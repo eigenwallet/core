@@ -16,8 +16,7 @@ use tor_llcrypto::util::rand_compat::RngCompatExt;
 use tor_llcrypto::*;
 
 // internal modules
-use crate::error::Result;
-use crate::*;
+use crate::error::TorCryptoError;
 
 /// The number of bytes in an ed25519 secret key
 /// cbindgen:ignore
@@ -96,16 +95,8 @@ fn calc_truncated_checksum(
 
 // Free functions
 
-fn hash_tor_password_with_salt(
-    salt: &[u8; S2K_RFC2440_SPECIFIER_LEN],
-    password: &str,
-) -> Result<String> {
-    if salt[S2K_RFC2440_SPECIFIER_LEN - 1] != 0x60 {
-        bail!(
-            "last byte in salt must be '0x60', received '{:#02X}'",
-            salt[S2K_RFC2440_SPECIFIER_LEN - 1]
-        );
-    }
+fn hash_tor_password_with_salt(salt: &[u8; S2K_RFC2440_SPECIFIER_LEN], password: &str) -> String {
+    assert!(salt[S2K_RFC2440_SPECIFIER_LEN - 1] == 0x60);
 
     // tor-specific rfc 2440 constants
     const EXPBIAS: u8 = 6u8;
@@ -141,10 +132,10 @@ fn hash_tor_password_with_salt(
     HEXUPPER.encode_append(salt, &mut hash);
     HEXUPPER.encode_append(&key, &mut hash);
 
-    Ok(hash)
+    hash
 }
 
-pub fn hash_tor_password(password: &str) -> Result<String> {
+pub fn hash_tor_password(password: &str) -> String {
     let mut salt = [0x00u8; S2K_RFC2440_SPECIFIER_LEN];
     OsRng.fill_bytes(&mut salt);
     salt[S2K_RFC2440_SPECIFIER_LEN - 1] = 0x60u8;
@@ -204,51 +195,64 @@ impl Ed25519PrivateKey {
         }
     }
 
-    pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey> {
+    pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey, TorCryptoError> {
         if key_blob.len() != ED25519_PRIVATE_KEYBLOB_LENGTH {
-            bail!(
+            return Err(TorCryptoError::ParseError(format!(
                 "expects string of length '{}'; received string with length '{}'",
                 ED25519_PRIVATE_KEYBLOB_LENGTH,
                 key_blob.len()
-            );
+            )));
         }
 
         if !key_blob.starts_with(ED25519_PRIVATE_KEYBLOB_HEADER) {
-            bail!(
+            return Err(TorCryptoError::ParseError(format!(
                 "expects string that begins with '{}'; received '{}'",
-                &ED25519_PRIVATE_KEYBLOB_HEADER,
-                &key_blob
-            );
+                &ED25519_PRIVATE_KEYBLOB_HEADER, &key_blob
+            )));
         }
 
         let base64_key: &str = &key_blob[ED25519_PRIVATE_KEYBLOB_HEADER.len()..];
-        let private_key_data = resolve!(BASE64.decode(base64_key.as_bytes()));
+        let private_key_data = match BASE64.decode(base64_key.as_bytes()) {
+            Ok(private_key_data) => private_key_data,
+            Err(_) => {
+                return Err(TorCryptoError::ParseError(format!(
+                    "could not parse '{}' as base64",
+                    base64_key
+                )))
+            }
+        };
         let private_key_data_len = private_key_data.len();
         let private_key_data_raw: [u8; ED25519_PRIVATE_KEY_SIZE] = match private_key_data.try_into()
         {
             Ok(private_key_data) => private_key_data,
-            Err(_) => bail!(
-                "expects decoded private key length '{}'; actual '{}'",
-                ED25519_PRIVATE_KEY_SIZE,
-                private_key_data_len
-            ),
+            Err(_) => {
+                return Err(TorCryptoError::ParseError(format!(
+                    "expects decoded private key length '{}'; actual '{}'",
+                    ED25519_PRIVATE_KEY_SIZE, private_key_data_len
+                )))
+            }
         };
 
         Ok(Ed25519PrivateKey::from_raw(&private_key_data_raw))
     }
 
-    fn from_private_x25519(x25519_private: &X25519PrivateKey) -> Result<(Ed25519PrivateKey, u8)> {
+    fn from_private_x25519(
+        x25519_private: &X25519PrivateKey,
+    ) -> Result<(Ed25519PrivateKey, u8), TorCryptoError> {
         if let Some((result, signbit)) =
             convert_curve25519_to_ed25519_private(&x25519_private.secret_key)
         {
-            return Ok((
+            Ok((
                 Ed25519PrivateKey {
                     expanded_secret_key: result,
                 },
                 signbit,
-            ));
+            ))
+        } else {
+            Err(TorCryptoError::ConversionError(
+                "could not convert x25519 private key to ed25519 private key".to_string(),
+            ))
         }
-        bail!("couldn't convert key");
     }
 
     pub fn to_key_blob(&self) -> String {
@@ -294,36 +298,48 @@ impl Clone for Ed25519PrivateKey {
 // Ed25519 Public Key
 
 impl Ed25519PublicKey {
-    pub fn from_raw(raw: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Ed25519PublicKey> {
+    pub fn from_raw(
+        raw: &[u8; ED25519_PUBLIC_KEY_SIZE],
+    ) -> Result<Ed25519PublicKey, TorCryptoError> {
         Ok(Ed25519PublicKey {
-            public_key: resolve!(pk::ed25519::PublicKey::from_bytes(raw)),
+            public_key: match pk::ed25519::PublicKey::from_bytes(raw) {
+                Ok(public_key) => public_key,
+                Err(_) => {
+                    return Err(TorCryptoError::ConversionError(
+                        "failed to create ed25519 public key from bytes".to_string(),
+                    ))
+                }
+            },
         })
     }
 
-    pub fn from_service_id(service_id: &V3OnionServiceId) -> Result<Ed25519PublicKey> {
+    pub fn from_service_id(
+        service_id: &V3OnionServiceId,
+    ) -> Result<Ed25519PublicKey, TorCryptoError> {
         // decode base32 encoded service id
         let mut decoded_service_id = [0u8; V3_ONION_SERVICE_ID_RAW_SIZE];
         let decoded_byte_count =
             match ONION_BASE32.decode_mut(service_id.as_bytes(), &mut decoded_service_id) {
                 Ok(decoded_byte_count) => decoded_byte_count,
-                Err(_) => bail!(
-                    "failed to decode '{}' as V3OnionServiceId",
-                    service_id.to_string()
-                ),
+                Err(_) => {
+                    return Err(TorCryptoError::ConversionError(format!(
+                        "failed to decode '{}' as V3OnionServiceId",
+                        service_id.to_string()
+                    )))
+                }
             };
         if decoded_byte_count != V3_ONION_SERVICE_ID_RAW_SIZE {
-            bail!(
+            return Err(TorCryptoError::ConversionError(format!(
                 "decoded byte count is '{}', expected '{}'",
-                decoded_byte_count,
-                V3_ONION_SERVICE_ID_RAW_SIZE
-            );
+                decoded_byte_count, V3_ONION_SERVICE_ID_RAW_SIZE
+            )));
         }
 
-        Ok(Ed25519PublicKey {
-            public_key: resolve!(pk::ed25519::PublicKey::from_bytes(
-                &decoded_service_id[0..ED25519_PUBLIC_KEY_SIZE]
-            )),
-        })
+        Ed25519PublicKey::from_raw(
+            decoded_service_id[0..ED25519_PUBLIC_KEY_SIZE]
+                .try_into()
+                .unwrap(),
+        )
     }
 
     pub fn from_private_key(private_key: &Ed25519PrivateKey) -> Ed25519PublicKey {
@@ -335,17 +351,21 @@ impl Ed25519PublicKey {
     fn from_public_x25519(
         public_x25519: &X25519PublicKey,
         signbit: u8,
-    ) -> Result<Ed25519PublicKey> {
-        ensure!(signbit == 0u8 || signbit == 1u8);
-        Ok(Ed25519PublicKey {
-            public_key: match convert_curve25519_to_ed25519_public(
-                &public_x25519.public_key,
-                signbit,
-            ) {
-                Some(public_key) => public_key,
-                None => bail!("failed to convert public key"),
-            },
-        })
+    ) -> Result<Ed25519PublicKey, TorCryptoError> {
+        if signbit != 0u8 && signbit != 1u8 {
+            Err(TorCryptoError::ConversionError(format!(
+                "invalid value of signbit, must be 0 or 1 but found {}",
+                signbit
+            )))
+        } else {
+            match convert_curve25519_to_ed25519_public(&public_x25519.public_key, signbit) {
+                Some(public_key) => Ok(Ed25519PublicKey { public_key }),
+                None => Err(TorCryptoError::ConversionError(
+                    "failed to create ed25519 public key from x25519 public key and signbit"
+                        .to_string(),
+                )),
+            }
+        }
     }
 
     pub fn to_base32(&self) -> String {
@@ -366,9 +386,18 @@ impl PartialEq for Ed25519PublicKey {
 // Ed25519 Signature
 
 impl Ed25519Signature {
-    pub fn from_raw(raw: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Ed25519Signature> {
+    pub fn from_raw(
+        raw: &[u8; ED25519_SIGNATURE_SIZE],
+    ) -> Result<Ed25519Signature, TorCryptoError> {
         Ok(Ed25519Signature {
-            signature: resolve!(pk::ed25519::Signature::from_bytes(raw)),
+            signature: match pk::ed25519::Signature::from_bytes(raw) {
+                Ok(signature) => signature,
+                Err(_) => {
+                    return Err(TorCryptoError::ConversionError(
+                        "failed to create ed25519 signature from bytes".to_string(),
+                    ))
+                }
+            },
         })
     }
 
@@ -419,20 +448,34 @@ impl X25519PrivateKey {
     }
 
     // a base64 encoded keyblob
-    pub fn from_base64(base64: &str) -> Result<X25519PrivateKey> {
-        ensure!(base64.len() == X25519_PRIVATE_KEYBLOB_BASE64_LENGTH,
-            "X25519PrivateKey::from_base64(): expects string of length '{}'; received string with length '{}'", X25519_PRIVATE_KEYBLOB_BASE64_LENGTH, base64.len());
+    pub fn from_base64(base64: &str) -> Result<X25519PrivateKey, TorCryptoError> {
+        if base64.len() != X25519_PRIVATE_KEYBLOB_BASE64_LENGTH {
+            return Err(TorCryptoError::ParseError(format!(
+                "expects string of length '{}'; received string with length '{}'",
+                X25519_PRIVATE_KEYBLOB_BASE64_LENGTH,
+                base64.len()
+            )));
+        }
 
-        let private_key_data = resolve!(BASE64.decode(base64.as_bytes()));
+        let private_key_data = match BASE64.decode(base64.as_bytes()) {
+            Ok(private_key_data) => private_key_data,
+            Err(_) => {
+                return Err(TorCryptoError::ParseError(format!(
+                    "could not parse '{}' as base64",
+                    base64
+                )))
+            }
+        };
         let private_key_data_len = private_key_data.len();
         let private_key_data_raw: [u8; X25519_PRIVATE_KEY_SIZE] = match private_key_data.try_into()
         {
             Ok(private_key_data) => private_key_data,
-            Err(_) => bail!(
-                "expects decoded private key length '{}'; actual '{}'",
-                X25519_PRIVATE_KEY_SIZE,
-                private_key_data_len
-            ),
+            Err(_) => {
+                return Err(TorCryptoError::ParseError(format!(
+                    "expects decoded private key length '{}'; actual '{}'",
+                    X25519_PRIVATE_KEY_SIZE, private_key_data_len
+                )))
+            }
         };
 
         Ok(X25519PrivateKey::from_raw(&private_key_data_raw))
@@ -442,7 +485,7 @@ impl X25519PrivateKey {
     // this function first derives an ed25519 private key from the provided x25519 private key
     // and signs the message, returning the signature and signbit needed to calculate the
     // ed25519 public key from our x25519 private key's associated x25519 public key
-    pub fn sign_message(&self, message: &[u8]) -> Result<(Ed25519Signature, u8)> {
+    pub fn sign_message(&self, message: &[u8]) -> Result<(Ed25519Signature, u8), TorCryptoError> {
         let (ed25519_private, signbit) = Ed25519PrivateKey::from_private_x25519(self)?;
         Ok((ed25519_private.sign_message(message), signbit))
     }
@@ -470,19 +513,34 @@ impl X25519PublicKey {
         }
     }
 
-    pub fn from_base32(base32: &str) -> Result<X25519PublicKey> {
-        ensure!(base32.len() == X25519_PUBLIC_KEYBLOB_BASE32_LENGTH,
-            "X25519PublicKey::from_base32(): expects string of length '{}'; received '{}' with length '{}'", X25519_PUBLIC_KEYBLOB_BASE32_LENGTH, base32, base32.len());
+    pub fn from_base32(base32: &str) -> Result<X25519PublicKey, TorCryptoError> {
+        if base32.len() != X25519_PUBLIC_KEYBLOB_BASE32_LENGTH {
+            return Err(TorCryptoError::ParseError(format!(
+                "expects string of length '{}'; received '{}' with length '{}'",
+                X25519_PUBLIC_KEYBLOB_BASE32_LENGTH,
+                base32,
+                base32.len()
+            )));
+        }
 
-        let public_key_data = resolve!(BASE32_NOPAD.decode(base32.as_bytes()));
+        let public_key_data = match BASE32_NOPAD.decode(base32.as_bytes()) {
+            Ok(public_key_data) => public_key_data,
+            Err(_) => {
+                return Err(TorCryptoError::ParseError(format!(
+                    "failed to decode '{}' as X25519PublicKey",
+                    base32
+                )))
+            }
+        };
         let public_key_data_len = public_key_data.len();
         let public_key_data_raw: [u8; X25519_PUBLIC_KEY_SIZE] = match public_key_data.try_into() {
             Ok(public_key_data) => public_key_data,
-            Err(_) => bail!(
-                "expects decoded public key length '{}'; actual '{}'",
-                X25519_PUBLIC_KEY_SIZE,
-                public_key_data_len
-            ),
+            Err(_) => {
+                return Err(TorCryptoError::ParseError(format!(
+                    "expects decoded public key length '{}'; actual '{}'",
+                    X25519_PUBLIC_KEY_SIZE, public_key_data_len
+                )))
+            }
         };
 
         Ok(X25519PublicKey::from_raw(&public_key_data_raw))
@@ -500,12 +558,15 @@ impl X25519PublicKey {
 // Onion Service Id
 
 impl V3OnionServiceId {
-    pub fn from_string(service_id: &str) -> Result<V3OnionServiceId> {
+    pub fn from_string(service_id: &str) -> Result<V3OnionServiceId, TorCryptoError> {
         if !V3OnionServiceId::is_valid(service_id) {
-            bail!("'{}' is not a valid v3 onion service id", &service_id);
+            return Err(TorCryptoError::ParseError(format!(
+                "'{}' is not a valid v3 onion service id",
+                service_id
+            )));
         }
         Ok(V3OnionServiceId {
-            data: resolve!(service_id.as_bytes().try_into()),
+            data: service_id.as_bytes().try_into().unwrap(),
         })
     }
 
@@ -580,7 +641,7 @@ impl std::fmt::Debug for V3OnionServiceId {
 }
 
 #[test]
-fn test_ed25519() -> Result<()> {
+fn test_ed25519() -> Result<(), anyhow::Error> {
     let private_key_blob = "ED25519-V3:YE3GZtDmc+izGijWKgeVRabbXqK456JKKGONDBhV+kPBVKa2mHVQqnRTVuFXe3inU3YW6qvc7glYEwe9rK0LhQ==";
     let private_raw: [u8; ED25519_PRIVATE_KEY_SIZE] = [
         0x60u8, 0x4du8, 0xc6u8, 0x66u8, 0xd0u8, 0xe6u8, 0x73u8, 0xe8u8, 0xb3u8, 0x1au8, 0x28u8,
@@ -651,27 +712,27 @@ fn test_ed25519() -> Result<()> {
 }
 
 #[test]
-fn test_password_hash() -> Result<()> {
+fn test_password_hash() -> Result<(), anyhow::Error> {
     let salt1: [u8; S2K_RFC2440_SPECIFIER_LEN] = [
         0xbeu8, 0x2au8, 0x25u8, 0x1du8, 0xe6u8, 0x2cu8, 0xb2u8, 0x7au8, 0x60u8,
     ];
-    let hash1 = hash_tor_password_with_salt(&salt1, "abcdefghijklmnopqrstuvwxyz")?;
+    let hash1 = hash_tor_password_with_salt(&salt1, "abcdefghijklmnopqrstuvwxyz");
     assert!(hash1 == "16:BE2A251DE62CB27A60AC9178A937990E8ED0AB662FA82A5C7DE3EBB23A");
 
     let salt2: [u8; S2K_RFC2440_SPECIFIER_LEN] = [
         0x36u8, 0x73u8, 0x0eu8, 0xefu8, 0xd1u8, 0x8cu8, 0x60u8, 0xd6u8, 0x60u8,
     ];
-    let hash2 = hash_tor_password_with_salt(&salt2, "password")?;
+    let hash2 = hash_tor_password_with_salt(&salt2, "password");
     assert!(hash2 == "16:36730EEFD18C60D66052E7EA535438761C0928D316EEA56A190C99B50A");
 
     // ensure same password is hashed to different things
-    assert!(hash_tor_password("password")? != hash_tor_password("password")?);
+    assert!(hash_tor_password("password") != hash_tor_password("password"));
 
     Ok(())
 }
 
 #[test]
-fn test_x25519() -> Result<()> {
+fn test_x25519() -> Result<(), anyhow::Error> {
     // private/public key pair
     const SECRET_BASE64: &str = "0GeSReJXdNcgvWRQdnDXhJGdu5UiwP2fefgT93/oqn0=";
     const SECRET_RAW: [u8; X25519_PRIVATE_KEY_SIZE] = [
@@ -687,22 +748,22 @@ fn test_x25519() -> Result<()> {
     ];
 
     // ensure we can convert from raw as expected
-    ensure!(&X25519PrivateKey::from_raw(&SECRET_RAW).to_base64() == SECRET_BASE64);
-    ensure!(&X25519PublicKey::from_raw(&PUBLIC_RAW).to_base32() == PUBLIC_BASE32);
+    assert!(&X25519PrivateKey::from_raw(&SECRET_RAW).to_base64() == SECRET_BASE64);
+    assert!(&X25519PublicKey::from_raw(&PUBLIC_RAW).to_base32() == PUBLIC_BASE32);
 
     // ensure we can round-trip as expected
-    ensure!(&X25519PrivateKey::from_base64(&SECRET_BASE64)?.to_base64() == SECRET_BASE64);
-    ensure!(&X25519PublicKey::from_base32(&PUBLIC_BASE32)?.to_base32() == PUBLIC_BASE32);
+    assert!(&X25519PrivateKey::from_base64(&SECRET_BASE64)?.to_base64() == SECRET_BASE64);
+    assert!(&X25519PublicKey::from_base32(&PUBLIC_BASE32)?.to_base32() == PUBLIC_BASE32);
 
     // ensure we generate the expected public key from private key
     let private_key = X25519PrivateKey::from_base64(&SECRET_BASE64)?;
     let public_key = X25519PublicKey::from_private_key(&private_key);
-    ensure!(public_key.to_base32() == PUBLIC_BASE32);
+    assert!(public_key.to_base32() == PUBLIC_BASE32);
 
     let message = b"All around me are familiar faces";
 
     let (signature, signbit) = private_key.sign_message(message)?;
-    ensure!(signature.verify_x25519(message, &public_key, signbit));
+    assert!(signature.verify_x25519(message, &public_key, signbit));
 
     Ok(())
 }

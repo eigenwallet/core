@@ -1,164 +1,175 @@
-use std::fmt;
-
-pub struct Error {
-    message: String,
-    file: &'static str,
-    line: u32,
-    function: &'static str,
+#[derive(thiserror::Error, Debug)]
+pub enum TorCryptoError {
+    #[error("{0}")]
+    ParseError(String),
+    #[error("{0}")]
+    ConversionError(String),
 }
 
-impl Error {
-    pub fn new(message: String, file: &'static str, line: u32, function: &'static str) -> Self {
-        Self {
-            message,
-            line,
-            function,
-            file,
-        }
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum TorProcessError {
+    #[error("failed to read control port file")]
+    ControlPortFileReadFailed(#[source] std::io::Error),
+
+    #[error("provided control port file '{0}' larger than expected ({1} bytes)")]
+    ControlPortFileTooLarge(String, u64),
+
+    #[error("failed to parse '{0}' as control port file")]
+    ControlPortFileContentsInvalid(String),
+
+    #[error("provided tor bin path '{0}' must be an absolute path")]
+    TorBinPathNotAbsolute(String),
+
+    #[error("provided data directory '{0}' must be an absolute path")]
+    TorDataDirectoryPathNotAbsolute(String),
+
+    #[error("failed to create data directory")]
+    DataDirectoryCreationFailed(#[source] std::io::Error),
+
+    #[error("file exists in provided data directory path '{0}'")]
+    DataDirectoryPathExistsAsFile(String),
+
+    #[error("failed to create default_torrc file")]
+    DefaultTorrcFileCreationFailed(#[source] std::io::Error),
+
+    #[error("failed to write default_torrc file")]
+    DefaultTorrcFileWriteFailed(#[source] std::io::Error),
+
+    #[error("failed to create torrc file")]
+    TorrcFileCreationFailed(#[source] std::io::Error),
+
+    #[error("failed to remove control_port file")]
+    ControlPortFileDeleteFailed(#[source] std::io::Error),
+
+    #[error("failed to start tor process")]
+    TorProcessStartFailed(#[source] std::io::Error),
+
+    #[error("failed to read control addr from control_file '{0}'")]
+    ControlPortFileMissing(String),
+
+    #[error("unable to take tor process stdout")]
+    TorProcessStdoutTakeFailed(),
+
+    #[error("failed to spawn tor process stdout read thread")]
+    StdoutReadThreadSpawnFailed(#[source] std::io::Error),
 }
 
-impl fmt::Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}({}:{}): {}",
-            self.function, self.file, self.line, self.message
-        )
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum ControlStreamError {
+    #[error("control stream read timeout must not be zero")]
+    ReadTimeoutZero(),
+
+    #[error("could not connect to control port")]
+    CreationFailed(#[source] std::io::Error),
+
+    #[error("configure control port socket failed")]
+    ConfigurationFailed(#[source] std::io::Error),
+
+    #[error("control port parsing regex creation failed")]
+    ParsingRegexCreationFailed(#[source] regex::Error),
+
+    #[error("control port stream read failure")]
+    ReadFailed(#[source] std::io::Error),
+
+    #[error("control port stream closed by remote")]
+    ClosedByRemote(),
+
+    #[error("received control port response invalid utf8")]
+    InvalidResponse(#[source] std::str::Utf8Error),
+
+    #[error("failed to parse control port reply: {0}")]
+    ReplyParseFailed(String),
+
+    #[error("control port stream write failure")]
+    WriteFailed(#[source] std::io::Error),
 }
 
-pub trait ToError {
-    fn to_error(self, file: &'static str, line: u32, function: &'static str) -> Error;
+#[derive(thiserror::Error, Debug)]
+pub enum TorVersionError {
+    #[error("{}", .0)]
+    ParseError(String),
 }
 
-impl<T> ToError for T
-where
-    T: std::string::ToString,
-{
-    fn to_error(self, file: &'static str, line: u32, function: &'static str) -> Error {
-        Error {
-            message: self.to_string(),
-            line,
-            function,
-            file,
-        }
-    }
+#[derive(thiserror::Error, Debug)]
+pub enum TorControllerError {
+    #[error("response regex creation failed")]
+    ParsingRegexCreationFailed(#[source] regex::Error),
+
+    #[error("control stream read reply failed")]
+    ReadReplyFailed(#[source] ControlStreamError),
+
+    #[error("unexpected synchronous reply recieved")]
+    UnexpectedSynchonousReplyReceived(),
+
+    #[error("control stream write command failed")]
+    WriteCommandFailed(#[source] ControlStreamError),
+
+    #[error("invalid command arguments: {0}")]
+    InvalidCommandArguments(String),
+
+    #[error("command failed: {0} {}", .1.join("\n"))]
+    CommandReturnedError(u32, Vec<String>),
+
+    #[error("failed to parse command reply: {0}")]
+    CommandReplyParseFailed(String),
+
+    #[error("failed to parse received tor version")]
+    TorVersionParseFailed(#[source] TorVersionError),
 }
 
-impl ToError for Error {
-    fn to_error(self, _file: &'static str, _line: u32, _function: &'static str) -> Error {
-        self
-    }
-}
+#[derive(thiserror::Error, Debug)]
+pub enum TorManagerError {
+    #[error("failed to create TorProcess object")]
+    TorProcessCreationFailed(#[source] TorProcessError),
 
-pub type Result<T, E = Error> = core::result::Result<T, E>;
+    #[error("failed to create ControlStream object")]
+    ControlStreamCreationFailed(#[source] ControlStreamError),
 
-#[macro_export]
-macro_rules! function {
-    () => {{
-        fn f() {}
-        fn type_name_of<T>(_: T) -> &'static str {
-            std::any::type_name::<T>()
-        }
-        let name = type_name_of(f);
-        &name[..name.len() - 3]
-    }};
-}
+    #[error("failed to create TorController object")]
+    TorControllerCreationFailed(#[source] TorControllerError),
 
-#[macro_export]
-macro_rules! to_error {
-    ($err:tt) => {{
-        let line = std::line!();
-        let function = function!();
-        let file = std::file!();
+    #[error("failed to authenticate with the tor process")]
+    TorProcessAuthenticationFailed(#[source] TorControllerError),
 
-        use $crate::error::ToError;
-        $err.to_error(file, line, function)
-    }};
-}
+    #[error("failed to determine the tor process version")]
+    GetInfoVersionFailed(#[source] TorControllerError),
 
-#[macro_export]
-macro_rules! bail {
-    ($msg:literal) => {
-        {
-            return Err(to_error!($msg));
-        }
-    };
-    ($err:expr) => {
-        {
-            return Err(to_error!($err));
-        }
-    };
-    ($fmt:literal, $($arg:tt)*) => {
-        {
-            let message = std::format!($fmt, $($arg)*);
-            return Err(to_error!(message));
-        }
-    };
-}
+    #[error("tor process version to old; found {0} but must be at least {1}")]
+    TorProcessTooOld(String, String),
 
-#[macro_export]
-macro_rules! resolve {
-    ($result:expr) => {
-        match $result {
-            Ok(val) => val,
-            Err(err) => bail!(err),
-        }
-    };
-}
+    #[error("failed to register for STATUS_CLIENT and HS_DESC events")]
+    SetEventsFailed(#[source] TorControllerError),
 
-#[macro_export]
-macro_rules! ensure {
-    ($condition:expr) => {
-        if !($condition as bool) {
-            bail!(std::format!("requirement `{}` failed", std::stringify!($condition)));
-        }
-    };
-    ($condition:expr, $msg:literal) => {
-        if !($condition as bool) {
-            bail!($msg);
-        }
-    };
-    ($condition:expr, $fmt:literal, $($arg:tt)*) => {
-        if !($condition as bool) {
-            bail!($fmt, $($arg)*);
-        }
-    };
-}
+    #[error("failed to delete unused onion service")]
+    DelOnionFailed(#[source] TorControllerError),
 
-#[macro_export]
-macro_rules! ensure_not_null {
-    ($ptr:expr) => {
-        if $ptr.is_null() {
-            bail!(std::format!("`{}` must not be null", std::stringify!($ptr)));
-        }
-    };
-}
+    #[error("failed waiting for async events")]
+    WaitAsyncEventsFailed(#[source] TorControllerError),
 
-#[macro_export]
-macro_rules! ensure_equal {
-    ($left:expr, $right:expr) => {
-        let left_val = $left;
-        let right_val = $right;
-        if left_val != right_val {
-            bail!(std::format!(
-                "`{}` must equal `{}` but found left: {:?}, right: {:?}",
-                std::stringify!($left),
-                std::stringify!($right),
-                left_val,
-                right_val
-            ));
-        }
-    };
-}
+    #[error("failed to begin bootstrap")]
+    SetConfDisableNetwork0Failed(#[source] TorControllerError),
 
-#[macro_export]
-macro_rules! ensure_ok {
-    ($result:expr) => {
-        match $result {
-            Ok(_) => {}
-            Err(err) => bail!(err),
-        }
-    };
+    #[error("failed to add client auth for onion service")]
+    OnionClientAuthAddFailed(#[source] TorControllerError),
+
+    #[error("failed to remove client auth from onion service")]
+    OnionClientAuthRemoveFailed(#[source] TorControllerError),
+
+    #[error("failed to get socks listener")]
+    GetInfoNetListenersSocksFailed(#[source] TorControllerError),
+
+    #[error("no socks listeners available to connect through")]
+    NoSocksListenersFound(),
+
+    #[error("unable to connect to socks listener")]
+    Socks5ConnectionFailed(#[source] std::io::Error),
+
+    #[error("unable to bind TCP listener")]
+    TcpListenerBindFailed(#[source] std::io::Error),
+
+    #[error("unable to get TCP listener's local address")]
+    TcpListenerLocalAddrFailed(#[source] std::io::Error),
+
+    #[error("faild to create onion service")]
+    AddOnionFailed(#[source] TorControllerError),
 }

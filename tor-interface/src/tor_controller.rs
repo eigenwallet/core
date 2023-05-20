@@ -28,10 +28,17 @@ use socks::Socks5Stream;
 use url::Host;
 
 // internal crates
-use crate::error::Result;
+use crate::error::ControlStreamError;
+use crate::error::ControlStreamError::*;
+use crate::error::TorControllerError;
+use crate::error::TorControllerError::*;
+use crate::error::TorManagerError;
+use crate::error::TorManagerError::*;
+use crate::error::TorProcessError;
+use crate::error::TorProcessError::*;
+use crate::error::TorVersionError;
+use crate::error::TorVersionError::*;
 use crate::tor_crypto::*;
-use crate::*;
-
 // get the name of our tor executable
 pub const fn tor_exe_name() -> &'static str {
     if cfg!(windows) {
@@ -52,30 +59,34 @@ fn generate_password(length: usize) -> String {
     password
 }
 
-fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddr> {
+fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddr, TorProcessError> {
     // open file
-    let mut file = resolve!(File::open(control_port_file));
+    let mut file = File::open(control_port_file).map_err(ControlPortFileReadFailed)?;
 
     // bail if the file is larger than expected
-    let metadata = resolve!(file.metadata());
-    ensure!(
-        metadata.len() < 1024,
-        "control port file larger than expected: {} bytes",
-        metadata.len()
-    );
+    let metadata = file.metadata().map_err(ControlPortFileReadFailed)?;
+    if metadata.len() >= 1024 {
+        return Err(ControlPortFileTooLarge(
+            format!("{}", control_port_file.display()),
+            metadata.len(),
+        ));
+    }
 
     // read contents to string
     let mut contents = String::new();
-    resolve!(file.read_to_string(&mut contents));
+    file.read_to_string(&mut contents)
+        .map_err(ControlPortFileReadFailed)?;
 
     if contents.starts_with("PORT=") {
         let addr_string = &contents.trim_end()["PORT=".len()..];
-        return Ok(resolve!(SocketAddr::from_str(addr_string)));
+        if let Ok(addr) = SocketAddr::from_str(addr_string) {
+            return Ok(addr);
+        }
     }
-    bail!(
-        "could not parse '{}' as control port file",
+    Err(ControlPortFileContentsInvalid(format!(
+        "{}",
         control_port_file.display()
-    );
+    )))
 }
 
 // Encapsulates the tor daemon process
@@ -88,20 +99,25 @@ struct TorProcess {
 }
 
 impl TorProcess {
-    // pub fn new(data_directory: &Path) -> Result<TorProcess> {
-    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<TorProcess> {
-        ensure!(tor_bin_path.is_absolute());
-        ensure!(data_directory.is_absolute());
+    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<TorProcess, TorProcessError> {
+        if tor_bin_path.is_relative() {
+            return Err(TorBinPathNotAbsolute(format!("{}", tor_bin_path.display())));
+        }
+        if data_directory.is_relative() {
+            return Err(TorDataDirectoryPathNotAbsolute(format!(
+                "{}",
+                data_directory.display()
+            )));
+        }
 
         // create data directory if it doesn't exist
         if !data_directory.exists() {
-            resolve!(fs::create_dir_all(data_directory));
-        } else {
-            ensure!(
-                !data_directory.is_file(),
-                "received data_directory '{}' is a file not a path",
+            fs::create_dir_all(data_directory).map_err(DataDirectoryCreationFailed)?;
+        } else if data_directory.is_file() {
+            return Err(DataDirectoryPathExistsAsFile(format!(
+                "{}",
                 data_directory.display()
-            );
+            )));
         }
 
         // construct paths to torrc files
@@ -120,30 +136,28 @@ impl TorProcess {
             AvoidDiskWrites 1\n\
             DisableNetwork 1\n\n";
 
-            let mut default_torrc_file = resolve!(File::create(&default_torrc));
-            resolve!(default_torrc_file.write_all(DEFAULT_TORRC_CONTENT.as_bytes()));
+            let mut default_torrc_file =
+                File::create(&default_torrc).map_err(DefaultTorrcFileCreationFailed)?;
+            default_torrc_file
+                .write_all(DEFAULT_TORRC_CONTENT.as_bytes())
+                .map_err(DefaultTorrcFileWriteFailed)?;
         }
 
         // create empty torrc for user
         if !torrc.exists() {
-            let _ = File::create(&torrc);
+            let _ = File::create(&torrc).map_err(TorrcFileCreationFailed)?;
         }
 
         // remove any existing control_port_file
         if control_port_file.exists() {
-            ensure!(
-                control_port_file.is_file(),
-                "control port file '{}' exists but is a directory",
-                control_port_file.display()
-            );
-            resolve!(fs::remove_file(&control_port_file));
+            fs::remove_file(&control_port_file).map_err(ControlPortFileDeleteFailed)?;
         }
 
         const CONTROL_PORT_PASSWORD_LENGTH: usize = 32usize;
         let password = generate_password(CONTROL_PORT_PASSWORD_LENGTH);
-        let password_hash = hash_tor_password(&password)?;
+        let password_hash = hash_tor_password(&password);
 
-        let mut process = resolve!(Command::new(tor_bin_path.as_os_str())
+        let mut process = Command::new(tor_bin_path.as_os_str())
             .stdout(Stdio::piped())
             .stdin(Stdio::null())
             .stderr(Stdio::null())
@@ -171,7 +185,8 @@ impl TorProcess {
             // to avoid orphaned tor daemon
             .arg("__OwningControllerProcess")
             .arg(process::id().to_string())
-            .spawn());
+            .spawn()
+            .map_err(TorProcessStartFailed)?;
 
         let mut control_addr = None;
         let start = Instant::now();
@@ -182,16 +197,18 @@ impl TorProcess {
         while control_addr.is_none() && start.elapsed() < Duration::from_secs(5) {
             if control_port_file.exists() {
                 control_addr = Some(read_control_port_file(control_port_file.as_path())?);
-                resolve!(fs::remove_file(&control_port_file));
+                fs::remove_file(&control_port_file).map_err(ControlPortFileDeleteFailed)?;
             }
         }
 
         let control_addr = match control_addr {
             Some(control_addr) => control_addr,
-            None => bail!(
-                "failed to read control addr from '{}'",
-                control_port_file.display()
-            ),
+            None => {
+                return Err(ControlPortFileMissing(format!(
+                    "{}",
+                    control_port_file.display()
+                )))
+            }
         };
 
         let stdout_lines: Arc<Mutex<Vec<String>>> = Default::default();
@@ -200,14 +217,15 @@ impl TorProcess {
             let stdout_lines = Arc::downgrade(&stdout_lines);
             let stdout = BufReader::new(match process.stdout.take() {
                 Some(stdout) => stdout,
-                None => unreachable!(),
+                None => return Err(TorProcessStdoutTakeFailed()),
             });
 
-            resolve!(std::thread::Builder::new()
+            std::thread::Builder::new()
                 .name("tor_stdout_reader".to_string())
                 .spawn(move || {
                     TorProcess::read_stdout_task(&stdout_lines, stdout);
-                }));
+                })
+                .map_err(StdoutReadThreadSpawnFailed)?;
         }
 
         Ok(TorProcess {
@@ -273,22 +291,29 @@ struct Reply {
 }
 
 impl ControlStream {
-    pub fn new(addr: &SocketAddr, read_timeout: Duration) -> Result<ControlStream> {
-        ensure!(
-            read_timeout != Duration::ZERO,
-            "read_timeout must not be zero"
-        );
+    pub fn new(
+        addr: &SocketAddr,
+        read_timeout: Duration,
+    ) -> Result<ControlStream, ControlStreamError> {
+        if read_timeout.is_zero() {
+            return Err(ReadTimeoutZero());
+        }
 
-        let stream = resolve!(TcpStream::connect(addr));
-        resolve!(stream.set_read_timeout(Some(read_timeout)));
+        let stream = TcpStream::connect(addr).map_err(CreationFailed)?;
+        stream
+            .set_read_timeout(Some(read_timeout))
+            .map_err(ConfigurationFailed)?;
 
         // pre-allocate a kilobyte for the read buffer
         const READ_BUFFER_SIZE: usize = 1024;
         let pending_data = Vec::with_capacity(READ_BUFFER_SIZE);
 
-        let single_line_data = resolve!(Regex::new(r"^\d\d\d-.*"));
-        let multi_line_data = resolve!(Regex::new(r"^\d\d\d+.*"));
-        let end_reply_line = resolve!(Regex::new(r"^\d\d\d .*"));
+        let single_line_data =
+            Regex::new(r"^\d\d\d-.*").map_err(ControlStreamError::ParsingRegexCreationFailed)?;
+        let multi_line_data =
+            Regex::new(r"^\d\d\d+.*").map_err(ControlStreamError::ParsingRegexCreationFailed)?;
+        let end_reply_line =
+            Regex::new(r"^\d\d\d .*").map_err(ControlStreamError::ParsingRegexCreationFailed)?;
 
         Ok(ControlStream {
             stream,
@@ -309,7 +334,7 @@ impl ControlStream {
         self.closed_by_remote
     }
 
-    fn read_line(&mut self) -> Result<Option<String>> {
+    fn read_line(&mut self) -> Result<Option<String>, ControlStreamError> {
         // read pending bytes from stream until we have a line to return
         while self.pending_lines.is_empty() {
             let byte_count = self.pending_data.len();
@@ -320,12 +345,12 @@ impl ControlStream {
                             return Ok(None);
                         }
                     } else {
-                        bail!(err);
+                        return Err(ControlStreamError::ReadFailed(err));
                     }
                 }
                 Ok(0usize) => {
                     self.closed_by_remote = true;
-                    bail!("stream closed by remote")
+                    return Err(ControlStreamError::ClosedByRemote());
                 }
                 Ok(_count) => (),
             }
@@ -338,10 +363,10 @@ impl ControlStream {
                     // view into byte vec of just the found line
                     let line_view: &[u8] = &self.pending_data[begin..end];
                     // convert to string
-                    let line_string = resolve!(std::str::from_utf8(line_view)).to_string();
+                    let line_string = std::str::from_utf8(line_view).map_err(InvalidResponse)?;
 
                     // save in pending list
-                    self.pending_lines.push_back(line_string);
+                    self.pending_lines.push_back(line_string.to_string());
                     // update begin (and skip over \r\n)
                     begin = end + 2;
                 }
@@ -353,45 +378,73 @@ impl ControlStream {
         Ok(self.pending_lines.pop_front())
     }
 
-    fn read_reply(&mut self) -> Result<Option<Reply>> {
+    fn read_reply(&mut self) -> Result<Option<Reply>, ControlStreamError> {
         loop {
-            let current_line = match self.read_line() {
-                Ok(Some(line)) => line,
-                Ok(None) => return Ok(None),
-                Err(err) => return Err(err),
+            let current_line = match self.read_line()? {
+                Some(line) => line,
+                None => return Ok(None),
             };
 
             // make sure the status code matches (if we are not in the
             // middle of a multi-line read
             if let Some(first_line) = self.pending_reply.first() {
                 if !self.reading_multiline_value {
-                    ensure!(first_line[0..3] == current_line[0..3]);
+                    let first_status_code = &first_line[0..3];
+                    let current_status_code = &current_line[0..3];
+                    if first_status_code != current_status_code {
+                        return Err(ReplyParseFailed(format!(
+                            "mismatched status codes, {} != {}",
+                            first_status_code, current_status_code
+                        )));
+                    }
                 }
             }
 
             // end of a response
             if self.end_reply_line.is_match(&current_line) {
-                ensure!(!self.reading_multiline_value);
+                if self.reading_multiline_value {
+                    return Err(ReplyParseFailed(
+                        "found multi-line end reply but not reading a multi-line reply".to_string(),
+                    ));
+                }
                 self.pending_reply.push(current_line);
                 break;
             // single line data from getinfo and friends
             } else if self.single_line_data.is_match(&current_line) {
-                ensure!(!self.reading_multiline_value);
+                if self.reading_multiline_value {
+                    return Err(ReplyParseFailed(
+                        "found single-line reply but still reading a multi-line reply".to_string(),
+                    ));
+                }
                 self.pending_reply.push(current_line);
             // begin of multiline data from getinfo and friends
             } else if self.multi_line_data.is_match(&current_line) {
-                ensure!(!self.reading_multiline_value);
+                if self.reading_multiline_value {
+                    return Err(ReplyParseFailed(
+                        "found multi-line start reply but still reading a multi-line reply"
+                            .to_string(),
+                    ));
+                }
                 self.pending_reply.push(current_line);
                 self.reading_multiline_value = true;
             // multiline data to be squashed to a single entry
             } else {
-                ensure!(self.reading_multiline_value);
+                if !self.reading_multiline_value {
+                    return Err(ReplyParseFailed(
+                        "found a multi-line intermediate reply but not reading a multi-line reply"
+                            .to_string(),
+                    ));
+                }
                 // don't bother writing the end of multiline token
                 if current_line == "." {
                     self.reading_multiline_value = false;
                 } else {
                     let multiline = match self.pending_reply.last_mut() {
                         Some(multiline) => multiline,
+                        // if our logic here is right, then
+                        // self.reading_multiline_value == !self.pending_reply.is_empty()
+                        // should always be true regardless of the data received
+                        // from the control port
                         None => unreachable!(),
                     };
                     multiline.push('\n');
@@ -407,11 +460,20 @@ impl ControlStream {
         // parse out the response code for easier matching
         let status_code_string = match reply_lines.first() {
             Some(line) => line[0..3].to_string(),
+            // the lines have already been parsed+validated in the above loop
             None => unreachable!(),
         };
-        let status_code: u32 = resolve!(status_code_string.parse());
+        let status_code: u32 = match status_code_string.parse() {
+            Ok(status_code) => status_code,
+            Err(_) => {
+                return Err(ReplyParseFailed(format!(
+                    "unable to parse '{}' as status code",
+                    status_code_string
+                )))
+            }
+        };
 
-        // strip the redundant status code form start of lines
+        // strip the redundant status code from start of lines
         for line in reply_lines.iter_mut() {
             println!(">>> {}", line);
             if line.starts_with(&status_code_string) {
@@ -425,11 +487,11 @@ impl ControlStream {
         }))
     }
 
-    pub fn write(&mut self, cmd: &str) -> Result<()> {
+    pub fn write(&mut self, cmd: &str) -> Result<(), ControlStreamError> {
         println!("<<< {}", cmd);
         if let Err(err) = write!(self.stream, "{}\r\n", cmd) {
             self.closed_by_remote = true;
-            bail!(err);
+            return Err(ControlStreamError::WriteFailed(err));
         }
         Ok(())
     }
@@ -451,7 +513,8 @@ pub struct OnionClientAuthAddFlags {
 }
 
 // see version-spec.txt
-pub struct Version {
+#[derive(Clone)]
+pub struct TorVersion {
     pub major: u32,
     pub minor: u32,
     pub micro: u32,
@@ -459,7 +522,7 @@ pub struct Version {
     pub status_tag: Option<String>,
 }
 
-impl Version {
+impl TorVersion {
     fn status_tag_pattern_is_match(status_tag: &str) -> bool {
         if status_tag.is_empty() {
             return false;
@@ -479,15 +542,20 @@ impl Version {
         micro: u32,
         patch_level: Option<u32>,
         status_tag: Option<&str>,
-    ) -> Result<Version> {
+    ) -> Result<TorVersion, TorVersionError> {
         let status_tag = if let Some(status_tag) = status_tag {
-            ensure!(Self::status_tag_pattern_is_match(status_tag));
-            Some(status_tag.to_string())
+            if Self::status_tag_pattern_is_match(status_tag) {
+                Some(status_tag.to_string())
+            } else {
+                return Err(TorVersionError::ParseError(
+                    "tor version status tag may not be empty or contain white-space".to_string(),
+                ));
+            }
         } else {
             None
         };
 
-        Ok(Version {
+        Ok(TorVersion {
             major,
             minor,
             micro,
@@ -497,79 +565,106 @@ impl Version {
     }
 }
 
-impl FromStr for Version {
-    type Err = error::Error;
+impl FromStr for TorVersion {
+    type Err = TorVersionError;
 
-    fn from_str(s: &str) -> Result<Version> {
+    fn from_str(s: &str) -> Result<TorVersion, Self::Err> {
         // MAJOR.MINOR.MICRO[.PATCHLEVEL][-STATUS_TAG][ (EXTRA_INFO)]*
         let mut tokens = s.split(' ');
-        let (major, minor, micro, patch_level, status_tag) = if let Some(version_status_tag) =
-            tokens.next()
-        {
-            let mut tokens = version_status_tag.split('-');
-            let (major, minor, micro, patch_level) = if let Some(version) = tokens.next() {
-                let mut tokens = version.split('.');
-                let major: u32 = if let Some(major) = tokens.next() {
-                    match major.parse() {
-                        Ok(major) => major,
-                        Err(_) => bail!("failed to parse '{}' as MAJOR portion of version", major),
-                    }
+        let (major, minor, micro, patch_level, status_tag) =
+            if let Some(version_status_tag) = tokens.next() {
+                let mut tokens = version_status_tag.split('-');
+                let (major, minor, micro, patch_level) = if let Some(version) = tokens.next() {
+                    let mut tokens = version.split('.');
+                    let major: u32 = if let Some(major) = tokens.next() {
+                        match major.parse() {
+                            Ok(major) => major,
+                            Err(_) => {
+                                return Err(ParseError(format!(
+                                    "failed to parse '{}' as MAJOR portion of tor version",
+                                    major
+                                )))
+                            }
+                        }
+                    } else {
+                        return Err(ParseError(
+                            "failed to find MAJOR portion of tor version".to_string(),
+                        ));
+                    };
+                    let minor: u32 = if let Some(minor) = tokens.next() {
+                        match minor.parse() {
+                            Ok(minor) => minor,
+                            Err(_) => {
+                                return Err(ParseError(format!(
+                                    "failed to parse '{}' as MINOR portion of tor version",
+                                    minor
+                                )))
+                            }
+                        }
+                    } else {
+                        return Err(ParseError(
+                            "failed to find MINOR portion of tor version".to_string(),
+                        ));
+                    };
+                    let micro: u32 = if let Some(micro) = tokens.next() {
+                        match micro.parse() {
+                            Ok(micro) => micro,
+                            Err(_) => {
+                                return Err(ParseError(format!(
+                                    "failed to parse '{}' as MICRO portion of tor version",
+                                    micro
+                                )))
+                            }
+                        }
+                    } else {
+                        return Err(ParseError(
+                            "failed to find MICRO portion of tor version".to_string(),
+                        ));
+                    };
+                    let patch_level: u32 = if let Some(patch_level) = tokens.next() {
+                        match patch_level.parse() {
+                            Ok(patch_level) => patch_level,
+                            Err(_) => {
+                                return Err(ParseError(format!(
+                                    "failed to parse '{}' as PATCHLEVEL portion of tor version",
+                                    patch_level
+                                )))
+                            }
+                        }
+                    } else {
+                        0u32
+                    };
+                    (major, minor, micro, patch_level)
                 } else {
-                    bail!("failed to find MAJOR portion of version");
+                    // if there were '-' the previous next() would have returned the enire string
+                    unreachable!();
                 };
-                let minor: u32 = if let Some(minor) = tokens.next() {
-                    match minor.parse() {
-                        Ok(minor) => minor,
-                        Err(_) => bail!("failed to parse '{}' as MINOR portion of version", minor),
-                    }
-                } else {
-                    bail!("failed to find MINOR portion of version");
-                };
-                let micro: u32 = if let Some(micro) = tokens.next() {
-                    match micro.parse() {
-                        Ok(micro) => micro,
-                        Err(_) => bail!("failed to parse '{}' as MICRO portion of version", micro),
-                    }
-                } else {
-                    bail!("failed to find MICRO portion of version");
-                };
-                let patch_level: u32 = if let Some(patch_level) = tokens.next() {
-                    match patch_level.parse() {
-                        Ok(patch_level) => patch_level,
-                        Err(_) => bail!(
-                            "failed to parse '{}' as PATCHLEVEL portion of version",
-                            patch_level
-                        ),
-                    }
-                } else {
-                    0u32
-                };
-                (major, minor, micro, patch_level)
+                let status_tag = tokens.next().map(|status_tag| status_tag.to_string());
+
+                (major, minor, micro, patch_level, status_tag)
             } else {
+                // if there were no ' ' character the previou snext() would have returned the enire string
                 unreachable!();
             };
-            let status_tag = tokens.next().map(|status_tag| status_tag.to_string());
-
-            (major, minor, micro, patch_level, status_tag)
-        } else {
-            bail!("failed to find MAJOR.MINOR.MICRO.[PATCH_LEVEL][-STATUS_TAG] portion of version");
-        };
         for extra_info in tokens {
             if !extra_info.starts_with('(') || !extra_info.ends_with(')') {
-                bail!("failed to parse '{}' as [ (EXTRA_INFO)]", extra_info);
+                return Err(ParseError(format!(
+                    "failed to parse '{}' as [ (EXTRA_INFO)]",
+                    extra_info
+                )));
             }
         }
-        Ok(Version {
+        TorVersion::new(
             major,
             minor,
             micro,
-            patch_level,
-            status_tag,
-        })
+            Some(patch_level),
+            status_tag.as_deref(),
+        )
     }
 }
 
-impl ToString for Version {
+impl ToString for TorVersion {
     fn to_string(&self) -> String {
         match &self.status_tag {
             Some(status_tag) => format!(
@@ -584,7 +679,7 @@ impl ToString for Version {
     }
 }
 
-impl PartialEq for Version {
+impl PartialEq for TorVersion {
     fn eq(&self, other: &Self) -> bool {
         self.major == other.major
             && self.minor == other.minor
@@ -594,7 +689,7 @@ impl PartialEq for Version {
     }
 }
 
-impl PartialOrd for Version {
+impl PartialOrd for TorVersion {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if let Some(order) = self.major.partial_cmp(&other.major) {
             if order != Ordering::Equal {
@@ -662,16 +757,16 @@ struct TorController {
 }
 
 impl TorController {
-    pub fn new(control_stream: ControlStream) -> Result<TorController> {
-        let status_event_pattern = resolve!(Regex::new(
-            r#"^STATUS_CLIENT (?P<severity>NOTICE|WARN|ERR) (?P<action>[A-Za-z]+)"#
-        ));
-        let status_event_argument_pattern = resolve!(Regex::new(
-            r#"(?P<key>[A-Z]+)=(?P<value>[A-Za-z0-9_]+|"[^"]+")"#
-        ));
-        let hs_desc_pattern = resolve!(Regex::new(
+    pub fn new(control_stream: ControlStream) -> Result<TorController, TorControllerError> {
+        let status_event_pattern =
+            Regex::new(r#"^STATUS_CLIENT (?P<severity>NOTICE|WARN|ERR) (?P<action>[A-Za-z]+)"#)
+                .map_err(TorControllerError::ParsingRegexCreationFailed)?;
+        let status_event_argument_pattern =
+            Regex::new(r#"(?P<key>[A-Z]+)=(?P<value>[A-Za-z0-9_]+|"[^"]+")"#)
+                .map_err(TorControllerError::ParsingRegexCreationFailed)?;
+        let hs_desc_pattern = Regex::new(
             r#"HS_DESC (?P<action>REQUESTED|UPLOAD|RECEIVED|UPLOADED|IGNORE|FAILED|CREATED) (?P<hsaddress>[a-z2-7]{56})"#
-        ));
+        ).map_err(TorControllerError::ParsingRegexCreationFailed)?;
 
         Ok(TorController {
             control_stream,
@@ -685,14 +780,14 @@ impl TorController {
 
     // return curently available events, does not block waiting
     // for an event
-    fn wait_async_replies(&mut self) -> Result<Vec<Reply>> {
+    fn wait_async_replies(&mut self) -> Result<Vec<Reply>, TorControllerError> {
         let mut replies: Vec<Reply> = Default::default();
         // take any previously received async replies
         std::mem::swap(&mut self.async_replies, &mut replies);
 
         // and keep consuming until none are available
         loop {
-            if let Some(reply) = self.control_stream.read_reply()? {
+            if let Some(reply) = self.control_stream.read_reply().map_err(ReadReplyFailed)? {
                 replies.push(reply);
             } else {
                 // no more replies immediately available so return
@@ -701,11 +796,10 @@ impl TorController {
         }
     }
 
-    fn reply_to_event(&self, reply: &mut Reply) -> Result<AsyncEvent> {
-        ensure!(
-            reply.status_code == 650u32,
-            "received unexpected synchrynous reply"
-        );
+    fn reply_to_event(&self, reply: &mut Reply) -> Result<AsyncEvent, TorControllerError> {
+        if reply.status_code != 650u32 {
+            return Err(UnexpectedSynchonousReplyReceived());
+        }
 
         // not sure this is what we want but yolo
         let reply_text = reply.reply_lines.join(" ");
@@ -774,7 +868,7 @@ impl TorController {
         Ok(AsyncEvent::Unknown { lines: reply_lines })
     }
 
-    pub fn wait_async_events(&mut self) -> Result<Vec<AsyncEvent>> {
+    pub fn wait_async_events(&mut self) -> Result<Vec<AsyncEvent>, TorControllerError> {
         let mut async_replies = self.wait_async_replies()?;
         let mut async_events: Vec<AsyncEvent> = Default::default();
 
@@ -786,9 +880,9 @@ impl TorController {
     }
 
     // wait for a sync reply, save off async replies for later
-    fn wait_sync_reply(&mut self) -> Result<Reply> {
+    fn wait_sync_reply(&mut self) -> Result<Reply, TorControllerError> {
         loop {
-            if let Some(reply) = self.control_stream.read_reply()? {
+            if let Some(reply) = self.control_stream.read_reply().map_err(ReadReplyFailed)? {
                 match reply.status_code {
                     650u32 => self.async_replies.push(reply),
                     _ => return Ok(reply),
@@ -797,8 +891,10 @@ impl TorController {
         }
     }
 
-    fn write_command(&mut self, text: &str) -> Result<Reply> {
-        self.control_stream.write(text)?;
+    fn write_command(&mut self, text: &str) -> Result<Reply, TorControllerError> {
+        self.control_stream
+            .write(text)
+            .map_err(WriteCommandFailed)?;
         self.wait_sync_reply()
     }
 
@@ -812,8 +908,12 @@ impl TorController {
     //
 
     // SETCONF (3.1)
-    fn setconf_cmd(&mut self, key_values: &[(&str, &str)]) -> Result<Reply> {
-        ensure!(!key_values.is_empty());
+    fn setconf_cmd(&mut self, key_values: &[(&str, &str)]) -> Result<Reply, TorControllerError> {
+        if key_values.is_empty() {
+            return Err(TorControllerError::InvalidCommandArguments(
+                "SETCONF key-value pairs list must not be empty".to_string(),
+            ));
+        }
         let mut command_buffer = vec!["SETCONF".to_string()];
 
         for (key, value) in key_values.iter() {
@@ -826,31 +926,43 @@ impl TorController {
 
     // GETCONF (3.3)
     #[cfg(test)]
-    fn getconf_cmd(&mut self, keywords: &[&str]) -> Result<Reply> {
-        ensure!(!keywords.is_empty());
+    fn getconf_cmd(&mut self, keywords: &[&str]) -> Result<Reply, TorControllerError> {
+        if keywords.is_empty() {
+            return Err(TorControllerError::InvalidCommandArguments(
+                "GETCONF keywords list must not be empty".to_string(),
+            ));
+        }
         let command = format!("GETCONF {}", keywords.join(" "));
 
         self.write_command(&command)
     }
 
     // SETEVENTS (3.4)
-    fn setevents_cmd(&mut self, event_codes: &[&str]) -> Result<Reply> {
-        ensure!(!event_codes.is_empty());
+    fn setevents_cmd(&mut self, event_codes: &[&str]) -> Result<Reply, TorControllerError> {
+        if event_codes.is_empty() {
+            return Err(TorControllerError::InvalidCommandArguments(
+                "SETEVENTS event codes list mut not be empty".to_string(),
+            ));
+        }
         let command = format!("SETEVENTS {}", event_codes.join(" "));
 
         self.write_command(&command)
     }
 
     // AUTHENTICATE (3.5)
-    fn authenticate_cmd(&mut self, password: &str) -> Result<Reply> {
+    fn authenticate_cmd(&mut self, password: &str) -> Result<Reply, TorControllerError> {
         let command = format!("AUTHENTICATE \"{}\"", password);
 
         self.write_command(&command)
     }
 
     // GETINFO (3.9)
-    fn getinfo_cmd(&mut self, keywords: &[&str]) -> Result<Reply> {
-        ensure!(!keywords.is_empty());
+    fn getinfo_cmd(&mut self, keywords: &[&str]) -> Result<Reply, TorControllerError> {
+        if keywords.is_empty() {
+            return Err(TorControllerError::InvalidCommandArguments(
+                "GETINFO keywords list must not be empty".to_string(),
+            ));
+        }
         let command = format!("GETINFO {}", keywords.join(" "));
 
         self.write_command(&command)
@@ -865,7 +977,7 @@ impl TorController {
         virt_port: u16,
         target: Option<SocketAddr>,
         client_auth: Option<&[X25519PublicKey]>,
-    ) -> Result<Reply> {
+    ) -> Result<Reply, TorControllerError> {
         let mut command_buffer = vec!["ADD_ONION".to_string()];
 
         // set our key or request a new one
@@ -922,7 +1034,10 @@ impl TorController {
     }
 
     // DEL_ONION (3.38)
-    fn del_onion_cmd(&mut self, service_id: &V3OnionServiceId) -> Result<Reply> {
+    fn del_onion_cmd(
+        &mut self,
+        service_id: &V3OnionServiceId,
+    ) -> Result<Reply, TorControllerError> {
         let command = format!("DEL_ONION {}", service_id.to_string());
 
         self.write_command(&command)
@@ -935,7 +1050,7 @@ impl TorController {
         private_key: &X25519PrivateKey,
         client_name: Option<String>,
         flags: &OnionClientAuthAddFlags,
-    ) -> Result<Reply> {
+    ) -> Result<Reply, TorControllerError> {
         let mut command_buffer = vec!["ONION_CLIENT_AUTH_ADD".to_string()];
 
         // set the onion service id
@@ -959,7 +1074,10 @@ impl TorController {
     }
 
     // ONION_CLIENT_AUTH_REMOVE (3.31)
-    fn onion_client_auth_remove_cmd(&mut self, service_id: &V3OnionServiceId) -> Result<Reply> {
+    fn onion_client_auth_remove_cmd(
+        &mut self,
+        service_id: &V3OnionServiceId,
+    ) -> Result<Reply, TorControllerError> {
         let command = format!("ONION_CLIENT_AUTH_REMOVE {}", service_id.to_string());
 
         self.write_command(&command)
@@ -969,17 +1087,23 @@ impl TorController {
     // Public high-level typesafe command method wrappers
     //
 
-    pub fn setconf(&mut self, key_values: &[(&str, &str)]) -> Result<()> {
+    pub fn setconf(&mut self, key_values: &[(&str, &str)]) -> Result<(), TorControllerError> {
         let reply = self.setconf_cmd(key_values)?;
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 
     #[cfg(test)]
-    pub fn getconf(&mut self, keywords: &[&str]) -> Result<Vec<(String, String)>> {
+    pub fn getconf(
+        &mut self,
+        keywords: &[&str],
+    ) -> Result<Vec<(String, String)>, TorControllerError> {
         let reply = self.getconf_cmd(keywords)?;
 
         match reply.status_code {
@@ -994,29 +1118,41 @@ impl TorController {
                 }
                 Ok(key_values)
             }
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 
-    pub fn setevents(&mut self, events: &[&str]) -> Result<()> {
+    pub fn setevents(&mut self, events: &[&str]) -> Result<(), TorControllerError> {
         let reply = self.setevents_cmd(events)?;
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 
-    pub fn authenticate(&mut self, password: &str) -> Result<()> {
+    pub fn authenticate(&mut self, password: &str) -> Result<(), TorControllerError> {
         let reply = self.authenticate_cmd(password)?;
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 
-    pub fn getinfo(&mut self, keywords: &[&str]) -> Result<Vec<(String, String)>> {
+    pub fn getinfo(
+        &mut self,
+        keywords: &[&str],
+    ) -> Result<Vec<(String, String)>, TorControllerError> {
         let reply = self.getinfo_cmd(keywords)?;
 
         match reply.status_code {
@@ -1035,7 +1171,10 @@ impl TorController {
                 }
                 Ok(key_values)
             }
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 
@@ -1047,7 +1186,7 @@ impl TorController {
         virt_port: u16,
         target: Option<SocketAddr>,
         client_auth: Option<&[X25519PublicKey]>,
-    ) -> Result<(Option<Ed25519PrivateKey>, V3OnionServiceId)> {
+    ) -> Result<(Option<Ed25519PrivateKey>, V3OnionServiceId), TorControllerError> {
         let reply = self.add_onion_cmd(key, flags, max_streams, virt_port, target, client_auth)?;
 
         let mut private_key: Option<Ed25519PrivateKey> = None;
@@ -1057,53 +1196,96 @@ impl TorController {
             250u32 => {
                 for line in reply.reply_lines {
                     if let Some(mut index) = line.find("ServiceID=") {
-                        ensure!(service_id.is_none(), "received duplicate service ids");
+                        if service_id.is_some() {
+                            return Err(TorControllerError::CommandReplyParseFailed(
+                                "received duplicate ServiceID entries".to_string(),
+                            ));
+                        }
                         index += "ServiceId=".len();
-                        service_id = Some(V3OnionServiceId::from_string(&line[index..])?);
+                        let service_id_string = &line[index..];
+                        service_id = match V3OnionServiceId::from_string(service_id_string) {
+                            Ok(service_id) => Some(service_id),
+                            Err(_) => {
+                                return Err(TorControllerError::CommandReplyParseFailed(format!(
+                                    "could not parse '{}' as V3OnionServiceId",
+                                    service_id_string
+                                )))
+                            }
+                        }
                     } else if let Some(mut index) = line.find("PrivateKey=") {
-                        ensure!(private_key.is_none(), "received duplicate private keys");
+                        if private_key.is_some() {
+                            return Err(TorControllerError::CommandReplyParseFailed(
+                                "received duplicate PrivateKey entries".to_string(),
+                            ));
+                        }
                         index += "PrivateKey=".len();
-                        private_key = Some(Ed25519PrivateKey::from_key_blob(&line[index..])?);
+                        let key_blob_string = &line[index..];
+                        private_key = match Ed25519PrivateKey::from_key_blob(key_blob_string) {
+                            Ok(private_key) => Some(private_key),
+                            Err(_) => {
+                                return Err(TorControllerError::CommandReplyParseFailed(format!(
+                                    "could not parse {} as Ed25519PrivateKey",
+                                    key_blob_string
+                                )))
+                            }
+                        };
                     } else if line.contains("ClientAuthV3=") {
-                        ensure!(
-                            !client_auth.unwrap_or_default().is_empty(),
-                            "received unexpected ClientAuthV3 keys"
-                        );
+                        if client_auth.unwrap_or_default().is_empty() {
+                            return Err(TorControllerError::CommandReplyParseFailed(
+                                "recieved unexpected ClientAuthV3 keys".to_string(),
+                            ));
+                        }
                     } else if !line.contains("OK") {
-                        bail!("received unexpected reply line: '{}'", line);
+                        return Err(TorControllerError::CommandReplyParseFailed(format!(
+                            "received unexpected reply line '{}'",
+                            line
+                        )));
                     }
                 }
             }
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => {
+                return Err(TorControllerError::CommandReturnedError(
+                    code,
+                    reply.reply_lines,
+                ))
+            }
         }
 
         if flags.discard_pk {
-            ensure!(
-                private_key.is_none(),
-                "private key should have been discarded"
-            );
-        } else {
-            ensure!(private_key.is_some(), "did not return private key");
+            if private_key.is_some() {
+                return Err(TorControllerError::CommandReplyParseFailed(
+                    "PrivateKey response should have been discard".to_string(),
+                ));
+            }
+        } else if private_key.is_none() {
+            return Err(TorControllerError::CommandReplyParseFailed(
+                "did not receive a PrivateKey".to_string(),
+            ));
         }
 
         match service_id {
             Some(service_id) => Ok((private_key, service_id)),
-            None => bail!("did not receive a serviceid"),
+            None => Err(TorControllerError::CommandReplyParseFailed(
+                "did not receive a ServiceID".to_string(),
+            )),
         }
     }
 
-    pub fn del_onion(&mut self, service_id: &V3OnionServiceId) -> Result<()> {
+    pub fn del_onion(&mut self, service_id: &V3OnionServiceId) -> Result<(), TorControllerError> {
         let reply = self.del_onion_cmd(service_id)?;
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 
     // more specific encapulsation of specific command invocations
 
-    pub fn getinfo_net_listeners_socks(&mut self) -> Result<Vec<SocketAddr>> {
+    pub fn getinfo_net_listeners_socks(&mut self) -> Result<Vec<SocketAddr>, TorControllerError> {
         let response = self.getinfo(&["net/listeners/socks"])?;
         for (key, value) in response.iter() {
             if key.as_str() == "net/listeners/socks" {
@@ -1114,26 +1296,43 @@ impl TorController {
                 let listeners: Vec<&str> = value.split(' ').collect();
                 let mut result: Vec<SocketAddr> = Default::default();
                 for socket_addr in listeners.iter() {
-                    ensure!(socket_addr.starts_with('\"') && socket_addr.ends_with('\"'));
+                    if !socket_addr.starts_with('\"') || !socket_addr.ends_with('\"') {
+                        return Err(TorControllerError::CommandReplyParseFailed(format!(
+                            "could not parse '{}' as socket address",
+                            socket_addr
+                        )));
+                    }
 
                     // remove leading/trailing double quote
                     let stripped = &socket_addr[1..socket_addr.len() - 1];
-                    result.push(resolve!(SocketAddr::from_str(stripped)));
+                    result.push(match SocketAddr::from_str(stripped) {
+                        Ok(result) => result,
+                        Err(_) => {
+                            return Err(TorControllerError::CommandReplyParseFailed(format!(
+                                "could not parse '{}' as socket address",
+                                socket_addr
+                            )))
+                        }
+                    });
                 }
                 return Ok(result);
             }
         }
-        bail!("did not find a 'net/listeners/socks' key/value");
+        Err(TorControllerError::CommandReplyParseFailed(
+            "reply did not find a 'net/listeners/socks' key/value".to_string(),
+        ))
     }
 
-    pub fn getinfo_version(&mut self) -> Result<Version> {
+    pub fn getinfo_version(&mut self) -> Result<TorVersion, TorControllerError> {
         let response = self.getinfo(&["version"])?;
         for (key, value) in response.iter() {
             if key.as_str() == "version" {
-                return Version::from_str(value);
+                return TorVersion::from_str(value).map_err(TorVersionParseFailed);
             }
         }
-        bail!("did not find a 'version' key/value");
+        Err(TorControllerError::CommandReplyParseFailed(
+            "did not find a 'version' key/value".to_string(),
+        ))
     }
 
     pub fn onion_client_auth_add(
@@ -1142,22 +1341,31 @@ impl TorController {
         private_key: &X25519PrivateKey,
         client_name: Option<String>,
         flags: &OnionClientAuthAddFlags,
-    ) -> Result<()> {
+    ) -> Result<(), TorControllerError> {
         let reply = self.onion_client_auth_add_cmd(service_id, private_key, client_name, flags)?;
 
         match reply.status_code {
             250u32..=252u32 => Ok(()),
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 
     #[allow(dead_code)]
-    pub fn onion_client_auth_remove(&mut self, service_id: &V3OnionServiceId) -> Result<()> {
+    pub fn onion_client_auth_remove(
+        &mut self,
+        service_id: &V3OnionServiceId,
+    ) -> Result<(), TorControllerError> {
         let reply = self.onion_client_auth_remove_cmd(service_id)?;
 
         match reply.status_code {
             250u32..=251u32 => Ok(()),
-            code => bail!("{} {}", code, reply.reply_lines.join("\n")),
+            code => Err(TorControllerError::CommandReturnedError(
+                code,
+                reply.reply_lines,
+            )),
         }
     }
 }
@@ -1224,9 +1432,9 @@ impl OnionStream {
         self.stream.write_timeout()
     }
 
-    pub fn try_clone(&self) -> Result<OnionStream> {
+    pub fn try_clone(&self) -> Result<OnionStream, std::io::Error> {
         Ok(OnionStream {
-            stream: resolve!(self.stream.try_clone()),
+            stream: self.stream.try_clone()?,
             peer_addr: self.peer_addr.clone(),
         })
     }
@@ -1262,12 +1470,11 @@ pub struct OnionListener {
 }
 
 impl OnionListener {
-    pub fn set_nonblocking(&self, nonblocking: bool) -> Result<()> {
-        resolve!(self.listener.set_nonblocking(nonblocking));
-        Ok(())
+    pub fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
+        self.listener.set_nonblocking(nonblocking)
     }
 
-    pub fn accept(&self) -> Result<Option<OnionStream>> {
+    pub fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
         match self.listener.accept() {
             Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
                 stream,
@@ -1277,7 +1484,7 @@ impl OnionListener {
                 if err.kind() == ErrorKind::WouldBlock {
                     Ok(None)
                 } else {
-                    bail!(err);
+                    Err(err)
                 }
             }
         }
@@ -1307,62 +1514,85 @@ pub enum Event {
 
 pub struct TorManager {
     daemon: TorProcess,
+    version: TorVersion,
     controller: TorController,
     socks_listener: Option<SocketAddr>,
-    // list of open onion services their is_active flag
+    // list of open onion services and their is_active flag
     onion_services: Vec<(V3OnionServiceId, Arc<atomic::AtomicBool>)>,
 }
 
 impl TorManager {
-    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<TorManager> {
+    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<TorManager, TorManagerError> {
         // launch tor
-        let daemon = TorProcess::new(tor_bin_path, data_directory)?;
+        let daemon =
+            TorProcess::new(tor_bin_path, data_directory).map_err(TorProcessCreationFailed)?;
         // open a control stream
-        let control_stream = ControlStream::new(&daemon.control_addr, Duration::from_millis(16))?;
+        let control_stream = ControlStream::new(&daemon.control_addr, Duration::from_millis(16))
+            .map_err(ControlStreamCreationFailed)?;
 
         // create a controler
-        let mut controller = TorController::new(control_stream)?;
+        let mut controller =
+            TorController::new(control_stream).map_err(TorControllerCreationFailed)?;
 
         // authenticate
-        controller.authenticate(&daemon.password)?;
+        controller
+            .authenticate(&daemon.password)
+            .map_err(TorProcessAuthenticationFailed)?;
 
-        let min_required_version: Version = Version::new(0u32, 4u32, 6u32, Some(1u32), None)?;
+        let min_required_version: TorVersion = TorVersion {
+            major: 0u32,
+            minor: 4u32,
+            micro: 6u32,
+            patch_level: 1u32,
+            status_tag: None,
+        };
 
-        let version = controller.getinfo_version()?;
+        let version = controller.getinfo_version().map_err(GetInfoVersionFailed)?;
 
-        ensure!(
-            version >= min_required_version,
-            "tor daemon not new enough; must be at least version {}",
-            min_required_version.to_string()
-        );
+        if version < min_required_version {
+            return Err(TorManagerError::TorProcessTooOld(
+                version.to_string(),
+                min_required_version.to_string(),
+            ));
+        }
 
         // register for STATUS_CLIENT async events
-        controller.setevents(&["STATUS_CLIENT", "HS_DESC"])?;
+        controller
+            .setevents(&["STATUS_CLIENT", "HS_DESC"])
+            .map_err(SetEventsFailed)?;
 
         Ok(TorManager {
             daemon,
+            version,
             controller,
             socks_listener: None,
             onion_services: Default::default(),
         })
     }
 
-    pub fn update(&mut self) -> Result<Vec<Event>> {
+    pub fn update(&mut self) -> Result<Vec<Event>, TorManagerError> {
         let mut i = 0;
         while i < self.onion_services.len() {
+            // remove onion services with no active listeners
             if !self.onion_services[i].1.load(atomic::Ordering::Relaxed) {
                 let entry = self.onion_services.swap_remove(i);
                 let service_id = entry.0;
 
-                println!("deleting {}", service_id.to_string());
-                self.controller.del_onion(&service_id)?;
+                self.controller
+                    .del_onion(&service_id)
+                    .map_err(DelOnionFailed)?;
             } else {
                 i += 1;
             }
         }
 
         let mut events: Vec<Event> = Default::default();
-        for async_event in self.controller.wait_async_events()?.iter() {
+        for async_event in self
+            .controller
+            .wait_async_events()
+            .map_err(WaitAsyncEventsFailed)?
+            .iter()
+        {
             match async_event {
                 AsyncEvent::StatusClient {
                     severity,
@@ -1375,7 +1605,7 @@ impl TorManager {
                         let mut summary: String = Default::default();
                         for (key, val) in arguments.iter() {
                             match key.as_str() {
-                                "PROGRESS" => progress = resolve!(val.parse()),
+                                "PROGRESS" => progress = val.parse().unwrap_or(0u32),
                                 "TAG" => tag = val.to_string(),
                                 "SUMMARY" => summary = val.to_string(),
                                 _ => {} // ignore unexpected arguments
@@ -1417,26 +1647,33 @@ impl TorManager {
     }
 
     #[allow(dead_code)]
-    pub fn version(&mut self) -> Result<Version> {
-        self.controller.getinfo_version()
+    pub fn version(&mut self) -> TorVersion {
+        self.version.clone()
     }
 
-    pub fn bootstrap(&mut self) -> Result<()> {
-        self.controller.setconf(&[("DisableNetwork", "0")])
+    pub fn bootstrap(&mut self) -> Result<(), TorManagerError> {
+        self.controller
+            .setconf(&[("DisableNetwork", "0")])
+            .map_err(SetConfDisableNetwork0Failed)
     }
 
     pub fn add_client_auth(
         &mut self,
         service_id: &V3OnionServiceId,
         client_auth: &X25519PrivateKey,
-    ) -> Result<()> {
+    ) -> Result<(), TorManagerError> {
         self.controller
             .onion_client_auth_add(service_id, client_auth, None, &Default::default())
+            .map_err(SetConfDisableNetwork0Failed)
     }
 
-    #[allow(dead_code)]
-    pub fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<()> {
-        self.controller.onion_client_auth_remove(service_id)
+    pub fn remove_client_auth(
+        &mut self,
+        service_id: &V3OnionServiceId,
+    ) -> Result<(), TorManagerError> {
+        self.controller
+            .onion_client_auth_remove(service_id)
+            .map_err(OnionClientAuthRemoveFailed)
     }
 
     // connect to an onion service and returns OnionStream
@@ -1445,13 +1682,15 @@ impl TorManager {
         service_id: &V3OnionServiceId,
         virt_port: u16,
         circuit: Option<CircuitToken>,
-    ) -> Result<OnionStream> {
+    ) -> Result<OnionStream, TorManagerError> {
         if self.socks_listener.is_none() {
-            let mut listeners = self.controller.getinfo_net_listeners_socks()?;
-            ensure!(
-                !listeners.is_empty(),
-                "no available socks listener to connect through"
-            );
+            let mut listeners = self
+                .controller
+                .getinfo_net_listeners_socks()
+                .map_err(GetInfoNetListenersSocksFailed)?;
+            if listeners.is_empty() {
+                return Err(TorManagerError::NoSocksListenersFound());
+            }
             self.socks_listener = Some(listeners.swap_remove(0));
         }
 
@@ -1465,14 +1704,15 @@ impl TorManager {
             socks::TargetAddr::Domain(format!("{}.onion", service_id.to_string()), virt_port);
         // readwrite stream
         let stream = match &circuit {
-            None => resolve!(Socks5Stream::connect(socks_listener, target)),
-            Some(circuit) => resolve!(Socks5Stream::connect_with_password(
+            None => Socks5Stream::connect(socks_listener, target),
+            Some(circuit) => Socks5Stream::connect_with_password(
                 socks_listener,
                 target,
                 &circuit.username,
-                &circuit.password
-            )),
-        };
+                &circuit.password,
+            ),
+        }
+        .map_err(Socks5ConnectionFailed)?;
 
         Ok(OnionStream {
             stream: stream.into_inner(),
@@ -1486,11 +1726,11 @@ impl TorManager {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<OnionListener> {
+    ) -> Result<OnionListener, TorManagerError> {
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
-        let listener = resolve!(TcpListener::bind(socket_addr));
-        let socket_addr = resolve!(listener.local_addr());
+        let listener = TcpListener::bind(socket_addr).map_err(TcpListenerBindFailed)?;
+        let socket_addr = listener.local_addr().map_err(TcpListenerLocalAddrFailed)?;
 
         let mut flags = AddOnionFlags {
             discard_pk: true,
@@ -1501,14 +1741,17 @@ impl TorManager {
         }
 
         // start onion service
-        let (_, service_id) = self.controller.add_onion(
-            Some(private_key),
-            &flags,
-            None,
-            virt_port,
-            Some(socket_addr),
-            authorized_clients,
-        )?;
+        let (_, service_id) = self
+            .controller
+            .add_onion(
+                Some(private_key),
+                &flags,
+                None,
+                virt_port,
+                Some(socket_addr),
+                authorized_clients,
+            )
+            .map_err(AddOnionFailed)?;
 
         let is_active = Arc::new(atomic::AtomicBool::new(true));
         self.onion_services
@@ -1523,8 +1766,8 @@ impl TorManager {
 
 #[test]
 #[serial]
-fn test_tor_controller() -> Result<()> {
-    let tor_path = resolve!(which::which(tor_exe_name()));
+fn test_tor_controller() -> anyhow::Result<()> {
+    let tor_path = which::which(tor_exe_name())?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_tor_controller");
     let tor_process = TorProcess::new(&tor_path, &data_path)?;
@@ -1537,7 +1780,7 @@ fn test_tor_controller() -> Result<()> {
         // create a tor controller and send authentication command
         let mut tor_controller = TorController::new(control_stream)?;
         tor_controller.authenticate_cmd(&tor_process.password)?;
-        ensure!(
+        assert!(
             tor_controller
                 .authenticate_cmd("invalid password")?
                 .status_code
@@ -1545,13 +1788,13 @@ fn test_tor_controller() -> Result<()> {
         );
 
         // tor controller should have shutdown the connection after failed authentication
-        if tor_controller
-            .authenticate_cmd(&tor_process.password)
-            .is_ok()
-        {
-            bail!("expected failure due to closed connection");
-        }
-        ensure!(tor_controller.control_stream.closed_by_remote());
+        assert!(
+            tor_controller
+                .authenticate_cmd(&tor_process.password)
+                .is_err(),
+            "expected failure due to closed connection"
+        );
+        assert!(tor_controller.control_stream.closed_by_remote());
     }
     // now create a second controller
     {
@@ -1570,9 +1813,9 @@ fn test_tor_controller() -> Result<()> {
                 "SocksPort" => "auto OnionTrafficOnly",
                 "AvoidDiskWrites" => "1",
                 "DisableNetwork" => "1",
-                _ => bail!("unexpected returned key: {}", key),
+                _ => panic!("unexpected returned key: {}", key),
             };
-            ensure!(value == expected);
+            assert!(value == expected);
         }
 
         let vals = tor_controller.getinfo(&["version", "config-file", "config-text"])?;
@@ -1582,9 +1825,9 @@ fn test_tor_controller() -> Result<()> {
         expected_control_port_path.push("control_port");
         for (key, value) in vals.iter() {
             match key.as_str() {
-                "version" => ensure!(resolve!(Regex::new(r"\d+\.\d+\.\d+\.\d+")).is_match(&value)),
-                "config-file" => ensure!(Path::new(&value) == expected_torrc_path),
-                "config-text" => ensure!(
+                "version" => assert!(Regex::new(r"\d+\.\d+\.\d+\.\d+")?.is_match(&value)),
+                "config-file" => assert!(Path::new(&value) == expected_torrc_path),
+                "config-text" => assert!(
                     value.to_string()
                         == format!(
                             "\nControlPort auto\nControlPortWriteToFile {}\nDataDirectory {}",
@@ -1592,7 +1835,7 @@ fn test_tor_controller() -> Result<()> {
                             data_path.display()
                         )
                 ),
-                _ => bail!("unexpected returned key: {}", key),
+                _ => panic!("unexpected returned key: {}", key),
             }
         }
 
@@ -1604,34 +1847,31 @@ fn test_tor_controller() -> Result<()> {
         let (private_key, service_id) =
             match tor_controller.add_onion(None, &Default::default(), None, 22, None, None)? {
                 (Some(private_key), service_id) => (private_key, service_id),
-                _ => bail!("add_onion did not return expected values"),
+                _ => panic!("add_onion did not return expected values"),
             };
         println!("private_key: {}", private_key.to_key_blob());
         println!("service_id: {}", service_id.to_string());
 
-        if let Ok(()) = tor_controller.del_onion(&V3OnionServiceId::from_string(
-            "6l62fw7tqctlu5fesdqukvpoxezkaxbzllrafa2ve6ewuhzphxczsjyd",
-        )?) {
-            bail!("deleting unknown onion should have failed");
-        }
+        assert!(
+            tor_controller
+                .del_onion(&V3OnionServiceId::from_string(
+                    "6l62fw7tqctlu5fesdqukvpoxezkaxbzllrafa2ve6ewuhzphxczsjyd"
+                )?)
+                .is_err(),
+            "deleting unknown onion should have failed"
+        );
 
         // delete our new onion
         tor_controller.del_onion(&service_id)?;
 
-        if let Ok(listeners) = tor_controller.getinfo_net_listeners_socks() {
-            println!("listeners: ");
-            for sock_addr in listeners.iter() {
-                println!(" {}", sock_addr);
-            }
+        println!("listeners: ");
+        for sock_addr in tor_controller.getinfo_net_listeners_socks()?.iter() {
+            println!(" {}", sock_addr);
         }
 
-        tor_controller.getinfo_net_listeners_socks()?;
-
         // print our event names available to tor
-        if let Ok(names) = tor_controller.getinfo(&["events/names"]) {
-            for (key, value) in names.iter() {
-                println!("{} : {}", key, value);
-            }
+        for (key, value) in tor_controller.getinfo(&["events/names"])?.iter() {
+            println!("{} : {}", key, value);
         }
 
         let stop_time = Instant::now() + std::time::Duration::from_secs(5);
@@ -1667,89 +1907,61 @@ fn test_tor_controller() -> Result<()> {
 }
 
 #[test]
-fn test_version() -> Result<()> {
-    ensure!(Version::from_str("1.2.3")? == Version::new(1, 2, 3, None, None)?);
-    ensure!(Version::from_str("1.2.3.4")? == Version::new(1, 2, 3, Some(4), None)?);
-    ensure!(Version::from_str("1.2.3-test")? == Version::new(1, 2, 3, None, Some("test"))?);
-    ensure!(Version::from_str("1.2.3.4-test")? == Version::new(1, 2, 3, Some(4), Some("test"))?);
-    ensure!(Version::from_str("1.2.3 (extra_info)")? == Version::new(1, 2, 3, None, None)?);
-    ensure!(Version::from_str("1.2.3.4 (extra_info)")? == Version::new(1, 2, 3, Some(4), None)?);
-    ensure!(
-        Version::from_str("1.2.3.4-tag (extra_info)")?
-            == Version::new(1, 2, 3, Some(4), Some("tag"))?
+fn test_version() -> anyhow::Result<()> {
+    assert!(TorVersion::from_str("1.2.3")? == TorVersion::new(1, 2, 3, None, None)?);
+    assert!(TorVersion::from_str("1.2.3.4")? == TorVersion::new(1, 2, 3, Some(4), None)?);
+    assert!(TorVersion::from_str("1.2.3-test")? == TorVersion::new(1, 2, 3, None, Some("test"))?);
+    assert!(
+        TorVersion::from_str("1.2.3.4-test")? == TorVersion::new(1, 2, 3, Some(4), Some("test"))?
+    );
+    assert!(TorVersion::from_str("1.2.3 (extra_info)")? == TorVersion::new(1, 2, 3, None, None)?);
+    assert!(
+        TorVersion::from_str("1.2.3.4 (extra_info)")? == TorVersion::new(1, 2, 3, Some(4), None)?
+    );
+    assert!(
+        TorVersion::from_str("1.2.3.4-tag (extra_info)")?
+            == TorVersion::new(1, 2, 3, Some(4), Some("tag"))?
     );
 
-    ensure!(
-        Version::from_str("1.2.3.4-tag (extra_info) (extra_info)")?
-            == Version::new(1, 2, 3, Some(4), Some("tag"))?
+    assert!(
+        TorVersion::from_str("1.2.3.4-tag (extra_info) (extra_info)")?
+            == TorVersion::new(1, 2, 3, Some(4), Some("tag"))?
     );
 
-    match Version::new(1, 2, 3, Some(4), Some("spaced tag")) {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    match Version::new(1, 2, 3, Some(4), Some("" /* empty tag */)) {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    match Version::from_str("") {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    match Version::from_str("1.2") {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    match Version::from_str("1.2-foo") {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    match Version::from_str("1.2.3.4-foo bar") {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    match Version::from_str("1.2.3.4-foo bar (extra_info)") {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    match Version::from_str("1.2.3.4-foo (extra_info) badtext") {
-        Ok(_) => bail!("expected failure"),
-        Err(err) => println!("{:?}", err),
-    }
-
-    ensure!(Version::new(0, 0, 0, Some(0), None)? < Version::new(1, 0, 0, Some(0), None)?);
-    ensure!(Version::new(0, 0, 0, Some(0), None)? < Version::new(0, 1, 0, Some(0), None)?);
-    ensure!(Version::new(0, 0, 0, Some(0), None)? < Version::new(0, 0, 1, Some(0), None)?);
+    assert!(TorVersion::new(1, 2, 3, Some(4), Some("spaced tag")).is_err());
+    assert!(TorVersion::new(1, 2, 3, Some(4), Some("" /* empty tag */)).is_err());
+    assert!(TorVersion::from_str("").is_err());
+    assert!(TorVersion::from_str("1.2").is_err());
+    assert!(TorVersion::from_str("1.2-foo").is_err());
+    assert!(TorVersion::from_str("1.2.3.4-foo bar").is_err());
+    assert!(TorVersion::from_str("1.2.3.4-foo bar (extra_info)").is_err());
+    assert!(TorVersion::from_str("1.2.3.4-foo (extra_info) badtext").is_err());
+    assert!(TorVersion::new(0, 0, 0, Some(0), None)? < TorVersion::new(1, 0, 0, Some(0), None)?);
+    assert!(TorVersion::new(0, 0, 0, Some(0), None)? < TorVersion::new(0, 1, 0, Some(0), None)?);
+    assert!(TorVersion::new(0, 0, 0, Some(0), None)? < TorVersion::new(0, 0, 1, Some(0), None)?);
 
     // ensure status tags make comparison between equal versions (apart from
     // tags) unknowable
-    let zero_version = Version::new(0, 0, 0, Some(0), None)?;
-    let zero_version_tag = Version::new(0, 0, 0, Some(0), Some("tag"))?;
+    let zero_version = TorVersion::new(0, 0, 0, Some(0), None)?;
+    let zero_version_tag = TorVersion::new(0, 0, 0, Some(0), Some("tag"))?;
 
-    ensure!(!(zero_version < zero_version_tag));
-    ensure!(!(zero_version <= zero_version_tag));
-    ensure!(!(zero_version > zero_version_tag));
-    ensure!(!(zero_version >= zero_version_tag));
+    assert!(!(zero_version < zero_version_tag));
+    assert!(!(zero_version <= zero_version_tag));
+    assert!(!(zero_version > zero_version_tag));
+    assert!(!(zero_version >= zero_version_tag));
 
     Ok(())
 }
 
 #[test]
 #[serial]
-fn test_tor_manager() -> Result<()> {
-    let tor_path = resolve!(which::which(tor_exe_name()));
+fn test_tor_manager() -> anyhow::Result<()> {
+    let tor_path = which::which(tor_exe_name())?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_tor_manager");
 
     let mut tor = TorManager::new(&tor_path, &data_path)?;
-    println!("version : {}", tor.version()?.to_string());
+    println!("version : {}", tor.version().to_string());
     tor.bootstrap()?;
 
     let mut received_log = false;
@@ -1777,7 +1989,7 @@ fn test_tor_manager() -> Result<()> {
             }
         }
     }
-    ensure!(
+    assert!(
         received_log,
         "should have received a log line from tor daemon"
     );
@@ -1787,8 +1999,8 @@ fn test_tor_manager() -> Result<()> {
 
 #[test]
 #[serial]
-fn test_onion_service() -> Result<()> {
-    let tor_path = resolve!(which::which(tor_exe_name()));
+fn test_onion_service() -> anyhow::Result<()> {
+    let tor_path = which::which(tor_exe_name())?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_onion_service");
 
@@ -1857,21 +2069,21 @@ fn test_onion_service() -> Result<()> {
             println!("Connecting to onion service");
             let mut client = tor.connect(&service_id, VIRT_PORT, None)?;
             println!("Client writing message: '{}'", MESSAGE);
-            resolve!(client.write_all(MESSAGE.as_bytes()));
-            resolve!(client.flush());
+            client.write_all(MESSAGE.as_bytes())?;
+            client.flush()?;
             println!("End of client scope");
         }
 
         if let Some(mut server) = listener.accept()? {
             println!("Server reading message");
             let mut buffer = Vec::new();
-            resolve!(server.read_to_end(&mut buffer));
-            let msg = resolve!(String::from_utf8(buffer));
+            server.read_to_end(&mut buffer)?;
+            let msg = String::from_utf8(buffer)?;
 
-            ensure!(MESSAGE == msg);
+            assert!(MESSAGE == msg);
             println!("Message received: '{}'", msg);
         } else {
-            bail!("no listener");
+            panic!("no listener");
         }
     }
 
@@ -1915,11 +2127,10 @@ fn test_onion_service() -> Result<()> {
             let service_id = V3OnionServiceId::from_private_key(&private_key);
 
             println!("Connecting to onion service (should fail)");
-            if tor.connect(&service_id, VIRT_PORT, None).is_ok() {
-                bail!(
-                    "should not able to connect to an authenticated onion service without auth key"
-                );
-            }
+            assert!(
+                tor.connect(&service_id, VIRT_PORT, None).is_err(),
+                "should not able to connect to an authenticated onion service without auth key"
+            );
 
             println!("Add auth key for onion service");
             tor.add_client_auth(&service_id, &private_auth_key)?;
@@ -1928,8 +2139,8 @@ fn test_onion_service() -> Result<()> {
             let mut client = tor.connect(&service_id, VIRT_PORT, None)?;
 
             println!("Client writing message: '{}'", MESSAGE);
-            resolve!(client.write_all(MESSAGE.as_bytes()));
-            resolve!(client.flush());
+            client.write_all(MESSAGE.as_bytes())?;
+            client.flush()?;
             println!("End of client scope");
 
             println!("Remove auth key for onion service");
@@ -1939,13 +2150,13 @@ fn test_onion_service() -> Result<()> {
         if let Some(mut server) = listener.accept()? {
             println!("Server reading message");
             let mut buffer = Vec::new();
-            resolve!(server.read_to_end(&mut buffer));
-            let msg = resolve!(String::from_utf8(buffer));
+            server.read_to_end(&mut buffer)?;
+            let msg = String::from_utf8(buffer)?;
 
-            ensure!(MESSAGE == msg);
+            assert!(MESSAGE == msg);
             println!("Message received: '{}'", msg);
         } else {
-            bail!("no listener");
+            panic!("no listener");
         }
     }
     Ok(())
