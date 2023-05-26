@@ -174,6 +174,20 @@ pub struct V3OnionServiceId {
     data: [u8; V3_ONION_SERVICE_ID_LENGTH],
 }
 
+pub enum SignBit {
+    Zero,
+    One,
+}
+
+impl From<SignBit> for u8 {
+    fn from(signbit: SignBit) -> Self {
+        match signbit {
+            SignBit::Zero => 0u8,
+            SignBit::One => 1u8,
+        }
+    }
+}
+
 // Ed25519 Private Key
 
 impl Ed25519PrivateKey {
@@ -238,7 +252,7 @@ impl Ed25519PrivateKey {
 
     fn from_private_x25519(
         x25519_private: &X25519PrivateKey,
-    ) -> Result<(Ed25519PrivateKey, u8), TorCryptoError> {
+    ) -> Result<(Ed25519PrivateKey, SignBit), TorCryptoError> {
         if let Some((result, signbit)) =
             convert_curve25519_to_ed25519_private(&x25519_private.secret_key)
         {
@@ -246,7 +260,16 @@ impl Ed25519PrivateKey {
                 Ed25519PrivateKey {
                     expanded_secret_key: result,
                 },
-                signbit,
+                match signbit {
+                    0u8 => SignBit::Zero,
+                    1u8 => SignBit::One,
+                    invalid_signbit => {
+                        return Err(TorCryptoError::ConversionError(format!(
+                            "convert_curve25519_to_ed25519_private() returned invalid signbit: {}",
+                            invalid_signbit
+                        )))
+                    }
+                },
             ))
         } else {
             Err(TorCryptoError::ConversionError(
@@ -350,21 +373,14 @@ impl Ed25519PublicKey {
 
     fn from_public_x25519(
         public_x25519: &X25519PublicKey,
-        signbit: u8,
+        signbit: SignBit,
     ) -> Result<Ed25519PublicKey, TorCryptoError> {
-        if signbit != 0u8 && signbit != 1u8 {
-            Err(TorCryptoError::ConversionError(format!(
-                "invalid value of signbit, must be 0 or 1 but found {}",
-                signbit
-            )))
-        } else {
-            match convert_curve25519_to_ed25519_public(&public_x25519.public_key, signbit) {
-                Some(public_key) => Ok(Ed25519PublicKey { public_key }),
-                None => Err(TorCryptoError::ConversionError(
-                    "failed to create ed25519 public key from x25519 public key and signbit"
-                        .to_string(),
-                )),
-            }
+        match convert_curve25519_to_ed25519_public(&public_x25519.public_key, signbit.into()) {
+            Some(public_key) => Ok(Ed25519PublicKey { public_key }),
+            None => Err(TorCryptoError::ConversionError(
+                "failed to create ed25519 public key from x25519 public key and signbit"
+                    .to_string(),
+            )),
         }
     }
 
@@ -410,11 +426,12 @@ impl Ed25519Signature {
 
     // derives an ed25519 public key from the provided x25519 public key and signbit, then
     // verifies this signature using said ed25519 public key
-    pub fn verify_x25519(&self, message: &[u8], public_key: &X25519PublicKey, signbit: u8) -> bool {
-        if signbit != 0u8 && signbit != 1u8 {
-            return false;
-        }
-
+    pub fn verify_x25519(
+        &self,
+        message: &[u8],
+        public_key: &X25519PublicKey,
+        signbit: SignBit,
+    ) -> bool {
         if let Ok(public_key) = Ed25519PublicKey::from_public_x25519(public_key, signbit) {
             return self.verify(message, &public_key);
         }
@@ -485,7 +502,10 @@ impl X25519PrivateKey {
     // this function first derives an ed25519 private key from the provided x25519 private key
     // and signs the message, returning the signature and signbit needed to calculate the
     // ed25519 public key from our x25519 private key's associated x25519 public key
-    pub fn sign_message(&self, message: &[u8]) -> Result<(Ed25519Signature, u8), TorCryptoError> {
+    pub fn sign_message(
+        &self,
+        message: &[u8],
+    ) -> Result<(Ed25519Signature, SignBit), TorCryptoError> {
         let (ed25519_private, signbit) = Ed25519PrivateKey::from_private_x25519(self)?;
         Ok((ed25519_private.sign_message(message), signbit))
     }
