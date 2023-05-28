@@ -174,6 +174,7 @@ pub struct V3OnionServiceId {
     data: [u8; V3_ONION_SERVICE_ID_LENGTH],
 }
 
+#[derive(Clone, Copy)]
 pub enum SignBit {
     Zero,
     One,
@@ -184,6 +185,25 @@ impl From<SignBit> for u8 {
         match signbit {
             SignBit::Zero => 0u8,
             SignBit::One => 1u8,
+        }
+    }
+}
+
+impl From<SignBit> for bool {
+    fn from(signbit: SignBit) -> Self {
+        match signbit {
+            SignBit::Zero => false,
+            SignBit::One => true,
+        }
+    }
+}
+
+impl From<bool> for SignBit {
+    fn from(signbit: bool) -> Self {
+        if signbit {
+            SignBit::One
+        } else {
+            SignBit::Zero
         }
     }
 }
@@ -250,7 +270,7 @@ impl Ed25519PrivateKey {
         Ok(Ed25519PrivateKey::from_raw(&private_key_data_raw))
     }
 
-    fn from_private_x25519(
+    pub fn from_private_x25519(
         x25519_private: &X25519PrivateKey,
     ) -> Result<(Ed25519PrivateKey, SignBit), TorCryptoError> {
         if let Some((result, signbit)) =
@@ -315,6 +335,12 @@ impl PartialEq for Ed25519PrivateKey {
 impl Clone for Ed25519PrivateKey {
     fn clone(&self) -> Ed25519PrivateKey {
         Ed25519PrivateKey::from_raw(&self.to_bytes())
+    }
+}
+
+impl std::fmt::Debug for Ed25519PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "--- ed25519 private key ---")
     }
 }
 
@@ -519,6 +545,12 @@ impl X25519PrivateKey {
     }
 }
 
+impl std::fmt::Debug for X25519PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "--- x25519 private key ---")
+    }
+}
+
 // X25519 Public Key
 impl X25519PublicKey {
     pub fn from_private_key(private_key: &X25519PrivateKey) -> X25519PublicKey {
@@ -570,8 +602,18 @@ impl X25519PublicKey {
         BASE32_NOPAD.encode(self.public_key.as_bytes())
     }
 
+    pub fn to_string(&self) -> String {
+        self.to_base32()
+    }
+
     pub fn as_bytes(&self) -> &[u8; X25519_PUBLIC_KEY_SIZE] {
         self.public_key.as_bytes()
+    }
+}
+
+impl std::fmt::Debug for X25519PublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
     }
 }
 
