@@ -612,10 +612,6 @@ impl X25519PublicKey {
         BASE32_NOPAD.encode(self.public_key.as_bytes())
     }
 
-    pub fn to_string(&self) -> String {
-        self.to_base32()
-    }
-
     pub fn as_bytes(&self) -> &[u8; X25519_PUBLIC_KEY_SIZE] {
         self.public_key.as_bytes()
     }
@@ -623,7 +619,7 @@ impl X25519PublicKey {
 
 impl std::fmt::Debug for X25519PublicKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.to_base32())
     }
 }
 

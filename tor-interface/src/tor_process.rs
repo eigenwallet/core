@@ -114,11 +114,11 @@ pub(crate) struct TorProcess {
 
 impl TorProcess {
     pub fn get_control_addr(&self) -> &SocketAddr {
-        return &self.control_addr;
+        &self.control_addr
     }
 
     pub fn get_password(&self) -> &String {
-        return &self.password;
+        &self.password
     }
 
     pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<TorProcess, Error> {
