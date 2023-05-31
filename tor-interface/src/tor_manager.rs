@@ -249,6 +249,7 @@ impl TorManager {
             .authenticate(daemon.get_password())
             .map_err(Error::TorProcessAuthenticationFailed)?;
 
+        // min required version for v3 client auth (see control-spec.txt)
         let min_required_version: TorVersion = TorVersion {
             major: 0u32,
             minor: 4u32,
