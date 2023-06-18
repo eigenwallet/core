@@ -388,7 +388,7 @@ impl Ed25519PublicKey {
                 Err(_) => {
                     return Err(Error::ConversionError(format!(
                         "failed to decode '{}' as V3OnionServiceId",
-                        service_id.to_string()
+                        service_id
                     )))
                 }
             };
@@ -696,15 +696,15 @@ impl V3OnionServiceId {
     }
 }
 
-impl ToString for V3OnionServiceId {
-    fn to_string(&self) -> String {
-        return unsafe { str::from_utf8_unchecked(&self.data).to_string() };
+impl std::fmt::Display for V3OnionServiceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unsafe { write!(f, "{}", str::from_utf8_unchecked(&self.data)) }
     }
 }
 
 impl std::fmt::Debug for V3OnionServiceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        unsafe { write!(f, "{}", str::from_utf8_unchecked(&self.data)) }
     }
 }
 

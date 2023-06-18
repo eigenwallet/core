@@ -329,7 +329,7 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
 
         // our onion domain
         let target =
-            socks::TargetAddr::Domain(format!("{}.onion", service_id.to_string()), virt_port);
+            socks::TargetAddr::Domain(format!("{}.onion", service_id), virt_port);
         // readwrite stream
         let stream = match &circuit {
             None => Socks5Stream::connect(socks_listener, target),

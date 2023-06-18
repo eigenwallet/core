@@ -376,7 +376,7 @@ impl TorController {
 
     // DEL_ONION (3.38)
     fn del_onion_cmd(&mut self, service_id: &V3OnionServiceId) -> Result<Reply, Error> {
-        let command = format!("DEL_ONION {}", service_id.to_string());
+        let command = format!("DEL_ONION {}", service_id);
 
         self.write_command(&command)
     }
@@ -416,7 +416,7 @@ impl TorController {
         &mut self,
         service_id: &V3OnionServiceId,
     ) -> Result<Reply, Error> {
-        let command = format!("ONION_CLIENT_AUTH_REMOVE {}", service_id.to_string());
+        let command = format!("ONION_CLIENT_AUTH_REMOVE {}", service_id);
 
         self.write_command(&command)
     }
