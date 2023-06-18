@@ -1,7 +1,7 @@
 // standard
 use std::default::Default;
-use std::io::{ErrorKind, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::ErrorKind;
+use std::net::{SocketAddr, TcpListener};
 use std::ops::Drop;
 use std::option::Option;
 use std::path::Path;
@@ -20,6 +20,7 @@ use crate::tor_control_stream::*;
 use crate::tor_controller::*;
 use crate::tor_crypto::*;
 use crate::tor_process::*;
+use crate::tor_provider::*;
 use crate::tor_version::*;
 
 #[derive(thiserror::Error, Debug)]
@@ -79,116 +80,44 @@ pub enum Error {
     AddOnionFailed(#[source] crate::tor_controller::Error),
 }
 
-pub struct CircuitToken {
+//
+// CircuitToken Implementation
+//
+pub struct TorDaemonCircuitToken {
     username: String,
     password: String,
 }
 
-impl CircuitToken {
+impl TorDaemonCircuitToken {
     #[allow(dead_code)]
-    pub fn new(first_party: Host) -> CircuitToken {
+    pub fn new(first_party: Host) -> TorDaemonCircuitToken {
         const CIRCUIT_TOKEN_PASSWORD_LENGTH: usize = 32usize;
         let username = first_party.to_string();
         let password = generate_password(CIRCUIT_TOKEN_PASSWORD_LENGTH);
 
-        CircuitToken { username, password }
+        TorDaemonCircuitToken { username, password }
     }
 }
 
-pub struct OnionStream {
-    stream: TcpStream,
-    peer_addr: Option<V3OnionServiceId>,
-}
+impl CircuitToken for TorDaemonCircuitToken {}
 
-impl OnionStream {
-    pub fn nodelay(&self) -> Result<bool, std::io::Error> {
-        self.stream.nodelay()
-    }
+//
+// TorDaemonOnionListener
+//
 
-    pub fn peer_addr(&self) -> Option<&V3OnionServiceId> {
-        self.peer_addr.as_ref()
-    }
-
-    pub fn read_timeout(&self) -> Result<Option<Duration>, std::io::Error> {
-        self.stream.read_timeout()
-    }
-
-    pub fn set_nodelay(&self, nodelay: bool) -> Result<(), std::io::Error> {
-        self.stream.set_nodelay(nodelay)
-    }
-
-    pub fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
-        self.stream.set_nonblocking(nonblocking)
-    }
-
-    pub fn set_read_timeout(&self, dur: Option<Duration>) -> Result<(), std::io::Error> {
-        self.stream.set_read_timeout(dur)
-    }
-
-    pub fn set_write_timeout(&self, dur: Option<Duration>) -> Result<(), std::io::Error> {
-        self.stream.set_write_timeout(dur)
-    }
-
-    pub fn shutdown(&self, how: std::net::Shutdown) -> Result<(), std::io::Error> {
-        self.stream.shutdown(how)
-    }
-
-    pub fn take_error(&self) -> Result<Option<std::io::Error>, std::io::Error> {
-        self.stream.take_error()
-    }
-
-    pub fn write_timeout(&self) -> Result<Option<Duration>, std::io::Error> {
-        self.stream.write_timeout()
-    }
-
-    pub fn try_clone(&self) -> Result<OnionStream, std::io::Error> {
-        Ok(OnionStream {
-            stream: self.stream.try_clone()?,
-            peer_addr: self.peer_addr.clone(),
-        })
-    }
-}
-
-// pass-through to underlying Read stream
-impl Read for OnionStream {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
-        self.stream.read(buf)
-    }
-}
-
-// pass-through to underlying Write stream
-impl Write for OnionStream {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
-        self.stream.write(buf)
-    }
-
-    fn flush(&mut self) -> Result<(), std::io::Error> {
-        self.stream.flush()
-    }
-}
-
-impl From<OnionStream> for TcpStream {
-    fn from(onion_stream: OnionStream) -> Self {
-        onion_stream.stream
-    }
-}
-
-pub struct OnionListener {
+pub struct TorDaemonOnionListener {
     listener: TcpListener,
     is_active: Arc<atomic::AtomicBool>,
 }
 
-impl OnionListener {
-    pub fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
+impl OnionListener for TorDaemonOnionListener {
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
         self.listener.set_nonblocking(nonblocking)
     }
 
-    pub fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
+    fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
         match self.listener.accept() {
-            Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
-                stream,
-                peer_addr: None,
-            })),
+            Ok((stream, _socket_addr)) => Ok(Some(OnionStream::new(stream, None))),
             Err(err) => {
                 if err.kind() == ErrorKind::WouldBlock {
                     Ok(None)
@@ -200,28 +129,13 @@ impl OnionListener {
     }
 }
 
-impl Drop for OnionListener {
+impl Drop for TorDaemonOnionListener {
     fn drop(&mut self) {
         self.is_active.store(false, atomic::Ordering::Relaxed);
     }
 }
 
-pub enum Event {
-    BootstrapStatus {
-        progress: u32,
-        tag: String,
-        summary: String,
-    },
-    BootstrapComplete,
-    LogReceived {
-        line: String,
-    },
-    OnionServicePublished {
-        service_id: V3OnionServiceId,
-    },
-}
-
-pub struct TorManager {
+pub struct LegacyTorClient {
     daemon: TorProcess,
     version: TorVersion,
     controller: TorController,
@@ -230,8 +144,8 @@ pub struct TorManager {
     onion_services: Vec<(V3OnionServiceId, Arc<atomic::AtomicBool>)>,
 }
 
-impl TorManager {
-    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<TorManager, Error> {
+impl LegacyTorClient {
+    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<LegacyTorClient, Error> {
         // launch tor
         let daemon = TorProcess::new(tor_bin_path, data_directory)
             .map_err(Error::TorProcessCreationFailed)?;
@@ -274,7 +188,7 @@ impl TorManager {
             .setevents(&["STATUS_CLIENT", "HS_DESC"])
             .map_err(Error::SetEventsFailed)?;
 
-        Ok(TorManager {
+        Ok(LegacyTorClient {
             daemon,
             version,
             controller,
@@ -283,7 +197,16 @@ impl TorManager {
         })
     }
 
-    pub fn update(&mut self) -> Result<Vec<Event>, Error> {
+    #[allow(dead_code)]
+    pub fn version(&mut self) -> TorVersion {
+        self.version.clone()
+    }
+}
+
+impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorClient {
+    type Error = Error;
+
+    fn update(&mut self) -> Result<Vec<TorEvent>, Error> {
         let mut i = 0;
         while i < self.onion_services.len() {
             // remove onion services with no active listeners
@@ -299,7 +222,7 @@ impl TorManager {
             }
         }
 
-        let mut events: Vec<Event> = Default::default();
+        let mut events: Vec<TorEvent> = Default::default();
         for async_event in self
             .controller
             .wait_async_events()
@@ -324,19 +247,19 @@ impl TorManager {
                                 _ => {} // ignore unexpected arguments
                             }
                         }
-                        events.push(Event::BootstrapStatus {
+                        events.push(TorEvent::BootstrapStatus {
                             progress,
                             tag,
                             summary,
                         });
                         if progress == 100u32 {
-                            events.push(Event::BootstrapComplete);
+                            events.push(TorEvent::BootstrapComplete);
                         }
                     }
                 }
                 AsyncEvent::HsDesc { action, hs_address } => {
                     if action == "UPLOADED" {
-                        events.push(Event::OnionServicePublished {
+                        events.push(TorEvent::OnionServicePublished {
                             service_id: hs_address.clone(),
                         });
                     }
@@ -351,7 +274,7 @@ impl TorManager {
         }
 
         for log_line in self.daemon.wait_log_lines().iter_mut() {
-            events.push(Event::LogReceived {
+            events.push(TorEvent::LogReceived {
                 line: std::mem::take(log_line),
             });
         }
@@ -359,18 +282,13 @@ impl TorManager {
         Ok(events)
     }
 
-    #[allow(dead_code)]
-    pub fn version(&mut self) -> TorVersion {
-        self.version.clone()
-    }
-
-    pub fn bootstrap(&mut self) -> Result<(), Error> {
+    fn bootstrap(&mut self) -> Result<(), Error> {
         self.controller
             .setconf(&[("DisableNetwork", "0")])
             .map_err(Error::SetConfDisableNetwork0Failed)
     }
 
-    pub fn add_client_auth(
+    fn add_client_auth(
         &mut self,
         service_id: &V3OnionServiceId,
         client_auth: &X25519PrivateKey,
@@ -380,18 +298,18 @@ impl TorManager {
             .map_err(Error::OnionClientAuthAddFailed)
     }
 
-    pub fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<(), Error> {
+    fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<(), Error> {
         self.controller
             .onion_client_auth_remove(service_id)
             .map_err(Error::OnionClientAuthRemoveFailed)
     }
 
     // connect to an onion service and returns OnionStream
-    pub fn connect(
+    fn connect(
         &mut self,
         service_id: &V3OnionServiceId,
         virt_port: u16,
-        circuit: Option<CircuitToken>,
+        circuit: Option<TorDaemonCircuitToken>,
     ) -> Result<OnionStream, Error> {
         if self.socks_listener.is_none() {
             let mut listeners = self
@@ -424,19 +342,19 @@ impl TorManager {
         }
         .map_err(Error::Socks5ConnectionFailed)?;
 
-        Ok(OnionStream {
-            stream: stream.into_inner(),
-            peer_addr: Some(service_id.clone()),
-        })
+        Ok(OnionStream::new(
+            stream.into_inner(),
+            Some(service_id.clone()),
+        ))
     }
 
-    // stand up an onion service and return an OnionListener
-    pub fn listener(
+    // stand up an onion service and return an TorDaemonOnionListener
+    fn listener(
         &mut self,
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<OnionListener, Error> {
+    ) -> Result<TorDaemonOnionListener, Error> {
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
         let listener = TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
@@ -469,7 +387,7 @@ impl TorManager {
         self.onion_services
             .push((service_id, Arc::clone(&is_active)));
 
-        Ok(OnionListener {
+        Ok(TorDaemonOnionListener {
             listener,
             is_active,
         })
@@ -483,7 +401,7 @@ fn test_tor_manager() -> anyhow::Result<()> {
     let mut data_path = std::env::temp_dir();
     data_path.push("test_tor_manager");
 
-    let mut tor = TorManager::new(&tor_path, &data_path)?;
+    let mut tor = LegacyTorClient::new(&tor_path, &data_path)?;
     println!("version : {}", tor.version().to_string());
     tor.bootstrap()?;
 
@@ -492,7 +410,7 @@ fn test_tor_manager() -> anyhow::Result<()> {
     while !bootstrap_complete {
         for event in tor.update()?.iter() {
             match event {
-                Event::BootstrapStatus {
+                TorEvent::BootstrapStatus {
                     progress,
                     tag,
                     summary,
@@ -500,11 +418,11 @@ fn test_tor_manager() -> anyhow::Result<()> {
                     "BootstrapStatus: {{ progress: {}, tag: {}, summary: '{}' }}",
                     progress, tag, summary
                 ),
-                Event::BootstrapComplete => {
+                TorEvent::BootstrapComplete => {
                     println!("Bootstrap Complete!");
                     bootstrap_complete = true;
                 }
-                Event::LogReceived { line } => {
+                TorEvent::LogReceived { line } => {
                     received_log = true;
                     println!("--- {}", line);
                 }
@@ -527,7 +445,7 @@ fn test_onion_service() -> anyhow::Result<()> {
     let mut data_path = std::env::temp_dir();
     data_path.push("test_onion_service");
 
-    let mut tor = TorManager::new(&tor_path, &data_path)?;
+    let mut tor = LegacyTorClient::new(&tor_path, &data_path)?;
 
     // for 30secs for bootstrap
     tor.bootstrap()?;
@@ -536,7 +454,7 @@ fn test_onion_service() -> anyhow::Result<()> {
     while !bootstrap_complete {
         for event in tor.update()?.iter() {
             match event {
-                Event::BootstrapStatus {
+                TorEvent::BootstrapStatus {
                     progress,
                     tag,
                     summary,
@@ -544,11 +462,11 @@ fn test_onion_service() -> anyhow::Result<()> {
                     "BootstrapStatus: {{ progress: {}, tag: {}, summary: '{}' }}",
                     progress, tag, summary
                 ),
-                Event::BootstrapComplete => {
+                TorEvent::BootstrapComplete => {
                     println!("Bootstrap Complete!");
                     bootstrap_complete = true;
                 }
-                Event::LogReceived { line } => {
+                TorEvent::LogReceived { line } => {
                     println!("--- {}", line);
                 }
                 _ => {}
@@ -569,10 +487,10 @@ fn test_onion_service() -> anyhow::Result<()> {
         while !onion_published {
             for event in tor.update()?.iter() {
                 match event {
-                    Event::LogReceived { line } => {
+                    TorEvent::LogReceived { line } => {
                         println!("--- {}", line);
                     }
-                    Event::OnionServicePublished { service_id } => {
+                    TorEvent::OnionServicePublished { service_id } => {
                         let expected_service_id = V3OnionServiceId::from_private_key(&private_key);
                         if expected_service_id == *service_id {
                             println!("Onion Service {} published", service_id.to_string());
@@ -626,10 +544,10 @@ fn test_onion_service() -> anyhow::Result<()> {
         while !onion_published {
             for event in tor.update()?.iter() {
                 match event {
-                    Event::LogReceived { line } => {
+                    TorEvent::LogReceived { line } => {
                         println!("--- {}", line);
                     }
-                    Event::OnionServicePublished { service_id } => {
+                    TorEvent::OnionServicePublished { service_id } => {
                         let expected_service_id = V3OnionServiceId::from_private_key(&private_key);
                         if expected_service_id == *service_id {
                             println!(
