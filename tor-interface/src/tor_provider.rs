@@ -6,6 +6,26 @@ use std::ops::{Deref, DerefMut};
 // internal crates
 use crate::tor_crypto::*;
 
+#[derive(Clone, Debug)]
+pub enum OnionAddr {
+    V3(V3OnionServiceId, u16),
+}
+
+impl std::fmt::Display for OnionAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OnionAddr::V3(service_id, port) => write!(f, "{}:{}", service_id, port),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum TargetAddr {
+    Ip(std::net::SocketAddr),
+    Domain(String, u16),
+    OnionService(OnionAddr),
+}
+
 pub enum TorEvent {
     BootstrapStatus {
         progress: u32,
@@ -28,8 +48,9 @@ pub trait CircuitToken {}
 //
 
 pub struct OnionStream {
-    stream: TcpStream,
-    onion_addr: Option<V3OnionServiceId>,
+    pub(crate) stream: TcpStream,
+    pub(crate) local_addr: Option<OnionAddr>,
+    pub(crate) peer_addr: Option<TargetAddr>,
 }
 
 impl Deref for OnionStream {
@@ -68,18 +89,19 @@ impl Write for OnionStream {
 }
 
 impl OnionStream {
-    pub fn new(stream: TcpStream, onion_addr: Option<V3OnionServiceId>) -> Self {
-        Self { stream, onion_addr }
+    pub fn peer_addr(&self) -> Option<TargetAddr> {
+        self.peer_addr.clone()
     }
 
-    pub fn onion_addr(&self) -> Option<V3OnionServiceId> {
-        self.onion_addr.clone()
+    pub fn local_addr(&self) -> Option<OnionAddr> {
+        None
     }
 
     pub fn try_clone(&self) -> Result<Self, std::io::Error> {
         Ok(Self {
             stream: self.stream.try_clone()?,
-            onion_addr: self.onion_addr.clone(),
+            local_addr: self.local_addr.clone(),
+            peer_addr: self.peer_addr.clone(),
         })
     }
 }

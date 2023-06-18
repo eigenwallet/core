@@ -1,6 +1,8 @@
 // standard
 use std::default::Default;
 use std::io::ErrorKind;
+#[cfg(test)]
+use std::io::{Read,Write};
 use std::net::{SocketAddr, TcpListener};
 use std::ops::Drop;
 use std::option::Option;
@@ -108,6 +110,7 @@ impl CircuitToken for TorDaemonCircuitToken {}
 pub struct TorDaemonOnionListener {
     listener: TcpListener,
     is_active: Arc<atomic::AtomicBool>,
+    onion_addr: OnionAddr,
 }
 
 impl OnionListener for TorDaemonOnionListener {
@@ -117,7 +120,11 @@ impl OnionListener for TorDaemonOnionListener {
 
     fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
         match self.listener.accept() {
-            Ok((stream, _socket_addr)) => Ok(Some(OnionStream::new(stream, None))),
+            Ok((stream, _socket_addr)) => Ok(Some(OnionStream{
+                stream,
+                local_addr: Some(self.onion_addr.clone()),
+                peer_addr: None,
+            })),
             Err(err) => {
                 if err.kind() == ErrorKind::WouldBlock {
                     Ok(None)
@@ -342,10 +349,11 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
         }
         .map_err(Error::Socks5ConnectionFailed)?;
 
-        Ok(OnionStream::new(
-            stream.into_inner(),
-            Some(service_id.clone()),
-        ))
+        Ok(OnionStream{
+            stream: stream.into_inner(),
+            local_addr: None,
+            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(service_id.clone(), virt_port))),
+        })
     }
 
     // stand up an onion service and return an TorDaemonOnionListener
@@ -370,6 +378,8 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
             flags.v3_auth = true;
         }
 
+        let onion_addr = OnionAddr::V3(V3OnionServiceId::from_private_key(private_key), virt_port);
+
         // start onion service
         let (_, service_id) = self
             .controller
@@ -390,6 +400,7 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
         Ok(TorDaemonOnionListener {
             listener,
             is_active,
+            onion_addr,
         })
     }
 }
