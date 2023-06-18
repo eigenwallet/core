@@ -64,15 +64,6 @@ pub enum Error {
     StdoutReadThreadSpawnFailed(#[source] std::io::Error),
 }
 
-// get the name of our tor executable
-pub const fn tor_exe_name() -> &'static str {
-    if cfg!(windows) {
-        "tor.exe"
-    } else {
-        "tor"
-    }
-}
-
 fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddr, Error> {
     // open file
     let mut file = File::open(control_port_file).map_err(Error::ControlPortFileReadFailed)?;

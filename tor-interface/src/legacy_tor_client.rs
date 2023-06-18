@@ -2,7 +2,7 @@
 use std::default::Default;
 use std::io::ErrorKind;
 #[cfg(test)]
-use std::io::{Read,Write};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::ops::Drop;
 use std::option::Option;
@@ -24,7 +24,6 @@ use crate::legacy_tor_process::*;
 use crate::legacy_tor_version::*;
 use crate::tor_crypto::*;
 use crate::tor_provider::*;
-
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -121,7 +120,7 @@ impl OnionListener for TorDaemonOnionListener {
 
     fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
         match self.listener.accept() {
-            Ok((stream, _socket_addr)) => Ok(Some(OnionStream{
+            Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
                 stream,
                 local_addr: Some(self.onion_addr.clone()),
                 peer_addr: None,
@@ -163,8 +162,8 @@ impl LegacyTorClient {
                 .map_err(Error::ControlStreamCreationFailed)?;
 
         // create a controler
-        let mut controller =
-            TorController::new(control_stream).map_err(Error::TorControllerCreationFailed)?;
+        let mut controller = LegacyTorController::new(control_stream)
+            .map_err(Error::LegacyTorControllerCreationFailed)?;
 
         // authenticate
         controller
@@ -336,8 +335,7 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
         };
 
         // our onion domain
-        let target =
-            socks::TargetAddr::Domain(format!("{}.onion", service_id), virt_port);
+        let target = socks::TargetAddr::Domain(format!("{}.onion", service_id), virt_port);
         // readwrite stream
         let stream = match &circuit {
             None => Socks5Stream::connect(socks_listener, target),
@@ -350,10 +348,13 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
         }
         .map_err(Error::Socks5ConnectionFailed)?;
 
-        Ok(OnionStream{
+        Ok(OnionStream {
             stream: stream.into_inner(),
             local_addr: None,
-            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(service_id.clone(), virt_port))),
+            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(
+                service_id.clone(),
+                virt_port,
+            ))),
         })
     }
 
@@ -409,7 +410,7 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
 #[test]
 #[serial]
 fn test_tor_manager() -> anyhow::Result<()> {
-    let tor_path = which::which(tor_exe_name())?;
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_tor_manager");
 
@@ -453,7 +454,7 @@ fn test_tor_manager() -> anyhow::Result<()> {
 #[test]
 #[serial]
 fn test_onion_service() -> anyhow::Result<()> {
-    let tor_path = which::which(tor_exe_name())?;
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_onion_service");
 

@@ -21,7 +21,6 @@ use crate::legacy_tor_process::*;
 use crate::legacy_tor_version::*;
 use crate::tor_crypto::*;
 
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("response regex creation failed")]
@@ -674,7 +673,7 @@ impl TorController {
 #[test]
 #[serial]
 fn test_tor_controller() -> anyhow::Result<()> {
-    let tor_path = which::which(tor_exe_name())?;
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_tor_controller");
     let tor_process = TorProcess::new(&tor_path, &data_path)?;
