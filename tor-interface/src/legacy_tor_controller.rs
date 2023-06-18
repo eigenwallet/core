@@ -39,7 +39,7 @@ pub enum Error {
     InvalidCommandArguments(String),
 
     #[error("command failed: {0} {}", .1.join("\n"))]
-    CommandReturnedError(u32, Vec<String>),
+    CommandFailed(u32, Vec<String>),
 
     #[error("failed to parse command reply: {0}")]
     CommandReplyParseFailed(String),
@@ -430,7 +430,7 @@ impl LegacyTorController {
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 
@@ -450,7 +450,7 @@ impl LegacyTorController {
                 }
                 Ok(key_values)
             }
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 
@@ -459,7 +459,7 @@ impl LegacyTorController {
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 
@@ -468,7 +468,7 @@ impl LegacyTorController {
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 
@@ -491,7 +491,7 @@ impl LegacyTorController {
                 }
                 Ok(key_values)
             }
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 
@@ -560,7 +560,7 @@ impl LegacyTorController {
                     }
                 }
             }
-            code => return Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => return Err(Error::CommandFailed(code, reply.reply_lines)),
         }
 
         if flags.discard_pk {
@@ -588,7 +588,7 @@ impl LegacyTorController {
 
         match reply.status_code {
             250u32 => Ok(()),
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 
@@ -655,7 +655,7 @@ impl LegacyTorController {
 
         match reply.status_code {
             250u32..=252u32 => Ok(()),
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 
@@ -665,7 +665,7 @@ impl LegacyTorController {
 
         match reply.status_code {
             250u32..=251u32 => Ok(()),
-            code => Err(Error::CommandReturnedError(code, reply.reply_lines)),
+            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
     }
 }
