@@ -18,53 +18,54 @@ use socks::Socks5Stream;
 use url::Host;
 
 // internal crates
-use crate::tor_control_stream::*;
-use crate::tor_controller::*;
+use crate::legacy_tor_control_stream::*;
+use crate::legacy_tor_controller::*;
+use crate::legacy_tor_process::*;
+use crate::legacy_tor_version::*;
 use crate::tor_crypto::*;
-use crate::tor_process::*;
 use crate::tor_provider::*;
-use crate::tor_version::*;
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("failed to create TorProcess object")]
-    TorProcessCreationFailed(#[source] crate::tor_process::Error),
+    TorProcessCreationFailed(#[source] crate::legacy_tor_process::Error),
 
     #[error("failed to create ControlStream object")]
-    ControlStreamCreationFailed(#[source] crate::tor_control_stream::Error),
+    ControlStreamCreationFailed(#[source] crate::legacy_tor_control_stream::Error),
 
     #[error("failed to create TorController object")]
-    TorControllerCreationFailed(#[source] crate::tor_controller::Error),
+    TorControllerCreationFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to authenticate with the tor process")]
-    TorProcessAuthenticationFailed(#[source] crate::tor_controller::Error),
+    TorProcessAuthenticationFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to determine the tor process version")]
-    GetInfoVersionFailed(#[source] crate::tor_controller::Error),
+    GetInfoVersionFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("tor process version to old; found {0} but must be at least {1}")]
     TorProcessTooOld(String, String),
 
     #[error("failed to register for STATUS_CLIENT and HS_DESC events")]
-    SetEventsFailed(#[source] crate::tor_controller::Error),
+    SetEventsFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to delete unused onion service")]
-    DelOnionFailed(#[source] crate::tor_controller::Error),
+    DelOnionFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed waiting for async events")]
-    WaitAsyncEventsFailed(#[source] crate::tor_controller::Error),
+    WaitAsyncEventsFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to begin bootstrap")]
-    SetConfDisableNetwork0Failed(#[source] crate::tor_controller::Error),
+    SetConfDisableNetwork0Failed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to add client auth for onion service")]
-    OnionClientAuthAddFailed(#[source] crate::tor_controller::Error),
+    OnionClientAuthAddFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to remove client auth from onion service")]
-    OnionClientAuthRemoveFailed(#[source] crate::tor_controller::Error),
+    OnionClientAuthRemoveFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to get socks listener")]
-    GetInfoNetListenersSocksFailed(#[source] crate::tor_controller::Error),
+    GetInfoNetListenersSocksFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("no socks listeners available to connect through")]
     NoSocksListenersFound(),
@@ -79,7 +80,7 @@ pub enum Error {
     TcpListenerLocalAddrFailed(#[source] std::io::Error),
 
     #[error("failed to create onion service")]
-    AddOnionFailed(#[source] crate::tor_controller::Error),
+    AddOnionFailed(#[source] crate::legacy_tor_controller::Error),
 }
 
 //

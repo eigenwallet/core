@@ -15,11 +15,12 @@ use regex::Regex;
 use serial_test::serial;
 
 // internal crates
-use crate::tor_control_stream::*;
-use crate::tor_crypto::*;
+use crate::legacy_tor_control_stream::*;
 #[cfg(test)]
-use crate::tor_process::*;
-use crate::tor_version::*;
+use crate::legacy_tor_process::*;
+use crate::legacy_tor_version::*;
+use crate::tor_crypto::*;
+
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -27,13 +28,13 @@ pub enum Error {
     ParsingRegexCreationFailed(#[source] regex::Error),
 
     #[error("control stream read reply failed")]
-    ReadReplyFailed(#[source] crate::tor_control_stream::Error),
+    ReadReplyFailed(#[source] crate::legacy_tor_control_stream::Error),
 
     #[error("unexpected synchronous reply recieved")]
     UnexpectedSynchonousReplyReceived(),
 
     #[error("control stream write command failed")]
-    WriteCommandFailed(#[source] crate::tor_control_stream::Error),
+    WriteCommandFailed(#[source] crate::legacy_tor_control_stream::Error),
 
     #[error("invalid command arguments: {0}")]
     InvalidCommandArguments(String),
@@ -45,7 +46,7 @@ pub enum Error {
     CommandReplyParseFailed(String),
 
     #[error("failed to parse received tor version")]
-    TorVersionParseFailed(#[source] crate::tor_version::Error),
+    TorVersionParseFailed(#[source] crate::legacy_tor_version::Error),
 }
 
 // Per-command data
