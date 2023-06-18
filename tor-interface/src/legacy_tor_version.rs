@@ -12,7 +12,7 @@ pub enum Error {
 
 // see version-spec.txt
 #[derive(Clone)]
-pub struct TorVersion {
+pub struct LegacyTorVersion {
     pub major: u32,
     pub minor: u32,
     pub micro: u32,
@@ -20,7 +20,7 @@ pub struct TorVersion {
     pub status_tag: Option<String>,
 }
 
-impl TorVersion {
+impl LegacyTorVersion {
     fn status_tag_pattern_is_match(status_tag: &str) -> bool {
         if status_tag.is_empty() {
             return false;
@@ -40,7 +40,7 @@ impl TorVersion {
         micro: u32,
         patch_level: Option<u32>,
         status_tag: Option<&str>,
-    ) -> Result<TorVersion, Error> {
+    ) -> Result<LegacyTorVersion, Error> {
         let status_tag = if let Some(status_tag) = status_tag {
             if Self::status_tag_pattern_is_match(status_tag) {
                 Some(status_tag.to_string())
@@ -53,7 +53,7 @@ impl TorVersion {
             None
         };
 
-        Ok(TorVersion {
+        Ok(LegacyTorVersion {
             major,
             minor,
             micro,
@@ -63,10 +63,10 @@ impl TorVersion {
     }
 }
 
-impl FromStr for TorVersion {
+impl FromStr for LegacyTorVersion {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<TorVersion, Self::Err> {
+    fn from_str(s: &str) -> Result<LegacyTorVersion, Self::Err> {
         // MAJOR.MINOR.MICRO[.PATCHLEVEL][-STATUS_TAG][ (EXTRA_INFO)]*
         let mut tokens = s.split(' ');
         let (major, minor, micro, patch_level, status_tag) =
@@ -152,7 +152,7 @@ impl FromStr for TorVersion {
                 )));
             }
         }
-        TorVersion::new(
+        LegacyTorVersion::new(
             major,
             minor,
             micro,
@@ -162,7 +162,7 @@ impl FromStr for TorVersion {
     }
 }
 
-impl ToString for TorVersion {
+impl ToString for LegacyTorVersion {
     fn to_string(&self) -> String {
         match &self.status_tag {
             Some(status_tag) => format!(
@@ -177,7 +177,7 @@ impl ToString for TorVersion {
     }
 }
 
-impl PartialEq for TorVersion {
+impl PartialEq for LegacyTorVersion {
     fn eq(&self, other: &Self) -> bool {
         self.major == other.major
             && self.minor == other.minor
@@ -187,7 +187,7 @@ impl PartialEq for TorVersion {
     }
 }
 
-impl PartialOrd for TorVersion {
+impl PartialOrd for LegacyTorVersion {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if let Some(order) = self.major.partial_cmp(&other.major) {
             if order != Ordering::Equal {
@@ -230,42 +230,61 @@ impl PartialOrd for TorVersion {
 
 #[test]
 fn test_version() -> anyhow::Result<()> {
-    assert!(TorVersion::from_str("1.2.3")? == TorVersion::new(1, 2, 3, None, None)?);
-    assert!(TorVersion::from_str("1.2.3.4")? == TorVersion::new(1, 2, 3, Some(4), None)?);
-    assert!(TorVersion::from_str("1.2.3-test")? == TorVersion::new(1, 2, 3, None, Some("test"))?);
+    assert!(LegacyTorVersion::from_str("1.2.3")? == LegacyTorVersion::new(1, 2, 3, None, None)?);
     assert!(
-        TorVersion::from_str("1.2.3.4-test")? == TorVersion::new(1, 2, 3, Some(4), Some("test"))?
-    );
-    assert!(TorVersion::from_str("1.2.3 (extra_info)")? == TorVersion::new(1, 2, 3, None, None)?);
-    assert!(
-        TorVersion::from_str("1.2.3.4 (extra_info)")? == TorVersion::new(1, 2, 3, Some(4), None)?
+        LegacyTorVersion::from_str("1.2.3.4")? == LegacyTorVersion::new(1, 2, 3, Some(4), None)?
     );
     assert!(
-        TorVersion::from_str("1.2.3.4-tag (extra_info)")?
-            == TorVersion::new(1, 2, 3, Some(4), Some("tag"))?
+        LegacyTorVersion::from_str("1.2.3-test")?
+            == LegacyTorVersion::new(1, 2, 3, None, Some("test"))?
+    );
+    assert!(
+        LegacyTorVersion::from_str("1.2.3.4-test")?
+            == LegacyTorVersion::new(1, 2, 3, Some(4), Some("test"))?
+    );
+    assert!(
+        LegacyTorVersion::from_str("1.2.3 (extra_info)")?
+            == LegacyTorVersion::new(1, 2, 3, None, None)?
+    );
+    assert!(
+        LegacyTorVersion::from_str("1.2.3.4 (extra_info)")?
+            == LegacyTorVersion::new(1, 2, 3, Some(4), None)?
+    );
+    assert!(
+        LegacyTorVersion::from_str("1.2.3.4-tag (extra_info)")?
+            == LegacyTorVersion::new(1, 2, 3, Some(4), Some("tag"))?
     );
 
     assert!(
-        TorVersion::from_str("1.2.3.4-tag (extra_info) (extra_info)")?
-            == TorVersion::new(1, 2, 3, Some(4), Some("tag"))?
+        LegacyTorVersion::from_str("1.2.3.4-tag (extra_info) (extra_info)")?
+            == LegacyTorVersion::new(1, 2, 3, Some(4), Some("tag"))?
     );
 
-    assert!(TorVersion::new(1, 2, 3, Some(4), Some("spaced tag")).is_err());
-    assert!(TorVersion::new(1, 2, 3, Some(4), Some("" /* empty tag */)).is_err());
-    assert!(TorVersion::from_str("").is_err());
-    assert!(TorVersion::from_str("1.2").is_err());
-    assert!(TorVersion::from_str("1.2-foo").is_err());
-    assert!(TorVersion::from_str("1.2.3.4-foo bar").is_err());
-    assert!(TorVersion::from_str("1.2.3.4-foo bar (extra_info)").is_err());
-    assert!(TorVersion::from_str("1.2.3.4-foo (extra_info) badtext").is_err());
-    assert!(TorVersion::new(0, 0, 0, Some(0), None)? < TorVersion::new(1, 0, 0, Some(0), None)?);
-    assert!(TorVersion::new(0, 0, 0, Some(0), None)? < TorVersion::new(0, 1, 0, Some(0), None)?);
-    assert!(TorVersion::new(0, 0, 0, Some(0), None)? < TorVersion::new(0, 0, 1, Some(0), None)?);
+    assert!(LegacyTorVersion::new(1, 2, 3, Some(4), Some("spaced tag")).is_err());
+    assert!(LegacyTorVersion::new(1, 2, 3, Some(4), Some("" /* empty tag */)).is_err());
+    assert!(LegacyTorVersion::from_str("").is_err());
+    assert!(LegacyTorVersion::from_str("1.2").is_err());
+    assert!(LegacyTorVersion::from_str("1.2-foo").is_err());
+    assert!(LegacyTorVersion::from_str("1.2.3.4-foo bar").is_err());
+    assert!(LegacyTorVersion::from_str("1.2.3.4-foo bar (extra_info)").is_err());
+    assert!(LegacyTorVersion::from_str("1.2.3.4-foo (extra_info) badtext").is_err());
+    assert!(
+        LegacyTorVersion::new(0, 0, 0, Some(0), None)?
+            < LegacyTorVersion::new(1, 0, 0, Some(0), None)?
+    );
+    assert!(
+        LegacyTorVersion::new(0, 0, 0, Some(0), None)?
+            < LegacyTorVersion::new(0, 1, 0, Some(0), None)?
+    );
+    assert!(
+        LegacyTorVersion::new(0, 0, 0, Some(0), None)?
+            < LegacyTorVersion::new(0, 0, 1, Some(0), None)?
+    );
 
     // ensure status tags make comparison between equal versions (apart from
     // tags) unknowable
-    let zero_version = TorVersion::new(0, 0, 0, Some(0), None)?;
-    let zero_version_tag = TorVersion::new(0, 0, 0, Some(0), Some("tag"))?;
+    let zero_version = LegacyTorVersion::new(0, 0, 0, Some(0), None)?;
+    let zero_version_tag = LegacyTorVersion::new(0, 0, 0, Some(0), Some("tag"))?;
 
     assert!(!(zero_version < zero_version_tag));
     assert!(!(zero_version <= zero_version_tag));

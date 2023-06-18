@@ -40,7 +40,7 @@ pub enum Error {
     WriteFailed(#[source] std::io::Error),
 }
 
-pub(crate) struct ControlStream {
+pub(crate) struct LegacyControlStream {
     stream: TcpStream,
     closed_by_remote: bool,
     pending_data: Vec<u8>,
@@ -59,8 +59,8 @@ pub(crate) struct Reply {
     pub reply_lines: Vec<String>,
 }
 
-impl ControlStream {
-    pub fn new(addr: &SocketAddr, read_timeout: Duration) -> Result<ControlStream, Error> {
+impl LegacyControlStream {
+    pub fn new(addr: &SocketAddr, read_timeout: Duration) -> Result<LegacyControlStream, Error> {
         if read_timeout.is_zero() {
             return Err(Error::ReadTimeoutZero());
         }
@@ -81,7 +81,7 @@ impl ControlStream {
         let end_reply_line =
             Regex::new(r"^\d\d\d .*").map_err(Error::ParsingRegexCreationFailed)?;
 
-        Ok(ControlStream {
+        Ok(LegacyControlStream {
             stream,
             closed_by_remote: false,
             pending_data,

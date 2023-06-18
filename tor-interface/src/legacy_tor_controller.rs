@@ -78,9 +78,9 @@ pub(crate) enum AsyncEvent {
     },
 }
 
-pub(crate) struct TorController {
+pub(crate) struct LegacyTorController {
     // underlying control stream
-    control_stream: ControlStream,
+    control_stream: LegacyControlStream,
     // list of async replies to be handled
     async_replies: Vec<Reply>,
     // regex for parsing events
@@ -89,8 +89,8 @@ pub(crate) struct TorController {
     hs_desc_pattern: Regex,
 }
 
-impl TorController {
-    pub fn new(control_stream: ControlStream) -> Result<TorController, Error> {
+impl LegacyTorController {
+    pub fn new(control_stream: LegacyControlStream) -> Result<LegacyTorController, Error> {
         let status_event_pattern =
             Regex::new(r#"^STATUS_CLIENT (?P<severity>NOTICE|WARN|ERR) (?P<action>[A-Za-z]+)"#)
                 .map_err(Error::ParsingRegexCreationFailed)?;
@@ -101,7 +101,7 @@ impl TorController {
             r#"HS_DESC (?P<action>REQUESTED|UPLOAD|RECEIVED|UPLOADED|IGNORE|FAILED|CREATED) (?P<hsaddress>[a-z2-7]{56})"#
         ).map_err(Error::ParsingRegexCreationFailed)?;
 
-        Ok(TorController {
+        Ok(LegacyTorController {
             control_stream,
             async_replies: Default::default(),
             // regex
@@ -632,11 +632,11 @@ impl TorController {
         ))
     }
 
-    pub fn getinfo_version(&mut self) -> Result<TorVersion, Error> {
+    pub fn getinfo_version(&mut self) -> Result<LegacyTorVersion, Error> {
         let response = self.getinfo(&["version"])?;
         for (key, value) in response.iter() {
             if key.as_str() == "version" {
-                return TorVersion::from_str(value).map_err(Error::TorVersionParseFailed);
+                return LegacyTorVersion::from_str(value).map_err(Error::TorVersionParseFailed);
             }
         }
         Err(Error::CommandReplyParseFailed(
@@ -676,15 +676,15 @@ fn test_tor_controller() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_tor_controller");
-    let tor_process = TorProcess::new(&tor_path, &data_path)?;
+    let tor_process = LegacyTorProcess::new(&tor_path, &data_path)?;
 
     // create a scope to ensure tor_controller is dropped
     {
         let control_stream =
-            ControlStream::new(tor_process.get_control_addr(), Duration::from_millis(16))?;
+            LegacyControlStream::new(tor_process.get_control_addr(), Duration::from_millis(16))?;
 
         // create a tor controller and send authentication command
-        let mut tor_controller = TorController::new(control_stream)?;
+        let mut tor_controller = LegacyTorController::new(control_stream)?;
         tor_controller.authenticate_cmd(tor_process.get_password())?;
         assert!(
             tor_controller
@@ -705,11 +705,11 @@ fn test_tor_controller() -> anyhow::Result<()> {
     // now create a second controller
     {
         let control_stream =
-            ControlStream::new(tor_process.get_control_addr(), Duration::from_millis(16))?;
+            LegacyControlStream::new(tor_process.get_control_addr(), Duration::from_millis(16))?;
 
         // create a tor controller and send authentication command
         // all async events are just printed to stdout
-        let mut tor_controller = TorController::new(control_stream)?;
+        let mut tor_controller = LegacyTorController::new(control_stream)?;
         tor_controller.authenticate(tor_process.get_password())?;
 
         // ensure everything is matching our default_torrc settings

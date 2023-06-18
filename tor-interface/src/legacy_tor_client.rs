@@ -27,23 +27,23 @@ use crate::tor_provider::*;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("failed to create TorProcess object")]
-    TorProcessCreationFailed(#[source] crate::legacy_tor_process::Error),
+    #[error("failed to create LegacyTorProcess object")]
+    LegacyTorProcessCreationFailed(#[source] crate::legacy_tor_process::Error),
 
-    #[error("failed to create ControlStream object")]
-    ControlStreamCreationFailed(#[source] crate::legacy_tor_control_stream::Error),
+    #[error("failed to create LegacyControlStream object")]
+    LegacyControlStreamCreationFailed(#[source] crate::legacy_tor_control_stream::Error),
 
-    #[error("failed to create TorController object")]
-    TorControllerCreationFailed(#[source] crate::legacy_tor_controller::Error),
+    #[error("failed to create LegacyTorController object")]
+    LegacyTorControllerCreationFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to authenticate with the tor process")]
-    TorProcessAuthenticationFailed(#[source] crate::legacy_tor_controller::Error),
+    LegacyTorProcessAuthenticationFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to determine the tor process version")]
     GetInfoVersionFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("tor process version to old; found {0} but must be at least {1}")]
-    TorProcessTooOld(String, String),
+    LegacyTorProcessTooOld(String, String),
 
     #[error("failed to register for STATUS_CLIENT and HS_DESC events")]
     SetEventsFailed(#[source] crate::legacy_tor_controller::Error),
@@ -85,35 +85,35 @@ pub enum Error {
 //
 // CircuitToken Implementation
 //
-pub struct TorDaemonCircuitToken {
+pub struct LegacyCircuitToken {
     username: String,
     password: String,
 }
 
-impl TorDaemonCircuitToken {
+impl LegacyCircuitToken {
     #[allow(dead_code)]
-    pub fn new(first_party: Host) -> TorDaemonCircuitToken {
+    pub fn new(first_party: Host) -> LegacyCircuitToken {
         const CIRCUIT_TOKEN_PASSWORD_LENGTH: usize = 32usize;
         let username = first_party.to_string();
         let password = generate_password(CIRCUIT_TOKEN_PASSWORD_LENGTH);
 
-        TorDaemonCircuitToken { username, password }
+        LegacyCircuitToken { username, password }
     }
 }
 
-impl CircuitToken for TorDaemonCircuitToken {}
+impl CircuitToken for LegacyCircuitToken {}
 
 //
-// TorDaemonOnionListener
+// LegacyOnionListener
 //
 
-pub struct TorDaemonOnionListener {
+pub struct LegacyOnionListener {
     listener: TcpListener,
     is_active: Arc<atomic::AtomicBool>,
     onion_addr: OnionAddr,
 }
 
-impl OnionListener for TorDaemonOnionListener {
+impl OnionListener for LegacyOnionListener {
     fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
         self.listener.set_nonblocking(nonblocking)
     }
@@ -136,16 +136,16 @@ impl OnionListener for TorDaemonOnionListener {
     }
 }
 
-impl Drop for TorDaemonOnionListener {
+impl Drop for LegacyOnionListener {
     fn drop(&mut self) {
         self.is_active.store(false, atomic::Ordering::Relaxed);
     }
 }
 
 pub struct LegacyTorClient {
-    daemon: TorProcess,
-    version: TorVersion,
-    controller: TorController,
+    daemon: LegacyTorProcess,
+    version: LegacyTorVersion,
+    controller: LegacyTorController,
     socks_listener: Option<SocketAddr>,
     // list of open onion services and their is_active flag
     onion_services: Vec<(V3OnionServiceId, Arc<atomic::AtomicBool>)>,
@@ -154,12 +154,12 @@ pub struct LegacyTorClient {
 impl LegacyTorClient {
     pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<LegacyTorClient, Error> {
         // launch tor
-        let daemon = TorProcess::new(tor_bin_path, data_directory)
-            .map_err(Error::TorProcessCreationFailed)?;
+        let daemon = LegacyTorProcess::new(tor_bin_path, data_directory)
+            .map_err(Error::LegacyTorProcessCreationFailed)?;
         // open a control stream
         let control_stream =
-            ControlStream::new(daemon.get_control_addr(), Duration::from_millis(16))
-                .map_err(Error::ControlStreamCreationFailed)?;
+            LegacyControlStream::new(daemon.get_control_addr(), Duration::from_millis(16))
+                .map_err(Error::LegacyControlStreamCreationFailed)?;
 
         // create a controler
         let mut controller = LegacyTorController::new(control_stream)
@@ -168,10 +168,10 @@ impl LegacyTorClient {
         // authenticate
         controller
             .authenticate(daemon.get_password())
-            .map_err(Error::TorProcessAuthenticationFailed)?;
+            .map_err(Error::LegacyTorProcessAuthenticationFailed)?;
 
         // min required version for v3 client auth (see control-spec.txt)
-        let min_required_version: TorVersion = TorVersion {
+        let min_required_version = LegacyTorVersion {
             major: 0u32,
             minor: 4u32,
             micro: 6u32,
@@ -184,7 +184,7 @@ impl LegacyTorClient {
             .map_err(Error::GetInfoVersionFailed)?;
 
         if version < min_required_version {
-            return Err(Error::TorProcessTooOld(
+            return Err(Error::LegacyTorProcessTooOld(
                 version.to_string(),
                 min_required_version.to_string(),
             ));
@@ -205,12 +205,12 @@ impl LegacyTorClient {
     }
 
     #[allow(dead_code)]
-    pub fn version(&mut self) -> TorVersion {
+    pub fn version(&mut self) -> LegacyTorVersion {
         self.version.clone()
     }
 }
 
-impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorClient {
+impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
     type Error = Error;
 
     fn update(&mut self) -> Result<Vec<TorEvent>, Error> {
@@ -316,7 +316,7 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
         &mut self,
         service_id: &V3OnionServiceId,
         virt_port: u16,
-        circuit: Option<TorDaemonCircuitToken>,
+        circuit: Option<LegacyCircuitToken>,
     ) -> Result<OnionStream, Error> {
         if self.socks_listener.is_none() {
             let mut listeners = self
@@ -358,13 +358,13 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
         })
     }
 
-    // stand up an onion service and return an TorDaemonOnionListener
+    // stand up an onion service and return an LegacyOnionListener
     fn listener(
         &mut self,
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<TorDaemonOnionListener, Error> {
+    ) -> Result<LegacyOnionListener, Error> {
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
         let listener = TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
@@ -399,7 +399,7 @@ impl TorProvider<TorDaemonCircuitToken, TorDaemonOnionListener> for LegacyTorCli
         self.onion_services
             .push((service_id, Arc::clone(&is_active)));
 
-        Ok(TorDaemonOnionListener {
+        Ok(LegacyOnionListener {
             listener,
             is_active,
             onion_addr,

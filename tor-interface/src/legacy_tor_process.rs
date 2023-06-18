@@ -51,14 +51,14 @@ pub enum Error {
     #[error("failed to remove control_port file")]
     ControlPortFileDeleteFailed(#[source] std::io::Error),
 
-    #[error("failed to start tor process")]
-    TorProcessStartFailed(#[source] std::io::Error),
+    #[error("failed to start legacy tor process")]
+    LegacyTorProcessStartFailed(#[source] std::io::Error),
 
     #[error("failed to read control addr from control_file '{0}'")]
     ControlPortFileMissing(String),
 
-    #[error("unable to take tor process stdout")]
-    TorProcessStdoutTakeFailed(),
+    #[error("unable to take legacy tor process stdout")]
+    LegacyTorProcessStdoutTakeFailed(),
 
     #[error("failed to spawn tor process stdout read thread")]
     StdoutReadThreadSpawnFailed(#[source] std::io::Error),
@@ -95,7 +95,7 @@ fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddr, Error>
 }
 
 // Encapsulates the tor daemon process
-pub(crate) struct TorProcess {
+pub(crate) struct LegacyTorProcess {
     control_addr: SocketAddr,
     process: Child,
     password: String,
@@ -103,7 +103,7 @@ pub(crate) struct TorProcess {
     stdout_lines: Arc<Mutex<Vec<String>>>,
 }
 
-impl TorProcess {
+impl LegacyTorProcess {
     pub fn get_control_addr(&self) -> &SocketAddr {
         &self.control_addr
     }
@@ -112,7 +112,7 @@ impl TorProcess {
         &self.password
     }
 
-    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<TorProcess, Error> {
+    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<LegacyTorProcess, Error> {
         if tor_bin_path.is_relative() {
             return Err(Error::TorBinPathNotAbsolute(format!(
                 "{}",
@@ -202,7 +202,7 @@ impl TorProcess {
             .arg("__OwningControllerProcess")
             .arg(process::id().to_string())
             .spawn()
-            .map_err(Error::TorProcessStartFailed)?;
+            .map_err(Error::LegacyTorProcessStartFailed)?;
 
         let mut control_addr = None;
         let start = Instant::now();
@@ -233,18 +233,18 @@ impl TorProcess {
             let stdout_lines = Arc::downgrade(&stdout_lines);
             let stdout = BufReader::new(match process.stdout.take() {
                 Some(stdout) => stdout,
-                None => return Err(Error::TorProcessStdoutTakeFailed()),
+                None => return Err(Error::LegacyTorProcessStdoutTakeFailed()),
             });
 
             std::thread::Builder::new()
                 .name("tor_stdout_reader".to_string())
                 .spawn(move || {
-                    TorProcess::read_stdout_task(&stdout_lines, stdout);
+                    LegacyTorProcess::read_stdout_task(&stdout_lines, stdout);
                 })
                 .map_err(Error::StdoutReadThreadSpawnFailed)?;
         }
 
-        Ok(TorProcess {
+        Ok(LegacyTorProcess {
             control_addr,
             process,
             password,
@@ -281,7 +281,7 @@ impl TorProcess {
     }
 }
 
-impl Drop for TorProcess {
+impl Drop for LegacyTorProcess {
     fn drop(&mut self) {
         let _ = self.process.kill();
     }
