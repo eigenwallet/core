@@ -183,12 +183,12 @@ pub struct X25519PrivateKey {
     secret_key: pk::curve25519::StaticSecret,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct X25519PublicKey {
     public_key: pk::curve25519::PublicKey,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct V3OnionServiceId {
     data: [u8; V3_ONION_SERVICE_ID_LENGTH],
 }

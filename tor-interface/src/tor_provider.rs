@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 // internal crates
 use crate::tor_crypto::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OnionAddrV3 {
     service_id: V3OnionServiceId,
     virt_port: u16,
@@ -31,7 +31,7 @@ impl std::fmt::Display for OnionAddrV3 {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OnionAddr {
     V3(OnionAddrV3),
 }
