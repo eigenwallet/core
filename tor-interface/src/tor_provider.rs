@@ -7,14 +7,39 @@ use std::ops::{Deref, DerefMut};
 use crate::tor_crypto::*;
 
 #[derive(Clone, Debug)]
+pub struct OnionAddrV3 {
+    service_id: V3OnionServiceId,
+    virt_port: u16,
+}
+
+impl OnionAddrV3 {
+    pub fn new(service_id: V3OnionServiceId, virt_port: u16) -> OnionAddrV3 {
+        OnionAddrV3 {
+            service_id,
+            virt_port,
+        }
+    }
+
+    pub fn service_id(&self) -> &V3OnionServiceId {
+        &self.service_id
+    }
+}
+
+impl std::fmt::Display for OnionAddrV3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.service_id, self.virt_port)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum OnionAddr {
-    V3(V3OnionServiceId, u16),
+    V3(OnionAddrV3),
 }
 
 impl std::fmt::Display for OnionAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OnionAddr::V3(service_id, port) => write!(f, "{}:{}", service_id, port),
+            OnionAddr::V3(onion_addr) => onion_addr.fmt(f),
         }
     }
 }

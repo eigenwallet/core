@@ -351,10 +351,10 @@ impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
         Ok(OnionStream {
             stream: stream.into_inner(),
             local_addr: None,
-            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(
+            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3::new(
                 service_id.clone(),
                 virt_port,
-            ))),
+            )))),
         })
     }
 
@@ -380,7 +380,10 @@ impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
             flags.v3_auth = true;
         }
 
-        let onion_addr = OnionAddr::V3(V3OnionServiceId::from_private_key(private_key), virt_port);
+        let onion_addr = OnionAddr::V3(OnionAddrV3::new(
+            V3OnionServiceId::from_private_key(private_key),
+            virt_port,
+        ));
 
         // start onion service
         let (_, service_id) = self
