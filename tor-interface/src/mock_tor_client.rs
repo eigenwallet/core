@@ -37,16 +37,13 @@ pub enum Error {
     TcpListenerLocalAddrFailed(#[source] std::io::Error),
 }
 
-pub struct MockCircuitToken {}
-impl CircuitToken for MockCircuitToken {}
-
 pub struct MockOnionListener {
     listener: std::net::TcpListener,
     is_active: Arc<atomic::AtomicBool>,
     onion_addr: OnionAddr,
 }
 
-impl OnionListener for MockOnionListener {
+impl OnionListenerImpl for MockOnionListener {
     fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
         self.listener.set_nonblocking(nonblocking)
     }
@@ -165,7 +162,7 @@ impl Default for MockTorClient {
     }
 }
 
-impl TorProvider<MockCircuitToken, MockOnionListener> for MockTorClient {
+impl TorProvider for MockTorClient {
     type Error = Error;
 
     fn update(&mut self) -> Result<Vec<TorEvent>, Self::Error> {
@@ -238,7 +235,7 @@ impl TorProvider<MockCircuitToken, MockOnionListener> for MockTorClient {
         &mut self,
         service_id: &V3OnionServiceId,
         virt_port: u16,
-        _circuit: Option<MockCircuitToken>,
+        _circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, Self::Error> {
         let client_auth = self.client_auth_keys.get(service_id);
 
@@ -255,7 +252,7 @@ impl TorProvider<MockCircuitToken, MockOnionListener> for MockTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<MockOnionListener, Self::Error> {
+    ) -> Result<OnionListener, Self::Error> {
         // convert inputs to relevant types
         let service_id = V3OnionServiceId::from_private_key(private_key);
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id.clone(), virt_port));
@@ -291,11 +288,21 @@ impl TorProvider<MockCircuitToken, MockOnionListener> for MockTorClient {
         self.events
             .push(TorEvent::OnionServicePublished { service_id });
 
-        Ok(MockOnionListener {
+        let onion_listener = Box::new(MockOnionListener {
             listener,
             is_active,
             onion_addr,
-        })
+        });
+
+        Ok(OnionListener{onion_listener})
+    }
+
+    fn generate_token(&mut self) -> CircuitToken {
+        0usize
+    }
+
+    fn release_token(&mut self, _token: CircuitToken) {
+
     }
 }
 

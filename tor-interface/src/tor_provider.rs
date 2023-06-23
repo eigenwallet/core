@@ -1,4 +1,5 @@
 // standard
+use std::boxed::Box;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::ops::{Deref, DerefMut};
@@ -66,7 +67,7 @@ pub enum TorEvent {
     },
 }
 
-pub trait CircuitToken {}
+pub type CircuitToken = usize;
 
 //
 // OnionStream Implementation
@@ -131,12 +132,26 @@ impl OnionStream {
     }
 }
 
-pub trait OnionListener {
+pub trait OnionListenerImpl : Send {
     fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error>;
     fn accept(&self) -> Result<Option<OnionStream>, std::io::Error>;
 }
 
-pub trait TorProvider<CT: CircuitToken, OL: OnionListener> {
+pub struct OnionListener {
+    pub(crate) onion_listener: Box<dyn OnionListenerImpl>,
+}
+
+impl OnionListener {
+    pub fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
+        self.onion_listener.set_nonblocking(nonblocking)
+    }
+
+    pub fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
+        self.onion_listener.accept()
+    }
+}
+
+pub trait TorProvider : Send {
     type Error;
 
     fn update(&mut self) -> Result<Vec<TorEvent>, Self::Error>;
@@ -151,12 +166,14 @@ pub trait TorProvider<CT: CircuitToken, OL: OnionListener> {
         &mut self,
         service_id: &V3OnionServiceId,
         virt_port: u16,
-        circuit: Option<CT>,
+        circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, Self::Error>;
     fn listener(
         &mut self,
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<OL, Self::Error>;
+    ) -> Result<OnionListener, Self::Error>;
+    fn generate_token(&mut self) -> CircuitToken;
+    fn release_token(&mut self, token: CircuitToken);
 }

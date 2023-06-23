@@ -1,4 +1,6 @@
 // standard
+use std::boxed::Box;
+use std::collections::BTreeMap;
 use std::default::Default;
 use std::io::ErrorKind;
 #[cfg(test)]
@@ -15,7 +17,6 @@ use std::time::Duration;
 #[cfg(test)]
 use serial_test::serial;
 use socks::Socks5Stream;
-use url::Host;
 
 // internal crates
 use crate::legacy_tor_control_stream::*;
@@ -69,6 +70,9 @@ pub enum Error {
     #[error("no socks listeners available to connect through")]
     NoSocksListenersFound(),
 
+    #[error("invalid circuit token")]
+    CircuitTokenInvalid(),
+
     #[error("unable to connect to socks listener")]
     Socks5ConnectionFailed(#[source] std::io::Error),
 
@@ -92,16 +96,15 @@ pub struct LegacyCircuitToken {
 
 impl LegacyCircuitToken {
     #[allow(dead_code)]
-    pub fn new(first_party: Host) -> LegacyCircuitToken {
+    pub fn new() -> LegacyCircuitToken {
+        const CIRCUIT_TOKEN_USERNAME_LENGTH: usize = 32usize;
         const CIRCUIT_TOKEN_PASSWORD_LENGTH: usize = 32usize;
-        let username = first_party.to_string();
+        let username = generate_password(CIRCUIT_TOKEN_USERNAME_LENGTH);
         let password = generate_password(CIRCUIT_TOKEN_PASSWORD_LENGTH);
 
         LegacyCircuitToken { username, password }
     }
 }
-
-impl CircuitToken for LegacyCircuitToken {}
 
 //
 // LegacyOnionListener
@@ -113,7 +116,7 @@ pub struct LegacyOnionListener {
     onion_addr: OnionAddr,
 }
 
-impl OnionListener for LegacyOnionListener {
+impl OnionListenerImpl for LegacyOnionListener {
     fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
         self.listener.set_nonblocking(nonblocking)
     }
@@ -149,6 +152,9 @@ pub struct LegacyTorClient {
     socks_listener: Option<SocketAddr>,
     // list of open onion services and their is_active flag
     onion_services: Vec<(V3OnionServiceId, Arc<atomic::AtomicBool>)>,
+    // our list of circuit tokens for the tor daemon
+    circuit_token_counter: usize,
+    circuit_tokens: BTreeMap<CircuitToken, LegacyCircuitToken>
 }
 
 impl LegacyTorClient {
@@ -201,6 +207,8 @@ impl LegacyTorClient {
             controller,
             socks_listener: None,
             onion_services: Default::default(),
+            circuit_token_counter: 0usize,
+            circuit_tokens: Default::default(),
         })
     }
 
@@ -210,7 +218,7 @@ impl LegacyTorClient {
     }
 }
 
-impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
+impl TorProvider for LegacyTorClient {
     type Error = Error;
 
     fn update(&mut self) -> Result<Vec<TorEvent>, Error> {
@@ -316,7 +324,7 @@ impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
         &mut self,
         service_id: &V3OnionServiceId,
         virt_port: u16,
-        circuit: Option<LegacyCircuitToken>,
+        circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, Error> {
         if self.socks_listener.is_none() {
             let mut listeners = self
@@ -339,12 +347,17 @@ impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
         // readwrite stream
         let stream = match &circuit {
             None => Socks5Stream::connect(socks_listener, target),
-            Some(circuit) => Socks5Stream::connect_with_password(
-                socks_listener,
-                target,
-                &circuit.username,
-                &circuit.password,
-            ),
+            Some(circuit) => {
+                if let Some(circuit) = self.circuit_tokens.get(circuit) {
+                    Socks5Stream::connect_with_password(
+                        socks_listener,
+                        target,
+                        &circuit.username,
+                        &circuit.password)
+                } else {
+                    return Err(Error::CircuitTokenInvalid());
+                }
+            },
         }
         .map_err(Error::Socks5ConnectionFailed)?;
 
@@ -364,7 +377,7 @@ impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<LegacyOnionListener, Error> {
+    ) -> Result<OnionListener, Error> {
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
         let listener = TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
@@ -402,11 +415,24 @@ impl TorProvider<LegacyCircuitToken, LegacyOnionListener> for LegacyTorClient {
         self.onion_services
             .push((service_id, Arc::clone(&is_active)));
 
-        Ok(LegacyOnionListener {
+        let onion_listener = Box::new(LegacyOnionListener {
             listener,
             is_active,
             onion_addr,
-        })
+        });
+
+        Ok(OnionListener{onion_listener})
+    }
+
+    fn generate_token(&mut self) -> CircuitToken {
+        let new_token = self.circuit_token_counter;
+        self.circuit_token_counter += 1;
+        self.circuit_tokens.insert(new_token, LegacyCircuitToken::new());
+        new_token
+    }
+
+    fn release_token(&mut self, circuit_token: CircuitToken) {
+        self.circuit_tokens.remove(&circuit_token);
     }
 }
 
