@@ -132,7 +132,7 @@ impl OnionStream {
     }
 }
 
-pub trait OnionListenerImpl : Send {
+pub trait OnionListenerImpl: Send {
     fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error>;
     fn accept(&self) -> Result<Option<OnionStream>, std::io::Error>;
 }
@@ -151,29 +151,33 @@ impl OnionListener {
     }
 }
 
-pub trait TorProvider : Send {
-    type Error;
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("{0}")]
+    Generic(String),
+}
 
-    fn update(&mut self) -> Result<Vec<TorEvent>, Self::Error>;
-    fn bootstrap(&mut self) -> Result<(), Self::Error>;
+pub trait TorProvider: Send {
+    fn update(&mut self) -> Result<Vec<TorEvent>, Error>;
+    fn bootstrap(&mut self) -> Result<(), Error>;
     fn add_client_auth(
         &mut self,
         service_id: &V3OnionServiceId,
         client_auth: &X25519PrivateKey,
-    ) -> Result<(), Self::Error>;
-    fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<(), Self::Error>;
+    ) -> Result<(), Error>;
+    fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<(), Error>;
     fn connect(
         &mut self,
         service_id: &V3OnionServiceId,
         virt_port: u16,
         circuit: Option<CircuitToken>,
-    ) -> Result<OnionStream, Self::Error>;
+    ) -> Result<OnionStream, Error>;
     fn listener(
         &mut self,
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<OnionListener, Self::Error>;
+    ) -> Result<OnionListener, Error>;
     fn generate_token(&mut self) -> CircuitToken;
     fn release_token(&mut self, token: CircuitToken);
 }

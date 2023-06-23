@@ -8,6 +8,7 @@ use std::sync::{atomic, Arc, Mutex};
 
 // internal crates
 use crate::tor_crypto::*;
+use crate::tor_provider;
 use crate::tor_provider::*;
 
 #[derive(thiserror::Error, Debug)]
@@ -35,6 +36,12 @@ pub enum Error {
 
     #[error("unable to get TCP listener's local adress")]
     TcpListenerLocalAddrFailed(#[source] std::io::Error),
+}
+
+impl From<Error> for crate::tor_provider::Error {
+    fn from(error: Error) -> Self {
+        crate::tor_provider::Error::Generic(error.to_string())
+    }
 }
 
 pub struct MockOnionListener {
@@ -163,9 +170,7 @@ impl Default for MockTorClient {
 }
 
 impl TorProvider for MockTorClient {
-    type Error = Error;
-
-    fn update(&mut self) -> Result<Vec<TorEvent>, Self::Error> {
+    fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
         match MOCK_TOR_NETWORK.lock() {
             Ok(mut mock_tor_network) => {
                 let mut i = 0;
@@ -186,9 +191,9 @@ impl TorProvider for MockTorClient {
         Ok(std::mem::take(&mut self.events))
     }
 
-    fn bootstrap(&mut self) -> Result<(), Self::Error> {
+    fn bootstrap(&mut self) -> Result<(), tor_provider::Error> {
         if self.bootstrapped {
-            Err(Error::ClientAlreadyBootstrapped())
+            Err(Error::ClientAlreadyBootstrapped())?
         } else {
             self.events.push(TorEvent::BootstrapStatus {
                 progress: 0u32,
@@ -215,7 +220,7 @@ impl TorProvider for MockTorClient {
         &mut self,
         service_id: &V3OnionServiceId,
         client_auth: &X25519PrivateKey,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), tor_provider::Error> {
         let client_auth_public = X25519PublicKey::from_private_key(client_auth);
         if let Some(key) = self.client_auth_keys.get_mut(service_id) {
             *key = client_auth_public;
@@ -226,7 +231,10 @@ impl TorProvider for MockTorClient {
         Ok(())
     }
 
-    fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<(), Self::Error> {
+    fn remove_client_auth(
+        &mut self,
+        service_id: &V3OnionServiceId,
+    ) -> Result<(), tor_provider::Error> {
         self.client_auth_keys.remove(service_id);
         Ok(())
     }
@@ -236,12 +244,12 @@ impl TorProvider for MockTorClient {
         service_id: &V3OnionServiceId,
         virt_port: u16,
         _circuit: Option<CircuitToken>,
-    ) -> Result<OnionStream, Self::Error> {
+    ) -> Result<OnionStream, tor_provider::Error> {
         let client_auth = self.client_auth_keys.get(service_id);
 
         match MOCK_TOR_NETWORK.lock() {
             Ok(mut mock_tor_network) => {
-                mock_tor_network.connect_to_onion(service_id, virt_port, client_auth)
+                Ok(mock_tor_network.connect_to_onion(service_id, virt_port, client_auth)?)
             }
             Err(_) => unreachable!("another thread panicked while holding mock tor network's lock"),
         }
@@ -252,7 +260,7 @@ impl TorProvider for MockTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<OnionListener, Self::Error> {
+    ) -> Result<OnionListener, tor_provider::Error> {
         // convert inputs to relevant types
         let service_id = V3OnionServiceId::from_private_key(private_key);
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id.clone(), virt_port));
@@ -294,16 +302,14 @@ impl TorProvider for MockTorClient {
             onion_addr,
         });
 
-        Ok(OnionListener{onion_listener})
+        Ok(OnionListener { onion_listener })
     }
 
     fn generate_token(&mut self) -> CircuitToken {
         0usize
     }
 
-    fn release_token(&mut self, _token: CircuitToken) {
-
-    }
+    fn release_token(&mut self, _token: CircuitToken) {}
 }
 
 impl Drop for MockTorClient {
