@@ -672,7 +672,7 @@ impl LegacyTorController {
 
 #[test]
 #[serial]
-#[cfg(not(feature="offline-test"))]
+#[cfg(not(feature = "offline-test"))]
 fn test_tor_controller() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();

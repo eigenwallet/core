@@ -455,7 +455,7 @@ impl TorProvider for LegacyTorClient {
 
 #[test]
 #[serial]
-#[cfg(not(feature="offline-test"))]
+#[cfg(not(feature = "offline-test"))]
 fn test_legacy_bootstrap() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
@@ -466,7 +466,7 @@ fn test_legacy_bootstrap() -> anyhow::Result<()> {
 
 #[test]
 #[serial]
-#[cfg(not(feature="offline-test"))]
+#[cfg(not(feature = "offline-test"))]
 fn test_legacy_onion_service() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
