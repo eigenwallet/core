@@ -13,8 +13,6 @@ use std::sync::{atomic, Arc};
 use std::time::Duration;
 
 // extern crates
-#[cfg(test)]
-use serial_test::serial;
 use socks::Socks5Stream;
 
 // internal crates
@@ -453,24 +451,4 @@ impl TorProvider for LegacyTorClient {
     }
 }
 
-#[test]
-#[serial]
-#[cfg(not(feature = "offline-test"))]
-fn test_legacy_bootstrap() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_bootstrap");
 
-    tor_provider::bootstrap_test(Box::new(LegacyTorClient::new(&tor_path, &data_path)?))
-}
-
-#[test]
-#[serial]
-#[cfg(not(feature = "offline-test"))]
-fn test_legacy_onion_service() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_onion_service");
-
-    tor_provider::onion_service_test(Box::new(LegacyTorClient::new(&tor_path, &data_path)?))
-}

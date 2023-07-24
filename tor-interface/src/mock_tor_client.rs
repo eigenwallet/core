@@ -324,13 +324,3 @@ impl Drop for MockTorClient {
         }
     }
 }
-
-#[test]
-fn test_mock_bootstrap() -> anyhow::Result<()> {
-    tor_provider::bootstrap_test(Box::new(MockTorClient::new()))
-}
-
-#[test]
-fn test_mock_onion_service() -> anyhow::Result<()> {
-    tor_provider::onion_service_test(Box::new(MockTorClient::new()))
-}
