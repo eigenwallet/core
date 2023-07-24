@@ -5,10 +5,10 @@ use std::io::{Read, Write};
 use serial_test::serial;
 
 // internal crates
+use tor_interface::legacy_tor_client::*;
+use tor_interface::mock_tor_client::*;
 use tor_interface::tor_crypto::*;
 use tor_interface::tor_provider::*;
-use tor_interface::mock_tor_client::*;
-use tor_interface::legacy_tor_client::*;
 
 pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>) -> anyhow::Result<()> {
     tor.bootstrap()?;
@@ -201,7 +201,6 @@ pub(crate) fn onion_service_test(mut tor: Box<dyn TorProvider>) -> anyhow::Resul
     }
     Ok(())
 }
-
 
 #[test]
 fn test_mock_bootstrap() -> anyhow::Result<()> {

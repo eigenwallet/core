@@ -450,5 +450,3 @@ impl TorProvider for LegacyTorClient {
         self.circuit_tokens.remove(&circuit_token);
     }
 }
-
-
