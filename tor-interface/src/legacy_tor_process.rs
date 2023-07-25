@@ -13,8 +13,15 @@ use std::string::ToString;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+// extern crates
+use crypto::digest::Digest;
+use crypto::sha1::Sha1;
+use data_encoding::HEXUPPER;
+use rand::rngs::OsRng;
+use rand::RngCore;
+
 // internal crates
-use crate::tor_crypto::*;
+use crate::tor_crypto::generate_password;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -104,6 +111,60 @@ pub(crate) struct LegacyTorProcess {
 }
 
 impl LegacyTorProcess {
+    const S2K_RFC2440_SPECIFIER_LEN: usize = 9;
+
+    fn hash_tor_password_with_salt(
+        salt: &[u8; Self::S2K_RFC2440_SPECIFIER_LEN],
+        password: &str,
+    ) -> String {
+        assert_eq!(salt[Self::S2K_RFC2440_SPECIFIER_LEN - 1], 0x60);
+
+        // tor-specific rfc 2440 constants
+        const EXPBIAS: u8 = 6u8;
+        const C: u8 = 0x60; // salt[S2K_RFC2440_SPECIFIER_LEN - 1]
+        const COUNT: usize = (16usize + ((C & 15u8) as usize)) << ((C >> 4) + EXPBIAS);
+
+        // squash together our hash input
+        let mut input: Vec<u8> = Default::default();
+        // append salt (sans the 'C' constant')
+        input.extend_from_slice(&salt[0..Self::S2K_RFC2440_SPECIFIER_LEN - 1]);
+        // append password bytes
+        input.extend_from_slice(password.as_bytes());
+
+        let input = input.as_slice();
+        let input_len = input.len();
+
+        let mut sha1 = Sha1::new();
+        let mut count = COUNT;
+        while count > 0 {
+            if count > input_len {
+                sha1.input(input);
+                count -= input_len;
+            } else {
+                sha1.input(&input[0..count]);
+                break;
+            }
+        }
+
+        const SHA1_BYTES: usize = 160 / 8;
+        let mut key = [0u8; SHA1_BYTES];
+        sha1.result(key.as_mut_slice());
+
+        let mut hash = "16:".to_string();
+        HEXUPPER.encode_append(salt, &mut hash);
+        HEXUPPER.encode_append(&key, &mut hash);
+
+        hash
+    }
+
+    fn hash_tor_password(password: &str) -> String {
+        let mut salt = [0x00u8; Self::S2K_RFC2440_SPECIFIER_LEN];
+        OsRng.fill_bytes(&mut salt);
+        salt[Self::S2K_RFC2440_SPECIFIER_LEN - 1] = 0x60u8;
+
+        Self::hash_tor_password_with_salt(&salt, password)
+    }
+
     pub fn get_control_addr(&self) -> &SocketAddr {
         &self.control_addr
     }
@@ -171,7 +232,7 @@ impl LegacyTorProcess {
 
         const CONTROL_PORT_PASSWORD_LENGTH: usize = 32usize;
         let password = generate_password(CONTROL_PORT_PASSWORD_LENGTH);
-        let password_hash = hash_tor_password(&password);
+        let password_hash = Self::hash_tor_password(&password);
 
         let mut process = Command::new(tor_bin_path.as_os_str())
             .stdout(Stdio::piped())
@@ -285,4 +346,33 @@ impl Drop for LegacyTorProcess {
     fn drop(&mut self) {
         let _ = self.process.kill();
     }
+}
+
+#[test]
+fn test_password_hash() -> Result<(), anyhow::Error> {
+    let salt1: [u8; LegacyTorProcess::S2K_RFC2440_SPECIFIER_LEN] = [
+        0xbeu8, 0x2au8, 0x25u8, 0x1du8, 0xe6u8, 0x2cu8, 0xb2u8, 0x7au8, 0x60u8,
+    ];
+    let hash1 = LegacyTorProcess::hash_tor_password_with_salt(&salt1, "abcdefghijklmnopqrstuvwxyz");
+    assert_eq!(
+        hash1,
+        "16:BE2A251DE62CB27A60AC9178A937990E8ED0AB662FA82A5C7DE3EBB23A"
+    );
+
+    let salt2: [u8; LegacyTorProcess::S2K_RFC2440_SPECIFIER_LEN] = [
+        0x36u8, 0x73u8, 0x0eu8, 0xefu8, 0xd1u8, 0x8cu8, 0x60u8, 0xd6u8, 0x60u8,
+    ];
+    let hash2 = LegacyTorProcess::hash_tor_password_with_salt(&salt2, "password");
+    assert_eq!(
+        hash2,
+        "16:36730EEFD18C60D66052E7EA535438761C0928D316EEA56A190C99B50A"
+    );
+
+    // ensure same password is hashed to different things
+    assert_ne!(
+        LegacyTorProcess::hash_tor_password("password"),
+        LegacyTorProcess::hash_tor_password("password")
+    );
+
+    Ok(())
 }

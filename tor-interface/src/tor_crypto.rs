@@ -5,14 +5,12 @@ use std::str;
 
 // extern crates
 use crypto::digest::Digest;
-use crypto::sha1::Sha1;
 use crypto::sha3::Sha3;
-use data_encoding::{BASE32, BASE32_NOPAD, BASE64, HEXUPPER};
+use data_encoding::{BASE32, BASE32_NOPAD, BASE64};
 use data_encoding_macro::new_encoding;
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rand::RngCore;
 use signature::Verifier;
 use tor_llcrypto::pk::keymanip::*;
 use tor_llcrypto::util::rand_compat::RngCompatExt;
@@ -78,29 +76,6 @@ const ONION_BASE32: data_encoding::Encoding = new_encoding! {
     padding: '=',
 };
 
-const SHA1_BYTES: usize = 160 / 8;
-const S2K_RFC2440_SPECIFIER_LEN: usize = 9;
-
-// see https://github.com/torproject/torspec/blob/main/rend-spec-v3.txt#L2143
-fn calc_truncated_checksum(
-    public_key: &[u8; ED25519_PUBLIC_KEY_SIZE],
-) -> [u8; TRUNCATED_CHECKSUM_SIZE] {
-    // space for full checksum
-    const SHA256_BYTES: usize = 256 / 8;
-    let mut hash_bytes = [0u8; SHA256_BYTES];
-
-    let mut hasher = Sha3::sha3_256();
-    assert_eq!(SHA256_BYTES, hasher.output_bytes());
-
-    // calculate checksum
-    hasher.input(b".onion checksum");
-    hasher.input(public_key);
-    hasher.input(&[0x03u8]);
-    hasher.result(&mut hash_bytes);
-
-    [hash_bytes[0], hash_bytes[1]]
-}
-
 // Free functions
 
 // securely generate password using OsRng
@@ -112,54 +87,6 @@ pub(crate) fn generate_password(length: usize) -> String {
         .collect();
 
     password
-}
-
-fn hash_tor_password_with_salt(salt: &[u8; S2K_RFC2440_SPECIFIER_LEN], password: &str) -> String {
-    assert!(salt[S2K_RFC2440_SPECIFIER_LEN - 1] == 0x60);
-
-    // tor-specific rfc 2440 constants
-    const EXPBIAS: u8 = 6u8;
-    const C: u8 = 0x60; // salt[S2K_RFC2440_SPECIFIER_LEN - 1]
-    const COUNT: usize = (16usize + ((C & 15u8) as usize)) << ((C >> 4) + EXPBIAS);
-
-    // squash together our hash input
-    let mut input: Vec<u8> = Default::default();
-    // append salt (sans the 'C' constant')
-    input.extend_from_slice(&salt[0..S2K_RFC2440_SPECIFIER_LEN - 1]);
-    // append password bytes
-    input.extend_from_slice(password.as_bytes());
-
-    let input = input.as_slice();
-    let input_len = input.len();
-
-    let mut sha1 = Sha1::new();
-    let mut count = COUNT;
-    while count > 0 {
-        if count > input_len {
-            sha1.input(input);
-            count -= input_len;
-        } else {
-            sha1.input(&input[0..count]);
-            break;
-        }
-    }
-
-    let mut key = [0u8; SHA1_BYTES];
-    sha1.result(key.as_mut_slice());
-
-    let mut hash = "16:".to_string();
-    HEXUPPER.encode_append(salt, &mut hash);
-    HEXUPPER.encode_append(&key, &mut hash);
-
-    hash
-}
-
-pub fn hash_tor_password(password: &str) -> String {
-    let mut salt = [0x00u8; S2K_RFC2440_SPECIFIER_LEN];
-    OsRng.fill_bytes(&mut salt);
-    salt[S2K_RFC2440_SPECIFIER_LEN - 1] = 0x60u8;
-
-    hash_tor_password_with_salt(&salt, password)
 }
 
 // Struct deinitions
@@ -440,6 +367,12 @@ impl PartialEq for Ed25519PublicKey {
     }
 }
 
+impl std::fmt::Debug for Ed25519PublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.public_key.fmt(f)
+    }
+}
+
 // Ed25519 Signature
 
 impl Ed25519Signature {
@@ -485,6 +418,12 @@ impl Ed25519Signature {
 impl PartialEq for Ed25519Signature {
     fn eq(&self, other: &Self) -> bool {
         self.signature.eq(&other.signature)
+    }
+}
+
+impl std::fmt::Debug for Ed25519Signature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.signature.fmt(f)
     }
 }
 
@@ -626,6 +565,26 @@ impl std::fmt::Debug for X25519PublicKey {
 // Onion Service Id
 
 impl V3OnionServiceId {
+    // see https://github.com/torproject/torspec/blob/main/rend-spec-v3.txt#L2143
+    fn calc_truncated_checksum(
+        public_key: &[u8; ED25519_PUBLIC_KEY_SIZE],
+    ) -> [u8; TRUNCATED_CHECKSUM_SIZE] {
+        // space for full checksum
+        const SHA256_BYTES: usize = 256 / 8;
+        let mut hash_bytes = [0u8; SHA256_BYTES];
+
+        let mut hasher = Sha3::sha3_256();
+        assert_eq!(SHA256_BYTES, hasher.output_bytes());
+
+        // calculate checksum
+        hasher.input(b".onion checksum");
+        hasher.input(public_key);
+        hasher.input(&[0x03u8]);
+        hasher.result(&mut hash_bytes);
+
+        [hash_bytes[0], hash_bytes[1]]
+    }
+
     pub fn from_string(service_id: &str) -> Result<V3OnionServiceId, Error> {
         if !V3OnionServiceId::is_valid(service_id) {
             return Err(Error::ParseError(format!(
@@ -642,7 +601,7 @@ impl V3OnionServiceId {
         let mut raw_service_id = [0u8; V3_ONION_SERVICE_ID_RAW_SIZE];
 
         raw_service_id[..ED25519_PUBLIC_KEY_SIZE].copy_from_slice(&public_key.as_bytes()[..]);
-        let truncated_checksum = calc_truncated_checksum(public_key.as_bytes());
+        let truncated_checksum = Self::calc_truncated_checksum(public_key.as_bytes());
         raw_service_id[V3_ONION_SERVICE_ID_CHECKSUM_OFFSET] = truncated_checksum[0];
         raw_service_id[V3_ONION_SERVICE_ID_CHECKSUM_OFFSET + 1] = truncated_checksum[1];
         raw_service_id[V3_ONION_SERVICE_ID_VERSION_OFFSET] = 0x03u8;
@@ -678,7 +637,7 @@ impl V3OnionServiceId {
                 let mut public_key = [0u8; ED25519_PUBLIC_KEY_SIZE];
                 public_key[..].copy_from_slice(&decoded_service_id[..ED25519_PUBLIC_KEY_SIZE]);
                 // ensure checksum is correct
-                let truncated_checksum = calc_truncated_checksum(&public_key);
+                let truncated_checksum = Self::calc_truncated_checksum(&public_key);
                 if truncated_checksum[0] != decoded_service_id[V3_ONION_SERVICE_ID_CHECKSUM_OFFSET]
                     || truncated_checksum[1]
                         != decoded_service_id[V3_ONION_SERVICE_ID_CHECKSUM_OFFSET + 1]
@@ -706,132 +665,4 @@ impl std::fmt::Debug for V3OnionServiceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         unsafe { write!(f, "{}", str::from_utf8_unchecked(&self.data)) }
     }
-}
-
-#[test]
-fn test_ed25519() -> Result<(), anyhow::Error> {
-    let private_key_blob = "ED25519-V3:YE3GZtDmc+izGijWKgeVRabbXqK456JKKGONDBhV+kPBVKa2mHVQqnRTVuFXe3inU3YW6qvc7glYEwe9rK0LhQ==";
-    let private_raw: [u8; ED25519_PRIVATE_KEY_SIZE] = [
-        0x60u8, 0x4du8, 0xc6u8, 0x66u8, 0xd0u8, 0xe6u8, 0x73u8, 0xe8u8, 0xb3u8, 0x1au8, 0x28u8,
-        0xd6u8, 0x2au8, 0x07u8, 0x95u8, 0x45u8, 0xa6u8, 0xdbu8, 0x5eu8, 0xa2u8, 0xb8u8, 0xe7u8,
-        0xa2u8, 0x4au8, 0x28u8, 0x63u8, 0x8du8, 0x0cu8, 0x18u8, 0x55u8, 0xfau8, 0x43u8, 0xc1u8,
-        0x54u8, 0xa6u8, 0xb6u8, 0x98u8, 0x75u8, 0x50u8, 0xaau8, 0x74u8, 0x53u8, 0x56u8, 0xe1u8,
-        0x57u8, 0x7bu8, 0x78u8, 0xa7u8, 0x53u8, 0x76u8, 0x16u8, 0xeau8, 0xabu8, 0xdcu8, 0xeeu8,
-        0x09u8, 0x58u8, 0x13u8, 0x07u8, 0xbdu8, 0xacu8, 0xadu8, 0x0bu8, 0x85u8,
-    ];
-    let public_raw: [u8; ED25519_PUBLIC_KEY_SIZE] = [
-        0xf2u8, 0xfdu8, 0xa2u8, 0xdbu8, 0xf3u8, 0x80u8, 0xa6u8, 0xbau8, 0x74u8, 0xa4u8, 0x90u8,
-        0xe1u8, 0x45u8, 0x55u8, 0xeeu8, 0xb9u8, 0x32u8, 0xa0u8, 0x5cu8, 0x39u8, 0x5au8, 0xe2u8,
-        0x02u8, 0x83u8, 0x55u8, 0x27u8, 0x89u8, 0x6au8, 0x1fu8, 0x2fu8, 0x3du8, 0xc5u8,
-    ];
-    let public_base32 = "6L62FW7TQCTLU5FESDQUKVPOXEZKAXBZLLRAFA2VE6EWUHZPHXCQ====";
-    let service_id_string = "6l62fw7tqctlu5fesdqukvpoxezkaxbzllrafa2ve6ewuhzphxczsjyd";
-    assert!(V3OnionServiceId::is_valid(&service_id_string));
-
-    let mut message = [0x00u8; 256];
-    let null_message = [0x00u8; 256];
-    for (i, ptr) in message.iter_mut().enumerate() {
-        *ptr = i as u8;
-    }
-    let signature_raw: [u8; ED25519_SIGNATURE_SIZE] = [
-        0xa6u8, 0xd6u8, 0xc6u8, 0x1au8, 0x03u8, 0xbcu8, 0x43u8, 0x6fu8, 0x38u8, 0x53u8, 0x94u8,
-        0xcdu8, 0xdcu8, 0x86u8, 0x0au8, 0x88u8, 0x64u8, 0x43u8, 0x1du8, 0x18u8, 0x84u8, 0x30u8,
-        0x2fu8, 0xcdu8, 0xa6u8, 0x79u8, 0xcau8, 0x87u8, 0xd0u8, 0x29u8, 0xe7u8, 0x2bu8, 0x32u8,
-        0x9bu8, 0xa2u8, 0xa4u8, 0x3cu8, 0x74u8, 0x6au8, 0x08u8, 0x67u8, 0x0eu8, 0x63u8, 0x60u8,
-        0xcbu8, 0x46u8, 0x22u8, 0x55u8, 0x43u8, 0x5bu8, 0x84u8, 0x68u8, 0x0fu8, 0x47u8, 0xceu8,
-        0x6cu8, 0xd2u8, 0xb8u8, 0xebu8, 0xfeu8, 0xf6u8, 0x9eu8, 0x97u8, 0x0au8,
-    ];
-
-    // test the golden path first
-    let service_id = V3OnionServiceId::from_string(&service_id_string)?;
-
-    let private_key = Ed25519PrivateKey::from_raw(&private_raw);
-    assert!(private_key == Ed25519PrivateKey::from_key_blob(&private_key_blob)?);
-    assert!(private_key_blob == private_key.to_key_blob());
-
-    let public_key = Ed25519PublicKey::from_raw(&public_raw)?;
-    assert!(public_key == Ed25519PublicKey::from_service_id(&service_id)?);
-    assert!(public_key == Ed25519PublicKey::from_private_key(&private_key));
-    assert!(service_id == V3OnionServiceId::from_public_key(&public_key));
-    assert!(public_base32 == public_key.to_base32());
-
-    let signature = private_key.sign_message(&message);
-    assert!(signature == Ed25519Signature::from_raw(&signature_raw)?);
-    assert!(signature.verify(&message, &public_key));
-    assert!(!signature.verify(&null_message, &public_key));
-
-    // some invalid service ids
-    assert!(!V3OnionServiceId::is_valid(""));
-    assert!(!V3OnionServiceId::is_valid(
-        "
-        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    ));
-    assert!(!V3OnionServiceId::is_valid(
-        "6L62FW7TQCTLU5FESDQUKVPOXEZKAXBZLLRAFA2VE6EWUHZPHXCZSJYD"
-    ));
-
-    // generate a new key, get the public key and sign/verify a message
-    let private_key = Ed25519PrivateKey::generate();
-    let public_key = Ed25519PublicKey::from_private_key(&private_key);
-    let signature = private_key.sign_message(&message);
-    assert!(signature.verify(&message, &public_key));
-
-    Ok(())
-}
-
-#[test]
-fn test_password_hash() -> Result<(), anyhow::Error> {
-    let salt1: [u8; S2K_RFC2440_SPECIFIER_LEN] = [
-        0xbeu8, 0x2au8, 0x25u8, 0x1du8, 0xe6u8, 0x2cu8, 0xb2u8, 0x7au8, 0x60u8,
-    ];
-    let hash1 = hash_tor_password_with_salt(&salt1, "abcdefghijklmnopqrstuvwxyz");
-    assert!(hash1 == "16:BE2A251DE62CB27A60AC9178A937990E8ED0AB662FA82A5C7DE3EBB23A");
-
-    let salt2: [u8; S2K_RFC2440_SPECIFIER_LEN] = [
-        0x36u8, 0x73u8, 0x0eu8, 0xefu8, 0xd1u8, 0x8cu8, 0x60u8, 0xd6u8, 0x60u8,
-    ];
-    let hash2 = hash_tor_password_with_salt(&salt2, "password");
-    assert!(hash2 == "16:36730EEFD18C60D66052E7EA535438761C0928D316EEA56A190C99B50A");
-
-    // ensure same password is hashed to different things
-    assert!(hash_tor_password("password") != hash_tor_password("password"));
-
-    Ok(())
-}
-
-#[test]
-fn test_x25519() -> Result<(), anyhow::Error> {
-    // private/public key pair
-    const SECRET_BASE64: &str = "0GeSReJXdNcgvWRQdnDXhJGdu5UiwP2fefgT93/oqn0=";
-    const SECRET_RAW: [u8; X25519_PRIVATE_KEY_SIZE] = [
-        0xd0u8, 0x67u8, 0x92u8, 0x45u8, 0xe2u8, 0x57u8, 0x74u8, 0xd7u8, 0x20u8, 0xbdu8, 0x64u8,
-        0x50u8, 0x76u8, 0x70u8, 0xd7u8, 0x84u8, 0x91u8, 0x9du8, 0xbbu8, 0x95u8, 0x22u8, 0xc0u8,
-        0xfdu8, 0x9fu8, 0x79u8, 0xf8u8, 0x13u8, 0xf7u8, 0x7fu8, 0xe8u8, 0xaau8, 0x7du8,
-    ];
-    const PUBLIC_BASE32: &str = "AEXCBCEDJ5KU34YGGMZ7PVHVDEA7D7YB7VQAPJTMTZGRJLN3JASA";
-    const PUBLIC_RAW: [u8; X25519_PUBLIC_KEY_SIZE] = [
-        0x01u8, 0x2eu8, 0x20u8, 0x88u8, 0x83u8, 0x4fu8, 0x55u8, 0x4du8, 0xf3u8, 0x06u8, 0x33u8,
-        0x33u8, 0xf7u8, 0xd4u8, 0xf5u8, 0x19u8, 0x01u8, 0xf1u8, 0xffu8, 0x01u8, 0xfdu8, 0x60u8,
-        0x07u8, 0xa6u8, 0x6cu8, 0x9eu8, 0x4du8, 0x14u8, 0xadu8, 0xbbu8, 0x48u8, 0x24u8,
-    ];
-
-    // ensure we can convert from raw as expected
-    assert!(&X25519PrivateKey::from_raw(&SECRET_RAW).to_base64() == SECRET_BASE64);
-    assert!(&X25519PublicKey::from_raw(&PUBLIC_RAW).to_base32() == PUBLIC_BASE32);
-
-    // ensure we can round-trip as expected
-    assert!(&X25519PrivateKey::from_base64(&SECRET_BASE64)?.to_base64() == SECRET_BASE64);
-    assert!(&X25519PublicKey::from_base32(&PUBLIC_BASE32)?.to_base32() == PUBLIC_BASE32);
-
-    // ensure we generate the expected public key from private key
-    let private_key = X25519PrivateKey::from_base64(&SECRET_BASE64)?;
-    let public_key = X25519PublicKey::from_private_key(&private_key);
-    assert!(public_key.to_base32() == PUBLIC_BASE32);
-
-    let message = b"All around me are familiar faces";
-
-    let (signature, signbit) = private_key.sign_message(message)?;
-    assert!(signature.verify_x25519(message, &public_key, signbit));
-
-    Ok(())
 }
