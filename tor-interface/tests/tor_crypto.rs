@@ -38,7 +38,7 @@ fn test_ed25519() -> Result<(), anyhow::Error> {
     // test the golden path first
     let service_id = V3OnionServiceId::from_string(&service_id_string)?;
 
-    let private_key = Ed25519PrivateKey::from_raw(&private_raw);
+    let private_key = Ed25519PrivateKey::from_raw(&private_raw)?;
     assert_eq!(
         private_key,
         Ed25519PrivateKey::from_key_blob(&private_key_blob)?
@@ -71,6 +71,22 @@ fn test_ed25519() -> Result<(), anyhow::Error> {
     let public_key = Ed25519PublicKey::from_private_key(&private_key);
     let signature = private_key.sign_message(&message);
     assert!(signature.verify(&message, &public_key));
+
+    // test invalid private key blob returns an error
+    // https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
+    let private_raw: [u8; ED25519_PRIVATE_KEY_SIZE] = [
+        0x2eu8, 0x26u8, 0x0au8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x0au8, 0x77u8, 0x77u8,
+        0x77u8, 0x77u8, 0x5du8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8,
+        0x82u8, 0xb4u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8,
+        0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0xffu8,
+        0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8,
+        0xffu8, 0xffu8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x77u8, 0x82u8, 0x88u8,
+    ];
+    match Ed25519PrivateKey::from_raw(&private_raw) {
+        Ok(_) => panic!("invalid key accepted"),
+        Err(tor_interface::tor_crypto::Error::SignatureError) => (),
+        Err(err) => panic!("unexpectd error: {:?}", err),
+    }
 
     Ok(())
 }

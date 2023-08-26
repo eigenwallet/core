@@ -22,6 +22,8 @@ pub enum Error {
     ParseError(String),
     #[error("{0}")]
     ConversionError(String),
+    #[error("signature error")]
+    SignatureError,
 }
 
 /// The number of bytes in an ed25519 secret key
@@ -165,14 +167,18 @@ impl Ed25519PrivateKey {
         }
     }
 
-    // according to nickm, any 64 byte string here is allowed
-    pub fn from_raw(raw: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Ed25519PrivateKey {
-        Ed25519PrivateKey {
-            expanded_secret_key: match pk::ed25519::ExpandedSecretKey::from_bytes(raw) {
-                Ok(expanded_secret_key) => expanded_secret_key,
-                Err(_) => unreachable!(),
-            },
+    pub fn from_raw(raw: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Result<Ed25519PrivateKey, Error> {
+        if let Ok(expanded_secret_key) = pk::ed25519::ExpandedSecretKey::from_bytes(raw) {
+            let public_key = pk::ed25519::PublicKey::from(&expanded_secret_key);
+            // verify signature of a test message
+            // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
+            const MESSAGE: &[u8] = &[0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
+            let signature = expanded_secret_key.sign(MESSAGE, &public_key);
+            if let Ok(()) = public_key.verify(MESSAGE, &signature) {
+                return Ok(Ed25519PrivateKey{ expanded_secret_key });
+            }
         }
+        Err(Error::SignatureError)
     }
 
     pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
@@ -213,7 +219,7 @@ impl Ed25519PrivateKey {
             }
         };
 
-        Ok(Ed25519PrivateKey::from_raw(&private_key_data_raw))
+        Ed25519PrivateKey::from_raw(&private_key_data_raw)
     }
 
     pub fn from_private_x25519(
@@ -280,7 +286,10 @@ impl PartialEq for Ed25519PrivateKey {
 
 impl Clone for Ed25519PrivateKey {
     fn clone(&self) -> Ed25519PrivateKey {
-        Ed25519PrivateKey::from_raw(&self.to_bytes())
+        match Ed25519PrivateKey::from_raw(&self.to_bytes()) {
+            Ok(ed25519_private_key) => ed25519_private_key,
+            Err(_) => unreachable!(),
+        }
     }
 }
 
