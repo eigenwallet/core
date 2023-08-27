@@ -22,8 +22,8 @@ pub enum Error {
     ParseError(String),
     #[error("{0}")]
     ConversionError(String),
-    #[error("signature error")]
-    SignatureError,
+    #[error("invalid key")]
+    KeyInvalid,
 }
 
 /// The number of bytes in an ed25519 secret key
@@ -168,17 +168,17 @@ impl Ed25519PrivateKey {
     }
 
     pub fn from_raw(raw: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Result<Ed25519PrivateKey, Error> {
-        if let Ok(expanded_secret_key) = pk::ed25519::ExpandedSecretKey::from_bytes(raw) {
-            let public_key = pk::ed25519::PublicKey::from(&expanded_secret_key);
-            // verify signature of a test message
-            // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
-            const MESSAGE: &[u8] = &[0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
-            let signature = expanded_secret_key.sign(MESSAGE, &public_key);
-            if let Ok(()) = public_key.verify(MESSAGE, &signature) {
-                return Ok(Ed25519PrivateKey{ expanded_secret_key });
+        // Verify the provided bytes have bits set correctly
+        // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
+        if raw[0] == raw[0] & 248 &&
+           raw[31] == (raw[31] & 63) | 64 {
+            match pk::ed25519::ExpandedSecretKey::from_bytes(raw) {
+                Ok(expanded_secret_key) => Ok(Ed25519PrivateKey{ expanded_secret_key }),
+                Err(_) => Err(Error::KeyInvalid),
             }
+        } else {
+            Err(Error::KeyInvalid)
         }
-        Err(Error::SignatureError)
     }
 
     pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
