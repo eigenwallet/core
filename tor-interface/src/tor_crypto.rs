@@ -503,6 +503,12 @@ impl X25519PrivateKey {
     }
 }
 
+impl PartialEq for X25519PrivateKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.secret_key.to_bytes() == other.secret_key.to_bytes()
+    }
+}
+
 impl std::fmt::Debug for X25519PrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "--- x25519 private key ---")
