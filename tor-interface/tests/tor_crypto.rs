@@ -114,7 +114,7 @@ fn test_x25519() -> Result<(), anyhow::Error> {
 
     // ensure we can convert from raw as expected
     assert_eq!(
-        &X25519PrivateKey::from_raw(&SECRET_RAW).to_base64(),
+        &X25519PrivateKey::from_raw(&SECRET_RAW)?.to_base64(),
         SECRET_BASE64
     );
     assert_eq!(

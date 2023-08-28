@@ -445,9 +445,13 @@ impl X25519PrivateKey {
         }
     }
 
-    pub fn from_raw(raw: &[u8; X25519_PRIVATE_KEY_SIZE]) -> X25519PrivateKey {
-        X25519PrivateKey {
-            secret_key: pk::curve25519::StaticSecret::from(*raw),
+    pub fn from_raw(raw: &[u8; X25519_PRIVATE_KEY_SIZE]) -> Result<X25519PrivateKey, Error> {
+        // see: https://docs.rs/x25519-dalek/2.0.0-pre.1/src/x25519_dalek/x25519.rs.html#197
+        if raw[0] == raw[0] & 240 &&
+           raw[31] == (raw[31] & 127) | 64 {
+            Ok(X25519PrivateKey { secret_key: pk::curve25519::StaticSecret::from(*raw) })
+        } else {
+            Err(Error::KeyInvalid)
         }
     }
 
@@ -482,7 +486,7 @@ impl X25519PrivateKey {
             }
         };
 
-        Ok(X25519PrivateKey::from_raw(&private_key_data_raw))
+        X25519PrivateKey::from_raw(&private_key_data_raw)
     }
 
     // security note: only ever sign messages the private key owner controls the contents of!
