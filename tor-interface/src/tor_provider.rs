@@ -52,6 +52,7 @@ pub enum TargetAddr {
     OnionService(OnionAddr),
 }
 
+#[derive(Debug)]
 pub enum TorEvent {
     BootstrapStatus {
         progress: u32,
