@@ -170,10 +170,11 @@ impl Ed25519PrivateKey {
     pub fn from_raw(raw: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Result<Ed25519PrivateKey, Error> {
         // Verify the provided bytes have bits set correctly
         // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
-        if raw[0] == raw[0] & 248 &&
-           raw[31] == (raw[31] & 63) | 64 {
+        if raw[0] == raw[0] & 248 && raw[31] == (raw[31] & 63) | 64 {
             match pk::ed25519::ExpandedSecretKey::from_bytes(raw) {
-                Ok(expanded_secret_key) => Ok(Ed25519PrivateKey{ expanded_secret_key }),
+                Ok(expanded_secret_key) => Ok(Ed25519PrivateKey {
+                    expanded_secret_key,
+                }),
                 Err(_) => Err(Error::KeyInvalid),
             }
         } else {
@@ -447,9 +448,10 @@ impl X25519PrivateKey {
 
     pub fn from_raw(raw: &[u8; X25519_PRIVATE_KEY_SIZE]) -> Result<X25519PrivateKey, Error> {
         // see: https://docs.rs/x25519-dalek/2.0.0-pre.1/src/x25519_dalek/x25519.rs.html#197
-        if raw[0] == raw[0] & 240 &&
-           raw[31] == (raw[31] & 127) | 64 {
-            Ok(X25519PrivateKey { secret_key: pk::curve25519::StaticSecret::from(*raw) })
+        if raw[0] == raw[0] & 240 && raw[31] == (raw[31] & 127) | 64 {
+            Ok(X25519PrivateKey {
+                secret_key: pk::curve25519::StaticSecret::from(*raw),
+            })
         } else {
             Err(Error::KeyInvalid)
         }
