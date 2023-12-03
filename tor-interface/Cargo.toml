@@ -4,6 +4,10 @@ authors = ["Richard Pospesel <richard@blueprintforfreespeech.net>"]
 version = "0.1.0"
 rust-version = "1.66"
 edition = "2021"
+license = "BSD-3-Clause"
+description = "A library providing a Rust interface to interact with the legacy tor daemon"
+keywords = ["tor", "anonymity"]
+repository = "https://github.com/blueprint-freespeech/gosling"
 
 [dependencies]
 data-encoding = "2.3.2"
