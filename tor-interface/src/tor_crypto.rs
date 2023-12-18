@@ -4,13 +4,12 @@ use std::iter;
 use std::str;
 
 // extern crates
-use crypto::digest::Digest;
-use crypto::sha3::Sha3;
 use data_encoding::{BASE32, BASE32_NOPAD, BASE64};
 use data_encoding_macro::new_encoding;
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
 use rand::Rng;
+use sha3::{Digest, Sha3_256};
 use signature::Verifier;
 use tor_llcrypto::pk::keymanip::*;
 use tor_llcrypto::util::rand_compat::RngCompatExt;
@@ -590,18 +589,14 @@ impl V3OnionServiceId {
     fn calc_truncated_checksum(
         public_key: &[u8; ED25519_PUBLIC_KEY_SIZE],
     ) -> [u8; TRUNCATED_CHECKSUM_SIZE] {
-        // space for full checksum
-        const SHA256_BYTES: usize = 256 / 8;
-        let mut hash_bytes = [0u8; SHA256_BYTES];
 
-        let mut hasher = Sha3::sha3_256();
-        assert_eq!(SHA256_BYTES, hasher.output_bytes());
+        let mut hasher = Sha3_256::new();
 
         // calculate checksum
-        hasher.input(b".onion checksum");
-        hasher.input(public_key);
-        hasher.input(&[0x03u8]);
-        hasher.result(&mut hash_bytes);
+        hasher.update(b".onion checksum");
+        hasher.update(public_key);
+        hasher.update(&[0x03u8]);
+        let hash_bytes = hasher.finalize();
 
         [hash_bytes[0], hash_bytes[1]]
     }

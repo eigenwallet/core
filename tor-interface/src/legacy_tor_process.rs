@@ -14,11 +14,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // extern crates
-use crypto::digest::Digest;
-use crypto::sha1::Sha1;
 use data_encoding::HEXUPPER;
 use rand::rngs::OsRng;
 use rand::RngCore;
+use sha1::{Digest, Sha1};
 
 // internal crates
 use crate::tor_crypto::generate_password;
@@ -138,17 +137,15 @@ impl LegacyTorProcess {
         let mut count = COUNT;
         while count > 0 {
             if count > input_len {
-                sha1.input(input);
+                sha1.update(input);
                 count -= input_len;
             } else {
-                sha1.input(&input[0..count]);
+                sha1.update(&input[0..count]);
                 break;
             }
         }
 
-        const SHA1_BYTES: usize = 160 / 8;
-        let mut key = [0u8; SHA1_BYTES];
-        sha1.result(key.as_mut_slice());
+        let key = sha1.finalize();
 
         let mut hash = "16:".to_string();
         HEXUPPER.encode_append(salt, &mut hash);
