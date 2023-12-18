@@ -595,7 +595,7 @@ impl V3OnionServiceId {
         // calculate checksum
         hasher.update(b".onion checksum");
         hasher.update(public_key);
-        hasher.update(&[0x03u8]);
+        hasher.update([0x03u8]);
         let hash_bytes = hasher.finalize();
 
         [hash_bytes[0], hash_bytes[1]]
