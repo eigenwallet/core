@@ -589,7 +589,6 @@ impl V3OnionServiceId {
     fn calc_truncated_checksum(
         public_key: &[u8; ED25519_PUBLIC_KEY_SIZE],
     ) -> [u8; TRUNCATED_CHECKSUM_SIZE] {
-
         let mut hasher = Sha3_256::new();
 
         // calculate checksum
