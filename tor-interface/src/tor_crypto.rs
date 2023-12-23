@@ -35,20 +35,20 @@ pub const ED25519_PUBLIC_KEY_SIZE: usize = 32;
 /// cbindgen:ignore
 pub const ED25519_SIGNATURE_SIZE: usize = 64;
 /// The number of bytes needed to store onion service id as an ASCII c-string (not including null-terminator)
-pub const V3_ONION_SERVICE_ID_LENGTH: usize = 56;
+pub const V3_ONION_SERVICE_ID_STRING_LENGTH: usize = 56;
 /// The number of bytes needed to store onion service id as an ASCII c-string (including null-terminator)
-pub const V3_ONION_SERVICE_ID_SIZE: usize = V3_ONION_SERVICE_ID_LENGTH + 1;
+pub const V3_ONION_SERVICE_ID_STRING_SIZE: usize = V3_ONION_SERVICE_ID_STRING_LENGTH + 1;
 /// The number of bytes needed to store base64 encoded ed25519 private key as an ASCII c-string (not including null-terminator)
 pub const ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH: usize = 88;
 /// key klob header string
-const ED25519_PRIVATE_KEYBLOB_HEADER: &str = "ED25519-V3:";
+const ED25519_PRIVATE_KEY_KEYBLOB_HEADER: &str = "ED25519-V3:";
 /// The number of bytes needed to store the keyblob header
-pub const ED25519_PRIVATE_KEYBLOB_HEADER_LENGTH: usize = 11;
+pub const ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH: usize = 11;
 /// The number of bytes needed to store ed25519 private keyblob as an ASCII c-string (not including a null terminator)
-pub const ED25519_PRIVATE_KEYBLOB_LENGTH: usize =
-    ED25519_PRIVATE_KEYBLOB_HEADER_LENGTH + ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH;
+pub const ED25519_PRIVATE_KEY_KEYBLOB_LENGTH: usize =
+    ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH + ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH;
 /// The number of bytes needed to store ed25519 private keyblob as an ASCII c-string (including a null terminator)
-pub const ED25519_PRIVATE_KEYBLOB_SIZE: usize = ED25519_PRIVATE_KEYBLOB_LENGTH + 1;
+pub const ED25519_PRIVATE_KEY_KEYBLOB_SIZE: usize = ED25519_PRIVATE_KEY_KEYBLOB_LENGTH + 1;
 // number of bytes in an onion service id after base32 decode
 const V3_ONION_SERVICE_ID_RAW_SIZE: usize = 35;
 // byte index of the start of the public key checksum
@@ -64,13 +64,13 @@ pub const X25519_PRIVATE_KEY_SIZE: usize = 32;
 /// cbindgen:ignore
 pub const X25519_PUBLIC_KEY_SIZE: usize = 32;
 /// The number of bytes needed to store base64 encoded x25519 private key as an ASCII c-string (not including null-terminator)
-pub const X25519_PRIVATE_KEYBLOB_BASE64_LENGTH: usize = 44;
+pub const X25519_PRIVATE_KEY_BASE64_LENGTH: usize = 44;
 /// The number of bytes needed to store base64 encoded x25519 private key as an ASCII c-string (including a null terminator)
-pub const X25519_PRIVATE_KEYBLOB_BASE64_SIZE: usize = X25519_PRIVATE_KEYBLOB_BASE64_LENGTH + 1;
+pub const X25519_PRIVATE_KEY_BASE64_SIZE: usize = X25519_PRIVATE_KEY_BASE64_LENGTH + 1;
 /// The number of bytes needed to store base32 encoded x25519 public key as an ASCII c-string (not including null-terminator)
-pub const X25519_PUBLIC_KEYBLOB_BASE32_LENGTH: usize = 52;
+pub const X25519_PUBLIC_KEY_BASE32_LENGTH: usize = 52;
 /// The number of bytes needed to store bsae32 encoded x25519 public key as an ASCII c-string (including a null terminator)
-pub const X25519_PUBLIC_KEYBLOB_BASE32_SIZE: usize = X25519_PUBLIC_KEYBLOB_BASE32_LENGTH + 1;
+pub const X25519_PUBLIC_KEY_BASE32_SIZE: usize = X25519_PUBLIC_KEY_BASE32_LENGTH + 1;
 
 const ONION_BASE32: data_encoding::Encoding = new_encoding! {
     symbols: "abcdefghijklmnopqrstuvwxyz234567",
@@ -118,7 +118,7 @@ pub struct X25519PublicKey {
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct V3OnionServiceId {
-    data: [u8; V3_ONION_SERVICE_ID_LENGTH],
+    data: [u8; V3_ONION_SERVICE_ID_STRING_LENGTH],
 }
 
 #[derive(Clone, Copy)]
@@ -182,22 +182,22 @@ impl Ed25519PrivateKey {
     }
 
     pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
-        if key_blob.len() != ED25519_PRIVATE_KEYBLOB_LENGTH {
+        if key_blob.len() != ED25519_PRIVATE_KEY_KEYBLOB_LENGTH {
             return Err(Error::ParseError(format!(
                 "expects string of length '{}'; received string with length '{}'",
-                ED25519_PRIVATE_KEYBLOB_LENGTH,
+                ED25519_PRIVATE_KEY_KEYBLOB_LENGTH,
                 key_blob.len()
             )));
         }
 
-        if !key_blob.starts_with(ED25519_PRIVATE_KEYBLOB_HEADER) {
+        if !key_blob.starts_with(ED25519_PRIVATE_KEY_KEYBLOB_HEADER) {
             return Err(Error::ParseError(format!(
                 "expects string that begins with '{}'; received '{}'",
-                &ED25519_PRIVATE_KEYBLOB_HEADER, &key_blob
+                &ED25519_PRIVATE_KEY_KEYBLOB_HEADER, &key_blob
             )));
         }
 
-        let base64_key: &str = &key_blob[ED25519_PRIVATE_KEYBLOB_HEADER.len()..];
+        let base64_key: &str = &key_blob[ED25519_PRIVATE_KEY_KEYBLOB_HEADER.len()..];
         let private_key_data = match BASE64.decode(base64_key.as_bytes()) {
             Ok(private_key_data) => private_key_data,
             Err(_) => {
@@ -251,7 +251,7 @@ impl Ed25519PrivateKey {
     }
 
     pub fn to_key_blob(&self) -> String {
-        let mut key_blob = ED25519_PRIVATE_KEYBLOB_HEADER.to_string();
+        let mut key_blob = ED25519_PRIVATE_KEY_KEYBLOB_HEADER.to_string();
         key_blob.push_str(&BASE64.encode(&self.expanded_secret_key.to_bytes()));
 
         key_blob
@@ -458,10 +458,10 @@ impl X25519PrivateKey {
 
     // a base64 encoded keyblob
     pub fn from_base64(base64: &str) -> Result<X25519PrivateKey, Error> {
-        if base64.len() != X25519_PRIVATE_KEYBLOB_BASE64_LENGTH {
+        if base64.len() != X25519_PRIVATE_KEY_BASE64_LENGTH {
             return Err(Error::ParseError(format!(
                 "expects string of length '{}'; received string with length '{}'",
-                X25519_PRIVATE_KEYBLOB_BASE64_LENGTH,
+                X25519_PRIVATE_KEY_BASE64_LENGTH,
                 base64.len()
             )));
         }
@@ -535,10 +535,10 @@ impl X25519PublicKey {
     }
 
     pub fn from_base32(base32: &str) -> Result<X25519PublicKey, Error> {
-        if base32.len() != X25519_PUBLIC_KEYBLOB_BASE32_LENGTH {
+        if base32.len() != X25519_PUBLIC_KEY_BASE32_LENGTH {
             return Err(Error::ParseError(format!(
                 "expects string of length '{}'; received '{}' with length '{}'",
-                X25519_PUBLIC_KEYBLOB_BASE32_LENGTH,
+                X25519_PUBLIC_KEY_BASE32_LENGTH,
                 base32,
                 base32.len()
             )));
@@ -621,7 +621,7 @@ impl V3OnionServiceId {
         raw_service_id[V3_ONION_SERVICE_ID_CHECKSUM_OFFSET + 1] = truncated_checksum[1];
         raw_service_id[V3_ONION_SERVICE_ID_VERSION_OFFSET] = 0x03u8;
 
-        let mut service_id = [0u8; V3_ONION_SERVICE_ID_LENGTH];
+        let mut service_id = [0u8; V3_ONION_SERVICE_ID_STRING_LENGTH];
         // panics on wrong buffer size, but given our constant buffer sizes should be fine
         ONION_BASE32.encode_mut(&raw_service_id, &mut service_id);
 
@@ -633,7 +633,7 @@ impl V3OnionServiceId {
     }
 
     pub fn is_valid(service_id: &str) -> bool {
-        if service_id.len() != V3_ONION_SERVICE_ID_LENGTH {
+        if service_id.len() != V3_ONION_SERVICE_ID_STRING_LENGTH {
             return false;
         }
 
@@ -665,7 +665,7 @@ impl V3OnionServiceId {
         }
     }
 
-    pub fn as_bytes(&self) -> &[u8; V3_ONION_SERVICE_ID_LENGTH] {
+    pub fn as_bytes(&self) -> &[u8; V3_ONION_SERVICE_ID_STRING_LENGTH] {
         &self.data
     }
 }
