@@ -242,7 +242,6 @@ impl LegacyControlStream {
 
         // strip the redundant status code from start of lines
         for line in reply_lines.iter_mut() {
-            println!(">>> {}", line);
             if line.starts_with(&status_code_string) {
                 *line = line[4..].to_string();
             }
@@ -255,7 +254,6 @@ impl LegacyControlStream {
     }
 
     pub fn write(&mut self, cmd: &str) -> Result<(), Error> {
-        println!("<<< {}", cmd);
         if let Err(err) = write!(self.stream, "{}\r\n", cmd) {
             self.closed_by_remote = true;
             return Err(Error::WriteFailed(err));
