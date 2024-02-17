@@ -25,17 +25,19 @@ add_custom_command(
 add_custom_target(tor_interface_target
     DEPENDS ${tor_interface_outputs})
 
-# cargo test
-add_custom_target(tor_interface_cargo_test
+# cargo test target
+add_custom_target(tor_interface_cargo_test_target
     COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+add_dependencies(test_target tor_interface_cargo_test_target)
 
-# cargo test (offline)
-add_custom_target(tor_interface_cargo_test_offline
+# cargo test (offline) target
+add_custom_target(tor_interface_cargo_test_offline_target
     COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS} --features offline-test
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+add_dependencies(test_offline_target tor_interface_cargo_test_offline_target)
 
 #
 # fuzz target
