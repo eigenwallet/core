@@ -21,7 +21,7 @@ pub enum Error {
     OnionServiceNotFound(OnionAddr),
 
     #[error("onion service not published: {}", .0)]
-    OnionServiceNoPublished(OnionAddr),
+    OnionServiceNotPublished(OnionAddr),
 
     #[error("onion service requires onion auth")]
     OnionServiceRequiresOnionAuth(),
@@ -77,13 +77,13 @@ impl Drop for MockOnionListener {
 }
 
 struct MockTorNetwork {
-    onion_services: BTreeMap<OnionAddr, (Vec<X25519PublicKey>, SocketAddr)>,
+    onion_services: Option<BTreeMap<OnionAddr, (Vec<X25519PublicKey>, SocketAddr)>>,
 }
 
 impl MockTorNetwork {
     const fn new() -> MockTorNetwork {
         MockTorNetwork {
-            onion_services: BTreeMap::new(),
+            onion_services: None,
         }
     }
 
@@ -94,29 +94,35 @@ impl MockTorNetwork {
         client_auth: Option<&X25519PublicKey>,
     ) -> Result<OnionStream, Error> {
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id.clone(), virt_port));
-        if let Some((client_auth_keys, socket_addr)) = self.onion_services.get(&onion_addr) {
-            match (client_auth_keys.len(), client_auth) {
-                (0, None) => (),
-                (_, None) => return Err(Error::OnionServiceRequiresOnionAuth()),
-                (0, Some(_)) => return Err(Error::OnionServiceAuthInvalid()),
-                (_, Some(client_auth)) => {
-                    if !client_auth_keys.contains(client_auth) {
-                        return Err(Error::OnionServiceAuthInvalid());
-                    }
-                }
-            }
 
-            if let Ok(stream) = TcpStream::connect(socket_addr) {
-                Ok(OnionStream {
-                    stream,
-                    local_addr: None,
-                    peer_addr: Some(TargetAddr::OnionService(onion_addr)),
-                })
-            } else {
-                Err(Error::OnionServiceNotFound(onion_addr))
-            }
-        } else {
-            Err(Error::OnionServiceNoPublished(onion_addr))
+        match &mut self.onion_services {
+            Some(onion_services) => {
+                if let Some((client_auth_keys, socket_addr)) = onion_services.get(&onion_addr) {
+                    match (client_auth_keys.len(), client_auth) {
+                        (0, None) => (),
+                        (_, None) => return Err(Error::OnionServiceRequiresOnionAuth()),
+                        (0, Some(_)) => return Err(Error::OnionServiceAuthInvalid()),
+                        (_, Some(client_auth)) => {
+                            if !client_auth_keys.contains(client_auth) {
+                                return Err(Error::OnionServiceAuthInvalid());
+                            }
+                        }
+                    }
+
+                    if let Ok(stream) = TcpStream::connect(socket_addr) {
+                        Ok(OnionStream {
+                            stream,
+                            local_addr: None,
+                            peer_addr: Some(TargetAddr::OnionService(onion_addr)),
+                        })
+                    } else {
+                        Err(Error::OnionServiceNotFound(onion_addr))
+                    }
+                } else {
+                    Err(Error::OnionServiceNotPublished(onion_addr))
+                }
+            },
+            None => Err(Error::OnionServiceNotPublished(onion_addr))
         }
     }
 
@@ -128,12 +134,22 @@ impl MockTorNetwork {
         address: SocketAddr,
     ) {
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id, virt_port));
-        self.onion_services
-            .insert(onion_addr, (client_auth_keys, address));
+        match &mut self.onion_services {
+            Some(onion_services) => {
+                onion_services.insert(onion_addr, (client_auth_keys, address));
+            },
+            None => {
+                let mut onion_services = BTreeMap::new();
+                onion_services.insert(onion_addr, (client_auth_keys, address));
+                self.onion_services = Some(onion_services);
+            }
+        }
     }
 
     fn stop_onion(&mut self, onion_addr: &OnionAddr) {
-        self.onion_services.remove(onion_addr);
+        if let Some(onion_services) = &mut self.onion_services {
+            onion_services.remove(onion_addr);
+        }
     }
 }
 
