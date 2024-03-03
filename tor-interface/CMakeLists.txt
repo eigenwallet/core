@@ -25,24 +25,32 @@ add_custom_command(
 add_custom_target(tor_interface_target
     DEPENDS ${tor_interface_outputs})
 
-# cargo test target
-add_custom_target(tor_interface_cargo_test_target
-    COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-add_dependencies(test_target tor_interface_cargo_test_target)
+if (ENABLE_TESTS)
+    if (ENABLE_ONLINE_TESTS)
+        #
+        # cargo test target
+        #
+        add_test(NAME tor_interface_cargo_test
+            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+    endif()
+    #
+    # cargo test (offline) target
+    #
+    add_test(NAME tor_interface_offline_cargo_test
+        COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS} --features offline-test
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
 
-# cargo test (offline) target
-add_custom_target(tor_interface_cargo_test_offline_target
-    COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS} --features offline-test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-add_dependencies(test_offline_target tor_interface_cargo_test_offline_target)
+    #
+    # fuzz target
+    #
+    if (ENABLE_FUZZ_TESTS)
+        add_test(NAME tor_interface_crypto_cargo_fuzz_test
+            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo fuzz run fuzz_crypto ${CARGO_FLAGS}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+    endif()
+endif()
 
-#
-# fuzz target
-#
-add_custom_target(tor_interface_cargo_fuzz_crypto
-    COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo fuzz run fuzz_crypto ${CARGO_FLAGS}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
