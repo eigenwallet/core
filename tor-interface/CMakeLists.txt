@@ -48,7 +48,7 @@ if (ENABLE_TESTS)
     #
     if (ENABLE_FUZZ_TESTS)
         add_test(NAME tor_interface_crypto_cargo_fuzz_test
-            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo fuzz run fuzz_crypto ${CARGO_FLAGS}
+            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo fuzz run fuzz_crypto -- -max_total_time=${FUZZ_TEST_MAX_TOTAL_TIME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     endif()
