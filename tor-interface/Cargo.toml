@@ -21,7 +21,7 @@ signature = "^1.5"
 socks = "^0.3"
 thiserror = "^1"
 time-macros = ">= 0.2, <= 0.2.8"
-tor-llcrypto = { version = ">= 0.3, <= 0.4.4", features = ["relay"] }
+tor-llcrypto = { version = "0.4.4", features = ["relay"] }
 
 [dev-dependencies]
 anyhow = "^1"
