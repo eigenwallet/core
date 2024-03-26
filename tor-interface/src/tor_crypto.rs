@@ -4,15 +4,14 @@ use std::iter;
 use std::str;
 
 // extern crates
+use curve25519_dalek::Scalar;
 use data_encoding::{BASE32, BASE32_NOPAD, BASE64};
 use data_encoding_macro::new_encoding;
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
 use rand::Rng;
 use sha3::{Digest, Sha3_256};
-use signature::Verifier;
 use tor_llcrypto::pk::keymanip::*;
-use tor_llcrypto::util::rand_compat::RngCompatExt;
 use tor_llcrypto::*;
 
 #[derive(thiserror::Error, Debug)]
@@ -93,7 +92,7 @@ pub(crate) fn generate_password(length: usize) -> String {
 // Struct deinitions
 
 pub struct Ed25519PrivateKey {
-    expanded_secret_key: pk::ed25519::ExpandedSecretKey,
+    expanded_keypair: pk::ed25519::ExpandedKeypair,
 }
 
 #[derive(Clone)]
@@ -155,33 +154,64 @@ impl From<bool> for SignBit {
     }
 }
 
+// which validation method to use when constructing an ed25519 expanded key from
+// a byte array
+enum FromRawValidationMethod {
+    // expanded ed25519 keys coming from legacy c-tor daemon; the scalar portion
+    // is clamped, but not reduced
+    LegacyCTor,
+    // expanded ed25519 keys coming from ed25519-dalek crate; the scalar portion
+    // has been clamped AND reduced
+    Ed25519Dalek,
+}
+
 // Ed25519 Private Key
 
 impl Ed25519PrivateKey {
     pub fn generate() -> Ed25519PrivateKey {
-        let secret_key = pk::ed25519::SecretKey::generate(&mut rand_core::OsRng.rng_compat());
+        let csprng = &mut OsRng;
+        let keypair = pk::ed25519::Keypair::generate(csprng);
 
         Ed25519PrivateKey {
-            expanded_secret_key: pk::ed25519::ExpandedSecretKey::from(&secret_key),
+            expanded_keypair: pk::ed25519::ExpandedKeypair::from(&keypair),
         }
     }
 
-    pub fn from_raw(raw: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Result<Ed25519PrivateKey, Error> {
-        // Verify the provided bytes have bits set correctly
-        // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
-        if raw[0] == raw[0] & 248 && raw[31] == (raw[31] & 63) | 64 {
-            match pk::ed25519::ExpandedSecretKey::from_bytes(raw) {
-                Ok(expanded_secret_key) => Ok(Ed25519PrivateKey {
-                    expanded_secret_key,
-                }),
-                Err(_) => Err(Error::KeyInvalid),
+    fn from_raw_impl(raw: &[u8; ED25519_PRIVATE_KEY_SIZE], method: FromRawValidationMethod) -> Result<Ed25519PrivateKey, Error> {
+        // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1343
+        match method {
+            FromRawValidationMethod::LegacyCTor => {
+                // Verify the scalar portion of the expanded key has been clamped
+                // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
+                if !(raw[0] == raw[0] & 248 && raw[31] == (raw[31] & 63) | 64) {
+                    return Err(Error::KeyInvalid);
+                }
+            },
+            FromRawValidationMethod::Ed25519Dalek => {
+                // Verify the scalar is non-zero and it has been reduced
+                let scalar: [u8; 32] = raw[..32].try_into().unwrap();
+                if scalar.iter().all(|&x| x == 0x00u8) {
+                    return Err(Error::KeyInvalid);
+                }
+                let reduced_scalar = Scalar::from_bytes_mod_order(scalar.clone()).to_bytes();
+                if scalar != reduced_scalar {
+                    return Err(Error::KeyInvalid);
+                }
             }
+        }
+
+        if let Some(expanded_keypair) = pk::ed25519::ExpandedKeypair::from_secret_key_bytes(raw.clone()) {
+            Ok(Ed25519PrivateKey{expanded_keypair})
         } else {
             Err(Error::KeyInvalid)
         }
     }
 
-    pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
+    pub fn from_raw(raw: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Result<Ed25519PrivateKey, Error> {
+        Self::from_raw_impl(raw, FromRawValidationMethod::Ed25519Dalek)
+    }
+
+    fn from_key_blob_impl(key_blob: &str, method: FromRawValidationMethod) -> Result<Ed25519PrivateKey, Error> {
         if key_blob.len() != ED25519_PRIVATE_KEY_KEYBLOB_LENGTH {
             return Err(Error::ParseError(format!(
                 "expects string of length '{}'; received string with length '{}'",
@@ -219,7 +249,15 @@ impl Ed25519PrivateKey {
             }
         };
 
-        Ed25519PrivateKey::from_raw(&private_key_data_raw)
+        Ed25519PrivateKey::from_raw_impl(&private_key_data_raw, method)
+    }
+
+    pub (crate) fn from_key_blob_legacy(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
+        Self::from_key_blob_impl(key_blob, FromRawValidationMethod::LegacyCTor)
+    }
+
+    pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
+        Self::from_key_blob_impl(key_blob, FromRawValidationMethod::Ed25519Dalek)
     }
 
     pub fn from_private_x25519(
@@ -230,7 +268,7 @@ impl Ed25519PrivateKey {
         {
             Ok((
                 Ed25519PrivateKey {
-                    expanded_secret_key: result,
+                    expanded_keypair: result,
                 },
                 match signbit {
                     0u8 => SignBit::Zero,
@@ -252,19 +290,19 @@ impl Ed25519PrivateKey {
 
     pub fn to_key_blob(&self) -> String {
         let mut key_blob = ED25519_PRIVATE_KEY_KEYBLOB_HEADER.to_string();
-        key_blob.push_str(&BASE64.encode(&self.expanded_secret_key.to_bytes()));
+        key_blob.push_str(&BASE64.encode(&self.expanded_keypair.to_secret_key_bytes()));
 
         key_blob
     }
 
     pub fn sign_message_ex(
         &self,
-        public_key: &Ed25519PublicKey,
+        _public_key: &Ed25519PublicKey,
         message: &[u8],
     ) -> Ed25519Signature {
         let signature = self
-            .expanded_secret_key
-            .sign(message, &public_key.public_key);
+            .expanded_keypair
+            .sign(message);
         Ed25519Signature { signature }
     }
 
@@ -274,7 +312,7 @@ impl Ed25519PrivateKey {
     }
 
     pub fn to_bytes(&self) -> [u8; ED25519_PRIVATE_KEY_SIZE] {
-        self.expanded_secret_key.to_bytes()
+        self.expanded_keypair.to_secret_key_bytes()
     }
 }
 
@@ -344,7 +382,7 @@ impl Ed25519PublicKey {
 
     pub fn from_private_key(private_key: &Ed25519PrivateKey) -> Ed25519PublicKey {
         Ed25519PublicKey {
-            public_key: pk::ed25519::PublicKey::from(&private_key.expanded_secret_key),
+            public_key: private_key.expanded_keypair.public().clone()
         }
     }
 
@@ -387,19 +425,12 @@ impl std::fmt::Debug for Ed25519PublicKey {
 impl Ed25519Signature {
     pub fn from_raw(raw: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Ed25519Signature, Error> {
         Ok(Ed25519Signature {
-            signature: match pk::ed25519::Signature::from_bytes(raw) {
-                Ok(signature) => signature,
-                Err(_) => {
-                    return Err(Error::ConversionError(
-                        "failed to create ed25519 signature from bytes".to_string(),
-                    ))
-                }
-            },
+            signature: pk::ed25519::Signature::from_bytes(raw)
         })
     }
 
     pub fn verify(&self, message: &[u8], public_key: &Ed25519PublicKey) -> bool {
-        if let Ok(()) = public_key.public_key.verify(message, &self.signature) {
+        if let Ok(()) = public_key.public_key.verify_strict(message, &self.signature) {
             return true;
         }
         false
@@ -440,8 +471,9 @@ impl std::fmt::Debug for Ed25519Signature {
 
 impl X25519PrivateKey {
     pub fn generate() -> X25519PrivateKey {
+        let csprng = &mut OsRng;
         X25519PrivateKey {
-            secret_key: pk::curve25519::StaticSecret::new(rand_core::OsRng.rng_compat()),
+            secret_key: pk::curve25519::StaticSecret::random_from_rng(csprng),
         }
     }
 

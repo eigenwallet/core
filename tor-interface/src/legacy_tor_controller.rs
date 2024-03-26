@@ -537,7 +537,7 @@ impl LegacyTorController {
                         }
                         index += "PrivateKey=".len();
                         let key_blob_string = &line[index..];
-                        private_key = match Ed25519PrivateKey::from_key_blob(key_blob_string) {
+                        private_key = match Ed25519PrivateKey::from_key_blob_legacy(key_blob_string) {
                             Ok(private_key) => Some(private_key),
                             Err(_) => {
                                 return Err(Error::CommandReplyParseFailed(format!(
