@@ -193,14 +193,14 @@ impl Ed25519PrivateKey {
                 if scalar.iter().all(|&x| x == 0x00u8) {
                     return Err(Error::KeyInvalid);
                 }
-                let reduced_scalar = Scalar::from_bytes_mod_order(scalar.clone()).to_bytes();
+                let reduced_scalar = Scalar::from_bytes_mod_order(scalar).to_bytes();
                 if scalar != reduced_scalar {
                     return Err(Error::KeyInvalid);
                 }
             }
         }
 
-        if let Some(expanded_keypair) = pk::ed25519::ExpandedKeypair::from_secret_key_bytes(raw.clone()) {
+        if let Some(expanded_keypair) = pk::ed25519::ExpandedKeypair::from_secret_key_bytes(*raw) {
             Ok(Ed25519PrivateKey{expanded_keypair})
         } else {
             Err(Error::KeyInvalid)
@@ -382,7 +382,7 @@ impl Ed25519PublicKey {
 
     pub fn from_private_key(private_key: &Ed25519PrivateKey) -> Ed25519PublicKey {
         Ed25519PublicKey {
-            public_key: private_key.expanded_keypair.public().clone()
+            public_key: *private_key.expanded_keypair.public()
         }
     }
 
