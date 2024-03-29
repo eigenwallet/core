@@ -1,14 +1,15 @@
 // standard
 use std::convert::TryInto;
-use std::iter;
 use std::str;
 
 // extern crates
 use curve25519_dalek::Scalar;
 use data_encoding::{BASE32, BASE32_NOPAD, BASE64};
 use data_encoding_macro::new_encoding;
+#[cfg(feature = "legacy-tor-provider")]
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
+#[cfg(feature = "legacy-tor-provider")]
 use rand::Rng;
 use sha3::{Digest, Sha3_256};
 use static_assertions::const_assert_eq;
@@ -85,8 +86,9 @@ const ONION_BASE32: data_encoding::Encoding = new_encoding! {
 // Free functions
 
 // securely generate password using OsRng
+#[cfg(feature = "legacy-tor-provider")]
 pub(crate) fn generate_password(length: usize) -> String {
-    let password: String = iter::repeat(())
+    let password: String = std::iter::repeat(())
         .map(|()| OsRng.sample(Alphanumeric))
         .map(char::from)
         .take(length)
@@ -165,6 +167,7 @@ impl From<bool> for SignBit {
 enum FromRawValidationMethod {
     // expanded ed25519 keys coming from legacy c-tor daemon; the scalar portion
     // is clamped, but not reduced
+    #[cfg(feature = "legacy-tor-provider")]
     LegacyCTor,
     // expanded ed25519 keys coming from ed25519-dalek crate; the scalar portion
     // has been clamped AND reduced
@@ -186,6 +189,7 @@ impl Ed25519PrivateKey {
     fn from_raw_impl(raw: &[u8; ED25519_PRIVATE_KEY_SIZE], method: FromRawValidationMethod) -> Result<Ed25519PrivateKey, Error> {
         // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1343
         match method {
+            #[cfg(feature = "legacy-tor-provider")]
             FromRawValidationMethod::LegacyCTor => {
                 // Verify the scalar portion of the expanded key has been clamped
                 // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1021
@@ -258,6 +262,7 @@ impl Ed25519PrivateKey {
         Ed25519PrivateKey::from_raw_impl(&private_key_data_raw, method)
     }
 
+    #[cfg(feature = "legacy-tor-provider")]
     pub (crate) fn from_key_blob_legacy(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
         Self::from_key_blob_impl(key_blob, FromRawValidationMethod::LegacyCTor)
     }

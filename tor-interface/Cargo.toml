@@ -28,3 +28,5 @@ tor-llcrypto = { version = "0.7", features = ["relay"] }
 anyhow = "1.0"
 serial_test = "0.9"
 which = "4.4"
+[features]
+legacy-tor-provider = []

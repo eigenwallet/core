@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use serial_test::serial;
 
 // internal crates
+#[cfg(feature = "legacy-tor-provider")]
 use tor_interface::legacy_tor_client::*;
 use tor_interface::mock_tor_client::*;
 use tor_interface::tor_crypto::*;
@@ -214,6 +215,7 @@ fn test_mock_onion_service() -> anyhow::Result<()> {
 
 #[test]
 #[serial]
+#[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_bootstrap() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
@@ -224,6 +226,7 @@ fn test_legacy_bootstrap() -> anyhow::Result<()> {
 
 #[test]
 #[serial]
+#[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_onion_service() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
