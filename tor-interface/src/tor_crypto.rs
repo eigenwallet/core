@@ -11,6 +11,7 @@ use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
 use rand::Rng;
 use sha3::{Digest, Sha3_256};
+use static_assertions::const_assert_eq;
 use tor_llcrypto::pk::keymanip::*;
 use tor_llcrypto::*;
 
@@ -36,18 +37,21 @@ pub const ED25519_SIGNATURE_SIZE: usize = 64;
 /// The number of bytes needed to store onion service id as an ASCII c-string (not including null-terminator)
 pub const V3_ONION_SERVICE_ID_STRING_LENGTH: usize = 56;
 /// The number of bytes needed to store onion service id as an ASCII c-string (including null-terminator)
-pub const V3_ONION_SERVICE_ID_STRING_SIZE: usize = V3_ONION_SERVICE_ID_STRING_LENGTH + 1;
+pub const V3_ONION_SERVICE_ID_STRING_SIZE: usize = 57;
+const_assert_eq!(V3_ONION_SERVICE_ID_STRING_SIZE, V3_ONION_SERVICE_ID_STRING_LENGTH + 1);
 /// The number of bytes needed to store base64 encoded ed25519 private key as an ASCII c-string (not including null-terminator)
 pub const ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH: usize = 88;
 /// key klob header string
 const ED25519_PRIVATE_KEY_KEYBLOB_HEADER: &str = "ED25519-V3:";
 /// The number of bytes needed to store the keyblob header
 pub const ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH: usize = 11;
+const_assert_eq!(ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH, ED25519_PRIVATE_KEY_KEYBLOB_HEADER.len());
 /// The number of bytes needed to store ed25519 private keyblob as an ASCII c-string (not including a null terminator)
-pub const ED25519_PRIVATE_KEY_KEYBLOB_LENGTH: usize =
-    ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH + ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH;
+pub const ED25519_PRIVATE_KEY_KEYBLOB_LENGTH: usize = 99;
+const_assert_eq!(ED25519_PRIVATE_KEY_KEYBLOB_LENGTH, ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH + ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH);
 /// The number of bytes needed to store ed25519 private keyblob as an ASCII c-string (including a null terminator)
-pub const ED25519_PRIVATE_KEY_KEYBLOB_SIZE: usize = ED25519_PRIVATE_KEY_KEYBLOB_LENGTH + 1;
+pub const ED25519_PRIVATE_KEY_KEYBLOB_SIZE: usize = 100;
+const_assert_eq!(ED25519_PRIVATE_KEY_KEYBLOB_SIZE, ED25519_PRIVATE_KEY_KEYBLOB_LENGTH + 1);
 // number of bytes in an onion service id after base32 decode
 const V3_ONION_SERVICE_ID_RAW_SIZE: usize = 35;
 // byte index of the start of the public key checksum
@@ -65,11 +69,13 @@ pub const X25519_PUBLIC_KEY_SIZE: usize = 32;
 /// The number of bytes needed to store base64 encoded x25519 private key as an ASCII c-string (not including null-terminator)
 pub const X25519_PRIVATE_KEY_BASE64_LENGTH: usize = 44;
 /// The number of bytes needed to store base64 encoded x25519 private key as an ASCII c-string (including a null terminator)
-pub const X25519_PRIVATE_KEY_BASE64_SIZE: usize = X25519_PRIVATE_KEY_BASE64_LENGTH + 1;
+pub const X25519_PRIVATE_KEY_BASE64_SIZE: usize = 45;
+const_assert_eq!(X25519_PRIVATE_KEY_BASE64_SIZE, X25519_PRIVATE_KEY_BASE64_LENGTH + 1);
 /// The number of bytes needed to store base32 encoded x25519 public key as an ASCII c-string (not including null-terminator)
 pub const X25519_PUBLIC_KEY_BASE32_LENGTH: usize = 52;
 /// The number of bytes needed to store bsae32 encoded x25519 public key as an ASCII c-string (including a null terminator)
-pub const X25519_PUBLIC_KEY_BASE32_SIZE: usize = X25519_PUBLIC_KEY_BASE32_LENGTH + 1;
+pub const X25519_PUBLIC_KEY_BASE32_SIZE: usize = 53;
+const_assert_eq!(X25519_PUBLIC_KEY_BASE32_SIZE, X25519_PUBLIC_KEY_BASE32_LENGTH + 1);
 
 const ONION_BASE32: data_encoding::Encoding = new_encoding! {
     symbols: "abcdefghijklmnopqrstuvwxyz234567",
