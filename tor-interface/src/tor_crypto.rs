@@ -73,7 +73,7 @@ pub const X25519_PRIVATE_KEY_BASE64_SIZE: usize = 45;
 const_assert_eq!(X25519_PRIVATE_KEY_BASE64_SIZE, X25519_PRIVATE_KEY_BASE64_LENGTH + 1);
 /// The number of bytes needed to store base32 encoded x25519 public key as an ASCII c-string (not including null-terminator)
 pub const X25519_PUBLIC_KEY_BASE32_LENGTH: usize = 52;
-/// The number of bytes needed to store bsae32 encoded x25519 public key as an ASCII c-string (including a null terminator)
+/// The number of bytes needed to store base32 encoded x25519 public key as an ASCII c-string (including a null terminator)
 pub const X25519_PUBLIC_KEY_BASE32_SIZE: usize = 53;
 const_assert_eq!(X25519_PUBLIC_KEY_BASE32_SIZE, X25519_PUBLIC_KEY_BASE32_LENGTH + 1);
 
