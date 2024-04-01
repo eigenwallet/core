@@ -19,6 +19,9 @@ set(tor_interface_outputs
 #
 
 set(TOR_INTERFACE_FEATURE_LIST)
+if (ENABLE_MOCK_TOR_PROVIDER)
+    list(APPEND TOR_INTERFACE_FEATURE_LIST "mock-tor-provider")
+endif()
 if (ENABLE_LEGACY_TOR_PROVIDER)
     list(APPEND TOR_INTERFACE_FEATURE_LIST "legacy-tor-provider")
 endif()

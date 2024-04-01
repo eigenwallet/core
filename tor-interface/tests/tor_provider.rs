@@ -7,6 +7,7 @@ use serial_test::serial;
 // internal crates
 #[cfg(feature = "legacy-tor-provider")]
 use tor_interface::legacy_tor_client::*;
+#[cfg(feature = "mock-tor-provider")]
 use tor_interface::mock_tor_client::*;
 use tor_interface::tor_crypto::*;
 use tor_interface::tor_provider::*;
@@ -204,11 +205,13 @@ pub(crate) fn onion_service_test(mut tor: Box<dyn TorProvider>) -> anyhow::Resul
 }
 
 #[test]
+#[cfg(feature = "mock-tor-provider")]
 fn test_mock_bootstrap() -> anyhow::Result<()> {
     bootstrap_test(Box::new(MockTorClient::new()))
 }
 
 #[test]
+#[cfg(feature = "mock-tor-provider")]
 fn test_mock_onion_service() -> anyhow::Result<()> {
     onion_service_test(Box::new(MockTorClient::new()))
 }
