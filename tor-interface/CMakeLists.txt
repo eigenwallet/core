@@ -30,7 +30,7 @@ add_custom_target(tor_interface_target
 # cargo test target
 #
 if (ENABLE_TESTS)
-    add_test(NAME tor_interface_offline_cargo_test
+    add_test(NAME tor_interface_cargo_test
         COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
