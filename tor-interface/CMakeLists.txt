@@ -22,35 +22,26 @@ add_custom_command(
     OUTPUT ${tor_interface_outputs}
     COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} cargo build ${CARGO_FLAGS}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 add_custom_target(tor_interface_target
     DEPENDS ${tor_interface_outputs})
 
+#
+# cargo test target
+#
 if (ENABLE_TESTS)
-    if (ENABLE_ONLINE_TESTS)
-        #
-        # cargo test target
-        #
-        add_test(NAME tor_interface_cargo_test
-            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    endif()
-    #
-    # cargo test (offline) target
-    #
     add_test(NAME tor_interface_offline_cargo_test
-        COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS} --features offline-test
+        COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
-
-    #
-    # fuzz target
-    #
-    if (ENABLE_FUZZ_TESTS)
-        add_test(NAME tor_interface_crypto_cargo_fuzz_test
-            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo fuzz run fuzz_crypto -- -max_total_time=${FUZZ_TEST_MAX_TOTAL_TIME}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    endif()
 endif()
 
+#
+# fuzz target
+#
+if (ENABLE_FUZZ_TESTS)
+    add_test(NAME tor_interface_crypto_cargo_fuzz_test
+        COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo fuzz run fuzz_crypto -- -max_total_time=${FUZZ_TEST_MAX_TOTAL_TIME}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+endif()
