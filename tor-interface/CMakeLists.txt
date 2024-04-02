@@ -1,5 +1,6 @@
 set(tor_interface_sources
     Cargo.toml
+    src/arti_client_tor_client.rs
     src/legacy_tor_client.rs
     src/legacy_tor_controller.rs
     src/legacy_tor_control_stream.rs
@@ -24,6 +25,9 @@ if (ENABLE_MOCK_TOR_PROVIDER)
 endif()
 if (ENABLE_LEGACY_TOR_PROVIDER)
     list(APPEND TOR_INTERFACE_FEATURE_LIST "legacy-tor-provider")
+endif()
+if (ENABLE_ARTI_CLIENT_TOR_PROVIDER)
+    list(APPEND TOR_INTERFACE_FEATURE_LIST "arti-client-tor-provider")
 endif()
 
 list(JOIN TOR_INTERFACE_FEATURE_LIST "," TOR_INTERFACE_FEATURES)

@@ -1,3 +1,5 @@
+#[cfg(feature = "arti-client-tor-provider")]
+pub mod arti_client_tor_client;
 #[cfg(feature = "legacy-tor-provider")]
 pub mod legacy_tor_client;
 #[cfg(feature = "legacy-tor-provider")]

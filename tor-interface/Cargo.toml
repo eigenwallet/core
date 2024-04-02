@@ -10,6 +10,7 @@ keywords = ["tor", "anonymity"]
 repository = "https://github.com/blueprint-freespeech/gosling"
 
 [dependencies]
+arti-client = { version = "0.18", optional = true }
 curve25519-dalek = "4.1"
 data-encoding = "2.0"
 data-encoding-macro = "0.1"
@@ -30,5 +31,6 @@ serial_test = "0.9"
 which = "4.4"
 
 [features]
+arti-client-tor-provider = ["arti-client"]
 mock-tor-provider = []
 legacy-tor-provider = []
