@@ -1,5 +1,13 @@
 // standard
 use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+//extern
+use tokio::*;
+use arti_client::{BootstrapBehavior, TorClient};
+use arti_client::config::{CfgPath, TorClientConfigBuilder};
+use tor_rtcompat::PreferredRuntime;
 
 // internal crates
 use crate::tor_crypto::*;
@@ -10,6 +18,10 @@ use crate::tor_provider::*;
 pub enum Error {
     #[error("not implemented")]
     NotImplemented(),
+    #[error("arti-client config-builder error: {0}")]
+    ArtiClientConfigBuilderError(#[source] arti_client::config::ConfigBuildError),
+    #[error("arti-client error: {0}")]
+    ArtiClientError(#[source] arti_client::Error),
 }
 
 impl From<Error> for crate::tor_provider::Error {
@@ -30,12 +42,39 @@ impl OnionListenerImpl for ArtiClientOnionListener {
     }
 }
 
-#[derive(Default)]
 pub struct ArtiClientTorClient {
+    tokio_runtime: Arc<runtime::Runtime>,
+    arti_client: TorClient<PreferredRuntime>,
 }
 
 impl ArtiClientTorClient {
+    pub fn new(tokio_runtime: Arc<runtime::Runtime>, data_directory: &Path) -> Result<Self, Error> {
 
+        let arti_client = tokio_runtime.block_on(async {
+            // set custom config options
+            let mut config_builder: TorClientConfigBuilder = Default::default();
+
+            // manually set arti data directory so we can have multiple concurrent instances and control
+            // where it writes
+            config_builder.storage().cache_dir(CfgPath::new_literal(PathBuf::from(data_directory)));
+            config_builder.storage().state_dir(CfgPath::new_literal(PathBuf::from(data_directory)));
+
+            let config = match config_builder.build() {
+                Ok(config) => config,
+                Err(err) => return Err(err).map_err(Error::ArtiClientConfigBuilderError),
+            };
+
+            TorClient::builder()
+                .config(config)
+                .bootstrap_behavior(BootstrapBehavior::Manual)
+                .create_unbootstrapped().map_err(Error::ArtiClientError)
+        })?;
+
+        Ok(Self {
+            tokio_runtime,
+            arti_client,
+        })
+    }
 }
 
 impl TorProvider for ArtiClientTorClient {
