@@ -24,6 +24,7 @@ socks = "0.3"
 static_assertions = "1.1"
 thiserror = "1.0"
 tokio = { version = "1", optional = true }
+tokio-stream = { version = "0.1", optional = true }
 tor-llcrypto = { version = "0.18", features = ["relay"] }
 tor-rtcompat = { version = "0", optional = true }
 
@@ -33,6 +34,6 @@ serial_test = "0.9"
 which = "4.4"
 
 [features]
-arti-client-tor-provider = ["arti-client", "tokio", "tor-rtcompat"]
+arti-client-tor-provider = ["arti-client", "tokio", "tokio-stream", "tor-rtcompat"]
 mock-tor-provider = []
 legacy-tor-provider = []
