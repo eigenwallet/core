@@ -325,6 +325,11 @@ impl Ed25519PrivateKey {
     pub fn to_bytes(&self) -> [u8; ED25519_PRIVATE_KEY_SIZE] {
         self.expanded_keypair.to_secret_key_bytes()
     }
+
+    #[cfg(feature = "arti-client-tor-provider")]
+    pub(crate) fn inner(&self) -> &pk::ed25519::ExpandedKeypair {
+        &self.expanded_keypair
+    }
 }
 
 impl PartialEq for Ed25519PrivateKey {
