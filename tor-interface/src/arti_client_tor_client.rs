@@ -1,6 +1,6 @@
 // standard
 use std::io::ErrorKind;
-use std::net::{SocketAddr, TcpListener};
+use std::net::{SocketAddr};
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -10,7 +10,7 @@ use arti_client::{BootstrapBehavior, TorClient};
 use arti_client::config::{CfgPath, TorClientConfigBuilder};
 use fs_mistrust::Mistrust;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime;
 use tokio_stream::StreamExt;
 use tor_cell::relaycell::msg::{Connected};
@@ -20,7 +20,8 @@ use tor_hsservice::{HsIdKeypairSpecifier, HsNickname, OnionService, RunningOnion
 use tor_hsservice::config::{OnionServiceConfigBuilder};
 use tor_llcrypto::pk::ed25519::ExpandedKeypair;
 use tor_persist::state_dir::StateDirectory;
-use tor_proto::stream::IncomingStreamRequest;
+use tor_proto::circuit::ClientCirc;
+use tor_proto::stream::{ClientStreamCtrl, IncomingStreamRequest};
 use tor_rtcompat::PreferredRuntime;
 
 // internal crates
@@ -38,6 +39,15 @@ pub enum Error {
 
     #[error("unable to get TCP listener's local address")]
     TcpListenerLocalAddrFailed(#[source] std::io::Error),
+
+    #[error("unable to accept connection on TCP Listener")]
+    TcpListenerAcceptFailed(#[source] std::io::Error),
+
+    #[error("unable to connect to TCP listener")]
+    TcpStreamConnectFailed(#[source] std::io::Error),
+
+    #[error("unable to convert tokio::TcpStream to std::net::TcpStream")]
+    TcpStreamIntoFailed(#[source] std::io::Error),
 
     #[error("arti-client config-builder error: {0}")]
     ArtiClientConfigBuilderError(#[source] arti_client::config::ConfigBuildError),
@@ -111,7 +121,7 @@ pub struct ArtiClientTorClient {
 }
 
 // used to forward traffic to/from arti to local tcp streams
-async fn forward_stream<R, W>(mut reader: R, mut writer: W) -> ()
+async fn forward_stream<R, W>(circuit: Arc<ClientCirc>, mut reader: R, mut writer: W) -> ()
 where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
@@ -121,18 +131,23 @@ where
         let count = match reader.read(&mut buf).await {
             Ok(0) => break,
             Ok(count) => count,
-            Err(_) => break,
+            Err(_err) => break,
         };
 
         match writer.write_all(&buf[0..count]).await {
             Ok(()) => (),
-            Err(_) => break,
+            Err(_err) => break,
         }
         match writer.flush().await {
             Ok(()) => (),
-            Err(_) => break,
+            Err(_err) => break,
         }
     }
+    // TODO: remove this yield once upstream issue is resovled:
+    // https://gitlab.torproject.org/tpo/core/arti/-/issues/1370
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    // kill the circuit
+    circuit.terminate();
 }
 
 impl ArtiClientTorClient {
@@ -150,6 +165,11 @@ impl ArtiClientTorClient {
         let mut state_dir = PathBuf::from(root_data_directory);
         state_dir.push("state");
         config_builder.storage().state_dir(CfgPath::new_literal(state_dir.clone()));
+
+        // disable access to clearnet addresses and enable access to onion services
+        config_builder.address_filter()
+            .allow_local_addrs(false)
+            .allow_onion_addrs(true);
 
         let config = match config_builder.build() {
             Ok(config) => config,
@@ -255,11 +275,66 @@ impl TorProvider for ArtiClientTorClient {
 
     fn connect(
         &mut self,
-        _service_id: &V3OnionServiceId,
-        _virt_port: u16,
-        _circuit: Option<CircuitToken>,
+        service_id: &V3OnionServiceId,
+        virt_port: u16,
+        circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
-        Err(Error::NotImplemented().into())
+
+        // stream isolation not implemented yet
+        if circuit.is_some() {
+            return Err(Error::NotImplemented().into());
+        }
+
+        // connect to onion service
+        let target = (format!("{}.onion", service_id),  virt_port);
+        let arti_client = self.arti_client.clone();
+        let data_stream = self.tokio_runtime.block_on(async move {
+            arti_client.connect(target).await
+        }).map_err(Error::ArtiClientError)?;
+
+        // start a task to forward traffic from returned data stream
+        // and tcp socket
+        let client_stream = self.tokio_runtime.block_on(async move {
+            let circuit = data_stream.ctrl().circuit().unwrap();
+            let (data_reader, data_writer) = data_stream.split();
+
+            // try to bind to a local address, let OS pick our port
+            let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
+            let server_listener = TcpListener::bind(socket_addr).await.map_err(Error::TcpListenerBindFailed)?;
+            // await future after a client connects
+            let server_accept_future = server_listener.accept();
+            let socket_addr = server_listener
+                .local_addr()
+                .map_err(Error::TcpListenerLocalAddrFailed)?;
+
+            // client stream will ultimatley be returned from connect()
+            let client_stream = TcpStream::connect(socket_addr).await.map_err(Error::TcpStreamConnectFailed)?;
+            // client has connected so now get the server's tcp stream
+            let (server_stream, _socket_addr) = server_accept_future.await.map_err(Error::TcpListenerAcceptFailed)?;
+            let (tcp_reader, tcp_writer) = server_stream.into_split();
+
+            // now spawn new tasks to forward traffic to/from local listener
+            tokio::task::spawn({
+                let circuit = circuit.clone();
+                async move {
+                    forward_stream(circuit, tcp_reader, data_writer).await;
+                }
+            });
+            tokio::task::spawn(async move {
+                forward_stream(circuit, data_reader, tcp_writer).await;
+            });
+            Ok::<TcpStream, tor_provider::Error>(client_stream)
+        })?;
+
+        let stream = client_stream.into_std().map_err(Error::TcpStreamIntoFailed)?;
+        Ok(OnionStream {
+            stream,
+            local_addr: None,
+            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3::new(
+                service_id.clone(),
+                virt_port,
+            )))),
+        })
     }
 
     fn listener(
@@ -276,14 +351,14 @@ impl TorProvider for ArtiClientTorClient {
 
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
-        let listener = TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
+        // TODO: make this one async too
+        let listener = std::net::TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
         let socket_addr = listener
             .local_addr()
             .map_err(Error::TcpListenerLocalAddrFailed)?;
 
         // create a new ephemeral store for storing our onion service keys
         let ephemeral_store: ArtiEphemeralKeystore = ArtiEphemeralKeystore::new("ephemeral".to_string());
-
         let keymgr = match KeyMgrBuilder::default()
             .default_store(Box::new(ephemeral_store))
             .build() {
@@ -336,19 +411,26 @@ impl TorProvider for ArtiClientTorClient {
         let runtime = self.arti_client.runtime().clone();
         let dirmgr = self.arti_client.dirmgr().clone().upcast_arc();
         let hs_circ_pool = self.arti_client.hs_circ_pool().clone();
-        // TODO: maybe make this not block, and instead we update the ArtiOnionListener to have like an
-        // Arc<Mutex<Option<RunningOnionService>>> which this task sets and on setting *then* we push
-        // the OnionServicePublished event
-        let (onion_service, mut rend_requests) = self.tokio_runtime.block_on(async move {
-            onion_service.launch(runtime.clone(), dirmgr, hs_circ_pool)
-        }).map_err(Error::TorHsServiceStartupError)?;
 
-        match self.pending_events.lock() {
-            Ok(mut pending_events) => {
-                pending_events.push(TorEvent::OnionServicePublished {service_id});
+        let (onion_service, mut rend_requests) = onion_service.launch(runtime, dirmgr, hs_circ_pool).map_err(Error::TorHsServiceStartupError)?;
+
+        // start a task to signal onion service published
+        let pending_events = self.pending_events.clone();
+        let mut status_events = onion_service.status_events();
+        self.tokio_runtime.spawn(async move {
+            while let Some(evt) = status_events.next().await {
+                match evt.state() {
+                    tor_hsservice::status::State::Running => match pending_events.lock() {
+                        Ok(mut pending_events) => {
+                            pending_events.push(TorEvent::OnionServicePublished{service_id});
+                            return;
+                        },
+                        Err(_) => unreachable!("another thread panicked while holding this pending_events mutex"),
+                    },
+                    _ => (),
+                }
             }
-            Err(_) => unreachable!("another thread panicked while holding this pending_events mutex"),
-        }
+        });
 
         // start a task which accepts every RendRequest to get a StreamRequest
         self.tokio_runtime.spawn(async move {
@@ -369,26 +451,31 @@ impl TorProvider for ArtiClientTorClient {
                         };
 
                         if should_accept {
-                            let (client_reader, client_writer) = match stream_request.accept(Connected::new_empty()).await {
-                                Ok(data_stream) => data_stream.split(),
-                                //  TODO: probably not our problem?
+                            let data_stream = match stream_request.accept(Connected::new_empty()).await {
+                                Ok(data_stream) => data_stream,
+                                // TODO: probably not our problem
                                 _ => continue,
                             };
+                            let circuit = data_stream.ctrl().circuit().unwrap();
+                            let (data_reader, data_writer) = data_stream.split();
 
-                            let (local_reader, local_writer) = match TcpStream::connect(socket_addr).await {
+                            let (tcp_reader, tcp_writer) = match TcpStream::connect(socket_addr).await {
                                 Ok(tcp_stream) => tcp_stream.into_split(),
                                 // TODO: possibly our problem?
                                 _ => continue,
                             };
-                            // now spawn new tasks to forward traffic to/from theonion listener
+                            // now spawn new tasks to forward traffic to/from the onion listener
 
                             // read from connected client and write to local socket
-                            tokio::task::spawn(async move {
-                                forward_stream(client_reader, local_writer).await;
+                            tokio::task::spawn({
+                                let circuit = circuit.clone();
+                                async move {
+                                    forward_stream(circuit, data_reader, tcp_writer).await;
+                                }
                             });
                             // read from local socket and write to connected client
                             tokio::task::spawn(async move {
-                                forward_stream(local_reader, client_writer).await;
+                                forward_stream(circuit, tcp_reader, data_writer).await;
                             });
                         } else {
                             // either requesting the wrong port or the wrong type of stream request

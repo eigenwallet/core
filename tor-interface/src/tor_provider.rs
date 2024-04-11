@@ -24,11 +24,15 @@ impl OnionAddrV3 {
     pub fn service_id(&self) -> &V3OnionServiceId {
         &self.service_id
     }
+
+    pub fn virt_port(&self) -> u16 {
+        self.virt_port
+    }
 }
 
 impl std::fmt::Display for OnionAddrV3 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.service_id, self.virt_port)
+        write!(f, "{}.onion:{}", self.service_id, self.virt_port)
     }
 }
 
