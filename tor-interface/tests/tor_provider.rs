@@ -431,3 +431,44 @@ fn test_arti_authenticated_onion_service() -> anyhow::Result<()> {
 }
 */
 
+//
+// Mixed Arti/Legacy TorProvider tests
+//
+
+#[test]
+#[serial]
+#[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
+fn test_arti_legacy_basic_onion_service() -> anyhow::Result<()> {
+    let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_arti_legacy_basic_onion_service_server");
+    let server_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path)?);
+
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_arti_legacy_basic_onion_service_client");
+    let client_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+
+    basic_onion_service_test(server_provider, client_provider)
+}
+
+#[test]
+#[serial]
+#[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
+fn test_legacy_arti_basic_onion_service() -> anyhow::Result<()> {
+
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_legacy_arty_basic_onion_service_client");
+    let server_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+
+
+    let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_legacy_arti_basic_onion_service_server");
+    let client_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path)?);
+
+    basic_onion_service_test(server_provider, client_provider)
+}
