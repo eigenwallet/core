@@ -1,10 +1,16 @@
 // stanndard
 use std::io::{Read, Write};
+#[cfg(feature = "arti-client-tor-provider")]
+use std::sync::Arc;
 
 // extern crates
 use serial_test::serial;
+#[cfg(feature = "arti-client-tor-provider")]
+use tokio::*;
 
 // internal crates
+#[cfg(feature = "arti-client-tor-provider")]
+use tor_interface::arti_client_tor_client::*;
 #[cfg(feature = "legacy-tor-provider")]
 use tor_interface::legacy_tor_client::*;
 #[cfg(feature = "mock-tor-provider")]
@@ -372,4 +378,56 @@ fn test_legacy_client_auth_onion_service() -> anyhow::Result<()> {
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
+
+//
+// Arti TorProvider tests
+//
+
+#[test]
+#[serial]
+#[cfg(feature = "arti-client-tor-provider")]
+fn test_arti_client_bootstrap() -> anyhow::Result<()> {
+    let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_arti_bootstrap");
+    let tor_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path).unwrap());
+
+    bootstrap_test(tor_provider)
+}
+
+
+#[test]
+#[cfg(feature = "arti-client-tor-provider")]
+fn test_arti_client_basic_onion_service() -> anyhow::Result<()> {
+    let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_arti_basic_onion_service_server");
+    let server_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_arti_basic_onion_service_client");
+    let client_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
+
+    basic_onion_service_test(server_provider, client_provider)
+}
+
+/*
+TODO: re-enable once client-auth is available in arti
+#[test]
+#[serial]
+#[cfg(feature = "arti-client-tor-provider")]
+fn test_arti_authenticated_onion_service() -> anyhow::Result<()> {
+    let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_arti_basic_onion_service_server");
+    let server_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_arti_basic_onion_service_client");
+    let client_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
+
+    authenticated_onion_service_test(server_provider, client_provider)
+}
+*/
 
