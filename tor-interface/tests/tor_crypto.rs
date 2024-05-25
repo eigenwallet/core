@@ -2,7 +2,7 @@
 use tor_interface::tor_crypto::*;
 
 #[test]
-fn test_ed25519() -> Result<(), anyhow::Error> {
+fn test_crypto_ed25519() -> Result<(), anyhow::Error> {
     let private_key_blob = "ED25519-V3:rP3u8mZaKohap0lKsB8Z8qXbXqK456JKKGONDBhV+gPBVKa2mHVQqnRTVuFXe3inU3YW6qvc7glYEwe9rK0LhQ==";
     let private_raw: [u8; ED25519_PRIVATE_KEY_SIZE] = [
         0xacu8, 0xfdu8, 0xeeu8, 0xf2u8, 0x66u8, 0x5au8, 0x2au8, 0x88u8, 0x5au8, 0xa7u8, 0x49u8,
@@ -92,7 +92,7 @@ fn test_ed25519() -> Result<(), anyhow::Error> {
 }
 
 #[test]
-fn test_x25519() -> Result<(), anyhow::Error> {
+fn test_crypto_x25519() -> Result<(), anyhow::Error> {
     // private/public key pair
     const SECRET_BASE64: &str = "0GeSReJXdNcgvWRQdnDXhJGdu5UiwP2fefgT93/oqn0=";
     const SECRET_RAW: [u8; X25519_PRIVATE_KEY_SIZE] = [

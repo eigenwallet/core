@@ -316,7 +316,7 @@ fn test_mock_bootstrap() -> anyhow::Result<()> {
 
 #[test]
 #[cfg(feature = "mock-tor-provider")]
-fn test_mock_basic_onion_service() -> anyhow::Result<()> {
+fn test_mock_onion_service() -> anyhow::Result<()> {
     let server_provider = Box::new(MockTorClient::new());
     let client_provider = Box::new(MockTorClient::new());
     basic_onion_service_test(server_provider, client_provider)
@@ -365,7 +365,7 @@ fn test_legacy_onion_service() -> anyhow::Result<()> {
 #[test]
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
-fn test_legacy_client_auth_onion_service() -> anyhow::Result<()> {
+fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
 
     let mut data_path = std::env::temp_dir();
@@ -398,7 +398,7 @@ fn test_arti_client_bootstrap() -> anyhow::Result<()> {
 
 #[test]
 #[cfg(feature = "arti-client-tor-provider")]
-fn test_arti_client_basic_onion_service() -> anyhow::Result<()> {
+fn test_arti_client_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
     let mut data_path = std::env::temp_dir();
     data_path.push("test_arti_basic_onion_service_server");
@@ -438,7 +438,7 @@ fn test_arti_authenticated_onion_service() -> anyhow::Result<()> {
 #[test]
 #[serial]
 #[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
-fn test_arti_legacy_basic_onion_service() -> anyhow::Result<()> {
+fn test_mixed_arti_client_legacy_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
     let mut data_path = std::env::temp_dir();
@@ -456,7 +456,7 @@ fn test_arti_legacy_basic_onion_service() -> anyhow::Result<()> {
 #[test]
 #[serial]
 #[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
-fn test_legacy_arti_basic_onion_service() -> anyhow::Result<()> {
+fn test_mixed_legacy_arti_client_onion_service() -> anyhow::Result<()> {
 
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
