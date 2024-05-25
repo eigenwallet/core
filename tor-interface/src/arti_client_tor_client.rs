@@ -4,6 +4,7 @@ use std::net::{SocketAddr};
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 //extern
 use arti_client::{BootstrapBehavior, TorClient};
@@ -20,8 +21,7 @@ use tor_hsservice::{HsIdKeypairSpecifier, HsNickname, OnionService, RunningOnion
 use tor_hsservice::config::{OnionServiceConfigBuilder};
 use tor_llcrypto::pk::ed25519::ExpandedKeypair;
 use tor_persist::state_dir::StateDirectory;
-use tor_proto::circuit::ClientCirc;
-use tor_proto::stream::{ClientStreamCtrl, IncomingStreamRequest};
+use tor_proto::stream::IncomingStreamRequest;
 use tor_rtcompat::PreferredRuntime;
 
 // internal crates
@@ -121,33 +121,42 @@ pub struct ArtiClientTorClient {
 }
 
 // used to forward traffic to/from arti to local tcp streams
-async fn forward_stream<R, W>(circuit: Arc<ClientCirc>, mut reader: R, mut writer: W) -> ()
+async fn forward_stream<R, W>(alive: Arc<AtomicBool>, mut reader: R, mut writer: W) -> ()
 where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
+    let read_timeout = std::time::Duration::from_millis(100);
     let mut buf = [0u8; 1024];
-    loop {
-        let count = match reader.read(&mut buf).await {
-            Ok(0) => break,
-            Ok(count) => count,
-            Err(_err) => break,
-        };
 
-        match writer.write_all(&buf[0..count]).await {
-            Ok(()) => (),
-            Err(_err) => break,
-        }
-        match writer.flush().await {
-            Ok(()) => (),
-            Err(_err) => break,
+    while alive.load(Ordering::Relaxed) {
+        tokio::select! {
+            count = reader.read(&mut buf) => match count {
+                // end of stream
+                Ok(0) => break,
+                // read N bytes
+                Ok(count) => {
+                    // forward traffic
+                    match writer.write_all(&buf[0..count]).await {
+                        Ok(()) => (),
+                        Err(_err) => break,
+                    }
+                    match writer.flush().await {
+                        Ok(()) => (),
+                        Err(_err) => break,
+                    }
+                },
+                // read failed
+                Err(_err) => break,
+            },
+            _ = tokio::time::sleep(read_timeout.clone()) => match writer.flush().await {
+                Ok(()) => (),
+                Err(_err) => break,
+            }
         }
     }
-    // TODO: remove this yield once upstream issue is resovled:
-    // https://gitlab.torproject.org/tpo/core/arti/-/issues/1370
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-    // kill the circuit
-    circuit.terminate();
+    // signal pump death
+    alive.store(false, Ordering::Relaxed);
 }
 
 impl ArtiClientTorClient {
@@ -295,7 +304,6 @@ impl TorProvider for ArtiClientTorClient {
         // start a task to forward traffic from returned data stream
         // and tcp socket
         let client_stream = self.tokio_runtime.block_on(async move {
-            let circuit = data_stream.ctrl().circuit().unwrap();
             let (data_reader, data_writer) = data_stream.split();
 
             // try to bind to a local address, let OS pick our port
@@ -314,14 +322,15 @@ impl TorProvider for ArtiClientTorClient {
             let (tcp_reader, tcp_writer) = server_stream.into_split();
 
             // now spawn new tasks to forward traffic to/from local listener
+            let pump_alive = Arc::new(AtomicBool::new(true));
             tokio::task::spawn({
-                let circuit = circuit.clone();
+                let pump_alive = pump_alive.clone();
                 async move {
-                    forward_stream(circuit, tcp_reader, data_writer).await;
+                    forward_stream(pump_alive, tcp_reader, data_writer).await;
                 }
             });
             tokio::task::spawn(async move {
-                forward_stream(circuit, data_reader, tcp_writer).await;
+                forward_stream(pump_alive, data_reader, tcp_writer).await;
             });
             Ok::<TcpStream, tor_provider::Error>(client_stream)
         })?;
@@ -456,7 +465,6 @@ impl TorProvider for ArtiClientTorClient {
                                 // TODO: probably not our problem
                                 _ => continue,
                             };
-                            let circuit = data_stream.ctrl().circuit().unwrap();
                             let (data_reader, data_writer) = data_stream.split();
 
                             let (tcp_reader, tcp_writer) = match TcpStream::connect(socket_addr).await {
@@ -466,16 +474,17 @@ impl TorProvider for ArtiClientTorClient {
                             };
                             // now spawn new tasks to forward traffic to/from the onion listener
 
+                            let pump_alive = Arc::new(AtomicBool::new(true));
                             // read from connected client and write to local socket
                             tokio::task::spawn({
-                                let circuit = circuit.clone();
+                                let pump_alive = pump_alive.clone();
                                 async move {
-                                    forward_stream(circuit, data_reader, tcp_writer).await;
+                                    forward_stream(pump_alive, data_reader,tcp_writer).await;
                                 }
                             });
                             // read from local socket and write to connected client
                             tokio::task::spawn(async move {
-                                forward_stream(circuit, tcp_reader, data_writer).await;
+                                forward_stream(pump_alive, tcp_reader, data_writer).await;
                             });
                         } else {
                             // either requesting the wrong port or the wrong type of stream request

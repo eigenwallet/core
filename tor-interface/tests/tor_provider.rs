@@ -6,7 +6,7 @@ use std::sync::Arc;
 // extern crates
 use serial_test::serial;
 #[cfg(feature = "arti-client-tor-provider")]
-use tokio::*;
+use tokio::runtime;
 
 // internal crates
 #[cfg(feature = "arti-client-tor-provider")]
