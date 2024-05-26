@@ -126,10 +126,18 @@ where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
+    // allow 100ms timeout on reads to verify writer is still good
     let read_timeout = std::time::Duration::from_millis(100);
+    // allow additional retries in the event the other half of the pump
+    // dies; keep pumping data until our read times out 3 times
+    let mut remaining_retries = 3;
     let mut buf = [0u8; 1024];
 
-    while alive.load(Ordering::Relaxed) {
+    loop {
+        if !alive.load(Ordering::Relaxed) && remaining_retries == 0 {
+            break;
+        }
+
         tokio::select! {
             count = reader.read(&mut buf) => match count {
                 // end of stream
@@ -150,7 +158,13 @@ where
                 Err(_err) => break,
             },
             _ = tokio::time::sleep(read_timeout.clone()) => match writer.flush().await {
-                Ok(()) => (),
+                Ok(()) => {
+                    // so long as our writer and reader are good, we should
+                    // allow a few additional data pump attempts
+                    if !alive.load(Ordering::Relaxed) {
+                        remaining_retries -= 1;
+                    }
+                },
                 Err(_err) => break,
             }
         }
