@@ -9,8 +9,8 @@ use crate::tor_crypto::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OnionAddrV3 {
-    service_id: V3OnionServiceId,
-    virt_port: u16,
+    pub(crate) service_id: V3OnionServiceId,
+    pub(crate) virt_port: u16,
 }
 
 impl OnionAddrV3 {
@@ -54,6 +54,12 @@ pub enum TargetAddr {
     Ip(std::net::SocketAddr),
     Domain(String, u16),
     OnionService(OnionAddr),
+}
+
+impl From<(V3OnionServiceId, u16)> for TargetAddr {
+    fn from(target_tuple: (V3OnionServiceId, u16)) -> Self {
+        TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3::new(target_tuple.0, target_tuple.1)))
+    }
 }
 
 #[derive(Debug)]
@@ -173,8 +179,7 @@ pub trait TorProvider: Send {
     fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<(), Error>;
     fn connect(
         &mut self,
-        service_id: &V3OnionServiceId,
-        virt_port: u16,
+        target: TargetAddr,
         circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, Error>;
     fn listener(

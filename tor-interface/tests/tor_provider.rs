@@ -145,7 +145,7 @@ pub(crate) fn basic_onion_service_test(mut server_provider: Box<dyn TorProvider>
             println!("Connecting to onion service");
             let mut attempt_count = 0;
             let mut client = loop {
-                match tor.connect(&service_id, VIRT_PORT, None) {
+                match tor.connect((service_id.clone(), VIRT_PORT).into(), None) {
                     Ok(client) => break client,
                     Err(err) => {
                         println!("connect error: {:?}", err);
@@ -270,7 +270,7 @@ pub(crate) fn authenticated_onion_service_test(mut server_provider: Box<dyn TorP
 
             println!("Connecting to onion service (should fail)");
             assert!(
-                client_provider.connect(&service_id, VIRT_PORT, None).is_err(),
+                client_provider.connect((service_id.clone(), VIRT_PORT).into(), None).is_err(),
                 "should not able to connect to an authenticated onion service without auth key"
             );
 
@@ -278,7 +278,7 @@ pub(crate) fn authenticated_onion_service_test(mut server_provider: Box<dyn TorP
             client_provider.add_client_auth(&service_id, &private_auth_key)?;
 
             println!("Connecting to onion service with authentication");
-            let mut client = client_provider.connect(&service_id, VIRT_PORT, None)?;
+            let mut client = client_provider.connect((service_id.clone(), VIRT_PORT).into(), None)?;
 
             println!("Client writing message: '{}'", MESSAGE);
             client.write_all(MESSAGE.as_bytes())?;

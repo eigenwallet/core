@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 //extern
-use arti_client::{BootstrapBehavior, TorClient};
+use arti_client::{BootstrapBehavior, DangerouslyIntoTorAddr, IntoTorAddr, TorClient};
 use arti_client::config::{CfgPath, TorClientConfigBuilder};
 use fs_mistrust::Mistrust;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -54,6 +54,9 @@ pub enum Error {
 
     #[error("arti-client error: {0}")]
     ArtiClientError(#[source] arti_client::Error),
+
+    #[error("arti-client tor-addr error: {0}")]
+    ArtiClientTorAddrError(#[source] arti_client::TorAddrError),
 
     #[error("tor-keymgr error: {0}")]
     TorKeyMgrError(#[source] tor_keymgr::Error),
@@ -298,8 +301,7 @@ impl TorProvider for ArtiClientTorClient {
 
     fn connect(
         &mut self,
-        service_id: &V3OnionServiceId,
-        virt_port: u16,
+        target: TargetAddr,
         circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
 
@@ -309,10 +311,15 @@ impl TorProvider for ArtiClientTorClient {
         }
 
         // connect to onion service
-        let target = (format!("{}.onion", service_id),  virt_port);
+        let arti_target = match target.clone() {
+            TargetAddr::Ip(socket_addr) => socket_addr.into_tor_addr_dangerously(),
+            TargetAddr::Domain(domain, port) => (domain, port).into_tor_addr(),
+            TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3{service_id, virt_port})) => (format!("{}.onion", service_id), virt_port).into_tor_addr(),
+        }.map_err(Error::ArtiClientTorAddrError)?;
+
         let arti_client = self.arti_client.clone();
         let data_stream = self.tokio_runtime.block_on(async move {
-            arti_client.connect(target).await
+            arti_client.connect(arti_target).await
         }).map_err(Error::ArtiClientError)?;
 
         // start a task to forward traffic from returned data stream
@@ -353,10 +360,7 @@ impl TorProvider for ArtiClientTorClient {
         Ok(OnionStream {
             stream,
             local_addr: None,
-            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3::new(
-                service_id.clone(),
-                virt_port,
-            )))),
+            peer_addr: Some(target),
         })
     }
 

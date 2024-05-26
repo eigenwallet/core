@@ -335,8 +335,7 @@ impl TorProvider for LegacyTorClient {
     // connect to an onion service and returns OnionStream
     fn connect(
         &mut self,
-        service_id: &V3OnionServiceId,
-        virt_port: u16,
+        target: TargetAddr,
         circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
         if self.socks_listener.is_none() {
@@ -355,16 +354,21 @@ impl TorProvider for LegacyTorClient {
             None => unreachable!(),
         };
 
-        // our onion domain
-        let target = socks::TargetAddr::Domain(format!("{}.onion", service_id), virt_port);
+        // our target
+        let socks_target = match target.clone() {
+            TargetAddr::Ip(socket_addr) => socks::TargetAddr::Ip(socket_addr),
+            TargetAddr::Domain(domain, port) => socks::TargetAddr::Domain(domain, port),
+            TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3{service_id, virt_port})) => socks::TargetAddr::Domain(format!("{}.onion", service_id), virt_port),
+        };
+
         // readwrite stream
         let stream = match &circuit {
-            None => Socks5Stream::connect(socks_listener, target),
+            None => Socks5Stream::connect(socks_listener, socks_target),
             Some(circuit) => {
                 if let Some(circuit) = self.circuit_tokens.get(circuit) {
                     Socks5Stream::connect_with_password(
                         socks_listener,
-                        target,
+                        socks_target,
                         &circuit.username,
                         &circuit.password,
                     )
@@ -378,10 +382,7 @@ impl TorProvider for LegacyTorClient {
         Ok(OnionStream {
             stream: stream.into_inner(),
             local_addr: None,
-            peer_addr: Some(TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3::new(
-                service_id.clone(),
-                virt_port,
-            )))),
+            peer_addr: Some(target),
         })
     }
 

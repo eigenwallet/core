@@ -34,6 +34,9 @@ pub enum Error {
 
     #[error("unable to get TCP listener's local adress")]
     TcpListenerLocalAddrFailed(#[source] std::io::Error),
+
+    #[error("not implemented")]
+    NotImplemented(),
 }
 
 impl From<Error> for crate::tor_provider::Error {
@@ -255,15 +258,18 @@ impl TorProvider for MockTorClient {
 
     fn connect(
         &mut self,
-        service_id: &V3OnionServiceId,
-        virt_port: u16,
+        target: TargetAddr,
         _circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
-        let client_auth = self.client_auth_keys.get(service_id);
+        let (service_id, virt_port) = match target {
+            TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3{service_id, virt_port})) => (service_id, virt_port),
+            _ => return Err(Error::NotImplemented().into()),
+        };
+        let client_auth = self.client_auth_keys.get(&service_id);
 
         match MOCK_TOR_NETWORK.lock() {
             Ok(mut mock_tor_network) => {
-                Ok(mock_tor_network.connect_to_onion(service_id, virt_port, client_auth)?)
+                Ok(mock_tor_network.connect_to_onion(&service_id, virt_port, client_auth)?)
             }
             Err(_) => unreachable!("another thread panicked while holding mock tor network's lock"),
         }
