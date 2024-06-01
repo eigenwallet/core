@@ -39,20 +39,32 @@ pub const ED25519_SIGNATURE_SIZE: usize = 64;
 pub const V3_ONION_SERVICE_ID_STRING_LENGTH: usize = 56;
 /// The number of bytes needed to store onion service id as an ASCII c-string (including null-terminator)
 pub const V3_ONION_SERVICE_ID_STRING_SIZE: usize = 57;
-const_assert_eq!(V3_ONION_SERVICE_ID_STRING_SIZE, V3_ONION_SERVICE_ID_STRING_LENGTH + 1);
+const_assert_eq!(
+    V3_ONION_SERVICE_ID_STRING_SIZE,
+    V3_ONION_SERVICE_ID_STRING_LENGTH + 1
+);
 /// The number of bytes needed to store base64 encoded ed25519 private key as an ASCII c-string (not including null-terminator)
 pub const ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH: usize = 88;
 /// key klob header string
 const ED25519_PRIVATE_KEY_KEYBLOB_HEADER: &str = "ED25519-V3:";
 /// The number of bytes needed to store the keyblob header
 pub const ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH: usize = 11;
-const_assert_eq!(ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH, ED25519_PRIVATE_KEY_KEYBLOB_HEADER.len());
+const_assert_eq!(
+    ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH,
+    ED25519_PRIVATE_KEY_KEYBLOB_HEADER.len()
+);
 /// The number of bytes needed to store ed25519 private keyblob as an ASCII c-string (not including a null terminator)
 pub const ED25519_PRIVATE_KEY_KEYBLOB_LENGTH: usize = 99;
-const_assert_eq!(ED25519_PRIVATE_KEY_KEYBLOB_LENGTH, ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH + ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH);
+const_assert_eq!(
+    ED25519_PRIVATE_KEY_KEYBLOB_LENGTH,
+    ED25519_PRIVATE_KEY_KEYBLOB_HEADER_LENGTH + ED25519_PRIVATE_KEYBLOB_BASE64_LENGTH
+);
 /// The number of bytes needed to store ed25519 private keyblob as an ASCII c-string (including a null terminator)
 pub const ED25519_PRIVATE_KEY_KEYBLOB_SIZE: usize = 100;
-const_assert_eq!(ED25519_PRIVATE_KEY_KEYBLOB_SIZE, ED25519_PRIVATE_KEY_KEYBLOB_LENGTH + 1);
+const_assert_eq!(
+    ED25519_PRIVATE_KEY_KEYBLOB_SIZE,
+    ED25519_PRIVATE_KEY_KEYBLOB_LENGTH + 1
+);
 // number of bytes in an onion service id after base32 decode
 const V3_ONION_SERVICE_ID_RAW_SIZE: usize = 35;
 // byte index of the start of the public key checksum
@@ -71,12 +83,18 @@ pub const X25519_PUBLIC_KEY_SIZE: usize = 32;
 pub const X25519_PRIVATE_KEY_BASE64_LENGTH: usize = 44;
 /// The number of bytes needed to store base64 encoded x25519 private key as an ASCII c-string (including a null terminator)
 pub const X25519_PRIVATE_KEY_BASE64_SIZE: usize = 45;
-const_assert_eq!(X25519_PRIVATE_KEY_BASE64_SIZE, X25519_PRIVATE_KEY_BASE64_LENGTH + 1);
+const_assert_eq!(
+    X25519_PRIVATE_KEY_BASE64_SIZE,
+    X25519_PRIVATE_KEY_BASE64_LENGTH + 1
+);
 /// The number of bytes needed to store base32 encoded x25519 public key as an ASCII c-string (not including null-terminator)
 pub const X25519_PUBLIC_KEY_BASE32_LENGTH: usize = 52;
 /// The number of bytes needed to store base32 encoded x25519 public key as an ASCII c-string (including a null terminator)
 pub const X25519_PUBLIC_KEY_BASE32_SIZE: usize = 53;
-const_assert_eq!(X25519_PUBLIC_KEY_BASE32_SIZE, X25519_PUBLIC_KEY_BASE32_LENGTH + 1);
+const_assert_eq!(
+    X25519_PUBLIC_KEY_BASE32_SIZE,
+    X25519_PUBLIC_KEY_BASE32_LENGTH + 1
+);
 
 const ONION_BASE32: data_encoding::Encoding = new_encoding! {
     symbols: "abcdefghijklmnopqrstuvwxyz234567",
@@ -186,7 +204,10 @@ impl Ed25519PrivateKey {
         }
     }
 
-    fn from_raw_impl(raw: &[u8; ED25519_PRIVATE_KEY_SIZE], method: FromRawValidationMethod) -> Result<Ed25519PrivateKey, Error> {
+    fn from_raw_impl(
+        raw: &[u8; ED25519_PRIVATE_KEY_SIZE],
+        method: FromRawValidationMethod,
+    ) -> Result<Ed25519PrivateKey, Error> {
         // see: https://gitlab.torproject.org/tpo/core/arti/-/issues/1343
         match method {
             #[cfg(feature = "legacy-tor-provider")]
@@ -196,7 +217,7 @@ impl Ed25519PrivateKey {
                 if !(raw[0] == raw[0] & 248 && raw[31] == (raw[31] & 63) | 64) {
                     return Err(Error::KeyInvalid);
                 }
-            },
+            }
             FromRawValidationMethod::Ed25519Dalek => {
                 // Verify the scalar is non-zero and it has been reduced
                 let scalar: [u8; 32] = raw[..32].try_into().unwrap();
@@ -211,7 +232,7 @@ impl Ed25519PrivateKey {
         }
 
         if let Some(expanded_keypair) = pk::ed25519::ExpandedKeypair::from_secret_key_bytes(*raw) {
-            Ok(Ed25519PrivateKey{expanded_keypair})
+            Ok(Ed25519PrivateKey { expanded_keypair })
         } else {
             Err(Error::KeyInvalid)
         }
@@ -221,7 +242,10 @@ impl Ed25519PrivateKey {
         Self::from_raw_impl(raw, FromRawValidationMethod::Ed25519Dalek)
     }
 
-    fn from_key_blob_impl(key_blob: &str, method: FromRawValidationMethod) -> Result<Ed25519PrivateKey, Error> {
+    fn from_key_blob_impl(
+        key_blob: &str,
+        method: FromRawValidationMethod,
+    ) -> Result<Ed25519PrivateKey, Error> {
         if key_blob.len() != ED25519_PRIVATE_KEY_KEYBLOB_LENGTH {
             return Err(Error::ParseError(format!(
                 "expects string of length '{}'; received string with length '{}'",
@@ -263,7 +287,7 @@ impl Ed25519PrivateKey {
     }
 
     #[cfg(feature = "legacy-tor-provider")]
-    pub (crate) fn from_key_blob_legacy(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
+    pub(crate) fn from_key_blob_legacy(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
         Self::from_key_blob_impl(key_blob, FromRawValidationMethod::LegacyCTor)
     }
 
@@ -311,9 +335,7 @@ impl Ed25519PrivateKey {
         _public_key: &Ed25519PublicKey,
         message: &[u8],
     ) -> Ed25519Signature {
-        let signature = self
-            .expanded_keypair
-            .sign(message);
+        let signature = self.expanded_keypair.sign(message);
         Ed25519Signature { signature }
     }
 
@@ -398,7 +420,7 @@ impl Ed25519PublicKey {
 
     pub fn from_private_key(private_key: &Ed25519PrivateKey) -> Ed25519PublicKey {
         Ed25519PublicKey {
-            public_key: *private_key.expanded_keypair.public()
+            public_key: *private_key.expanded_keypair.public(),
         }
     }
 
@@ -441,12 +463,15 @@ impl std::fmt::Debug for Ed25519PublicKey {
 impl Ed25519Signature {
     pub fn from_raw(raw: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Ed25519Signature, Error> {
         Ok(Ed25519Signature {
-            signature: pk::ed25519::Signature::from_bytes(raw)
+            signature: pk::ed25519::Signature::from_bytes(raw),
         })
     }
 
     pub fn verify(&self, message: &[u8], public_key: &Ed25519PublicKey) -> bool {
-        if let Ok(()) = public_key.public_key.verify_strict(message, &self.signature) {
+        if let Ok(()) = public_key
+            .public_key
+            .verify_strict(message, &self.signature)
+        {
             return true;
         }
         false

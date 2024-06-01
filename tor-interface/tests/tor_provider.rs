@@ -54,8 +54,10 @@ pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>) -> anyhow::Result<()
     Ok(())
 }
 
-pub(crate) fn basic_onion_service_test(mut server_provider: Box<dyn TorProvider>, mut client_provider: Box<dyn TorProvider>) -> anyhow::Result<()> {
-
+pub(crate) fn basic_onion_service_test(
+    mut server_provider: Box<dyn TorProvider>,
+    mut client_provider: Box<dyn TorProvider>,
+) -> anyhow::Result<()> {
     server_provider.bootstrap()?;
     client_provider.bootstrap()?;
 
@@ -177,8 +179,10 @@ pub(crate) fn basic_onion_service_test(mut server_provider: Box<dyn TorProvider>
     Ok(())
 }
 
-pub(crate) fn authenticated_onion_service_test(mut server_provider: Box<dyn TorProvider>, mut client_provider: Box<dyn TorProvider>) -> anyhow::Result<()> {
-
+pub(crate) fn authenticated_onion_service_test(
+    mut server_provider: Box<dyn TorProvider>,
+    mut client_provider: Box<dyn TorProvider>,
+) -> anyhow::Result<()> {
     server_provider.bootstrap()?;
     client_provider.bootstrap()?;
 
@@ -239,7 +243,8 @@ pub(crate) fn authenticated_onion_service_test(mut server_provider: Box<dyn TorP
 
         println!("Starting and listening to authenticated onion service");
         const VIRT_PORT: u16 = 42069u16;
-        let listener = server_provider.listener(&private_key, VIRT_PORT, Some(&[public_auth_key]))?;
+        let listener =
+            server_provider.listener(&private_key, VIRT_PORT, Some(&[public_auth_key]))?;
 
         let mut onion_published = false;
         while !onion_published {
@@ -270,7 +275,9 @@ pub(crate) fn authenticated_onion_service_test(mut server_provider: Box<dyn TorP
 
             println!("Connecting to onion service (should fail)");
             assert!(
-                client_provider.connect((service_id.clone(), VIRT_PORT).into(), None).is_err(),
+                client_provider
+                    .connect((service_id.clone(), VIRT_PORT).into(), None)
+                    .is_err(),
                 "should not able to connect to an authenticated onion service without auth key"
             );
 
@@ -278,7 +285,8 @@ pub(crate) fn authenticated_onion_service_test(mut server_provider: Box<dyn TorP
             client_provider.add_client_auth(&service_id, &private_auth_key)?;
 
             println!("Connecting to onion service with authentication");
-            let mut client = client_provider.connect((service_id.clone(), VIRT_PORT).into(), None)?;
+            let mut client =
+                client_provider.connect((service_id.clone(), VIRT_PORT).into(), None)?;
 
             println!("Client writing message: '{}'", MESSAGE);
             client.write_all(MESSAGE.as_bytes())?;
@@ -395,7 +403,6 @@ fn test_arti_client_bootstrap() -> anyhow::Result<()> {
     bootstrap_test(tor_provider)
 }
 
-
 #[test]
 #[cfg(feature = "arti-client-tor-provider")]
 fn test_arti_client_onion_service() -> anyhow::Result<()> {
@@ -457,12 +464,10 @@ fn test_mixed_arti_client_legacy_onion_service() -> anyhow::Result<()> {
 #[serial]
 #[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
 fn test_mixed_legacy_arti_client_onion_service() -> anyhow::Result<()> {
-
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_legacy_arty_basic_onion_service_client");
     let server_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
-
 
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 

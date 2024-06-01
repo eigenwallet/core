@@ -124,8 +124,8 @@ impl MockTorNetwork {
                 } else {
                     Err(Error::OnionServiceNotPublished(onion_addr))
                 }
-            },
-            None => Err(Error::OnionServiceNotPublished(onion_addr))
+            }
+            None => Err(Error::OnionServiceNotPublished(onion_addr)),
         }
     }
 
@@ -140,7 +140,7 @@ impl MockTorNetwork {
         match &mut self.onion_services {
             Some(onion_services) => {
                 onion_services.insert(onion_addr, (client_auth_keys, address));
-            },
+            }
             None => {
                 let mut onion_services = BTreeMap::new();
                 onion_services.insert(onion_addr, (client_auth_keys, address));
@@ -262,7 +262,10 @@ impl TorProvider for MockTorClient {
         _circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
         let (service_id, virt_port) = match target {
-            TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3{service_id, virt_port})) => (service_id, virt_port),
+            TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3 {
+                service_id,
+                virt_port,
+            })) => (service_id, virt_port),
             _ => return Err(Error::NotImplemented().into()),
         };
         let client_auth = self.client_auth_keys.get(&service_id);

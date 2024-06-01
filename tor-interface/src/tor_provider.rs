@@ -58,7 +58,10 @@ pub enum TargetAddr {
 
 impl From<(V3OnionServiceId, u16)> for TargetAddr {
     fn from(target_tuple: (V3OnionServiceId, u16)) -> Self {
-        TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3::new(target_tuple.0, target_tuple.1)))
+        TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3::new(
+            target_tuple.0,
+            target_tuple.1,
+        )))
     }
 }
 
