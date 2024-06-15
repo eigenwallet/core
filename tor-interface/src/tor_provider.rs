@@ -203,6 +203,16 @@ impl FromStr for TargetAddr {
     }
 }
 
+impl std::fmt::Display for TargetAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TargetAddr::Ip(socket_addr) => socket_addr.fmt(f),
+            TargetAddr::OnionService(onion_addr) => onion_addr.fmt(f),
+            TargetAddr::Domain(domain_addr) => domain_addr.fmt(f),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum TorEvent {
     BootstrapStatus {
