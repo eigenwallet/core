@@ -103,10 +103,18 @@ if (ENABLE_TESTS)
         )
     endif()
 
+    # cryptography
     add_test(NAME tor_interface_crypto_cargo_test
         COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_crypto_ ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
+
+    # tor provider utils
+    add_test(NAME tor_interface_tor_provider_cargo_test
+        COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_tor_provider_ ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
 endif()
 
 #

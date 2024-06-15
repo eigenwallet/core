@@ -321,7 +321,9 @@ impl TorProvider for ArtiClientTorClient {
         // connect to onion service
         let arti_target = match target.clone() {
             TargetAddr::Ip(socket_addr) => socket_addr.into_tor_addr_dangerously(),
-            TargetAddr::Domain(domain, port) => (domain, port).into_tor_addr(),
+            TargetAddr::Domain(domain_addr) => {
+                (domain_addr.domain(), domain_addr.port()).into_tor_addr()
+            }
             TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3 {
                 service_id,
                 virt_port,

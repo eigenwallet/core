@@ -1,8 +1,16 @@
 // standard
 use std::boxed::Box;
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::ops::{Deref, DerefMut};
+use std::str::FromStr;
+use std::sync::OnceLock;
+
+// extern crates
+use domain::base::name::Name;
+use idna::uts46::{Hyphens, Uts46};
+use idna::{domain_to_ascii_cow, AsciiDenyList};
+use regex::Regex;
 
 // internal crates
 use crate::tor_crypto::*;
@@ -41,6 +49,39 @@ pub enum OnionAddr {
     V3(OnionAddrV3),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum OnionAddrParseError {
+    #[error("Failed to parse '{0}' as OnionAddr")]
+    Generic(String),
+}
+
+impl FromStr for OnionAddr {
+    type Err = OnionAddrParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        static ONION_SERVICE_PATTERN: OnceLock<Regex> = OnceLock::new();
+        let onion_service_pattern = ONION_SERVICE_PATTERN.get_or_init(|| {
+            Regex::new(r"(?m)^(?P<service_id>[a-z2-7]{56})\.onion:(?P<port>[1-9][0-9]{0,4})$")
+                .unwrap()
+        });
+
+        if let Some(caps) = onion_service_pattern.captures(s.to_lowercase().as_ref()) {
+            let service_id = caps
+                .name("service_id")
+                .expect("missing service_id group")
+                .as_str()
+                .to_lowercase();
+            let port = caps.name("port").expect("missing port group").as_str();
+            if let (Ok(service_id), Ok(port)) = (
+                V3OnionServiceId::from_string(service_id.as_ref()),
+                u16::from_str(port),
+            ) {
+                return Ok(OnionAddr::V3(OnionAddrV3::new(service_id, port)));
+            }
+        }
+        Err(Self::Err::Generic(s.to_string()))
+    }
+}
+
 impl std::fmt::Display for OnionAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -49,11 +90,76 @@ impl std::fmt::Display for OnionAddr {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DomainAddr {
+    domain: String,
+    port: u16,
+}
+
+impl DomainAddr {
+    pub fn domain(&self) -> &str {
+        self.domain.as_ref()
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+}
+
+impl std::fmt::Display for DomainAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let uts46: Uts46 = Default::default();
+        let (ui_str, _err) = uts46.to_user_interface(
+            self.domain.as_str().as_bytes(),
+            AsciiDenyList::URL,
+            Hyphens::Allow,
+            |_, _, _| -> bool { false },
+        );
+        write!(f, "{}:{}", ui_str, self.port)
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DomainAddrParseError {
+    #[error("Unable to parse '{0}' as DomainAddr")]
+    Generic(String),
+}
+
+impl FromStr for DomainAddr {
+    type Err = DomainAddrParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        static DOMAIN_PATTERN: OnceLock<Regex> = OnceLock::new();
+        let domain_pattern = DOMAIN_PATTERN
+            .get_or_init(|| Regex::new(r"(?m)^(?P<domain>.*):(?P<port>[1-9][0-9]{0,4})$").unwrap());
+        if let Some(caps) = domain_pattern.captures(s) {
+            let domain = caps
+                .name("domain")
+                .expect("missing service_id group")
+                .as_str();
+            let port = caps.name("port").expect("missing port group").as_str();
+
+            if let (Ok(domain), Ok(port)) = (
+                domain_to_ascii_cow(domain.as_bytes(), AsciiDenyList::URL),
+                u16::from_str(port),
+            ) {
+                let domain = domain.to_string();
+                if let Ok(domain) = Name::<Vec<u8>>::from_str(domain.as_ref()) {
+                    return Ok(Self {
+                        domain: domain.to_string(),
+                        port,
+                    });
+                }
+            }
+        }
+        Err(DomainAddrParseError::Generic(s.to_string()))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum TargetAddr {
     Ip(std::net::SocketAddr),
-    Domain(String, u16),
     OnionService(OnionAddr),
+    Domain(DomainAddr),
 }
 
 impl From<(V3OnionServiceId, u16)> for TargetAddr {
@@ -62,6 +168,28 @@ impl From<(V3OnionServiceId, u16)> for TargetAddr {
             target_tuple.0,
             target_tuple.1,
         )))
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TargetAddrParseError {
+    #[error("Unable to parse '{0}' as TargetAddr")]
+    Generic(String),
+}
+
+impl FromStr for TargetAddr {
+    type Err = TargetAddrParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(socket_addr) = SocketAddr::from_str(s) {
+            return Ok(TargetAddr::Ip(socket_addr));
+        } else if let Ok(onion_addr) = OnionAddr::from_str(s) {
+            return Ok(TargetAddr::OnionService(onion_addr));
+        } else if let Ok(domain_addr) = DomainAddr::from_str(s) {
+            if !domain_addr.domain().ends_with(".onion") {
+                return Ok(TargetAddr::Domain(domain_addr));
+            }
+        }
+        Err(TargetAddrParseError::Generic(s.to_string()))
     }
 }
 

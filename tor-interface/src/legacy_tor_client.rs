@@ -357,7 +357,9 @@ impl TorProvider for LegacyTorClient {
         // our target
         let socks_target = match target.clone() {
             TargetAddr::Ip(socket_addr) => socks::TargetAddr::Ip(socket_addr),
-            TargetAddr::Domain(domain, port) => socks::TargetAddr::Domain(domain, port),
+            TargetAddr::Domain(domain_addr) => {
+                socks::TargetAddr::Domain(domain_addr.domain().to_string(), domain_addr.port())
+            }
             TargetAddr::OnionService(OnionAddr::V3(OnionAddrV3 {
                 service_id,
                 virt_port,
