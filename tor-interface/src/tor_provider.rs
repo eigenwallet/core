@@ -1,5 +1,6 @@
 // standard
 use std::boxed::Box;
+use std::convert::TryFrom;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::ops::{Deref, DerefMut};
@@ -125,6 +126,24 @@ pub enum DomainAddrParseError {
     Generic(String),
 }
 
+impl TryFrom<(String, u16)> for DomainAddr {
+    type Error = DomainAddrParseError;
+
+    fn try_from(value: (String, u16)) -> Result<Self, Self::Error> {
+        let (domain, port) = (&value.0, value.1);
+        if let Ok(domain) = domain_to_ascii_cow(domain.as_bytes(), AsciiDenyList::URL) {
+            let domain = domain.to_string();
+            if let Ok(domain) = Name::<Vec<u8>>::from_str(domain.as_ref()) {
+                return Ok(Self {
+                    domain: domain.to_string(),
+                    port,
+                });
+            }
+        }
+        Err(DomainAddrParseError::Generic(format!("{}:{}", domain, port)))
+    }
+}
+
 impl FromStr for DomainAddr {
     type Err = DomainAddrParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -134,21 +153,12 @@ impl FromStr for DomainAddr {
         if let Some(caps) = domain_pattern.captures(s) {
             let domain = caps
                 .name("domain")
-                .expect("missing service_id group")
-                .as_str();
+                .expect("missing domain group")
+                .as_str()
+                .to_string();
             let port = caps.name("port").expect("missing port group").as_str();
-
-            if let (Ok(domain), Ok(port)) = (
-                domain_to_ascii_cow(domain.as_bytes(), AsciiDenyList::URL),
-                u16::from_str(port),
-            ) {
-                let domain = domain.to_string();
-                if let Ok(domain) = Name::<Vec<u8>>::from_str(domain.as_ref()) {
-                    return Ok(Self {
-                        domain: domain.to_string(),
-                        port,
-                    });
-                }
+            if let Ok(port) = u16::from_str(port) {
+                return Self::try_from((domain, port));
             }
         }
         Err(DomainAddrParseError::Generic(s.to_string()))
