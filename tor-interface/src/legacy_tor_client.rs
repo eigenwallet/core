@@ -192,7 +192,7 @@ pub struct LegacyTorClient {
 
 impl LegacyTorClient {
     pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
-        let (daemon, mut controller, password) = match config {
+        let (daemon, mut controller, password, socks_listener) = match config {
             LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory} => {
                 // launch tor
                 let daemon = LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
@@ -207,7 +207,7 @@ impl LegacyTorClient {
                     .map_err(Error::LegacyTorControllerCreationFailed)?;
 
                 let password = daemon.get_password().to_string();
-                (Some(daemon), controller, password)
+                (Some(daemon), controller, password, None)
             },
             LegacyTorClientConfig::SystemTor{..} => return Err(Error::NotImplemented())
         };
@@ -247,7 +247,7 @@ impl LegacyTorClient {
             daemon,
             version,
             controller,
-            socks_listener: None,
+            socks_listener,
             onion_services: Default::default(),
             circuit_token_counter: 0usize,
             circuit_tokens: Default::default(),
