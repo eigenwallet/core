@@ -717,7 +717,7 @@ fn test_tor_controller() -> anyhow::Result<()> {
         let vals = tor_controller.getconf(&["SocksPort", "AvoidDiskWrites", "DisableNetwork"])?;
         for (key, value) in vals.iter() {
             let expected = match key.as_str() {
-                "SocksPort" => "auto OnionTrafficOnly",
+                "SocksPort" => "auto",
                 "AvoidDiskWrites" => "1",
                 "DisableNetwork" => "1",
                 _ => panic!("unexpected returned key: {}", key),

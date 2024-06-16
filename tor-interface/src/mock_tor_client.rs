@@ -35,6 +35,9 @@ pub enum Error {
     #[error("unable to get TCP listener's local adress")]
     TcpListenerLocalAddrFailed(#[source] std::io::Error),
 
+    #[error("unable to connect to {}", .0)]
+    ConnectFailed(TargetAddr),
+
     #[error("not implemented")]
     NotImplemented(),
 }
@@ -163,6 +166,7 @@ pub struct MockTorClient {
     bootstrapped: bool,
     client_auth_keys: BTreeMap<V3OnionServiceId, X25519PublicKey>,
     onion_services: Vec<(OnionAddr, Arc<atomic::AtomicBool>)>,
+    loopback: TcpListener,
 }
 
 impl MockTorClient {
@@ -171,11 +175,16 @@ impl MockTorClient {
         let line = "[notice] MockTorClient running".to_string();
         events.push(TorEvent::LogReceived { line });
 
+
+        let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
+        let listener = TcpListener::bind(socket_addr).expect("tcplistener bind failed");
+
         MockTorClient {
             events,
             bootstrapped: false,
             client_auth_keys: Default::default(),
             onion_services: Default::default(),
+            loopback: listener,
         }
     }
 }
@@ -266,7 +275,15 @@ impl TorProvider for MockTorClient {
                 service_id,
                 virt_port,
             })) => (service_id, virt_port),
-            _ => return Err(Error::NotImplemented().into()),
+            target_address => if let Ok(stream) = TcpStream::connect(self.loopback.local_addr().expect("loopback local_addr failed")) {
+                return Ok(OnionStream {
+                    stream,
+                    local_addr: None,
+                    peer_addr: Some(target_address),
+                });
+            } else {
+                return Err(Error::ConnectFailed(target_address).into());
+            },
         };
         let client_auth = self.client_auth_keys.get(&service_id);
 

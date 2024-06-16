@@ -202,11 +202,11 @@ impl LegacyTorProcess {
         // TODO: should we nuke the existing torrc between runs? Do we want
         // users setting custom nonsense in there?
         // construct default torrc
-        //  - daemon determines socks port and only allows clients to connect to onion services
+        //  - daemon determines socks port
         //  - minimize writes to disk
         //  - start with network disabled by default
         if !default_torrc.exists() {
-            const DEFAULT_TORRC_CONTENT: &str = "SocksPort auto OnionTrafficOnly\n\
+            const DEFAULT_TORRC_CONTENT: &str = "SocksPort auto\n\
             AvoidDiskWrites 1\n\
             DisableNetwork 1\n\n";
 
