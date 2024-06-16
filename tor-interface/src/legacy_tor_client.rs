@@ -83,6 +83,9 @@ pub enum Error {
     #[error("failed to create onion service")]
     AddOnionFailed(#[source] crate::legacy_tor_controller::Error),
 
+    #[error("tor not bootstrapped")]
+    LegacyTorNotBootstrapped(),
+
     #[error("not implemented")]
     NotImplemented(),
 }
@@ -182,6 +185,7 @@ pub struct LegacyTorClient {
     daemon: Option<LegacyTorProcess>,
     version: LegacyTorVersion,
     controller: LegacyTorController,
+    bootstrapped: bool,
     socks_listener: Option<SocketAddr>,
     // list of open onion services and their is_active flag
     onion_services: Vec<(V3OnionServiceId, Arc<atomic::AtomicBool>)>,
@@ -192,7 +196,7 @@ pub struct LegacyTorClient {
 
 impl LegacyTorClient {
     pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
-        let (daemon, mut controller, password, socks_listener) = match config {
+        let (daemon, mut controller, password, bootstrapped, socks_listener) = match config {
             LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory} => {
                 // launch tor
                 let daemon = LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
@@ -207,7 +211,7 @@ impl LegacyTorClient {
                     .map_err(Error::LegacyTorControllerCreationFailed)?;
 
                 let password = daemon.get_password().to_string();
-                (Some(daemon), controller, password, None)
+                (Some(daemon), controller, password, false, None)
             },
             LegacyTorClientConfig::SystemTor{..} => return Err(Error::NotImplemented())
         };
@@ -247,6 +251,7 @@ impl LegacyTorClient {
             daemon,
             version,
             controller,
+            bootstrapped,
             socks_listener,
             onion_services: Default::default(),
             circuit_token_counter: 0usize,
@@ -309,6 +314,7 @@ impl TorProvider for LegacyTorClient {
                         });
                         if progress == 100u32 {
                             events.push(TorEvent::BootstrapComplete);
+                            self.bootstrapped = true;
                         }
                     }
                 }
@@ -340,10 +346,12 @@ impl TorProvider for LegacyTorClient {
     }
 
     fn bootstrap(&mut self) -> Result<(), tor_provider::Error> {
-        Ok(self
-            .controller
-            .setconf(&[("DisableNetwork", "0")])
-            .map_err(Error::SetConfDisableNetwork0Failed)?)
+        if !self.bootstrapped {
+            self.controller
+                .setconf(&[("DisableNetwork", "0")])
+                .map_err(Error::SetConfDisableNetwork0Failed)?;
+        }
+        Ok(())
     }
 
     fn add_client_auth(
@@ -373,6 +381,10 @@ impl TorProvider for LegacyTorClient {
         target: TargetAddr,
         circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
+        if !self.bootstrapped {
+            return Err(Error::LegacyTorNotBootstrapped().into());
+        }
+
         if self.socks_listener.is_none() {
             let mut listeners = self
                 .controller
@@ -433,6 +445,10 @@ impl TorProvider for LegacyTorClient {
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
     ) -> Result<OnionListener, tor_provider::Error> {
+        if !self.bootstrapped {
+            return Err(Error::LegacyTorNotBootstrapped().into());
+        }
+
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
         let listener = TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
