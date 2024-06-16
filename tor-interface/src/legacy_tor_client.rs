@@ -179,7 +179,7 @@ pub enum LegacyTorClientConfig {
 //
 
 pub struct LegacyTorClient {
-    daemon: LegacyTorProcess,
+    daemon: Option<LegacyTorProcess>,
     version: LegacyTorVersion,
     controller: LegacyTorController,
     socks_listener: Option<SocketAddr>,
@@ -192,7 +192,7 @@ pub struct LegacyTorClient {
 
 impl LegacyTorClient {
     pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
-        match config {
+        let (daemon, mut controller, password) = match config {
             LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory} => {
                 // launch tor
                 let daemon = LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
@@ -203,51 +203,55 @@ impl LegacyTorClient {
                         .map_err(Error::LegacyControlStreamCreationFailed)?;
 
                 // create a controler
-                let mut controller = LegacyTorController::new(control_stream)
+                let controller = LegacyTorController::new(control_stream)
                     .map_err(Error::LegacyTorControllerCreationFailed)?;
 
-                // authenticate
-                controller
-                    .authenticate(daemon.get_password())
-                    .map_err(Error::LegacyTorProcessAuthenticationFailed)?;
-
-                // min required version for v3 client auth (see control-spec.txt)
-                let min_required_version = LegacyTorVersion {
-                    major: 0u32,
-                    minor: 4u32,
-                    micro: 6u32,
-                    patch_level: 1u32,
-                    status_tag: None,
-                };
-
-                let version = controller
-                    .getinfo_version()
-                    .map_err(Error::GetInfoVersionFailed)?;
-
-                if version < min_required_version {
-                    return Err(Error::LegacyTorProcessTooOld(
-                        version.to_string(),
-                        min_required_version.to_string(),
-                    ));
-                }
-
-                // register for STATUS_CLIENT async events
-                controller
-                    .setevents(&["STATUS_CLIENT", "HS_DESC"])
-                    .map_err(Error::SetEventsFailed)?;
-
-                Ok(LegacyTorClient {
-                    daemon,
-                    version,
-                    controller,
-                    socks_listener: None,
-                    onion_services: Default::default(),
-                    circuit_token_counter: 0usize,
-                    circuit_tokens: Default::default(),
-                })
+                let password = daemon.get_password().to_string();
+                (Some(daemon), controller, password)
             },
-            LegacyTorClientConfig::SystemTor{..} => Err(Error::NotImplemented())
+            LegacyTorClientConfig::SystemTor{..} => return Err(Error::NotImplemented())
+        };
+
+        // authenticate
+        controller
+            .authenticate(&password)
+            .map_err(Error::LegacyTorProcessAuthenticationFailed)?;
+
+        // min required version for v3 client auth (see control-spec.txt)
+        let min_required_version = LegacyTorVersion {
+            major: 0u32,
+            minor: 4u32,
+            micro: 6u32,
+            patch_level: 1u32,
+            status_tag: None,
+        };
+
+        // verify version is recent enough
+        let version = controller
+            .getinfo_version()
+            .map_err(Error::GetInfoVersionFailed)?;
+
+        if version < min_required_version {
+            return Err(Error::LegacyTorProcessTooOld(
+                version.to_string(),
+                min_required_version.to_string(),
+            ));
         }
+
+        // register for STATUS_CLIENT async events
+        controller
+            .setevents(&["STATUS_CLIENT", "HS_DESC"])
+            .map_err(Error::SetEventsFailed)?;
+
+        Ok(LegacyTorClient {
+            daemon,
+            version,
+            controller,
+            socks_listener: None,
+            onion_services: Default::default(),
+            circuit_token_counter: 0usize,
+            circuit_tokens: Default::default(),
+        })
     }
 
     #[allow(dead_code)]
@@ -324,10 +328,12 @@ impl TorProvider for LegacyTorClient {
             }
         }
 
-        for log_line in self.daemon.wait_log_lines().iter_mut() {
-            events.push(TorEvent::LogReceived {
-                line: std::mem::take(log_line),
-            });
+        if let Some(daemon) = &mut self.daemon {
+            for log_line in daemon.wait_log_lines().iter_mut() {
+                events.push(TorEvent::LogReceived {
+                    line: std::mem::take(log_line),
+                });
+            }
         }
 
         Ok(events)
