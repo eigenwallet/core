@@ -351,7 +351,12 @@ fn test_legacy_bootstrap() -> anyhow::Result<()> {
     let mut data_path = std::env::temp_dir();
     data_path.push("test_legacy_bootstrap");
 
-    bootstrap_test(Box::new(LegacyTorClient::new(&tor_path, &data_path)?))
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+    };
+
+    bootstrap_test(Box::new(LegacyTorClient::new(tor_config)?))
 }
 
 #[test]
@@ -362,11 +367,19 @@ fn test_legacy_onion_service() -> anyhow::Result<()> {
 
     let mut data_path = std::env::temp_dir();
     data_path.push("test_legacy_onion_service_server");
-    let server_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path.clone(),
+        data_directory: data_path,
+    };
+    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
     let mut data_path = std::env::temp_dir();
     data_path.push("test_legacy_onion_service_cient");
-    let client_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+    };
+    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
     basic_onion_service_test(server_provider, client_provider)
 }
@@ -379,11 +392,20 @@ fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
 
     let mut data_path = std::env::temp_dir();
     data_path.push("test_legacy_authenticated_onion_service_server");
-    let server_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path.clone(),
+        data_directory: data_path,
+    };
+    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
     let mut data_path = std::env::temp_dir();
     data_path.push("test_legacy_authenticated_onion_service_cient");
-    let client_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+    };
+    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
@@ -456,7 +478,11 @@ fn test_mixed_arti_client_legacy_onion_service() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_arti_legacy_basic_onion_service_client");
-    let client_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+    };
+    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
     basic_onion_service_test(server_provider, client_provider)
 }
@@ -466,9 +492,14 @@ fn test_mixed_arti_client_legacy_onion_service() -> anyhow::Result<()> {
 #[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
 fn test_mixed_legacy_arti_client_onion_service() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+
     let mut data_path = std::env::temp_dir();
     data_path.push("test_legacy_arty_basic_onion_service_client");
-    let server_provider = Box::new(LegacyTorClient::new(&tor_path, &data_path)?);
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+    };
+    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 

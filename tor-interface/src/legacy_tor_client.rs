@@ -7,7 +7,7 @@ use std::io::ErrorKind;
 use std::net::{SocketAddr, TcpListener};
 use std::ops::Drop;
 use std::option::Option;
-use std::path::Path;
+use std::path::PathBuf;
 use std::string::ToString;
 use std::sync::{atomic, Arc};
 use std::time::Duration;
@@ -82,6 +82,9 @@ pub enum Error {
 
     #[error("failed to create onion service")]
     AddOnionFailed(#[source] crate::legacy_tor_controller::Error),
+
+    #[error("not implemented")]
+    NotImplemented(),
 }
 
 impl From<Error> for crate::tor_provider::Error {
@@ -154,6 +157,27 @@ impl Drop for LegacyOnionListener {
     }
 }
 
+//
+// LegacyTorClientConfig
+//
+
+#[derive(Clone)]
+pub enum LegacyTorClientConfig {
+    SystemTor {
+        tor_socks_addr: SocketAddr,
+        tor_control_addr: SocketAddr,
+        tor_control_passwd: String,
+    },
+    BundledTor {
+        tor_bin_path: PathBuf,
+        data_directory: PathBuf,
+    },
+}
+
+//
+// LegacyTorClient
+//
+
 pub struct LegacyTorClient {
     daemon: LegacyTorProcess,
     version: LegacyTorVersion,
@@ -167,58 +191,63 @@ pub struct LegacyTorClient {
 }
 
 impl LegacyTorClient {
-    pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<LegacyTorClient, Error> {
-        // launch tor
-        let daemon = LegacyTorProcess::new(tor_bin_path, data_directory)
-            .map_err(Error::LegacyTorProcessCreationFailed)?;
-        // open a control stream
-        let control_stream =
-            LegacyControlStream::new(daemon.get_control_addr(), Duration::from_millis(16))
-                .map_err(Error::LegacyControlStreamCreationFailed)?;
+    pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
+        match config {
+            LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory} => {
+                // launch tor
+                let daemon = LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
+                    .map_err(Error::LegacyTorProcessCreationFailed)?;
+                // open a control stream
+                let control_stream =
+                    LegacyControlStream::new(daemon.get_control_addr(), Duration::from_millis(16))
+                        .map_err(Error::LegacyControlStreamCreationFailed)?;
 
-        // create a controler
-        let mut controller = LegacyTorController::new(control_stream)
-            .map_err(Error::LegacyTorControllerCreationFailed)?;
+                // create a controler
+                let mut controller = LegacyTorController::new(control_stream)
+                    .map_err(Error::LegacyTorControllerCreationFailed)?;
 
-        // authenticate
-        controller
-            .authenticate(daemon.get_password())
-            .map_err(Error::LegacyTorProcessAuthenticationFailed)?;
+                // authenticate
+                controller
+                    .authenticate(daemon.get_password())
+                    .map_err(Error::LegacyTorProcessAuthenticationFailed)?;
 
-        // min required version for v3 client auth (see control-spec.txt)
-        let min_required_version = LegacyTorVersion {
-            major: 0u32,
-            minor: 4u32,
-            micro: 6u32,
-            patch_level: 1u32,
-            status_tag: None,
-        };
+                // min required version for v3 client auth (see control-spec.txt)
+                let min_required_version = LegacyTorVersion {
+                    major: 0u32,
+                    minor: 4u32,
+                    micro: 6u32,
+                    patch_level: 1u32,
+                    status_tag: None,
+                };
 
-        let version = controller
-            .getinfo_version()
-            .map_err(Error::GetInfoVersionFailed)?;
+                let version = controller
+                    .getinfo_version()
+                    .map_err(Error::GetInfoVersionFailed)?;
 
-        if version < min_required_version {
-            return Err(Error::LegacyTorProcessTooOld(
-                version.to_string(),
-                min_required_version.to_string(),
-            ));
+                if version < min_required_version {
+                    return Err(Error::LegacyTorProcessTooOld(
+                        version.to_string(),
+                        min_required_version.to_string(),
+                    ));
+                }
+
+                // register for STATUS_CLIENT async events
+                controller
+                    .setevents(&["STATUS_CLIENT", "HS_DESC"])
+                    .map_err(Error::SetEventsFailed)?;
+
+                Ok(LegacyTorClient {
+                    daemon,
+                    version,
+                    controller,
+                    socks_listener: None,
+                    onion_services: Default::default(),
+                    circuit_token_counter: 0usize,
+                    circuit_tokens: Default::default(),
+                })
+            },
+            LegacyTorClientConfig::SystemTor{..} => Err(Error::NotImplemented())
         }
-
-        // register for STATUS_CLIENT async events
-        controller
-            .setevents(&["STATUS_CLIENT", "HS_DESC"])
-            .map_err(Error::SetEventsFailed)?;
-
-        Ok(LegacyTorClient {
-            daemon,
-            version,
-            controller,
-            socks_listener: None,
-            onion_services: Default::default(),
-            circuit_token_counter: 0usize,
-            circuit_tokens: Default::default(),
-        })
     }
 
     #[allow(dead_code)]
