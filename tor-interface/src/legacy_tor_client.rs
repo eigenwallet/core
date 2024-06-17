@@ -196,7 +196,7 @@ pub struct LegacyTorClient {
 
 impl LegacyTorClient {
     pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
-        let (daemon, mut controller, password, bootstrapped, socks_listener) = match config {
+        let (daemon, mut controller, password, socks_listener) = match config {
             LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory} => {
                 // launch tor
                 let daemon = LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
@@ -211,9 +211,20 @@ impl LegacyTorClient {
                     .map_err(Error::LegacyTorControllerCreationFailed)?;
 
                 let password = daemon.get_password().to_string();
-                (Some(daemon), controller, password, false, None)
+                (Some(daemon), controller, password, None)
             },
-            LegacyTorClientConfig::SystemTor{..} => return Err(Error::NotImplemented())
+            LegacyTorClientConfig::SystemTor{tor_socks_addr, tor_control_addr, tor_control_passwd} => {
+                // open a control stream
+                let control_stream =
+                    LegacyControlStream::new(&tor_control_addr, Duration::from_millis(16))
+                        .map_err(Error::LegacyControlStreamCreationFailed)?;
+
+                // create a controler
+                let controller = LegacyTorController::new(control_stream)
+                    .map_err(Error::LegacyTorControllerCreationFailed)?;
+
+                (None, controller, tor_control_passwd, Some(tor_socks_addr))
+            },
         };
 
         // authenticate
@@ -251,7 +262,7 @@ impl LegacyTorClient {
             daemon,
             version,
             controller,
-            bootstrapped,
+            bootstrapped: false,
             socks_listener,
             onion_services: Default::default(),
             circuit_token_counter: 0usize,
@@ -335,11 +346,16 @@ impl TorProvider for LegacyTorClient {
         }
 
         if let Some(daemon) = &mut self.daemon {
+            // bundled tor gives us log-lines
             for log_line in daemon.wait_log_lines().iter_mut() {
                 events.push(TorEvent::LogReceived {
                     line: std::mem::take(log_line),
                 });
             }
+        } else if !self.bootstrapped {
+            // system tor needs to send a bootstrap complete event *once*
+            events.push(TorEvent::BootstrapComplete);
+            self.bootstrapped = true;
         }
 
         Ok(events)

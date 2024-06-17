@@ -1,5 +1,11 @@
 // stanndard
+#[cfg(feature = "legacy-tor-provider")]
+use std::fs::File;
 use std::io::{Read, Write};
+#[cfg(feature = "legacy-tor-provider")]
+use std::process;
+#[cfg(feature = "legacy-tor-provider")]
+use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
 #[cfg(feature = "arti-client-tor-provider")]
 use std::sync::Arc;
@@ -408,6 +414,125 @@ fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
 
 
     authenticated_onion_service_test(server_provider, client_provider)
+}
+
+//
+// System Legacy TorProvider tests
+//
+
+#[cfg(test)]
+fn start_system_tor_daemon(tor_path: &std::ffi::OsStr, name: &str, control_port: u16, socks_port: u16) -> anyhow::Result<Child> {
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push(name);
+    std::fs::create_dir_all(&data_path)?;
+    let default_torrc = data_path.join("default_torrc");
+    { let _ = File::create(&default_torrc)?; }
+    let torrc = data_path.join("torrc");
+    { let _ = File::create(&torrc)?; }
+
+    let tor_daemon = Command::new(tor_path)
+        .stdout(Stdio::null())
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        // point to our above written torrc file
+        .arg("--defaults-torrc")
+        .arg(default_torrc)
+        // location of torrc
+        .arg("--torrc-file")
+        .arg(torrc)
+        // enable networking
+        .arg("DisableNetwork")
+        .arg("0")
+        // root data directory
+        .arg("DataDirectory")
+        .arg(data_path)
+        // daemon will assign us a port, and we will
+        // read it from the control port file
+        .arg("ControlPort")
+        .arg(control_port.to_string())
+        // password: foobar1
+        .arg("HashedControlPassword")
+        .arg("16:E807DCE69AFE9979600760C9758B95ADB2F95E8740478AEA5356C95358")
+        // socks port
+        .arg("SocksPort")
+        .arg(socks_port.to_string())
+        // tor process will shut down after this process shuts down
+        // to avoid orphaned tor daemon
+        .arg("__OwningControllerProcess")
+        .arg(process::id().to_string())
+        .spawn()?;
+
+
+    Ok(tor_daemon)
+}
+
+#[test]
+#[serial]
+#[cfg(feature = "legacy-tor-provider")]
+fn test_system_legacy_onion_service() -> anyhow::Result<()> {
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+
+    let mut server_tor_daemon = start_system_tor_daemon(tor_path.as_os_str(), "test_system_legacy_onion_service_server", 9251u16, 9250u16)?;
+    let mut client_tor_daemon = start_system_tor_daemon(tor_path.as_os_str(), "test_system_legacy_onion_service_client", 9351u16, 9350u16)?;
+
+    // give daemons time to start
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    let tor_config = LegacyTorClientConfig::SystemTor{
+        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9250")?,
+        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9251")?,
+        tor_control_passwd: "password".to_string(),
+    };
+    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    let tor_config = LegacyTorClientConfig::SystemTor{
+        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9350")?,
+        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9351")?,
+        tor_control_passwd: "password".to_string(),
+    };
+    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    basic_onion_service_test(server_provider, client_provider)?;
+
+    server_tor_daemon.kill()?;
+    client_tor_daemon.kill()?;
+
+    Ok(())
+}
+
+#[test]
+#[serial]
+#[cfg(feature = "legacy-tor-provider")]
+fn test_system_legacy_authenticated_onion_service() -> anyhow::Result<()> {
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+
+    let mut server_tor_daemon = start_system_tor_daemon(tor_path.as_os_str(), "test_system_legacy_authenticated_onion_service_server", 9251u16, 9250u16)?;
+    let mut client_tor_daemon = start_system_tor_daemon(tor_path.as_os_str(), "test_system_legacy_authenticated_onion_service_client", 9351u16, 9350u16)?;
+
+    // give daemons time to start
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    let tor_config = LegacyTorClientConfig::SystemTor{
+        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9250")?,
+        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9251")?,
+        tor_control_passwd: "password".to_string(),
+    };
+    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    let tor_config = LegacyTorClientConfig::SystemTor{
+        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9350")?,
+        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9351")?,
+        tor_control_passwd: "password".to_string(),
+    };
+    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    authenticated_onion_service_test(server_provider, client_provider)?;
+
+    server_tor_daemon.kill()?;
+    client_tor_daemon.kill()?;
+
+    Ok(())
 }
 
 //
