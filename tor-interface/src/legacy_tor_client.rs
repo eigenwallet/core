@@ -56,6 +56,9 @@ pub enum Error {
     #[error("failed to begin bootstrap")]
     SetConfDisableNetwork0Failed(#[source] crate::legacy_tor_controller::Error),
 
+    #[error("failed to setconf")]
+    SetConfFailed(#[source] crate::legacy_tor_controller::Error),
+
     #[error("failed to add client auth for onion service")]
     OnionClientAuthAddFailed(#[source] crate::legacy_tor_controller::Error),
 
@@ -257,8 +260,52 @@ impl LegacyTorClient {
             ));
         }
 
-        if let LegacyTorClientConfig::BundledTor{proxy_settings: _, allowed_ports: _, pluggable_transports: _, bridge_lines: _, ..} = config {
+        // configure tor client
+        if let LegacyTorClientConfig::BundledTor{proxy_settings, allowed_ports: _, pluggable_transports: _, bridge_lines: _, ..} = config {
+            // configure proxy
+            match proxy_settings {
+                Some(ProxyConfig::Socks4(Socks4ProxyConfig{address})) => {
+                    controller
+                    .setconf(&[("Socks4Proxy", address.to_string())])
+                    .map_err(Error::SetConfFailed)?;
+                },
+                Some(ProxyConfig::Socks5(Socks5ProxyConfig{address, username, password})) => {
+                    controller
+                    .setconf(&[("Socks5Proxy", address.to_string())])
+                    .map_err(Error::SetConfFailed)?;
+                    let username = username.unwrap_or("".to_string());
+                    if !username.is_empty() {
+                        controller
+                        .setconf(&[("Socks5ProxyUsername", username.to_string())])
+                        .map_err(Error::SetConfFailed)?;
+                    }
+                    let password = password.unwrap_or("".to_string());
+                    if !password.is_empty() {
+                        controller
+                        .setconf(&[("Socks5ProxyPassword", password.to_string())])
+                        .map_err(Error::SetConfFailed)?;
+                    }
+                },
+                Some(ProxyConfig::Https(HttpsProxyConfig{address, username, password})) => {
+                    controller
+                    .setconf(&[("HTTPSProxy", address.to_string())])
+                    .map_err(Error::SetConfFailed)?;
+                    let username = username.unwrap_or("".to_string());
+                    let password = password.unwrap_or("".to_string());
+                    if !username.is_empty() || !password.is_empty() {
+                        let authenticator = format!("{}:{}", username, password);
+                        controller
+                        .setconf(&[("HTTPSProxyAuthenticator", authenticator)])
+                        .map_err(Error::SetConfFailed)?;
+                    }
+                },
+                None => (),
+            }
+            // configure firewall
 
+            // configure pluggable transports
+
+            // configure bridge lines
         }
 
         // register for STATUS_CLIENT async events
