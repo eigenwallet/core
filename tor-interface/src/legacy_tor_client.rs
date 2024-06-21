@@ -50,7 +50,7 @@ pub enum Error {
     #[error("failed to delete unused onion service")]
     DelOnionFailed(#[source] crate::legacy_tor_controller::Error),
 
-    #[error("failed waiting for async events")]
+    #[error("failed waiting for async events: {0}")]
     WaitAsyncEventsFailed(#[source] crate::legacy_tor_controller::Error),
 
     #[error("failed to begin bootstrap")]
@@ -164,16 +164,20 @@ impl Drop for LegacyOnionListener {
 // LegacyTorClientConfig
 //
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LegacyTorClientConfig {
+    BundledTor {
+        tor_bin_path: PathBuf,
+        data_directory: PathBuf,
+        proxy_settings: Option<ProxyConfig>,
+        allowed_ports: Option<Vec<u16>>,
+        pluggable_transports: Option<Vec<PluggableTransportConfig>>,
+        bridge_lines: Option<Vec<BridgeLine>>,
+    },
     SystemTor {
         tor_socks_addr: SocketAddr,
         tor_control_addr: SocketAddr,
         tor_control_passwd: String,
-    },
-    BundledTor {
-        tor_bin_path: PathBuf,
-        data_directory: PathBuf,
     },
 }
 
@@ -196,8 +200,8 @@ pub struct LegacyTorClient {
 
 impl LegacyTorClient {
     pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
-        let (daemon, mut controller, password, socks_listener) = match config {
-            LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory} => {
+        let (daemon, mut controller, password, socks_listener) = match &config {
+            LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory, ..} => {
                 // launch tor
                 let daemon = LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
                     .map_err(Error::LegacyTorProcessCreationFailed)?;
@@ -223,7 +227,7 @@ impl LegacyTorClient {
                 let controller = LegacyTorController::new(control_stream)
                     .map_err(Error::LegacyTorControllerCreationFailed)?;
 
-                (None, controller, tor_control_passwd, Some(tor_socks_addr))
+                (None, controller, tor_control_passwd.clone(), Some(tor_socks_addr.clone()))
             },
         };
 
@@ -251,6 +255,10 @@ impl LegacyTorClient {
                 version.to_string(),
                 min_required_version.to_string(),
             ));
+        }
+
+        if let LegacyTorClientConfig::BundledTor{proxy_settings: _, allowed_ports: _, pluggable_transports: _, bridge_lines: _, ..} = config {
+
         }
 
         // register for STATUS_CLIENT async events

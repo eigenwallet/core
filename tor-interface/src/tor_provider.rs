@@ -4,6 +4,7 @@ use std::convert::TryFrom;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
@@ -15,6 +16,10 @@ use regex::Regex;
 
 // internal crates
 use crate::tor_crypto::*;
+
+//
+// OnionAddr
+//
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OnionAddrV3 {
@@ -91,6 +96,10 @@ impl std::fmt::Display for OnionAddr {
     }
 }
 
+//
+// DomainAddr
+//
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DomainAddr {
     domain: String,
@@ -164,6 +173,10 @@ impl FromStr for DomainAddr {
         Err(DomainAddrParseError::Generic(s.to_string()))
     }
 }
+
+//
+// TargetAddr
+//
 
 #[derive(Clone, Debug)]
 pub enum TargetAddr {
@@ -294,6 +307,10 @@ impl OnionStream {
     }
 }
 
+//
+// Onion Listener
+//
+
 pub trait OnionListenerImpl: Send {
     fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error>;
     fn accept(&self) -> Result<Option<OnionStream>, std::io::Error>;
@@ -311,6 +328,59 @@ impl OnionListener {
     pub fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
         self.onion_listener.accept()
     }
+}
+
+//
+// ProxyConfig
+//
+
+#[derive(Clone, Debug)]
+pub struct Socks4ProxyConfig {
+    pub(crate) address: TargetAddr,
+}
+
+#[derive(Clone, Debug)]
+pub struct Socks5ProxyConfig {
+    pub(crate) address: TargetAddr,
+    pub(crate) username: Option<String>,
+    pub(crate) password: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HttpsProxyConfig {
+    pub(crate) address: TargetAddr,
+    pub(crate) username: Option<String>,
+    pub(crate) password: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ProxyConfig {
+    Socks4(Socks4ProxyConfig),
+    Socks5(Socks5ProxyConfig),
+    Https(HttpsProxyConfig),
+}
+
+//
+// PluggableTransportConfig
+//
+
+#[derive(Clone, Debug)]
+pub struct PluggableTransportConfig {
+    transports: Vec<String>,
+    path_to_binary: PathBuf,
+    options: Vec<String>
+}
+
+//
+// BridgeSettings
+//
+
+#[derive(Clone, Debug)]
+pub struct BridgeLine {
+    transport: String,
+    address: SocketAddr,
+    fingerprint: String,
+    keyvalues: Vec<(String,String)>,
 }
 
 #[derive(thiserror::Error, Debug)]

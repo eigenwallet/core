@@ -360,6 +360,10 @@ fn test_legacy_bootstrap() -> anyhow::Result<()> {
     let tor_config = LegacyTorClientConfig::BundledTor{
         tor_bin_path: tor_path,
         data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
     };
 
     bootstrap_test(Box::new(LegacyTorClient::new(tor_config)?))
@@ -376,6 +380,10 @@ fn test_legacy_onion_service() -> anyhow::Result<()> {
     let tor_config = LegacyTorClientConfig::BundledTor{
         tor_bin_path: tor_path.clone(),
         data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
     };
     let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
@@ -384,6 +392,10 @@ fn test_legacy_onion_service() -> anyhow::Result<()> {
     let tor_config = LegacyTorClientConfig::BundledTor{
         tor_bin_path: tor_path,
         data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
     };
     let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
@@ -401,6 +413,10 @@ fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
     let tor_config = LegacyTorClientConfig::BundledTor{
         tor_bin_path: tor_path.clone(),
         data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
     };
     let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
@@ -409,6 +425,10 @@ fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
     let tor_config = LegacyTorClientConfig::BundledTor{
         tor_bin_path: tor_path,
         data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
     };
     let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
@@ -606,6 +626,10 @@ fn test_mixed_arti_client_legacy_onion_service() -> anyhow::Result<()> {
     let tor_config = LegacyTorClientConfig::BundledTor{
         tor_bin_path: tor_path,
         data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
     };
     let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
@@ -623,6 +647,10 @@ fn test_mixed_legacy_arti_client_onion_service() -> anyhow::Result<()> {
     let tor_config = LegacyTorClientConfig::BundledTor{
         tor_bin_path: tor_path,
         data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
     };
     let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
