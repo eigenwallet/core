@@ -110,6 +110,9 @@ pub enum Error {
     #[error("pluggable transport multiply defines '{0}' bridge transport type")]
     BridgeTransportTypeMultiplyDefined(String),
 
+    #[error("bridge transport '{0}' not supported by pluggable transport configuration")]
+    BridgeTransportNotSupported(String),
+
     #[error("not implemented")]
     NotImplemented(),
 }
@@ -282,7 +285,7 @@ impl LegacyTorClient {
         }
 
         // configure tor client
-        if let LegacyTorClientConfig::BundledTor{data_directory, proxy_settings, allowed_ports, pluggable_transports, bridge_lines: _, ..} = config {
+        if let LegacyTorClientConfig::BundledTor{data_directory, proxy_settings, allowed_ports, pluggable_transports, bridge_lines, ..} = config {
             // configure proxy
             match proxy_settings {
                 Some(ProxyConfig::Socks4(Socks4ProxyConfig{address})) => {
@@ -396,8 +399,20 @@ impl LegacyTorClient {
                 controller.setconf(conf.as_slice())
                 .map_err(Error::SetConfFailed)?;
             }
-
             // configure bridge lines
+            if let Some(bridge_lines) = bridge_lines {
+                let mut conf: Vec<(&str, String)> = Default::default();
+                for bridge_line in &bridge_lines {
+                    if !supported_transports.contains(bridge_line.transport()) {
+                        return Err(Error::BridgeTransportNotSupported(bridge_line.transport().to_string()));
+                    }
+                    let value = bridge_line.as_legacy_tor_setconf_value();
+                    conf.push(("Bridge", value));
+                }
+                conf.push(("UseBridges", "1".to_string()));
+                controller.setconf(conf.as_slice())
+                .map_err(Error::SetConfFailed)?;
+            }
         }
 
         // register for STATUS_CLIENT async events
