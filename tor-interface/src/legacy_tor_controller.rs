@@ -249,7 +249,7 @@ impl LegacyTorController {
     //
 
     // SETCONF (3.1)
-    fn setconf_cmd(&mut self, key_values: &[(&str, &str)]) -> Result<Reply, Error> {
+    fn setconf_cmd(&mut self, key_values: &[(&str, String)]) -> Result<Reply, Error> {
         if key_values.is_empty() {
             return Err(Error::InvalidCommandArguments(
                 "SETCONF key-value pairs list must not be empty".to_string(),
@@ -258,7 +258,7 @@ impl LegacyTorController {
         let mut command_buffer = vec!["SETCONF".to_string()];
 
         for (key, value) in key_values.iter() {
-            command_buffer.push(format!("{}={}", key, value));
+            command_buffer.push(format!("{}=\"{}\"", key, value.trim()));
         }
         let command = command_buffer.join(" ");
 
@@ -425,7 +425,7 @@ impl LegacyTorController {
     // Public high-level typesafe command method wrappers
     //
 
-    pub fn setconf(&mut self, key_values: &[(&str, &str)]) -> Result<(), Error> {
+    pub fn setconf(&mut self, key_values: &[(&str, String)]) -> Result<(), Error> {
         let reply = self.setconf_cmd(key_values)?;
 
         match reply.status_code {
@@ -748,7 +748,7 @@ fn test_tor_controller() -> anyhow::Result<()> {
 
         tor_controller.setevents(&["STATUS_CLIENT"])?;
         // begin bootstrap
-        tor_controller.setconf(&[("DisableNetwork", "0")])?;
+        tor_controller.setconf(&[("DisableNetwork", "0".to_string())])?;
 
         // add an onoin service
         let (private_key, service_id) =

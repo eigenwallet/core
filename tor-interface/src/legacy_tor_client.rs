@@ -364,7 +364,7 @@ impl TorProvider for LegacyTorClient {
     fn bootstrap(&mut self) -> Result<(), tor_provider::Error> {
         if !self.bootstrapped {
             self.controller
-                .setconf(&[("DisableNetwork", "0")])
+                .setconf(&[("DisableNetwork", "0".to_string())])
                 .map_err(Error::SetConfDisableNetwork0Failed)?;
         }
         Ok(())
