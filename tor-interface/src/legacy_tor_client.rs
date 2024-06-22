@@ -89,6 +89,27 @@ pub enum Error {
     #[error("tor not bootstrapped")]
     LegacyTorNotBootstrapped(),
 
+    #[error("{0}")]
+    PluggableTransportConfigDirectoryCreationFailed(#[source] std::io::Error),
+
+    #[error("unable to create pluggable-transport directory because file with same name already exists: {0:?}")]
+    PluggableTransportDirectoryNameCollision(PathBuf),
+
+    #[error("{0}")]
+    PluggableTransportSymlinkRemovalFailed(#[source] std::io::Error),
+
+    #[error("{0}")]
+    PluggableTransportSymlinkCreationFailed(#[source] std::io::Error),
+
+    #[error("pluggable transport binary name not representable as utf8: {0:?}")]
+    PluggableTransportBinaryNameNotUtf8Representnable(std::ffi::OsString),
+
+    #[error("{0}")]
+    PluggableTransportConfigError(#[source] crate::tor_provider::PluggableTransportConfigError),
+
+    #[error("pluggable transport multiply defines '{0}' bridge transport type")]
+    BridgeTransportTypeMultiplyDefined(String),
+
     #[error("not implemented")]
     NotImplemented(),
 }
@@ -261,7 +282,7 @@ impl LegacyTorClient {
         }
 
         // configure tor client
-        if let LegacyTorClientConfig::BundledTor{proxy_settings, allowed_ports, pluggable_transports: _, bridge_lines: _, ..} = config {
+        if let LegacyTorClientConfig::BundledTor{data_directory, proxy_settings, allowed_ports, pluggable_transports, bridge_lines: _, ..} = config {
             // configure proxy
             match proxy_settings {
                 Some(ProxyConfig::Socks4(Socks4ProxyConfig{address})) => {
@@ -310,6 +331,71 @@ impl LegacyTorClient {
                 .map_err(Error::SetConfFailed)?;
             }
             // configure pluggable transports
+            let mut supported_transports: std::collections::BTreeSet<String> = Default::default();
+            if let Some(pluggable_transports) = pluggable_transports {
+                // Legacy tor daemon cannot be configured to use pluggable-transports which
+                // exist in paths containing spaces. To work around this, we create a known, safe
+                // path in the tor daemon's working directory, and soft-link the provided
+                // binary path to this safe location. Finally, we configure tor to use the soft-linked
+                // binary in the ClientTransportPlugin setconf call.
+
+                // create pluggable-transport directory
+                let mut pt_directory = data_directory.clone();
+                pt_directory.push("pluggable-transports");
+                if !std::path::Path::exists(&pt_directory) {
+                    // path does not exist so create it
+                    std::fs::create_dir(&pt_directory).map_err(Error::PluggableTransportConfigDirectoryCreationFailed)?;
+                } else if !std::path::Path::is_dir(&pt_directory) {
+                    // path exists but it is not a directory
+                    return Err(Error::PluggableTransportDirectoryNameCollision(pt_directory));
+                }
+
+                // symlink all our pts and configure tor
+                let mut conf: Vec<(&str, String)> = Default::default();
+                for pt_settings in &pluggable_transports {
+                    // symlink absolute path of pt binary to pt_directory in tor's working
+                    // directory
+                    let path_to_binary = pt_settings.path_to_binary();
+                    let binary_name = path_to_binary.file_name().expect("file_name should be absolute path");
+                    let mut pt_symlink = pt_directory.clone();
+                    pt_symlink.push(binary_name);
+                    let binary_name = if let Some(binary_name) = binary_name.to_str() {
+                        binary_name
+                    } else {
+                        return Err(Error::PluggableTransportBinaryNameNotUtf8Representnable(binary_name.to_os_string()));
+                    };
+
+                    // remove any file that may exist with the same name
+                    if std::path::Path::exists(&pt_symlink) {
+                        std::fs::remove_file(&pt_symlink).map_err(Error::PluggableTransportSymlinkRemovalFailed)?;
+                    }
+
+                    // create new symlink
+                    #[cfg(windows)]
+                    std::os::windows::fs::symlink_file(path_to_binary, &pt_symlink).map_err(Error::PluggableTransportSymlinkCreationFailed)?;
+                    #[cfg(unix)]
+                    std::os::unix::fs::symlink(path_to_binary, &pt_symlink).map_err(Error::PluggableTransportSymlinkCreationFailed)?;
+
+                    // verify a bridge-type support has not been defined for multiple pluggable-transports
+                    for transport in pt_settings.transports() {
+                        if supported_transports.contains(transport) {
+                            return Err(Error::BridgeTransportTypeMultiplyDefined(transport.to_string()));
+                        }
+                        supported_transports.insert(transport.to_string());
+                    }
+
+                    // finally construct our setconf value
+                    let transports = pt_settings.transports().join(",");
+                    use std::path::MAIN_SEPARATOR;
+                    let path_to_binary = format!("pluggable-transports{MAIN_SEPARATOR}{binary_name}");
+                    let options = pt_settings.options().join(" ");
+
+                    let value = format!("{transports} exec {path_to_binary} {options}");
+                    conf.push(("ClientTransportPlugin", value));
+                }
+                controller.setconf(conf.as_slice())
+                .map_err(Error::SetConfFailed)?;
+            }
 
             // configure bridge lines
         }

@@ -460,6 +460,55 @@ pub struct PluggableTransportConfig {
     options: Vec<String>
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum PluggableTransportConfigError {
+    #[error("pluggable transport name '{0}' is invalid")]
+    TransportNameInvalid(String),
+    #[error("unable to use '{0}' as pluggable transport binary path, {1}")]
+    BinaryPathInvalid(String, String)
+}
+
+impl PluggableTransportConfig{
+    pub fn new(transports: Vec<String>, path_to_binary: PathBuf) -> Result<Self, PluggableTransportSettingsError> {
+        // per the PT spec: https://github.com/Pluggable-Transports/Pluggable-Transports-spec/blob/main/releases/PTSpecV1.0/pt-1_0.txt
+        static TRANSPORT_PATTERN: OnceLock<Regex> = OnceLock::new();
+        let transport_pattern = TRANSPORT_PATTERN.get_or_init(|| {
+            Regex::new(r"(?m)^[a-zA-Z_][a-zA-Z0-9_]*$")
+                .unwrap()
+        });
+        // validate each transport
+        for transport in &transports {
+            if !transport_pattern.is_match(&transport) {
+                return Err(PluggableTransportConfigError::TransportNameInvalid(transport.clone()));
+            }
+        }
+
+        // pluggable transport path must be absolute so we can fix it up for individual
+        // TorProvider implementations
+        if !path_to_binary.is_absolute() {
+            return Err(PluggableTransportConfigError::BinaryPathInvalid(format!("{:?}", path_to_binary.display()), "must be an absolute path".to_string()));
+        }
+
+        Ok(Self{transports, path_to_binary, options: Default::default()})
+    }
+
+    pub fn transports(&self) -> &Vec<String> {
+    	&self.transports
+    }
+
+    pub fn path_to_binary(&self) -> &PathBuf {
+    	&self.path_to_binary
+    }
+
+    pub fn options(&self) -> &Vec<String> {
+    	&self.options
+    }
+
+    pub fn add_option(&mut self, arg: String) {
+        self.options.push(arg);
+    }
+}
+
 //
 // BridgeSettings
 //
