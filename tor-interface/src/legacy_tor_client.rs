@@ -261,7 +261,7 @@ impl LegacyTorClient {
         }
 
         // configure tor client
-        if let LegacyTorClientConfig::BundledTor{proxy_settings, allowed_ports: _, pluggable_transports: _, bridge_lines: _, ..} = config {
+        if let LegacyTorClientConfig::BundledTor{proxy_settings, allowed_ports, pluggable_transports: _, bridge_lines: _, ..} = config {
             // configure proxy
             match proxy_settings {
                 Some(ProxyConfig::Socks4(Socks4ProxyConfig{address})) => {
@@ -302,7 +302,13 @@ impl LegacyTorClient {
                 None => (),
             }
             // configure firewall
-
+            if let Some(allowed_ports) = allowed_ports {
+                let allowed_addresses: Vec<String> = allowed_ports.iter().map(|port| format!("*{{}}:{port}")).collect();
+                let allowed_addresses = allowed_addresses.join(", ");
+                controller
+                .setconf(&[("ReachableAddresses", allowed_addresses)])
+                .map_err(Error::SetConfFailed)?;
+            }
             // configure pluggable transports
 
             // configure bridge lines
