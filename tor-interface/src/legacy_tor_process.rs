@@ -208,7 +208,7 @@ impl LegacyTorProcess {
         if !default_torrc.exists() {
             const DEFAULT_TORRC_CONTENT: &str = "SocksPort auto\n\
             AvoidDiskWrites 1\n\
-            DisableNetwork 1\n\n";
+            DisableNetwork 1\n";
 
             let mut default_torrc_file =
                 File::create(&default_torrc).map_err(Error::DefaultTorrcFileCreationFailed)?;
