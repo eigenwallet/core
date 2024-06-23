@@ -372,6 +372,47 @@ fn test_legacy_bootstrap() -> anyhow::Result<()> {
 #[test]
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
+fn test_legacy_pluggable_transport_bootstrap() -> anyhow::Result<()> {
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_legacy_pluggable_transport_bootstrap");
+
+
+    // find the lyrebird bin
+    let teb_path = std::env::var("TEB_PATH")?;
+    if teb_path.is_empty() {
+        println!("TEB_PATH environment variable empty, so skipping test_legacy_pluggable_transport_bootstrap()");
+        return Ok(());
+    }
+    let mut lyrebird_path = std::path::PathBuf::from(&teb_path);
+    let lyrebird_bin = format!("lyrebird{}", std::env::consts::EXE_SUFFIX);
+    lyrebird_path.push(lyrebird_bin.clone());
+    assert!(std::path::Path::exists(&lyrebird_path));
+    assert!(std::path::Path::is_file(&lyrebird_path));
+
+    // configure lyrebird pluggable transport
+    let pluggable_transport = PluggableTransportConfig::new(
+        vec!["obfs4".to_string()],
+        lyrebird_path)?;
+
+    // obfs4 bridgeline
+    let bridge_line = BridgeLine::from_str("obfs4 207.172.185.193:22223 F34AC0CDBC06918E54292A474578C99834A58893 cert=MjqosoyVylLQuLo4LH+eQ5hS7Z44s2CaMfQbIjJtn4bGRnvLv8ldSvSED5JpvWSxm09XXg iat-mode=0")?;
+
+    let tor_config = LegacyTorClientConfig::BundledTor{
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: Some(vec![pluggable_transport]),
+        bridge_lines: Some(vec![bridge_line]),
+    };
+
+    bootstrap_test(Box::new(LegacyTorClient::new(tor_config)?))
+}
+
+#[test]
+#[serial]
+#[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_onion_service() -> anyhow::Result<()> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
 
@@ -662,6 +703,10 @@ fn test_mixed_legacy_arti_client_onion_service() -> anyhow::Result<()> {
 
     basic_onion_service_test(server_provider, client_provider)
 }
+
+//
+// Misc Utils
+//
 
 #[test]
 fn test_tor_provider_target_addr() -> anyhow::Result<()> {

@@ -87,6 +87,13 @@ if (ENABLE_TESTS)
             COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_system_legacy_authenticated_onion_service ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
+        if (ENABLE_TOR_EXPERT_BUNDLE)
+            add_test(NAME tor_interface_legacy_pluggable_transport_bootstrap_cargo_test
+                COMMAND env TEB_PATH=${TEB_PATH} CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_legacy_pluggable_transport_bootstrap ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            )
+            set_tests_properties(tor_interface_legacy_pluggable_transport_bootstrap_cargo_test PROPERTIES FIXTURES_REQUIRED tor_expert_bundle_target_fixture)
+        endif()
     endif()
 
     if (ENABLE_ARTI_CLIENT_TOR_PROVIDER)
@@ -125,7 +132,7 @@ if (ENABLE_TESTS)
 
     # catchall
     add_test(NAME tor_interface_cargo_test
-        COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
+        COMMAND env TEB_PATH=${TEB_PATH} CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 endif()
