@@ -235,6 +235,8 @@ impl LegacyTorProcess {
             .stdout(Stdio::piped())
             .stdin(Stdio::null())
             .stderr(Stdio::null())
+            // set working directory to data directory
+            .current_dir(data_directory)
             // point to our above written torrc file
             .arg("--defaults-torrc")
             .arg(default_torrc)
