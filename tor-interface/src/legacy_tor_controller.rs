@@ -89,6 +89,12 @@ pub(crate) struct LegacyTorController {
     hs_desc_pattern: Regex,
 }
 
+fn quoted_string(string: &str) -> String {
+    // replace \ with \\ and " with \"
+    // see: https://spec.torproject.org/control-spec/message-format.html?highlight=QuotedString#description-format
+    string.replace("\\", "\\\\").replace("\"", "\\\"")
+}
+
 impl LegacyTorController {
     pub fn new(control_stream: LegacyControlStream) -> Result<LegacyTorController, Error> {
         let status_event_pattern =
@@ -258,7 +264,7 @@ impl LegacyTorController {
         let mut command_buffer = vec!["SETCONF".to_string()];
 
         for (key, value) in key_values.iter() {
-            command_buffer.push(format!("{}=\"{}\"", key, value.trim()));
+            command_buffer.push(format!("{}=\"{}\"", key, quoted_string(value.trim())));
         }
         let command = command_buffer.join(" ");
 
@@ -292,7 +298,7 @@ impl LegacyTorController {
 
     // AUTHENTICATE (3.5)
     fn authenticate_cmd(&mut self, password: &str) -> Result<Reply, Error> {
-        let command = format!("AUTHENTICATE \"{}\"", password);
+        let command = format!("AUTHENTICATE \"{}\"", quoted_string(password));
 
         self.write_command(&command)
     }
