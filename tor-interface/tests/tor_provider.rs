@@ -479,6 +479,7 @@ fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
 //
 
 #[cfg(test)]
+#[cfg(feature = "legacy-tor-provider")]
 fn start_system_tor_daemon(
     tor_path: &std::ffi::OsStr,
     name: &str,
