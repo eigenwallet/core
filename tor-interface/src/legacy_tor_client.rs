@@ -228,10 +228,15 @@ pub struct LegacyTorClient {
 impl LegacyTorClient {
     pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
         let (daemon, mut controller, password, socks_listener) = match &config {
-            LegacyTorClientConfig::BundledTor{tor_bin_path, data_directory, ..} => {
+            LegacyTorClientConfig::BundledTor {
+                tor_bin_path,
+                data_directory,
+                ..
+            } => {
                 // launch tor
-                let daemon = LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
-                    .map_err(Error::LegacyTorProcessCreationFailed)?;
+                let daemon =
+                    LegacyTorProcess::new(tor_bin_path.as_path(), data_directory.as_path())
+                        .map_err(Error::LegacyTorProcessCreationFailed)?;
                 // open a control stream
                 let control_stream =
                     LegacyControlStream::new(daemon.get_control_addr(), Duration::from_millis(16))
@@ -243,8 +248,12 @@ impl LegacyTorClient {
 
                 let password = daemon.get_password().to_string();
                 (Some(daemon), controller, password, None)
-            },
-            LegacyTorClientConfig::SystemTor{tor_socks_addr, tor_control_addr, tor_control_passwd} => {
+            }
+            LegacyTorClientConfig::SystemTor {
+                tor_socks_addr,
+                tor_control_addr,
+                tor_control_passwd,
+            } => {
                 // open a control stream
                 let control_stream =
                     LegacyControlStream::new(&tor_control_addr, Duration::from_millis(16))
@@ -254,8 +263,13 @@ impl LegacyTorClient {
                 let controller = LegacyTorController::new(control_stream)
                     .map_err(Error::LegacyTorControllerCreationFailed)?;
 
-                (None, controller, tor_control_passwd.clone(), Some(tor_socks_addr.clone()))
-            },
+                (
+                    None,
+                    controller,
+                    tor_control_passwd.clone(),
+                    Some(tor_socks_addr.clone()),
+                )
+            }
         };
 
         // authenticate
@@ -285,53 +299,72 @@ impl LegacyTorClient {
         }
 
         // configure tor client
-        if let LegacyTorClientConfig::BundledTor{data_directory, proxy_settings, allowed_ports, pluggable_transports, bridge_lines, ..} = config {
+        if let LegacyTorClientConfig::BundledTor {
+            data_directory,
+            proxy_settings,
+            allowed_ports,
+            pluggable_transports,
+            bridge_lines,
+            ..
+        } = config
+        {
             // configure proxy
             match proxy_settings {
-                Some(ProxyConfig::Socks4(Socks4ProxyConfig{address})) => {
+                Some(ProxyConfig::Socks4(Socks4ProxyConfig { address })) => {
                     controller
-                    .setconf(&[("Socks4Proxy", address.to_string())])
-                    .map_err(Error::SetConfFailed)?;
-                },
-                Some(ProxyConfig::Socks5(Socks5ProxyConfig{address, username, password})) => {
+                        .setconf(&[("Socks4Proxy", address.to_string())])
+                        .map_err(Error::SetConfFailed)?;
+                }
+                Some(ProxyConfig::Socks5(Socks5ProxyConfig {
+                    address,
+                    username,
+                    password,
+                })) => {
                     controller
-                    .setconf(&[("Socks5Proxy", address.to_string())])
-                    .map_err(Error::SetConfFailed)?;
+                        .setconf(&[("Socks5Proxy", address.to_string())])
+                        .map_err(Error::SetConfFailed)?;
                     let username = username.unwrap_or("".to_string());
                     if !username.is_empty() {
                         controller
-                        .setconf(&[("Socks5ProxyUsername", username.to_string())])
-                        .map_err(Error::SetConfFailed)?;
+                            .setconf(&[("Socks5ProxyUsername", username.to_string())])
+                            .map_err(Error::SetConfFailed)?;
                     }
                     let password = password.unwrap_or("".to_string());
                     if !password.is_empty() {
                         controller
-                        .setconf(&[("Socks5ProxyPassword", password.to_string())])
-                        .map_err(Error::SetConfFailed)?;
+                            .setconf(&[("Socks5ProxyPassword", password.to_string())])
+                            .map_err(Error::SetConfFailed)?;
                     }
-                },
-                Some(ProxyConfig::Https(HttpsProxyConfig{address, username, password})) => {
+                }
+                Some(ProxyConfig::Https(HttpsProxyConfig {
+                    address,
+                    username,
+                    password,
+                })) => {
                     controller
-                    .setconf(&[("HTTPSProxy", address.to_string())])
-                    .map_err(Error::SetConfFailed)?;
+                        .setconf(&[("HTTPSProxy", address.to_string())])
+                        .map_err(Error::SetConfFailed)?;
                     let username = username.unwrap_or("".to_string());
                     let password = password.unwrap_or("".to_string());
                     if !username.is_empty() || !password.is_empty() {
                         let authenticator = format!("{}:{}", username, password);
                         controller
-                        .setconf(&[("HTTPSProxyAuthenticator", authenticator)])
-                        .map_err(Error::SetConfFailed)?;
+                            .setconf(&[("HTTPSProxyAuthenticator", authenticator)])
+                            .map_err(Error::SetConfFailed)?;
                     }
-                },
+                }
                 None => (),
             }
             // configure firewall
             if let Some(allowed_ports) = allowed_ports {
-                let allowed_addresses: Vec<String> = allowed_ports.iter().map(|port| format!("*{{}}:{port}")).collect();
+                let allowed_addresses: Vec<String> = allowed_ports
+                    .iter()
+                    .map(|port| format!("*{{}}:{port}"))
+                    .collect();
                 let allowed_addresses = allowed_addresses.join(", ");
                 controller
-                .setconf(&[("ReachableAddresses", allowed_addresses)])
-                .map_err(Error::SetConfFailed)?;
+                    .setconf(&[("ReachableAddresses", allowed_addresses)])
+                    .map_err(Error::SetConfFailed)?;
             }
             // configure pluggable transports
             let mut supported_transports: std::collections::BTreeSet<String> = Default::default();
@@ -347,10 +380,13 @@ impl LegacyTorClient {
                 pt_directory.push("pluggable-transports");
                 if !std::path::Path::exists(&pt_directory) {
                     // path does not exist so create it
-                    std::fs::create_dir(&pt_directory).map_err(Error::PluggableTransportConfigDirectoryCreationFailed)?;
+                    std::fs::create_dir(&pt_directory)
+                        .map_err(Error::PluggableTransportConfigDirectoryCreationFailed)?;
                 } else if !std::path::Path::is_dir(&pt_directory) {
                     // path exists but it is not a directory
-                    return Err(Error::PluggableTransportDirectoryNameCollision(pt_directory));
+                    return Err(Error::PluggableTransportDirectoryNameCollision(
+                        pt_directory,
+                    ));
                 }
 
                 // symlink all our pts and configure tor
@@ -359,30 +395,39 @@ impl LegacyTorClient {
                     // symlink absolute path of pt binary to pt_directory in tor's working
                     // directory
                     let path_to_binary = pt_settings.path_to_binary();
-                    let binary_name = path_to_binary.file_name().expect("file_name should be absolute path");
+                    let binary_name = path_to_binary
+                        .file_name()
+                        .expect("file_name should be absolute path");
                     let mut pt_symlink = pt_directory.clone();
                     pt_symlink.push(binary_name);
                     let binary_name = if let Some(binary_name) = binary_name.to_str() {
                         binary_name
                     } else {
-                        return Err(Error::PluggableTransportBinaryNameNotUtf8Representnable(binary_name.to_os_string()));
+                        return Err(Error::PluggableTransportBinaryNameNotUtf8Representnable(
+                            binary_name.to_os_string(),
+                        ));
                     };
 
                     // remove any file that may exist with the same name
                     if std::path::Path::exists(&pt_symlink) {
-                        std::fs::remove_file(&pt_symlink).map_err(Error::PluggableTransportSymlinkRemovalFailed)?;
+                        std::fs::remove_file(&pt_symlink)
+                            .map_err(Error::PluggableTransportSymlinkRemovalFailed)?;
                     }
 
                     // create new symlink
                     #[cfg(windows)]
-                    std::os::windows::fs::symlink_file(path_to_binary, &pt_symlink).map_err(Error::PluggableTransportSymlinkCreationFailed)?;
+                    std::os::windows::fs::symlink_file(path_to_binary, &pt_symlink)
+                        .map_err(Error::PluggableTransportSymlinkCreationFailed)?;
                     #[cfg(unix)]
-                    std::os::unix::fs::symlink(path_to_binary, &pt_symlink).map_err(Error::PluggableTransportSymlinkCreationFailed)?;
+                    std::os::unix::fs::symlink(path_to_binary, &pt_symlink)
+                        .map_err(Error::PluggableTransportSymlinkCreationFailed)?;
 
                     // verify a bridge-type support has not been defined for multiple pluggable-transports
                     for transport in pt_settings.transports() {
                         if supported_transports.contains(transport) {
-                            return Err(Error::BridgeTransportTypeMultiplyDefined(transport.to_string()));
+                            return Err(Error::BridgeTransportTypeMultiplyDefined(
+                                transport.to_string(),
+                            ));
                         }
                         supported_transports.insert(transport.to_string());
                     }
@@ -390,28 +435,33 @@ impl LegacyTorClient {
                     // finally construct our setconf value
                     let transports = pt_settings.transports().join(",");
                     use std::path::MAIN_SEPARATOR;
-                    let path_to_binary = format!("pluggable-transports{MAIN_SEPARATOR}{binary_name}");
+                    let path_to_binary =
+                        format!("pluggable-transports{MAIN_SEPARATOR}{binary_name}");
                     let options = pt_settings.options().join(" ");
 
                     let value = format!("{transports} exec {path_to_binary} {options}");
                     conf.push(("ClientTransportPlugin", value));
                 }
-                controller.setconf(conf.as_slice())
-                .map_err(Error::SetConfFailed)?;
+                controller
+                    .setconf(conf.as_slice())
+                    .map_err(Error::SetConfFailed)?;
             }
             // configure bridge lines
             if let Some(bridge_lines) = bridge_lines {
                 let mut conf: Vec<(&str, String)> = Default::default();
                 for bridge_line in &bridge_lines {
                     if !supported_transports.contains(bridge_line.transport()) {
-                        return Err(Error::BridgeTransportNotSupported(bridge_line.transport().to_string()));
+                        return Err(Error::BridgeTransportNotSupported(
+                            bridge_line.transport().to_string(),
+                        ));
                     }
                     let value = bridge_line.as_legacy_tor_setconf_value();
                     conf.push(("Bridge", value));
                 }
                 conf.push(("UseBridges", "1".to_string()));
-                controller.setconf(conf.as_slice())
-                .map_err(Error::SetConfFailed)?;
+                controller
+                    .setconf(conf.as_slice())
+                    .map_err(Error::SetConfFailed)?;
             }
         }
 

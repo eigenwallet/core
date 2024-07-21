@@ -175,7 +175,6 @@ impl MockTorClient {
         let line = "[notice] MockTorClient running".to_string();
         events.push(TorEvent::LogReceived { line });
 
-
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
         let listener = TcpListener::bind(socket_addr).expect("tcplistener bind failed");
 
@@ -275,15 +274,21 @@ impl TorProvider for MockTorClient {
                 service_id,
                 virt_port,
             })) => (service_id, virt_port),
-            target_address => if let Ok(stream) = TcpStream::connect(self.loopback.local_addr().expect("loopback local_addr failed")) {
-                return Ok(OnionStream {
-                    stream,
-                    local_addr: None,
-                    peer_addr: Some(target_address),
-                });
-            } else {
-                return Err(Error::ConnectFailed(target_address).into());
-            },
+            target_address => {
+                if let Ok(stream) = TcpStream::connect(
+                    self.loopback
+                        .local_addr()
+                        .expect("loopback local_addr failed"),
+                ) {
+                    return Ok(OnionStream {
+                        stream,
+                        local_addr: None,
+                        peer_addr: Some(target_address),
+                    });
+                } else {
+                    return Err(Error::ConnectFailed(target_address).into());
+                }
+            }
         };
         let client_auth = self.client_auth_keys.get(&service_id);
 

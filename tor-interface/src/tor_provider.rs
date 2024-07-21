@@ -149,7 +149,10 @@ impl TryFrom<(String, u16)> for DomainAddr {
                 });
             }
         }
-        Err(DomainAddrParseError::Generic(format!("{}:{}", domain, port)))
+        Err(DomainAddrParseError::Generic(format!(
+            "{}:{}",
+            domain, port
+        )))
     }
 }
 
@@ -350,13 +353,17 @@ impl Socks4ProxyConfig {
         let port = match &address {
             TargetAddr::Ip(addr) => addr.port(),
             TargetAddr::Domain(addr) => addr.port(),
-            TargetAddr::OnionService(_) => return Err(ProxyConfigError::Generic("proxy address may not be onion service".to_string())),
+            TargetAddr::OnionService(_) => {
+                return Err(ProxyConfigError::Generic(
+                    "proxy address may not be onion service".to_string(),
+                ))
+            }
         };
         if port == 0 {
             return Err(ProxyConfigError::Generic("proxy port not be 0".to_string()));
         }
 
-        Ok(Self{address})
+        Ok(Self { address })
     }
 }
 
@@ -368,11 +375,19 @@ pub struct Socks5ProxyConfig {
 }
 
 impl Socks5ProxyConfig {
-    pub fn new(address: TargetAddr, username: Option<String>, password: Option<String>) -> Result<Self, ProxyConfigError> {
+    pub fn new(
+        address: TargetAddr,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Result<Self, ProxyConfigError> {
         let port = match &address {
             TargetAddr::Ip(addr) => addr.port(),
             TargetAddr::Domain(addr) => addr.port(),
-            TargetAddr::OnionService(_) => return Err(ProxyConfigError::Generic("proxy address may not be onion service".to_string())),
+            TargetAddr::OnionService(_) => {
+                return Err(ProxyConfigError::Generic(
+                    "proxy address may not be onion service".to_string(),
+                ))
+            }
         };
         if port == 0 {
             return Err(ProxyConfigError::Generic("proxy port not be 0".to_string()));
@@ -381,17 +396,25 @@ impl Socks5ProxyConfig {
         // username must be less than 255 bytes
         if let Some(username) = &username {
             if username.len() > 255 {
-                return Err(ProxyConfigError::Generic("socks5 username must be <= 255 bytes".to_string()));
+                return Err(ProxyConfigError::Generic(
+                    "socks5 username must be <= 255 bytes".to_string(),
+                ));
             }
         }
         // password must be less than 255 bytes
         if let Some(password) = &password {
             if password.len() > 255 {
-                return Err(ProxyConfigError::Generic("socks5 password must be <= 255 bytes".to_string()));
+                return Err(ProxyConfigError::Generic(
+                    "socks5 password must be <= 255 bytes".to_string(),
+                ));
             }
         }
 
-        Ok(Self{address, username, password})
+        Ok(Self {
+            address,
+            username,
+            password,
+        })
     }
 }
 
@@ -403,11 +426,19 @@ pub struct HttpsProxyConfig {
 }
 
 impl HttpsProxyConfig {
-    pub fn new(address: TargetAddr, username: Option<String>, password: Option<String>) -> Result<Self, ProxyConfigError> {
+    pub fn new(
+        address: TargetAddr,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Result<Self, ProxyConfigError> {
         let port = match &address {
             TargetAddr::Ip(addr) => addr.port(),
             TargetAddr::Domain(addr) => addr.port(),
-            TargetAddr::OnionService(_) => return Err(ProxyConfigError::Generic("proxy address may not be onion service".to_string())),
+            TargetAddr::OnionService(_) => {
+                return Err(ProxyConfigError::Generic(
+                    "proxy address may not be onion service".to_string(),
+                ))
+            }
         };
         if port == 0 {
             return Err(ProxyConfigError::Generic("proxy port not be 0".to_string()));
@@ -416,11 +447,17 @@ impl HttpsProxyConfig {
         // username may not contain ':' character (per RFC 2617)
         if let Some(username) = &username {
             if username.contains(':') {
-                return Err(ProxyConfigError::Generic("username may not contain ':' character".to_string()));
+                return Err(ProxyConfigError::Generic(
+                    "username may not contain ':' character".to_string(),
+                ));
             }
         }
 
-        Ok(Self{address, username, password})
+        Ok(Self {
+            address,
+            username,
+            password,
+        })
     }
 }
 
@@ -457,7 +494,7 @@ impl From<HttpsProxyConfig> for ProxyConfig {
 pub struct PluggableTransportConfig {
     transports: Vec<String>,
     path_to_binary: PathBuf,
-    options: Vec<String>
+    options: Vec<String>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -465,7 +502,7 @@ pub enum PluggableTransportConfigError {
     #[error("pluggable transport name '{0}' is invalid")]
     TransportNameInvalid(String),
     #[error("unable to use '{0}' as pluggable transport binary path, {1}")]
-    BinaryPathInvalid(String, String)
+    BinaryPathInvalid(String, String),
 }
 
 // per the PT spec: https://github.com/Pluggable-Transports/Pluggable-Transports-spec/blob/main/releases/PTSpecV1.0/pt-1_0.txt
@@ -475,34 +512,46 @@ fn init_transport_pattern() -> Regex {
 }
 
 impl PluggableTransportConfig {
-    pub fn new(transports: Vec<String>, path_to_binary: PathBuf) -> Result<Self, PluggableTransportConfigError> {
+    pub fn new(
+        transports: Vec<String>,
+        path_to_binary: PathBuf,
+    ) -> Result<Self, PluggableTransportConfigError> {
         let transport_pattern = TRANSPORT_PATTERN.get_or_init(init_transport_pattern);
         // validate each transport
         for transport in &transports {
             if !transport_pattern.is_match(&transport) {
-                return Err(PluggableTransportConfigError::TransportNameInvalid(transport.clone()));
+                return Err(PluggableTransportConfigError::TransportNameInvalid(
+                    transport.clone(),
+                ));
             }
         }
 
         // pluggable transport path must be absolute so we can fix it up for individual
         // TorProvider implementations
         if !path_to_binary.is_absolute() {
-            return Err(PluggableTransportConfigError::BinaryPathInvalid(format!("{:?}", path_to_binary.display()), "must be an absolute path".to_string()));
+            return Err(PluggableTransportConfigError::BinaryPathInvalid(
+                format!("{:?}", path_to_binary.display()),
+                "must be an absolute path".to_string(),
+            ));
         }
 
-        Ok(Self{transports, path_to_binary, options: Default::default()})
+        Ok(Self {
+            transports,
+            path_to_binary,
+            options: Default::default(),
+        })
     }
 
     pub fn transports(&self) -> &Vec<String> {
-    	&self.transports
+        &self.transports
     }
 
     pub fn path_to_binary(&self) -> &PathBuf {
-    	&self.path_to_binary
+        &self.path_to_binary
     }
 
     pub fn options(&self) -> &Vec<String> {
-    	&self.options
+        &self.options
     }
 
     pub fn add_option(&mut self, arg: String) {
@@ -519,7 +568,7 @@ pub struct BridgeLine {
     transport: String,
     address: SocketAddr,
     fingerprint: String,
-    keyvalues: Vec<(String,String)>,
+    keyvalues: Vec<(String, String)>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -550,7 +599,12 @@ pub enum BridgeLineError {
 }
 
 impl BridgeLine {
-    pub fn new(transport: String, address: SocketAddr, fingerprint: String, keyvalues: Vec<(String,String)>) -> Result<BridgeLine, BridgeLineError> {
+    pub fn new(
+        transport: String,
+        address: SocketAddr,
+        fingerprint: String,
+        keyvalues: Vec<(String, String)>,
+    ) -> Result<BridgeLine, BridgeLineError> {
         let transport_pattern = TRANSPORT_PATTERN.get_or_init(init_transport_pattern);
 
         // transports have a particular pattern
@@ -564,10 +618,8 @@ impl BridgeLine {
         }
 
         static BRIDGE_FINGERPRINT_PATTERN: OnceLock<Regex> = OnceLock::new();
-        let bridge_fingerprint_pattern = BRIDGE_FINGERPRINT_PATTERN.get_or_init(|| {
-            Regex::new(r"(?m)^[0-9a-fA-F]{40}$")
-                .unwrap()
-        });
+        let bridge_fingerprint_pattern = BRIDGE_FINGERPRINT_PATTERN
+            .get_or_init(|| Regex::new(r"(?m)^[0-9a-fA-F]{40}$").unwrap());
 
         // fingerprint should be a sha1 hash
         if !bridge_fingerprint_pattern.is_match(&fingerprint) {
@@ -576,14 +628,17 @@ impl BridgeLine {
 
         // validate key-values
         for (key, value) in &keyvalues {
-            if key.contains(' ')
-            || key.contains('=')
-            || key.len() == 0 {
+            if key.contains(' ') || key.contains('=') || key.len() == 0 {
                 return Err(BridgeLineError::KeyValueInvalid(format!("{key}={value}")));
             }
         }
 
-        Ok(Self{transport, address, fingerprint, keyvalues})
+        Ok(Self {
+            transport,
+            address,
+            fingerprint,
+            keyvalues,
+        })
     }
 
     pub fn transport(&self) -> &String {
@@ -598,7 +653,7 @@ impl BridgeLine {
         &self.fingerprint
     }
 
-    pub fn keyvalues(&self) -> &Vec<(String,String)> {
+    pub fn keyvalues(&self) -> &Vec<(String, String)> {
         &self.keyvalues
     }
 
@@ -607,7 +662,11 @@ impl BridgeLine {
         let transport = &self.transport;
         let address = self.address.to_string();
         let fingerprint = self.fingerprint.to_string();
-        let keyvalues: Vec<String> = self.keyvalues.iter().map(|(key,value)| format!("{key}={value}")).collect();
+        let keyvalues: Vec<String> = self
+            .keyvalues
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect();
         let keyvalues = keyvalues.join(" ");
 
         format!("{transport} {address} {fingerprint} {keyvalues}")
@@ -643,23 +702,34 @@ impl FromStr for BridgeLine {
 
         // get the bridge options
         static BRIDGE_OPTION_PATTERN: OnceLock<Regex> = OnceLock::new();
-        let bridge_option_pattern = BRIDGE_OPTION_PATTERN.get_or_init(|| {
-            Regex::new(r"(?m)^(?<key>[^=]+)=(?<value>.*)$")
-                .unwrap()
-        });
+        let bridge_option_pattern = BRIDGE_OPTION_PATTERN
+            .get_or_init(|| Regex::new(r"(?m)^(?<key>[^=]+)=(?<value>.*)$").unwrap());
 
-        let mut keyvalues: Vec<(String,String)> = Default::default();
+        let mut keyvalues: Vec<(String, String)> = Default::default();
         while let Some(keyvalue) = tokens.next() {
             if let Some(caps) = bridge_option_pattern.captures(&keyvalue) {
-                let key = caps.name("key").expect("missing key group").as_str().to_string();
-                let value = caps.name("value").expect("missing value group").as_str().to_string();
-                keyvalues.push((key,value));
+                let key = caps
+                    .name("key")
+                    .expect("missing key group")
+                    .as_str()
+                    .to_string();
+                let value = caps
+                    .name("value")
+                    .expect("missing value group")
+                    .as_str()
+                    .to_string();
+                keyvalues.push((key, value));
             } else {
                 return Err(BridgeLineError::KeyValueInvalid(keyvalue.to_string()));
             }
         }
 
-        BridgeLine::new(transport.to_string(), address, fingerprint.to_string(), keyvalues)
+        BridgeLine::new(
+            transport.to_string(),
+            address,
+            fingerprint.to_string(),
+            keyvalues,
+        )
     }
 }
 
