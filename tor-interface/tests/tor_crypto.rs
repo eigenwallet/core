@@ -17,7 +17,6 @@ fn test_crypto_ed25519() -> Result<(), anyhow::Error> {
         0xe1u8, 0x45u8, 0x55u8, 0xeeu8, 0xb9u8, 0x32u8, 0xa0u8, 0x5cu8, 0x39u8, 0x5au8, 0xe2u8,
         0x02u8, 0x83u8, 0x55u8, 0x27u8, 0x89u8, 0x6au8, 0x1fu8, 0x2fu8, 0x3du8, 0xc5u8,
     ];
-    let public_base32 = "6L62FW7TQCTLU5FESDQUKVPOXEZKAXBZLLRAFA2VE6EWUHZPHXCQ====";
     let service_id_string = "6l62fw7tqctlu5fesdqukvpoxezkaxbzllrafa2ve6ewuhzphxczsjyd";
     assert!(V3OnionServiceId::is_valid(&service_id_string));
 
@@ -49,7 +48,6 @@ fn test_crypto_ed25519() -> Result<(), anyhow::Error> {
     assert_eq!(public_key, Ed25519PublicKey::from_service_id(&service_id)?);
     assert_eq!(public_key, Ed25519PublicKey::from_private_key(&private_key));
     assert_eq!(service_id, V3OnionServiceId::from_public_key(&public_key));
-    assert_eq!(public_base32, public_key.to_base32());
 
     let signature = private_key.sign_message(&message);
     assert_eq!(signature, Ed25519Signature::from_raw(&signature_raw)?);

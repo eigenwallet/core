@@ -4,7 +4,7 @@ use std::str;
 
 // extern crates
 use curve25519_dalek::Scalar;
-use data_encoding::{BASE32, BASE32_NOPAD, BASE64};
+use data_encoding::{BASE32_NOPAD, BASE64};
 use data_encoding_macro::new_encoding;
 #[cfg(feature = "legacy-tor-provider")]
 use rand::distributions::Alphanumeric;
@@ -426,10 +426,6 @@ impl Ed25519PublicKey {
                     .to_string(),
             )),
         }
-    }
-
-    pub fn to_base32(&self) -> String {
-        BASE32.encode(self.as_bytes())
     }
 
     pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
