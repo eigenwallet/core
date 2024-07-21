@@ -330,18 +330,9 @@ impl Ed25519PrivateKey {
         key_blob
     }
 
-    pub fn sign_message_ex(
-        &self,
-        _public_key: &Ed25519PublicKey,
-        message: &[u8],
-    ) -> Ed25519Signature {
+    pub fn sign_message(&self, message: &[u8]) -> Ed25519Signature {
         let signature = self.expanded_keypair.sign(message);
         Ed25519Signature { signature }
-    }
-
-    pub fn sign_message(&self, message: &[u8]) -> Ed25519Signature {
-        let public_key = Ed25519PublicKey::from_private_key(self);
-        self.sign_message_ex(&public_key, message)
     }
 
     pub fn to_bytes(&self) -> [u8; ED25519_PRIVATE_KEY_SIZE] {
