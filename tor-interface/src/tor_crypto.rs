@@ -16,12 +16,18 @@ use static_assertions::const_assert_eq;
 use tor_llcrypto::pk::keymanip::*;
 use tor_llcrypto::*;
 
+/// Represents various errors that can occur in the tor_crypto module.
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    /// A error encountered converting a String to a tor_crypto type
     #[error("{0}")]
     ParseError(String),
+
+    /// An error encountered converting between tor_crypto types
     #[error("{0}")]
     ConversionError(String),
+
+    /// An error encountered converting from a raw byte representation
     #[error("invalid key")]
     KeyInvalid,
 }
@@ -117,35 +123,46 @@ pub(crate) fn generate_password(length: usize) -> String {
 
 // Struct deinitions
 
+/// An ed25519 private key.
+///
+/// This key type is used with [`crate::tor_provider::TorProvider`] trait for hosting onion-services and can be convertd to an [`Ed25519PublicKey`]. It can also be used to sign messages and create an [`Ed25519Signature`].
 pub struct Ed25519PrivateKey {
     expanded_keypair: pk::ed25519::ExpandedKeypair,
 }
 
+/// An ed25519 public key.
+///
+/// This key type is derived from [`Ed25519PrivateKey`] and can be converted to a [`V3OnionServiceId`]. It can also be used to verify a [`Ed25519Signature`].
 #[derive(Clone)]
 pub struct Ed25519PublicKey {
     public_key: pk::ed25519::PublicKey,
 }
 
+/// An ed25519 cryptographic signature
 #[derive(Clone)]
 pub struct Ed25519Signature {
     signature: pk::ed25519::Signature,
 }
 
+/// An x25519 private key
 #[derive(Clone)]
 pub struct X25519PrivateKey {
     secret_key: pk::curve25519::StaticSecret,
 }
 
+/// An x25519 public key
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct X25519PublicKey {
     public_key: pk::curve25519::PublicKey,
 }
 
+/// A v3 onion-service id
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct V3OnionServiceId {
     data: [u8; V3_ONION_SERVICE_ID_STRING_LENGTH],
 }
 
+/// An enum representing a single bit
 #[derive(Clone, Copy)]
 pub enum SignBit {
     Zero,
@@ -192,9 +209,9 @@ enum FromRawValidationMethod {
     Ed25519Dalek,
 }
 
-// Ed25519 Private Key
-
+/// A wrapper around `tor_llcrypto::pk::ed25519::ExpandedKeypair`.
 impl Ed25519PrivateKey {
+    /// Securely generate a new `Ed25519PrivateKey`.
     pub fn generate() -> Ed25519PrivateKey {
         let csprng = &mut OsRng;
         let keypair = pk::ed25519::Keypair::generate(csprng);
@@ -238,6 +255,9 @@ impl Ed25519PrivateKey {
         }
     }
 
+    /// Attempt to create an `Ed25519PrivateKey` from an array of bytes. Not all byte buffers of the required size can create a valid `Ed25519PrivateKey`. Only buffers derived from [`Ed25519PrivateKey::to_bytes()`] are required to convert correctly.
+    ///
+    /// To securely generate a valid `Ed25519PrivateKey`, use [`Ed25519PrivateKey::generate()`].
     pub fn from_raw(raw: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Result<Ed25519PrivateKey, Error> {
         Self::from_raw_impl(raw, FromRawValidationMethod::Ed25519Dalek)
     }
@@ -291,10 +311,15 @@ impl Ed25519PrivateKey {
         Self::from_key_blob_impl(key_blob, FromRawValidationMethod::LegacyCTor)
     }
 
+    /// Create an `Ed25519PrivateKey` from a [`String`] in the legacy c-tor daemon key blob format used in the `ADD_ONION` control-port command. From the c-tor control [specification](https://spec.torproject.org/control-spec/commands.html#add_onion):
+    /// > For a "ED25519-V3" key is the Base64 encoding of the concatenation of the 32-byte ed25519 secret scalar in little-endian and the 32-byte ed25519 PRF secret.
+    ///
+    /// Only key blob strings derived from [`Ed25519PrivateKey::to_key_blob()`] are required to convert correctly.
     pub fn from_key_blob(key_blob: &str) -> Result<Ed25519PrivateKey, Error> {
         Self::from_key_blob_impl(key_blob, FromRawValidationMethod::Ed25519Dalek)
     }
 
+    /// Construct an `Ed25519PrivateKEy` from an [`X25519PrivateKey`].
     pub fn from_private_x25519(
         x25519_private: &X25519PrivateKey,
     ) -> Result<(Ed25519PrivateKey, SignBit), Error> {
@@ -323,6 +348,7 @@ impl Ed25519PrivateKey {
         }
     }
 
+    /// Write `Ed25519PrivateKey` to a c-tor key blob formatted [`String`].
     pub fn to_key_blob(&self) -> String {
         let mut key_blob = ED25519_PRIVATE_KEY_KEYBLOB_HEADER.to_string();
         key_blob.push_str(&BASE64.encode(&self.expanded_keypair.to_secret_key_bytes()));
@@ -330,11 +356,15 @@ impl Ed25519PrivateKey {
         key_blob
     }
 
+    /// Sign the provided message and return an [`Ed25519Signature`].
+    /// ## ⚠ Warning ⚠
+    ///Only ever sign messages the private key owner controls the contents of!
     pub fn sign_message(&self, message: &[u8]) -> Ed25519Signature {
         let signature = self.expanded_keypair.sign(message);
         Ed25519Signature { signature }
     }
 
+    /// Convert this private key to an array of bytes.
     pub fn to_bytes(&self) -> [u8; ED25519_PRIVATE_KEY_SIZE] {
         self.expanded_keypair.to_secret_key_bytes()
     }
@@ -366,22 +396,19 @@ impl std::fmt::Debug for Ed25519PrivateKey {
     }
 }
 
-// Ed25519 Public Key
-
+/// A wrapper around `tor_llcrypto::pk::ed25519::PublicKey`
 impl Ed25519PublicKey {
+    /// Construct an `Ed25519PublicKey` from an array of bytes. Not all byte buffers of the required size can create a valid `Ed25519PublicKey`. Only buffers derived from [`Ed25519PublicKey::as_bytes()`] are required to convert correctly.
     pub fn from_raw(raw: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Ed25519PublicKey, Error> {
         Ok(Ed25519PublicKey {
             public_key: match pk::ed25519::PublicKey::from_bytes(raw) {
                 Ok(public_key) => public_key,
-                Err(_) => {
-                    return Err(Error::ConversionError(
-                        "failed to create ed25519 public key from bytes".to_string(),
-                    ))
-                }
+                Err(_) => return Err(Error::KeyInvalid),
             },
         })
     }
 
+    /// Construct an `Ed25519PublicKey` from a [`V3OnionServiceId`].
     pub fn from_service_id(service_id: &V3OnionServiceId) -> Result<Ed25519PublicKey, Error> {
         // decode base32 encoded service id
         let mut decoded_service_id = [0u8; V3_ONION_SERVICE_ID_RAW_SIZE];
@@ -409,6 +436,7 @@ impl Ed25519PublicKey {
         )
     }
 
+    /// Construct an `Ed25519PublicKey` from an [`Ed25519PrivateKey`].
     pub fn from_private_key(private_key: &Ed25519PrivateKey) -> Ed25519PublicKey {
         Ed25519PublicKey {
             public_key: *private_key.expanded_keypair.public(),
@@ -428,6 +456,7 @@ impl Ed25519PublicKey {
         }
     }
 
+    /// View this public key as an array of bytes
     pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
         self.public_key.as_bytes()
     }
@@ -445,15 +474,18 @@ impl std::fmt::Debug for Ed25519PublicKey {
     }
 }
 
-// Ed25519 Signature
 
+/// A wrapper around `tor_llcrypto::pk::ed25519::Signature`
 impl Ed25519Signature {
+    /// Construct an `Ed25519Signature` from an array of bytes.
     pub fn from_raw(raw: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Ed25519Signature, Error> {
+        // todo: message cannot fail so should not return a Result<>
         Ok(Ed25519Signature {
             signature: pk::ed25519::Signature::from_bytes(raw),
         })
     }
 
+    /// Verify this `Ed25519Signature` for the given message and [`Ed25519PublicKey`].
     pub fn verify(&self, message: &[u8], public_key: &Ed25519PublicKey) -> bool {
         if let Ok(()) = public_key
             .public_key
@@ -464,8 +496,7 @@ impl Ed25519Signature {
         false
     }
 
-    // derives an ed25519 public key from the provided x25519 public key and signbit, then
-    // verifies this signature using said ed25519 public key
+    /// Verify this `Ed25519Signature` for the given message, [`X25519PublicKey`], and [`SignBit`]. This signature must have been created by first converting an [`X25519PrivateKey`] to a [`Ed25519PrivateKey`] and [`SignBit`], and then signing the message using this [`Ed25519PrivateKey`]. This method verifies the signature using the [`Ed25519PublicKey`] derived from the provided  [`X25519PublicKey`] and [`SignBit`].
     pub fn verify_x25519(
         &self,
         message: &[u8],
@@ -478,6 +509,7 @@ impl Ed25519Signature {
         false
     }
 
+    /// Convert this signature to an array of bytes
     pub fn to_bytes(&self) -> [u8; ED25519_SIGNATURE_SIZE] {
         self.signature.to_bytes()
     }
@@ -495,9 +527,9 @@ impl std::fmt::Debug for Ed25519Signature {
     }
 }
 
-// X25519 Private Key
-
+/// A wrapper around `tor_llcrypto::pk::curve25519::StaticSecret`
 impl X25519PrivateKey {
+    /// Securely generate a new `X25519PrivateKey`
     pub fn generate() -> X25519PrivateKey {
         let csprng = &mut OsRng;
         X25519PrivateKey {
@@ -505,6 +537,9 @@ impl X25519PrivateKey {
         }
     }
 
+    /// Attempt to create an `X25519PrivateKey` from an array of bytes. Not all byte buffers of the required size can create a valid `X25519PrivateKey`. Only buffers derived from [`X25519PrivateKey::to_bytes()`] are required to convert correctly.
+    ///
+    /// To securely generate a valid `X25519PrivateKey`, use [`X25519PrivateKey::generate()`].
     pub fn from_raw(raw: &[u8; X25519_PRIVATE_KEY_SIZE]) -> Result<X25519PrivateKey, Error> {
         // see: https://docs.rs/x25519-dalek/2.0.0-pre.1/src/x25519_dalek/x25519.rs.html#197
         if raw[0] == raw[0] & 240 && raw[31] == (raw[31] & 127) | 64 {
@@ -516,8 +551,14 @@ impl X25519PrivateKey {
         }
     }
 
-    // a base64 encoded keyblob
+    /// Create an `X25519PrivateKey` from a [`String`] in the legacy c-tor daemon key blob format used in the `ONION_CLIENT_AUTH_ADD` control-port command. From the c-tor control [specification](https://spec.torproject.org/control-spec/commands.html#onion_client_auth_add):
+    /// > ```text
+    /// > PrivateKeyBlob = base64 encoding of x25519 key
+    /// > ```
+    ///
+    /// Only key blob strings derived from [`X25519PrivateKey::to_base64()`] are required to convert correctly.
     pub fn from_base64(base64: &str) -> Result<X25519PrivateKey, Error> {
+        // todo: see if this should be from/to key blob like with ed25519 rather than base64
         if base64.len() != X25519_PRIVATE_KEY_BASE64_LENGTH {
             return Err(Error::ParseError(format!(
                 "expects string of length '{}'; received string with length '{}'",
@@ -550,19 +591,23 @@ impl X25519PrivateKey {
         X25519PrivateKey::from_raw(&private_key_data_raw)
     }
 
-    // security note: only ever sign messages the private key owner controls the contents of!
-    // this function first derives an ed25519 private key from the provided x25519 private key
-    // and signs the message, returning the signature and signbit needed to calculate the
-    // ed25519 public key from our x25519 private key's associated x25519 public key
+    /// Sign the provided message and return an [`Ed25519Signature`] and [`SignBit`].
+    ///
+    /// This method first converts this `X25519PrivateKey` to an [`Ed25519PrivateKey`] and [`SignBit`]. Then, the message is signed using the derived [`Ed25519PrivateKey`]. To verify the signature, both the [`X25519PublicKey`] and this calculated [`SignBit`] are required.
+    ///
+    /// ## ⚠ Warning ⚠
+    ///Only ever sign messages the private key owner controls the contents of!
     pub fn sign_message(&self, message: &[u8]) -> Result<(Ed25519Signature, SignBit), Error> {
         let (ed25519_private, signbit) = Ed25519PrivateKey::from_private_x25519(self)?;
         Ok((ed25519_private.sign_message(message), signbit))
     }
 
+    /// Write `X25519PrivateKey` to a base64 encocded [`String`].
     pub fn to_base64(&self) -> String {
         BASE64.encode(&self.secret_key.to_bytes())
     }
 
+    /// Convert this private key to an array of bytes.
     pub fn to_bytes(&self) -> [u8; X25519_PRIVATE_KEY_SIZE] {
         self.secret_key.to_bytes()
     }
@@ -580,20 +625,29 @@ impl std::fmt::Debug for X25519PrivateKey {
     }
 }
 
-// X25519 Public Key
+/// A wrapper around `tor_llcrypto::pk::curve25519::PublicKey`
 impl X25519PublicKey {
+    /// Construct an `X25519PublicKey` from an [`X25519PrivateKey`].
     pub fn from_private_key(private_key: &X25519PrivateKey) -> X25519PublicKey {
         X25519PublicKey {
             public_key: pk::curve25519::PublicKey::from(&private_key.secret_key),
         }
     }
 
+    /// Construct an `X25519PublicKey` from an array of bytes.
     pub fn from_raw(raw: &[u8; X25519_PUBLIC_KEY_SIZE]) -> X25519PublicKey {
         X25519PublicKey {
             public_key: pk::curve25519::PublicKey::from(*raw),
         }
     }
 
+    /// Create an `X25519PublicKey` from a [`String`] in the legacy c-tor daemon key base32 format used in the `ADD_ONION` control-port command. From the c-tor control [specification](https://spec.torproject.org/control-spec/commands.html#add_onion):
+    /// > ```text
+    /// > V3Key = The client's base32-encoded x25519 public key, using only the key
+    /// >         part of rend-spec-v3.txt section G.1.2 (v3 only).
+    /// > ```
+    ///
+    /// Only key base32 strings derived from [`X25519PublicKey::to_base32()`] are required to convert correctly.
     pub fn from_base32(base32: &str) -> Result<X25519PublicKey, Error> {
         if base32.len() != X25519_PUBLIC_KEY_BASE32_LENGTH {
             return Err(Error::ParseError(format!(
@@ -627,10 +681,12 @@ impl X25519PublicKey {
         Ok(X25519PublicKey::from_raw(&public_key_data_raw))
     }
 
+    /// Write `X25519PublicKey` to a base32 encocded [`String`].
     pub fn to_base32(&self) -> String {
         BASE32_NOPAD.encode(self.public_key.as_bytes())
     }
 
+    /// View this public key as an array of bytes
     pub fn as_bytes(&self) -> &[u8; X25519_PUBLIC_KEY_SIZE] {
         self.public_key.as_bytes()
     }
@@ -642,8 +698,7 @@ impl std::fmt::Debug for X25519PublicKey {
     }
 }
 
-// Onion Service Id
-
+/// Strongly-typed representation of a v3 onion-service id
 impl V3OnionServiceId {
     // see https://github.com/torproject/torspec/blob/main/rend-spec-v3.txt#L2143
     fn calc_truncated_checksum(
@@ -660,6 +715,18 @@ impl V3OnionServiceId {
         [hash_bytes[0], hash_bytes[1]]
     }
 
+    /// Create a `V3OnionServiceId` from a [`String`] in the version 3 onion service digest format. From the tor address [specification](https://spec.torproject.org/address-spec.html#onion):
+    /// > ```text
+    /// > onion_address = base32(PUBKEY | CHECKSUM | VERSION)
+    /// > CHECKSUM = H(".onion checksum" | PUBKEY | VERSION)[:2]
+    /// >
+    /// > where:
+    /// > - PUBKEY is the 32 bytes ed25519 master pubkey of the onion service.
+    /// > - VERSION is a one byte version field (default value '\x03')
+    /// > - ".onion checksum" is a constant string
+    /// > - H is SHA3-256
+    /// > - CHECKSUM is truncated to two bytes before inserting it in onion_address
+    /// > ```
     pub fn from_string(service_id: &str) -> Result<V3OnionServiceId, Error> {
         if !V3OnionServiceId::is_valid(service_id) {
             return Err(Error::ParseError(format!(
@@ -672,6 +739,7 @@ impl V3OnionServiceId {
         })
     }
 
+    /// Create a `V3OnionServiceId` from an [`Ed25519PublicKey`].
     pub fn from_public_key(public_key: &Ed25519PublicKey) -> V3OnionServiceId {
         let mut raw_service_id = [0u8; V3_ONION_SERVICE_ID_RAW_SIZE];
 
@@ -688,10 +756,12 @@ impl V3OnionServiceId {
         V3OnionServiceId { data: service_id }
     }
 
+    /// Create a `V3OnionServiceId` from an [`Ed25519PrivateKey`].
     pub fn from_private_key(private_key: &Ed25519PrivateKey) -> V3OnionServiceId {
         Self::from_public_key(&Ed25519PublicKey::from_private_key(private_key))
     }
 
+    /// Determine if the provided string is a valid representation of a `V3OnionServiceId`
     pub fn is_valid(service_id: &str) -> bool {
         if service_id.len() != V3_ONION_SERVICE_ID_STRING_LENGTH {
             return false;
@@ -725,6 +795,7 @@ impl V3OnionServiceId {
         }
     }
 
+    /// View this service id as an array of bytes
     pub fn as_bytes(&self) -> &[u8; V3_ONION_SERVICE_ID_STRING_LENGTH] {
         &self.data
     }

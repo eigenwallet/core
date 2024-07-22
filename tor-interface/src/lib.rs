@@ -16,5 +16,6 @@ mod legacy_tor_version;
 pub mod mock_tor_client;
 #[cfg(feature = "legacy-tor-provider")]
 pub mod proxy;
+/// Tor-specific cryptographic primitives, operations, and conversion functions.
 pub mod tor_crypto;
 pub mod tor_provider;
