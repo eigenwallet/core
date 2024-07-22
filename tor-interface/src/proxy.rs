@@ -2,17 +2,21 @@
 use crate::tor_provider::TargetAddr;
 
 #[derive(thiserror::Error, Debug)]
+/// Error type for the proxy module
 pub enum ProxyConfigError {
     #[error("{0}")]
+    /// An error returned when constructing a proxy configuration with invalid parameters
     Generic(String),
 }
 
 #[derive(Clone, Debug)]
+/// Configuration for a SOCKS4 proxy
 pub struct Socks4ProxyConfig {
     pub(crate) address: TargetAddr,
 }
 
 impl Socks4ProxyConfig {
+    /// Construct a new `Socks4ProxyConfig`. The `address` argument must not be a [`crate::tor_provider::TargetAddr::OnionService`] and its port must not be 0.
     pub fn new(address: TargetAddr) -> Result<Self, ProxyConfigError> {
         let port = match &address {
             TargetAddr::Socket(addr) => addr.port(),
@@ -32,6 +36,7 @@ impl Socks4ProxyConfig {
 }
 
 #[derive(Clone, Debug)]
+/// Configuration for a SOCKS5 proxy
 pub struct Socks5ProxyConfig {
     pub(crate) address: TargetAddr,
     pub(crate) username: Option<String>,
@@ -39,6 +44,7 @@ pub struct Socks5ProxyConfig {
 }
 
 impl Socks5ProxyConfig {
+    /// Construct a new `Socks5ProxyConfig`. The `address` argument must not be a  [`crate::tor_provider::TargetAddr::OnionService`] and its port must not be 0. The `username` and `password` arguments, if present, must each be less than 256 bytes long.
     pub fn new(
         address: TargetAddr,
         username: Option<String>,
@@ -83,6 +89,7 @@ impl Socks5ProxyConfig {
 }
 
 #[derive(Clone, Debug)]
+/// Configuration for an HTTP CONNECT proxy (`HTTPSProxy` in c-tor torrc configuration)
 pub struct HttpsProxyConfig {
     pub(crate) address: TargetAddr,
     pub(crate) username: Option<String>,
@@ -90,6 +97,7 @@ pub struct HttpsProxyConfig {
 }
 
 impl HttpsProxyConfig {
+    /// Construct a new `HttpsProxyConfig`. The `address` argument must not be a [`crate::tor_provider::TargetAddr::OnionService`] and its port must not be 0. The `username` argument, if present, must not contain the `:` (colon) character.
     pub fn new(
         address: TargetAddr,
         username: Option<String>,
@@ -126,9 +134,13 @@ impl HttpsProxyConfig {
 }
 
 #[derive(Clone, Debug)]
+/// An enum representing a possible proxy server configuration with address and possible credentials.
 pub enum ProxyConfig {
+    /// A SOCKS4 proxy
     Socks4(Socks4ProxyConfig),
+    /// A SOCKS5 proxy
     Socks5(Socks5ProxyConfig),
+    /// An HTTP CONNECT proxy
     Https(HttpsProxyConfig),
 }
 
