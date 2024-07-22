@@ -17,6 +17,7 @@ use crate::legacy_tor_control_stream::*;
 use crate::legacy_tor_controller::*;
 use crate::legacy_tor_process::*;
 use crate::legacy_tor_version::*;
+use crate::proxy::*;
 use crate::tor_crypto::*;
 use crate::tor_provider;
 use crate::tor_provider::*;

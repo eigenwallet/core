@@ -8,6 +8,7 @@ set(tor_interface_sources
     src/legacy_tor_version.rs
     src/lib.rs
     src/mock_tor_client.rs
+    src/proxy.rs
     src/tor_crypto.rs
     src/tor_provider.rs)
 

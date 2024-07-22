@@ -14,5 +14,7 @@ mod legacy_tor_process;
 mod legacy_tor_version;
 #[cfg(feature = "mock-tor-provider")]
 pub mod mock_tor_client;
+#[cfg(feature = "legacy-tor-provider")]
+pub mod proxy;
 pub mod tor_crypto;
 pub mod tor_provider;
