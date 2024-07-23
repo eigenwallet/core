@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 #[derive(Clone, Debug)]
+/// Configuration for a pluggable-transport
 pub struct PluggableTransportConfig {
     transports: Vec<String>,
     path_to_binary: PathBuf,
@@ -15,10 +16,13 @@ pub struct PluggableTransportConfig {
 }
 
 #[derive(thiserror::Error, Debug)]
+/// Error returned on failure to construct a [`PluggableTransportConfig`]
 pub enum PluggableTransportConfigError {
     #[error("pluggable transport name '{0}' is invalid")]
+    /// transport names must be a valid C identifier
     TransportNameInvalid(String),
     #[error("unable to use '{0}' as pluggable transport binary path, {1}")]
+    /// configuration only allows aboslute paths to binaries
     BinaryPathInvalid(String, String),
 }
 
@@ -28,7 +32,9 @@ fn init_transport_pattern() -> Regex {
     Regex::new(r"(?m)^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap()
 }
 
+/// Configuration struct for a pluggable-transport which conforms to the v1.0 pluggable-transport [specification](https://github.com/Pluggable-Transports/Pluggable-Transports-spec/blob/main/releases/PTSpecV1.0/pt-1_0.txt)
 impl PluggableTransportConfig {
+    /// Construct a new `PluggableTransportConfig`. Each `transport` string must be a [valid C identifier](https://github.com/Pluggable-Transports/Pluggable-Transports-spec/blob/c92e59a9fa6ba11c181f4c5ec9d533eaa7d9d7f3/releases/PTSpecV1.0/pt-1_0.txt#L144) while `path_to_binary` must be an absolute path.
     pub fn new(
         transports: Vec<String>,
         path_to_binary: PathBuf,
@@ -59,23 +65,28 @@ impl PluggableTransportConfig {
         })
     }
 
+    /// Get a reference to this `PluggableTransportConfig`'s list of transports.
     pub fn transports(&self) -> &Vec<String> {
         &self.transports
     }
 
+    /// Get a reference to this `PluggableTransportConfig`'s `PathBuf` containing the absolute path to the pluggable-transport binary.
     pub fn path_to_binary(&self) -> &PathBuf {
         &self.path_to_binary
     }
 
+    /// Get a reference to this `PluggableTransportConfig`'s list of command-line options
     pub fn options(&self) -> &Vec<String> {
         &self.options
     }
 
+    /// Add a command-line option used to invoke this pluggable-transport.
     pub fn add_option(&mut self, arg: String) {
         self.options.push(arg);
     }
 }
 
+/// Configuration for a bridge line to be used with a pluggable-transport
 #[derive(Clone, Debug)]
 pub struct BridgeLine {
     transport: String,
@@ -85,33 +96,47 @@ pub struct BridgeLine {
 }
 
 #[derive(thiserror::Error, Debug)]
+/// Error returned on failure to construct a [`BridgeLine`]
 pub enum BridgeLineError {
     #[error("bridge line '{0}' missing transport")]
+    /// Provided bridge line missing transport
     TransportMissing(String),
 
     #[error("bridge line '{0}' missing address")]
+    /// Provided bridge line missing address
     AddressMissing(String),
 
     #[error("bridge line '{0}' missing fingerprint")]
+    /// Provided bridge line missing fingerprint
     FingerprintMissing(String),
 
     #[error("transport name '{0}' is invalid")]
+    /// Invalid transport name (must be a valid C identifier)
     TransportNameInvalid(String),
 
     #[error("address '{0}' cannot be parsed as IP:PORT")]
+    /// Provided bridge line's address not parseable
     AddressParseFailed(String),
 
     #[error("key=value '{0}' is invalid")]
+    /// A key/value pair in invalid format
     KeyValueInvalid(String),
 
     #[error("bridge address port must not be 0")]
+    /// Invalid bridge address port
     AddressPortInvalid,
 
     #[error("fingerprint '{0}' is invalid")]
+    /// Fingerprint is not parseable (must be length 40 base16 string)
     FingerprintInvalid(String),
 }
 
+/// A `BridgeLine` contains the information required to connect to a bridge through the means of a particular pluggable-transport (defined in a `PluggableTransportConfi`). For more information, see:
+/// - [https://tb-manual.torproject.org/bridges/](https://tb-manual.torproject.org/bridges/)
 impl BridgeLine {
+    /// Construct a new `BridgeLine` from its constiuent parts. The `transport` argument must be a valid C identifier and must have an associated `transport` defined in an associated `PluggableTransportConfig`. The `address` must have a non-zero port. The `fingerprint` is a length 40 base16-encoded string. Finally, the keys in the `keyvalues` list must not contain space (` `) or equal (`=`) characters.
+    ///
+    /// In practice, bridge lines are distributed as entire strings so most consumers of these APIs are not likely to need this particular function.
     pub fn new(
         transport: String,
         address: SocketAddr,
@@ -154,23 +179,28 @@ impl BridgeLine {
         })
     }
 
+    /// Get a reference to this `BridgeLine`'s transport field.
     pub fn transport(&self) -> &String {
         &self.transport
     }
 
+    /// Get a reference to this `BridgeLine`'s address field.
     pub fn address(&self) -> &SocketAddr {
         &self.address
     }
 
+    /// Get a reference to this `BridgeLine`'s fingerprint field.
     pub fn fingerprint(&self) -> &String {
         &self.fingerprint
     }
 
+    /// Get a reference to this `BridgeLine`'s key/values field.
     pub fn keyvalues(&self) -> &Vec<(String, String)> {
         &self.keyvalues
     }
 
     #[cfg(feature = "legacy-tor-provider")]
+    /// Serialise this `BridgeLine` to the value set via `SETCONF Bridge...` legacy c-tor control-port command.
     pub fn as_legacy_tor_setconf_value(&self) -> String {
         let transport = &self.transport;
         let address = self.address.to_string();
