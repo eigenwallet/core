@@ -19,6 +19,8 @@ use tokio::runtime;
 #[cfg(feature = "arti-client-tor-provider")]
 use tor_interface::arti_client_tor_client::*;
 #[cfg(feature = "legacy-tor-provider")]
+use tor_interface::censorship_circumvention::*;
+#[cfg(feature = "legacy-tor-provider")]
 use tor_interface::legacy_tor_client::*;
 #[cfg(feature = "mock-tor-provider")]
 use tor_interface::mock_tor_client::*;

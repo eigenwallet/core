@@ -3,6 +3,9 @@
 #[cfg(feature = "arti-client-tor-provider")]
 pub mod arti_client_tor_client;
 #[cfg(feature = "legacy-tor-provider")]
+/// Censorship circumvention configuration for pluggable-transports and bridge settings
+pub mod censorship_circumvention;
+#[cfg(feature = "legacy-tor-provider")]
 pub mod legacy_tor_client;
 #[cfg(feature = "legacy-tor-provider")]
 mod legacy_tor_control_stream;

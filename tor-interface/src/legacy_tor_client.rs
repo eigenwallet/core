@@ -13,6 +13,7 @@ use std::time::Duration;
 use socks::Socks5Stream;
 
 // internal crates
+use crate::censorship_circumvention::*;
 use crate::legacy_tor_control_stream::*;
 use crate::legacy_tor_controller::*;
 use crate::legacy_tor_process::*;
@@ -103,7 +104,7 @@ pub enum Error {
     PluggableTransportBinaryNameNotUtf8Representnable(std::ffi::OsString),
 
     #[error("{0}")]
-    PluggableTransportConfigError(#[source] crate::tor_provider::PluggableTransportConfigError),
+    PluggableTransportConfigError(#[source] crate::censorship_circumvention::PluggableTransportConfigError),
 
     #[error("pluggable transport multiply defines '{0}' bridge transport type")]
     BridgeTransportTypeMultiplyDefined(String),
