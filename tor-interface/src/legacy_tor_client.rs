@@ -631,7 +631,7 @@ impl TorProvider for LegacyTorClient {
 
         // our target
         let socks_target = match target.clone() {
-            TargetAddr::Ip(socket_addr) => socks::TargetAddr::Ip(socket_addr),
+            TargetAddr::Socket(socket_addr) => socks::TargetAddr::Ip(socket_addr),
             TargetAddr::Domain(domain_addr) => {
                 socks::TargetAddr::Domain(domain_addr.domain().to_string(), domain_addr.port())
             }

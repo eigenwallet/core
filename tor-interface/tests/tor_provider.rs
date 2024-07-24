@@ -780,7 +780,7 @@ fn test_tor_provider_target_addr() -> anyhow::Result<()> {
 
     for target_addr_str in valid_ip_addr {
         match TargetAddr::from_str(target_addr_str) {
-            Ok(TargetAddr::Ip(socket_addr)) => println!("{} => {}", target_addr_str, socket_addr),
+            Ok(TargetAddr::Socket(socket_addr)) => println!("{} => {}", target_addr_str, socket_addr),
             Ok(TargetAddr::OnionService(onion_addr)) => panic!(
                 "unexpected conversion: {} => OnionService({})",
                 target_addr_str, onion_addr
@@ -800,7 +800,7 @@ fn test_tor_provider_target_addr() -> anyhow::Result<()> {
 
     for target_addr_str in valid_onion_addr {
         match TargetAddr::from_str(target_addr_str) {
-            Ok(TargetAddr::Ip(socket_addr)) => panic!(
+            Ok(TargetAddr::Socket(socket_addr)) => panic!(
                 "unexpected conversion: {} => Ip({})",
                 target_addr_str, socket_addr
             ),
@@ -841,7 +841,7 @@ fn test_tor_provider_target_addr() -> anyhow::Result<()> {
 
     for target_addr_str in valid_domain_addr {
         match TargetAddr::from_str(target_addr_str) {
-            Ok(TargetAddr::Ip(socket_addr)) => panic!(
+            Ok(TargetAddr::Socket(socket_addr)) => panic!(
                 "unexpected conversion: {} => SocketAddr({})",
                 target_addr_str, socket_addr
             ),
@@ -901,7 +901,7 @@ fn test_tor_provider_target_addr() -> anyhow::Result<()> {
 
     for target_addr_str in invalid_target_addr {
         match TargetAddr::from_str(target_addr_str) {
-            Ok(TargetAddr::Ip(socket_addr)) => panic!(
+            Ok(TargetAddr::Socket(socket_addr)) => panic!(
                 "unexpected conversion: {} => SocketAddr({})",
                 target_addr_str, socket_addr
             ),

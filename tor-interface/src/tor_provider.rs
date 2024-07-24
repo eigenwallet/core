@@ -186,7 +186,7 @@ impl FromStr for DomainAddr {
 
 #[derive(Clone, Debug)]
 pub enum TargetAddr {
-    Ip(std::net::SocketAddr),
+    Socket(std::net::SocketAddr),
     OnionService(OnionAddr),
     Domain(DomainAddr),
 }
@@ -210,7 +210,7 @@ impl FromStr for TargetAddr {
     type Err = TargetAddrParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Ok(socket_addr) = SocketAddr::from_str(s) {
-            return Ok(TargetAddr::Ip(socket_addr));
+            return Ok(TargetAddr::Socket(socket_addr));
         } else if let Ok(onion_addr) = OnionAddr::from_str(s) {
             return Ok(TargetAddr::OnionService(onion_addr));
         } else if let Ok(domain_addr) = DomainAddr::from_str(s) {
@@ -223,7 +223,7 @@ impl FromStr for TargetAddr {
 impl std::fmt::Display for TargetAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TargetAddr::Ip(socket_addr) => socket_addr.fmt(f),
+            TargetAddr::Socket(socket_addr) => socket_addr.fmt(f),
             TargetAddr::OnionService(onion_addr) => onion_addr.fmt(f),
             TargetAddr::Domain(domain_addr) => domain_addr.fmt(f),
         }
@@ -352,7 +352,7 @@ pub struct Socks4ProxyConfig {
 impl Socks4ProxyConfig {
     pub fn new(address: TargetAddr) -> Result<Self, ProxyConfigError> {
         let port = match &address {
-            TargetAddr::Ip(addr) => addr.port(),
+            TargetAddr::Socket(addr) => addr.port(),
             TargetAddr::Domain(addr) => addr.port(),
             TargetAddr::OnionService(_) => {
                 return Err(ProxyConfigError::Generic(
@@ -382,7 +382,7 @@ impl Socks5ProxyConfig {
         password: Option<String>,
     ) -> Result<Self, ProxyConfigError> {
         let port = match &address {
-            TargetAddr::Ip(addr) => addr.port(),
+            TargetAddr::Socket(addr) => addr.port(),
             TargetAddr::Domain(addr) => addr.port(),
             TargetAddr::OnionService(_) => {
                 return Err(ProxyConfigError::Generic(
@@ -433,7 +433,7 @@ impl HttpsProxyConfig {
         password: Option<String>,
     ) -> Result<Self, ProxyConfigError> {
         let port = match &address {
-            TargetAddr::Ip(addr) => addr.port(),
+            TargetAddr::Socket(addr) => addr.port(),
             TargetAddr::Domain(addr) => addr.port(),
             TargetAddr::OnionService(_) => {
                 return Err(ProxyConfigError::Generic(
