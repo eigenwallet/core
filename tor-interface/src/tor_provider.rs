@@ -143,10 +143,13 @@ impl TryFrom<(String, u16)> for DomainAddr {
         if let Ok(domain) = domain_to_ascii_cow(domain.as_bytes(), AsciiDenyList::URL) {
             let domain = domain.to_string();
             if let Ok(domain) = Name::<Vec<u8>>::from_str(domain.as_ref()) {
-                return Ok(Self {
-                    domain: domain.to_string(),
-                    port,
-                });
+                let domain = domain.to_string();
+                if !domain.ends_with(".onion") {
+                    return Ok(Self {
+                        domain,
+                        port,
+                    });
+                }
             }
         }
         Err(DomainAddrParseError::Generic(format!(
@@ -211,9 +214,7 @@ impl FromStr for TargetAddr {
         } else if let Ok(onion_addr) = OnionAddr::from_str(s) {
             return Ok(TargetAddr::OnionService(onion_addr));
         } else if let Ok(domain_addr) = DomainAddr::from_str(s) {
-            if !domain_addr.domain().ends_with(".onion") {
-                return Ok(TargetAddr::Domain(domain_addr));
-            }
+            return Ok(TargetAddr::Domain(domain_addr));
         }
         Err(TargetAddrParseError::Generic(s.to_string()))
     }
