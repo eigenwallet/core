@@ -17,6 +17,19 @@ use regex::Regex;
 // internal crates
 use crate::tor_crypto::*;
 
+
+/// Various `tor_provider` errors.
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Failed to parse '{0}' as {1}")]
+    /// Failure parsing some string into a type
+    ParseFailure(String, String),
+
+    #[error("{0}")]
+    /// Other miscellaneous error
+    Generic(String),
+}
+
 //
 // OnionAddr
 //
@@ -55,14 +68,8 @@ pub enum OnionAddr {
     V3(OnionAddrV3),
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum OnionAddrParseError {
-    #[error("Failed to parse '{0}' as OnionAddr")]
-    Generic(String),
-}
-
 impl FromStr for OnionAddr {
-    type Err = OnionAddrParseError;
+    type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         static ONION_SERVICE_PATTERN: OnceLock<Regex> = OnceLock::new();
         let onion_service_pattern = ONION_SERVICE_PATTERN.get_or_init(|| {
@@ -84,7 +91,7 @@ impl FromStr for OnionAddr {
                 return Ok(OnionAddr::V3(OnionAddrV3::new(service_id, port)));
             }
         }
-        Err(Self::Err::Generic(s.to_string()))
+        Err(Self::Err::ParseFailure(s.to_string(), "OnionAddr".to_string()))
     }
 }
 
@@ -129,14 +136,8 @@ impl std::fmt::Display for DomainAddr {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum DomainAddrParseError {
-    #[error("Unable to parse '{0}' as DomainAddr")]
-    Generic(String),
-}
-
 impl TryFrom<(String, u16)> for DomainAddr {
-    type Error = DomainAddrParseError;
+    type Error = Error;
 
     fn try_from(value: (String, u16)) -> Result<Self, Self::Error> {
         let (domain, port) = (&value.0, value.1);
@@ -152,15 +153,15 @@ impl TryFrom<(String, u16)> for DomainAddr {
                 }
             }
         }
-        Err(DomainAddrParseError::Generic(format!(
+        Err(Self::Error::ParseFailure(format!(
             "{}:{}",
             domain, port
-        )))
+        ), "DomainAddr".to_string()))
     }
 }
 
 impl FromStr for DomainAddr {
-    type Err = DomainAddrParseError;
+    type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         static DOMAIN_PATTERN: OnceLock<Regex> = OnceLock::new();
         let domain_pattern = DOMAIN_PATTERN
@@ -176,7 +177,7 @@ impl FromStr for DomainAddr {
                 return Self::try_from((domain, port));
             }
         }
-        Err(DomainAddrParseError::Generic(s.to_string()))
+        Err(Self::Err::ParseFailure(s.to_string(), "DomainAddr".to_string()))
     }
 }
 
@@ -200,14 +201,8 @@ impl From<(V3OnionServiceId, u16)> for TargetAddr {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum TargetAddrParseError {
-    #[error("Unable to parse '{0}' as TargetAddr")]
-    Generic(String),
-}
-
 impl FromStr for TargetAddr {
-    type Err = TargetAddrParseError;
+    type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Ok(socket_addr) = SocketAddr::from_str(s) {
             return Ok(TargetAddr::Socket(socket_addr));
@@ -216,7 +211,7 @@ impl FromStr for TargetAddr {
         } else if let Ok(domain_addr) = DomainAddr::from_str(s) {
             return Ok(TargetAddr::Domain(domain_addr));
         }
-        Err(TargetAddrParseError::Generic(s.to_string()))
+        Err(Self::Err::ParseFailure(s.to_string(), "TargetAddr".to_string()))
     }
 }
 
@@ -734,11 +729,6 @@ impl FromStr for BridgeLine {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("{0}")]
-    Generic(String),
-}
 
 pub trait TorProvider: Send {
     fn update(&mut self) -> Result<Vec<TorEvent>, Error>;
