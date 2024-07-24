@@ -1,11 +1,8 @@
 // standard
-use std::boxed::Box;
 use std::collections::BTreeMap;
 use std::convert::From;
 use std::default::Default;
-use std::io::ErrorKind;
 use std::net::{SocketAddr, TcpListener};
-use std::ops::Drop;
 use std::option::Option;
 use std::path::PathBuf;
 use std::string::ToString;
@@ -145,45 +142,6 @@ impl LegacyCircuitToken {
 impl Default for LegacyCircuitToken {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-//
-// LegacyOnionListener
-//
-
-pub struct LegacyOnionListener {
-    listener: TcpListener,
-    is_active: Arc<atomic::AtomicBool>,
-    onion_addr: OnionAddr,
-}
-
-impl OnionListenerImpl for LegacyOnionListener {
-    fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
-        self.listener.set_nonblocking(nonblocking)
-    }
-
-    fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
-        match self.listener.accept() {
-            Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
-                stream,
-                local_addr: Some(self.onion_addr.clone()),
-                peer_addr: None,
-            })),
-            Err(err) => {
-                if err.kind() == ErrorKind::WouldBlock {
-                    Ok(None)
-                } else {
-                    Err(err)
-                }
-            }
-        }
-    }
-}
-
-impl Drop for LegacyOnionListener {
-    fn drop(&mut self) {
-        self.is_active.store(false, atomic::Ordering::Relaxed);
     }
 }
 
@@ -714,13 +672,9 @@ impl TorProvider for LegacyTorClient {
         self.onion_services
             .push((service_id, Arc::clone(&is_active)));
 
-        let onion_listener = Box::new(LegacyOnionListener {
-            listener,
-            is_active,
-            onion_addr,
-        });
-
-        Ok(OnionListener { onion_listener })
+        Ok(OnionListener::new(listener, onion_addr, is_active, |is_active| {
+            is_active.store(false, atomic::Ordering::Relaxed);
+        }))
     }
 
     fn generate_token(&mut self) -> CircuitToken {

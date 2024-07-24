@@ -1,8 +1,9 @@
 // standard
+use std::any::Any;
 use std::boxed::Box;
 use std::convert::TryFrom;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -310,22 +311,66 @@ impl OnionStream {
 // Onion Listener
 //
 
-pub trait OnionListenerImpl: Send {
-    fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error>;
-    fn accept(&self) -> Result<Option<OnionStream>, std::io::Error>;
-}
 
 pub struct OnionListener {
-    pub(crate) onion_listener: Box<dyn OnionListenerImpl>,
+    pub(crate) listener: TcpListener,
+    pub(crate) onion_addr: OnionAddr,
+    pub(crate) data: Option<Box<dyn Any + Send>>,
+    pub(crate) drop: Option<Box<dyn FnMut(Box<dyn Any>) + Send>>,
 }
 
 impl OnionListener {
+    pub(crate) fn new<T: 'static + Send>(
+        listener: TcpListener,
+        onion_addr: OnionAddr,
+        data: T,
+        mut drop: impl FnMut(T) + 'static + Send) -> Self {
+        // marshall our data into an Any
+        let data: Option<Box<dyn Any + Send>> = Some(Box::new(data));
+        // marhsall our drop into a function which takes an Any
+        let drop: Option<Box<dyn FnMut(Box<dyn Any>) + Send>>  = Some(Box::new(move |data: Box<dyn std::any::Any>| {
+            // encapsulate extracting our data from the Any
+            if let Ok(data) = data.downcast::<T>() {
+                // and call our provided drop
+                drop(*data);
+            }
+        }));
+
+        Self{
+            listener,
+            onion_addr,
+            data,
+            drop,
+        }
+    }
+
     pub fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
-        self.onion_listener.set_nonblocking(nonblocking)
+        self.listener.set_nonblocking(nonblocking)
     }
 
     pub fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
-        self.onion_listener.accept()
+        match self.listener.accept() {
+            Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
+                stream,
+                local_addr: Some(self.onion_addr.clone()),
+                peer_addr: None,
+            })),
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::WouldBlock {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+}
+
+impl Drop for OnionListener {
+    fn drop(&mut self) {
+        if let (Some(data), Some(mut drop)) = (self.data.take(), self.drop.take()) {
+            drop(data)
+        }
     }
 }
 

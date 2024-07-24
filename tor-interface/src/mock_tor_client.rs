@@ -1,6 +1,5 @@
 // standard
 use std::collections::BTreeMap;
-use std::io::ErrorKind;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{atomic, Arc, Mutex};
 
@@ -45,40 +44,6 @@ pub enum Error {
 impl From<Error> for crate::tor_provider::Error {
     fn from(error: Error) -> Self {
         crate::tor_provider::Error::Generic(error.to_string())
-    }
-}
-
-pub struct MockOnionListener {
-    listener: std::net::TcpListener,
-    is_active: Arc<atomic::AtomicBool>,
-    onion_addr: OnionAddr,
-}
-
-impl OnionListenerImpl for MockOnionListener {
-    fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
-        self.listener.set_nonblocking(nonblocking)
-    }
-    fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
-        match self.listener.accept() {
-            Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
-                stream,
-                local_addr: Some(self.onion_addr.clone()),
-                peer_addr: None,
-            })),
-            Err(err) => {
-                if err.kind() == ErrorKind::WouldBlock {
-                    Ok(None)
-                } else {
-                    Err(err)
-                }
-            }
-        }
-    }
-}
-
-impl Drop for MockOnionListener {
-    fn drop(&mut self) {
-        self.is_active.store(false, atomic::Ordering::Relaxed);
     }
 }
 
@@ -341,13 +306,10 @@ impl TorProvider for MockTorClient {
         self.events
             .push(TorEvent::OnionServicePublished { service_id });
 
-        let onion_listener = Box::new(MockOnionListener {
-            listener,
-            is_active,
-            onion_addr,
-        });
 
-        Ok(OnionListener { onion_listener })
+        Ok(OnionListener::new(listener, onion_addr, is_active, |is_active| {
+            is_active.store(false, atomic::Ordering::Relaxed);
+        }))
     }
 
     fn generate_token(&mut self) -> CircuitToken {

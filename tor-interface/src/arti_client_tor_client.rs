@@ -1,5 +1,4 @@
 // standard
-use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
@@ -82,36 +81,6 @@ pub enum Error {
 impl From<Error> for crate::tor_provider::Error {
     fn from(error: Error) -> Self {
         crate::tor_provider::Error::Generic(error.to_string())
-    }
-}
-
-pub struct ArtiClientOnionListener {
-    listener: std::net::TcpListener,
-    onion_addr: OnionAddr,
-    // onion service terminates when this is dropped, we don't actually use it
-    // for anything after construction
-    _onion_service: Arc<RunningOnionService>,
-}
-
-impl OnionListenerImpl for ArtiClientOnionListener {
-    fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
-        self.listener.set_nonblocking(nonblocking)
-    }
-    fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
-        match self.listener.accept() {
-            Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
-                stream,
-                local_addr: Some(self.onion_addr.clone()),
-                peer_addr: None,
-            })),
-            Err(err) => {
-                if err.kind() == ErrorKind::WouldBlock {
-                    Ok(None)
-                } else {
-                    Err(err)
-                }
-            }
-        }
     }
 }
 
@@ -549,14 +518,8 @@ impl TorProvider for ArtiClientTorClient {
             }
         });
 
-        // return our OnionListener
-        let onion_listener = Box::new(ArtiClientOnionListener {
-            listener,
-            onion_addr,
-            _onion_service: onion_service,
-        });
-
-        Ok(OnionListener { onion_listener })
+        // onion-service is torn down when `onion_service` is dropped
+        Ok(OnionListener::new::<Arc<RunningOnionService>>(listener, onion_addr, onion_service, |_|{}))
     }
 
     fn generate_token(&mut self) -> CircuitToken {
