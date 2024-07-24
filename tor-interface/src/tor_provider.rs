@@ -299,7 +299,7 @@ impl OnionStream {
     }
 
     pub fn local_addr(&self) -> Option<OnionAddr> {
-        None
+        self.local_addr.clone()
     }
 
     pub fn try_clone(&self) -> Result<Self, std::io::Error> {
