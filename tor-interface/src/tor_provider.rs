@@ -34,6 +34,9 @@ pub enum Error {
 // OnionAddr
 //
 
+/// A version 3 onion service address.
+///
+/// Version 3 Onion Service addresses const of a [`crate::tor_crypto::V3OnionServiceId`] and a 16-bit port number.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OnionAddrV3 {
     pub(crate) service_id: V3OnionServiceId,
@@ -41,6 +44,7 @@ pub struct OnionAddrV3 {
 }
 
 impl OnionAddrV3 {
+    /// Create a new `OnionAddrV3` from a [`crate::tor_crypto::V3OnionServiceId`] and port number.
     pub fn new(service_id: V3OnionServiceId, virt_port: u16) -> OnionAddrV3 {
         OnionAddrV3 {
             service_id,
@@ -48,10 +52,12 @@ impl OnionAddrV3 {
         }
     }
 
+    /// Return the service id associated with this onion address.
     pub fn service_id(&self) -> &V3OnionServiceId {
         &self.service_id
     }
 
+    /// Return the port numebr associated with this onion address.
     pub fn virt_port(&self) -> u16 {
         self.virt_port
     }
@@ -63,6 +69,7 @@ impl std::fmt::Display for OnionAddrV3 {
     }
 }
 
+/// An onion service address analog to [`std::net::SocketAddr`]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OnionAddr {
     V3(OnionAddrV3),
@@ -107,17 +114,23 @@ impl std::fmt::Display for OnionAddr {
 // DomainAddr
 //
 
+/// A domain name analog to `std::net::SocketAddr`
+///
+/// A `DomainAddr` must not end in ".onion"
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DomainAddr {
     domain: String,
     port: u16,
 }
 
+/// A `DomainAddr` has a domain name (scuh as `www.example.com`) and a port
 impl DomainAddr {
+    /// Returns the domain name associated with this domain address.
     pub fn domain(&self) -> &str {
         self.domain.as_ref()
     }
 
+    /// Returns the port number associated with this domain address.
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -185,10 +198,14 @@ impl FromStr for DomainAddr {
 // TargetAddr
 //
 
+/// An enum representing the various types of addresses a [`TorProvider`] implementation may connect to.
 #[derive(Clone, Debug)]
 pub enum TargetAddr {
+    /// An ip address and port
     Socket(std::net::SocketAddr),
+    /// An onion-service id and virtual port
     OnionService(OnionAddr),
+    /// A domain name and port
     Domain(DomainAddr),
 }
 
@@ -225,28 +242,42 @@ impl std::fmt::Display for TargetAddr {
     }
 }
 
+/// Various events possibly returned by a [`TorProvider`] implementation's `update()` method.
 #[derive(Debug)]
 pub enum TorEvent {
+    /// A status update received connecting to the Tor Network.
     BootstrapStatus {
+        /// A number from 0 to 100 for how through the bootstrap process the `TorProvider` is.
         progress: u32,
+        /// A short string to identify the current phase of the bootstrap process.
         tag: String,
+        /// A longer string with a summary of the current phase of the bootstrap process.
         summary: String,
     },
+    /// Indicates successful connection to the Tor Network. The [`TorProvider::connect()`] and [`TorProvider::listener()`] methods may now be used.
     BootstrapComplete,
+    /// Messages which may be useful for troubleshooting.
     LogReceived {
+        /// A message
         line: String,
     },
+    /// An onion-service has been published to the Tor Network and may now be reachable by clients.
     OnionServicePublished {
+        /// The service-id of the onion-service which has been published.
         service_id: V3OnionServiceId,
     },
 }
 
+/// A `CircuitToken` is used to specify circuits used to connect to clearnet services.
 pub type CircuitToken = usize;
 
 //
-// OnionStream Implementation
+// Onion Stream
 //
 
+/// A wrapper around a [`std::net::TcpStream`] with some Tor-specific customisations
+///
+/// An onion-listener can be constructed using the [`TorProvider::connect()`] method.
 pub struct OnionStream {
     pub(crate) stream: TcpStream,
     pub(crate) local_addr: Option<OnionAddr>,
@@ -289,14 +320,17 @@ impl Write for OnionStream {
 }
 
 impl OnionStream {
+    /// Returns the target address of the remote peer of this onion connection.
     pub fn peer_addr(&self) -> Option<TargetAddr> {
         self.peer_addr.clone()
     }
 
+    /// Returns the onion address of the local connection for an incoming onion-service connection. Returns `None` for outgoing connections.
     pub fn local_addr(&self) -> Option<OnionAddr> {
         self.local_addr.clone()
     }
 
+    /// Tries to clone the underlying connection and data. A simple pass-through to [`std::net::TcpStream::try_clone()`].
     pub fn try_clone(&self) -> Result<Self, std::io::Error> {
         Ok(Self {
             stream: self.stream.try_clone()?,
@@ -310,7 +344,9 @@ impl OnionStream {
 // Onion Listener
 //
 
-
+/// A wrapper around a [`std::net::TcpListener`] with some Tor-specific customisations.
+///
+/// An onion-listener can be constructed using the [`TorProvider::listener()`] method.
 pub struct OnionListener {
     pub(crate) listener: TcpListener,
     pub(crate) onion_addr: OnionAddr,
@@ -319,6 +355,7 @@ pub struct OnionListener {
 }
 
 impl OnionListener {
+    /// Construct an `OnionListener`. The `data` and `drop` parameters are to allow custom `TorProvider` implementations their own data and cleanup procedures.
     pub(crate) fn new<T: 'static + Send>(
         listener: TcpListener,
         onion_addr: OnionAddr,
@@ -343,10 +380,12 @@ impl OnionListener {
         }
     }
 
+    /// Moves the underlying `TcpListener` into or out of nonblocking mode.
     pub fn set_nonblocking(&self, nonblocking: bool) -> Result<(), std::io::Error> {
         self.listener.set_nonblocking(nonblocking)
     }
 
+    /// Accept a new incoming connection from this listener.
     pub fn accept(&self) -> Result<Option<OnionStream>, std::io::Error> {
         match self.listener.accept() {
             Ok((stream, _socket_addr)) => Ok(Some(OnionStream {
@@ -373,27 +412,43 @@ impl Drop for OnionListener {
     }
 }
 
-
+/// The `TorProvider` trait allows for high-level Tor Network functionality. Implementations ay connect to the Tor Network, anonymously connect to both clearnet and onion-service endpoints, and host onion-services.
 pub trait TorProvider: Send {
+    /// Process and return `TorEvent`s handled by this `TorProvider`.
     fn update(&mut self) -> Result<Vec<TorEvent>, Error>;
+    /// Begin connecting to the Tor Network.
     fn bootstrap(&mut self) -> Result<(), Error>;
+    /// Add v3 onion-service authorisation credentials, allowing this `TorProvider` to connect to an onion-service whose service-descriptor is encrypted using the assocciated x25519 public key.
     fn add_client_auth(
         &mut self,
         service_id: &V3OnionServiceId,
         client_auth: &X25519PrivateKey,
     ) -> Result<(), Error>;
+    /// Remove a previously added client authorisation credential. This `TorProvider` will be unable to connect to the onion-service associated with the removed credentail.
     fn remove_client_auth(&mut self, service_id: &V3OnionServiceId) -> Result<(), Error>;
+    /// Anonymously connect to the address specified by `target` over the Tor Network and return the associated [`OnionStream`].
+    ///
+    /// When conecting to clearnet targets, an optional [`CircuitToken`] may be used to enforce usage of different circuits through the Tor Network. If `circuit` is `None`, the default circuit is used.
+    ///
+    ///Connections made with different `CircuitToken`s are required to use different circuits through the Tor Network. However, connections made with identical `CircuitToken`s are *not* required to use identical circuits through the Tor Network.
+    ///
+    /// Specifying a circuit token when connecting to an onion-service has no effect on the resulting circuit.
     fn connect(
         &mut self,
         target: TargetAddr,
         circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, Error>;
+    /// Anonymously start an onion-service and return the associated [`OnionListener`].
+    ///
+    ///The resulting onion-service will not be reachable by clients until [`TorProvider::update()`] returns a [`TorEvent::OnionServicePublished`] event. The optional `authorised_clients` parameter may be used to require client authorisation keys to connect to resulting onion-service. For further information, see the Tor Project's onion-services [client-auth documentation](https://community.torproject.org/onion-services/advanced/client-auth).
     fn listener(
         &mut self,
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
-        authorized_clients: Option<&[X25519PublicKey]>,
+        authorised_clients: Option<&[X25519PublicKey]>,
     ) -> Result<OnionListener, Error>;
+    /// Create a new [`CircuitToken`].
     fn generate_token(&mut self) -> CircuitToken;
+    /// Releaes a previously generated [`CircuitToken`].
     fn release_token(&mut self, token: CircuitToken);
 }

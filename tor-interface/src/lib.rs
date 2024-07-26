@@ -22,4 +22,5 @@ pub mod mock_tor_client;
 pub mod proxy;
 /// Tor-specific cryptographic primitives, operations, and conversion functions.
 pub mod tor_crypto;
+/// Traits and types for connecting to the Tor Network.
 pub mod tor_provider;
