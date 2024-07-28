@@ -23,6 +23,7 @@ use crate::tor_crypto::*;
 use crate::tor_provider;
 use crate::tor_provider::*;
 
+/// [`LegacyTorClient`]-specific error type
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("failed to create LegacyTorProcess object")]
@@ -172,6 +173,11 @@ pub enum LegacyTorClientConfig {
 // LegacyTorClient
 //
 
+/// A `LegacyTorClient` implements the [`TorProvider`] trait using a legacy c-tor daemon backend.
+///
+/// The tor process can either be launched and owned by `LegacyTorClient`, or it can use an already running tor-daemon. When using an already runnng tor-daemon, the [`TorProvider::bootstrap()`] automatically succeeds, presuming the connected tor-daemon has successfully bootstrapped.
+///
+/// The minimum supported c-tor is version 0.4.6.1.
 pub struct LegacyTorClient {
     daemon: Option<LegacyTorProcess>,
     version: LegacyTorVersion,
@@ -186,6 +192,7 @@ pub struct LegacyTorClient {
 }
 
 impl LegacyTorClient {
+    /// Construct a new `LegacyTorClient` from a [`LegacyTorClientConfig`].
     pub fn new(config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
         let (daemon, mut controller, password, socks_listener) = match &config {
             LegacyTorClientConfig::BundledTor {
@@ -443,6 +450,7 @@ impl LegacyTorClient {
     }
 
     #[allow(dead_code)]
+    /// Get the version of the connected c-tor daemon.
     pub fn version(&mut self) -> LegacyTorVersion {
         self.version.clone()
     }

@@ -8,6 +8,8 @@ use crate::tor_crypto::*;
 use crate::tor_provider;
 use crate::tor_provider::*;
 
+
+/// [`MockTorClient`]-specific error type
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("client not bootstrapped")]
@@ -126,6 +128,11 @@ impl MockTorNetwork {
 
 static MOCK_TOR_NETWORK: Mutex<MockTorNetwork> = Mutex::new(MockTorNetwork::new());
 
+/// A mock `TorProvider` implementation for testing.
+///
+/// `MockTorClient` implements the [`TorProvider`] trait. It creates a fake, in-process Tor Network using local socekts and listeners. No actual traffic ever leaves the local host.
+///
+/// Mock onion-services can be created, connected to, and communiccated with. Connecting to clearnet targets always succeeds by connecting to single local endpoint, but will never send any traffic to connecting clients.
 pub struct MockTorClient {
     events: Vec<TorEvent>,
     bootstrapped: bool,
@@ -135,6 +142,7 @@ pub struct MockTorClient {
 }
 
 impl MockTorClient {
+    /// Construt a new `MockTorClient`.
     pub fn new() -> MockTorClient {
         let mut events: Vec<TorEvent> = Default::default();
         let line = "[notice] MockTorClient running".to_string();

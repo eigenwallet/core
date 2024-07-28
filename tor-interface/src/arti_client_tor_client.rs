@@ -28,6 +28,7 @@ use crate::tor_crypto::*;
 use crate::tor_provider;
 use crate::tor_provider::*;
 
+/// [`ArtiClientTorClient`]-specific error type
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("not implemented")]
@@ -84,6 +85,9 @@ impl From<Error> for crate::tor_provider::Error {
     }
 }
 
+/// The `ArtiClientTorClient` is an in-process [`arti-client`](https://crates.io/crates/arti-client)-based [`TorProvider`].
+///
+///
 pub struct ArtiClientTorClient {
     tokio_runtime: Arc<runtime::Runtime>,
     arti_client: TorClient<PreferredRuntime>,
@@ -146,6 +150,7 @@ where
 }
 
 impl ArtiClientTorClient {
+    /// Construct a new `ArtiClientTorClient` which uses a [Tokio](https://crates.io/crates/tokio) runtime internally for all async operations.
     pub fn new(
         tokio_runtime: Arc<runtime::Runtime>,
         root_data_directory: &Path,
