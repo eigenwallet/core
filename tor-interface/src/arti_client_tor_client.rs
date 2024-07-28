@@ -99,8 +99,8 @@ pub struct ArtiClientTorClient {
 // used to forward traffic to/from arti to local tcp streams
 async fn forward_stream<R, W>(alive: Arc<AtomicBool>, mut reader: R, mut writer: W) -> ()
 where
-    R: tokio::io::AsyncRead + Unpin,
-    W: tokio::io::AsyncWrite + Unpin,
+    R: AsyncReadExt + Unpin,
+    W: AsyncWriteExt + Unpin,
 {
     // allow 100ms timeout on reads to verify writer is still good
     let read_timeout = std::time::Duration::from_millis(100);
