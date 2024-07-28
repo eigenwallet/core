@@ -15,8 +15,9 @@ mod legacy_tor_control_stream;
 mod legacy_tor_controller;
 #[cfg(feature = "legacy-tor-provider")]
 mod legacy_tor_process;
+/// Legacy c-tor daemon version.
 #[cfg(feature = "legacy-tor-provider")]
-mod legacy_tor_version;
+pub mod legacy_tor_version;
 /// Implementation of a local, in-process, mock `TorProvider` for testing.
 #[cfg(feature = "mock-tor-provider")]
 pub mod mock_tor_client;

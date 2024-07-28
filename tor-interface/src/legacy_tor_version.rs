@@ -4,20 +4,21 @@ use std::option::Option;
 use std::str::FromStr;
 use std::string::ToString;
 
+/// `LegacyTorVersion`-specific error type
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("{}", .0)]
     ParseError(String),
 }
 
-// see version-spec.txt
+/// Type representing a legacy c-tor daemon's version number. This version conforms c-tor's [version-spec](https://spec.torproject.org/version-spec.htm).
 #[derive(Clone)]
 pub struct LegacyTorVersion {
-    pub major: u32,
-    pub minor: u32,
-    pub micro: u32,
-    pub patch_level: u32,
-    pub status_tag: Option<String>,
+    pub(crate) major: u32,
+    pub(crate) minor: u32,
+    pub(crate) micro: u32,
+    pub(crate) patch_level: u32,
+    pub(crate) status_tag: Option<String>,
 }
 
 impl LegacyTorVersion {
@@ -34,7 +35,8 @@ impl LegacyTorVersion {
         true
     }
 
-    fn new(
+    /// Construct a new `LegacyTorVersion` object.
+    pub fn new(
         major: u32,
         minor: u32,
         micro: u32,

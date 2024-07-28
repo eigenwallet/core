@@ -449,7 +449,6 @@ impl LegacyTorClient {
         })
     }
 
-    #[allow(dead_code)]
     /// Get the version of the connected c-tor daemon.
     pub fn version(&mut self) -> LegacyTorVersion {
         self.version.clone()
