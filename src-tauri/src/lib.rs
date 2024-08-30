@@ -53,25 +53,28 @@ macro_rules! tauri_command {
     ($fn_name:ident, $request_name:ident) => {
         #[tauri::command]
         async fn $fn_name(
-            context: tauri::State<'_, Arc<Context>>,
+            context: tauri::State<'_, Option<Arc<Context>>>,
             args: $request_name,
         ) -> Result<<$request_name as swap::cli::api::request::Request>::Response, String> {
-            <$request_name as swap::cli::api::request::Request>::request(
-                args,
-                context.inner().clone(),
-            )
-            .await
-            .to_string_result()
+            // Throw error if context is not available
+            let context = context.inner().as_ref().ok_or("Context not available")?;
+
+            <$request_name as swap::cli::api::request::Request>::request(args, context.clone())
+                .await
+                .to_string_result()
         }
     };
     ($fn_name:ident, $request_name:ident, no_args) => {
         #[tauri::command]
         async fn $fn_name(
-            context: tauri::State<'_, Arc<Context>>,
+            context: tauri::State<'_, Option<Arc<Context>>>,
         ) -> Result<<$request_name as swap::cli::api::request::Request>::Response, String> {
+            // Throw error if context is not available
+            let context = context.inner().as_ref().ok_or("Context not available")?;
+
             <$request_name as swap::cli::api::request::Request>::request(
                 $request_name {},
-                context.inner().clone(),
+                context.clone(),
             )
             .await
             .to_string_result()
@@ -88,7 +91,11 @@ tauri_command!(get_swap_infos_all, GetSwapInfosAllArgs, no_args);
 tauri_command!(get_history, GetHistoryArgs, no_args);
 
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    tauri::async_runtime::block_on(async {
+    let app_handle = app.app_handle().to_owned().clone();
+
+    app_handle.manage::<Option<Arc<Context>>>(None);
+
+    tauri::async_runtime::spawn(async move {
         let context = ContextBuilder::new(true)
             .with_bitcoin(Bitcoin {
                 bitcoin_electrum_rpc_url: None,
@@ -99,11 +106,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             })
             .with_json(true)
             .with_debug(true)
-            .with_tauri(TauriHandle::new(app.app_handle().to_owned()))
+            .with_tauri(TauriHandle::new(app_handle.clone()))
             .build()
             .await
             .expect("failed to create context");
-        app.manage(Arc::new(context));
+        app_handle.manage::<Option<Arc<Context>>>(Arc::new(context).into());
     });
 
     Ok(())
@@ -127,10 +134,12 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| match event {
             RunEvent::Exit | RunEvent::ExitRequested { .. } => {
-                let context = app.state::<Arc<Context>>().inner();
+                let context = app.state::<Option<Arc<Context>>>().inner().as_ref();
 
-                if let Err(err) = context.cleanup() {
-                    println!("Cleanup failed {}", err);
+                if let Some(context) = context {
+                    if let Err(err) = context.cleanup() {
+                        println!("Cleanup failed {}", err);
+                    }
                 }
             }
             _ => {}
