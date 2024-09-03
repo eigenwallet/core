@@ -22,12 +22,7 @@ The **arti-client-tor-provider** feature is experimental is not fully implemente
 
 The following code snippet creates a `LegacyTorClient` which starts a bundled tor daemon, bootstraps, and attempts to connect to [www.example.com](www.example.com).
 
-```rust
-# use std::str::FromStr;
-# use std::net::TcpStream;
-# use tor_interface::legacy_tor_client::{LegacyTorClient, LegacyTorClientConfig};
-# use tor_interface::tor_provider::{OnionStream, TargetAddr, TorEvent, TorProvider};
-# return;
+```rust,ignore
 // construct legacy tor client config
 let tor_path = std::path::PathBuf::from_str("/usr/bin/tor").unwrap();
 let mut data_path = std::env::temp_dir();

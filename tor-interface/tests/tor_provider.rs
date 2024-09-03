@@ -27,6 +27,7 @@ use tor_interface::mock_tor_client::*;
 use tor_interface::tor_crypto::*;
 use tor_interface::tor_provider::*;
 
+#[allow(dead_code)]
 pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>) -> anyhow::Result<()> {
     tor.bootstrap()?;
 
@@ -63,6 +64,7 @@ pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>) -> anyhow::Result<()
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn basic_onion_service_test(
     mut server_provider: Box<dyn TorProvider>,
     mut client_provider: Box<dyn TorProvider>,
@@ -188,6 +190,7 @@ pub(crate) fn basic_onion_service_test(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn authenticated_onion_service_test(
     mut server_provider: Box<dyn TorProvider>,
     mut client_provider: Box<dyn TorProvider>,
