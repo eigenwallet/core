@@ -16,7 +16,7 @@ use tokio_stream::StreamExt;
 use tor_cell::relaycell::msg::Connected;
 use tor_hscrypto::pk::HsIdKeypair;
 use tor_hsservice::config::OnionServiceConfigBuilder;
-use tor_hsservice::{HsIdKeypairSpecifier, HsNickname, OnionService, RunningOnionService};
+use tor_hsservice::{HsIdKeypairSpecifier, HsNickname, OnionServiceBuilder, RunningOnionService};
 use tor_keymgr::{ArtiEphemeralKeystore, KeyMgrBuilder, KeystoreSelector};
 use tor_llcrypto::pk::ed25519::ExpandedKeypair;
 use tor_persist::state_dir::StateDirectory;
@@ -432,8 +432,16 @@ impl TorProvider for ArtiClientTorClient {
             Ok(state_dir) => state_dir,
             Err(err) => Err(err).map_err(Error::TorPersistError)?,
         };
-        let onion_service = OnionService::new(onion_service_config, Arc::new(keymgr), &state_dir)
-            .map_err(Error::TorHsServiceStartupError)?;
+
+        let onion_service = match OnionServiceBuilder::default()
+            .config(onion_service_config)
+            .keymgr(Arc::new(keymgr))
+            .state_dir(state_dir)
+            .build()
+        {
+            Ok(onion_service) => onion_service,
+            Err(err) => Err(err).map_err(Error::TorHsServiceStartupError)?,
+        };
 
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id.clone(), virt_port));
 
