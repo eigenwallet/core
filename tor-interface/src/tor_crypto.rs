@@ -690,6 +690,12 @@ impl X25519PublicKey {
     pub fn as_bytes(&self) -> &[u8; X25519_PUBLIC_KEY_SIZE] {
         self.public_key.as_bytes()
     }
+
+    #[cfg(feature = "arti-client-tor-provider")]
+    pub(crate) fn inner(&self) -> &pk::curve25519::PublicKey {
+        &self.public_key
+    }
+
 }
 
 impl std::fmt::Debug for X25519PublicKey {

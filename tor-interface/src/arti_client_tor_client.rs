@@ -2,6 +2,7 @@
 use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +17,7 @@ use tokio_stream::StreamExt;
 use tor_cell::relaycell::msg::Connected;
 use tor_hscrypto::pk::HsIdKeypair;
 use tor_hsservice::config::OnionServiceConfigBuilder;
+use tor_hsservice::config::restricted_discovery::HsClientNickname;
 use tor_hsservice::{HsIdKeypairSpecifier, HsNickname, OnionServiceBuilder, RunningOnionService};
 use tor_keymgr::{ArtiEphemeralKeystore, KeyMgrBuilder, KeystoreSelector};
 use tor_llcrypto::pk::ed25519::ExpandedKeypair;
@@ -367,10 +369,6 @@ impl TorProvider for ArtiClientTorClient {
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
     ) -> Result<OnionListener, tor_provider::Error> {
-        // client auth is not implemented yet
-        if authorized_clients.is_some() {
-            return Err(Error::NotImplemented().into());
-        }
 
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
@@ -419,9 +417,30 @@ impl TorProvider for ArtiClientTorClient {
         }
 
         // create an OnionServiceConfig with the ephemeral nickname
-        let onion_service_config = match OnionServiceConfigBuilder::default()
-            .nickname(hs_nickname)
-            .build()
+        let mut onion_service_config_builder = OnionServiceConfigBuilder::default();
+        onion_service_config_builder.nickname(hs_nickname);
+
+        // add authorised client keys if they exist
+        if let Some(authorized_clients) = authorized_clients {
+            if !authorized_clients.is_empty() {
+                let restricted_discovery_config = onion_service_config_builder
+                    .restricted_discovery();
+                restricted_discovery_config.enabled(true);
+
+                for (i, key) in authorized_clients.iter().enumerate() {
+                    let nickname = format!("client_{i}");
+                    restricted_discovery_config
+                        .static_keys()
+                        .access()
+                        .push((
+                            HsClientNickname::from_str(nickname.as_str()).unwrap(),
+                            key.inner().clone().into(),
+                        ));
+                }
+            }
+        }
+
+        let onion_service_config = match onion_service_config_builder.build()
         {
             Ok(onion_service_config) => onion_service_config,
             Err(err) => Err(err).map_err(Error::OnionServiceConfigBuilderError)?,
