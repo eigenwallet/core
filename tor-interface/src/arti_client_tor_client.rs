@@ -267,17 +267,27 @@ impl TorProvider for ArtiClientTorClient {
 
     fn add_client_auth(
         &mut self,
-        _service_id: &V3OnionServiceId,
-        _client_auth: &X25519PrivateKey,
+        service_id: &V3OnionServiceId,
+        client_auth: &X25519PrivateKey,
     ) -> Result<(), tor_provider::Error> {
-        Err(Error::NotImplemented().into())
+        let ed25519_public = Ed25519PublicKey::from_service_id(service_id).unwrap();
+        let hs_id = ed25519_public.as_bytes().clone();
+
+        self.arti_client.insert_service_discovery_key(KeystoreSelector::Primary, hs_id.into(), client_auth.inner().clone().into()).map_err(Error::ArtiClientError)?;
+
+        Ok(())
     }
 
     fn remove_client_auth(
         &mut self,
-        _service_id: &V3OnionServiceId,
+        service_id: &V3OnionServiceId,
     ) -> Result<(), tor_provider::Error> {
-        Err(Error::NotImplemented().into())
+        let ed25519_public = Ed25519PublicKey::from_service_id(service_id).unwrap();
+        let hs_id = ed25519_public.as_bytes().clone();
+
+        self.arti_client.remove_service_discovery_key(KeystoreSelector::Primary, hs_id.into()).map_err(Error::ArtiClientError)?;
+
+        Ok(())
     }
 
     fn connect(

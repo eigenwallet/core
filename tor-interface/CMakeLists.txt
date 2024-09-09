@@ -107,6 +107,10 @@ if (ENABLE_TESTS)
             COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_arti_client_onion_service ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
+        add_test(NAME tor_interface_arti_authenticated_onion_service_cargo_test
+            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_arti_authenticated_onion_service ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
     endif()
 
     if (ENABLE_LEGACY_TOR_PROVIDER AND ENABLE_ARTI_CLIENT_TOR_PROVIDER)
@@ -122,7 +126,10 @@ if (ENABLE_TESTS)
             COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_mixed_arti_client_legacy_authenticated_onion_service ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
-
+        add_test(NAME tor_interface_mixed_legacy_arti_client_authenticated_onion_service_cargo_test
+            COMMAND env CARGO_TARGET_DIR=${CARGO_TARGET_DIR} RUSTFLAGS=${RUSTFLAGS} RUST_BACKTRACE=full cargo test test_mixed_legacy_arti_client_authenticated_onion_service ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES} -- --nocapture
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
     endif()
 
     # cryptography

@@ -657,8 +657,6 @@ fn test_arti_client_onion_service() -> anyhow::Result<()> {
     basic_onion_service_test(server_provider, client_provider)
 }
 
-/*
-TODO: re-enable once client-auth is available in arti
 #[test]
 #[serial]
 #[cfg(feature = "arti-client-tor-provider")]
@@ -666,16 +664,15 @@ fn test_arti_authenticated_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
     let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_basic_onion_service_server");
+    data_path.push("test_arti_authenticated_onion_service_server");
     let server_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
 
     let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_basic_onion_service_client");
+    data_path.push("test_arti_authenticated_onion_service_client");
     let client_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
-*/
 
 //
 // Mixed Arti/Legacy TorProvider tests
@@ -756,6 +753,32 @@ fn test_mixed_arti_client_legacy_authenticated_onion_service() -> anyhow::Result
         bridge_lines: None,
     };
     let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    authenticated_onion_service_test(server_provider, client_provider)
+}
+
+#[test]
+#[serial]
+#[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
+fn test_mixed_legacy_arti_client_authenticated_onion_service() -> anyhow::Result<()> {
+    let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_mixed_legacy_arti_client_authenticated_onion_service_server");
+    let tor_config = LegacyTorClientConfig::BundledTor {
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
+    };
+    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push("test_mixed_legacy_arti_client_authenticated_onion_service_client");
+    let client_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path)?);
 
     authenticated_onion_service_test(server_provider, client_provider)
 }

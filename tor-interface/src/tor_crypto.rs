@@ -611,6 +611,11 @@ impl X25519PrivateKey {
     pub fn to_bytes(&self) -> [u8; X25519_PRIVATE_KEY_SIZE] {
         self.secret_key.to_bytes()
     }
+
+    #[cfg(feature = "arti-client-tor-provider")]
+    pub(crate) fn inner(&self) -> &pk::curve25519::StaticSecret {
+        &self.secret_key
+    }
 }
 
 impl PartialEq for X25519PrivateKey {
