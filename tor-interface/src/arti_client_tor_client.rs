@@ -9,19 +9,17 @@ use std::sync::{Arc, Mutex};
 //extern
 use arti_client::config::{CfgPath, TorClientConfigBuilder};
 use arti_client::{BootstrapBehavior, DangerouslyIntoTorAddr, IntoTorAddr, TorClient};
-use fs_mistrust::Mistrust;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime;
 use tokio_stream::StreamExt;
 use tor_cell::relaycell::msg::Connected;
-use tor_hscrypto::pk::HsIdKeypair;
+use tor_config::ExplicitOrAuto;
+use tor_llcrypto::pk::ed25519::ExpandedKeypair;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 use tor_hsservice::config::restricted_discovery::HsClientNickname;
-use tor_hsservice::{HsIdKeypairSpecifier, HsNickname, OnionServiceBuilder, RunningOnionService};
-use tor_keymgr::{ArtiEphemeralKeystore, KeyMgrBuilder, KeystoreSelector};
-use tor_llcrypto::pk::ed25519::ExpandedKeypair;
-use tor_persist::state_dir::StateDirectory;
+use tor_hsservice::{HsNickname, RunningOnionService};
+use tor_keymgr::{config::arti::ArtiKeystoreKind, KeystoreSelector};
 use tor_proto::stream::IncomingStreamRequest;
 use tor_rtcompat::PreferredRuntime;
 
@@ -60,25 +58,14 @@ pub enum Error {
     #[error("arti-client tor-addr error: {0}")]
     ArtiClientTorAddrError(#[source] arti_client::TorAddrError),
 
+    #[error("arti-client onion-service startup error: {0}")]
+    ArtiClientOnionServiceLaunchError(#[source] arti_client::Error),
+
     #[error("tor-keymgr error: {0}")]
     TorKeyMgrError(#[source] tor_keymgr::Error),
 
-    // TODO: the 'real' error (tor_keymgr::mgr::KeyMgrBuilderError) isn't
-    // actually defined anywhere from what I can tell
-    #[error("failed to build KeyMgr")]
-    TorKeyMgrBuilderError(),
-
-    #[error("unexpected key found when inserting HsIdKeypair")]
-    KeyMgrInsertionFailure(),
-
     #[error("onion-service config-builder error: {0}")]
     OnionServiceConfigBuilderError(#[source] tor_config::ConfigBuildError),
-
-    #[error("tor-persist error: {0}")]
-    TorPersistError(#[source] tor_persist::Error),
-
-    #[error("tor-hsservice startup error: {0}")]
-    TorHsServiceStartupError(#[source] tor_hsservice::StartupError),
 }
 
 impl From<Error> for crate::tor_provider::Error {
@@ -93,8 +80,6 @@ impl From<Error> for crate::tor_provider::Error {
 pub struct ArtiClientTorClient {
     tokio_runtime: Arc<runtime::Runtime>,
     arti_client: TorClient<PreferredRuntime>,
-    state_dir: PathBuf,
-    fs_mistrust: Mistrust,
     pending_events: Arc<Mutex<Vec<TorEvent>>>,
     bootstrapped: Arc<AtomicBool>,
 }
@@ -167,13 +152,15 @@ impl ArtiClientTorClient {
         cache_dir.push("cache");
         config_builder
             .storage()
-            .cache_dir(CfgPath::new_literal(cache_dir));
+            .cache_dir(CfgPath::new_literal(cache_dir))
+            .keystore()
+            .primary().kind(ExplicitOrAuto::Explicit(ArtiKeystoreKind::Ephemeral));
 
         let mut state_dir = PathBuf::from(root_data_directory);
         state_dir.push("state");
         config_builder
             .storage()
-            .state_dir(CfgPath::new_literal(state_dir.clone()));
+            .state_dir(CfgPath::new_literal(state_dir));
 
         // disable access to clearnet addresses and enable access to onion services
         config_builder
@@ -185,8 +172,6 @@ impl ArtiClientTorClient {
             Ok(config) => config,
             Err(err) => return Err(err).map_err(Error::ArtiClientConfigBuilderError),
         };
-
-        let fs_mistrust = config.fs_mistrust().clone();
 
         let arti_client = tokio_runtime.block_on(async {
             TorClient::builder()
@@ -207,8 +192,6 @@ impl ArtiClientTorClient {
         Ok(Self {
             tokio_runtime,
             arti_client,
-            state_dir,
-            fs_mistrust,
             pending_events,
             bootstrapped: Arc::new(AtomicBool::new(false)),
         })
@@ -392,17 +375,6 @@ impl TorProvider for ArtiClientTorClient {
             .local_addr()
             .map_err(Error::TcpListenerLocalAddrFailed)?;
 
-        // create a new ephemeral store for storing our onion service keys
-        let ephemeral_store: ArtiEphemeralKeystore =
-            ArtiEphemeralKeystore::new("ephemeral".to_string());
-        let keymgr = match KeyMgrBuilder::default()
-            .default_store(Box::new(ephemeral_store))
-            .build()
-        {
-            Ok(keymgr) => keymgr,
-            Err(_) => return Err(Error::TorKeyMgrBuilderError().into()),
-        };
-
         // generate a nickname to identify this onion service
         let service_id = V3OnionServiceId::from_private_key(private_key);
         let hs_nickname = match HsNickname::new(service_id.to_string()) {
@@ -411,27 +383,16 @@ impl TorProvider for ArtiClientTorClient {
                 panic!("v3 onion service id string representation should be a valid HsNickname")
             }
         };
-
-        let hs_id_spec = HsIdKeypairSpecifier::new(hs_nickname.clone());
         // generate a new HsIdKeypair (from an Ed25519PrivateKey)
         // clone() isn't implemented for ExpandedKeypair >:[
         let secret_key_bytes = private_key.inner().to_secret_key_bytes();
-        let expanded_keypair = ExpandedKeypair::from_secret_key_bytes(secret_key_bytes)
-            .unwrap()
-            .into();
-
-        // write the HsIdKeypair to keymgr
-        // TODO: for now this should return Ok(None) unless we persist the ephemeral store longer-term (ie for client auth keys in the future)
-        match keymgr.insert::<HsIdKeypair>(expanded_keypair, &hs_id_spec, KeystoreSelector::Default)
-        {
-            Ok(None) => (), // expected
-            Ok(Some(_)) => return Err(Error::KeyMgrInsertionFailure().into()),
-            Err(err) => Err(err).map_err(Error::TorKeyMgrError)?,
-        }
+        let hs_id_keypair = ExpandedKeypair::from_secret_key_bytes(secret_key_bytes)
+            .unwrap();
 
         // create an OnionServiceConfig with the ephemeral nickname
         let mut onion_service_config_builder = OnionServiceConfigBuilder::default();
-        onion_service_config_builder.nickname(hs_nickname);
+        onion_service_config_builder
+            .nickname(hs_nickname);
 
         // add authorised client keys if they exist
         if let Some(authorized_clients) = authorized_clients {
@@ -459,42 +420,21 @@ impl TorProvider for ArtiClientTorClient {
             Err(err) => Err(err).map_err(Error::OnionServiceConfigBuilderError)?,
         };
 
-        // create OnionService
-        let state_dir = match StateDirectory::new(self.state_dir.as_path(), &self.fs_mistrust) {
-            Ok(state_dir) => state_dir,
-            Err(err) => Err(err).map_err(Error::TorPersistError)?,
-        };
-
-        let onion_service = match OnionServiceBuilder::default()
-            .config(onion_service_config)
-            .keymgr(Arc::new(keymgr))
-            .state_dir(state_dir)
-            .build()
-        {
-            Ok(onion_service) => onion_service,
-            Err(err) => Err(err).map_err(Error::TorHsServiceStartupError)?,
-        };
-
-        let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id.clone(), virt_port));
-
-        // launch the OnionService and get a Stream of RendRequest
-        let runtime = self.arti_client.runtime().clone();
-        let dirmgr = self.arti_client.dirmgr().clone().upcast_arc();
-        let hs_circ_pool = self.arti_client.hs_circ_pool().clone();
-
-        let (onion_service, mut rend_requests) = onion_service
-            .launch(runtime, dirmgr, hs_circ_pool)
-            .map_err(Error::TorHsServiceStartupError)?;
+        let (onion_service, mut rend_requests) = self.arti_client
+            .launch_onion_service_with_hsid(onion_service_config, hs_id_keypair.into())
+            .map_err(Error::ArtiClientOnionServiceLaunchError)?;
 
         // start a task to signal onion service published
         let pending_events = self.pending_events.clone();
         let mut status_events = onion_service.status_events();
+        let service_id_clone = service_id.clone();
+
         self.tokio_runtime.spawn(async move {
             while let Some(evt) = status_events.next().await {
                 match evt.state() {
                     tor_hsservice::status::State::Running => match pending_events.lock() {
                         Ok(mut pending_events) => {
-                            pending_events.push(TorEvent::OnionServicePublished { service_id });
+                            pending_events.push(TorEvent::OnionServicePublished { service_id: service_id_clone });
                             return;
                         }
                         Err(_) => unreachable!(
@@ -563,6 +503,7 @@ impl TorProvider for ArtiClientTorClient {
             }
         });
 
+        let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id, virt_port));
         // onion-service is torn down when `onion_service` is dropped
         Ok(OnionListener::new::<Arc<RunningOnionService>>(listener, onion_addr, onion_service, |_|{}))
     }

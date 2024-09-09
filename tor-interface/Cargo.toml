@@ -10,12 +10,11 @@ keywords = ["tor", "anonymity"]
 repository = "https://github.com/blueprint-freespeech/gosling"
 
 [dependencies]
-arti-client = { version = "0.23.0", features = ["experimental-api", "onion-service-client", "onion-service-service", "tokio"], optional = true}
+arti-client = { version = "0.23.0", features = ["ephemeral-keystore", "experimental-api", "keymgr", "onion-service-client", "onion-service-service", "tokio"], optional = true}
 curve25519-dalek = "4.1"
 data-encoding = "2.0"
 data-encoding-macro = "0.1"
 domain = "<= 0.10.0"
-fs-mistrust = { version = "0", optional = true }
 idna = "1"
 rand = "0.8"
 rand_core = "0.6"
@@ -30,11 +29,9 @@ tokio = { version = "1", features = ["macros"], optional = true }
 tokio-stream = { version = "0", optional = true }
 tor-cell = { version = "0.23.0", optional = true }
 tor-config = { version = "0.23.0", optional = true }
-tor-hscrypto = { version = "0.23.0", optional = true }
 tor-hsservice = { version = "0.23.0", optional = true, features = ["restricted-discovery"] }
 tor-keymgr = { version = "0.23.0", optional = true, features = ["keymgr"] }
 tor-llcrypto = { version = "0.23.0", features = ["relay"] }
-tor-persist = { version = "0.23.0", optional = true }
 tor-proto = { version = "0.23.0", features = ["stream-ctrl"], optional = true }
 tor-rtcompat = { version = "0.23.0", optional = true }
 
@@ -44,6 +41,6 @@ serial_test = "0.9"
 which = "4.4"
 
 [features]
-arti-client-tor-provider = ["arti-client", "fs-mistrust", "tokio", "tokio-stream", "tor-cell", "tor-config", "tor-hscrypto", "tor-hsservice", "tor-keymgr", "tor-persist", "tor-proto", "tor-rtcompat"]
+arti-client-tor-provider = ["arti-client", "tokio", "tokio-stream", "tor-cell", "tor-config", "tor-hsservice", "tor-keymgr", "tor-proto", "tor-rtcompat"]
 mock-tor-provider = []
 legacy-tor-provider = []
