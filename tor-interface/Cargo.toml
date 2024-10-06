@@ -10,7 +10,7 @@ keywords = ["tor", "anonymity"]
 repository = "https://github.com/blueprint-freespeech/gosling"
 
 [dependencies]
-arti-client = { version = "0.23.0", features = ["ephemeral-keystore", "experimental-api", "keymgr", "onion-service-client", "onion-service-service", "tokio"], optional = true}
+arti-client = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", features = ["ephemeral-keystore", "experimental-api", "keymgr", "onion-service-client", "onion-service-service", "tokio"], optional = true}
 curve25519-dalek = "4.1"
 data-encoding = "2.0"
 data-encoding-macro = "0.1"
@@ -27,13 +27,13 @@ static_assertions = "1.1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros"], optional = true }
 tokio-stream = { version = "0", optional = true }
-tor-cell = { version = "0.23.0", optional = true }
-tor-config = { version = "0.23.0", optional = true }
-tor-hsservice = { version = "0.23.0", optional = true, features = ["restricted-discovery"] }
-tor-keymgr = { version = "0.23.0", optional = true, features = ["keymgr"] }
-tor-llcrypto = { version = "0.23.0", features = ["relay"] }
-tor-proto = { version = "0.23.0", features = ["stream-ctrl"], optional = true }
-tor-rtcompat = { version = "0.23.0", optional = true }
+tor-cell = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", optional = true }
+tor-config = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", optional = true }
+tor-hsservice = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", optional = true, features = ["restricted-discovery"] }
+tor-keymgr = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", optional = true, features = ["keymgr"] }
+tor-llcrypto = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", features = ["relay"] }
+tor-proto = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", features = ["stream-ctrl"], optional = true }
+tor-rtcompat = { git = "https://gitlab.torproject.org/tpo/core/arti.git", rev = "0956b386580d5d75983a8faff4e3043654936698", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0"
