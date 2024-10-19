@@ -42,5 +42,6 @@ which = "4.4"
 
 [features]
 arti-client-tor-provider = ["arti-client", "tokio", "tokio-stream", "tor-cell", "tor-config", "tor-hsservice", "tor-keymgr", "tor-proto", "tor-rtcompat"]
+arti-tor-provider = []
 mock-tor-provider = []
 legacy-tor-provider = []

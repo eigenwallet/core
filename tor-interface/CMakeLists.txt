@@ -1,6 +1,7 @@
 set(tor_interface_sources
     Cargo.toml
     src/arti_client_tor_client.rs
+    src/arti_tor_client.rs
     src/censorship_circumvention.rs
     src/legacy_tor_client.rs
     src/legacy_tor_controller.rs
@@ -30,6 +31,9 @@ if (ENABLE_LEGACY_TOR_PROVIDER)
 endif()
 if (ENABLE_ARTI_CLIENT_TOR_PROVIDER)
     list(APPEND TOR_INTERFACE_FEATURE_LIST "arti-client-tor-provider")
+endif()
+if (ENABLE_ARTI_TOR_PROVIDER)
+    list(APPEND TOR_INTERFACE_FEATURE_LIST "arti-tor-provider")
 endif()
 
 list(JOIN TOR_INTERFACE_FEATURE_LIST "," TOR_INTERFACE_FEATURES)
