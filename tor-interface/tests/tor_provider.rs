@@ -2,6 +2,7 @@
 #[cfg(feature = "legacy-tor-provider")]
 use std::fs::File;
 use std::io::{Read, Write};
+use std::ops::Drop;
 #[cfg(feature = "legacy-tor-provider")]
 use std::process;
 #[cfg(feature = "legacy-tor-provider")]
@@ -26,6 +27,163 @@ use tor_interface::legacy_tor_client::*;
 use tor_interface::mock_tor_client::*;
 use tor_interface::tor_crypto::*;
 use tor_interface::tor_provider::*;
+
+//
+// TorProvider Factory Functions
+//
+
+// purely in-process mock tor provider
+#[cfg(test)]
+#[cfg(feature = "mock-tor-provider")]
+fn build_mock_tor_provider() -> anyhow::Result<Box<dyn TorProvider>> {
+    Ok(Box::new(MockTorClient::new()))
+}
+
+// out-of-process c-tor owned by this process
+#[cfg(test)]
+#[cfg(feature = "legacy-tor-provider")]
+fn build_bundled_legacy_tor_provider(name: &str) -> anyhow::Result<Box<dyn TorProvider>> {
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+    let mut data_path = std::env::temp_dir();
+    data_path.push(name);
+
+    let tor_config = LegacyTorClientConfig::BundledTor {
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: None,
+        bridge_lines: None,
+    };
+
+    Ok(Box::new(LegacyTorClient::new(tor_config)?))
+}
+
+// out-of-process pt-using c-tor owned  by this process
+#[cfg(test)]
+#[cfg(feature = "legacy-tor-provider")]
+fn build_bundled_pt_legacy_tor_provider(name: &str) -> anyhow::Result<Option<Box<dyn TorProvider>>> {
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+    let mut data_path = std::env::temp_dir();
+    data_path.push(name);
+
+    // find the lyrebird bin
+    let teb_path = std::env::var("TEB_PATH")?;
+    if teb_path.is_empty() {
+        println!("TEB_PATH environment variable empty, so skipping test_legacy_pluggable_transport_bootstrap()");
+        return Ok(None);
+    }
+    let mut lyrebird_path = std::path::PathBuf::from(&teb_path);
+    let lyrebird_bin = format!("lyrebird{}", std::env::consts::EXE_SUFFIX);
+    lyrebird_path.push(lyrebird_bin.clone());
+    assert!(std::path::Path::exists(&lyrebird_path));
+    assert!(std::path::Path::is_file(&lyrebird_path));
+
+    // configure lyrebird pluggable transport
+    let pluggable_transport =
+        PluggableTransportConfig::new(vec!["obfs4".to_string()], lyrebird_path)?;
+
+    // obfs4 bridgeline
+    let bridge_line = BridgeLine::from_str("obfs4 207.172.185.193:22223 F34AC0CDBC06918E54292A474578C99834A58893 cert=MjqosoyVylLQuLo4LH+eQ5hS7Z44s2CaMfQbIjJtn4bGRnvLv8ldSvSED5JpvWSxm09XXg iat-mode=0")?;
+
+    let tor_config = LegacyTorClientConfig::BundledTor {
+        tor_bin_path: tor_path,
+        data_directory: data_path,
+        proxy_settings: None,
+        allowed_ports: None,
+        pluggable_transports: Some(vec![pluggable_transport]),
+        bridge_lines: Some(vec![bridge_line]),
+    };
+
+    Ok(Some(Box::new(LegacyTorClient::new(tor_config)?)))
+}
+
+#[cfg(feature = "legacy-tor-provider")]
+struct TorProcess {child: Child}
+#[cfg(feature = "legacy-tor-provider")]
+impl Drop for TorProcess {
+    fn drop(&mut self) -> () {
+        let _ = self.child.kill();
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "legacy-tor-provider")]
+fn build_system_legacy_tor_provider(
+    name: &str,
+    control_port: u16,
+    socks_port: u16,
+) -> anyhow::Result<(Box<dyn TorProvider>, TorProcess)> {
+    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push(name);
+    std::fs::create_dir_all(&data_path)?;
+    let default_torrc = data_path.join("default_torrc");
+    {
+        let _ = File::create(&default_torrc)?;
+    }
+    let torrc = data_path.join("torrc");
+    {
+        let _ = File::create(&torrc)?;
+    }
+
+    let tor_daemon = TorProcess { child: Command::new(tor_path)
+        .stdout(Stdio::null())
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        // point to our above written torrc file
+        .arg("--defaults-torrc")
+        .arg(default_torrc)
+        // location of torrc
+        .arg("--torrc-file")
+        .arg(torrc)
+        // enable networking
+        .arg("DisableNetwork")
+        .arg("0")
+        // root data directory
+        .arg("DataDirectory")
+        .arg(data_path)
+        // control port
+        .arg("ControlPort")
+        .arg(control_port.to_string())
+        // password: foobar1
+        .arg("HashedControlPassword")
+        .arg("16:E807DCE69AFE9979600760C9758B95ADB2F95E8740478AEA5356C95358")
+        // socks port
+        .arg("SocksPort")
+        .arg(socks_port.to_string())
+        // tor process will shut down after this process shuts down
+        // to avoid orphaned tor daemon
+        .arg("__OwningControllerProcess")
+        .arg(process::id().to_string())
+        .spawn()?
+    };
+    // give daemons time to start
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    let tor_config = LegacyTorClientConfig::SystemTor {
+        tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?,
+        tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?,
+        tor_control_passwd: "password".to_string(),
+    };
+    let tor_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    Ok((tor_provider, tor_daemon))
+}
+
+#[cfg(test)]
+#[cfg(feature = "arti-client-tor-provider")]
+fn build_arti_client_tor_provider(runtime: Arc<runtime::Runtime>, name: &str) -> anyhow::Result<Box<dyn TorProvider>> {
+
+    let mut data_path = std::env::temp_dir();
+    data_path.push(name);
+    Ok(Box::new(ArtiClientTorClient::new(runtime, &data_path)?))
+}
+
+//
+// Test Functions
+//
 
 #[allow(dead_code)]
 pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>) -> anyhow::Result<()> {
@@ -331,22 +489,22 @@ pub(crate) fn authenticated_onion_service_test(
 #[test]
 #[cfg(feature = "mock-tor-provider")]
 fn test_mock_bootstrap() -> anyhow::Result<()> {
-    bootstrap_test(Box::new(MockTorClient::new()))
+    bootstrap_test(build_mock_tor_provider()?)
 }
 
 #[test]
 #[cfg(feature = "mock-tor-provider")]
 fn test_mock_onion_service() -> anyhow::Result<()> {
-    let server_provider = Box::new(MockTorClient::new());
-    let client_provider = Box::new(MockTorClient::new());
+    let server_provider = build_mock_tor_provider()?;
+    let client_provider = build_mock_tor_provider()?;
     basic_onion_service_test(server_provider, client_provider)
 }
 
 #[test]
 #[cfg(feature = "mock-tor-provider")]
 fn test_mock_authenticated_onion_service() -> anyhow::Result<()> {
-    let server_provider = Box::new(MockTorClient::new());
-    let client_provider = Box::new(MockTorClient::new());
+    let server_provider = build_mock_tor_provider()?;
+    let client_provider = build_mock_tor_provider()?;
     authenticated_onion_service_test(server_provider, client_provider)
 }
 
@@ -358,90 +516,30 @@ fn test_mock_authenticated_onion_service() -> anyhow::Result<()> {
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_bootstrap() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_bootstrap");
-
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-
-    bootstrap_test(Box::new(LegacyTorClient::new(tor_config)?))
+    let tor_provider = build_bundled_legacy_tor_provider("test_legacy_bootstrap")?;
+    bootstrap_test(tor_provider)
 }
 
 #[test]
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_pluggable_transport_bootstrap() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_pluggable_transport_bootstrap");
+    let tor_provider = build_bundled_pt_legacy_tor_provider("test_legacy_pluggable_transport_bootstrap")?;
 
-    // find the lyrebird bin
-    let teb_path = std::env::var("TEB_PATH")?;
-    if teb_path.is_empty() {
-        println!("TEB_PATH environment variable empty, so skipping test_legacy_pluggable_transport_bootstrap()");
-        return Ok(());
+    if let Some(tor_provider) = tor_provider {
+        bootstrap_test(tor_provider)?
     }
-    let mut lyrebird_path = std::path::PathBuf::from(&teb_path);
-    let lyrebird_bin = format!("lyrebird{}", std::env::consts::EXE_SUFFIX);
-    lyrebird_path.push(lyrebird_bin.clone());
-    assert!(std::path::Path::exists(&lyrebird_path));
-    assert!(std::path::Path::is_file(&lyrebird_path));
-
-    // configure lyrebird pluggable transport
-    let pluggable_transport =
-        PluggableTransportConfig::new(vec!["obfs4".to_string()], lyrebird_path)?;
-
-    // obfs4 bridgeline
-    let bridge_line = BridgeLine::from_str("obfs4 207.172.185.193:22223 F34AC0CDBC06918E54292A474578C99834A58893 cert=MjqosoyVylLQuLo4LH+eQ5hS7Z44s2CaMfQbIjJtn4bGRnvLv8ldSvSED5JpvWSxm09XXg iat-mode=0")?;
-
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: Some(vec![pluggable_transport]),
-        bridge_lines: Some(vec![bridge_line]),
-    };
-
-    bootstrap_test(Box::new(LegacyTorClient::new(tor_config)?))
+    Ok(())
 }
 
 #[test]
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_onion_service() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_onion_service_server");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path.clone(),
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_onion_service_cient");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+    let server_provider = build_bundled_legacy_tor_provider(
+        "test_legacy_onion_service_server")?;
+    let client_provider = build_bundled_legacy_tor_provider(
+        "test_legacy_onion_service_client")?;
 
     basic_onion_service_test(server_provider, client_provider)
 }
@@ -450,31 +548,8 @@ fn test_legacy_onion_service() -> anyhow::Result<()> {
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_authenticated_onion_service_server");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path.clone(),
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_authenticated_onion_service_cient");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+    let server_provider = build_bundled_legacy_tor_provider("test_legacy_authenticated_onion_service_server")?;
+    let client_provider = build_bundled_legacy_tor_provider("test_legacy_authenticated_onion_service_client")?;
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
@@ -483,101 +558,22 @@ fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
 // System Legacy TorProvider tests
 //
 
-#[cfg(test)]
-#[cfg(feature = "legacy-tor-provider")]
-fn start_system_tor_daemon(
-    tor_path: &std::ffi::OsStr,
-    name: &str,
-    control_port: u16,
-    socks_port: u16,
-) -> anyhow::Result<Child> {
-    let mut data_path = std::env::temp_dir();
-    data_path.push(name);
-    std::fs::create_dir_all(&data_path)?;
-    let default_torrc = data_path.join("default_torrc");
-    {
-        let _ = File::create(&default_torrc)?;
-    }
-    let torrc = data_path.join("torrc");
-    {
-        let _ = File::create(&torrc)?;
-    }
-
-    let tor_daemon = Command::new(tor_path)
-        .stdout(Stdio::null())
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        // point to our above written torrc file
-        .arg("--defaults-torrc")
-        .arg(default_torrc)
-        // location of torrc
-        .arg("--torrc-file")
-        .arg(torrc)
-        // enable networking
-        .arg("DisableNetwork")
-        .arg("0")
-        // root data directory
-        .arg("DataDirectory")
-        .arg(data_path)
-        // daemon will assign us a port, and we will
-        // read it from the control port file
-        .arg("ControlPort")
-        .arg(control_port.to_string())
-        // password: foobar1
-        .arg("HashedControlPassword")
-        .arg("16:E807DCE69AFE9979600760C9758B95ADB2F95E8740478AEA5356C95358")
-        // socks port
-        .arg("SocksPort")
-        .arg(socks_port.to_string())
-        // tor process will shut down after this process shuts down
-        // to avoid orphaned tor daemon
-        .arg("__OwningControllerProcess")
-        .arg(process::id().to_string())
-        .spawn()?;
-
-    Ok(tor_daemon)
-}
 
 #[test]
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_system_legacy_onion_service() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-
-    let mut server_tor_daemon = start_system_tor_daemon(
-        tor_path.as_os_str(),
+    let server_provider = build_system_legacy_tor_provider(
         "test_system_legacy_onion_service_server",
         9251u16,
-        9250u16,
-    )?;
-    let mut client_tor_daemon = start_system_tor_daemon(
-        tor_path.as_os_str(),
+        9250u16)?;
+
+    let client_provider = build_system_legacy_tor_provider(
         "test_system_legacy_onion_service_client",
         9351u16,
-        9350u16,
-    )?;
+        9350u16)?;
 
-    // give daemons time to start
-    std::thread::sleep(std::time::Duration::from_secs(5));
-
-    let tor_config = LegacyTorClientConfig::SystemTor {
-        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9250")?,
-        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9251")?,
-        tor_control_passwd: "password".to_string(),
-    };
-    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
-    let tor_config = LegacyTorClientConfig::SystemTor {
-        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9350")?,
-        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9351")?,
-        tor_control_passwd: "password".to_string(),
-    };
-    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
-    basic_onion_service_test(server_provider, client_provider)?;
-
-    server_tor_daemon.kill()?;
-    client_tor_daemon.kill()?;
+    basic_onion_service_test(server_provider.0, client_provider.0)?;
 
     Ok(())
 }
@@ -586,42 +582,17 @@ fn test_system_legacy_onion_service() -> anyhow::Result<()> {
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_system_legacy_authenticated_onion_service() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-
-    let mut server_tor_daemon = start_system_tor_daemon(
-        tor_path.as_os_str(),
+    let server_provider = build_system_legacy_tor_provider(
         "test_system_legacy_authenticated_onion_service_server",
         9251u16,
-        9250u16,
-    )?;
-    let mut client_tor_daemon = start_system_tor_daemon(
-        tor_path.as_os_str(),
+        9250u16)?;
+
+    let client_provider = build_system_legacy_tor_provider(
         "test_system_legacy_authenticated_onion_service_client",
         9351u16,
-        9350u16,
-    )?;
+        9350u16)?;
 
-    // give daemons time to start
-    std::thread::sleep(std::time::Duration::from_secs(5));
-
-    let tor_config = LegacyTorClientConfig::SystemTor {
-        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9250")?,
-        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9251")?,
-        tor_control_passwd: "password".to_string(),
-    };
-    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
-    let tor_config = LegacyTorClientConfig::SystemTor {
-        tor_socks_addr: std::net::SocketAddr::from_str("127.0.0.1:9350")?,
-        tor_control_addr: std::net::SocketAddr::from_str("127.0.0.1:9351")?,
-        tor_control_passwd: "password".to_string(),
-    };
-    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
-    authenticated_onion_service_test(server_provider, client_provider)?;
-
-    server_tor_daemon.kill()?;
-    client_tor_daemon.kill()?;
+    authenticated_onion_service_test(server_provider.0, client_provider.0)?;
 
     Ok(())
 }
@@ -635,10 +606,8 @@ fn test_system_legacy_authenticated_onion_service() -> anyhow::Result<()> {
 #[cfg(feature = "arti-client-tor-provider")]
 fn test_arti_client_bootstrap() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_bootstrap");
-    let tor_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path).unwrap());
 
+    let tor_provider = build_arti_client_tor_provider(runtime, "test_arti_client_bootstrap")?;
     bootstrap_test(tor_provider)
 }
 
@@ -646,13 +615,9 @@ fn test_arti_client_bootstrap() -> anyhow::Result<()> {
 #[cfg(feature = "arti-client-tor-provider")]
 fn test_arti_client_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_basic_onion_service_server");
-    let server_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
 
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_basic_onion_service_client");
-    let client_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
+    let server_provider = build_arti_client_tor_provider(runtime.clone(), "test_arti_basic_onion_service_server")?;
+    let client_provider = build_arti_client_tor_provider(runtime.clone(), "test_arti_basic_onion_service_client")?;
 
     basic_onion_service_test(server_provider, client_provider)
 }
@@ -663,13 +628,8 @@ fn test_arti_client_onion_service() -> anyhow::Result<()> {
 fn test_arti_authenticated_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_authenticated_onion_service_server");
-    let server_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
-
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_authenticated_onion_service_client");
-    let client_provider = Box::new(ArtiClientTorClient::new(runtime.clone(), &data_path).unwrap());
+    let server_provider = build_arti_client_tor_provider(runtime.clone(), "test_arti_authenticated_onion_service_server")?;
+    let client_provider = build_arti_client_tor_provider(runtime.clone(), "test_arti_authenticated_onion_service_client")?;
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
@@ -684,22 +644,8 @@ fn test_arti_authenticated_onion_service() -> anyhow::Result<()> {
 fn test_mixed_arti_client_legacy_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_legacy_basic_onion_service_server");
-    let server_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path)?);
-
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_arti_legacy_basic_onion_service_client");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+    let server_provider = build_arti_client_tor_provider(runtime, "test_mixed_arti_client_legacy_onion_service_server")?;
+    let client_provider = build_bundled_legacy_tor_provider("test_mixed_arti_client_legacy_onion_service_client")?;
 
     basic_onion_service_test(server_provider, client_provider)
 }
@@ -708,25 +654,10 @@ fn test_mixed_arti_client_legacy_onion_service() -> anyhow::Result<()> {
 #[serial]
 #[cfg(all(feature = "arti-client-tor-provider", feature = "legacy-tor-provider"))]
 fn test_mixed_legacy_arti_client_onion_service() -> anyhow::Result<()> {
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_arty_basic_onion_service_client");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_legacy_arti_basic_onion_service_server");
-    let client_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path)?);
+    let server_provider = build_bundled_legacy_tor_provider("test_mixed_legacy_arti_client_onion_service_server")?;
+    let client_provider = build_arti_client_tor_provider(runtime, "test_mixed_legacy_arti_client_onion_service_client")?;
 
     basic_onion_service_test(server_provider, client_provider)
 }
@@ -737,22 +668,8 @@ fn test_mixed_legacy_arti_client_onion_service() -> anyhow::Result<()> {
 fn test_mixed_arti_client_legacy_authenticated_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_mixed_arti_client_legacy_authenticated_onion_service_server");
-    let server_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path)?);
-
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_mixed_arti_client_legacy_authenticated_onion_service_client");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let client_provider = Box::new(LegacyTorClient::new(tor_config)?);
+    let server_provider = build_arti_client_tor_provider(runtime, "test_mixed_arti_client_legacy_authenticated_onion_service_server")?;
+    let client_provider = build_bundled_legacy_tor_provider("test_mixed_arti_client_legacy_authenticated_onion_service_client")?;
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
@@ -763,22 +680,8 @@ fn test_mixed_arti_client_legacy_authenticated_onion_service() -> anyhow::Result
 fn test_mixed_legacy_arti_client_authenticated_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
-    let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_mixed_legacy_arti_client_authenticated_onion_service_server");
-    let tor_config = LegacyTorClientConfig::BundledTor {
-        tor_bin_path: tor_path,
-        data_directory: data_path,
-        proxy_settings: None,
-        allowed_ports: None,
-        pluggable_transports: None,
-        bridge_lines: None,
-    };
-    let server_provider = Box::new(LegacyTorClient::new(tor_config)?);
-
-    let mut data_path = std::env::temp_dir();
-    data_path.push("test_mixed_legacy_arti_client_authenticated_onion_service_client");
-    let client_provider = Box::new(ArtiClientTorClient::new(runtime, &data_path)?);
+    let server_provider = build_arti_client_tor_provider(runtime, "test_mixed_legacy_arti_client_authenticated_onion_service_server")?;
+    let client_provider = build_bundled_legacy_tor_provider("test_mixed_legacy_arti_client_authenticated_onion_service_client")?;
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
