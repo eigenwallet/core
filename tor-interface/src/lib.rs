@@ -6,6 +6,8 @@ pub mod arti_client_tor_client;
 /// Implementation of an out-of-process [`arti`](https://crates.io/crates/arti)-based `TorProvider`
 #[cfg(feature = "arti-tor-provider")]
 pub mod arti_tor_client;
+#[cfg(feature = "arti-tor-provider")]
+pub mod arti_process;
 /// Censorship circumvention configuration for pluggable-transports and bridge settings
 #[cfg(feature = "legacy-tor-provider")]
 pub mod censorship_circumvention;
