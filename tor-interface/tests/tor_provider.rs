@@ -455,8 +455,19 @@ pub(crate) fn authenticated_onion_service_test(
             client_provider.add_client_auth(&service_id, &private_auth_key)?;
 
             println!("Connecting to onion service with authentication");
-            let mut client =
-                client_provider.connect((service_id.clone(), VIRT_PORT).into(), None)?;
+            let mut attempt_count = 0;
+            let mut client = loop {
+                match client_provider.connect((service_id.clone(), VIRT_PORT).into(), None) {
+                    Ok(client) => break client,
+                    Err(err) => {
+                        println!("connect error: {:?}", err);
+                        attempt_count += 1;
+                        if attempt_count == 3 {
+                            panic!("failed to connect :(");
+                        }
+                    }
+                }
+            };
 
             println!("Client writing message: '{}'", MESSAGE);
             client.write_all(MESSAGE.as_bytes())?;
