@@ -19,7 +19,7 @@ use tor_llcrypto::pk::ed25519::ExpandedKeypair;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 use tor_hsservice::config::restricted_discovery::HsClientNickname;
 use tor_hsservice::{HsNickname, RunningOnionService};
-use tor_keymgr::{config::arti::ArtiKeystoreKind, KeystoreSelector};
+use tor_keymgr::{config::ArtiKeystoreKind, KeystoreSelector};
 use tor_proto::stream::IncomingStreamRequest;
 use tor_rtcompat::PreferredRuntime;
 
