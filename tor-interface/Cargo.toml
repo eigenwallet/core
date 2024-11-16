@@ -1,7 +1,7 @@
 [package]
 name = "tor-interface"
 authors = ["morgan <morgan@torproject.org>", "Richard Pospesel <richard@blueprintforfreespeech.net>"]
-version = "0.4.0"
+version = "0.5.0"
 rust-version = "1.70"
 edition = "2021"
 license = "BSD-3-Clause"
