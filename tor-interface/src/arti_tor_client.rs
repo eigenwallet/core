@@ -1,3 +1,6 @@
+// std
+use std::path::PathBuf;
+
 // internal crates
 use crate::tor_crypto::*;
 use crate::tor_provider;
@@ -19,9 +22,11 @@ impl From<Error> for crate::tor_provider::Error {
 
 #[derive(Clone, Debug)]
 pub enum ArtiTorClientConfig {
-    Bundled {
+    BundledArti {
+        arti_bin_path: PathBuf,
+        data_directory: PathBuf,
     },
-    System {
+    SystemArti {
 
     },
 }
