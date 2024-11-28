@@ -636,7 +636,7 @@ fn test_arti_client_onion_service() -> anyhow::Result<()> {
 #[test]
 #[serial]
 #[cfg(feature = "arti-client-tor-provider")]
-fn test_arti_authenticated_onion_service() -> anyhow::Result<()> {
+fn test_arti_client_authenticated_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
     let server_provider = build_arti_client_tor_provider(runtime.clone(), "test_arti_authenticated_onion_service_server")?;
