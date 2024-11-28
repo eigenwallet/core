@@ -1,6 +1,7 @@
 set(tor_interface_sources
     Cargo.toml
     src/arti_client_tor_client.rs
+    src/arti_process.rs
     src/arti_tor_client.rs
     src/censorship_circumvention.rs
     src/legacy_tor_client.rs

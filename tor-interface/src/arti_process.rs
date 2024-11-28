@@ -67,40 +67,45 @@ impl ArtiProcess {
         // construct paths to arti files file
         let arti_toml = data_directory.join("arti.toml");
 
-        // write arti.toml settings file
-        if !arti_toml.exists() {
-            let cache_dir = data_directory.join("cache").display().to_string();
-            let state_dir = data_directory.join("state").display().to_string();
+        // write arti.toml settings file (always overwrite)
+        let cache_dir = data_directory.join("cache").display().to_string();
+        let state_dir = data_directory.join("state").display().to_string();
+        let rpc_listen = data_directory.join("SOCKET").display().to_string();
 
-            let arti_toml_content = format!("\
-            [storage]\n\
-            cache_dir = \"{cache_dir}\"\n\
-            state_dir = \"{state_dir}\"\n\
-            [storage.keystore]\n\
-            enabled = true\n\
-            [storage.keystore.primary]\n\
-            kind = \"ephemeral\"\n\
-            ");
+        let arti_toml_content = format!("\
+        [storage]\n\
+        cache_dir = \"{cache_dir}\"\n\
+        state_dir = \"{state_dir}\"\n\
+        [storage.keystore]\n\
+        enabled = true\n\
+        [storage.keystore.primary]\n\
+        kind = \"ephemeral\"\n\
+        [storage.permissions]\n\
+        dangerously_trust_everyone = true\n\
+        [rpc]\n
+        rpc_listen = \"{rpc_listen}\"\n
+        ");
 
-            let mut arti_toml_file =
-                File::create(&arti_toml).map_err(Error::ArtiTomlFileCreationFailed)?;
-            arti_toml_file
-                .write_all(arti_toml_content.as_bytes())
-                .map_err(Error::ArtiTomlFileWriteFailed)?;
-        }
+        let mut arti_toml_file =
+            File::create(&arti_toml).map_err(Error::ArtiTomlFileCreationFailed)?;
+        arti_toml_file
+            .write_all(arti_toml_content.as_bytes())
+            .map_err(Error::ArtiTomlFileWriteFailed)?;
 
-
-        let mut process = Command::new(arti_bin_path.as_os_str())
-            .stdout(Stdio::piped())
+        let process = Command::new(arti_bin_path.as_os_str())
+            .stdout(Stdio::inherit())
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             // set working directory to data directory
             .current_dir(data_directory)
+            // proxy subcommand
+            .arg("proxy")
             // point to our above written arti.toml file
             .arg("--config")
             .arg(arti_toml)
             .spawn()
             .map_err(Error::ArtiProcessStartFailed)?;
+
 
         Ok(ArtiProcess { process })
     }

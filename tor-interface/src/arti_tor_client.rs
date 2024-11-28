@@ -5,11 +5,14 @@ use std::path::PathBuf;
 use crate::tor_crypto::*;
 use crate::tor_provider;
 use crate::tor_provider::*;
-
+use crate::arti_process::*;
 
 /// [`ArtiTorClient`]-specific error type
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
+    #[error("failed to create ArtiProcess object: {0}")]
+    ArtiProcessCreationFailed(#[source] crate::arti_process::Error),
+
     #[error("not implemented")]
     NotImplemented(),
 }
@@ -32,12 +35,30 @@ pub enum ArtiTorClientConfig {
 }
 
 pub struct ArtiTorClient {
-
+    daemon: Option<ArtiProcess>
 }
 
 impl ArtiTorClient {
     pub fn new(config: ArtiTorClientConfig) -> Result<Self, tor_provider::Error> {
-        Err(Error::NotImplemented().into())
+        let (daemon) = match &config {
+            ArtiTorClientConfig::BundledArti {
+                arti_bin_path,
+                data_directory,
+            } => {
+                // launch arti
+                let daemon =
+                    ArtiProcess::new(arti_bin_path.as_path(), data_directory.as_path())
+                        .map_err(Error::ArtiProcessCreationFailed)?;
+                (daemon)
+            },
+            _ => {
+                return Err(Error::NotImplemented().into())
+            }
+        };
+
+        Ok(ArtiTorClient {
+            daemon: Some(daemon)
+        })
     }
 }
 
