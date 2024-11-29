@@ -699,9 +699,7 @@ fn test_arti_bootstrap() -> anyhow::Result<()> {
 }
 
 //
-
-//
-// Mixed Arti/Legacy TorProvider tests
+// Mixed Arti-Client/Legacy TorProvider tests
 //
 
 #[test]
@@ -746,8 +744,56 @@ fn test_mixed_arti_client_legacy_authenticated_onion_service() -> anyhow::Result
 fn test_mixed_legacy_arti_client_authenticated_onion_service() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
-    let server_provider = build_arti_client_tor_provider(runtime, "test_mixed_legacy_arti_client_authenticated_onion_service_server")?;
-    let client_provider = build_bundled_legacy_tor_provider("test_mixed_legacy_arti_client_authenticated_onion_service_client")?;
+    let server_provider = build_bundled_legacy_tor_provider("test_mixed_legacy_arti_client_authenticated_onion_service_server")?;
+    let client_provider = build_arti_client_tor_provider(runtime, "test_mixed_legacy_arti_client_authenticated_onion_service_client")?;
 
     authenticated_onion_service_test(server_provider, client_provider)
 }
+
+//
+// Mixed Arti/Legacy TorProvider tests
+//
+
+// #[test]
+// #[serial]
+// #[cfg(all(feature = "arti-tor-provider", feature = "legacy-tor-provider"))]
+// fn test_mixed_arti_legacy_onion_service() -> anyhow::Result<()> {
+//     let server_provider = build_arti_tor_provider("test_mixed_arti_legacy_onion_service_server")?;
+//     let client_provider = build_bundled_legacy_tor_provider("test_mixed_arti_legacy_onion_service_client")?;
+
+//     basic_onion_service_test(server_provider, client_provider)
+// }
+
+#[test]
+#[serial]
+#[cfg(all(feature = "arti-tor-provider", feature = "legacy-tor-provider"))]
+fn test_mixed_legacy_arti_onion_service() -> anyhow::Result<()> {
+    let server_provider = build_bundled_legacy_tor_provider("test_mixed_legacy_arti_onion_service_server")?;
+    let client_provider = build_arti_tor_provider("test_mixed_legacy_arti_onion_service_client")?;
+
+    basic_onion_service_test(server_provider, client_provider)
+}
+
+// #[test]
+// #[serial]
+// #[cfg(all(feature = "arti-tor-provider", feature = "legacy-tor-provider"))]
+// fn test_mixed_arti_legacy_authenticated_onion_service() -> anyhow::Result<()> {
+//     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+
+//     let server_provider = build_arti_tor_provider("test_mixed_arti_legacy_authenticated_onion_service_server")?;
+//     let client_provider = build_bundled_legacy_tor_provider("test_mixed_arti_legacy_authenticated_onion_service_client")?;
+
+//     authenticated_onion_service_test(server_provider, client_provider)
+// }
+
+// #[test]
+// #[serial]
+// #[cfg(all(feature = "arti-tor-provider", feature = "legacy-tor-provider"))]
+// fn test_mixed_legacy_arti_authenticated_onion_service() -> anyhow::Result<()> {
+//     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
+
+//     let server_provider = build_bundled_legacy_tor_provider("test_mixed_legacy_arti_authenticated_onion_service_server")?;
+//     let client_provider = build_arti_tor_provider("test_mixed_legacy_arti_authenticated_onion_service_client")?;
+
+//     authenticated_onion_service_test(server_provider, client_provider)
+// }
