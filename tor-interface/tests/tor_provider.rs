@@ -186,7 +186,7 @@ fn build_arti_client_tor_provider(runtime: Arc<runtime::Runtime>, name: &str) ->
 //
 
 #[allow(dead_code)]
-pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>) -> anyhow::Result<()> {
+pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>, skip_connect_tests: bool) -> anyhow::Result<()> {
     tor.bootstrap()?;
 
     let mut received_log = false;
@@ -218,6 +218,30 @@ pub(crate) fn bootstrap_test(mut tor: Box<dyn TorProvider>) -> anyhow::Result<()
         received_log,
         "should have received a log line from tor provider"
     );
+
+    //
+    // Attempt to connect to various endpoints
+    //
+
+    if !skip_connect_tests {
+
+        // example.com
+        let stream = tor.connect(TargetAddr::from_str("www.example.com:80")?, None)?;
+        println!("stream: {stream:?}");
+
+        // google dns (ipv4)
+        let stream = tor.connect(TargetAddr::from_str("8.8.8.8:53")?, None)?;
+        println!("stream: {stream:?}");
+
+        // google dns (ipv6)
+        let stream = tor.connect(TargetAddr::from_str("[2001:4860:4860::8888]:53")?, None)?;
+        println!("stream: {stream:?}");
+
+        // riseup onion service
+        let stream = tor.connect(TargetAddr::from_str("vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion:80")?, None)?;
+        println!("stream: {stream:?}");
+
+    }
 
     Ok(())
 }
@@ -500,7 +524,7 @@ pub(crate) fn authenticated_onion_service_test(
 #[test]
 #[cfg(feature = "mock-tor-provider")]
 fn test_mock_bootstrap() -> anyhow::Result<()> {
-    bootstrap_test(build_mock_tor_provider()?)
+    bootstrap_test(build_mock_tor_provider()?, true)
 }
 
 #[test]
@@ -528,7 +552,7 @@ fn test_mock_authenticated_onion_service() -> anyhow::Result<()> {
 #[cfg(feature = "legacy-tor-provider")]
 fn test_legacy_bootstrap() -> anyhow::Result<()> {
     let tor_provider = build_bundled_legacy_tor_provider("test_legacy_bootstrap")?;
-    bootstrap_test(tor_provider)
+    bootstrap_test(tor_provider, false)
 }
 
 #[test]
@@ -538,7 +562,7 @@ fn test_legacy_pluggable_transport_bootstrap() -> anyhow::Result<()> {
     let tor_provider = build_bundled_pt_legacy_tor_provider("test_legacy_pluggable_transport_bootstrap")?;
 
     if let Some(tor_provider) = tor_provider {
-        bootstrap_test(tor_provider)?
+        bootstrap_test(tor_provider, false)?
     }
     Ok(())
 }
@@ -619,7 +643,7 @@ fn test_arti_client_bootstrap() -> anyhow::Result<()> {
     let runtime: Arc<runtime::Runtime> = Arc::new(runtime::Runtime::new().unwrap());
 
     let tor_provider = build_arti_client_tor_provider(runtime, "test_arti_client_bootstrap")?;
-    bootstrap_test(tor_provider)
+    bootstrap_test(tor_provider, false)
 }
 
 #[test]
