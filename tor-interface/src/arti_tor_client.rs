@@ -56,6 +56,7 @@ pub enum ArtiTorClientConfig {
 pub struct ArtiTorClient {
     daemon: Option<ArtiProcess>,
     rpc_conn: RpcConn,
+    pending_log_lines: Arc<Mutex<Vec<String>>>,
     pending_events: Arc<Mutex<Vec<TorEvent>>>,
     bootstrapped: bool,
     // our list of circuit tokens for the arti daemon
@@ -65,14 +66,17 @@ pub struct ArtiTorClient {
 
 impl ArtiTorClient {
     pub fn new(config: ArtiTorClientConfig) -> Result<Self, tor_provider::Error> {
+        let pending_log_lines: Arc<Mutex<Vec<String>>> = Default::default();
+
         let (daemon, rpc_conn) = match &config {
             ArtiTorClientConfig::BundledArti {
                 arti_bin_path,
                 data_directory,
             } => {
+
                 // launch arti
                 let daemon =
-                    ArtiProcess::new(arti_bin_path.as_path(), data_directory.as_path())
+                    ArtiProcess::new(arti_bin_path.as_path(), data_directory.as_path(), Arc::downgrade(&pending_log_lines))
                         .map_err(Error::ArtiProcessCreationFailed)?;
 
                 let builder = RpcConnBuilder::from_connect_string(daemon.connect_string()).unwrap();
@@ -109,6 +113,7 @@ impl ArtiTorClient {
         Ok(Self {
             daemon: Some(daemon),
             rpc_conn,
+            pending_log_lines,
             pending_events,
             bootstrapped: false,
             circuit_token_counter: 0,
@@ -120,12 +125,28 @@ impl ArtiTorClient {
 impl TorProvider for ArtiTorClient {
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
         std::thread::sleep(std::time::Duration::from_millis(16));
-        match self.pending_events.lock() {
-            Ok(mut pending_events) => Ok(std::mem::take(pending_events.deref_mut())),
+        let mut tor_events = match self.pending_events.lock() {
+            Ok(mut pending_events) => std::mem::take(pending_events.deref_mut()),
             Err(_) => {
                 unreachable!("another thread panicked while holding this pending_events mutex")
             }
+        };
+        // take our log lines
+        let mut log_lines = match self.pending_log_lines.lock() {
+            Ok(mut pending_log_lines) => std::mem::take(pending_log_lines.deref_mut()),
+            Err(_) => {
+                unreachable!("another thread panicked while holding this pending_log_lines mutex")
+            }
+        };
+
+        // append raw lines as TorEvent
+        for log_line in log_lines.iter_mut() {
+            tor_events.push(TorEvent::LogReceived {
+                line: std::mem::take(log_line),
+            });
         }
+
+        Ok(tor_events)
     }
 
     fn bootstrap(&mut self) -> Result<(), tor_provider::Error> {

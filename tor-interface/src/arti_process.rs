@@ -1,11 +1,12 @@
 // standard
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::ops::Drop;
 use std::process;
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::path::Path;
+use std::sync::{Mutex, Weak};
 use std::time::{Duration, Instant};
 
 #[derive(thiserror::Error, Debug)]
@@ -19,20 +20,26 @@ pub enum Error {
     #[error("provided data directory '{0}' must be an absolute path")]
     ArtiDataDirectoryPathNotAbsolute(String),
 
-    #[error("failed to create data directory")]
+    #[error("failed to create data directory: {0}")]
     ArtiDataDirectoryCreationFailed(#[source] std::io::Error),
 
     #[error("file exists in provided data directory path '{0}'")]
     ArtiDataDirectoryPathExistsAsFile(String),
 
-    #[error("failed to create arti.toml file")]
+    #[error("failed to create arti.toml file: {0}")]
     ArtiTomlFileCreationFailed(#[source] std::io::Error),
 
-    #[error("failed to write arti.toml file")]
+    #[error("failed to write arti.toml file: {0}")]
     ArtiTomlFileWriteFailed(#[source] std::io::Error),
 
-    #[error("failed to start arti process")]
+    #[error("failed to start arti process: {0}")]
     ArtiProcessStartFailed(#[source] std::io::Error),
+
+    #[error("unable to take arti process stdout")]
+    ArtiProcessStdoutTakeFailed(),
+
+    #[error("failed to spawn arti process stdout read thread: {0}")]
+    ArtiStdoutReadThreadSpawnFailed(#[source] std::io::Error),
 }
 
 pub(crate) struct ArtiProcess {
@@ -41,7 +48,7 @@ pub(crate) struct ArtiProcess {
 }
 
 impl ArtiProcess {
-    pub fn new(arti_bin_path: &Path, data_directory: &Path) -> Result<Self, Error> {
+    pub fn new(arti_bin_path: &Path, data_directory: &Path, stdout_lines: Weak<Mutex<Vec<String>>>) -> Result<Self, Error> {
         // verify provided paths are absolute
         if arti_bin_path.is_relative() {
             return Err(Error::ArtiBinPathNotAbsolute(format!(
@@ -94,9 +101,8 @@ impl ArtiProcess {
             .write_all(arti_toml_content.as_bytes())
             .map_err(Error::ArtiTomlFileWriteFailed)?;
 
-        let process = Command::new(arti_bin_path.as_os_str())
-            // TODO: make this pipe() and fwd log events
-            .stdout(Stdio::inherit())
+        let mut process = Command::new(arti_bin_path.as_os_str())
+            .stdout(Stdio::piped())
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             // set working directory to data directory
@@ -109,6 +115,18 @@ impl ArtiProcess {
             .spawn()
             .map_err(Error::ArtiProcessStartFailed)?;
 
+        // spawn a task to read stdout lines and forward to list
+        let stdout = BufReader::new(match process.stdout.take() {
+            Some(stdout) => stdout,
+            None => return Err(Error::ArtiProcessStdoutTakeFailed()),
+        });
+        std::thread::Builder::new()
+            .name("arti_stdout_reader".to_string())
+            .spawn(move || {
+                ArtiProcess::read_stdout_task(&stdout_lines, stdout);
+            })
+            .map_err(Error::ArtiStdoutReadThreadSpawnFailed)?;
+
         let connect_string = format!("unix:{rpc_listen}");
 
         Ok(ArtiProcess { process, connect_string })
@@ -116,6 +134,26 @@ impl ArtiProcess {
 
     pub fn connect_string(&self) -> &str {
         self.connect_string.as_str()
+    }
+
+    fn read_stdout_task(
+        stdout_lines: &std::sync::Weak<Mutex<Vec<String>>>,
+        mut stdout: BufReader<ChildStdout>,
+    ) {
+        while let Some(stdout_lines) = stdout_lines.upgrade() {
+            let mut line = String::default();
+            // read line
+            if stdout.read_line(&mut line).is_ok() {
+                // remove trailing '\n'
+                line.pop();
+                // then acquire the lock on the line buffer
+                let mut stdout_lines = match stdout_lines.lock() {
+                    Ok(stdout_lines) => stdout_lines,
+                    Err(_) => unreachable!(),
+                };
+                stdout_lines.push(line);
+            }
+        }
     }
 }
 
