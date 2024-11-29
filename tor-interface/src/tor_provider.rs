@@ -278,6 +278,7 @@ pub type CircuitToken = usize;
 /// A wrapper around a [`std::net::TcpStream`] with some Tor-specific customisations
 ///
 /// An onion-listener can be constructed using the [`TorProvider::connect()`] method.
+#[derive(Debug)]
 pub struct OnionStream {
     pub(crate) stream: TcpStream,
     pub(crate) local_addr: Option<OnionAddr>,
