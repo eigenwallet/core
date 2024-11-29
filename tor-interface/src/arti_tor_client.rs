@@ -1,5 +1,9 @@
 // std
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+// extern
+use arti_rpc_client_core::{ObjectId, RpcConn, RpcConnBuilder};
 
 // internal crates
 use crate::tor_crypto::*;
@@ -12,6 +16,9 @@ use crate::arti_process::*;
 pub enum Error {
     #[error("failed to create ArtiProcess object: {0}")]
     ArtiProcessCreationFailed(#[source] crate::arti_process::Error),
+
+    #[error("failed to connect to ArtiProcess after {0:?}")]
+    ArtiRpcConnectFailed(std::time::Duration),
 
     #[error("not implemented")]
     NotImplemented(),
@@ -35,12 +42,13 @@ pub enum ArtiTorClientConfig {
 }
 
 pub struct ArtiTorClient {
-    daemon: Option<ArtiProcess>
+    daemon: Option<ArtiProcess>,
+    rpc_conn: RpcConn,
 }
 
 impl ArtiTorClient {
     pub fn new(config: ArtiTorClientConfig) -> Result<Self, tor_provider::Error> {
-        let (daemon) = match &config {
+        let (daemon, rpc_conn) = match &config {
             ArtiTorClientConfig::BundledArti {
                 arti_bin_path,
                 data_directory,
@@ -49,7 +57,27 @@ impl ArtiTorClient {
                 let daemon =
                     ArtiProcess::new(arti_bin_path.as_path(), data_directory.as_path())
                         .map_err(Error::ArtiProcessCreationFailed)?;
-                (daemon)
+
+                let builder = RpcConnBuilder::from_connect_string(daemon.connect_string()).unwrap();
+
+                let rpc_conn = {
+                    // try to open an rpc conneciton for 5 seconds beore giving up
+                    let timeout = Duration::from_secs(5);
+                    let mut rpc_conn: Option<RpcConn> = None;
+
+                    let start = Instant::now();
+                    while rpc_conn.is_none() && start.elapsed() < timeout {
+                        rpc_conn = builder.connect().map_or(None, |rpc_conn| Some(rpc_conn));
+                    }
+
+                    if let Some(rpc_conn) = rpc_conn {
+                        rpc_conn
+                    } else {
+                        return Err(Error::ArtiRpcConnectFailed(timeout))?
+                    }
+                };
+
+                (daemon, rpc_conn)
             },
             _ => {
                 return Err(Error::NotImplemented().into())
@@ -57,18 +85,20 @@ impl ArtiTorClient {
         };
 
         Ok(ArtiTorClient {
-            daemon: Some(daemon)
+            daemon: Some(daemon),
+            rpc_conn,
         })
     }
 }
 
 impl TorProvider for ArtiTorClient {
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
-        Err(Error::NotImplemented().into())
+        Ok(Default::default())
     }
 
     fn bootstrap(&mut self) -> Result<(), tor_provider::Error> {
-        Err(Error::NotImplemented().into())
+        // TODO: seems no way to start arti without automatically bootstrapping
+        Ok(())
     }
 
     fn add_client_auth(

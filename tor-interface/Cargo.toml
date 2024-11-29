@@ -11,6 +11,7 @@ repository = "https://github.com/blueprint-freespeech/gosling"
 
 [dependencies]
 arti-client = { version = "0.24.0", features = ["ephemeral-keystore", "experimental-api", "keymgr", "onion-service-client", "onion-service-service", "tokio"], optional = true}
+arti-rpc-client-core = { version = "0.24.0", optional = true }
 curve25519-dalek = "4.1"
 data-encoding = "2.0"
 data-encoding-macro = "0.1"
@@ -42,6 +43,6 @@ which = "4.4"
 
 [features]
 arti-client-tor-provider = ["arti-client", "tokio", "tokio-stream", "tor-cell", "tor-config", "tor-hsservice", "tor-keymgr", "tor-proto", "tor-rtcompat"]
-arti-tor-provider = []
+arti-tor-provider = ["arti-rpc-client-core"]
 mock-tor-provider = []
 legacy-tor-provider = []

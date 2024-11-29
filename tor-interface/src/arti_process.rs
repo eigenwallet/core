@@ -6,6 +6,7 @@ use std::ops::Drop;
 use std::process;
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -36,6 +37,7 @@ pub enum Error {
 
 pub(crate) struct ArtiProcess {
     process: Child,
+    connect_string: String,
 }
 
 impl ArtiProcess {
@@ -82,7 +84,7 @@ impl ArtiProcess {
         kind = \"ephemeral\"\n\
         [storage.permissions]\n\
         dangerously_trust_everyone = true\n\
-        [rpc]\n
+        [rpc]\n\
         rpc_listen = \"{rpc_listen}\"\n
         ");
 
@@ -93,6 +95,7 @@ impl ArtiProcess {
             .map_err(Error::ArtiTomlFileWriteFailed)?;
 
         let process = Command::new(arti_bin_path.as_os_str())
+            // TODO: make this pipe() and fwd log events
             .stdout(Stdio::inherit())
             .stdin(Stdio::null())
             .stderr(Stdio::null())
@@ -106,8 +109,13 @@ impl ArtiProcess {
             .spawn()
             .map_err(Error::ArtiProcessStartFailed)?;
 
+        let connect_string = format!("unix:{rpc_listen}");
 
-        Ok(ArtiProcess { process })
+        Ok(ArtiProcess { process, connect_string })
+    }
+
+    pub fn connect_string(&self) -> &str {
+        self.connect_string.as_str()
     }
 }
 
