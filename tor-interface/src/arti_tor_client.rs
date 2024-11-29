@@ -1,5 +1,7 @@
 // std
+use std::ops::DerefMut;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // extern
@@ -44,6 +46,9 @@ pub enum ArtiTorClientConfig {
 pub struct ArtiTorClient {
     daemon: Option<ArtiProcess>,
     rpc_conn: RpcConn,
+    pending_events: Arc<Mutex<Vec<TorEvent>>>,
+    bootstrapped: bool,
+
 }
 
 impl ArtiTorClient {
@@ -84,20 +89,54 @@ impl ArtiTorClient {
             }
         };
 
-        Ok(ArtiTorClient {
+        let pending_events = std::vec![TorEvent::LogReceived {
+            line: "Starting arti-client TorProvider".to_string()
+        }];
+        let pending_events = Arc::new(Mutex::new(pending_events));
+
+        Ok(Self {
             daemon: Some(daemon),
             rpc_conn,
+            pending_events,
+            bootstrapped: false,
         })
     }
 }
 
 impl TorProvider for ArtiTorClient {
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
-        Ok(Default::default())
+        std::thread::sleep(std::time::Duration::from_millis(16));
+        match self.pending_events.lock() {
+            Ok(mut pending_events) => Ok(std::mem::take(pending_events.deref_mut())),
+            Err(_) => {
+                unreachable!("another thread panicked while holding this pending_events mutex")
+            }
+        }
     }
 
     fn bootstrap(&mut self) -> Result<(), tor_provider::Error> {
         // TODO: seems no way to start arti without automatically bootstrapping
+        if !self.bootstrapped {
+            match self.pending_events.lock() {
+                Ok(mut pending_events) => {
+                    pending_events.push(TorEvent::BootstrapStatus {
+                        progress: 0,
+                        tag: "no-tag".to_string(),
+                        summary: "no summary".to_string(),
+                    });
+                    pending_events.push(TorEvent::BootstrapStatus {
+                        progress: 100,
+                        tag: "no-tag".to_string(),
+                        summary: "no summary".to_string(),
+                    });
+                    pending_events.push(TorEvent::BootstrapComplete);
+                }
+                Err(_) => unreachable!(
+                    "another thread panicked while holding this pending_events mutex"
+                ),
+            }
+            self.bootstrapped = true;
+        }
         Ok(())
     }
 
