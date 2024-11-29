@@ -6,10 +6,10 @@ use std::str;
 use curve25519_dalek::Scalar;
 use data_encoding::{BASE32_NOPAD, BASE64};
 use data_encoding_macro::new_encoding;
-#[cfg(feature = "legacy-tor-provider")]
+#[cfg(any(feature = "legacy-tor-provider", feature = "arti-tor-provider"))]
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
-#[cfg(feature = "legacy-tor-provider")]
+#[cfg(any(feature = "legacy-tor-provider", feature = "arti-tor-provider"))]
 use rand::Rng;
 use sha3::{Digest, Sha3_256};
 use static_assertions::const_assert_eq;
@@ -110,7 +110,7 @@ const ONION_BASE32: data_encoding::Encoding = new_encoding! {
 // Free functions
 
 // securely generate password using OsRng
-#[cfg(feature = "legacy-tor-provider")]
+#[cfg(any(feature = "legacy-tor-provider", feature = "arti-tor-provider"))]
 pub(crate) fn generate_password(length: usize) -> String {
     let password: String = std::iter::repeat(())
         .map(|()| OsRng.sample(Alphanumeric))

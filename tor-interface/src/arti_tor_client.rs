@@ -1,4 +1,5 @@
 // std
+use std::collections::BTreeMap;
 use std::ops::DerefMut;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,9 @@ pub enum Error {
     #[error("failed to connect: {0}")]
     ArtiOpenStreamFailed(#[source] arti_rpc_client_core::StreamError),
 
+    #[error("invalid circuit token: {0}")]
+    CircuitTokenInvalid(CircuitToken),
+
     #[error("not implemented")]
     NotImplemented(),
 }
@@ -54,7 +58,9 @@ pub struct ArtiTorClient {
     rpc_conn: RpcConn,
     pending_events: Arc<Mutex<Vec<TorEvent>>>,
     bootstrapped: bool,
-
+    // our list of circuit tokens for the arti daemon
+    circuit_token_counter: usize,
+    circuit_tokens: BTreeMap<CircuitToken, String>,
 }
 
 impl ArtiTorClient {
@@ -105,6 +111,8 @@ impl ArtiTorClient {
             rpc_conn,
             pending_events,
             bootstrapped: false,
+            circuit_token_counter: 0,
+            circuit_tokens: Default::default(),
         })
     }
 }
@@ -164,19 +172,32 @@ impl TorProvider for ArtiTorClient {
     fn connect(
         &mut self,
         target: TargetAddr,
-        _circuit: Option<CircuitToken>,
+        circuit_token: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
         if !self.bootstrapped {
             return Err(Error::ArtiNotBootstrapped().into());
         }
 
+        // convert TargetAddr to (String, u16) tuple
         let (host, port) = match &target {
             TargetAddr::Socket(socket_addr) => (format!("{:?}", socket_addr.ip()), socket_addr.port()),
             TargetAddr::OnionService(OnionAddr::V3(onion_addr)) => (format!("{}.onion", onion_addr.service_id()), onion_addr.virt_port()),
             TargetAddr::Domain(domain_addr) => (domain_addr.domain().to_string(), domain_addr.port()),
         };
 
-        let stream = self.rpc_conn.open_stream(None, (host.as_str(), port), "")
+        // map circuit_token to isolation string for arti
+        let isolation = if let Some(circuit_token) = circuit_token {
+            if let Some(isolation) = self.circuit_tokens.get(&circuit_token) {
+                isolation.as_str()
+            } else {
+                return Err(Error::CircuitTokenInvalid(circuit_token))?;
+            }
+        } else {
+            ""
+        };
+
+        // connect to target
+        let stream = self.rpc_conn.open_stream(None, (host.as_str(), port), isolation)
             .map_err(Error::ArtiOpenStreamFailed)?;
 
         Ok(OnionStream {
@@ -196,8 +217,17 @@ impl TorProvider for ArtiTorClient {
     }
 
     fn generate_token(&mut self) -> CircuitToken {
-        0usize
+        const ISOLATION_TOKEN_LEN: usize = 32;
+        let new_token = self.circuit_token_counter;
+        self.circuit_token_counter += 1;
+        self.circuit_tokens.insert(
+            new_token,
+            generate_password(ISOLATION_TOKEN_LEN));
+
+        new_token
     }
 
-    fn release_token(&mut self, _token: CircuitToken) {}
+    fn release_token(&mut self, token: CircuitToken) {
+        self.circuit_tokens.remove(&token);
+    }
 }
