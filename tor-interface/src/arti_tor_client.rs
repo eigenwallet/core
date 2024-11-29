@@ -22,6 +22,12 @@ pub enum Error {
     #[error("failed to connect to ArtiProcess after {0:?}")]
     ArtiRpcConnectFailed(std::time::Duration),
 
+    #[error("arti not bootstrapped")]
+    ArtiNotBootstrapped(),
+
+    #[error("failed to connect: {0}")]
+    ArtiOpenStreamFailed(#[source] arti_rpc_client_core::StreamError),
+
     #[error("not implemented")]
     NotImplemented(),
 }
@@ -157,10 +163,27 @@ impl TorProvider for ArtiTorClient {
 
     fn connect(
         &mut self,
-        _target: TargetAddr,
+        target: TargetAddr,
         _circuit: Option<CircuitToken>,
     ) -> Result<OnionStream, tor_provider::Error> {
-        Err(Error::NotImplemented().into())
+        if !self.bootstrapped {
+            return Err(Error::ArtiNotBootstrapped().into());
+        }
+
+        let (host, port) = match &target {
+            TargetAddr::Socket(socket_addr) => (format!("{:?}", socket_addr.ip()), socket_addr.port()),
+            TargetAddr::OnionService(OnionAddr::V3(onion_addr)) => (format!("{}.onion", onion_addr.service_id()), onion_addr.virt_port()),
+            TargetAddr::Domain(domain_addr) => (domain_addr.domain().to_string(), domain_addr.port()),
+        };
+
+        let stream = self.rpc_conn.open_stream(None, (host.as_str(), port), "")
+            .map_err(Error::ArtiOpenStreamFailed)?;
+
+        Ok(OnionStream {
+            stream,
+            local_addr: None,
+            peer_addr: Some(target),
+        })
     }
 
     fn listener(
