@@ -38,6 +38,7 @@ where
     latest_rate: LR,
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
+    max_swap_timeout: Duration,
     external_redeem_address: Option<bitcoin::Address>,
 
     swap_sender: mpsc::Sender<Swap>,
@@ -122,6 +123,7 @@ where
         latest_rate: LR,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
+        max_swap_timeout: Duration,
         external_redeem_address: Option<bitcoin::Address>,
     ) -> Result<(Self, mpsc::Receiver<Swap>)> {
         let swap_channel = MpscChannels::default();
@@ -138,6 +140,7 @@ where
             swap_sender: swap_channel.sender,
             min_buy,
             max_buy,
+            max_swap_timeout,
             external_redeem_address,
             recv_encrypted_signature: Default::default(),
             inflight_encrypted_signatures: Default::default(),
@@ -232,7 +235,7 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            let quote = match self.make_quote(self.min_buy, self.max_buy).await {
+                            let quote = match self.make_quote(self.min_buy, self.max_buy, self.max_swap_timeout).await {
                                 Ok(quote) => quote,
                                 Err(error) => {
                                     tracing::warn!(%peer, "Failed to make quote: {:#}", error);
@@ -466,6 +469,7 @@ where
         &mut self,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
+        max_swap_timeout: Duration,
     ) -> Result<BidQuote> {
         let ask_price = self
             .latest_rate
@@ -502,6 +506,7 @@ where
                 price: ask_price,
                 min_quantity: bitcoin::Amount::ZERO,
                 max_quantity: bitcoin::Amount::ZERO,
+                valid_duration: Some(max_swap_timeout),
             });
         }
 
@@ -514,6 +519,7 @@ where
                 price: ask_price,
                 min_quantity: min_buy,
                 max_quantity: max_bitcoin_for_monero,
+                valid_duration: Some(max_swap_timeout),
             });
         }
 
@@ -521,6 +527,7 @@ where
             price: ask_price,
             min_quantity: min_buy,
             max_quantity: max_buy,
+            valid_duration: Some(max_swap_timeout),
         })
     }
 

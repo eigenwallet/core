@@ -345,6 +345,7 @@ mod tests {
                     price: Default::default(),
                     min_quantity: Default::default(),
                     max_quantity: Default::default(),
+                    valid_duration: Some(Duration::from_secs(120)),
                 }),
             },
         ];
@@ -360,6 +361,7 @@ mod tests {
                         price: Default::default(),
                         min_quantity: Default::default(),
                         max_quantity: Default::default(),
+                        valid_duration: Some(Duration::from_secs(120)),
                     })
                 },
                 Seller {

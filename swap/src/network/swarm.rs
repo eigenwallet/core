@@ -18,6 +18,7 @@ pub fn asb<LR>(
     seed: &Seed,
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
+    max_swap_timeout: Duration,
     latest_rate: LR,
     resume_only: bool,
     env_config: env::Config,
@@ -46,6 +47,7 @@ where
     let behaviour = asb::Behaviour::new(
         min_buy,
         max_buy,
+        max_swap_timeout,
         latest_rate,
         resume_only,
         env_config,

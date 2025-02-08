@@ -116,6 +116,7 @@ pub struct Behaviour<LR> {
     events: VecDeque<OutEvent>,
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
+    max_swap_timeout: Duration,
     env_config: env::Config,
 
     latest_rate: LR,
@@ -126,6 +127,7 @@ impl<LR> Behaviour<LR> {
     pub fn new(
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
+        max_swap_timeout: Duration,
         env_config: env::Config,
         latest_rate: LR,
         resume_only: bool,
@@ -134,6 +136,7 @@ impl<LR> Behaviour<LR> {
             events: Default::default(),
             min_buy,
             max_buy,
+            max_swap_timeout,
             env_config,
             latest_rate,
             resume_only,
@@ -161,6 +164,7 @@ where
         let handler = Handler::new(
             self.min_buy,
             self.max_buy,
+            self.max_swap_timeout,
             self.env_config,
             self.latest_rate.clone(),
             self.resume_only,
@@ -181,6 +185,7 @@ where
         let handler = Handler::new(
             self.min_buy,
             self.max_buy,
+            self.max_swap_timeout,
             self.env_config,
             self.latest_rate.clone(),
             self.resume_only,
@@ -256,6 +261,7 @@ impl<LR> Handler<LR> {
     fn new(
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
+        negotiation_timeout: Duration,
         env_config: env::Config,
         latest_rate: LR,
         resume_only: bool,
@@ -268,7 +274,7 @@ impl<LR> Handler<LR> {
             env_config,
             latest_rate,
             resume_only,
-            negotiation_timeout: Duration::from_secs(120),
+            negotiation_timeout,
             keep_alive_until: Some(Instant::now() + Duration::from_secs(30)),
         }
     }

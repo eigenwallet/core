@@ -38,6 +38,8 @@ pub struct BidQuote {
     #[serde(with = "::bitcoin::util::amount::serde::as_sat")]
     #[typeshare(serialized_as = "number")]
     pub max_quantity: bitcoin::Amount,
+
+    pub valid_duration: Option<Duration>,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]

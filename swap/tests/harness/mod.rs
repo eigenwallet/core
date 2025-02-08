@@ -247,6 +247,7 @@ async fn start_alice(
         seed,
         min_buy,
         max_buy,
+        Duration::from_secs(120),
         latest_rate,
         resume_only,
         env_config,
@@ -268,6 +269,7 @@ async fn start_alice(
         FixedRate::default(),
         min_buy,
         max_buy,
+        Duration::from_secs(120),
         None,
     )
     .unwrap();

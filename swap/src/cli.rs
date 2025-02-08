@@ -82,6 +82,7 @@ mod tests {
             price: bitcoin::Amount::from_sat(1337),
             min_quantity: bitcoin::Amount::from_sat(42),
             max_quantity: bitcoin::Amount::from_sat(9001),
+            valid_duration: Some(Duration::from_secs(42)),
         };
 
         let mut asb = new_swarm(|identity| {
