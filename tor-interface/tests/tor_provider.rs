@@ -87,7 +87,7 @@ fn build_bundled_pt_legacy_tor_provider(name: &str) -> anyhow::Result<Option<Box
         PluggableTransportConfig::new(vec!["obfs4".to_string()], lyrebird_path)?;
 
     // obfs4 bridgeline
-    let bridge_line = BridgeLine::from_str("obfs4 207.172.185.193:22223 F34AC0CDBC06918E54292A474578C99834A58893 cert=MjqosoyVylLQuLo4LH+eQ5hS7Z44s2CaMfQbIjJtn4bGRnvLv8ldSvSED5JpvWSxm09XXg iat-mode=0")?;
+    let bridge_line = BridgeLine::from_str("obfs4 45.145.95.6:27015 C5B7CD6946FF10C5B3E89691A7D3F2C122D2117C cert=TD7PbUO0/0k6xYHMPW3vJxICfkMZNdkRrb63Zhl5j9dW3iRGiCx0A7mPhe5T2EDzQ35+Zw iat-mode=0")?;
 
     let tor_config = LegacyTorClientConfig::BundledTor {
         tor_bin_path: tor_path,
