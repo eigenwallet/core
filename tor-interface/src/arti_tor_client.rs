@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // extern
-use arti_rpc_client_core::{ObjectId, RpcConn, RpcConnBuilder};
+use arti_rpc_client_core::{RpcConn, RpcConnBuilder};
 
 // internal crates
 use crate::tor_crypto::*;
@@ -54,7 +54,7 @@ pub enum ArtiTorClientConfig {
 }
 
 pub struct ArtiTorClient {
-    daemon: Option<ArtiProcess>,
+    _daemon: Option<ArtiProcess>,
     rpc_conn: RpcConn,
     pending_log_lines: Arc<Mutex<Vec<String>>>,
     pending_events: Arc<Mutex<Vec<TorEvent>>>,
@@ -79,15 +79,17 @@ impl ArtiTorClient {
                     ArtiProcess::new(arti_bin_path.as_path(), data_directory.as_path(), Arc::downgrade(&pending_log_lines))
                         .map_err(Error::ArtiProcessCreationFailed)?;
 
-                let builder = RpcConnBuilder::from_connect_string(daemon.connect_string()).unwrap();
-
                 let rpc_conn = {
-                    // try to open an rpc conneciton for 5 seconds beore giving up
+                    // try to open an rpc connnection for 5 seconds beore giving up
                     let timeout = Duration::from_secs(5);
                     let mut rpc_conn: Option<RpcConn> = None;
 
                     let start = Instant::now();
                     while rpc_conn.is_none() && start.elapsed() < timeout {
+
+                        let mut builder = RpcConnBuilder::new();
+                        builder.prepend_literal_path(daemon.connect_string().into());
+
                         rpc_conn = builder.connect().map_or(None, |rpc_conn| Some(rpc_conn));
                     }
 
@@ -106,12 +108,12 @@ impl ArtiTorClient {
         };
 
         let pending_events = std::vec![TorEvent::LogReceived {
-            line: "Starting arti-client TorProvider".to_string()
+            line: "Starting arti TorProvider".to_string()
         }];
         let pending_events = Arc::new(Mutex::new(pending_events));
 
         Ok(Self {
-            daemon: Some(daemon),
+            _daemon: Some(daemon),
             rpc_conn,
             pending_log_lines,
             pending_events,
