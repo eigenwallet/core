@@ -5,15 +5,15 @@ authors = [ "CoBloX Team <team@coblox.tech>" ]
 edition = "2021"
 
 [dependencies]
-anyhow = "1"
-monero = "0.12"
-monero-rpc = { path = "../monero-rpc" }
+anyhow = { workspace = true }
+monero = { workspace = true }
+monero-rpc = { workspace = true }
 rand = "0.7"
 
 [dev-dependencies]
 curve25519-dalek = "3"
-monero-harness = { path = "../monero-harness" }
+monero-harness = { workspace = true }
 rand = "0.7"
-testcontainers = "0.15"
-tokio = { version = "1", features = [ "rt-multi-thread", "time", "macros", "sync", "process", "fs" ] }
-tracing-subscriber = { version = "0.3", default-features = false, features = [ "fmt", "ansi", "env-filter", "chrono", "tracing-log" ] }
+testcontainers = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log"] }

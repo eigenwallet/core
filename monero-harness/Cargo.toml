@@ -6,11 +6,11 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anyhow = "1"
-futures = "0.3"
-monero-rpc = { path = "../monero-rpc" }
+anyhow = { workspace = true }
+futures = { workspace = true }
+monero-rpc = { workspace = true }
 rand = "0.7"
-testcontainers = "0.15"
-tokio = { version = "1", default-features = false, features = [ "rt-multi-thread", "time", "macros" ] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = [ "fmt", "ansi", "env-filter", "tracing-log" ] }
+testcontainers = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "ansi", "env-filter", "tracing-log"] }
