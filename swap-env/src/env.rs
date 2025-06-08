@@ -1,6 +1,7 @@
 use crate::config::Config as AsbConfig;
 use serde::Serialize;
 use std::cmp::max;
+use std::fs;
 use std::time::Duration;
 use time::ext::NumericalStdDuration;
 
@@ -134,6 +135,14 @@ pub fn new(is_testnet: bool, asb_config: &AsbConfig) -> Config {
     } else {
         env_config
     }
+}
+
+pub fn may_init_tor() -> bool {
+    let is_whonix = fs::exists("/usr/share/whonix/marker").unwrap_or(false);
+    if is_whonix {
+        tracing::info!("On whonix, not starting Tor");
+    }
+    !is_whonix
 }
 
 #[cfg(test)]

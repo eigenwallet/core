@@ -13986,6 +13986,7 @@ dependencies = [
  "serde",
  "serde_json",
  "swap",
+ "swap-env",
  "tauri",
  "tauri-build",
  "tauri-plugin-cli",

@@ -17,7 +17,7 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
-use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
+use swap_env::env::{may_init_tor, Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
 use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
 use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
@@ -561,7 +561,10 @@ mod builder {
             let future_unbootstrapped_tor_client_rpc_pool = {
                 let tauri_handle = self.tauri_handle.clone();
                 async move {
-                    let unbootstrapped_tor_client = if self.tor {
+                    let unbootstrapped_tor_client = if !may_init_tor() {
+                        // Don't init a tor client unless we should use it.
+                        None
+                    } else if self.tor {
                         create_tor_client(&base_data_dir).await.inspect_err(|err| {
                             tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
                         }).ok()
