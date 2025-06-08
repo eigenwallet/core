@@ -39,7 +39,7 @@ use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap::{bitcoin, monero};
 use swap_env::config::{
-    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
+    may_init_tor, initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
 };
 use swap_feed;
 use tracing_subscriber::filter::LevelFilter;
@@ -218,9 +218,13 @@ pub async fn main() -> Result<()> {
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
-            let tor_client = create_tor_client(&config.data.dir).await?;
-            bootstrap_tor_client(tor_client.clone(), None).await?;
-            let tor_client = tor_client.into();
+            let tor_client = if may_init_tor() {
+                let tor_client = create_tor_client(&config.data.dir).await?;
+                bootstrap_tor_client(tor_client.clone(), None).await?;
+                Some(tor_client.into())
+            } else {
+                None
+            };
 
             let (mut swarm, onion_addresses) = swarm::asb(
                 &seed,

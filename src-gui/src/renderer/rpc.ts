@@ -280,6 +280,11 @@ export async function checkContextAvailability(): Promise<boolean> {
   return available;
 }
 
+export async function getTorForced(): Promise<boolean> {
+  const forced = await invokeNoArgs<boolean>("get_tor_forced");
+  return forced;
+}
+
 export async function getLogsOfSwap(
   swapId: string,
   redact: boolean,

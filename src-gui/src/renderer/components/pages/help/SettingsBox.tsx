@@ -62,6 +62,7 @@ import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import { isValidMultiAddressWithPeerId } from "utils/parseUtils";
 import { getNodeStatus } from "renderer/rpc";
 import { setStatus } from "store/features/nodesSlice";
+import { getTorForced } from "../../../rpc";
 
 const PLACEHOLDER_ELECTRUM_RPC_URL = "ssl://blockstream.info:700";
 const PLACEHOLDER_MONERO_NODE_URL = "http://xmr-node.cakewallet.com:18081";
@@ -694,24 +695,25 @@ function NodeTable({
   );
 }
 
+const torForced = await getTorForced();
 export function TorSettings() {
   const dispatch = useAppDispatch();
   const torEnabled = useSettings((settings) => settings.enableTor);
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
     dispatch(setTorEnabled(event.target.checked));
-  const status = (state: boolean) => (state === true ? "enabled" : "disabled");
 
   return (
     <TableRow>
       <TableCell>
         <SettingLabel
           label="Use Tor"
-          tooltip="Route network traffic through Tor to hide your IP address from the maker."
+          tooltip={"Route network traffic through Tor to hide your IP address from the maker." +
+            (torForced ? " Under whonix, the app always uses the global Tor connection." : "")}
         />
       </TableCell>
 
       <TableCell>
-        <Switch checked={torEnabled} onChange={handleChange} color="primary" />
+        <Switch disabled={torForced} checked={torEnabled || torForced} onChange={handleChange} color="primary" />
       </TableCell>
     </TableRow>
   );
