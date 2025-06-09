@@ -1,9 +1,9 @@
 // standard
 use std::default::Default;
-use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::option::Option;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::string::ToString;
 #[cfg(test)]
@@ -46,6 +46,9 @@ pub enum Error {
 
     #[error("failed to parse received tor version")]
     TorVersionParseFailed(#[source] crate::legacy_tor_version::Error),
+
+    #[error("unable to read cookie file: {1:?}")]
+    CookieReadingFailed(#[source] std::io::Error, PathBuf),
 }
 
 // Per-command data
@@ -78,6 +81,14 @@ pub(crate) enum AsyncEvent {
     },
 }
 
+#[derive(Default, Debug, PartialEq, Eq)]
+struct ProtocolInfo {
+    auth_cookie: bool,
+    auth_safecookie: bool,
+    auth_null: bool,
+    cookiefile: PathBuf,
+}
+
 pub(crate) struct LegacyTorController {
     // underlying control stream
     control_stream: LegacyControlStream,
@@ -87,6 +98,7 @@ pub(crate) struct LegacyTorController {
     status_event_pattern: Regex,
     status_event_argument_pattern: Regex,
     hs_desc_pattern: Regex,
+    protocolinfo_data: Option<ProtocolInfo>,
 }
 
 fn quoted_string(string: &str) -> String {
@@ -118,6 +130,113 @@ fn reply_ok(reply: Reply) -> Result<Reply, Error> {
     }
 }
 
+
+// https://raw.githubusercontent.com/torproject/torspec/refs/heads/main/control-spec.txt
+// 250-AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE="/home/nabijaczleweli/.tor/control_auth_cookie"
+// 250-AUTH METHODS=HASHEDPASSWORD
+// 250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/home/nabijaczleweli/.tor/coo kie \\\" \320\266 \n 2"
+// 250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/home/nabijaczleweli/.tor/C/\001\002\003\004\005\006\007\010\t\n\013\014\r\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037 !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\177\200\201\202\203\204\205\206\207\210\211\212\213\214\215\216\217\220\221\222\223\224\225\226\227\230\231\232\233\234\235\236\237\240\241\242\243\244\245\246\247\250\251\252\253\254\255\256\257\260\261\262\263\264\265\266\267\270\271\272\273\274\275\276\277\300\301\302\303\304\305\306\307\310\311\312\313\314\315\316\317\320\321\322\323\324\325\326\327\330\331\332\333\334\335\336\337\340\341\342\343\344\345\346\347\350\351\352\353\354\355\356\357\360\361\362\363\364\365\366\367\370\371\372\373\374\375\376\377"
+// 250-AUTH METHODS=NULL
+fn parse_auth_methods(auth: &str) -> ProtocolInfo {
+    let mut ret = ProtocolInfo::default();
+    let mut two = auth["AUTH METHODS=".len()..].splitn(2, ' ');
+    if let Some(methods) = two.next() {
+        for m in methods.split(',') {
+            match m {
+                "COOKIE" => ret.auth_cookie = true,
+                "SAFECOOKIE" => ret.auth_safecookie = true,
+                "NULL" => ret.auth_null = true,
+                _ => {}
+            }
+        }
+    }
+    let remainder = two.next();
+    if (ret.auth_cookie || ret.auth_safecookie) && remainder.map(|r| r.starts_with("COOKIEFILE=\"")).unwrap_or(false) {
+        let mut remainder = remainder.unwrap()["COOKIEFILE=\"".len()..].as_bytes();
+
+        let mut path = vec![];
+        // https://datatracker.ietf.org/doc/html/rfc2822 qcontent
+        while let Some(mut byte) = remainder.get(0).copied() {
+            if byte == b'"' {
+                break;
+            }
+            remainder = &remainder[1..];
+            if byte == b'\\' {
+                let mut consume = 1;
+                match (remainder.get(0), remainder.get(1), remainder.get(2)) {
+                    (Some(b't'), ..) => byte = b'\t',
+                    (Some(b'n'), ..) => byte = b'\n',
+                    (Some(b'r'), ..) => byte = b'\r',
+                    (Some(b'\"'), ..) => byte = b'\"',
+                    (Some(b'\''), ..) => byte = b'\'',
+                    (Some(b'\\'), ..) => byte = b'\\',
+                    (Some(h @ b'0'..=b'3'), Some(t @ b'0'..=b'7'), Some(u @ b'0'..=b'7')) => {
+                        byte = ((h - b'0') << 6) | ((t - b'0') << 3) | (u - b'0');
+                        consume = 3;
+                    }
+                    _ => {
+                        path.clear();
+                        break;
+                    }
+                }
+                remainder = &remainder[consume..];
+            }
+            path.push(byte);
+        }
+        // On UNIX, paths are sequences of non-0 bytes. We know this.
+        // On tor/Win32, paths are sequences of ASCII bytes(?): https://101010.pl/@nabijaczleweli/114655491521731646
+        #[cfg(unix)]
+        {
+            use std::ffi::OsString;
+            use std::os::unix::ffi::OsStringExt;
+            ret.cookiefile = OsString::from_vec(path.into()).into();
+        }
+        #[cfg(not(unix))]
+        {
+            // TODO: string_from_utf8_lossy_owned
+            ret.cookiefile = String::from_utf8_lossy(&path).into();
+        }
+    }
+    ret
+}
+
+#[cfg(test)]
+#[test]
+fn parse_auth_methods_test() {
+    assert_eq!(parse_auth_methods(r####"AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE="/home/nabijaczleweli/.tor/control_auth_cookie""####), ProtocolInfo {
+        auth_cookie: true,
+        auth_safecookie: true,
+        auth_null: false,
+        cookiefile: Path::new("/home/nabijaczleweli/.tor/control_auth_cookie").to_owned(),
+    });
+    assert_eq!(parse_auth_methods(r####"AUTH METHODS=HASHEDPASSWORD"####), ProtocolInfo::default());
+    assert_eq!(parse_auth_methods(r####"AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/home/nabijaczleweli/.tor/coo kie \\\" \320\266 \n 2""####), ProtocolInfo {
+        auth_cookie: true,
+        auth_safecookie: true,
+        auth_null: false,
+        cookiefile: Path::new("/home/nabijaczleweli/.tor/coo kie \\\" ж \n 2").to_owned(),
+    });
+    #[cfg(unix)]
+    {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let mut buf = b"/home/nabijaczleweli/.tor/C/"[..].to_owned();
+        for b in 1..=0xFF {
+            buf.push(b);
+        }
+        assert_eq!(parse_auth_methods(r####"AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/home/nabijaczleweli/.tor/C/\001\002\003\004\005\006\007\010\t\n\013\014\r\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037 !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\177\200\201\202\203\204\205\206\207\210\211\212\213\214\215\216\217\220\221\222\223\224\225\226\227\230\231\232\233\234\235\236\237\240\241\242\243\244\245\246\247\250\251\252\253\254\255\256\257\260\261\262\263\264\265\266\267\270\271\272\273\274\275\276\277\300\301\302\303\304\305\306\307\310\311\312\313\314\315\316\317\320\321\322\323\324\325\326\327\330\331\332\333\334\335\336\337\340\341\342\343\344\345\346\347\350\351\352\353\354\355\356\357\360\361\362\363\364\365\366\367\370\371\372\373\374\375\376\377""####), ProtocolInfo {
+            auth_cookie: true,
+            auth_safecookie: true,
+            auth_null: false,
+            cookiefile: OsString::from_vec(buf).into(),
+        });
+    }
+    assert_eq!(parse_auth_methods(r####"AUTH METHODS=NULL"####), ProtocolInfo {
+        auth_null: true,
+        ..ProtocolInfo::default()
+    });
+}
+
 impl LegacyTorController {
     pub fn new(control_stream: LegacyControlStream) -> Result<LegacyTorController, Error> {
         let status_event_pattern =
@@ -137,6 +256,7 @@ impl LegacyTorController {
             status_event_pattern,
             status_event_argument_pattern,
             hs_desc_pattern,
+            protocolinfo_data: None,
         })
     }
 
@@ -336,6 +456,11 @@ impl LegacyTorController {
         self.write_command(unsafe { str::from_utf8_unchecked(&command) })
     }
 
+    // PROTOCOLINFO (3.21)
+    fn protocolinfo_cmd(&mut self) -> Result<Reply, Error> {
+        self.write_command("PROTOCOLINFO 1")
+    }
+
     // GETINFO (3.9)
     fn getinfo_cmd(&mut self, keywords: &[&str]) -> Result<Reply, Error> {
         if keywords.is_empty() {
@@ -491,8 +616,40 @@ impl LegacyTorController {
         self.authenticate_cmd(password).and_then(reply_ok).map(|_| ())
     }
 
+    fn ensure_protocolinfo(&mut self) {
+        if self.protocolinfo_data.is_some() {
+            return;
+        }
+
+        // https://raw.githubusercontent.com/torproject/torspec/refs/heads/main/control-spec.txt
+        // 250-VERSION Tor=\"0.4.7.16\"
+        match self.protocolinfo_cmd() {
+            Ok(reply) if reply.status_code == 250 => {
+                self.protocolinfo_data = Some(reply.reply_lines.iter()
+                    .find(|l| l.starts_with("AUTH METHODS="))
+                    .map(|auth| parse_auth_methods(auth))
+                    .unwrap_or_default());
+            }
+            _ => self.protocolinfo_data = Some(Default::default()),
+        }
+    }
+
     pub fn authenticate_cookie(&mut self, data: [u8; 32]) -> Result<(), Error> {
         self.authenticate_cmd_cookie(data).and_then(reply_ok).map(|_| ())
+    }
+
+    pub fn authenticate_auto(&mut self) -> Result<(), Error> {
+        self.ensure_protocolinfo();
+        let Some(pi) = self.protocolinfo_data.as_ref()
+            else { unreachable!() };
+
+        if pi.auth_null {
+            self.authenticate("")
+        } else if pi.auth_cookie && pi.cookiefile != Path::new("") {
+            self.authenticate_cookie(read_cookie(&pi.cookiefile).map_err(|e| Error::CookieReadingFailed(e, pi.cookiefile.clone()))?)
+        } else {
+            self.authenticate("") // fallback
+        }
     }
 
     pub fn getinfo(&mut self, keywords: &[&str]) -> Result<Vec<(String, String)>, Error> {

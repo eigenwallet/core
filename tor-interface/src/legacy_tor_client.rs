@@ -251,7 +251,7 @@ impl LegacyTorClient {
 
         // authenticate
         match auth {
-            None => controller.authenticate(""),
+            None => controller.authenticate_auto(),
             Some(TorAuth::Password(pass)) => controller.authenticate(&pass),
             Some(TorAuth::Cookie(file)) => controller.authenticate_cookie(crate::legacy_tor_controller::read_cookie(&file).map_err(|e| Error::CookieReadingFailed(e, file))?),
             Some(TorAuth::CookieData(cookie)) => controller.authenticate_cookie(cookie),

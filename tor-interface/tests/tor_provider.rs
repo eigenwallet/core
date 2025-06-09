@@ -109,14 +109,13 @@ impl Drop for TorProcess {
         let _ = self.child.kill();
     }
 }
-
-#[cfg(test)]
 #[cfg(feature = "legacy-tor-provider")]
-fn build_system_legacy_tor_provider(
+fn build_system_legacy_tor<A: FnOnce(std::path::PathBuf, &mut Command) -> &mut Command>(
     name: &str,
     control_port: u16,
     socks_port: u16,
-) -> anyhow::Result<(Box<dyn TorProvider>, TorProcess)> {
+    auth: A
+) -> anyhow::Result<TorProcess> {
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
 
     let mut data_path = std::env::temp_dir();
@@ -131,7 +130,7 @@ fn build_system_legacy_tor_provider(
         let _ = File::create(&torrc)?;
     }
 
-    let tor_daemon = TorProcess { child: Command::new(tor_path)
+    let tor_daemon = TorProcess { child: auth(data_path.clone(), Command::new(tor_path)
         .stdout(Stdio::null())
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -150,25 +149,63 @@ fn build_system_legacy_tor_provider(
         // control port
         .arg("ControlPort")
         .arg(control_port.to_string())
-        // password: foobar1
-        .arg("HashedControlPassword")
-        .arg("16:E807DCE69AFE9979600760C9758B95ADB2F95E8740478AEA5356C95358")
         // socks port
         .arg("SocksPort")
         .arg(socks_port.to_string())
         // tor process will shut down after this process shuts down
         // to avoid orphaned tor daemon
         .arg("__OwningControllerProcess")
-        .arg(process::id().to_string())
+        .arg(process::id().to_string()))
         .spawn()?
     };
     // give daemons time to start
     std::thread::sleep(std::time::Duration::from_secs(5));
+    Ok(tor_daemon)
+}
+
+#[cfg(test)]
+#[cfg(feature = "legacy-tor-provider")]
+fn build_system_legacy_tor_provider_password(
+    name: &str,
+    control_port: u16,
+    socks_port: u16,
+) -> anyhow::Result<(Box<dyn TorProvider>, TorProcess)> {
+    let tor_daemon = build_system_legacy_tor(name, control_port, socks_port, |_, cmd|
+        // password: foobar1
+        cmd.arg("HashedControlPassword")
+           .arg("16:E807DCE69AFE9979600760C9758B95ADB2F95E8740478AEA5356C95358")
+    )?;
 
     let tor_config = LegacyTorClientConfig::SystemTor {
         tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?,
         tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?,
         tor_control_auth: Some(TorAuth::Password("password".to_string())),
+    };
+    let tor_provider = Box::new(LegacyTorClient::new(tor_config)?);
+
+    Ok((tor_provider, tor_daemon))
+}
+
+#[cfg(test)]
+#[cfg(feature = "legacy-tor-provider")]
+fn build_system_legacy_tor_provider_cookie(
+    name: &str,
+    control_port: u16,
+    socks_port: u16,
+) -> anyhow::Result<(Box<dyn TorProvider>, TorProcess)> {
+    let mut cookiefile = std::path::PathBuf::new();
+    let tor_daemon = build_system_legacy_tor(name, control_port, socks_port, |data_dir, cmd| {
+        cookiefile = data_dir.join("cookie");
+        cmd.arg("CookieAuthentication")
+           .arg("1")
+           .arg("CookieAuthFile")
+           .arg(&cookiefile)
+    })?;
+
+    let tor_config = LegacyTorClientConfig::SystemTor {
+        tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?,
+        tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?,
+        tor_control_auth: Some(TorAuth::Cookie(cookiefile)),
     };
     let tor_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
@@ -615,17 +652,19 @@ fn test_legacy_authenticated_onion_service() -> anyhow::Result<()> {
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_system_legacy_onion_service() -> anyhow::Result<()> {
-    let server_provider = build_system_legacy_tor_provider(
-        "test_system_legacy_onion_service_server",
-        9251u16,
-        9250u16)?;
+    for (backend, name) in [build_system_legacy_tor_provider_password, build_system_legacy_tor_provider_cookie].into_iter().zip(["password", "cookie"]) {
+        let server_provider = backend(
+            &format!("test_system_legacy_onion_service_server_{}", name),
+            9251u16,
+            9250u16)?;
 
-    let client_provider = build_system_legacy_tor_provider(
-        "test_system_legacy_onion_service_client",
-        9351u16,
-        9350u16)?;
+        let client_provider = backend(
+            &format!("test_system_legacy_onion_service_client_{}", name),
+            9351u16,
+            9350u16)?;
 
-    basic_onion_service_test(server_provider.0, client_provider.0)?;
+        basic_onion_service_test(server_provider.0, client_provider.0)?;
+    }
 
     Ok(())
 }
@@ -634,17 +673,19 @@ fn test_system_legacy_onion_service() -> anyhow::Result<()> {
 #[serial]
 #[cfg(feature = "legacy-tor-provider")]
 fn test_system_legacy_authenticated_onion_service() -> anyhow::Result<()> {
-    let server_provider = build_system_legacy_tor_provider(
-        "test_system_legacy_authenticated_onion_service_server",
-        9251u16,
-        9250u16)?;
+    for (backend, name) in [build_system_legacy_tor_provider_password, build_system_legacy_tor_provider_cookie].into_iter().zip(["password", "cookie"]) {
+        let server_provider = backend(
+            &format!("test_system_legacy_authenticated_onion_service_server_{}", name),
+            9251u16,
+            9250u16)?;
 
-    let client_provider = build_system_legacy_tor_provider(
-        "test_system_legacy_authenticated_onion_service_client",
-        9351u16,
-        9350u16)?;
+        let client_provider = backend(
+            &format!("test_system_legacy_authenticated_onion_service_client_{}", name),
+            9351u16,
+            9350u16)?;
 
-    authenticated_onion_service_test(server_provider.0, client_provider.0)?;
+        authenticated_onion_service_test(server_provider.0, client_provider.0)?;
+    }
 
     Ok(())
 }
