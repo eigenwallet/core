@@ -10,6 +10,9 @@ use std::string::ToString;
 use std::time::{Duration, Instant};
 
 // extern crates
+use hmac::Mac;
+use rand::rngs::OsRng;
+use rand::TryRngCore;
 use regex::Regex;
 #[cfg(test)]
 use serial_test::serial;
@@ -49,6 +52,15 @@ pub enum Error {
 
     #[error("unable to read cookie file: {1:?}")]
     CookieReadingFailed(#[source] std::io::Error, PathBuf),
+
+    #[error("[SAFE]COOKIE authentication not supported")]
+    CookiesNotSupported(),
+
+    #[error("impostor sent invalid SAFECOOKIE HMAC")]
+    BadCookieHash(),
+
+    #[error("failed to generate random data")]
+    RngError(#[source] <OsRng as TryRngCore>::Error),
 }
 
 // Per-command data
@@ -121,6 +133,23 @@ pub(crate) fn read_cookie(from: &Path) -> std::io::Result<[u8; 32]> {
     } else {
         Ok(ret)
     }
+}
+
+fn tonibble(c: u8) -> u8 {
+    match c {
+        b'0'..=b'9' => c - b'0',
+        b'a'..=b'f' => 0xA + (c - b'a'),
+        b'A'..=b'F' => 0xA + (c - b'A'),
+        _ => unreachable!(),
+    }
+}
+
+fn hmac_sha256(key: &str, blob1: &[u8], blob2: &[u8], blob3: &[u8]) -> hmac::Hmac<sha2::Sha256> {
+    let mut hmac = hmac::Hmac::new_from_slice(key.as_bytes()).unwrap();
+    hmac.update(blob1);
+    hmac.update(blob2);
+    hmac.update(blob3);
+    hmac
 }
 
 fn reply_ok(reply: Reply) -> Result<Reply, Error> {
@@ -447,9 +476,19 @@ impl LegacyTorController {
     }
 
     // AUTHENTICATE (3.5)
-    fn authenticate_cmd_cookie(&mut self, cookie: [u8; 32]) -> Result<Reply, Error> {
+    fn authenticate_cmd_cookie(&mut self, cookie: &[u8]) -> Result<Reply, Error> {
         let mut command = b"AUTHENTICATE "[..].to_owned();
         for b in cookie {
+            write!(&mut command, "{:02x}", b).map_err(|e| Error::InvalidCommandArguments(e.to_string()))?;
+        }
+
+        self.write_command(unsafe { str::from_utf8_unchecked(&command) })
+    }
+
+    // AUTHCHALLENGE (3.24)
+    fn authchallenge_cmd(&mut self, client_nonce: &[u8]) -> Result<Reply, Error> {
+        let mut command = b"AUTHCHALLENGE SAFECOOKIE "[..].to_owned();
+        for b in client_nonce {
             write!(&mut command, "{:02x}", b).map_err(|e| Error::InvalidCommandArguments(e.to_string()))?;
         }
 
@@ -634,8 +673,63 @@ impl LegacyTorController {
         }
     }
 
+    fn authenticate_safecookie(&mut self, data: [u8; 32]) -> Result<Reply, Error> {
+        let mut client_nonce = [0u8; 32];
+        OsRng.try_fill_bytes(&mut client_nonce).map_err(Error::RngError)?;
+        let reply = self.authchallenge_cmd(&client_nonce).and_then(reply_ok)?;
+
+        if reply.reply_lines.len() != 1 || !reply.reply_lines[0].starts_with("AUTHCHALLENGE SERVERHASH=") {
+            return Err(Error::CommandReplyParseFailed(reply.reply_lines.get(0).cloned().unwrap_or_else(|| "[no response]".to_string())));
+        }
+        let mut chunks = reply.reply_lines[0]["AUTHCHALLENGE SERVERHASH=".len()..].splitn(2, ' ');
+
+        let sh = chunks.next().map(|sh| sh.as_bytes())
+            .filter(|sh| sh.len() % 64 == 0)
+            .filter(|sh| sh.iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F')))
+            .ok_or_else(|| Error::CommandReplyParseFailed(reply.reply_lines[0].clone()))?;
+        let mut server_hash = Vec::new();
+        server_hash.resize(sh.len() / 2, 0);
+        for (hilo, dest) in sh.chunks_exact(2).zip(server_hash.iter_mut()) {
+            *dest = tonibble(hilo[0]) << 4 | tonibble(hilo[1]);
+        }
+
+        let sn = chunks.next().map(|sh| sh.as_bytes())
+            .filter(|sn| sn.starts_with(b"SERVERNONCE="))
+            .map(|sn| &sn[b"SERVERNONCE=".len()..])
+            .filter(|sh| sh.len() == 64)
+            .filter(|sh| sh.iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F')))
+            .ok_or_else(|| Error::CommandReplyParseFailed(reply.reply_lines[0].clone()))?;
+        let mut server_nonce = [0u8; 32];
+        for (hilo, dest) in sn.chunks_exact(2).zip(server_nonce.iter_mut()) {
+            *dest = tonibble(hilo[0]) << 4 | tonibble(hilo[1]);
+        }
+
+        hmac_sha256("Tor safe cookie authentication server-to-controller hash", &data, &client_nonce, &server_nonce)
+            .verify_slice(&server_hash).map_err(|_| Error::BadCookieHash())?;
+
+        self.authenticate_cmd_cookie(
+            hmac_sha256("Tor safe cookie authentication controller-to-server hash", &data, &client_nonce, &server_nonce).finalize().into_bytes().as_slice())
+    }
+
     pub fn authenticate_cookie(&mut self, data: [u8; 32]) -> Result<(), Error> {
-        self.authenticate_cmd_cookie(data).and_then(reply_ok).map(|_| ())
+        self.ensure_protocolinfo();
+        let Some(pi) = self.protocolinfo_data.as_ref()
+            else { unreachable!() };
+
+        let reply = if pi.auth_safecookie && pi.auth_cookie {
+            match self.authenticate_safecookie(data) {
+                r @ Ok(_) | r @ Err(Error::BadCookieHash()) => r?,
+                _ => self.authenticate_cmd_cookie(&data)?,
+            }
+        } else if pi.auth_safecookie {
+            self.authenticate_safecookie(data)?
+        } else if pi.auth_cookie {
+            self.authenticate_cmd_cookie(&data)?
+        } else {
+            return Err(Error::CookiesNotSupported());
+        };
+
+        reply_ok(reply).map(|_| ())
     }
 
     pub fn authenticate_auto(&mut self) -> Result<(), Error> {
@@ -645,7 +739,7 @@ impl LegacyTorController {
 
         if pi.auth_null {
             self.authenticate("")
-        } else if pi.auth_cookie && pi.cookiefile != Path::new("") {
+        } else if (pi.auth_cookie || pi.auth_safecookie) && pi.cookiefile != Path::new("") {
             self.authenticate_cookie(read_cookie(&pi.cookiefile).map_err(|e| Error::CookieReadingFailed(e, pi.cookiefile.clone()))?)
         } else {
             self.authenticate("") // fallback
