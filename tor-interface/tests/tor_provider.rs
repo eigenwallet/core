@@ -168,7 +168,7 @@ fn build_system_legacy_tor_provider(
     let tor_config = LegacyTorClientConfig::SystemTor {
         tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?,
         tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?,
-        tor_control_passwd: "password".to_string(),
+        tor_control_auth: Some(TorAuth::Password("password".to_string())),
     };
     let tor_provider = Box::new(LegacyTorClient::new(tor_config)?);
 
