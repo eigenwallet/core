@@ -2,12 +2,15 @@
 use std::collections::BTreeMap;
 use std::convert::From;
 use std::default::Default;
-use std::net::{SocketAddr, TcpListener};
+use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::option::Option;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::string::ToString;
 use std::sync::{atomic, Arc};
 use std::time::Duration;
+#[cfg(unix)]
+use std::os::unix::net::SocketAddr as UnixSocketAddr;
 
 // extern crates
 use socks::{SocketAddrOrUnixSocketAddr, Socks5Stream};
@@ -179,6 +182,95 @@ pub enum TorAuth {
     CookieData([u8; 32]),
 }
 
+impl LegacyTorClientConfig {
+    fn one(ipc: &str, host: &str, port: &str) -> Option<SocketAddrOrUnixSocketAddr> {
+        #[cfg(unix)]
+        if let Some(p) = std::env::var_os(ipc) {
+            return Some(UnixSocketAddr::from_pathname(p).ok()?.into());
+        }
+        match (std::env::var(host), std::env::var(port)) {
+            (Ok(h), Ok(p)) => Some(SocketAddr::new(IpAddr::from_str(&h).ok()?, u16::from_str(&p).ok()?).into()),
+            _ => None,
+        }
+    }
+
+    /// Consult `$TOR_SOCKS_{IPC_PATH,HOST+PORT}`, `$TOR_CONTROL_{IPC_PATH,HOST+PORT}` and `$TOR_CONTROL_{PASSWD,COOKIE_AUTH_FILE}`
+    ///
+    /// `$TOR_SOCKS_IPC_PATH` and `$TOR_CONTROL_IPC_PATH` are ignored if `cfg(not(unix))`,
+    /// and take precedence if `cfg(unix)`.
+    ///
+    /// `$TOR_CONTROL_PASSWD` takes precedence over `$TOR_CONTROL_COOKIE_AUTH_FILE`
+    pub fn system_from_environment() -> Option<Self> {
+        Some(LegacyTorClientConfig::SystemTor {
+            tor_socks_addr: Self::one("TOR_SOCKS_IPC_PATH", "TOR_SOCKS_HOST", "TOR_SOCKS_PORT")?,
+            tor_control_addr: Self::one("TOR_CONTROL_IPC_PATH", "TOR_CONTROL_HOST", "TOR_CONTROL_PORT")?,
+            tor_control_auth: match (std::env::var("TOR_CONTROL_PASSWD"), std::env::var_os("TOR_CONTROL_COOKIE_AUTH_FILE")) {
+                (Ok(pass), _) => Some(TorAuth::Password(pass)),
+                (Err(std::env::VarError::NotUnicode(_)), _) => return None,
+                (_, Some(cookie)) => Some(TorAuth::Cookie(cookie.into())),
+                _ => None,
+            }
+        })
+    }
+}
+
+#[test]
+fn system_from_environment() {
+    fn flatten(conf: Option<LegacyTorClientConfig>) -> Option<(SocketAddrOrUnixSocketAddr, SocketAddrOrUnixSocketAddr, Option<TorAuth>)> {
+        conf.and_then(|c| match c {
+            LegacyTorClientConfig::BundledTor { .. } => None,
+            LegacyTorClientConfig::SystemTor { tor_socks_addr, tor_control_addr, tor_control_auth } => Some((tor_socks_addr, tor_control_addr, tor_control_auth))
+        })
+    }
+
+    for var in ["TOR_SOCKS_IPC_PATH", "TOR_SOCKS_HOST", "TOR_SOCKS_PORT", "TOR_CONTROL_IPC_PATH", "TOR_CONTROL_HOST", "TOR_CONTROL_PORT", "TOR_CONTROL_PASSWD", "TOR_CONTROL_COOKIE_AUTH_FILE"] {
+        unsafe { std::env::remove_var(var) };
+    }
+    assert_eq!(flatten(LegacyTorClientConfig::system_from_environment()), None);
+
+    std::env::set_var("TOR_SOCKS_HOST", "1.1.1.1");
+    std::env::set_var("TOR_SOCKS_PORT", "9050");
+    std::env::set_var("TOR_CONTROL_HOST", "2.2.2.2");
+    std::env::set_var("TOR_CONTROL_PORT", "9051");
+    assert_eq!(flatten(LegacyTorClientConfig::system_from_environment()), Some((
+        SocketAddr::from(([1, 1, 1, 1], 9050)).into(),
+        SocketAddr::from(([2, 2, 2, 2], 9051)).into(),
+        None,
+    )));
+
+    unsafe { std::env::set_var("TOR_CONTROL_PASSWD", std::ffi::OsStr::from_encoded_bytes_unchecked(b"\xFF")) };
+    std::env::set_var("TOR_CONTROL_COOKIE_AUTH_FILE", "/cookie");
+    assert_eq!(flatten(LegacyTorClientConfig::system_from_environment()), None);
+
+    std::env::set_var("TOR_CONTROL_PASSWD", "pass");
+    assert_eq!(flatten(LegacyTorClientConfig::system_from_environment()), Some((
+        SocketAddr::from(([1, 1, 1, 1], 9050)).into(),
+        SocketAddr::from(([2, 2, 2, 2], 9051)).into(),
+        Some(TorAuth::Password("pass".to_string())),
+    )));
+
+    unsafe { std::env::remove_var("TOR_CONTROL_PASSWD") };
+    assert_eq!(flatten(LegacyTorClientConfig::system_from_environment()), Some((
+        SocketAddr::from(([1, 1, 1, 1], 9050)).into(),
+        SocketAddr::from(([2, 2, 2, 2], 9051)).into(),
+        Some(TorAuth::Cookie("/cookie".into())),
+    )));
+
+    std::env::set_var("TOR_SOCKS_IPC_PATH", "/sock");
+    #[cfg(not(unix))]
+    assert_eq!(flatten(LegacyTorClientConfig::system_from_environment()), Some((
+        SocketAddr::from(([1, 1, 1, 1], 9050)).into(),
+        SocketAddr::from(([2, 2, 2, 2], 9051)).into(),
+        Some(TorAuth::Cookie("/cookie".into())),
+    )));
+    #[cfg(unix)]
+    assert_eq!(flatten(LegacyTorClientConfig::system_from_environment()), Some((
+        UnixSocketAddr::from_pathname("/sock").unwrap().into(),
+        SocketAddr::from(([2, 2, 2, 2], 9051)).into(),
+        Some(TorAuth::Cookie("/cookie".into())),
+    )));
+}
+
 //
 // LegacyTorClient
 //
@@ -204,7 +296,7 @@ pub struct LegacyTorClient {
 impl LegacyTorClient {
     /// Construct a new `LegacyTorClient` from a [`LegacyTorClientConfig`].
     pub fn new(mut config: LegacyTorClientConfig) -> Result<LegacyTorClient, Error> {
-        let (daemon, mut controller, auth, socks_listener) = match &mut config {
+        let (daemon, mut controller, mut auth, socks_listener) = match &mut config {
             LegacyTorClientConfig::BundledTor {
                 tor_bin_path,
                 data_directory,
@@ -249,11 +341,11 @@ impl LegacyTorClient {
         };
 
         // authenticate
-        match auth {
+        match auth.as_mut() {
             None => controller.authenticate_auto(),
             Some(TorAuth::Password(pass)) => controller.authenticate(&pass),
-            Some(TorAuth::Cookie(file)) => controller.authenticate_cookie(crate::legacy_tor_controller::read_cookie(&file).map_err(|e| Error::CookieReadingFailed(e, file))?),
-            Some(TorAuth::CookieData(cookie)) => controller.authenticate_cookie(cookie),
+            Some(TorAuth::Cookie(file)) => controller.authenticate_cookie(crate::legacy_tor_controller::read_cookie(&file).map_err(|e| Error::CookieReadingFailed(e, std::mem::take(file)))?),
+            Some(TorAuth::CookieData(cookie)) => controller.authenticate_cookie(*cookie),
         }.map_err(Error::LegacyTorProcessAuthenticationFailed)?;
 
         // min required version for v3 client auth (see control-spec.txt)
