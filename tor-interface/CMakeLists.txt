@@ -101,6 +101,27 @@ if (ENABLE_TESTS)
             )
             set_tests_properties(tor_interface_legacy_pluggable_transport_bootstrap_cargo_test PROPERTIES FIXTURES_REQUIRED tor_expert_bundle_target_fixture)
         endif()
+        if (BUILD_EXAMPLES)
+            set(tor_interface_legacy_tor_provider_listener_example_outputs
+                ${CMAKE_CURRENT_BINARY_DIR}/${CARGO_PROFILE}/examples/legacy-tor-provider-listener${CMAKE_EXECUTABLE_SUFFIX})
+            add_custom_command(
+                DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/examples/legacy-tor-provider-listener.rs ${tor_interface_sources}
+                OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CARGO_PROFILE}/examples/legacy-tor-provider-listener${CMAKE_EXECUTABLE_SUFFIX}
+                COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} RUSTFLAGS=${RUSTFLAGS} cargo build --example legacy-tor-provider-listener ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+            add_custom_target(tor_interface_legacy_tor_provider_listener_example ALL
+                DEPENDS ${tor_interface_legacy_tor_provider_listener_example_outputs})
+
+            set(tor_interface_legacy_tor_provider_provider_example_outputs
+                ${CMAKE_CURRENT_BINARY_DIR}/${CARGO_PROFILE}/examples/legacy-tor-provider-provider${CMAKE_EXECUTABLE_SUFFIX})
+            add_custom_command(
+                DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/examples/legacy-tor-provider-provider.rs ${tor_interface_sources}
+                OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CARGO_PROFILE}/examples/legacy-tor-provider-provider${CMAKE_EXECUTABLE_SUFFIX}
+                COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} RUSTFLAGS=${RUSTFLAGS} cargo build --example legacy-tor-provider-provider ${CARGO_FLAGS} ${TOR_INTERFACE_FEATURES}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+            add_custom_target(tor_interface_legacy_tor_provider_provider_example ALL
+                DEPENDS ${tor_interface_legacy_tor_provider_provider_example_outputs})
+        endif()
     endif()
 
     if (ENABLE_ARTI_CLIENT_TOR_PROVIDER)
