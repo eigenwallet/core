@@ -1,7 +1,7 @@
 // standard
 use std::collections::VecDeque;
 use std::default::Default;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{ErrorKind, IoSlice, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::option::Option;
 use std::string::ToString;
@@ -254,10 +254,24 @@ impl LegacyControlStream {
     }
 
     pub fn write(&mut self, cmd: &str) -> Result<(), Error> {
-        if let Err(err) = write!(self.stream, "{}\r\n", cmd) {
+        if let Err(err) = write_all_vectored(&mut self.stream, &mut [IoSlice::new(cmd.as_bytes()), IoSlice::new(b"\r\n")]) {
             self.closed_by_remote = true;
             return Err(Error::WriteFailed(err));
         }
         Ok(())
     }
+}
+
+// Implementation taken from std::io::Read::write_all_vectored()
+// TODO: remove once stabilised
+fn write_all_vectored<W: Write>(write: &mut W, mut bufs: &mut [IoSlice<'_>]) -> std::io::Result<()> {
+    while !bufs.is_empty() {
+        match write.write_vectored(bufs) {
+            Ok(0) => return Err(std::io::Error::new(std::io::ErrorKind::WriteZero, "failed to write whole buffer")),
+            Ok(n) => IoSlice::advance_slices(&mut bufs, n),
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
