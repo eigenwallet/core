@@ -633,7 +633,7 @@ impl TorProvider for LegacyTorClient {
         })
     }
 
-    // stand up an onion service and return an LegacyOnionListener
+    // stand up an onion service and return an OnionListener
     fn listener(
         &mut self,
         private_key: &Ed25519PrivateKey,

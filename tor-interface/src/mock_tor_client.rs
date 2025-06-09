@@ -142,7 +142,7 @@ pub struct MockTorClient {
 }
 
 impl MockTorClient {
-    /// Construt a new `MockTorClient`.
+    /// Construct a new `MockTorClient`.
     pub fn new() -> MockTorClient {
         let mut events: Vec<TorEvent> = Default::default();
         let line = "[notice] MockTorClient running".to_string();
