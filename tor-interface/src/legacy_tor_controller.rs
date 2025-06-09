@@ -943,10 +943,22 @@ impl LegacyTorController {
 #[test]
 #[serial]
 fn test_tor_controller() -> anyhow::Result<()> {
+    test_tor_controller_impl(false)
+}
+#[test]
+#[serial]
+#[cfg(unix)]
+fn test_tor_controller_unix() -> anyhow::Result<()> {
+    test_tor_controller_impl(true)
+}
+#[cfg(test)]
+fn test_tor_controller_impl(unix: bool) -> anyhow::Result<()> {
+    use std::borrow::Cow;
+
     let tor_path = which::which(format!("tor{}", std::env::consts::EXE_SUFFIX))?;
     let mut data_path = std::env::temp_dir();
     data_path.push("test_tor_controller");
-    let tor_process = LegacyTorProcess::new(&tor_path, &data_path)?;
+    let tor_process = LegacyTorProcess::new_unix(&tor_path, &data_path, unix)?;
 
     // create a scope to ensure tor_controller is dropped
     {
@@ -956,11 +968,11 @@ fn test_tor_controller() -> anyhow::Result<()> {
         // create a tor controller and send authentication command
         let mut tor_controller = LegacyTorController::new(control_stream)?;
         tor_controller.authenticate_cmd(tor_process.get_password())?;
-        assert!(
+        assert_eq!(
             tor_controller
                 .authenticate_cmd("invalid password")?
-                .status_code
-                == 515u32
+                .status_code,
+            515u32
         );
 
         // tor controller should have shutdown the connection after failed authentication
@@ -991,7 +1003,7 @@ fn test_tor_controller() -> anyhow::Result<()> {
                 "DisableNetwork" => "1",
                 _ => panic!("unexpected returned key: {}", key),
             };
-            assert!(value == expected);
+            assert_eq!(value, expected);
         }
 
         let vals = tor_controller.getinfo(&["version", "config-file", "config-text"])?;
@@ -1002,14 +1014,15 @@ fn test_tor_controller() -> anyhow::Result<()> {
         for (key, value) in vals.iter() {
             match key.as_str() {
                 "version" => assert!(Regex::new(r"\d+\.\d+\.\d+\.\d+")?.is_match(&value)),
-                "config-file" => assert!(Path::new(&value) == expected_torrc_path),
-                "config-text" => assert!(
-                    value.to_string()
-                        == format!(
-                            "\nControlPort auto\nControlPortWriteToFile {}\nDataDirectory {}",
-                            expected_control_port_path.display(),
-                            data_path.display()
-                        )
+                "config-file" => assert_eq!(Path::new(&value), expected_torrc_path),
+                "config-text" => assert_eq!(
+                    value.to_string(),
+                    format!(
+                        "\nControlPort {}\nControlPortWriteToFile {}\nDataDirectory {}",
+                        if unix { Cow::Owned(format!("unix:{}", expected_control_port_path.with_file_name("control.sock").display())) } else { Cow::Borrowed("auto") },
+                        expected_control_port_path.display(),
+                        data_path.display()
+                    )
                 ),
                 _ => panic!("unexpected returned key: {}", key),
             }

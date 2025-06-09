@@ -1,14 +1,14 @@
 // standard
 use std::collections::VecDeque;
 use std::default::Default;
-use std::io::{ErrorKind, IoSlice, Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::io::{ErrorKind, Read, Write, IoSlice};
 use std::option::Option;
 use std::string::ToString;
 use std::time::Duration;
 
 // extern crates
 use regex::Regex;
+use socks::{SocketAddrOrUnixSocketAddr, TcpOrUnixStream};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -41,7 +41,7 @@ pub enum Error {
 }
 
 pub(crate) struct LegacyControlStream {
-    stream: TcpStream,
+    stream: TcpOrUnixStream,
     closed_by_remote: bool,
     pending_data: Vec<u8>,
     pending_lines: VecDeque<String>,
@@ -60,12 +60,12 @@ pub(crate) struct Reply {
 }
 
 impl LegacyControlStream {
-    pub fn new(addr: &SocketAddr, read_timeout: Duration) -> Result<LegacyControlStream, Error> {
+    pub fn new<T: Into<SocketAddrOrUnixSocketAddr>>(addr: T, read_timeout: Duration) -> Result<LegacyControlStream, Error> {
         if read_timeout.is_zero() {
             return Err(Error::ReadTimeoutZero());
         }
 
-        let stream = TcpStream::connect(addr).map_err(Error::CreationFailed)?;
+        let stream = TcpOrUnixStream::connect(addr).map_err(Error::CreationFailed)?;
         stream
             .set_read_timeout(Some(read_timeout))
             .map_err(Error::ConfigurationFailed)?;

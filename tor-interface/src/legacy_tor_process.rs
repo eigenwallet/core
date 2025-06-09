@@ -1,4 +1,5 @@
 // standard
+use std::borrow::Cow;
 use std::default::Default;
 use std::fs;
 use std::fs::File;
@@ -12,11 +13,14 @@ use std::str::FromStr;
 use std::string::ToString;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+#[cfg(unix)]
+use std::os::unix::net::SocketAddr as UnixSocketAddr;
 
 // extern crates
 use data_encoding::HEXUPPER;
 use rand::RngCore;
 use sha1::{Digest, Sha1};
+use socks::SocketAddrOrUnixSocketAddr;
 
 // internal crates
 use crate::tor_crypto::generate_password;
@@ -69,7 +73,7 @@ pub enum Error {
     StdoutReadThreadSpawnFailed(#[source] std::io::Error),
 }
 
-fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddr, Error> {
+fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddrOrUnixSocketAddr, Error> {
     // open file
     let mut file = File::open(control_port_file).map_err(Error::ControlPortFileReadFailed)?;
 
@@ -90,7 +94,14 @@ fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddr, Error>
     if contents.starts_with("PORT=") {
         let addr_string = &contents.trim_end()["PORT=".len()..];
         if let Ok(addr) = SocketAddr::from_str(addr_string) {
-            return Ok(addr);
+            return Ok(addr.into());
+        }
+    }
+    #[cfg(unix)]
+    if contents.starts_with("UNIX_PORT=") {
+        let addr_string = &contents.trim_end()["UNIX_PORT=".len()..];
+        if let Ok(addr) = UnixSocketAddr::from_pathname(addr_string) {
+            return Ok(addr.into());
         }
     }
     Err(Error::ControlPortFileContentsInvalid(format!(
@@ -101,7 +112,7 @@ fn read_control_port_file(control_port_file: &Path) -> Result<SocketAddr, Error>
 
 // Encapsulates the tor daemon process
 pub(crate) struct LegacyTorProcess {
-    control_addr: SocketAddr,
+    control_addr: SocketAddrOrUnixSocketAddr,
     process: Child,
     password: String,
     // stdout data
@@ -162,7 +173,7 @@ impl LegacyTorProcess {
         Self::hash_tor_password_with_salt(&salt, password)
     }
 
-    pub fn get_control_addr(&self) -> &SocketAddr {
+    pub fn get_control_addr(&self) -> &SocketAddrOrUnixSocketAddr {
         &self.control_addr
     }
 
@@ -171,6 +182,11 @@ impl LegacyTorProcess {
     }
 
     pub fn new(tor_bin_path: &Path, data_directory: &Path) -> Result<LegacyTorProcess, Error> {
+        Self::new_unix(tor_bin_path, data_directory, false)
+    }
+
+    /// Unix mode is test/debug only
+    pub(crate) fn new_unix(tor_bin_path: &Path, data_directory: &Path, unix: bool) -> Result<LegacyTorProcess, Error> {
         if tor_bin_path.is_relative() {
             return Err(Error::TorBinPathNotAbsolute(format!(
                 "{}",
@@ -249,10 +265,10 @@ impl LegacyTorProcess {
             // daemon will assign us a port, and we will
             // read it from the control port file
             .arg("ControlPort")
-            .arg("auto")
+            .arg(&*if unix { Cow::Owned(format!("unix:{}", data_directory.join("control.sock").display())) } else { Cow::Borrowed("auto") })
             // control port file destination
             .arg("ControlPortWriteToFile")
-            .arg(control_port_file.clone())
+            .arg(&control_port_file)
             // use password authentication to prevent other apps
             // from modifying our daemon's settings
             .arg("HashedControlPassword")

@@ -3,7 +3,7 @@ use std::any::Any;
 use std::boxed::Box;
 use std::convert::TryFrom;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::sync::{atomic, Arc, OnceLock};
@@ -17,6 +17,7 @@ use domain::base::name::Name;
 use idna::uts46::{Hyphens, Uts46};
 use idna::{domain_to_ascii_cow, AsciiDenyList};
 use regex::Regex;
+pub use socks::TcpOrUnixStream;
 
 // internal crates
 use crate::tor_crypto::*;
@@ -284,7 +285,7 @@ pub type OnionStreamIntoRaw = RawFd;
 #[cfg(windows)]
 pub type OnionStreamIntoRaw = RawSocket;
 
-/// A wrapper around a [`std::net::TcpStream`] with some Tor-specific customisations
+/// A wrapper around a [`TcpOrUnixStream`] with some Tor-specific customisations
 ///
 /// An onion-listener can be constructed using the [`TorProvider::connect()`] method.
 pub trait OnionStream: Send + Read + Write + std::fmt::Debug {
@@ -294,10 +295,10 @@ pub trait OnionStream: Send + Read + Write + std::fmt::Debug {
     /// Returns the onion address of the local connection for an incoming onion-service connection. Returns `None` for outgoing connections.
     fn local_addr(&self) -> Option<OnionAddr>;
 
-    /// Tries to clone the underlying connection and data. A simple pass-through to [`std::net::TcpStream::try_clone()`].
+    /// Tries to clone the underlying connection and data. A simple pass-through to [`TcpOrUnixStream::try_clone()`].
     fn try_clone(&self) -> std::io::Result<Self> where Self: Sized;
 
-    /// Moves the underlying `TcpStream` into or out of nonblocking mode.
+    /// Moves the underlying `TcpOrUnixStream` into or out of nonblocking mode.
     fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()>;
 
     /// Consume stream and return the underlying raw handle.
@@ -305,32 +306,32 @@ pub trait OnionStream: Send + Read + Write + std::fmt::Debug {
 }
 
 #[derive(Debug)]
-pub struct TcpOnionStream {
-    pub(crate) stream: TcpStream,
+pub struct TcpOrUnixOnionStream {
+    pub(crate) stream: TcpOrUnixStream,
     pub(crate) local_addr: Option<OnionAddr>,
     pub(crate) peer_addr: Option<TargetAddr>,
 }
 
-impl Deref for TcpOnionStream {
-    type Target = TcpStream;
+impl Deref for TcpOrUnixOnionStream {
+    type Target = TcpOrUnixStream;
     fn deref(&self) -> &Self::Target {
         &self.stream
     }
 }
 
-impl DerefMut for TcpOnionStream {
+impl DerefMut for TcpOrUnixOnionStream {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.stream
     }
 }
 
-impl From<TcpOnionStream> for TcpStream {
-    fn from(onion_stream: TcpOnionStream) -> Self {
+impl From<TcpOrUnixOnionStream> for TcpOrUnixStream {
+    fn from(onion_stream: TcpOrUnixOnionStream) -> Self {
         onion_stream.stream
     }
 }
 
-impl Read for TcpOnionStream {
+impl Read for TcpOrUnixOnionStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.stream.read(buf)
     }
@@ -348,7 +349,7 @@ impl Read for TcpOnionStream {
     }
 }
 
-impl Write for TcpOnionStream {
+impl Write for TcpOrUnixOnionStream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.stream.write(buf)
     }
@@ -366,7 +367,7 @@ impl Write for TcpOnionStream {
     }
 }
 
-impl OnionStream for TcpOnionStream {
+impl OnionStream for TcpOrUnixOnionStream {
     fn peer_addr(&self) -> Option<TargetAddr> {
         self.peer_addr.clone()
     }
@@ -529,7 +530,7 @@ pub(crate) struct TcpOnionListenerBase(pub TcpListener, pub OnionAddr);
 pub struct TcpOnionListener(pub(crate) TcpOnionListenerBase, pub(crate) Arc<atomic::AtomicBool>);
 
 impl OnionListener for TcpOnionListenerBase {
-    type Stream = TcpOnionStream;
+    type Stream = TcpOrUnixOnionStream;
 
     fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
         self.0.set_nonblocking(nonblocking)
@@ -537,8 +538,8 @@ impl OnionListener for TcpOnionListenerBase {
 
     fn accept(&self) -> std::io::Result<Option<Self::Stream>> {
         match self.0.accept() {
-            Ok((stream, _socket_addr)) => Ok(Some(TcpOnionStream {
-                stream,
+            Ok((stream, _socket_addr)) => Ok(Some(TcpOrUnixOnionStream {
+                stream: stream.into(),
                 local_addr: Some(self.1.clone()),
                 peer_addr: None,
             })),
@@ -554,7 +555,7 @@ impl OnionListener for TcpOnionListenerBase {
 }
 
 impl OnionListener for TcpOnionListener {
-    type Stream = TcpOnionStream;
+    type Stream = TcpOrUnixOnionStream;
 
     fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
         self.0.set_nonblocking(nonblocking)

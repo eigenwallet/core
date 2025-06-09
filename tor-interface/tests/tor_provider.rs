@@ -177,8 +177,8 @@ fn build_system_legacy_tor_provider_password(
     )?;
 
     let tor_config = LegacyTorClientConfig::SystemTor {
-        tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?,
-        tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?,
+        tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?.into(),
+        tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?.into(),
         tor_control_auth: Some(TorAuth::Password("password".to_string())),
     };
     let tor_provider = LegacyTorClient::new(tor_config)?;
@@ -203,8 +203,8 @@ fn build_system_legacy_tor_provider_cookie(
     })?;
 
     let tor_config = LegacyTorClientConfig::SystemTor {
-        tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?,
-        tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?,
+        tor_socks_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{socks_port}").as_str())?.into(),
+        tor_control_addr: std::net::SocketAddr::from_str(format!("127.0.0.1:{control_port}").as_str())?.into(),
         tor_control_auth: Some(TorAuth::Cookie(cookiefile)),
     };
     let tor_provider = LegacyTorClient::new(tor_config)?;

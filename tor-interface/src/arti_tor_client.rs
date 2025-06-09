@@ -125,7 +125,7 @@ impl ArtiTorClient {
 }
 
 impl TorProvider for ArtiTorClient {
-    type Stream = TcpOnionStream;
+    type Stream = TcpOrUnixOnionStream;
     type Listener = TcpOnionListener;
 
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
@@ -226,8 +226,8 @@ impl TorProvider for ArtiTorClient {
         let stream = self.rpc_conn.open_stream(None, (host.as_str(), port), isolation)
             .map_err(Error::ArtiOpenStreamFailed)?;
 
-        Ok(TcpOnionStream {
-            stream,
+        Ok(TcpOrUnixOnionStream {
+            stream: stream.into(),
             local_addr: None,
             peer_addr: Some(target),
         })

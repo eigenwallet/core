@@ -23,7 +23,9 @@ regex = "1.9"
 sha1 = "0.10"
 sha3 = "0.10"
 signature = "1.5"
-socks = "0.3"
+# socks = "0.3"
+# socks = { path = "../../../../../rust-socks" }
+socks = { git = "https://github.com/nabijaczleweli/rust-socks" }
 static_assertions = "1.1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros"], optional = true }
