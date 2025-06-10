@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 
 // extern crates
 use data_encoding::HEXUPPER;
-use rand::rngs::OsRng;
 use rand::RngCore;
 use sha1::{Digest, Sha1};
 
@@ -156,7 +155,8 @@ impl LegacyTorProcess {
 
     fn hash_tor_password(password: &str) -> String {
         let mut salt = [0x00u8; Self::S2K_RFC2440_SPECIFIER_LEN];
-        OsRng.fill_bytes(&mut salt);
+        let csprng = &mut tor_llcrypto::rng::CautiousRng;
+        csprng.fill_bytes(&mut salt);
         salt[Self::S2K_RFC2440_SPECIFIER_LEN - 1] = 0x60u8;
 
         Self::hash_tor_password_with_salt(&salt, password)
