@@ -95,6 +95,13 @@ fn quoted_string(string: &str) -> String {
     string.replace("\\", "\\\\").replace("\"", "\\\"")
 }
 
+fn reply_ok(reply: Reply) -> Result<Reply, Error> {
+    match reply.status_code {
+        250u32 => Ok(reply),
+        code => Err(Error::CommandFailed(code, reply.reply_lines)),
+    }
+}
+
 impl LegacyTorController {
     pub fn new(control_stream: LegacyControlStream) -> Result<LegacyTorController, Error> {
         let status_event_pattern =
@@ -432,73 +439,48 @@ impl LegacyTorController {
     //
 
     pub fn setconf(&mut self, key_values: &[(&str, String)]) -> Result<(), Error> {
-        let reply = self.setconf_cmd(key_values)?;
-
-        match reply.status_code {
-            250u32 => Ok(()),
-            code => Err(Error::CommandFailed(code, reply.reply_lines)),
-        }
+        self.setconf_cmd(key_values).and_then(reply_ok).map(|_| ())
     }
 
     #[cfg(test)]
     pub fn getconf(&mut self, keywords: &[&str]) -> Result<Vec<(String, String)>, Error> {
-        let reply = self.getconf_cmd(keywords)?;
+        let reply = self.getconf_cmd(keywords).and_then(reply_ok)?;
 
-        match reply.status_code {
-            250u32 => {
-                let mut key_values: Vec<(String, String)> = Default::default();
-                for line in reply.reply_lines {
-                    match line.find('=') {
-                        Some(index) => key_values
-                            .push((line[0..index].to_string(), line[index + 1..].to_string())),
-                        None => key_values.push((line, String::new())),
-                    }
-                }
-                Ok(key_values)
+        let mut key_values: Vec<(String, String)> = Default::default();
+        for line in reply.reply_lines {
+            match line.find('=') {
+                Some(index) => key_values
+                    .push((line[0..index].to_string(), line[index + 1..].to_string())),
+                None => key_values.push((line, String::new())),
             }
-            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
+        Ok(key_values)
     }
 
     pub fn setevents(&mut self, events: &[&str]) -> Result<(), Error> {
-        let reply = self.setevents_cmd(events)?;
-
-        match reply.status_code {
-            250u32 => Ok(()),
-            code => Err(Error::CommandFailed(code, reply.reply_lines)),
-        }
+        self.setevents_cmd(events).and_then(reply_ok).map(|_| ())
     }
 
     pub fn authenticate(&mut self, password: &str) -> Result<(), Error> {
-        let reply = self.authenticate_cmd(password)?;
-
-        match reply.status_code {
-            250u32 => Ok(()),
-            code => Err(Error::CommandFailed(code, reply.reply_lines)),
-        }
+        self.authenticate_cmd(password).and_then(reply_ok).map(|_| ())
     }
 
     pub fn getinfo(&mut self, keywords: &[&str]) -> Result<Vec<(String, String)>, Error> {
-        let reply = self.getinfo_cmd(keywords)?;
+        let reply = self.getinfo_cmd(keywords).and_then(reply_ok)?;
 
-        match reply.status_code {
-            250u32 => {
-                let mut key_values: Vec<(String, String)> = Default::default();
-                for line in reply.reply_lines {
-                    match line.find('=') {
-                        Some(index) => key_values
-                            .push((line[0..index].to_string(), line[index + 1..].to_string())),
-                        None => {
-                            if line != "OK" {
-                                key_values.push((line, String::new()))
-                            }
-                        }
+        let mut key_values: Vec<(String, String)> = Default::default();
+        for line in reply.reply_lines {
+            match line.find('=') {
+                Some(index) => key_values
+                    .push((line[0..index].to_string(), line[index + 1..].to_string())),
+                None => {
+                    if line != "OK" {
+                        key_values.push((line, String::new()))
                     }
                 }
-                Ok(key_values)
             }
-            code => Err(Error::CommandFailed(code, reply.reply_lines)),
         }
+        Ok(key_values)
     }
 
     pub fn add_onion(
@@ -510,64 +492,59 @@ impl LegacyTorController {
         target: Option<SocketAddr>,
         client_auth: Option<&[X25519PublicKey]>,
     ) -> Result<(Option<Ed25519PrivateKey>, V3OnionServiceId), Error> {
-        let reply = self.add_onion_cmd(key, flags, max_streams, virt_port, target, client_auth)?;
+        let reply = self.add_onion_cmd(key, flags, max_streams, virt_port, target, client_auth).and_then(reply_ok)?;
 
         let mut private_key: Option<Ed25519PrivateKey> = None;
         let mut service_id: Option<V3OnionServiceId> = None;
 
-        match reply.status_code {
-            250u32 => {
-                for line in reply.reply_lines {
-                    if let Some(mut index) = line.find("ServiceID=") {
-                        if service_id.is_some() {
-                            return Err(Error::CommandReplyParseFailed(
-                                "received duplicate ServiceID entries".to_string(),
-                            ));
-                        }
-                        index += "ServiceId=".len();
-                        let service_id_string = &line[index..];
-                        service_id = match V3OnionServiceId::from_string(service_id_string) {
-                            Ok(service_id) => Some(service_id),
-                            Err(_) => {
-                                return Err(Error::CommandReplyParseFailed(format!(
-                                    "could not parse '{}' as V3OnionServiceId",
-                                    service_id_string
-                                )))
-                            }
-                        }
-                    } else if let Some(mut index) = line.find("PrivateKey=") {
-                        if private_key.is_some() {
-                            return Err(Error::CommandReplyParseFailed(
-                                "received duplicate PrivateKey entries".to_string(),
-                            ));
-                        }
-                        index += "PrivateKey=".len();
-                        let key_blob_string = &line[index..];
-                        private_key = match Ed25519PrivateKey::from_key_blob_legacy(key_blob_string)
-                        {
-                            Ok(private_key) => Some(private_key),
-                            Err(_) => {
-                                return Err(Error::CommandReplyParseFailed(format!(
-                                    "could not parse {} as Ed25519PrivateKey",
-                                    key_blob_string
-                                )))
-                            }
-                        };
-                    } else if line.contains("ClientAuthV3=") {
-                        if client_auth.unwrap_or_default().is_empty() {
-                            return Err(Error::CommandReplyParseFailed(
-                                "recieved unexpected ClientAuthV3 keys".to_string(),
-                            ));
-                        }
-                    } else if !line.contains("OK") {
+        for line in reply.reply_lines {
+            if let Some(mut index) = line.find("ServiceID=") {
+                if service_id.is_some() {
+                    return Err(Error::CommandReplyParseFailed(
+                        "received duplicate ServiceID entries".to_string(),
+                    ));
+                }
+                index += "ServiceId=".len();
+                let service_id_string = &line[index..];
+                service_id = match V3OnionServiceId::from_string(service_id_string) {
+                    Ok(service_id) => Some(service_id),
+                    Err(_) => {
                         return Err(Error::CommandReplyParseFailed(format!(
-                            "received unexpected reply line '{}'",
-                            line
-                        )));
+                            "could not parse '{}' as V3OnionServiceId",
+                            service_id_string
+                        )))
                     }
                 }
+            } else if let Some(mut index) = line.find("PrivateKey=") {
+                if private_key.is_some() {
+                    return Err(Error::CommandReplyParseFailed(
+                        "received duplicate PrivateKey entries".to_string(),
+                    ));
+                }
+                index += "PrivateKey=".len();
+                let key_blob_string = &line[index..];
+                private_key = match Ed25519PrivateKey::from_key_blob_legacy(key_blob_string)
+                {
+                    Ok(private_key) => Some(private_key),
+                    Err(_) => {
+                        return Err(Error::CommandReplyParseFailed(format!(
+                            "could not parse {} as Ed25519PrivateKey",
+                            key_blob_string
+                        )))
+                    }
+                };
+            } else if line.contains("ClientAuthV3=") {
+                if client_auth.unwrap_or_default().is_empty() {
+                    return Err(Error::CommandReplyParseFailed(
+                        "recieved unexpected ClientAuthV3 keys".to_string(),
+                    ));
+                }
+            } else if !line.contains("OK") {
+                return Err(Error::CommandReplyParseFailed(format!(
+                    "received unexpected reply line '{}'",
+                    line
+                )));
             }
-            code => return Err(Error::CommandFailed(code, reply.reply_lines)),
         }
 
         if flags.discard_pk {
@@ -591,12 +568,7 @@ impl LegacyTorController {
     }
 
     pub fn del_onion(&mut self, service_id: &V3OnionServiceId) -> Result<(), Error> {
-        let reply = self.del_onion_cmd(service_id)?;
-
-        match reply.status_code {
-            250u32 => Ok(()),
-            code => Err(Error::CommandFailed(code, reply.reply_lines)),
-        }
+        self.del_onion_cmd(service_id).and_then(reply_ok).map(|_| ())
     }
 
     // more specific encapulsation of specific command invocations
