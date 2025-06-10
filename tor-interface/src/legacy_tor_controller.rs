@@ -111,6 +111,7 @@ pub(crate) struct LegacyTorController {
     status_event_argument_pattern: Regex,
     hs_desc_pattern: Regex,
     protocolinfo_data: Option<ProtocolInfo>,
+    version: Option<LegacyTorVersion>,
 }
 
 fn quoted_string(string: &str) -> String {
@@ -286,6 +287,7 @@ impl LegacyTorController {
             status_event_argument_pattern,
             hs_desc_pattern,
             protocolinfo_data: None,
+            version: None,
         })
     }
 
@@ -664,6 +666,10 @@ impl LegacyTorController {
         // 250-VERSION Tor=\"0.4.7.16\"
         match self.protocolinfo_cmd() {
             Ok(reply) if reply.status_code == 250 => {
+                if let Some(vers) = reply.reply_lines.iter().find(|l| l.starts_with("VERSION Tor=\"")) {
+                    self.version = vers["VERSION Tor=\"".len()..].split('\"').next().and_then(|s| <_>::from_str(s).ok());
+                }
+
                 self.protocolinfo_data = Some(reply.reply_lines.iter()
                     .find(|l| l.starts_with("AUTH METHODS="))
                     .map(|auth| parse_auth_methods(auth))
@@ -893,6 +899,10 @@ impl LegacyTorController {
     }
 
     pub fn getinfo_version(&mut self) -> Result<LegacyTorVersion, Error> {
+        if let Some(vers) = self.version.take() {
+            return Ok(vers);
+        }
+
         let response = self.getinfo(&["version"])?;
         for (key, value) in response.iter() {
             if key.as_str() == "version" {
