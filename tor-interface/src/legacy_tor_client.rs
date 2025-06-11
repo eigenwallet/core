@@ -490,7 +490,6 @@ impl TorProvider for LegacyTorClient {
             .controller
             .wait_async_events()
             .map_err(Error::WaitAsyncEventsFailed)?
-            .iter()
         {
             match async_event {
                 AsyncEvent::StatusClient {
@@ -502,11 +501,11 @@ impl TorProvider for LegacyTorClient {
                         let mut progress: u32 = 0;
                         let mut tag: String = Default::default();
                         let mut summary: String = Default::default();
-                        for (key, val) in arguments.iter() {
+                        for (key, val) in arguments {
                             match key.as_str() {
                                 "PROGRESS" => progress = val.parse().unwrap_or(0u32),
-                                "TAG" => tag = val.to_string(),
-                                "SUMMARY" => summary = val.to_string(),
+                                "TAG" => tag = val,
+                                "SUMMARY" => summary = val,
                                 _ => {} // ignore unexpected arguments
                             }
                         }
@@ -524,7 +523,7 @@ impl TorProvider for LegacyTorClient {
                 AsyncEvent::HsDesc { action, hs_address } => {
                     if action == "UPLOADED" {
                         events.push(TorEvent::OnionServicePublished {
-                            service_id: hs_address.clone(),
+                            service_id: hs_address,
                         });
                     }
                 }
