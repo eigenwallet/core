@@ -262,6 +262,7 @@ async fn start_alice(
         XmrBtcNamespace::Testnet,
         &[],
         None,
+        &db_path,
         false,
         1,
     )

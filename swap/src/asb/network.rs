@@ -22,12 +22,15 @@ use swap_feed::LatestRate;
 use uuid::Uuid;
 
 pub mod transport {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+    use std::path::Path;
+    use std::fs;
+    use std::io::Write;
 
     use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
-    use libp2p::{core::transport::OptionalTransport, dns, identity, tcp, Transport};
-    use libp2p_tor::AddressConversion;
+    use libp2p::{core::transport::{OptionalTransport, OrTransport}, dns, identity, tcp, Transport};
     use tor_rtcompat::tokio::TokioRustlsRuntime;
+    use crate::common::tor::existing_tor_config;
 
     use super::*;
 
@@ -35,6 +38,16 @@ pub mod transport {
     static ASB_ONION_SERVICE_PORT: u16 = 9939;
 
     type OnionTransportWithAddresses = (Boxed<(PeerId, StreamMuxerBox)>, Vec<Multiaddr>);
+
+    fn mode600(m: &mut fs::OpenOptions) -> &mut fs::OpenOptions {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            m.mode(0o600)
+        }
+        #[cfg(not(unix))]
+        m
+    }
 
     /// Creates the libp2p transport for the ASB.
     ///
@@ -46,12 +59,51 @@ pub mod transport {
     pub fn new(
         identity: &identity::Keypair,
         maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+        config_data_dir: &Path,
         register_hidden_service: bool,
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
-        let (maybe_tor_transport, onion_addresses) = if let Some(tor_client) = maybe_tor_client {
+        let (yesmaybe, maybe_tor_transport, onion_addresses) = if let Some((reuse_config, bindaddr)) = existing_tor_config() {
+            let client = libp2p_community_tor_interface::tor_interface::legacy_tor_client::LegacyTorClient::new(reuse_config)?;
+            let mut tor_transport = libp2p_community_tor_interface::TorInterfaceTransport::from_provider(
+                libp2p_community_tor_interface::AddressConversion::DnsOnly, Arc::new(Mutex::new(client)), None)?;
+
+            let pk_path = config_data_dir.join(ASB_ONION_SERVICE_NICKNAME).with_extension("pk");
+            let loaded_pk = fs::read_to_string(&pk_path).ok()
+                .and_then(|pk| libp2p_community_tor_interface::tor_interface::tor_crypto::Ed25519PrivateKey::from_key_blob(pk.lines().next()?).ok());
+
+            let addresses = if register_hidden_service {
+                match tor_transport.add_customised_onion_service(loaded_pk.as_ref(), ASB_ONION_SERVICE_PORT, None, bindaddr)
+                {
+                    Ok((addr, pk)) => {
+                        tracing::debug!(
+                            %addr,
+                            "Setting up onion service for libp2p to listen on"
+                        );
+                        if loaded_pk.is_none() {
+                            let writeback = pk.to_key_blob();
+                            let _ = mode600(fs::OpenOptions::new()
+                                .create(true)
+                                .truncate(true)
+                                .write(true))
+                                .open(&pk_path)
+                                .and_then(|mut f| f.write_all(writeback.as_bytes()).and_then(|_| f.write_all(b"\n")));
+                        }
+                        vec![addr]
+                    }
+                    Err(err) => {
+                        tracing::warn!(error=%err, "Failed to listen on onion address");
+                        vec![]
+                    }
+                }
+            } else {
+                vec![]
+            };
+
+            (true, OrTransport::new(OptionalTransport::none(), OptionalTransport::some(tor_transport)), addresses)
+        } else if let Some(tor_client) = maybe_tor_client {
             let mut tor_transport =
-                libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
+                libp2p_tor::TorTransport::from_client(tor_client, libp2p_tor::AddressConversion::DnsOnly);
 
             let addresses = if register_hidden_service {
                 let onion_service_config = OnionServiceConfigBuilder::default()
@@ -82,13 +134,17 @@ pub mod transport {
                 vec![]
             };
 
-            (OptionalTransport::some(tor_transport), addresses)
+            (true, OrTransport::new(OptionalTransport::some(tor_transport), OptionalTransport::none()), addresses)
         } else {
-            (OptionalTransport::none(), vec![])
+            (false, OrTransport::new(OptionalTransport::none(), OptionalTransport::none()), vec![])
         };
 
-        let tcp = maybe_tor_transport
-            .or_transport(tcp::tokio::Transport::new(tcp::Config::new().nodelay(true)));
+        let tcp = OrTransport::new(maybe_tor_transport,
+            if yesmaybe {
+                OptionalTransport::none()
+            } else {
+                OptionalTransport::some(tcp::tokio::Transport::new(tcp::Config::new().nodelay(true)))
+            });
         let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
         Ok((

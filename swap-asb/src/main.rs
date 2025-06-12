@@ -236,11 +236,12 @@ pub async fn main() -> Result<()> {
                 namespace,
                 &rendezvous_addrs,
                 tor_client,
+                &config.data.dir,
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
             )?;
 
-            for listen in config.network.listen.clone() {
+            for listen in &config.network.listen {
                 if let Err(e) = Swarm::listen_on(&mut swarm, listen.clone()) {
                     tracing::warn!("Failed to listen on network interface {}: {}. Consider removing it from the config.", listen, e);
                 }

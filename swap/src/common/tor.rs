@@ -6,7 +6,20 @@ use crate::cli::api::tauri_bindings::{
 };
 use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
 use futures::StreamExt;
+use swap_env::env::is_whonix;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+pub fn existing_tor_config() -> Option<(
+    libp2p_community_tor_interface::tor_interface::legacy_tor_client::LegacyTorClientConfig,
+    std::net::SocketAddr,
+)> {
+    if is_whonix() {
+        Some((libp2p_community_tor_interface::tor_interface::legacy_tor_client::LegacyTorClientConfig::system_from_environment().expect("whonix always has $TOR_... set"),
+            ([0, 0, 0, 0], 9939).into()))
+    } else {
+        None
+    }
+}
 
 /// Creates an unbootstrapped Tor client
 pub async fn create_tor_client(
