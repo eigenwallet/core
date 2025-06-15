@@ -29,6 +29,7 @@ pub mod transport {
 
     use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
     use libp2p::{core::transport::{OptionalTransport, OrTransport}, dns, identity, tcp, Transport};
+    use libp2p_tor::{AddressConversion, tor_interface};
     use tor_rtcompat::tokio::TokioRustlsRuntime;
     use crate::common::tor::existing_tor_config;
 
@@ -64,31 +65,34 @@ pub mod transport {
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
         let (yesmaybe, maybe_tor_transport, onion_addresses) = if let Some((reuse_config, bindaddr)) = existing_tor_config() {
-            let client = libp2p_community_tor_interface::tor_interface::legacy_tor_client::LegacyTorClient::new(reuse_config)?;
-            let mut tor_transport = libp2p_community_tor_interface::TorInterfaceTransport::from_provider(
-                libp2p_community_tor_interface::AddressConversion::DnsOnly, Arc::new(Mutex::new(client)), None)?;
+            let client = tor_interface::legacy_tor_client::LegacyTorClient::new(reuse_config)?;
+            let mut tor_transport = libp2p_tor::TorInterfaceTransport::from_provider(
+                AddressConversion::DnsOnly, Arc::new(Mutex::new(client)), None)?;
 
             let pk_path = config_data_dir.join(ASB_ONION_SERVICE_NICKNAME).with_extension("pk");
-            let loaded_pk = fs::read_to_string(&pk_path).ok()
-                .and_then(|pk| libp2p_community_tor_interface::tor_interface::tor_crypto::Ed25519PrivateKey::from_key_blob(pk.lines().next()?).ok());
+            let pk = match fs::read_to_string(&pk_path).ok()
+                .and_then(|pk| tor_interface::tor_crypto::Ed25519PrivateKey::from_key_blob(pk.lines().next()?).ok()) {
+                Some(pk) => pk,
+                None => {
+                    let pk = tor_interface::tor_crypto::Ed25519PrivateKey::generate();
+                    let _ = mode600(fs::OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true))
+                        .open(&pk_path)
+                        .and_then(|mut f| f.write_all(pk.to_key_blob().as_bytes()).and_then(|_| f.write_all(b"\n")));
+                    pk
+                }
+            };
 
             let addresses = if register_hidden_service {
-                match tor_transport.add_customised_onion_service(loaded_pk.as_ref(), ASB_ONION_SERVICE_PORT, None, bindaddr)
+                match tor_transport.add_onion_service(&pk, ASB_ONION_SERVICE_PORT, None, Some(bindaddr))
                 {
-                    Ok((addr, pk)) => {
+                    Ok(addr) => {
                         tracing::debug!(
                             %addr,
                             "Setting up onion service for libp2p to listen on"
                         );
-                        if loaded_pk.is_none() {
-                            let writeback = pk.to_key_blob();
-                            let _ = mode600(fs::OpenOptions::new()
-                                .create(true)
-                                .truncate(true)
-                                .write(true))
-                                .open(&pk_path)
-                                .and_then(|mut f| f.write_all(writeback.as_bytes()).and_then(|_| f.write_all(b"\n")));
-                        }
                         vec![addr]
                     }
                     Err(err) => {

@@ -291,7 +291,7 @@ dependencies = [
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "educe",
- "fs-mistrust",
+ "fs-mistrust 0.10.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "futures",
  "hostname-validator",
  "humantime",
@@ -304,29 +304,52 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "time 0.3.41",
- "tor-async-utils",
- "tor-basic-utils",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-chanmgr",
  "tor-circmgr",
- "tor-config",
- "tor-config-path",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config-path 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-dirmgr",
- "tor-error",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-guardmgr",
  "tor-hsclient",
- "tor-hscrypto",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-hsservice",
- "tor-keymgr",
+ "tor-keymgr 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-memquota",
  "tor-netdir",
  "tor-netdoc",
- "tor-persist",
+ "tor-persist 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-proto",
  "tor-protover",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
+ "void",
+]
+
+[[package]]
+name = "arti-rpc-client-core"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09d4ceb10e4abdbe7708ceed407460b1076756d2d35bd450ad2614fe86c3847c"
+dependencies = [
+ "caret 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cfg-if",
+ "derive_more 2.0.1",
+ "educe",
+ "fs-mistrust 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "percent-encoding",
+ "rand 0.9.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tor-config-path 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-rpc-connect",
+ "tor-socksproto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "void",
 ]
 
@@ -1537,6 +1560,12 @@ dependencies = [
 [[package]]
 name = "caret"
 version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "061dc3258f029feaf9ff02b43c6af5ea67a7dfaed5d2aef36204c812e614ef9c"
+
+[[package]]
+name = "caret"
+version = "0.5.3"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 
 [[package]]
@@ -2495,6 +2524,19 @@ dependencies = [
  "darling_core 0.20.11",
  "quote",
  "syn 2.0.104",
+]
+
+[[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core 0.9.11",
 ]
 
 [[package]]
@@ -3541,6 +3583,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs-mistrust"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "198b8f9ab4cff63b5c91e9e64edd4e6b43cd7fe7a52519a03c6c32ea0acfa557"
+dependencies = [
+ "derive_builder_fork_arti",
+ "dirs",
+ "libc",
+ "pwd-grp",
+ "serde",
+ "thiserror 2.0.12",
+ "walkdir",
 ]
 
 [[package]]
@@ -5501,20 +5558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libp2p-community-tor-interface"
-version = "0.1.0"
-source = "git+https://github.com/nabijaczleweli/libp2p-tor-interface#e7a37fc32a054de2d19fa334d5c02a10972876de"
-dependencies = [
- "anyhow",
- "futures",
- "libp2p",
- "thiserror 1.0.69",
- "tokio",
- "tor-interface",
- "tracing",
-]
-
-[[package]]
 name = "libp2p-connection-limits"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5935,8 +5978,9 @@ dependencies = [
  "tokio-test",
  "tor-cell",
  "tor-hsservice",
+ "tor-interface",
  "tor-proto",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "tracing-subscriber",
 ]
@@ -6463,7 +6507,7 @@ dependencies = [
  "tokio",
  "tokio-native-tls",
  "tokio-test",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tower 0.5.2",
  "tower-http 0.6.6",
  "tracing",
@@ -7180,6 +7224,15 @@ name = "once_cell_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
+
+[[package]]
+name = "oneshot-fused-workaround"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff2948fd2414b613f9a97f8401270bd5d7638265ab940475cdbcfa28a0273d58"
+dependencies = [
+ "futures",
+]
 
 [[package]]
 name = "oneshot-fused-workaround"
@@ -8682,6 +8735,12 @@ checksum = "95325155c684b1c89f7765e30bc1c42e4a6da51ca513615660cb8a62ef9a88e3"
 [[package]]
 name = "retry-error"
 version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce97442758392c7e2a7716e06c514de75f0fe4b5a4b76e14ba1e5edfb7ba3512"
+
+[[package]]
+name = "retry-error"
+version = "0.6.5"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 
 [[package]]
@@ -9691,6 +9750,20 @@ dependencies = [
 
 [[package]]
 name = "serial_test"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92761393ee4dc3ff8f4af487bd58f4307c9329bbedea02cac0089ad9c411e153"
+dependencies = [
+ "dashmap",
+ "futures",
+ "lazy_static",
+ "log",
+ "parking_lot 0.12.4",
+ "serial_test_derive 0.9.0",
+]
+
+[[package]]
+name = "serial_test"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b258109f244e1d6891bf1053a55d63a5cd4f8f4c30cf9a1280989f80e7a1fa9"
@@ -9700,7 +9773,19 @@ dependencies = [
  "once_cell",
  "parking_lot 0.12.4",
  "scc",
- "serial_test_derive",
+ "serial_test_derive 3.2.0",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b6f5d1c3087fb119617cff2966fe3808a80e5eb59a8c1601d5994d66f4346a5"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -10570,7 +10655,6 @@ dependencies = [
  "hex",
  "jsonrpsee",
  "libp2p",
- "libp2p-community-tor-interface",
  "libp2p-tor",
  "mockito",
  "moka",
@@ -10595,7 +10679,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "serde_with 1.14.0",
- "serial_test",
+ "serial_test 3.2.0",
  "sha2 0.10.9",
  "sigma_fun",
  "sqlx",
@@ -10616,7 +10700,7 @@ dependencies = [
  "tokio-tar",
  "tokio-tungstenite",
  "tokio-util",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tower 0.4.13",
  "tower-http 0.3.5",
  "tracing",
@@ -11635,6 +11719,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-mpmc"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffadf729b08a5df966b11daa6faee399f72a4ddb00125c0e8853aa4e0f08006c"
+dependencies = [
+ "crossbeam-queue",
+ "futures",
+ "rand 0.9.2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "tokio-native-tls"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11842,16 +11940,50 @@ checksum = "fcc842091f2def52017664b53082ecbbeb5c7731092bad69d2c63050401dfd64"
 [[package]]
 name = "tor-async-utils"
 version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12bee2c4a8ea4cfe533bf284eef89d26f53ed0145854c54471734cb36e451f3e"
+dependencies = [
+ "derive-deftly 1.1.0",
+ "educe",
+ "futures",
+ "oneshot-fused-workaround 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pin-project",
+ "postage",
+ "thiserror 2.0.12",
+ "void",
+]
+
+[[package]]
+name = "tor-async-utils"
+version = "0.32.0"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 dependencies = [
  "derive-deftly 1.1.0",
  "educe",
  "futures",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "pin-project",
  "postage",
  "thiserror 2.0.12",
  "void",
+]
+
+[[package]]
+name = "tor-basic-utils"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41a4e9e4da7ce0f089aee75808db143c4d547ca6d4ffd5b15a1cb042c3082928"
+dependencies = [
+ "derive_more 2.0.1",
+ "hex",
+ "itertools 0.14.0",
+ "libc",
+ "paste",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "slab",
+ "smallvec",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -11875,6 +12007,24 @@ dependencies = [
 [[package]]
 name = "tor-bytes"
 version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5a4a8401219d99b460c9bc001386366a4c50dc881a0abf346f04c1785f7e06a"
+dependencies = [
+ "bytes",
+ "derive-deftly 1.1.0",
+ "digest 0.10.7",
+ "educe",
+ "getrandom 0.3.3",
+ "safelog 0.4.8",
+ "thiserror 2.0.12",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-llcrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-bytes"
+version = "0.32.0"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 dependencies = [
  "bytes",
@@ -11884,8 +12034,8 @@ dependencies = [
  "getrandom 0.3.3",
  "safelog 0.4.7",
  "thiserror 2.0.12",
- "tor-error",
- "tor-llcrypto 0.32.0",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "zeroize",
 ]
 
@@ -11897,7 +12047,7 @@ dependencies = [
  "amplify",
  "bitflags 2.9.1",
  "bytes",
- "caret",
+ "caret 0.5.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "derive-deftly 1.1.0",
  "derive_more 2.0.1",
  "educe",
@@ -11905,17 +12055,33 @@ dependencies = [
  "rand 0.9.2",
  "smallvec",
  "thiserror 2.0.12",
- "tor-basic-utils",
- "tor-bytes",
- "tor-cert",
- "tor-error",
- "tor-hscrypto",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-cert 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-memquota",
  "tor-protover",
- "tor-units",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "void",
+]
+
+[[package]]
+name = "tor-cert"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9abc35321d207c3ffbfdc37feb0a9e186555ee49dfaa8079027115ce44491ff2"
+dependencies = [
+ "caret 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "derive_builder_fork_arti",
+ "derive_more 2.0.1",
+ "digest 0.10.7",
+ "thiserror 2.0.12",
+ "tor-bytes 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-checkable 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-llcrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -11923,14 +12089,14 @@ name = "tor-cert"
 version = "0.32.0"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 dependencies = [
- "caret",
+ "caret 0.5.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "digest 0.10.7",
  "thiserror 2.0.12",
- "tor-bytes",
- "tor-checkable",
- "tor-llcrypto 0.32.0",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-checkable 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
 ]
 
 [[package]]
@@ -11939,32 +12105,44 @@ version = "0.32.0"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 dependencies = [
  "async-trait",
- "caret",
+ "caret 0.5.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "educe",
  "futures",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "postage",
  "rand 0.9.2",
  "safelog 0.4.7",
  "serde",
  "thiserror 2.0.12",
- "tor-async-utils",
- "tor-basic-utils",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-cell",
- "tor-config",
- "tor-error",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-memquota",
  "tor-netdir",
  "tor-proto",
- "tor-rtcompat",
- "tor-socksproto",
- "tor-units",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-socksproto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "void",
+]
+
+[[package]]
+name = "tor-checkable"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72e994401be86ecdaa8b17b176cd1562ddddc6778a47afd751e6db99ccadb8e6"
+dependencies = [
+ "humantime",
+ "signature 2.2.0",
+ "thiserror 2.0.12",
+ "tor-llcrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -11975,7 +12153,7 @@ dependencies = [
  "humantime",
  "signature 2.2.0",
  "thiserror 2.0.12",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
 ]
 
 [[package]]
@@ -11996,33 +12174,66 @@ dependencies = [
  "humantime-serde",
  "itertools 0.14.0",
  "once_cell",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "pin-project",
  "rand 0.9.2",
- "retry-error",
+ "retry-error 0.6.5 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "safelog 0.4.7",
  "serde",
  "static_assertions",
  "thiserror 2.0.12",
- "tor-async-utils",
- "tor-basic-utils",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-chanmgr",
- "tor-config",
- "tor-error",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-guardmgr",
  "tor-linkspec",
  "tor-memquota",
  "tor-netdir",
  "tor-netdoc",
- "tor-persist",
+ "tor-persist 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-proto",
  "tor-protover",
  "tor-relay-selection",
- "tor-rtcompat",
- "tor-units",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "void",
  "weak-table",
+]
+
+[[package]]
+name = "tor-config"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3280e6e26a30f94d752d55d273c307d2b819971ff4b830101d816990f9a5ec36"
+dependencies = [
+ "amplify",
+ "cfg-if",
+ "derive-deftly 1.1.0",
+ "derive_builder_fork_arti",
+ "educe",
+ "either",
+ "figment",
+ "fs-mistrust 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures",
+ "itertools 0.14.0",
+ "notify",
+ "paste",
+ "postage",
+ "regex",
+ "serde",
+ "serde-value",
+ "serde_ignored",
+ "strum 0.27.2",
+ "thiserror 2.0.12",
+ "toml 0.8.23",
+ "tor-basic-utils 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-rtcompat 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing",
+ "void",
 ]
 
 [[package]]
@@ -12037,7 +12248,7 @@ dependencies = [
  "educe",
  "either",
  "figment",
- "fs-mistrust",
+ "fs-mistrust 0.10.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "futures",
  "itertools 0.14.0",
  "notify",
@@ -12050,11 +12261,25 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.12",
  "toml 0.8.23",
- "tor-basic-utils",
- "tor-error",
- "tor-rtcompat",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "void",
+]
+
+[[package]]
+name = "tor-config-path"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5347bcbe96c660694fe52fb76e852d982d73fe0d92f4c4cb9eaa8427a5d52f17"
+dependencies = [
+ "directories",
+ "serde",
+ "shellexpand",
+ "thiserror 2.0.12",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-general-addr 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -12066,8 +12291,8 @@ dependencies = [
  "serde",
  "shellexpand",
  "thiserror 2.0.12",
- "tor-error",
- "tor-general-addr",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-general-addr 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
 ]
 
 [[package]]
@@ -12078,7 +12303,7 @@ dependencies = [
  "digest 0.10.7",
  "hex",
  "thiserror 2.0.12",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
 ]
 
 [[package]]
@@ -12098,13 +12323,13 @@ dependencies = [
  "memchr",
  "thiserror 2.0.12",
  "tor-circmgr",
- "tor-error",
- "tor-hscrypto",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-netdoc",
  "tor-proto",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
 ]
 
@@ -12120,7 +12345,7 @@ dependencies = [
  "digest 0.10.7",
  "educe",
  "event-listener",
- "fs-mistrust",
+ "fs-mistrust 0.10.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "fslock",
  "futures",
  "hex",
@@ -12128,7 +12353,7 @@ dependencies = [
  "humantime-serde",
  "itertools 0.14.0",
  "memmap2",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "paste",
  "postage",
  "rand 0.9.2",
@@ -12142,23 +12367,40 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.12",
  "time 0.3.41",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-checkable",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-checkable 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-circmgr",
- "tor-config",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-consdiff",
  "tor-dirclient",
- "tor-error",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-guardmgr",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-netdir",
  "tor-netdoc",
- "tor-persist",
+ "tor-persist 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-proto",
  "tor-protover",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
+]
+
+[[package]]
+name = "tor-error"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79ae19c74564749c54e14e532ffb15f84807f734d17f452bb3ffb8b1957f06a2"
+dependencies = [
+ "derive_more 2.0.1",
+ "futures",
+ "paste",
+ "retry-error 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "static_assertions",
+ "strum 0.27.2",
+ "thiserror 2.0.12",
+ "tracing",
+ "void",
 ]
 
 [[package]]
@@ -12169,11 +12411,22 @@ dependencies = [
  "derive_more 2.0.1",
  "futures",
  "paste",
- "retry-error",
+ "retry-error 0.6.5 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "static_assertions",
  "strum 0.27.2",
  "thiserror 2.0.12",
  "tracing",
+ "void",
+]
+
+[[package]]
+name = "tor-general-addr"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dad9c6e9147f4ee644c80c3b044813cf93a3f802279c49b06aac2f4f33555877"
+dependencies = [
+ "derive_more 2.0.1",
+ "thiserror 2.0.12",
  "void",
 ]
 
@@ -12204,7 +12457,7 @@ dependencies = [
  "humantime-serde",
  "itertools 0.14.0",
  "num_enum",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "pin-project",
  "postage",
  "rand 0.9.2",
@@ -12212,19 +12465,19 @@ dependencies = [
  "serde",
  "strum 0.27.2",
  "thiserror 2.0.12",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-config",
- "tor-error",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-netdir",
  "tor-netdoc",
- "tor-persist",
+ "tor-persist 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-proto",
  "tor-relay-selection",
- "tor-rtcompat",
- "tor-units",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
 ]
 
@@ -12240,35 +12493,63 @@ dependencies = [
  "either",
  "futures",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "postage",
  "rand 0.9.2",
- "retry-error",
+ "retry-error 0.6.5 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "safelog 0.4.7",
  "slotmap-careful",
  "strum 0.27.2",
  "thiserror 2.0.12",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-bytes",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-cell",
- "tor-checkable",
+ "tor-checkable 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-circmgr",
- "tor-config",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-dirclient",
- "tor-error",
- "tor-hscrypto",
- "tor-keymgr",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-keymgr 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-memquota",
  "tor-netdir",
  "tor-netdoc",
- "tor-persist",
+ "tor-persist 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-proto",
  "tor-protover",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
+]
+
+[[package]]
+name = "tor-hscrypto"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7469efe5d22466fcaaeec9506bf03426ce59c03ee1b8a7c8b316830b153b40a"
+dependencies = [
+ "data-encoding",
+ "derive_more 2.0.1",
+ "digest 0.10.7",
+ "hex",
+ "humantime",
+ "itertools 0.14.0",
+ "paste",
+ "rand 0.9.2",
+ "safelog 0.4.8",
+ "serde",
+ "signature 2.2.0",
+ "subtle",
+ "thiserror 2.0.12",
+ "tor-basic-utils 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-bytes 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-key-forge 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-llcrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-units 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "void",
 ]
 
 [[package]]
@@ -12291,13 +12572,13 @@ dependencies = [
  "signature 2.2.0",
  "subtle",
  "thiserror 2.0.12",
- "tor-basic-utils",
- "tor-bytes",
- "tor-error",
- "tor-key-forge",
- "tor-llcrypto 0.32.0",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-key-forge 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-memquota",
- "tor-units",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "void",
  "zeroize",
 ]
@@ -12316,7 +12597,7 @@ dependencies = [
  "derive_more 2.0.1",
  "digest 0.10.7",
  "educe",
- "fs-mistrust",
+ "fs-mistrust 0.10.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "futures",
  "growable-bloom-filter",
  "hex",
@@ -12324,37 +12605,37 @@ dependencies = [
  "itertools 0.14.0",
  "k12",
  "once_cell",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "postage",
  "rand 0.9.2",
  "rand_core 0.9.3",
- "retry-error",
+ "retry-error 0.6.5 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "safelog 0.4.7",
  "serde",
  "serde_with 3.14.0",
  "strum 0.27.2",
  "thiserror 2.0.12",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-bytes",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-cell",
  "tor-circmgr",
- "tor-config",
- "tor-config-path",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config-path 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-dirclient",
- "tor-error",
- "tor-hscrypto",
- "tor-keymgr",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-keymgr 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-log-ratelim",
  "tor-netdir",
  "tor-netdoc",
- "tor-persist",
+ "tor-persist 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-proto",
  "tor-protover",
  "tor-relay-selection",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "void",
 ]
@@ -12362,8 +12643,10 @@ dependencies = [
 [[package]]
 name = "tor-interface"
 version = "0.5.0"
-source = "git+https://github.com/nabijaczleweli/gosling?rev=65da8990e33c674ed8abeb10b454b4a39463d81d#65da8990e33c674ed8abeb10b454b4a39463d81d"
 dependencies = [
+ "anyhow",
+ "arti-client",
+ "arti-rpc-client-core",
  "curve25519-dalek 4.1.3",
  "data-encoding",
  "data-encoding-macro",
@@ -12373,6 +12656,7 @@ dependencies = [
  "rand 0.9.2",
  "rand_core 0.9.3",
  "regex",
+ "serial_test 0.9.0",
  "sha1",
  "sha2 0.10.9",
  "sha3",
@@ -12380,7 +12664,39 @@ dependencies = [
  "socks",
  "static_assertions",
  "thiserror 1.0.69",
- "tor-llcrypto 0.31.0",
+ "tokio",
+ "tokio-mpmc",
+ "tokio-stream",
+ "tor-cell",
+ "tor-config 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-hsservice",
+ "tor-keymgr 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-llcrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-proto",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "which",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-key-forge"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6697b58f1518757b975993d345a261387eb7a86c730cb542ad1ea68284155eaa"
+dependencies = [
+ "derive-deftly 1.1.0",
+ "derive_more 2.0.1",
+ "downcast-rs 2.0.1",
+ "paste",
+ "rand 0.9.2",
+ "signature 2.2.0",
+ "ssh-key",
+ "thiserror 2.0.12",
+ "tor-bytes 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-cert 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-checkable 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-llcrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -12396,11 +12712,49 @@ dependencies = [
  "signature 2.2.0",
  "ssh-key",
  "thiserror 2.0.12",
- "tor-bytes",
- "tor-cert",
- "tor-checkable",
- "tor-error",
- "tor-llcrypto 0.32.0",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-cert 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-checkable 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+]
+
+[[package]]
+name = "tor-keymgr"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56d765c0fd6b1910b427feb1b604fbc85e5768332e9be1e670bf64e698c92606"
+dependencies = [
+ "amplify",
+ "arrayvec",
+ "cfg-if",
+ "derive-deftly 1.1.0",
+ "derive_builder_fork_arti",
+ "derive_more 2.0.1",
+ "downcast-rs 2.0.1",
+ "dyn-clone",
+ "fs-mistrust 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "glob-match",
+ "humantime",
+ "inventory",
+ "itertools 0.14.0",
+ "rand 0.9.2",
+ "serde",
+ "signature 2.2.0",
+ "ssh-key",
+ "thiserror 2.0.12",
+ "tor-basic-utils 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-bytes 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-config 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-config-path 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-hscrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-key-forge 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-llcrypto 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-persist 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing",
+ "walkdir",
+ "zeroize",
 ]
 
 [[package]]
@@ -12416,7 +12770,7 @@ dependencies = [
  "derive_more 2.0.1",
  "downcast-rs 2.0.1",
  "dyn-clone",
- "fs-mistrust",
+ "fs-mistrust 0.10.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "glob-match",
  "humantime",
  "inventory",
@@ -12426,15 +12780,15 @@ dependencies = [
  "signature 2.2.0",
  "ssh-key",
  "thiserror 2.0.12",
- "tor-basic-utils",
- "tor-bytes",
- "tor-config",
- "tor-config-path",
- "tor-error",
- "tor-hscrypto",
- "tor-key-forge",
- "tor-llcrypto 0.32.0",
- "tor-persist",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config-path 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-key-forge 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-persist 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "visibility",
  "walkdir",
@@ -12448,7 +12802,7 @@ source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df195
 dependencies = [
  "base64ct",
  "by_address",
- "caret",
+ "caret 0.5.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "derive-deftly 1.1.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
@@ -12459,19 +12813,19 @@ dependencies = [
  "serde_with 3.14.0",
  "strum 0.27.2",
  "thiserror 2.0.12",
- "tor-basic-utils",
- "tor-bytes",
- "tor-config",
- "tor-llcrypto 0.32.0",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-memquota",
  "tor-protover",
 ]
 
 [[package]]
 name = "tor-llcrypto"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4def0c5674fa67c5b8a8fb8814c0381570e4866842c233ac98982e78779339bf"
+checksum = "992c49dd4c285c52594858c0e92afe96531203dbe9bb29cfbe6937d94bb3c7ad"
 dependencies = [
  "aes",
  "base64ct",
@@ -12484,7 +12838,6 @@ dependencies = [
  "educe",
  "getrandom 0.3.3",
  "hex",
- "once_cell",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "rand_core 0.6.4",
@@ -12551,8 +12904,8 @@ dependencies = [
  "futures",
  "humantime",
  "thiserror 2.0.12",
- "tor-error",
- "tor-rtcompat",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "weak-table",
 ]
@@ -12574,12 +12927,12 @@ dependencies = [
  "slotmap-careful",
  "static_assertions",
  "thiserror 2.0.12",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-config",
- "tor-error",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-log-ratelim",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "void",
 ]
@@ -12604,14 +12957,14 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.12",
  "time 0.3.41",
- "tor-basic-utils",
- "tor-error",
- "tor-hscrypto",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-netdoc",
  "tor-protover",
- "tor-units",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "typed-index-collections",
 ]
@@ -12643,20 +12996,47 @@ dependencies = [
  "thiserror 2.0.12",
  "time 0.3.41",
  "tinystr",
- "tor-basic-utils",
- "tor-bytes",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-cell",
- "tor-cert",
- "tor-checkable",
- "tor-error",
- "tor-hscrypto",
+ "tor-cert 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-checkable 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-protover",
- "tor-units",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "void",
  "weak-table",
  "zeroize",
+]
+
+[[package]]
+name = "tor-persist"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fabc9ba76dbe0ca3b254ed73480455a337c1941904f375d583efcdc57966f98"
+dependencies = [
+ "derive-deftly 1.1.0",
+ "derive_more 2.0.1",
+ "filetime",
+ "fs-mistrust 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fslock",
+ "futures",
+ "itertools 0.14.0",
+ "oneshot-fused-workaround 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "paste",
+ "sanitize-filename",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "time 0.3.41",
+ "tor-async-utils 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-basic-utils 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing",
+ "void",
 ]
 
 [[package]]
@@ -12668,21 +13048,21 @@ dependencies = [
  "derive-deftly 1.1.0",
  "derive_more 2.0.1",
  "filetime",
- "fs-mistrust",
+ "fs-mistrust 0.10.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "fslock",
  "fslock-guard",
  "futures",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "paste",
  "sanitize-filename",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
  "time 0.3.41",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-error",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "void",
 ]
@@ -12696,7 +13076,7 @@ dependencies = [
  "asynchronous-codec 0.7.0",
  "bitvec",
  "bytes",
- "caret",
+ "caret 0.5.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "cfg-if",
  "cipher",
  "coarsetime",
@@ -12711,7 +13091,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "pin-project",
  "postage",
  "rand 0.9.2",
@@ -12725,23 +13105,23 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
- "tor-async-utils",
- "tor-basic-utils",
- "tor-bytes",
+ "tor-async-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-cell",
- "tor-cert",
- "tor-checkable",
- "tor-config",
- "tor-error",
- "tor-hscrypto",
+ "tor-cert 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-checkable 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-config 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-hscrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
- "tor-llcrypto 0.32.0",
+ "tor-llcrypto 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-log-ratelim",
  "tor-memquota",
  "tor-protover",
- "tor-rtcompat",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-rtmock",
- "tor-units",
+ "tor-units 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "typenum",
  "visibility",
@@ -12754,11 +13134,11 @@ name = "tor-protover"
 version = "0.32.0"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 dependencies = [
- "caret",
+ "caret 0.5.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "paste",
  "serde_with 3.14.0",
  "thiserror 2.0.12",
- "tor-bytes",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
 ]
 
 [[package]]
@@ -12768,10 +13148,61 @@ source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df195
 dependencies = [
  "rand 0.9.2",
  "serde",
- "tor-basic-utils",
+ "tor-basic-utils 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tor-linkspec",
  "tor-netdir",
  "tor-netdoc",
+]
+
+[[package]]
+name = "tor-rpc-connect"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "985904e33200b9d2ef6e98863430855ecc45cd96c9811d839151c9651fdd306d"
+dependencies = [
+ "base16ct",
+ "cfg-if",
+ "derive_builder_fork_arti",
+ "derive_more 2.0.1",
+ "fs-mistrust 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.9.2",
+ "safelog 0.4.8",
+ "serde",
+ "serde_with 3.14.0",
+ "subtle",
+ "thiserror 2.0.12",
+ "tiny-keccak",
+ "toml 0.8.23",
+ "tor-basic-utils 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-config-path 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-general-addr 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "tor-rtcompat"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a75969f63c5147af49753e1c03339d342bc3e53e7412518e52702cc417cff729"
+dependencies = [
+ "async-trait",
+ "async_executors",
+ "asynchronous-codec 0.7.0",
+ "coarsetime",
+ "derive_more 2.0.1",
+ "dyn-clone",
+ "educe",
+ "futures",
+ "hex",
+ "libc",
+ "paste",
+ "pin-project",
+ "thiserror 2.0.12",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-general-addr 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tracing",
+ "void",
 ]
 
 [[package]]
@@ -12797,8 +13228,8 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
- "tor-error",
- "tor-general-addr",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-general-addr 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "void",
 ]
@@ -12817,15 +13248,15 @@ dependencies = [
  "futures",
  "humantime",
  "itertools 0.14.0",
- "oneshot-fused-workaround",
+ "oneshot-fused-workaround 0.2.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "pin-project",
  "priority-queue",
  "slotmap-careful",
  "strum 0.27.2",
  "thiserror 2.0.12",
- "tor-error",
- "tor-general-addr",
- "tor-rtcompat",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-general-addr 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-rtcompat 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "tracing",
  "tracing-test",
  "void",
@@ -12834,17 +13265,45 @@ dependencies = [
 [[package]]
 name = "tor-socksproto"
 version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9b7d2a9b7394b8f2c683d282f4a0da08c056ed23b3bb9afdb84cb92d554c77b"
+dependencies = [
+ "amplify",
+ "caret 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "derive-deftly 1.1.0",
+ "educe",
+ "safelog 0.4.8",
+ "subtle",
+ "thiserror 2.0.12",
+ "tor-bytes 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tor-error 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tor-socksproto"
+version = "0.32.0"
 source = "git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841#18111286b5830cda88af5df1950b5e24ee5a8841"
 dependencies = [
  "amplify",
- "caret",
+ "caret 0.5.3 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
  "derive-deftly 1.1.0",
  "educe",
  "safelog 0.4.7",
  "subtle",
  "thiserror 2.0.12",
- "tor-bytes",
- "tor-error",
+ "tor-bytes 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+ "tor-error 0.32.0 (git+https://github.com/eigenwallet/arti?rev=18111286b5830cda88af5df1950b5e24ee5a8841)",
+]
+
+[[package]]
+name = "tor-units"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22f2bd3dc4f5defec5d4b9d152d911a3a852d08409558dd927ec8eb28e20f9de"
+dependencies = [
+ "derive_more 2.0.1",
+ "serde",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -13955,6 +14414,18 @@ name = "weezl"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a751b3277700db47d3e574514de2eced5e54dc8a5436a3bf7a0b248b2cee16f3"
+
+[[package]]
+name = "which"
+version = "4.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
+dependencies = [
+ "either",
+ "home",
+ "once_cell",
+ "rustix 0.38.44",
+]
 
 [[package]]
 name = "whoami"
