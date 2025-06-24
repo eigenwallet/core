@@ -204,7 +204,7 @@ impl FromStr for DomainAddr {
 //
 
 /// An enum representing the various types of addresses a [`TorProvider`] implementation may connect to.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TargetAddr {
     /// An ip address and port
     Socket(std::net::SocketAddr),
