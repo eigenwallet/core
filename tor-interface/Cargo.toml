@@ -40,6 +40,7 @@ tor-proto = { version = "0.31.0", features = ["stream-ctrl"], optional = true }
 tor-rtcompat = { version = "0.31.0", optional = true }
 hmac = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }
+zeroize = { version = "1.8", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 anyhow = "1.0"
@@ -50,4 +51,4 @@ which = "4.4"
 arti-client-tor-provider = ["arti-client", "tokio", "tokio-stream", "tokio-mpmc", "tor-cell", "tor-config", "tor-hsservice", "tor-keymgr", "tor-proto", "tor-rtcompat"]
 arti-tor-provider = ["arti-rpc-client-core"]
 mock-tor-provider = []
-legacy-tor-provider = ["hmac", "sha2"]
+legacy-tor-provider = ["hmac", "sha2", "zeroize"]

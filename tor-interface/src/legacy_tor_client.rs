@@ -9,6 +9,7 @@ use std::str::FromStr;
 use std::string::ToString;
 use std::sync::{atomic, Arc};
 use std::time::Duration;
+use zeroize::ZeroizeOnDrop;
 #[cfg(unix)]
 use std::os::unix::net::SocketAddr as UnixSocketAddr;
 
@@ -175,9 +176,10 @@ pub enum LegacyTorClientConfig {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, ZeroizeOnDrop)]
 pub enum TorAuth {
     Password(String),
+    #[zeroize(skip)]
     Cookie(PathBuf),
     CookieData([u8; 32]),
 }
