@@ -71,7 +71,7 @@ fn build_bundled_pt_legacy_tor_provider(name: &str) -> anyhow::Result<Option<Box
     data_path.push(name);
 
     // find the lyrebird bin
-    let teb_path = std::env::var("TEB_PATH")?;
+    let teb_path = std::env::var("TEB_PATH").unwrap_or_default();
     if teb_path.is_empty() {
         println!("TEB_PATH environment variable empty, so skipping test_legacy_pluggable_transport_bootstrap()");
         return Ok(None);
