@@ -745,15 +745,15 @@ impl TorProvider for LegacyTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
+        bind_addr: Option<SocketAddr>,
     ) -> Result<Self::Listener, tor_provider::Error> {
         if !self.bootstrapped {
             return Err(Error::LegacyTorNotBootstrapped().into());
         }
 
         // try to bind to a local address, let OS pick our port
-        let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
-        let listener = TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
-        let socket_addr = listener
+        let listener = TcpListener::bind(bind_addr.unwrap_or(([127, 0, 0, 1], 0u16).into())).map_err(Error::TcpListenerBindFailed)?;
+        let bind_addr = listener
             .local_addr()
             .map_err(Error::TcpListenerLocalAddrFailed)?;
 
@@ -763,11 +763,6 @@ impl TorProvider for LegacyTorClient {
             ..Default::default()
         };
 
-        let onion_addr = OnionAddr::V3(OnionAddrV3::new(
-            V3OnionServiceId::from_private_key(private_key),
-            virt_port,
-        ));
-
         // start onion service
         let (_, service_id) = self
             .controller
@@ -776,10 +771,15 @@ impl TorProvider for LegacyTorClient {
                 &flags,
                 None,
                 virt_port,
-                Some(socket_addr),
+                Some(bind_addr),
                 authorized_clients,
             )
             .map_err(Error::AddOnionFailed)?;
+
+        let onion_addr = OnionAddr::V3(OnionAddrV3::new(
+            V3OnionServiceId::from_private_key(private_key),
+            virt_port,
+        ));
 
         let is_active = Arc::new(atomic::AtomicBool::new(true));
         self.onion_services

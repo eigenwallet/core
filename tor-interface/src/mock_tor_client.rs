@@ -281,6 +281,7 @@ impl TorProvider for MockTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
+        bind_addr: Option<SocketAddr>,
     ) -> Result<Self::Listener, tor_provider::Error> {
         // convert inputs to relevant types
         let service_id = V3OnionServiceId::from_private_key(private_key);
@@ -291,7 +292,7 @@ impl TorProvider for MockTorClient {
         };
 
         // try to bind to a local address, let OS pick our port
-        let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
+        let socket_addr = bind_addr.unwrap_or(SocketAddr::from(([127, 0, 0, 1], 0u16)));
         let listener = TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
         let socket_addr = listener
             .local_addr()

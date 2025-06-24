@@ -1,6 +1,7 @@
 // standard
 use std::future::Future;
 use std::io::{Read, Write};
+use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -286,6 +287,7 @@ impl TorProvider for ArtiClientTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
+        _bind_addr: Option<SocketAddr>,
     ) -> Result<Self::Listener, tor_provider::Error> {
         // generate a nickname to identify this onion service
         let service_id = V3OnionServiceId::from_private_key(private_key);

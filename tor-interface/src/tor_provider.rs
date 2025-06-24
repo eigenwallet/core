@@ -633,12 +633,13 @@ pub trait TorProvider: Send {
     ) -> Result<Self::Stream, Error>;
     /// Anonymously start an onion-service and return the associated [`OnionListener`].
     ///
-    ///The resulting onion-service will not be reachable by clients until [`TorProvider::update()`] returns a [`TorEvent::OnionServicePublished`] event. The optional `authorised_clients` parameter may be used to require client authorisation keys to connect to resulting onion-service. For further information, see the Tor Project's onion-services [client-auth documentation](https://community.torproject.org/onion-services/advanced/client-auth).
+    ///The resulting onion-service will not be reachable by clients until [`TorProvider::update()`] returns a [`TorEvent::OnionServicePublished`] event. The optional `authorised_clients` parameter may be used to require client authorisation keys to connect to resulting onion-service. `bind_addr` may be used to force a specific address and port. For further information, see the Tor Project's onion-services [client-auth documentation](https://community.torproject.org/onion-services/advanced/client-auth).
     fn listener(
         &mut self,
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorised_clients: Option<&[X25519PublicKey]>,
+        bind_addr: Option<SocketAddr>,
     ) -> Result<Self::Listener, Error>;
     /// Create a new [`CircuitToken`].
     fn generate_token(&mut self) -> CircuitToken;
@@ -655,7 +656,7 @@ pub struct BoxTorProvider {
     add_client_auth: fn(&mut Box<dyn Any + Send>, &V3OnionServiceId, &X25519PrivateKey) -> Result<(), Error>,
     remove_client_auth: fn(&mut Box<dyn Any + Send>, &V3OnionServiceId) -> Result<(), Error>,
     connect: fn(&mut Box<dyn Any + Send>, TargetAddr, Option<CircuitToken>) -> Result<<Self as TorProvider>::Stream, Error>,
-    listener: fn(&mut Box<dyn Any + Send>, &Ed25519PrivateKey, u16, Option<&[X25519PublicKey]>) -> Result<<Self as TorProvider>::Listener, Error>,
+    listener: fn(&mut Box<dyn Any + Send>, &Ed25519PrivateKey, u16, Option<&[X25519PublicKey]>, Option<SocketAddr>) -> Result<<Self as TorProvider>::Listener, Error>,
     generate_token: fn(&mut Box<dyn Any + Send>) -> CircuitToken,
     release_token: fn(&mut Box<dyn Any + Send>, CircuitToken),
 }
@@ -670,7 +671,7 @@ impl BoxTorProvider {
             add_client_auth: |slf, service_id, client_auth| slf.downcast_mut::<P>().unwrap().add_client_auth(service_id, client_auth),
             remove_client_auth: |slf, service_id| slf.downcast_mut::<P>().unwrap().remove_client_auth(service_id),
             connect: |slf, target, circuit| slf.downcast_mut::<P>().unwrap().connect(target, circuit).map(BoxOnionStream::new),
-            listener: |slf, private_key, virt_port, authorised_clients| slf.downcast_mut::<P>().unwrap().listener(private_key, virt_port, authorised_clients).map(BoxOnionListener::new),
+            listener: |slf, private_key, virt_port, authorised_clients, bind_addr| slf.downcast_mut::<P>().unwrap().listener(private_key, virt_port, authorised_clients, bind_addr).map(BoxOnionListener::new),
             generate_token: |slf| slf.downcast_mut::<P>().unwrap().generate_token(),
             release_token: |slf, token| slf.downcast_mut::<P>().unwrap().release_token(token),
         }
@@ -709,8 +710,9 @@ impl TorProvider for BoxTorProvider {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorised_clients: Option<&[X25519PublicKey]>,
+        bind_addr: Option<SocketAddr>,
     ) -> Result<Self::Listener, Error> {
-        (self.listener)(&mut self.data, private_key, virt_port, authorised_clients)
+        (self.listener)(&mut self.data, private_key, virt_port, authorised_clients, bind_addr)
     }
     fn generate_token(&mut self) -> CircuitToken {
         (self.generate_token)(&mut self.data)
