@@ -523,6 +523,9 @@ pub trait OnionListener: Send {
 
     /// Accept a new incoming connection from this listener.
     fn accept(&self) -> std::io::Result<Option<Self::Stream>>;
+
+    /// Address this listener is listening on
+    fn address(&self) -> &OnionAddr;
 }
 
 pub(crate) struct TcpOnionListenerBase(pub TcpListener, pub OnionAddr);
@@ -552,6 +555,10 @@ impl OnionListener for TcpOnionListenerBase {
             }
         }
     }
+
+    fn address(&self) -> &OnionAddr {
+        &self.1
+    }
 }
 
 impl OnionListener for TcpOnionListener {
@@ -563,6 +570,10 @@ impl OnionListener for TcpOnionListener {
 
     fn accept(&self) -> std::io::Result<Option<Self::Stream>> {
         self.0.accept()
+    }
+
+    fn address(&self) -> &OnionAddr {
+        &self.0.address()
     }
 }
 
@@ -587,6 +598,7 @@ pub struct BoxOnionListener {
 
     set_nonblocking: fn(&Box<dyn Any + Send>, bool) -> std::io::Result<()>,
     accept: fn(&Box<dyn Any + Send>) -> std::io::Result<Option<<Self as OnionListener>::Stream>>,
+    address: fn(&Box<dyn Any + Send>) -> &OnionAddr,
 }
 
 impl BoxOnionListener {
@@ -596,6 +608,7 @@ impl BoxOnionListener {
 
             set_nonblocking: |slf, nonblocking| slf.downcast_ref::<L>().unwrap().set_nonblocking(nonblocking),
             accept: |slf| slf.downcast_ref::<L>().unwrap().accept().map(|r| r.map(BoxOnionStream::new)),
+            address: |slf| slf.downcast_ref::<L>().unwrap().address(),
         }
     }
 }
@@ -609,6 +622,10 @@ impl OnionListener for BoxOnionListener {
 
     fn accept(&self) -> std::io::Result<Option<Self::Stream>> {
         (self.accept)(&self.data)
+    }
+
+    fn address(&self) -> &OnionAddr {
+        (self.address)(&self.data)
     }
 }
 

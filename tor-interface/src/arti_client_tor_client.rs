@@ -519,4 +519,8 @@ impl OnionListener for ArtiClientOnionListener {
             self.tokio_runtime.block_on(fut)
         }
     }
+
+    fn address(&self) -> &OnionAddr {
+        &self.onion_addr
+    }
 }
