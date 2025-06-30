@@ -13,7 +13,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::Display;
-use tokio::sync::{oneshot, Mutex as TokioMutex};
+use tokio::sync::oneshot;
+use std::sync::Mutex;
 use typeshare::typeshare;
 use uuid::Uuid;
 
@@ -120,7 +121,7 @@ pub struct TorBootstrapStatus {
 #[cfg(feature = "tauri")]
 struct TauriHandleInner {
     app_handle: tauri::AppHandle,
-    pending_approvals: Arc<TokioMutex<HashMap<Uuid, PendingApproval>>>,
+    pending_approvals: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
 }
 
 #[derive(Clone)]
@@ -139,7 +140,7 @@ impl TauriHandle {
             #[cfg(feature = "tauri")]
             Arc::new(TauriHandleInner {
                 app_handle: tauri_handle,
-                pending_approvals: Arc::new(TokioMutex::new(HashMap::new())),
+                pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             }),
         )
     }
@@ -204,7 +205,7 @@ impl TauriHandle {
 
             // Lock map and insert the pending approval
             {
-                let mut pending_map = self.0.pending_approvals.lock().await;
+                let mut pending_map = self.0.pending_approvals.lock().unwrap();
                 pending_map.insert(request_id, pending);
             }
 
@@ -268,7 +269,7 @@ impl TauriHandle {
 
         #[cfg(feature = "tauri")]
         {
-            let mut pending_map = self.0.pending_approvals.lock().await;
+            let mut pending_map = self.0.pending_approvals.lock().unwrap();
             if let Some(mut pending) = pending_map.remove(&request_id) {
                 // Send response through oneshot channel
                 let _ = pending
@@ -783,7 +784,7 @@ pub struct ListSellersProgress {
 // Add this struct before the TauriHandle implementation
 struct ApprovalCleanupGuard {
     request_id: Option<Uuid>,
-    approval_store: Arc<TokioMutex<HashMap<Uuid, PendingApproval>>>,
+    approval_store: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
     handle: TauriHandle,
 }
 
@@ -791,7 +792,7 @@ impl ApprovalCleanupGuard {
     fn new(
         request_id: Uuid,
         handle: TauriHandle,
-        approval_store: Arc<TokioMutex<HashMap<Uuid, PendingApproval>>>,
+        approval_store: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
     ) -> Self {
         Self {
             request_id: Some(request_id),
@@ -811,21 +812,21 @@ impl Drop for ApprovalCleanupGuard {
         if let Some(request_id) = self.request_id {
             tracing::debug!(%request_id, "Approval handle dropped, we should cleanup now");
 
-            // Lock the Mutex (sync, not using async)
-            let mut approval_store = self.approval_store.blocking_lock();
-            
-            // Check if the request id still present in the map
-            if let Some(mut pending_approval) = approval_store.remove(&request_id) {
-                // If there is still someone listening, send a rejection
-                if let Some(responder) = pending_approval.responder.take() {
-                    let _ = responder.send(false);
-                }
+            // Lock the Mutex
+            if let Ok(mut approval_store) = self.approval_store.lock() {
+                // Check if the request id still present in the map
+                if let Some(mut pending_approval) = approval_store.remove(&request_id) {
+                    // If there is still someone listening, send a rejection
+                    if let Some(responder) = pending_approval.responder.take() {
+                        let _ = responder.send(false);
+                    }
 
-                // Emit a rejection event to the frontend
-                self.handle.emit_approval(ApprovalRequest::Rejected {
-                    request_id: request_id.to_string(),
-                    details: pending_approval.details.clone(),
-                });
+                    // Emit a rejection event to the frontend
+                    self.handle.emit_approval(ApprovalRequest::Rejected {
+                        request_id: request_id.to_string(),
+                        details: pending_approval.details.clone(),
+                    });
+                }
             }
         }
     }
