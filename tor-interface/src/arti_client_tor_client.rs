@@ -199,6 +199,9 @@ impl ArtiClientTorClient {
 }
 
 impl TorProvider for ArtiClientTorClient {
+    type Stream = TcpOnionStream;
+    type Listener = TcpOnionListener;
+
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
         std::thread::sleep(std::time::Duration::from_millis(16));
         match self.pending_events.lock() {
@@ -294,7 +297,7 @@ impl TorProvider for ArtiClientTorClient {
         &mut self,
         target: TargetAddr,
         circuit: Option<CircuitToken>,
-    ) -> Result<OnionStream, tor_provider::Error> {
+    ) -> Result<Self::Stream, tor_provider::Error> {
         // stream isolation not implemented yet
         if circuit.is_some() {
             return Err(Error::NotImplemented().into());
@@ -362,7 +365,7 @@ impl TorProvider for ArtiClientTorClient {
         let stream = client_stream
             .into_std()
             .map_err(Error::TcpStreamIntoFailed)?;
-        Ok(OnionStream {
+        Ok(TcpOnionStream {
             stream,
             local_addr: None,
             peer_addr: Some(target),
@@ -374,7 +377,7 @@ impl TorProvider for ArtiClientTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<OnionListener, tor_provider::Error> {
+    ) -> Result<Self::Listener, tor_provider::Error> {
 
         // try to bind to a local address, let OS pick our port
         let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
@@ -515,7 +518,7 @@ impl TorProvider for ArtiClientTorClient {
 
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id, virt_port));
         // onion-service is torn down when `onion_service` is dropped
-        Ok(OnionListener::new::<Arc<RunningOnionService>>(listener, onion_addr, onion_service, |_|{}))
+        Ok(TcpOnionListener::new::<Arc<RunningOnionService>>(listener, onion_addr, onion_service, |_|{}))
     }
 
     fn generate_token(&mut self) -> CircuitToken {

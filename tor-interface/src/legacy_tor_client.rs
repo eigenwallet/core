@@ -469,6 +469,9 @@ impl LegacyTorClient {
 }
 
 impl TorProvider for LegacyTorClient {
+    type Stream = TcpOnionStream;
+    type Listener = TcpOnionListener;
+
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
         let mut i = 0;
         while i < self.onion_services.len() {
@@ -587,7 +590,7 @@ impl TorProvider for LegacyTorClient {
         &mut self,
         target: TargetAddr,
         circuit: Option<CircuitToken>,
-    ) -> Result<OnionStream, tor_provider::Error> {
+    ) -> Result<Self::Stream, tor_provider::Error> {
         if !self.bootstrapped {
             return Err(Error::LegacyTorNotBootstrapped().into());
         }
@@ -638,7 +641,7 @@ impl TorProvider for LegacyTorClient {
         }
         .map_err(Error::Socks5ConnectionFailed)?;
 
-        Ok(OnionStream {
+        Ok(TcpOnionStream {
             stream: stream.into_inner(),
             local_addr: None,
             peer_addr: Some(target),
@@ -651,7 +654,7 @@ impl TorProvider for LegacyTorClient {
         private_key: &Ed25519PrivateKey,
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
-    ) -> Result<OnionListener, tor_provider::Error> {
+    ) -> Result<Self::Listener, tor_provider::Error> {
         if !self.bootstrapped {
             return Err(Error::LegacyTorNotBootstrapped().into());
         }
@@ -691,7 +694,7 @@ impl TorProvider for LegacyTorClient {
         self.onion_services
             .push((service_id, Arc::clone(&is_active)));
 
-        Ok(OnionListener::new(listener, onion_addr, is_active, |is_active| {
+        Ok(TcpOnionListener::new(listener, onion_addr, is_active, |is_active| {
             is_active.store(false, atomic::Ordering::Relaxed);
         }))
     }
