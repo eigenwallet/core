@@ -7,27 +7,25 @@ import { useState } from "react";
 import SwapSuspendAlert from "renderer/components/modal/SwapSuspendAlert";
 
 export default function CancelButton() {
-  const swap = useAppSelector((state) => state.swap);
-  const [openSuspendAlert, setOpenSuspendAlert] = useState(false);
   const dispatch = useAppDispatch();
+  const swap = useAppSelector((state) => state.swap);
   const isSwapRunning = useIsSwapRunning();
+
+  const [openSuspendAlert, setOpenSuspendAlert] = useState(false);
 
   async function onCancel() {
     const swapId = await getCurrentSwapId();
 
-    if (swapId !== null) {
-      if (haveFundsBeenLocked(swap.state.curr)) {
-        if (isSwapRunning) {
-          setOpenSuspendAlert(true);
-          return;
-        }
+    if (swapId.swap_id !== null) {
+      if (haveFundsBeenLocked(swap.state?.curr) && isSwapRunning) {
+        setOpenSuspendAlert(true);
+        return;
       }
 
       await suspendCurrentSwap();
-      dispatch(swapReset());
-    } else {
-      dispatch(swapReset());
     }
+
+    dispatch(swapReset());
   }
 
   return (

@@ -91,9 +91,13 @@ pub async fn list_sellers_init(
             // Prepare initial dial queue with cached peer addresses, if any
             let external_dial_queue = match db {
                 Some(db) => {
-                    // TODO: Dont use unwrap
-                    let peers = db.get_all_peer_addresses().await.unwrap();
-                    VecDeque::from(peers)
+                    match db.get_all_peer_addresses().await {
+                        Ok(peers) => VecDeque::from(peers),
+                        Err(err) => {
+                            tracing::error!(%err, "Failed to get peers from database for list_sellers");
+                            VecDeque::new()
+                        }
+                    }
                 }
                 None => VecDeque::new(),
             };

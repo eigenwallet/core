@@ -812,20 +812,20 @@ impl Drop for ApprovalCleanupGuard {
             tracing::debug!(%request_id, "Approval handle dropped, we should cleanup now");
 
             // Lock the Mutex (sync, not using async)
-            if let Ok(mut approval_store) = self.approval_store.try_lock() {
-                // Check if the request id still present in the map
-                if let Some(mut pending_approval) = approval_store.remove(&request_id) {
-                    // If there is still someone listening, send a rejection
-                    if let Some(responder) = pending_approval.responder.take() {
-                        let _ = responder.send(false);
-                    }
-
-                    // Emit a rejection event to the frontend
-                    self.handle.emit_approval(ApprovalRequest::Rejected {
-                        request_id: request_id.to_string(),
-                        details: pending_approval.details.clone(),
-                    });
+            let mut approval_store = self.approval_store.blocking_lock();
+            
+            // Check if the request id still present in the map
+            if let Some(mut pending_approval) = approval_store.remove(&request_id) {
+                // If there is still someone listening, send a rejection
+                if let Some(responder) = pending_approval.responder.take() {
+                    let _ = responder.send(false);
                 }
+
+                // Emit a rejection event to the frontend
+                self.handle.emit_approval(ApprovalRequest::Rejected {
+                    request_id: request_id.to_string(),
+                    details: pending_approval.details.clone(),
+                });
             }
         }
     }
