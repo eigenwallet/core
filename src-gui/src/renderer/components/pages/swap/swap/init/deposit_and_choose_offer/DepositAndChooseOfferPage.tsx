@@ -1,4 +1,4 @@
-import { Typography, Box, Paper, Divider } from "@mui/material";
+import { Typography, Box, Paper, Divider, Pagination } from "@mui/material";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import MakerOfferItem from "./MakerOfferItem";
 import { usePendingSelectMakerApproval } from "store/hooks";
@@ -6,6 +6,7 @@ import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
 import _, { sortBy } from "lodash";
+import { useState } from "react";
 
 export default function DepositAndChooseOfferPage({
   deposit_address,
@@ -13,6 +14,8 @@ export default function DepositAndChooseOfferPage({
   known_quotes,
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
   const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
+  const [currentPage, setCurrentPage] = useState(1);
+  const offersPerPage = 3;
 
   const makerOffers = _.chain(
     sortBy(
@@ -34,6 +37,16 @@ export default function DepositAndChooseOfferPage({
     .sortBy((quote) => (quote.requestId ? 0 : 1))
     // .uniqBy((quote) => quote.quoteWithAddress.peer_id)
     .value();
+
+  // Pagination calculations
+  const totalPages = Math.ceil(makerOffers.length / offersPerPage);
+  const startIndex = (currentPage - 1) * offersPerPage;
+  const endIndex = startIndex + offersPerPage;
+  const paginatedOffers = makerOffers.slice(startIndex, endIndex);
+
+  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+    setCurrentPage(value);
+  };
 
   return (
     <>
@@ -115,17 +128,30 @@ export default function DepositAndChooseOfferPage({
           {/* Real Maker Offers */}
           <Box>
             {makerOffers.length > 0 && (
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                {makerOffers.map((quote, index) => {
-                  return (
-                    <MakerOfferItem
-                      key={index}
-                      quoteWithAddress={quote.quoteWithAddress}
-                      requestId={quote.requestId}
+              <>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  {paginatedOffers.map((quote, index) => {
+                    return (
+                      <MakerOfferItem
+                        key={startIndex + index}
+                        quoteWithAddress={quote.quoteWithAddress}
+                        requestId={quote.requestId}
+                      />
+                    );
+                  })}
+                </Box>
+                
+                {totalPages > 1 && (
+                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                    <Pagination
+                      count={totalPages}
+                      page={currentPage}
+                      onChange={handlePageChange}
+                      color="primary"
                     />
-                  );
-                })}
-              </Box>
+                  </Box>
+                )}
+              </>
             )}
 
             {/* TODO: Differentiate between no makers found and still loading */}
