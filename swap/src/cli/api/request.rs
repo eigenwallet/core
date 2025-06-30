@@ -1293,6 +1293,8 @@ pub async fn fetch_quotes_task(
         identity,
         db,
         tauri_handle,
+        Some(tx.clone()),
+        sellers,
     )
     .await?;
 
