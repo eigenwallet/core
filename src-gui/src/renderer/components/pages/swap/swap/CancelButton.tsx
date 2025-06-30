@@ -10,14 +10,15 @@ export default function CancelButton() {
   const dispatch = useAppDispatch();
   const swap = useAppSelector((state) => state.swap);
   const isSwapRunning = useIsSwapRunning();
-
   const [openSuspendAlert, setOpenSuspendAlert] = useState(false);
+
+  const hasFundsBeenLocked = haveFundsBeenLocked(swap.state?.curr);
 
   async function onCancel() {
     const swapId = await getCurrentSwapId();
 
     if (swapId.swap_id !== null) {
-      if (haveFundsBeenLocked(swap.state?.curr) && isSwapRunning) {
+      if (hasFundsBeenLocked && isSwapRunning) {
         setOpenSuspendAlert(true);
         return;
       }
@@ -38,7 +39,11 @@ export default function CancelButton() {
         sx={{ display: "flex", justifyContent: "flex-start", width: "100%" }}
       >
         <Button variant="outlined" onClick={onCancel}>
-          Cancel
+          {
+            hasFundsBeenLocked && swap.state?.curr.type !== "Released" ? "Suspend" :
+            swap.state?.curr.type === "Released" ? "Close" :
+            "Cancel"
+          }
         </Button>
       </Box>
     </>

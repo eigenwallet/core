@@ -99,6 +99,7 @@ export default function MakerOfferItem({
           onInvoke={() => resolveApproval(requestId, true)}
           displayErrorSnackbar
           disabled={!requestId}
+          tooltipTitle={requestId == null ? "You don't have enough Bitcoin to swap with this maker" : null}
         >
           Select
         </PromiseInvokeButton>

@@ -36,11 +36,11 @@ export default function TransactionInfoBox({
           <Typography variant="subtitle2">{additionalContent}</Typography>
           {explorerUrlCreator != null &&
             txId != null && ( // Only show the link if the txId is not null and we have a creator for the explorer URL
-              <Typography variant="body1">
+              (<Typography variant="body1">
                 <Link href={explorerUrlCreator(txId)} target="_blank">
                   View on explorer
                 </Link>
-              </Typography>
+              </Typography>)
             )}
         </Box>
       }

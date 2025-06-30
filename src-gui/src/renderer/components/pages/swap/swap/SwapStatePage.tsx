@@ -24,7 +24,6 @@ import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
 import InitPage from "./init/InitPage";
 import { Box } from "@mui/material";
-import CancelButton from "./CancelButton";
 
 function getPageForState(state: SwapState) {
   if (state === null) {
@@ -137,7 +136,6 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       {getPageForState(state)}
-      {state !== null && <CancelButton />}
     </Box>
   );
 }
