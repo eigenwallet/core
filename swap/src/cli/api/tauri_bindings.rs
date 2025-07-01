@@ -411,7 +411,29 @@ impl TauriEmitter for Option<TauriHandle> {
     }
 }
 
-/// A handle for updating a specific background process's progress
+impl TauriHandle {
+    #[cfg(feature = "tauri")]
+    pub async fn get_pending_approvals(&self) -> std::collections::HashMap<uuid::Uuid, ApprovalRequest> {
+        let inner = self.0.as_ref();
+        let pending_approvals = inner.pending_approvals.lock().await;
+        
+        pending_approvals.iter().map(|(uuid, pending)| {
+            let approval_request = ApprovalRequest::Pending {
+                request_id: uuid.to_string(),
+                expiration_ts: pending.expiration_ts,
+                details: pending.details.clone(),
+            };
+            (*uuid, approval_request)
+        }).collect()
+    }
+    
+    #[cfg(not(feature = "tauri"))]
+    pub async fn get_pending_approvals(&self) -> std::collections::HashMap<uuid::Uuid, ApprovalRequest> {
+        std::collections::HashMap::new()
+    }
+}
+
+/// A handle for updating a specific background progress's progress
 ///
 /// # Examples
 ///

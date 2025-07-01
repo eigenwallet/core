@@ -149,6 +149,12 @@ export const rpcSlice = createSlice({
     backgroundProgressEventRemoved(slice, action: PayloadAction<string>) {
       delete slice.state.background[action.payload];
     },
+    rpcSetBackgroundItems(slice, action: PayloadAction<{ [key: string]: TauriBackgroundProgress }>) {
+      slice.state.background = action.payload;
+    },
+    rpcSetApprovalItems(slice, action: PayloadAction<{ [requestId: string]: ApprovalRequest }>) {
+      slice.state.approvalRequests = action.payload;
+    },
   },
 });
 
@@ -167,6 +173,8 @@ export const {
   approvalEventReceived,
   backgroundProgressEventReceived,
   backgroundProgressEventRemoved,
+  rpcSetBackgroundItems,
+  rpcSetApprovalItems,
 } = rpcSlice.actions;
 
 export default rpcSlice.reducer;

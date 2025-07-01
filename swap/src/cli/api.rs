@@ -594,22 +594,22 @@ async fn init_monero_wallet(
     // It doesn't contain any coins
     // Deleting it ensures we never have issues at startup
     // And we reset the restore height
-    let wallet_path = wallet_dir.join(DEFAULT_WALLET);
-    if wallet_path.exists() {
-        tracing::debug!(
-            wallet_path = %wallet_path.display(),
-            "Removing monitoring wallet"
-        );
-        let _ = tokio::fs::remove_file(&wallet_path).await;
-    }
-    let keys_path = wallet_path.with_extension("keys");
-    if keys_path.exists() {
-        tracing::debug!(
-            keys_path = %keys_path.display(),
-            "Removing monitoring wallet keys"
-        );
-        let _ = tokio::fs::remove_file(keys_path).await;
-    }
+    // let wallet_path = wallet_dir.join(DEFAULT_WALLET);
+    // if wallet_path.exists() {
+    //     tracing::debug!(
+    //         wallet_path = %wallet_path.display(),
+    //         "Removing monitoring wallet"
+    //     );
+    //     let _ = tokio::fs::remove_file(&wallet_path).await;
+    // }
+    // let keys_path = wallet_path.with_extension("keys");
+    // if keys_path.exists() {
+    //     tracing::debug!(
+    //         keys_path = %keys_path.display(),
+    //         "Removing monitoring wallet keys"
+    //     );
+    //     let _ = tokio::fs::remove_file(keys_path).await;
+    // }
 
     let wallets = monero::Wallets::new(
         wallet_dir,

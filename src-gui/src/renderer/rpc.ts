@@ -34,8 +34,20 @@ import {
   SendMoneroArgs,
   SendMoneroResponse,
   GetMoneroSyncProgressResponse,
+  GetBackgroundItemsResponse,
+  GetApprovalItemsResponse,
 } from "models/tauriModel";
-import { rpcSetBalance, rpcSetSwapInfo } from "store/features/rpcSlice";
+import { rpcSetBalance, rpcSetSwapInfo, rpcSetBackgroundItems, rpcSetApprovalItems } from "store/features/rpcSlice";
+import {
+  setLoading,
+  setRefreshing,
+  setSending,
+  setError,
+  setMainAddress,
+  setBalance,
+  setSyncProgress,
+  setSendResult,
+} from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
 import { Maker } from "models/apiModel";
 import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
@@ -410,6 +422,107 @@ export async function sendMonero(args: SendMoneroArgs): Promise<SendMoneroRespon
 
 export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResponse> {
   return await invokeNoArgs<GetMoneroSyncProgressResponse>("get_monero_sync_progress");
+}
+
+export async function getBackgroundItems(): Promise<GetBackgroundItemsResponse> {
+  return await invokeNoArgs<GetBackgroundItemsResponse>("get_background_items");
+}
+
+export async function getApprovalItems(): Promise<GetApprovalItemsResponse> {
+  return await invokeNoArgs<GetApprovalItemsResponse>("get_approval_items");
+}
+
+// Wallet management functions that handle Redux dispatching
+export async function initializeMoneroWallet() {
+  store.dispatch(setLoading(true));
+  store.dispatch(setError(null));
+  
+  try {
+    const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
+      getMoneroMainAddress(),
+      getMoneroBalance(),
+      getMoneroSyncProgress(),
+    ]);
+    
+    store.dispatch(setMainAddress(addressResponse.address));
+    store.dispatch(setBalance(balanceResponse));
+    store.dispatch(setSyncProgress(syncProgressResponse));
+  } catch (err) {
+    console.error("Failed to fetch Monero wallet data:", err);
+    store.dispatch(setError("Failed to fetch Monero wallet data."));
+  } finally {
+    store.dispatch(setLoading(false));
+  }
+}
+
+export async function refreshMoneroWallet() {
+  store.dispatch(setRefreshing(true));
+  store.dispatch(setError(null));
+  store.dispatch(setSendResult(null));
+  
+  try {
+    const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
+      getMoneroMainAddress(),
+      getMoneroBalance(),
+      getMoneroSyncProgress(),
+    ]);
+    
+    store.dispatch(setMainAddress(addressResponse.address));
+    store.dispatch(setBalance(balanceResponse));
+    store.dispatch(setSyncProgress(syncProgressResponse));
+  } catch (err) {
+    console.error("Failed to refresh Monero wallet data:", err);
+    store.dispatch(setError("Failed to refresh Monero wallet data."));
+  } finally {
+    store.dispatch(setRefreshing(false));
+  }
+}
+
+export async function sendMoneroTransaction(args: SendMoneroArgs): Promise<void> {
+  store.dispatch(setSending(true));
+  store.dispatch(setSendResult(null));
+  
+  try {
+    const result = await sendMonero(args);
+    store.dispatch(setSendResult(result));
+    
+    // Refresh balance after sending
+    const newBalance = await getMoneroBalance();
+    store.dispatch(setBalance(newBalance));
+  } catch (err) {
+    console.error("Failed to send Monero:", err);
+    store.dispatch(setError("Failed to send Monero transaction."));
+  } finally {
+    store.dispatch(setSending(false));
+  }
+}
+
+export async function updateMoneroSyncProgress() {
+  try {
+    const response = await getMoneroSyncProgress();
+    store.dispatch(setSyncProgress(response));
+  } catch (err) {
+    console.error("Failed to fetch sync progress:", err);
+  }
+}
+
+// Background and approval management functions
+export async function fetchAndUpdateBackgroundItems() {
+  try {
+    const response = await getBackgroundItems();
+    store.dispatch(rpcSetBackgroundItems(response.background));
+  } catch (err) {
+    console.error("Failed to fetch background items:", err);
+  }
+}
+
+export async function fetchAndUpdateApprovalItems() {
+  try {
+    const response = await getApprovalItems();
+    store.dispatch(rpcSetApprovalItems(response.approvals));
+  } catch (err) {
+    console.error("Failed to fetch approval items:", err);
+  }
 }
 
 export async function getDataDir(): Promise<string> {

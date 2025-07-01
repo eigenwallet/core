@@ -14,6 +14,7 @@ use swap::cli::{
             GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
             ResolveApprovalArgs, ResumeSwapArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
             GetMoneroBalanceArgs, SendMoneroArgs, GetMoneroSyncProgressArgs,
+            GetBackgroundItemsArgs, GetApprovalItemsArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -200,6 +201,8 @@ pub fn run() {
             get_monero_balance,
             send_monero,
             get_monero_sync_progress,
+            get_background_items,
+            get_approval_items,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -254,6 +257,10 @@ tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
 
 // Add the new command for getting Monero main address
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
+
+// Add new commands for fetching background and approval items
+tauri_command!(get_background_items, GetBackgroundItemsArgs, no_args);
+tauri_command!(get_approval_items, GetApprovalItemsArgs, no_args);
 
 /// Here we define Tauri commands whose implementation is not delegated to the Request trait
 #[tauri::command]

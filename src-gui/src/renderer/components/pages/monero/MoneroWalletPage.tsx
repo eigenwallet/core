@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useSelector } from "react-redux";
 import { 
   Box, 
   Typography, 
@@ -8,41 +9,37 @@ import {
   Button,
   Card,
   CardContent,
-  Grid,
   InputAdornment,
-  LinearProgress
+  LinearProgress,
+  Stack,
+  Divider
 } from "@mui/material";
-import { Send as SendIcon, QrCodeScanner as QrCodeScannerIcon, Refresh as RefreshIcon } from "@mui/icons-material";
+import { Send as SendIcon, Refresh as RefreshIcon } from "@mui/icons-material";
 import { 
-  GetMoneroBalanceResponse, 
-  SendMoneroArgs,
-  SendMoneroResponse,
-  GetMoneroSyncProgressResponse
-} from "models/tauriModel";
-import { 
-  getMoneroMainAddress, 
-  getMoneroBalance, 
-  sendMonero,
-  getMoneroSyncProgress
+  initializeMoneroWallet,
+  refreshMoneroWallet,
+  sendMoneroTransaction,
+  updateMoneroSyncProgress
 } from "../../../rpc";
 import ActionableMonospaceTextBox from "../../other/ActionableMonospaceTextBox";
 import { PiconeroAmount } from "../../other/Units";
+import { RootState } from "../../../store/storeRenderer";
 
 export default function MoneroWalletPage() {
-  const [mainAddress, setMainAddress] = useState<string | null>(null);
-  const [balance, setBalance] = useState<GetMoneroBalanceResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  // Send form state
+  const {
+    mainAddress,
+    balance,
+    syncProgress,
+    isLoading,
+    isRefreshing,
+    isSending,
+    error,
+    sendResult,
+  } = useSelector((state: RootState) => state.wallet.state);
+
+  // Local form state
   const [sendAddress, setSendAddress] = useState("");
   const [sendAmount, setSendAmount] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [sendResult, setSendResult] = useState<SendMoneroResponse | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
-  // Sync progress state
-  const [syncProgress, setSyncProgress] = useState<GetMoneroSyncProgressResponse | null>(null);
 
   // Auto-refresh sync progress every 5 seconds if not fully synced
   useEffect(() => {
@@ -50,70 +47,28 @@ export default function MoneroWalletPage() {
       return;
     }
 
-    const interval = setInterval(async () => {
-      try {
-        const response = await getMoneroSyncProgress();
-        setSyncProgress(response);
-      } catch (err) {
-        console.error("Failed to fetch sync progress:", err);
-      }
+    const interval = setInterval(() => {
+      updateMoneroSyncProgress();
     }, 5000);
 
     return () => clearInterval(interval);
   }, [syncProgress]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
-          getMoneroMainAddress(),
-          getMoneroBalance(),
-          getMoneroSyncProgress(),
-        ]);
-        
-        setMainAddress(addressResponse.address);
-        setBalance(balanceResponse);
-        setSyncProgress(syncProgressResponse);
-      } catch (err) {
-        console.error("Failed to fetch Monero wallet data:", err);
-        setError("Failed to fetch Monero wallet data.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
+    initializeMoneroWallet();
   }, []);
 
   const handleSend = async () => {
     if (!sendAddress || !sendAmount) return;
     
-    try {
-      setIsSending(true);
-      setSendResult(null);
-      
-      const result = await sendMonero({
-        address: sendAddress,
-        amount: parseFloat(sendAmount) * 1e12, // Convert XMR to piconero
-      });
-      
-      setSendResult(result);
-      setSendAddress("");
-      setSendAmount("");
-      
-      // Refresh balance after sending
-      const newBalance = await getMoneroBalance();
-      setBalance(newBalance);
-      
-    } catch (err) {
-      console.error("Failed to send Monero:", err);
-      setError("Failed to send Monero transaction.");
-    } finally {
-      setIsSending(false);
-    }
+    await sendMoneroTransaction({
+      address: sendAddress,
+      amount: parseFloat(sendAmount) * 1e12, // Convert XMR to piconero
+    });
+    
+    // Clear form after successful send
+    setSendAddress("");
+    setSendAmount("");
   };
 
   const handleMaxAmount = () => {
@@ -126,26 +81,7 @@ export default function MoneroWalletPage() {
   };
 
   const handleRefresh = async () => {
-    try {
-      setIsRefreshing(true);
-      setError(null);
-      setSendResult(null);
-      
-      const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
-        getMoneroMainAddress(),
-        getMoneroBalance(),
-        getMoneroSyncProgress(),
-      ]);
-      
-      setMainAddress(addressResponse.address);
-      setBalance(balanceResponse);
-      setSyncProgress(syncProgressResponse);
-    } catch (err) {
-      console.error("Failed to refresh Monero wallet data:", err);
-      setError("Failed to refresh Monero wallet data.");
-    } finally {
-      setIsRefreshing(false);
-    }
+    await refreshMoneroWallet();
   };
 
   if (isLoading) {
@@ -157,7 +93,7 @@ export default function MoneroWalletPage() {
   }
 
   return (
-    <Box sx={{ maxWidth: 800, mx: "auto", p: 2 }}>
+    <Box sx={{ maxWidth: 800, mx: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -165,18 +101,15 @@ export default function MoneroWalletPage() {
       )}
 
       {sendResult && (
-        <Alert severity="success" sx={{ mb: 2 }}>
+        <Alert severity="success">
           Transaction sent! Hash: {sendResult.tx_hash}
         </Alert>
       )}
 
       {/* Primary Address */}
       {mainAddress && (
-        <Card sx={{ mb: 3 }}>
+        <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Primary Address
-            </Typography>
             <ActionableMonospaceTextBox content={mainAddress} />
           </CardContent>
         </Card>
@@ -184,11 +117,11 @@ export default function MoneroWalletPage() {
 
       {/* Balance */}
       {balance && (
-        <Card sx={{ mb: 3 }}>
+        <Card>
           <CardContent>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2}}>
               <Typography variant="h6">
-                Monero Balance
+                Balance
               </Typography>
               <Button
                 variant="outlined"
@@ -200,21 +133,22 @@ export default function MoneroWalletPage() {
                 {isRefreshing ? "Refreshing..." : "Refresh"}
               </Button>
             </Box>
-            <Box sx={{ display: "flex", gap: 4 }}>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center"}}>
               <Box>
                 <Typography variant="body2" color="text.secondary">
                   Confirmed
                 </Typography>
                 <Typography variant="h5">
-                  <PiconeroAmount amount={parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance)} /> XMR
+                  <PiconeroAmount amount={parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance)} />
                 </Typography>
               </Box>
+              <Divider orientation="vertical" flexItem />
               <Box>
                 <Typography variant="body2" color="text.secondary">
-                  Unconfirmed (Available)
+                  Unconfirmed
                 </Typography>
                 <Typography variant="h5" color="primary">
-                  <PiconeroAmount amount={parseFloat(balance.unlocked_balance)} /> XMR
+                  <PiconeroAmount amount={parseFloat(balance.unlocked_balance)} />
                 </Typography>
               </Box>
             </Box>
@@ -224,13 +158,10 @@ export default function MoneroWalletPage() {
 
       {/* Sync Progress */}
       {syncProgress && (
-        <Card sx={{ mb: 3 }}>
+        <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Sync Progress
-            </Typography>
-            <Box sx={{ mb: 2 }}>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+            <Stack spacing={1}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <Typography variant="body2" color="text.secondary">
                   Block {syncProgress.current_block.toLocaleString()} of {syncProgress.target_block.toLocaleString()}
                 </Typography>
@@ -243,17 +174,17 @@ export default function MoneroWalletPage() {
                 value={syncProgress.progress_percentage} 
                 sx={{ height: 8, borderRadius: 4 }}
               />
-            </Box>
-            {syncProgress.progress_percentage < 100 && (
-              <Typography variant="body2" color="text.secondary">
-                Wallet is synchronizing with the Monero network...
-              </Typography>
-            )}
-            {syncProgress.progress_percentage >= 100 && (
-              <Typography variant="body2" color="success.main">
-                Wallet is fully synchronized
-              </Typography>
-            )}
+              {syncProgress.progress_percentage < 100 && (
+                <Typography variant="body2" color="text.secondary">
+                  Wallet is synchronizing with the Monero network...
+                </Typography>
+              )}
+              {syncProgress.progress_percentage >= 100 && (
+                <Typography variant="body2" color="success.main">
+                  Wallet is fully synchronized
+                </Typography>
+              )}
+            </Stack>
           </CardContent>
         </Card>
       )}
@@ -262,28 +193,19 @@ export default function MoneroWalletPage() {
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>
-            Send Monero
+            Transfer
           </Typography>
           
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Stack spacing={2}>
             <TextField
               fullWidth
               label="Pay to"
               placeholder="Monero address"
               value={sendAddress}
               onChange={(e) => setSendAddress(e.target.value)}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Button size="small" startIcon={<QrCodeScannerIcon />}>
-                      Scan
-                    </Button>
-                  </InputAdornment>
-                ),
-              }}
             />
             
-            <Box sx={{ display: "flex", gap: 1 }}>
+            <Stack direction="row" spacing={1}>
               <TextField
                 fullWidth
                 label="Amount"
@@ -302,15 +224,14 @@ export default function MoneroWalletPage() {
               >
                 Max
               </Button>
-            </Box>
+            </Stack>
             
-            <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
               <Button
                 variant="outlined"
                 onClick={() => {
                   setSendAddress("");
                   setSendAmount("");
-                  setSendResult(null);
                 }}
                 disabled={isSending}
               >
@@ -326,8 +247,8 @@ export default function MoneroWalletPage() {
               >
                 {isSending ? <CircularProgress size={20} /> : "Send"}
               </Button>
-            </Box>
-          </Box>
+            </Stack>
+          </Stack>
         </CardContent>
       </Card>
     </Box>

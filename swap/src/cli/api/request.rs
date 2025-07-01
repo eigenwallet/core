@@ -1614,3 +1614,56 @@ impl Request for GetMoneroSyncProgressArgs {
         })
     }
 }
+
+// New request types for fetching background and approval items
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetBackgroundItemsArgs;
+
+#[typeshare]
+#[derive(Serialize)]
+pub struct GetBackgroundItemsResponse {
+    pub background: std::collections::HashMap<String, crate::cli::api::tauri_bindings::TauriBackgroundProgress>,
+}
+
+impl Request for GetBackgroundItemsArgs {
+    type Response = GetBackgroundItemsResponse;
+
+    async fn request(self, _ctx: Arc<Context>) -> Result<Self::Response> {
+        // For now, return empty background items since they're managed through events
+        // TODO: Implement centralized background state storage if needed
+        Ok(GetBackgroundItemsResponse {
+            background: std::collections::HashMap::new(),
+        })
+    }
+}
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetApprovalItemsArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetApprovalItemsResponse {
+    pub approvals: std::collections::HashMap<String, crate::cli::api::tauri_bindings::ApprovalRequest>,
+}
+
+impl Request for GetApprovalItemsArgs {
+    type Response = GetApprovalItemsResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        // Get approval items from the tauri handle if available
+        if let Some(tauri_handle) = &ctx.tauri_handle {
+            let approvals = tauri_handle.get_pending_approvals().await;
+            Ok(GetApprovalItemsResponse {
+                approvals: approvals.into_iter()
+                    .map(|(uuid, approval)| (uuid.to_string(), approval))
+                    .collect(),
+            })
+        } else {
+            Ok(GetApprovalItemsResponse {
+                approvals: std::collections::HashMap::new(),
+            })
+        }
+    }
+}
