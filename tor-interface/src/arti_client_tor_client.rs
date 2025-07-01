@@ -1,7 +1,6 @@
 // standard
 use std::future::Future;
 use std::io::{Read, Write};
-use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -13,15 +12,16 @@ use std::task::{Context, Poll, Waker};
 use arti_client::config::{CfgPath, TorClientConfigBuilder};
 use arti_client::{BootstrapBehavior, DangerouslyIntoTorAddr, DataStream, IntoTorAddr, TorClient};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio::{pin, runtime};
+use tokio_mpmc as mpmc;
 use tokio_stream::StreamExt;
 use tor_cell::relaycell::msg::Connected;
 use tor_config::ExplicitOrAuto;
 use tor_llcrypto::pk::ed25519::ExpandedKeypair;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 use tor_hsservice::config::restricted_discovery::HsClientNickname;
-use tor_hsservice::{HsNickname, RunningOnionService};
+use tor_hsservice::status::State;
+use tor_hsservice::{HsNickname, RunningOnionService, StreamRequest};
 use tor_keymgr::{config::ArtiKeystoreKind, KeystoreSelector};
 use tor_proto::stream::IncomingStreamRequest;
 use tor_rtcompat::PreferredRuntime;
@@ -85,59 +85,6 @@ pub struct ArtiClientTorClient {
     arti_client: TorClient<PreferredRuntime>,
     pending_events: Arc<Mutex<Vec<TorEvent>>>,
     bootstrapped: Arc<AtomicBool>,
-}
-
-// used to forward traffic to/from arti to local tcp streams
-async fn forward_stream<R, W>(alive: Arc<AtomicBool>, mut reader: R, mut writer: W) -> ()
-where
-    R: AsyncReadExt + Unpin,
-    W: AsyncWriteExt + Unpin,
-{
-    // allow 100ms timeout on reads to verify writer is still good
-    let read_timeout = std::time::Duration::from_millis(100);
-    // allow additional retries in the event the other half of the pump
-    // dies; keep pumping data until our read times out 3 times
-    let mut remaining_retries = 3;
-    let mut buf = [0u8; 1024];
-
-    loop {
-        if !alive.load(Ordering::Relaxed) && remaining_retries == 0 {
-            break;
-        }
-
-        tokio::select! {
-            count = reader.read(&mut buf) => match count {
-                // end of stream
-                Ok(0) => break,
-                // read N bytes
-                Ok(count) => {
-                    // forward traffic
-                    match writer.write_all(&buf[0..count]).await {
-                        Ok(()) => (),
-                        Err(_err) => break,
-                    }
-                    match writer.flush().await {
-                        Ok(()) => (),
-                        Err(_err) => break,
-                    }
-                },
-                // read failed
-                Err(_err) => break,
-            },
-            _ = tokio::time::sleep(read_timeout.clone()) => match writer.flush().await {
-                Ok(()) => {
-                    // so long as our writer and reader are good, we should
-                    // allow a few additional data pump attempts
-                    if !alive.load(Ordering::Relaxed) {
-                        remaining_retries -= 1;
-                    }
-                },
-                Err(_err) => break,
-            }
-        }
-    }
-    // signal pump death
-    alive.store(false, Ordering::Relaxed);
 }
 
 impl ArtiClientTorClient {
@@ -340,16 +287,6 @@ impl TorProvider for ArtiClientTorClient {
         virt_port: u16,
         authorized_clients: Option<&[X25519PublicKey]>,
     ) -> Result<Self::Listener, tor_provider::Error> {
-
-        // try to bind to a local address, let OS pick our port
-        let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
-        // TODO: make this one async too
-        let listener =
-            std::net::TcpListener::bind(socket_addr).map_err(Error::TcpListenerBindFailed)?;
-        let socket_addr = listener
-            .local_addr()
-            .map_err(Error::TcpListenerLocalAddrFailed)?;
-
         // generate a nickname to identify this onion service
         let service_id = V3OnionServiceId::from_private_key(private_key);
         let hs_nickname = match HsNickname::new(service_id.to_string()) {
@@ -389,13 +326,10 @@ impl TorProvider for ArtiClientTorClient {
             }
         }
 
-        let onion_service_config = match onion_service_config_builder.build()
-        {
-            Ok(onion_service_config) => onion_service_config,
-            Err(err) => Err(err).map_err(Error::OnionServiceConfigBuilderError)?,
-        };
+        let onion_service_config = onion_service_config_builder.build()
+            .map_err(Error::OnionServiceConfigBuilderError)?;
 
-        let (onion_service, mut rend_requests) = self.arti_client
+        let (onion_service, rend_requests) = self.arti_client
             .launch_onion_service_with_hsid(onion_service_config, hs_id_keypair.into())
             .map_err(Error::ArtiClientOnionServiceLaunchError)?;
 
@@ -421,66 +355,27 @@ impl TorProvider for ArtiClientTorClient {
             }
         });
 
-        // start a task which accepts every RendRequest to get a StreamRequest
+        let (sender, receiver) = mpmc::channel(1);
         self.tokio_runtime.spawn(async move {
-            while let Some(request) = rend_requests.next().await {
-                let mut stream_requests = match request.accept().await {
-                    Ok(stream_requests) => stream_requests,
-                    // TODO: probably not our problem?
-                    _ => return,
-                };
-                // spawn a new task to consume the stream requsts
-                tokio::task::spawn(async move {
-                    while let Some(stream_request) = stream_requests.next().await {
-                        let should_accept =
-                            if let IncomingStreamRequest::Begin(begin) = stream_request.request() {
-                                // we only accept connections on the virt port
-                                begin.port() == virt_port
-                            } else {
-                                false
-                            };
-
-                        if should_accept {
-                            let data_stream =
-                                match stream_request.accept(Connected::new_empty()).await {
-                                    Ok(data_stream) => data_stream,
-                                    // TODO: probably not our problem
-                                    _ => continue,
-                                };
-                            let (data_reader, data_writer) = data_stream.split();
-
-                            let (tcp_reader, tcp_writer) =
-                                match TcpStream::connect(socket_addr).await {
-                                    Ok(tcp_stream) => tcp_stream.into_split(),
-                                    // TODO: possibly our problem?
-                                    _ => continue,
-                                };
-                            // now spawn new tasks to forward traffic to/from the onion listener
-
-                            let pump_alive = Arc::new(AtomicBool::new(true));
-                            // read from connected client and write to local socket
-                            tokio::task::spawn({
-                                let pump_alive = pump_alive.clone();
-                                async move {
-                                    forward_stream(pump_alive, data_reader, tcp_writer).await;
-                                }
-                            });
-                            // read from local socket and write to connected client
-                            tokio::task::spawn(async move {
-                                forward_stream(pump_alive, tcp_reader, data_writer).await;
-                            });
-                        } else {
-                            // either requesting the wrong port or the wrong type of stream request
-                            let _ = stream_request.shutdown_circuit();
-                        }
-                    }
-                });
+            let mut stream_requests = tor_hsservice::handle_rend_requests(rend_requests);
+            while let Some(stream_request) = stream_requests.next().await {
+                if sender.send(stream_request).await.is_err() {
+                    return;
+                }
             }
         });
 
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id, virt_port));
         // onion-service is torn down when `onion_service` is dropped
-        Ok(ArtiClientOnionListener(TcpOnionListenerBase(listener, onion_addr), onion_service))
+        Ok(ArtiClientOnionListener {
+            tokio_runtime: self.tokio_runtime.clone(),
+            stream_requests: receiver,
+            virt_port,
+
+            nonblocking: AtomicBool::new(false),
+            onion_service,
+            onion_addr,
+        })
     }
 
     fn generate_token(&mut self) -> CircuitToken {
@@ -557,16 +452,69 @@ impl OnionStream for ArtiClientOnionStream {
     }
 }
 
-pub struct ArtiClientOnionListener(TcpOnionListenerBase, #[allow(dead_code)] Arc<RunningOnionService>);
+pub struct ArtiClientOnionListener {
+    tokio_runtime: Arc<runtime::Runtime>,
+    stream_requests: mpmc::Receiver<StreamRequest>,
+    virt_port: u16,
+
+    nonblocking: AtomicBool,
+    onion_service: Arc<RunningOnionService>,
+    onion_addr: OnionAddr,
+}
 
 impl OnionListener for ArtiClientOnionListener {
-    type Stream = TcpOnionStream;
+    type Stream = ArtiClientOnionStream;
 
     fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
-        self.0.set_nonblocking(nonblocking)
+        self.nonblocking.store(nonblocking, Ordering::Relaxed);
+        Ok(())
     }
 
     fn accept(&self) -> std::io::Result<Option<Self::Stream>> {
-        self.0.accept()
+        pin! {
+            let fut = async {
+                while let Some(stream_request) = self.stream_requests.recv().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))? {
+                    let should_accept =
+                        if let IncomingStreamRequest::Begin(begin) = stream_request.request() {
+                            // we only accept connections on the virt port
+                            begin.port() == self.virt_port
+                        } else {
+                            false
+                        };
+
+                    if should_accept {
+                        let data_stream =
+                            match stream_request.accept(Connected::new_empty()).await {
+                                Ok(data_stream) => data_stream,
+                                // TODO: probably not our problem
+                                _ => continue,
+                            };
+
+                        return Ok(Some(ArtiClientOnionStream {
+                            tokio_runtime: self.tokio_runtime.clone(),
+                            data_stream,
+                            nonblocking: AtomicBool::new(false),
+                            local_addr: Some(self.onion_addr.clone()),
+                            peer_addr: None,
+                        }));
+                    } else {
+                        // either requesting the wrong port or the wrong type of stream request
+                        let _ = stream_request.shutdown_circuit();
+                    }
+                }
+                match self.onion_service.status().state() {
+                    s @ State::Shutdown | s @ State::DegradedUnreachable | s @ State::Broken => Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", s))),
+                    _ => Ok(None),
+                }
+            };
+        }
+        if self.nonblocking.load(Ordering::Relaxed) {
+            match fut.poll(&mut Context::from_waker(Waker::noop())) {
+                Poll::Ready(ret) => ret,
+                Poll::Pending => Ok(None),
+            }
+        } else {
+            self.tokio_runtime.block_on(fut)
+        }
     }
 }
