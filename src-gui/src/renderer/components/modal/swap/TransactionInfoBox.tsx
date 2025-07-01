@@ -9,7 +9,7 @@ export type TransactionInfoBoxProps = {
   explorerUrlCreator: ((txId: string) => string) | null;
   additionalContent: ReactNode;
   loading: boolean;
-  icon: React.ReactElement;
+  icon: ReactNode;
 };
 
 export default function TransactionInfoBox({

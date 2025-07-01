@@ -240,7 +240,7 @@ export default function SwapStatusAlert({
   swap: GetSwapInfoResponseExt;
   isRunning: boolean;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
-}): React.ReactElement | null {
+}) {
   // If the swap is completed, we do not need to display anything
   if (!isGetSwapInfoResponseRunningSwap(swap)) {
     return null;

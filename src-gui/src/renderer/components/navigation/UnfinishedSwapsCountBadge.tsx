@@ -5,7 +5,7 @@ import { useResumeableSwapsCountExcludingPunished } from "store/hooks";
 export default function UnfinishedSwapsBadge({
   children,
 }: {
-  children: React.ReactElement;
+  children: React.ReactNode;
 }) {
   const resumableSwapsCount = useResumeableSwapsCountExcludingPunished();
 

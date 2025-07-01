@@ -9,18 +9,21 @@ import {
   Card,
   CardContent,
   Grid,
-  InputAdornment
+  InputAdornment,
+  LinearProgress
 } from "@mui/material";
 import { Send as SendIcon, QrCodeScanner as QrCodeScannerIcon, Refresh as RefreshIcon } from "@mui/icons-material";
 import { 
   GetMoneroBalanceResponse, 
   SendMoneroArgs,
-  SendMoneroResponse 
+  SendMoneroResponse,
+  GetMoneroSyncProgressResponse
 } from "models/tauriModel";
 import { 
   getMoneroMainAddress, 
   getMoneroBalance, 
-  sendMonero 
+  sendMonero,
+  getMoneroSyncProgress
 } from "../../../rpc";
 import ActionableMonospaceTextBox from "../../other/ActionableMonospaceTextBox";
 import { PiconeroAmount } from "../../other/Units";
@@ -37,6 +40,27 @@ export default function MoneroWalletPage() {
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<SendMoneroResponse | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Sync progress state
+  const [syncProgress, setSyncProgress] = useState<GetMoneroSyncProgressResponse | null>(null);
+
+  // Auto-refresh sync progress every 5 seconds if not fully synced
+  useEffect(() => {
+    if (!syncProgress || syncProgress.progress_percentage >= 100) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await getMoneroSyncProgress();
+        setSyncProgress(response);
+      } catch (err) {
+        console.error("Failed to fetch sync progress:", err);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [syncProgress]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -44,13 +68,15 @@ export default function MoneroWalletPage() {
         setIsLoading(true);
         setError(null);
         
-        const [addressResponse, balanceResponse] = await Promise.all([
+        const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
           getMoneroMainAddress(),
           getMoneroBalance(),
+          getMoneroSyncProgress(),
         ]);
         
         setMainAddress(addressResponse.address);
         setBalance(balanceResponse);
+        setSyncProgress(syncProgressResponse);
       } catch (err) {
         console.error("Failed to fetch Monero wallet data:", err);
         setError("Failed to fetch Monero wallet data.");
@@ -105,13 +131,15 @@ export default function MoneroWalletPage() {
       setError(null);
       setSendResult(null);
       
-      const [addressResponse, balanceResponse] = await Promise.all([
+      const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
         getMoneroMainAddress(),
         getMoneroBalance(),
+        getMoneroSyncProgress(),
       ]);
       
       setMainAddress(addressResponse.address);
       setBalance(balanceResponse);
+      setSyncProgress(syncProgressResponse);
     } catch (err) {
       console.error("Failed to refresh Monero wallet data:", err);
       setError("Failed to refresh Monero wallet data.");
@@ -190,6 +218,42 @@ export default function MoneroWalletPage() {
                 </Typography>
               </Box>
             </Box>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sync Progress */}
+      {syncProgress && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Sync Progress
+            </Typography>
+            <Box sx={{ mb: 2 }}>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Block {syncProgress.current_block.toLocaleString()} of {syncProgress.target_block.toLocaleString()}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {syncProgress.progress_percentage.toFixed(2)}%
+                </Typography>
+              </Box>
+              <LinearProgress 
+                variant="determinate" 
+                value={syncProgress.progress_percentage} 
+                sx={{ height: 8, borderRadius: 4 }}
+              />
+            </Box>
+            {syncProgress.progress_percentage < 100 && (
+              <Typography variant="body2" color="text.secondary">
+                Wallet is synchronizing with the Monero network...
+              </Typography>
+            )}
+            {syncProgress.progress_percentage >= 100 && (
+              <Typography variant="body2" color="success.main">
+                Wallet is fully synchronized
+              </Typography>
+            )}
           </CardContent>
         </Card>
       )}

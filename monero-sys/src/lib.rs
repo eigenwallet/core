@@ -647,7 +647,7 @@ impl WalletHandle {
         destination_address: &monero::Address,
         expected_amount: monero::Amount,
         confirmations: u64,
-        listener: Option<impl Fn(u64) + Send + 'static>,
+        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
     ) -> anyhow::Result<()> {
         tracing::info!(%txid, %destination_address, amount=%expected_amount, %confirmations, "Waiting until transaction is confirmed");
 
@@ -691,7 +691,7 @@ impl WalletHandle {
 
             // If the listener exists, notify it of the result
             if let Some(listener) = &listener {
-                listener(tx_status.confirmations);
+                listener((tx_status.confirmations, confirmations));
             }
 
             // Stop when we have the required number of confirmations
@@ -723,6 +723,8 @@ impl Wallet {
     fn run(&mut self) {
         while let Some(call) = self.call_receiver.blocking_recv() {
             let result = (call.function)(&mut self.wallet);
+
+            // TODO: Do not panic here
             call.sender
                 .send(result)
                 .expect("failed to send result back to caller");
@@ -1179,7 +1181,7 @@ impl FfiWallet {
     /// Get the sync progress of the wallet as a percentage.
     ///
     /// Returns a zeroed sync progress if the daemon is not connected.
-    fn sync_progress(&self) -> SyncProgress {
+    pub fn sync_progress(&self) -> SyncProgress {
         let current_block = self
             .inner
             .blockChainHeight()

@@ -13,7 +13,7 @@ use swap::cli::{
             GetMoneroAddressesArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs,
             GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
             ResolveApprovalArgs, ResumeSwapArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
-            GetMoneroBalanceArgs, SendMoneroArgs,
+            GetMoneroBalanceArgs, SendMoneroArgs, GetMoneroSyncProgressArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -199,6 +199,7 @@ pub fn run() {
             get_monero_main_address,
             get_monero_balance,
             send_monero,
+            get_monero_sync_progress,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -417,3 +418,4 @@ async fn initialize_context(
 
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(send_monero, SendMoneroArgs);
+tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);

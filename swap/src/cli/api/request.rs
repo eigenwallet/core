@@ -1581,3 +1581,36 @@ impl Request for ResolveApprovalArgs {
         resolve_approval_request(self, ctx).await
     }
 }
+
+// New request type for Monero sync progress
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetMoneroSyncProgressArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetMoneroSyncProgressResponse {
+    #[typeshare(serialized_as = "number")]
+    pub current_block: u64,
+    #[typeshare(serialized_as = "number")]
+    pub target_block: u64,
+    #[typeshare(serialized_as = "number")]
+    pub progress_percentage: f32,
+}
+
+impl Request for GetMoneroSyncProgressArgs {
+    type Response = GetMoneroSyncProgressResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet = wallet_manager.main_wallet().await;
+        
+        let sync_progress = wallet.call(|wallet| wallet.sync_progress()).await;
+        
+        Ok(GetMoneroSyncProgressResponse {
+            current_block: sync_progress.current_block,
+            target_block: sync_progress.target_block,
+            progress_percentage: sync_progress.percentage(),
+        })
+    }
+}
