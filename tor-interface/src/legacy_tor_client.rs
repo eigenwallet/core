@@ -694,9 +694,7 @@ impl TorProvider for LegacyTorClient {
         self.onion_services
             .push((service_id, Arc::clone(&is_active)));
 
-        Ok(TcpOnionListener::new(listener, onion_addr, is_active, |is_active| {
-            is_active.store(false, atomic::Ordering::Relaxed);
-        }))
+        Ok(TcpOnionListener(TcpOnionListenerBase(listener, onion_addr), is_active))
     }
 
     fn generate_token(&mut self) -> CircuitToken {

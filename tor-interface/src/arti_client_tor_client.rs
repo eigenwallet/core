@@ -200,7 +200,7 @@ impl ArtiClientTorClient {
 
 impl TorProvider for ArtiClientTorClient {
     type Stream = TcpOnionStream;
-    type Listener = TcpOnionListener;
+    type Listener = ArtiClientOnionListener;
 
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
         std::thread::sleep(std::time::Duration::from_millis(16));
@@ -518,7 +518,7 @@ impl TorProvider for ArtiClientTorClient {
 
         let onion_addr = OnionAddr::V3(OnionAddrV3::new(service_id, virt_port));
         // onion-service is torn down when `onion_service` is dropped
-        Ok(TcpOnionListener::new::<Arc<RunningOnionService>>(listener, onion_addr, onion_service, |_|{}))
+        Ok(ArtiClientOnionListener(TcpOnionListenerBase(listener, onion_addr), onion_service))
     }
 
     fn generate_token(&mut self) -> CircuitToken {
@@ -526,4 +526,18 @@ impl TorProvider for ArtiClientTorClient {
     }
 
     fn release_token(&mut self, _token: CircuitToken) {}
+}
+
+pub struct ArtiClientOnionListener(TcpOnionListenerBase, #[allow(dead_code)] Arc<RunningOnionService>);
+
+impl OnionListener for ArtiClientOnionListener {
+    type Stream = TcpOnionStream;
+
+    fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
+        self.0.set_nonblocking(nonblocking)
+    }
+
+    fn accept(&self) -> std::io::Result<Option<Self::Stream>> {
+        self.0.accept()
+    }
 }

@@ -318,9 +318,7 @@ impl TorProvider for MockTorClient {
             .push(TorEvent::OnionServicePublished { service_id });
 
 
-        Ok(TcpOnionListener::new(listener, onion_addr, is_active, |is_active| {
-            is_active.store(false, atomic::Ordering::Relaxed);
-        }))
+        Ok(TcpOnionListener(TcpOnionListenerBase(listener, onion_addr), is_active))
     }
 
     fn generate_token(&mut self) -> CircuitToken {

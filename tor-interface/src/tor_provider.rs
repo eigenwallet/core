@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
-use std::sync::OnceLock;
+use std::sync::{atomic, Arc, OnceLock};
 #[cfg(unix)]
 use std::os::unix::io::{IntoRawFd, RawFd};
 #[cfg(windows)]
@@ -524,52 +524,22 @@ pub trait OnionListener: Send {
     fn accept(&self) -> std::io::Result<Option<Self::Stream>>;
 }
 
-pub struct TcpOnionListener {
-    pub(crate) listener: TcpListener,
-    pub(crate) onion_addr: OnionAddr,
-    pub(crate) data: Option<Box<dyn Any + Send>>,
-    pub(crate) drop: Option<Box<dyn FnMut(Box<dyn Any>) + Send>>,
-}
+pub(crate) struct TcpOnionListenerBase(pub TcpListener, pub OnionAddr);
 
-impl TcpOnionListener {
-    /// Construct an `TcpOnionListener`. The `data` and `drop` parameters are to allow custom `TorProvider` implementations their own data and cleanup procedures.
-    pub(crate) fn new<T: 'static + Send>(
-        listener: TcpListener,
-        onion_addr: OnionAddr,
-        data: T,
-        mut drop: impl FnMut(T) + 'static + Send) -> Self {
-        // marshall our data into an Any
-        let data: Option<Box<dyn Any + Send>> = Some(Box::new(data));
-        // marhsall our drop into a function which takes an Any
-        let drop: Option<Box<dyn FnMut(Box<dyn Any>) + Send>>  = Some(Box::new(move |data: Box<dyn std::any::Any>| {
-            // encapsulate extracting our data from the Any
-            if let Ok(data) = data.downcast::<T>() {
-                // and call our provided drop
-                drop(*data);
-            }
-        }));
+pub struct TcpOnionListener(pub(crate) TcpOnionListenerBase, pub(crate) Arc<atomic::AtomicBool>);
 
-        Self{
-            listener,
-            onion_addr,
-            data,
-            drop,
-        }
-    }
-}
-
-impl OnionListener for TcpOnionListener {
+impl OnionListener for TcpOnionListenerBase {
     type Stream = TcpOnionStream;
 
     fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
-        self.listener.set_nonblocking(nonblocking)
+        self.0.set_nonblocking(nonblocking)
     }
 
     fn accept(&self) -> std::io::Result<Option<Self::Stream>> {
-        match self.listener.accept() {
+        match self.0.accept() {
             Ok((stream, _socket_addr)) => Ok(Some(TcpOnionStream {
                 stream,
-                local_addr: Some(self.onion_addr.clone()),
+                local_addr: Some(self.1.clone()),
                 peer_addr: None,
             })),
             Err(err) => {
@@ -583,11 +553,21 @@ impl OnionListener for TcpOnionListener {
     }
 }
 
+impl OnionListener for TcpOnionListener {
+    type Stream = TcpOnionStream;
+
+    fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
+        self.0.set_nonblocking(nonblocking)
+    }
+
+    fn accept(&self) -> std::io::Result<Option<Self::Stream>> {
+        self.0.accept()
+    }
+}
+
 impl Drop for TcpOnionListener {
     fn drop(&mut self) {
-        if let (Some(data), Some(mut drop)) = (self.data.take(), self.drop.take()) {
-            drop(data)
-        }
+        self.1.store(false, atomic::Ordering::Relaxed)
     }
 }
 
