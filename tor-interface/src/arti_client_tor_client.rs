@@ -1,17 +1,20 @@
 // standard
+use std::future::Future;
+use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Waker};
 
 //extern
 use arti_client::config::{CfgPath, TorClientConfigBuilder};
-use arti_client::{BootstrapBehavior, DangerouslyIntoTorAddr, IntoTorAddr, TorClient};
+use arti_client::{BootstrapBehavior, DangerouslyIntoTorAddr, DataStream, IntoTorAddr, TorClient};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::runtime;
+use tokio::net::TcpStream;
+use tokio::{pin, runtime};
 use tokio_stream::StreamExt;
 use tor_cell::relaycell::msg::Connected;
 use tor_config::ExplicitOrAuto;
@@ -199,7 +202,7 @@ impl ArtiClientTorClient {
 }
 
 impl TorProvider for ArtiClientTorClient {
-    type Stream = TcpOnionStream;
+    type Stream = ArtiClientOnionStream;
     type Listener = ArtiClientOnionListener;
 
     fn update(&mut self) -> Result<Vec<TorEvent>, tor_provider::Error> {
@@ -322,51 +325,10 @@ impl TorProvider for ArtiClientTorClient {
             .block_on(async move { arti_client.connect(arti_target).await })
             .map_err(Error::ArtiClientError)?;
 
-        // start a task to forward traffic from returned data stream
-        // and tcp socket
-        let client_stream = self.tokio_runtime.block_on(async move {
-            let (data_reader, data_writer) = data_stream.split();
-
-            // try to bind to a local address, let OS pick our port
-            let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0u16));
-            let server_listener = TcpListener::bind(socket_addr)
-                .await
-                .map_err(Error::TcpListenerBindFailed)?;
-            // await future after a client connects
-            let server_accept_future = server_listener.accept();
-            let socket_addr = server_listener
-                .local_addr()
-                .map_err(Error::TcpListenerLocalAddrFailed)?;
-
-            // client stream will ultimatley be returned from connect()
-            let client_stream = TcpStream::connect(socket_addr)
-                .await
-                .map_err(Error::TcpStreamConnectFailed)?;
-            // client has connected so now get the server's tcp stream
-            let (server_stream, _socket_addr) = server_accept_future
-                .await
-                .map_err(Error::TcpListenerAcceptFailed)?;
-            let (tcp_reader, tcp_writer) = server_stream.into_split();
-
-            // now spawn new tasks to forward traffic to/from local listener
-            let pump_alive = Arc::new(AtomicBool::new(true));
-            tokio::task::spawn({
-                let pump_alive = pump_alive.clone();
-                async move {
-                    forward_stream(pump_alive, tcp_reader, data_writer).await;
-                }
-            });
-            tokio::task::spawn(async move {
-                forward_stream(pump_alive, data_reader, tcp_writer).await;
-            });
-            Ok::<TcpStream, tor_provider::Error>(client_stream)
-        })?;
-
-        let stream = client_stream
-            .into_std()
-            .map_err(Error::TcpStreamIntoFailed)?;
-        Ok(TcpOnionStream {
-            stream,
+        Ok(ArtiClientOnionStream {
+            tokio_runtime: self.tokio_runtime.clone(),
+            data_stream,
+            nonblocking: AtomicBool::new(false),
             local_addr: None,
             peer_addr: Some(target),
         })
@@ -526,6 +488,73 @@ impl TorProvider for ArtiClientTorClient {
     }
 
     fn release_token(&mut self, _token: CircuitToken) {}
+}
+
+#[derive(Debug)]
+pub struct ArtiClientOnionStream {
+    tokio_runtime: Arc<runtime::Runtime>,
+    data_stream: DataStream,
+
+    nonblocking: AtomicBool,
+    peer_addr: Option<TargetAddr>,
+    local_addr: Option<OnionAddr>,
+}
+
+macro_rules! fwd {
+    ($self:expr, $func:tt, $($args:expr),*) => {{
+        pin! {
+            let fut = $self.data_stream.$func($($args),*);
+        }
+        if $self.nonblocking.load(Ordering::Relaxed) {
+            match fut.poll(&mut Context::from_waker(Waker::noop())) {
+                Poll::Ready(ret) => ret,
+                Poll::Pending => Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, "")),
+            }
+        } else {
+            $self.tokio_runtime.block_on(fut)
+        }
+    }}
+}
+
+impl Read for ArtiClientOnionStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        fwd!(self, read, buf)
+    }
+}
+
+impl Write for ArtiClientOnionStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        fwd!(self, write, buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        fwd!(self, flush, )
+    }
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+        fwd!(self, write_vectored, bufs)
+    }
+}
+
+impl OnionStream for ArtiClientOnionStream {
+    fn peer_addr(&self) -> Option<TargetAddr> {
+        self.peer_addr.clone()
+    }
+
+    fn local_addr(&self) -> Option<OnionAddr> {
+        self.local_addr.clone()
+    }
+
+    fn try_clone(&self) -> std::io::Result<Self> where Self: Sized {
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "not available"))
+    }
+
+    fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
+        self.nonblocking.store(nonblocking, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn into_raw(self) -> OnionStreamIntoRaw {
+        unimplemented!()
+    }
 }
 
 pub struct ArtiClientOnionListener(TcpOnionListenerBase, #[allow(dead_code)] Arc<RunningOnionService>);
