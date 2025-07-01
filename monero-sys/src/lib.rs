@@ -134,7 +134,7 @@ pub struct TransactionInfo {
     #[serde(with = "monero_serde")]
     pub amount: monero::Amount,
     #[typeshare(serialized_as = "number")]
-    pub block_height: u64,
+    pub confirmations: u64,
 }
 
 /// A wrapper around a pending transaction.
@@ -1707,7 +1707,9 @@ impl FfiWallet {
         let mut transactions = Vec::with_capacity(count as usize);
         for i in 0..count {
             if let Some(tx_info_handle) = history_handle.transaction(i) {
-                transactions.push(tx_info_handle.serialize());
+                if let Some(serialized_tx) = tx_info_handle.serialize() {
+                    transactions.push(serialized_tx);
+                }
             }
         }
         transactions
@@ -1941,8 +1943,6 @@ impl TransactionHistoryHandle {
 
     /// Get a transaction from the history by index.
     pub fn transaction(&self, index: i32) -> Option<TransactionInfoHandle> {
-        println!("calling TransactionHistoryHandle::transaction with index: {}", index);
-
         // Safety: self.0 is a valid UniquePtr<TransactionHistory>.
         // The bridged transaction() method returns a raw pointer, which we immediately wrap.
         let tx_info_ptr = unsafe { self.0.as_ref().unwrap().transaction(index) };
@@ -1950,8 +1950,6 @@ impl TransactionHistoryHandle {
         if tx_info_ptr.is_null() {
             None
         } else {
-            println!("got tx_info_ptr: {:?}", tx_info_ptr);
-
             // We wrap the raw pointer in our safe wrapper struct.
             Some(TransactionInfoHandle(tx_info_ptr))
         }
@@ -1960,42 +1958,36 @@ impl TransactionHistoryHandle {
 
 impl TransactionInfoHandle {
     /// Get the amount of the transaction.
-    pub fn amount(&self) -> u64 {
+    pub fn amount(&self) -> Option<u64> {
         // Safety: self.0 is a valid *mut ffi::TransactionInfo
         // The bridged method is safe to call on a valid reference.
-        unsafe { self.0.as_ref().expect("transaction info pointer not to be null").amount() }
+        unsafe { self.0.as_ref().map(|info| info.amount()) }
     }
 
     /// Get the fee of the transaction.
-    pub fn fee(&self) -> u64 {
+    pub fn fee(&self) -> Option<u64> {
         // Safety: self.0 is a valid *mut ffi::TransactionInfo
         // The bridged method is safe to call on a valid reference.
-        unsafe { self.0.as_ref().expect("transaction info pointer not to be null").fee() }
+        unsafe { self.0.as_ref().map(|info| info.fee()) }
     }
 
     /// Get the confirmations of the transaction.
-    pub fn confirmations(&self) -> u64 {
+    pub fn confirmations(&self) -> Option<u64> {
         // Safety: self.0 is a valid *mut ffi::TransactionInfo
         // The bridged method is safe to call on a valid reference.
-        unsafe { self.0.as_ref().expect("transaction info pointer not to be null").confirmations() }
+        unsafe { self.0.as_ref().map(|info| info.confirmations()) }
     }
 
-    pub fn serialize(&self) -> TransactionInfo {
-        println!("TransactionInfoHandle::serializing: transaction info");
+    pub fn serialize(&self) -> Option<TransactionInfo> {
+        let fee = self.fee()?;
+        let amount = self.amount()?;
+        let block_height = self.confirmations()?;
 
-        let fee = monero::Amount::from_pico(self.fee());
-        let amount = monero::Amount::from_pico(self.amount());
-        let block_height = self.confirmations();
-
-        println!("TransactionInfoHandle::serializing: fee: {:?}", fee);
-        println!("TransactionInfoHandle::serializing: amount: {:?}", amount);
-        println!("TransactionInfoHandle::serializing: block_height: {:?}", block_height);
-
-        TransactionInfo {
-            fee,
-            amount,
-            block_height,
-        }
+        Some(TransactionInfo {
+            fee: monero::Amount::from_pico(fee),
+            amount: monero::Amount::from_pico(amount),
+            confirmations: block_height,
+        })
     }
 }
 
