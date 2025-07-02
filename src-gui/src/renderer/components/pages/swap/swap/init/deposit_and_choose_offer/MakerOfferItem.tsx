@@ -1,4 +1,4 @@
-import { Box, Button, Chip, Paper, Typography } from "@mui/material";
+import { Box, Button, Chip, Paper, Tooltip, Typography } from "@mui/material";
 import Avatar from "boring-avatars";
 import { QuoteWithAddress } from "models/tauriModel";
 import {
@@ -7,6 +7,8 @@ import {
 } from "renderer/components/other/Units";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
+import { isMakerVersionOutdated } from "utils/multiAddrUtils";
+import WarningIcon from '@mui/icons-material/Warning';
 
 export default function MakerOfferItem({
   quoteWithAddress,
@@ -65,7 +67,6 @@ export default function MakerOfferItem({
               flexWrap: "wrap",
             }}
           >
-            <Typography variant="body1">
               <Chip
                 label={
                   <MoneroSatsExchangeRate
@@ -75,8 +76,6 @@ export default function MakerOfferItem({
                 }
                 size="small"
               />
-            </Typography>
-            <Typography variant="body1">
               <Chip
                 label={
                   <>
@@ -86,10 +85,22 @@ export default function MakerOfferItem({
                 }
                 size="small"
               />
-            </Typography>
-            <Typography variant="body1">
-              <Chip label={version} size="small" />
-            </Typography>
+              {isMakerVersionOutdated(version) ? (
+                <Tooltip title="Outdated maker version. This may cause issues with the swap.">
+                <Chip
+                  color="warning"
+                  label={
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <WarningIcon sx={{ fontSize: "1rem" }} />
+                      <Typography variant="body2">{version}</Typography>
+                    </Box>
+                  }
+                  size="small"
+                />
+                </Tooltip>
+              ) : (
+                <Chip label={version} size="small" />
+              )}
           </Box>
         </Box>
       </Box>
