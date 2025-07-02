@@ -2,7 +2,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO lexxmark/winflexbison
     REF v2.5.25
-    SHA512 0
+    SHA512 7a797d5a1aef21786b4ce8bc8f2a31c4957e55012a4d29b14fbe6d89c1b8ad33e7ab6d1afec6b37ddccd1696dc5b861da568fc8a14d22bb33aa7c1116172d7cf
     HEAD_REF master
 )
 
