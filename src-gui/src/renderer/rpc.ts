@@ -37,7 +37,12 @@ import {
   GetBackgroundItemsResponse,
   GetApprovalItemsResponse,
 } from "models/tauriModel";
-import { rpcSetBalance, rpcSetSwapInfo, rpcSetBackgroundItems, rpcSetApprovalItems } from "store/features/rpcSlice";
+import {
+  rpcSetBalance,
+  rpcSetSwapInfo,
+  rpcSetBackgroundItems,
+  rpcSetApprovalItems,
+} from "store/features/rpcSlice";
 import {
   setLoading,
   setRefreshing,
@@ -46,6 +51,7 @@ import {
   setMainAddress,
   setBalance,
   setSyncProgress,
+  setHistory,
   setSendResult,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
@@ -409,19 +415,25 @@ export async function getMoneroHistory(): Promise<GetMoneroHistoryResponse> {
 }
 
 export async function getMoneroMainAddress(): Promise<GetMoneroMainAddressResponse> {
-  return await invokeNoArgs<GetMoneroMainAddressResponse>("get_monero_main_address");
+  return await invokeNoArgs<GetMoneroMainAddressResponse>(
+    "get_monero_main_address",
+  );
 }
 
 export async function getMoneroBalance(): Promise<GetMoneroBalanceResponse> {
   return await invokeNoArgs<GetMoneroBalanceResponse>("get_monero_balance");
 }
 
-export async function sendMonero(args: SendMoneroArgs): Promise<SendMoneroResponse> {
+export async function sendMonero(
+  args: SendMoneroArgs,
+): Promise<SendMoneroResponse> {
   return await invoke<SendMoneroArgs, SendMoneroResponse>("send_monero", args);
 }
 
 export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResponse> {
-  return await invokeNoArgs<GetMoneroSyncProgressResponse>("get_monero_sync_progress");
+  return await invokeNoArgs<GetMoneroSyncProgressResponse>(
+    "get_monero_sync_progress",
+  );
 }
 
 export async function getBackgroundItems(): Promise<GetBackgroundItemsResponse> {
@@ -436,17 +448,24 @@ export async function getApprovalItems(): Promise<GetApprovalItemsResponse> {
 export async function initializeMoneroWallet() {
   store.dispatch(setLoading(true));
   store.dispatch(setError(null));
-  
+
   try {
-    const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
+    const [
+      addressResponse,
+      balanceResponse,
+      syncProgressResponse,
+      historyResponse,
+    ] = await Promise.all([
       getMoneroMainAddress(),
       getMoneroBalance(),
       getMoneroSyncProgress(),
+      getMoneroHistory(),
     ]);
-    
+
     store.dispatch(setMainAddress(addressResponse.address));
     store.dispatch(setBalance(balanceResponse));
     store.dispatch(setSyncProgress(syncProgressResponse));
+    store.dispatch(setHistory(historyResponse));
   } catch (err) {
     console.error("Failed to fetch Monero wallet data:", err);
     store.dispatch(setError("Failed to fetch Monero wallet data."));
@@ -459,17 +478,24 @@ export async function refreshMoneroWallet() {
   store.dispatch(setRefreshing(true));
   store.dispatch(setError(null));
   store.dispatch(setSendResult(null));
-  
+
   try {
-    const [addressResponse, balanceResponse, syncProgressResponse] = await Promise.all([
+    const [
+      addressResponse,
+      balanceResponse,
+      syncProgressResponse,
+      historyResponse,
+    ] = await Promise.all([
       getMoneroMainAddress(),
       getMoneroBalance(),
       getMoneroSyncProgress(),
+      getMoneroHistory(),
     ]);
-    
+
     store.dispatch(setMainAddress(addressResponse.address));
     store.dispatch(setBalance(balanceResponse));
     store.dispatch(setSyncProgress(syncProgressResponse));
+    store.dispatch(setHistory(historyResponse));
   } catch (err) {
     console.error("Failed to refresh Monero wallet data:", err);
     store.dispatch(setError("Failed to refresh Monero wallet data."));
@@ -478,17 +504,23 @@ export async function refreshMoneroWallet() {
   }
 }
 
-export async function sendMoneroTransaction(args: SendMoneroArgs): Promise<void> {
+export async function sendMoneroTransaction(
+  args: SendMoneroArgs,
+): Promise<void> {
   store.dispatch(setSending(true));
   store.dispatch(setSendResult(null));
-  
+
   try {
     const result = await sendMonero(args);
     store.dispatch(setSendResult(result));
-    
-    // Refresh balance after sending
-    const newBalance = await getMoneroBalance();
+
+    // Refresh balance and history after sending
+    const [newBalance, newHistory] = await Promise.all([
+      getMoneroBalance(),
+      getMoneroHistory(),
+    ]);
     store.dispatch(setBalance(newBalance));
+    store.dispatch(setHistory(newHistory));
   } catch (err) {
     console.error("Failed to send Monero:", err);
     store.dispatch(setError("Failed to send Monero transaction."));

@@ -78,7 +78,10 @@ export const walletSlice = createSlice({
     setBalance(slice, action: PayloadAction<GetMoneroBalanceResponse>) {
       slice.state.balance = action.payload;
     },
-    setSyncProgress(slice, action: PayloadAction<GetMoneroSyncProgressResponse>) {
+    setSyncProgress(
+      slice,
+      action: PayloadAction<GetMoneroSyncProgressResponse>,
+    ) {
       slice.state.syncProgress = action.payload;
     },
     setHistory(slice, action: PayloadAction<GetMoneroHistoryResponse>) {

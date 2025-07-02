@@ -16,7 +16,6 @@ use crate::{bitcoin, cli, monero};
 use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
 use ::monero::Network;
-use std::str::FromStr;
 use anyhow::{bail, Context as AnyContext, Result};
 use libp2p::core::Multiaddr;
 use libp2p::PeerId;
@@ -29,6 +28,7 @@ use std::cmp::min;
 use std::convert::TryInto;
 use std::future::Future;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -469,9 +469,12 @@ impl Request for GetMoneroHistoryArgs {
     type Response = GetMoneroHistoryResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
         let wallet = wallet.main_wallet().await;
-        
+
         let transactions = wallet.history().await;
         Ok(GetMoneroHistoryResponse { transactions })
     }
@@ -492,7 +495,10 @@ impl Request for GetMoneroMainAddressArgs {
     type Response = GetMoneroMainAddressResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
         let wallet = wallet.main_wallet().await;
         let address = wallet.main_address().await;
         Ok(GetMoneroMainAddressResponse { address })
@@ -507,7 +513,8 @@ pub struct GetMoneroBalanceArgs;
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetMoneroBalanceResponse {
-    #[typeshare(serialized_as = "string")] // Assuming monero::Amount serializes to string via typeshare
+    #[typeshare(serialized_as = "string")]
+    // Assuming monero::Amount serializes to string via typeshare
     pub total_balance: crate::monero::Amount,
     #[typeshare(serialized_as = "string")]
     pub unlocked_balance: crate::monero::Amount,
@@ -517,9 +524,12 @@ impl Request for GetMoneroBalanceArgs {
     type Response = GetMoneroBalanceResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet_manager = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
         let wallet = wallet_manager.main_wallet().await;
-        
+
         let total_balance = wallet.total_balance().await;
         let unlocked_balance = wallet.unlocked_balance().await;
 
@@ -550,19 +560,22 @@ impl Request for SendMoneroArgs {
     type Response = SendMoneroResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet_manager = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
         let wallet = wallet_manager.main_wallet().await;
-        
+
         // Parse the address
         let address = monero::Address::from_str(&self.address)
             .map_err(|e| anyhow::anyhow!("Invalid Monero address: {}", e))?;
-        
+
         // Convert our amount to monero-sys amount
         let amount = monero::Amount::from_piconero(self.amount.as_piconero());
-        
-        // Send the transaction
-        let receipt = wallet.transfer(&address, amount.into()).await?;
-        
+
+        // Send the transaction with GUI-specific retry logic (single retry only)
+        let receipt = wallet.transfer_gui(&address, amount.into()).await?;
+
         Ok(SendMoneroResponse {
             tx_hash: receipt.txid,
             amount_sent: crate::monero::Amount::from_piconero(amount.as_piconero()),
@@ -1602,11 +1615,14 @@ impl Request for GetMoneroSyncProgressArgs {
     type Response = GetMoneroSyncProgressResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet_manager = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
         let wallet = wallet_manager.main_wallet().await;
-        
+
         let sync_progress = wallet.call(|wallet| wallet.sync_progress()).await;
-        
+
         Ok(GetMoneroSyncProgressResponse {
             current_block: sync_progress.current_block,
             target_block: sync_progress.target_block,
@@ -1623,7 +1639,8 @@ pub struct GetBackgroundItemsArgs;
 #[typeshare]
 #[derive(Serialize)]
 pub struct GetBackgroundItemsResponse {
-    pub background: std::collections::HashMap<String, crate::cli::api::tauri_bindings::TauriBackgroundProgress>,
+    pub background:
+        std::collections::HashMap<String, crate::cli::api::tauri_bindings::TauriBackgroundProgress>,
 }
 
 impl Request for GetBackgroundItemsArgs {
@@ -1645,7 +1662,8 @@ pub struct GetApprovalItemsArgs;
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetApprovalItemsResponse {
-    pub approvals: std::collections::HashMap<String, crate::cli::api::tauri_bindings::ApprovalRequest>,
+    pub approvals:
+        std::collections::HashMap<String, crate::cli::api::tauri_bindings::ApprovalRequest>,
 }
 
 impl Request for GetApprovalItemsArgs {
@@ -1656,7 +1674,8 @@ impl Request for GetApprovalItemsArgs {
         if let Some(tauri_handle) = &ctx.tauri_handle {
             let approvals = tauri_handle.get_pending_approvals().await;
             Ok(GetApprovalItemsResponse {
-                approvals: approvals.into_iter()
+                approvals: approvals
+                    .into_iter()
                     .map(|(uuid, approval)| (uuid.to_string(), approval))
                     .collect(),
             })

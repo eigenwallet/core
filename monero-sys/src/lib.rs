@@ -125,7 +125,6 @@ pub struct Daemon {
     pub ssl: bool,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare]
 pub struct TransactionInfo {
@@ -141,12 +140,15 @@ pub struct TransactionInfo {
 pub struct PendingTransaction(*mut ffi::PendingTransaction);
 
 /// A struct containing transaction history.
-pub struct TransactionHistoryHandle(UniquePtr<TransactionHistory>);
+pub struct TransactionHistoryHandle(*mut TransactionHistory);
 
 /// A struct containing a single transaction.
 pub struct TransactionInfoHandle(*mut ffi::TransactionInfo);
 
 // Safety: The underlying C++ object is thread-safe for immutable access once obtained from TransactionHistory.
+unsafe impl Send for TransactionHistoryHandle {}
+unsafe impl Sync for TransactionHistoryHandle {}
+
 unsafe impl Send for TransactionInfoHandle {}
 unsafe impl Sync for TransactionInfoHandle {}
 
@@ -434,6 +436,45 @@ impl WalletHandle {
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e}"))
     }
 
+    /// Transfer funds to an address with limited retries for GUI usage.
+    /// Only retries once instead of the default exponential backoff strategy.
+    pub async fn transfer_gui(
+        &self,
+        address: &monero::Address,
+        amount: monero::Amount,
+    ) -> anyhow::Result<TxReceipt> {
+        let address = *address;
+
+        // Try the transfer
+        match self
+            .call(move |wallet| wallet.transfer(&address, amount))
+            .await
+        {
+            Ok(receipt) => Ok(receipt),
+            Err(first_error) => {
+                tracing::warn!(error=%first_error, "First transfer attempt failed, retrying once");
+
+                // Single retry
+                match self
+                    .call(move |wallet| wallet.transfer(&address, amount))
+                    .await
+                {
+                    Ok(receipt) => {
+                        tracing::info!("Transfer succeeded on retry");
+                        Ok(receipt)
+                    }
+                    Err(second_error) => {
+                        tracing::error!(first_error=%first_error, second_error=%second_error, "Transfer failed after single retry");
+                        Err(anyhow!(
+                            "Failed to transfer funds after single retry: {}",
+                            second_error
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
     /// Sweep all funds to an address.
     pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<Vec<TxReceipt>> {
         let address = *address;
@@ -477,9 +518,7 @@ impl WalletHandle {
     /// Get the transaction history and convert it to a list of serializable transaction infos.
     /// This is needed because TransactionHistory and TransactionInfo are not Send.
     pub async fn history(&self) -> Vec<TransactionInfo> {
-        self.call(move |wallet| {
-            wallet.history()
-        }).await
+        self.call(move |wallet| wallet.history()).await
     }
 
     /// Get the unlocked balance of the wallet.
@@ -1704,8 +1743,12 @@ impl FfiWallet {
 
     /// Get the transaction history.
     fn history(&self) -> Vec<TransactionInfo> {
-        let history_handle = unsafe { TransactionHistoryHandle(ffi::walletHistory(self.inner.inner)) };
+        let history_ptr = unsafe { ffi::walletHistory(self.inner.inner) };
+        let history_handle = TransactionHistoryHandle(history_ptr.into_raw());
         let count = history_handle.count();
+
+        println!("history_handle.count(): {}", count);
+
         let mut transactions = Vec::with_capacity(count as usize);
         for i in 0..count {
             if let Some(tx_info_handle) = history_handle.transaction(i) {
@@ -1938,14 +1981,14 @@ impl Deref for PendingTransaction {
 impl TransactionHistoryHandle {
     /// Get the number of transactions in the history.
     pub fn count(&self) -> i32 {
-        // Safety: self.0 is a valid UniquePtr<TransactionHistory>
+        // Safety: self.0 is a valid *mut TransactionHistory
         // The bridged count() method is safe to call on a valid reference.
-        self.0.as_ref().unwrap().count()
+        unsafe { self.0.as_ref().unwrap().count() }
     }
 
     /// Get a transaction from the history by index.
     pub fn transaction(&self, index: i32) -> Option<TransactionInfoHandle> {
-        // Safety: self.0 is a valid UniquePtr<TransactionHistory>.
+        // Safety: self.0 is a valid *mut TransactionHistory.
         // The bridged transaction() method returns a raw pointer, which we immediately wrap.
         let tx_info_ptr = unsafe { self.0.as_ref().unwrap().transaction(index) };
 

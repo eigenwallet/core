@@ -354,7 +354,9 @@ impl MoneroAddressPool {
 
         const TOLERANCE: f64 = 1e-6;
 
-        if (sum - Decimal::ONE).abs() > Decimal::from_f64(TOLERANCE).expect("TOLERANCE constant should be a valid f64") {
+        if (sum - Decimal::ONE).abs()
+            > Decimal::from_f64(TOLERANCE).expect("TOLERANCE constant should be a valid f64")
+        {
             bail!("Address pool percentages do not sum to 1");
         }
 
