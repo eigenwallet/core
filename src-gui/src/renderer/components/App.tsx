@@ -73,7 +73,7 @@ function InnerContent() {
       <Routes>
         <Route path="/swap" element={<SwapPage />} />
         <Route path="/history" element={<HistoryPage />} />
-        <Route path="/wallet" element={<WalletPage />} />
+        <Route path="/bitcoin-wallet" element={<WalletPage />} />
         <Route path="/monero-wallet" element={<MoneroWalletPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />

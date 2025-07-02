@@ -10,7 +10,7 @@ use swap::cli::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
             CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
             CheckSeedResponse, ExportBitcoinWalletArgs, GetApprovalItemsArgs,
-            GetBackgroundItemsArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
+            GetBackgroundItemsArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
             GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetSwapInfoArgs,
             GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
@@ -198,6 +198,7 @@ pub fn run() {
             check_monero_node,
             check_electrum_node,
             get_wallet_descriptor,
+            get_current_swap,
             get_data_dir,
             resolve_approval_request,
             redact,
@@ -260,6 +261,7 @@ tauri_command!(get_swap_infos_all, GetSwapInfosAllArgs, no_args);
 tauri_command!(get_history, GetHistoryArgs, no_args);
 tauri_command!(get_monero_addresses, GetMoneroAddressesArgs, no_args);
 tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
+tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
 
 // Add the new command for getting Monero main address
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);

@@ -1,5 +1,6 @@
 use super::request::BalanceResponse;
 use crate::bitcoin;
+use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::{bitcoin::ExpiredTimelocks, monero, network::quote::BidQuote};
 use anyhow::{anyhow, bail, Context, Result};
@@ -10,9 +11,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::Display;
-use tokio::sync::{oneshot, Mutex as TokioMutex};
+use tokio::sync::oneshot;
 use typeshare::typeshare;
 use uuid::Uuid;
 
@@ -51,6 +53,17 @@ pub struct LockBitcoinDetails {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelectMakerDetails {
+    #[typeshare(serialized_as = "string")]
+    pub swap_id: Uuid,
+    #[typeshare(serialized_as = "number")]
+    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub btc_amount_to_swap: bitcoin::Amount,
+    pub maker: QuoteWithAddress,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "content")]
 pub enum SeedChoice {
     RandomSeed,
@@ -73,6 +86,9 @@ pub enum ApprovalRequestType {
     /// Request approval before locking Bitcoin.
     /// Contains specific details for review.
     LockBitcoin(LockBitcoinDetails),
+    /// Request approval for maker selection.
+    /// Contains available makers and swap details.
+    SelectMaker(SelectMakerDetails),
     /// Request seed selection from user.
     /// User can choose between random seed or provide their own.
     SeedSelection,
@@ -100,6 +116,15 @@ struct PendingApproval {
     request: ApprovalRequest,
 }
 
+impl Drop for PendingApproval {
+    fn drop(&mut self) {
+        if let Some(responder) = self.responder.take() {
+            tracing::debug!("Dropping pending approval because handle was dropped");
+            let _ = responder.send(serde_json::Value::Bool(false));
+        }
+    }
+}
+
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TorBootstrapStatus {
@@ -111,7 +136,7 @@ pub struct TorBootstrapStatus {
 #[cfg(feature = "tauri")]
 struct TauriHandleInner {
     app_handle: tauri::AppHandle,
-    pending_approvals: TokioMutex<HashMap<Uuid, PendingApproval>>,
+    pending_approvals: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
 }
 
 #[derive(Clone)]
@@ -130,7 +155,7 @@ impl TauriHandle {
             #[cfg(feature = "tauri")]
             Arc::new(TauriHandleInner {
                 app_handle: tauri_handle,
-                pending_approvals: TokioMutex::new(HashMap::new()),
+                pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             }),
         )
     }
@@ -148,6 +173,7 @@ impl TauriHandle {
 
     /// Helper to emit a approval event via the unified event name
     fn emit_approval(&self, event: ApprovalRequest) {
+        tracing::debug!(?event, "Emitting approval event");
         self.emit_unified_event(TauriEvent::Approval(event))
     }
 
@@ -174,7 +200,7 @@ impl TauriHandle {
             let timeout_secs = timeout_secs.unwrap_or(60 * 60 * 24 * 7);
             let expiration_ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| anyhow!("Failed to get current time: {}", e))?
                 .as_secs()
                 + timeout_secs;
             let request = ApprovalRequest {
@@ -187,7 +213,6 @@ impl TauriHandle {
             self.emit_approval(request.clone());
 
             tracing::debug!(%request, "Emitted approval request event");
-
             // Construct the data structure we use to internally track the approval request
             let (responder, receiver) = oneshot::channel();
 
@@ -197,7 +222,7 @@ impl TauriHandle {
                 responder: Some(responder),
                 expiration_ts: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .map_err(|e| anyhow!("Failed to get current time: {}", e))?
                     .as_secs()
                     + timeout_secs,
                 request: request.clone(),
@@ -205,9 +230,20 @@ impl TauriHandle {
 
             // Lock map and insert the pending approval
             {
-                let mut pending_map = self.0.pending_approvals.lock().await;
-                pending_map.insert(request.request_id, pending);
+                let mut pending_map = self
+                    .0
+                    .pending_approvals
+                    .lock()
+                    .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
+                pending_map.insert(request_id, pending);
             }
+
+            // Create cleanup guard to handle cancellation
+            let mut cleanup_guard = ApprovalCleanupGuard::new(
+                request_id,
+                self.clone(),
+                self.0.pending_approvals.clone(),
+            );
 
             // Determine if the request will be accepted or rejected
             // Either by being resolved by the user, or by timing out
@@ -223,14 +259,18 @@ impl TauriHandle {
             let response: Result<Response> = serde_json::from_value(unparsed_response.clone())
                 .context("Failed to parse approval response to expected type");
 
-            let mut map = self.0.pending_approvals.lock().await;
-            if let Some(_pending) = map.remove(&request.request_id) {
+            let mut map = self
+                .0
+                .pending_approvals
+                .lock()
+                .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
+            if let Some(_pending) = map.remove(&request_id) {
                 let status = if response.is_ok() {
                     RequestStatus::Resolved {
                         approve_input: unparsed_response,
                     }
                 } else {
-                    RequestStatus::Rejected {}
+                    RequestStatus::Rejected
                 };
 
                 let mut approval = request.clone();
@@ -260,15 +300,19 @@ impl TauriHandle {
 
         #[cfg(feature = "tauri")]
         {
-            let mut pending_map = self.0.pending_approvals.lock().await;
-            if let Some(pending) = pending_map.get_mut(&request_id) {
-                let _ = pending
-                    .responder
-                    .take()
-                    .context("Approval responder was already consumed")?
-                    .send(response);
-
-                Ok(())
+            let mut pending_map = self
+                .0
+                .pending_approvals
+                .lock()
+                .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
+            if let Some(mut pending) = pending_map.remove(&request_id) {
+                // Send response through oneshot channel
+                if let Some(responder) = pending.responder.take() {
+                    let _ = responder.send(response);
+                    Ok(())
+                } else {
+                    Err(anyhow!("Approval responder was already consumed"))
+                }
             } else {
                 Err(anyhow!("Approval not found or already handled"))
             }
@@ -280,6 +324,7 @@ impl Display for ApprovalRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.request {
             ApprovalRequestType::LockBitcoin(..) => write!(f, "LockBitcoin()"),
+            ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SeedSelection => write!(f, "SeedSelection()"),
         }
     }
@@ -290,6 +335,12 @@ pub trait TauriEmitter {
     async fn request_bitcoin_approval(
         &self,
         details: LockBitcoinDetails,
+        timeout_secs: u64,
+    ) -> Result<bool>;
+
+    async fn request_maker_selection(
+        &self,
+        details: SelectMakerDetails,
         timeout_secs: u64,
     ) -> Result<bool>;
 
@@ -375,6 +426,20 @@ impl TauriEmitter for TauriHandle {
             .unwrap_or(false))
     }
 
+    async fn request_maker_selection(
+        &self,
+        details: SelectMakerDetails,
+        timeout_secs: u64,
+    ) -> Result<bool> {
+        Ok(self
+            .request_approval(
+                ApprovalRequestType::SelectMaker(details),
+                Some(timeout_secs),
+            )
+            .await
+            .unwrap_or(false))
+    }
+
     async fn request_seed_selection(&self) -> Result<SeedChoice> {
         self.request_approval(ApprovalRequestType::SeedSelection, None)
             .await
@@ -431,6 +496,17 @@ impl TauriEmitter for Option<TauriHandle> {
         }
     }
 
+    async fn request_maker_selection(
+        &self,
+        details: SelectMakerDetails,
+        timeout_secs: u64,
+    ) -> Result<bool> {
+        match self {
+            Some(tauri) => tauri.request_maker_selection(details, timeout_secs).await,
+            None => bail!("No Tauri handle available"),
+        }
+    }
+
     async fn request_seed_selection(&self) -> Result<SeedChoice> {
         match self {
             Some(tauri) => tauri.request_seed_selection().await,
@@ -469,7 +545,11 @@ impl TauriHandle {
         &self,
     ) -> std::collections::HashMap<uuid::Uuid, ApprovalRequest> {
         let inner = self.0.as_ref();
-        let pending_approvals = inner.pending_approvals.lock().await;
+
+        // If the lock fails, return an empty map. Should almost never happen.
+        let Ok(pending_approvals) = inner.pending_approvals.lock() else {
+            return std::collections::HashMap::new();
+        };
 
         pending_approvals
             .iter()
@@ -670,14 +750,8 @@ pub enum TauriSwapProgressEvent {
         max_giveable: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
         #[serde(with = "::bitcoin::amount::serde::as_sat")]
-        min_deposit_until_swap_will_start: bitcoin::Amount,
-        #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
-        max_deposit_until_maximum_amount_is_reached: bitcoin::Amount,
-        #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         min_bitcoin_lock_tx_fee: bitcoin::Amount,
-        quote: BidQuote,
+        known_quotes: Vec<QuoteWithAddress>,
     },
     SwapSetupInflight {
         #[typeshare(serialized_as = "number")]
@@ -816,4 +890,49 @@ pub struct ListSellersProgress {
     pub peers_discovered: u32,
     pub quotes_received: u32,
     pub quotes_failed: u32,
+}
+
+// Add this struct before the TauriHandle implementation
+struct ApprovalCleanupGuard {
+    request_id: Option<Uuid>,
+    approval_store: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
+    handle: TauriHandle,
+}
+
+impl ApprovalCleanupGuard {
+    fn new(
+        request_id: Uuid,
+        handle: TauriHandle,
+        approval_store: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
+    ) -> Self {
+        Self {
+            request_id: Some(request_id),
+            handle,
+            approval_store,
+        }
+    }
+
+    /// Disarm the guard so it won't cleanup on drop (call when normally resolved)
+    fn disarm(&mut self) {
+        self.request_id = None;
+    }
+}
+
+impl Drop for ApprovalCleanupGuard {
+    fn drop(&mut self) {
+        if let Some(request_id) = self.request_id {
+            tracing::debug!(%request_id, "Approval handle dropped, we should cleanup now");
+
+            // Lock the Mutex
+            if let Ok(mut approval_store) = self.approval_store.lock() {
+                // Check if the request id still present in the map
+                if let Some(mut pending_approval) = approval_store.remove(&request_id) {
+                    // If there is still someone listening, send a rejection
+                    if let Some(responder) = pending_approval.responder.take() {
+                        let _ = responder.send(serde_json::Value::Bool(false));
+                    }
+                }
+            }
+        }
+    }
 }
