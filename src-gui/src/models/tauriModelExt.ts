@@ -5,6 +5,7 @@ import {
   GetSwapInfoResponse,
   PendingCompleted,
   QuoteWithAddress,
+  SelectMakerDetails,
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
 } from "./tauriModel";
@@ -306,9 +307,7 @@ export function isBitcoinSyncProgress(
 }
 
 export type PendingSelectMakerApprovalRequest = PendingApprovalRequest & {
-  content: {
-    details: { type: "SelectMaker" };
-  };
+  request: { type: "SelectMaker"; content: SelectMakerDetails };
 };
 
 export interface SortableQuoteWithAddress extends QuoteWithAddress {
@@ -320,12 +319,12 @@ export function isPendingSelectMakerApprovalEvent(
   event: ApprovalRequest,
 ): event is PendingSelectMakerApprovalRequest {
   // Check if the request is pending
-  if (event.state !== "Pending") {
+  if (event.request_status.state !== "Pending") {
     return false;
   }
 
   // Check if the request is a SelectMaker request
-  return event.content.details.type === "SelectMaker";
+  return event.request.type === "SelectMaker";
 }
 
 /**

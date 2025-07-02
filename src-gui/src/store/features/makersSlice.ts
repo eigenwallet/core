@@ -47,7 +47,10 @@ function selectNewSelectedMaker(
   }
 
   // Otherwise we'd prefer to switch to a provider that has the newest version
-  const providers = [...(slice.registry.makers ?? []), ...(slice.rendezvous.makers ?? [])];
+  const providers = [
+    ...(slice.registry.makers ?? []),
+    ...(slice.rendezvous.makers ?? []),
+  ];
 
   return providers.at(0) || null;
 }

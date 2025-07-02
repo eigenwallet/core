@@ -8,7 +8,7 @@ import {
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
-import WarningIcon from '@mui/icons-material/Warning';
+import WarningIcon from "@mui/icons-material/Warning";
 
 export default function MakerOfferItem({
   quoteWithAddress,
@@ -67,47 +67,49 @@ export default function MakerOfferItem({
               flexWrap: "wrap",
             }}
           >
-              <Chip
-                label={
-                  <MoneroSatsExchangeRate
-                    rate={quote.price}
-                    displayMarkup={true}
-                  />
-                }
-                size="small"
-              />
-              <Chip
-                label={
-                  <>
-                    <SatsAmount amount={quote.min_quantity} /> -{" "}
-                    <SatsAmount amount={quote.max_quantity} />
-                  </>
-                }
-                size="small"
-              />
-              {isMakerVersionOutdated(version) ? (
-                <Tooltip title="Outdated maker version. This may cause issues with the swap.">
+            <Chip
+              label={
+                <MoneroSatsExchangeRate
+                  rate={quote.price}
+                  displayMarkup={true}
+                />
+              }
+              size="small"
+            />
+            <Chip
+              label={
+                <>
+                  <SatsAmount amount={quote.min_quantity} /> -{" "}
+                  <SatsAmount amount={quote.max_quantity} />
+                </>
+              }
+              size="small"
+            />
+            {isMakerVersionOutdated(version) ? (
+              <Tooltip title="Outdated maker version. This may cause issues with the swap.">
                 <Chip
                   color="warning"
                   label={
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                    <Box
+                      sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+                    >
                       <WarningIcon sx={{ fontSize: "1rem" }} />
                       <Typography variant="body2">{version}</Typography>
                     </Box>
                   }
                   size="small"
                 />
-                </Tooltip>
-              ) : (
-                <Chip label={version} size="small" />
-              )}
+              </Tooltip>
+            ) : (
+              <Chip label={version} size="small" />
+            )}
           </Box>
         </Box>
       </Box>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <PromiseInvokeButton
           variant="contained"
-          onInvoke={() => resolveApproval(requestId, true)}
+          onInvoke={() => resolveApproval(requestId, true as unknown as object)}
           displayErrorSnackbar
           disabled={!requestId}
           tooltipTitle={

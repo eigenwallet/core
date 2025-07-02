@@ -56,13 +56,20 @@ export default function SwapSetupInflightPage({
   // Display a loading spinner to the user for as long as the swap_setup request is in flight
   if (request == null) {
     return (
-      <Box sx={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <CircularProgressWithSubtitle
-        description={
-          <>
-            Negotiating offer for <SatsAmount amount={btc_lock_amount} />
-          </>
-        }
+      <Box
+        sx={{
+          height: 200,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <CircularProgressWithSubtitle
+          description={
+            <>
+              Negotiating offer for <SatsAmount amount={btc_lock_amount} />
+            </>
+          }
         />
       </Box>
     );
@@ -72,73 +79,74 @@ export default function SwapSetupInflightPage({
     request.request.content;
 
   return (
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "space-between",
+        justifyContent: "space-between",
+        height: "100%",
+        flex: 1,
+      }}
+    >
+      {/* Grid layout for perfect alignment */}
       <Box
         sx={{
           display: "flex",
-          flexDirection: "column",
-          alignItems: "space-between",
+          flexDirection: { xs: "column", lg: "row" },
+          gap: "1.5rem",
+          alignItems: "stretch",
           justifyContent: "space-between",
-          height: "100%",
-          flex: 1,
         }}
       >
-        {/* Grid layout for perfect alignment */}
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: {xs: "column", lg: "row"},
-            gap: "1.5rem",
-            alignItems: "stretch",
-            justifyContent: "space-between",
-          }}
-        >
-          {/* Row 1: Bitcoin box */}
-          <Box sx={{ height: "100%", flex: "0 0 auto" }}>
-            <BitcoinMainBox
-              btc_lock_amount={btc_lock_amount}
-              btc_network_fee={btc_network_fee}
-            />
-          </Box>
-
-          {/* Row 1: Animated arrow */}
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <AnimatedArrow />
-          </Box>
-
-          {/* Row 1: Monero main box */}
-          <Box sx={{ flex: "0 0 auto" }}>
-            <MoneroMainBox
-              monero_receive_pool={monero_receive_pool}
-              xmr_receive_amount={xmr_receive_amount}
-            />
-          </Box>
+        {/* Row 1: Bitcoin box */}
+        <Box sx={{ height: "100%", flex: "0 0 auto" }}>
+          <BitcoinMainBox
+            btc_lock_amount={btc_lock_amount}
+            btc_network_fee={btc_network_fee}
+          />
         </Box>
 
+        {/* Row 1: Animated arrow */}
         <Box
           sx={{
-            marginTop: 4,
             display: "flex",
-            flexDirection: "column",
             alignItems: "center",
-            gap: 1.5,
+            justifyContent: "center",
           }}
         >
-          <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
+          <AnimatedArrow />
+        </Box>
 
+        {/* Row 1: Monero main box */}
+        <Box sx={{ flex: "0 0 auto" }}>
+          <MoneroMainBox
+            monero_receive_pool={monero_receive_pool}
+            xmr_receive_amount={xmr_receive_amount}
+          />
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          marginTop: 4,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 1.5,
+        }}
+      >
+        <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
           <PromiseInvokeButton
             variant="text"
             size="large"
             sx={(theme) => ({ color: theme.palette.text.secondary })}
-            onInvoke={() => resolveApproval(request.content.request_id, false)}
+            onInvoke={() =>
+              resolveApproval(request.request_id, false as unknown as object)
+            }
             displayErrorSnackbar
             requiresContext
-            >
+          >
             Deny
           </PromiseInvokeButton>
 
@@ -146,19 +154,27 @@ export default function SwapSetupInflightPage({
             variant="contained"
             color="primary"
             size="large"
-            onInvoke={() => resolveApproval(request.content.request_id, true)}
+            onInvoke={() =>
+              resolveApproval(request.request_id, true as unknown as object)
+            }
             displayErrorSnackbar
             requiresContext
             endIcon={<CheckIcon />}
-            >
+          >
             {`Confirm`}
           </PromiseInvokeButton>
-            </Box>
-          <Typography variant="caption" sx={{ textAlign: "center", color: (theme) => theme.palette.text.secondary }}>
-            {`Offer expires in ${timeLeft}s`}
-          </Typography>
         </Box>
+        <Typography
+          variant="caption"
+          sx={{
+            textAlign: "center",
+            color: (theme) => theme.palette.text.secondary,
+          }}
+        >
+          {`Offer expires in ${timeLeft}s`}
+        </Typography>
       </Box>
+    </Box>
   );
 }
 
@@ -182,7 +198,15 @@ const BitcoinMainBox = ({
   btc_lock_amount: number;
   btc_network_fee: number;
 }) => (
-  <Box sx={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", gap: 1 }}>
+  <Box
+    sx={{
+      position: "relative",
+      height: "100%",
+      display: "flex",
+      flexDirection: "column",
+      gap: 1,
+    }}
+  >
     <Box
       sx={{
         display: "flex",
@@ -324,7 +348,7 @@ const PoolBreakdown = ({
             >
               {pool.label === "user address" ? "Your Wallet" : pool.label}
             </Typography>
-            {pool.label === "user address" &&
+            {pool.label === "user address" && (
               <Typography
                 variant="body2"
                 sx={{
@@ -337,7 +361,7 @@ const PoolBreakdown = ({
                   {pool.address}
                 </TruncatedText>
               </Typography>
-            }
+            )}
           </Box>
           <Box
             sx={{
@@ -463,10 +487,10 @@ const MoneroMainBox = ({
       </Box>
 
       {/* Secondary Monero content attached to the bottom */}
-        <MoneroSecondaryContent
-          monero_receive_pool={monero_receive_pool}
-          xmr_receive_amount={xmr_receive_amount}
-        />
+      <MoneroSecondaryContent
+        monero_receive_pool={monero_receive_pool}
+        xmr_receive_amount={xmr_receive_amount}
+      />
     </Box>
   );
 };
@@ -510,7 +534,7 @@ const AnimatedArrow = () => (
       justifyContent: "center",
       alignSelf: "center",
       flex: "0 0 auto",
-      transform: {xs: "rotate(90deg)", lg: "rotate(0deg)"},
+      transform: { xs: "rotate(90deg)", lg: "rotate(0deg)" },
     }}
   >
     <ArrowRightAltIcon sx={arrowSx} />

@@ -1,8 +1,6 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
-use crate::cli::api::tauri_bindings::{
-    SelectMakerDetails, TauriEmitter, TauriSwapProgressEvent,
-};
+use crate::cli::api::tauri_bindings::{SelectMakerDetails, TauriEmitter, TauriSwapProgressEvent};
 use crate::cli::api::Context;
 use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
 use crate::cli::{list_sellers as list_sellers_impl, EventLoop, SellerStatus};

@@ -15,7 +15,9 @@ export default function SwapWidget() {
   const [debug, setDebug] = useState(false);
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}>
+    <Box
+      sx={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}
+    >
       <SwapStatusAlert swap={swapInfo} onlyShowIfUnusualAmountOfTimeHasPassed />
       <Dialog open={debug} onClose={() => setDebug(false)}>
         <DebugPage />

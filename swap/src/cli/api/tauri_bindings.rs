@@ -199,7 +199,7 @@ impl TauriHandle {
             let timeout_secs = timeout_secs.unwrap_or(60 * 60 * 24 * 7);
             let expiration_ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| anyhow!("Failed to get current time: {}", e))?
                 .as_secs()
                 + timeout_secs;
             let request = ApprovalRequest {
@@ -221,14 +221,18 @@ impl TauriHandle {
                 responder: Some(responder),
                 expiration_ts: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .unwrap()
+                    .map_err(|e| anyhow!("Failed to get current time: {}", e))?
                     .as_secs()
                     + timeout_secs,
             };
 
             // Lock map and insert the pending approval
             {
-                let mut pending_map = self.0.pending_approvals.lock().unwrap();
+                let mut pending_map = self
+                    .0
+                    .pending_approvals
+                    .lock()
+                    .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
                 pending_map.insert(request_id, pending);
             }
 
@@ -253,7 +257,11 @@ impl TauriHandle {
             let response: Result<Response> = serde_json::from_value(unparsed_response.clone())
                 .context("Failed to parse approval response to expected type");
 
-            let mut map = self.0.pending_approvals.lock().unwrap();
+            let mut map = self
+                .0
+                .pending_approvals
+                .lock()
+                .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
             if let Some(_pending) = map.remove(&request_id) {
                 let status = if response.is_ok() {
                     RequestStatus::Resolved {
@@ -290,7 +298,11 @@ impl TauriHandle {
 
         #[cfg(feature = "tauri")]
         {
-            let mut pending_map = self.0.pending_approvals.lock().unwrap();
+            let mut pending_map = self
+                .0
+                .pending_approvals
+                .lock()
+                .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
             if let Some(mut pending) = pending_map.remove(&request_id) {
                 // Send response through oneshot channel
                 if let Some(responder) = pending.responder.take() {
