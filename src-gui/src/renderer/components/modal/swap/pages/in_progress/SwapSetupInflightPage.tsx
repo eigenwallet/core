@@ -34,9 +34,13 @@ export default function SwapSetupInflightPage({
 }: TauriSwapProgressEventContent<"SwapSetupInflight">) {
   const request = useActiveLockBitcoinApprovalRequest();
 
+  if (request === null) { 
+    return null;
+  }
+
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
-  const expiresAtMs = request?.content.content.expiration_ts * 1000 || 0;
+  const expiresAtMs = request?.content?.content?.expiration_ts * 1000 || 0;
 
   useEffect(() => {
     const tick = () => {
@@ -64,7 +68,7 @@ export default function SwapSetupInflightPage({
   }
 
   const { btc_network_fee, xmr_receive_amount } =
-    request.content.content.details;
+    request.request.content;
 
   return (
     <InfoBox
