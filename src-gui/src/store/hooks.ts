@@ -158,7 +158,7 @@ export function useNodes<T>(selector: (nodes: NodesSlice) => T): T {
 export function usePendingApprovals(): PendingApprovalRequest[] {
   const approvals = useAppSelector((state) => state.rpc.state.approvalRequests);
   return Object.values(approvals).filter(
-    (c) => c.content.state === "Pending",
+    (c) => c.request_status.state === "Pending",
   ) as PendingApprovalRequest[];
 }
 

@@ -26,20 +26,15 @@ export default function SeedSelectionDialog() {
     if (!approval) return;
 
     if (accept) {
-      const seedChoice = selectedOption === "RandomSeed" 
-        ? { type: "RandomSeed" }
-        : { type: "FromSeed", content: { seed: customSeed } };
-      
-      await resolveApproval(
-        approval.content.content.request_id,
-        seedChoice
-      );
+      const seedChoice =
+        selectedOption === "RandomSeed"
+          ? { type: "RandomSeed" }
+          : { type: "FromSeed", content: { seed: customSeed } };
+
+      await resolveApproval(approval.request_id, seedChoice);
     } else {
       // On reject, just close without approval
-      await resolveApproval(
-        approval.content.content.request_id,
-        { type: "RandomSeed" }
-      );
+      await resolveApproval(approval.request_id, { type: "RandomSeed" });
     }
   };
 

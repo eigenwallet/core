@@ -213,6 +213,10 @@ export async function listSellersAtRendezvousPoint(
   });
 }
 
+export async function initializeHandle() {
+  await invokeUnsafe<void>("initialize_handle");
+}
+
 export async function initializeContext() {
   const network = getNetwork();
   const testnet = isTestnet();
@@ -252,10 +256,16 @@ export async function initializeContext() {
 
   logger.info("Initializing context with settings", tauriSettings);
 
-  await invokeUnsafe<void>("initialize_context", {
-    settings: tauriSettings,
-    testnet,
-  });
+  try {
+    await invokeUnsafe<void>("initialize_context", {
+      settings: tauriSettings,
+      testnet,
+    });
+  } catch (error) {
+    throw new Error("Couldn't initialize context: " + error);
+  }
+
+  logger.info("Initialized context");
 }
 
 export async function getWalletDescriptor() {
@@ -343,7 +353,7 @@ export async function getDataDir(): Promise<string> {
 
 export async function resolveApproval(
   requestId: string,
-  accept: boolean,
+  accept: object,
 ): Promise<void> {
   await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
     "resolve_approval_request",

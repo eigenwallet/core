@@ -1450,11 +1450,3 @@ pub struct ResolveApprovalArgs {
 pub struct ResolveApprovalResponse {
     pub success: bool,
 }
-
-impl Request for ResolveApprovalArgs {
-    type Response = ResolveApprovalResponse;
-
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        resolve_approval_request(self, ctx).await
-    }
-}

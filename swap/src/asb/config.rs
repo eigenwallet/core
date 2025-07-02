@@ -384,7 +384,10 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
             .interact_text()?;
         if electrum_url.as_str().is_empty() {
             electrum_done = true;
-        } else if electrum_rpc_urls.iter().any(|url| url.to_string() == electrum_url) {
+        } else if electrum_rpc_urls
+            .iter()
+            .any(|url| url.to_string() == electrum_url)
+        {
             println!("That Electrum URL is already in the list.");
         } else {
             let electrum_url = Url::parse(&electrum_url).context("Invalid Electrum URL")?;

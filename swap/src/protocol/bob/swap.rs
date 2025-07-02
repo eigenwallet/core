@@ -172,7 +172,7 @@ async fn next_state(
             // as the exchange rate determined at this step might be different
             // from the one we previously displayed to the user.
             let approval_result = event_emitter
-                .request_approval::<bool>(ApprovalRequest::LockBitcoin(details), PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS)
+                .request_bitcoin_approval(details, PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS)
                 .await;
 
             match approval_result {

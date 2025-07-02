@@ -93,12 +93,16 @@ macro_rules! tauri_command {
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
     pub context: Option<Arc<Context>>,
+    pub handle: Option<TauriHandle>,
 }
 
 impl State {
     /// Creates a new State instance with no Context
     fn new() -> Self {
-        Self { context: None }
+        Self {
+            context: None,
+            handle: None,
+        }
     }
 
     /// Sets the context for the application state
@@ -106,6 +110,10 @@ impl State {
     /// in the setup function
     fn set_context(&mut self, context: impl Into<Option<Arc<Context>>>) {
         self.context = context.into();
+    }
+
+    fn set_handle(&mut self, handle: TauriHandle) {
+        self.handle = Some(handle);
     }
 
     /// Attempts to retrieve the context
@@ -187,6 +195,7 @@ pub fn run() {
             cancel_and_refund,
             is_context_available,
             initialize_context,
+            initialize_handle,
             check_monero_node,
             check_electrum_node,
             get_wallet_descriptor,
@@ -234,7 +243,6 @@ tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);
 tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
-tauri_command!(resolve_approval_request, ResolveApprovalArgs);
 tauri_command!(redact, RedactArgs);
 
 // These commands require no arguments
@@ -327,6 +335,38 @@ async fn save_txt_files(
     Ok(())
 }
 
+#[tauri::command]
+async fn resolve_approval_request(
+    args: ResolveApprovalArgs,
+    state: tauri::State<'_, RwLock<State>>,
+) -> Result<(), String> {
+    println!("Resolving approval request");
+    let lock = state.read().await;
+
+    lock.handle
+        .as_ref()
+        .unwrap()
+        .resolve_approval(args.request_id.parse().unwrap(), args.accept)
+        .await
+        .to_string_result()?;
+    println!("Resolved approval request");
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn initialize_handle(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, RwLock<State>>,
+) -> Result<(), String> {
+    let handle = TauriHandle::new(app_handle);
+    println!("Initializing handle");
+    let mut lock = state.write().await;
+    lock.set_handle(handle);
+    println!("Initialized handle");
+    Ok(())
+}
+
 /// Tauri command to initialize the Context
 #[tauri::command]
 async fn initialize_context(
@@ -361,14 +401,14 @@ async fn initialize_context(
         }
     }
 
-    // Acquire a write lock on the state
-    let mut state_write_lock = state
-        .try_write()
-        .context("Context is already being initialized")
-        .to_string_result()?;
-
     // Get app handle and create a Tauri handle
-    let tauri_handle = TauriHandle::new(app_handle.clone());
+    let tauri_handle = state
+        .try_read()
+        .context("Context is already being initialized")
+        .to_string_result()?
+        .handle
+        .clone()
+        .unwrap_or_else(|| TauriHandle::new(app_handle.clone()));
 
     // Notify frontend that the context is being initialized
     tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Initializing);
@@ -388,7 +428,11 @@ async fn initialize_context(
 
     match context_result {
         Ok(context_instance) => {
-            state_write_lock.set_context(Arc::new(context_instance));
+            state
+                .try_write()
+                .context("Context is already being initialized")
+                .to_string_result()?
+                .set_context(Arc::new(context_instance));
 
             tracing::info!("Context initialized");
 

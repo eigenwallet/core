@@ -21,6 +21,7 @@ import {
   checkContextAvailability,
   getSwapInfo,
   initializeContext,
+  initializeHandle,
   listSellersAtRendezvousPoint,
   updateAllNodeStatuses,
 } from "./rpc";
@@ -50,6 +51,7 @@ function setIntervalImmediate(callback: () => void, interval: number): void {
 }
 
 export async function setupBackgroundTasks(): Promise<void> {
+  await initializeHandle();
   // Setup periodic fetch tasks
   setIntervalImmediate(updatePublicRegistry, PROVIDER_UPDATE_INTERVAL);
   setIntervalImmediate(updateAllNodeStatuses, STATUS_UPDATE_INTERVAL);

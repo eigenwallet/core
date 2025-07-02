@@ -11,7 +11,7 @@ use crate::monero::wallet_rpc;
 use crate::monero::Wallets;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
-use crate::seed::NewSeed;
+use crate::seed::Seed;
 use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
@@ -38,7 +38,7 @@ static START: Once = Once::new();
 pub struct Config {
     namespace: XmrBtcNamespace,
     pub env_config: EnvConfig,
-    seed: Option<NewSeed>,
+    seed: Option<Seed>,
     debug: bool,
     json: bool,
     data_dir: PathBuf,
@@ -281,13 +281,7 @@ impl ContextBuilder {
 
     /// Takes the builder, initializes the context by initializing the wallets and other components and returns the Context.
     pub async fn build(self) -> Result<Context> {
-        // These are needed for everything else, and are blocking calls
         let data_dir = &data::data_dir_from(self.data, self.is_testnet)?;
-        let env_config = env_config_from(self.is_testnet);
-        let seed = &NewSeed::from_file_or_generate(data_dir.as_path(), self.tauri_handle.clone())
-            .context("Failed to read seed in file")?;
-        
-
 
         // Initialize logging
         let format = if self.json { Format::Json } else { Format::Raw };
@@ -313,6 +307,12 @@ impl ContextBuilder {
                 "Setting up context"
             );
         });
+
+        // These are needed for everything else, and are blocking calls
+        let env_config = env_config_from(self.is_testnet);
+        let seed = &Seed::from_file_or_generate(data_dir.as_path(), self.tauri_handle.clone())
+            .await
+            .context("Failed to read seed in file")?;
 
         // Create the data structure we use to manage the swap lock
         let swap_lock = Arc::new(SwapLock::new());
@@ -507,7 +507,7 @@ impl Context {
     }
 
     pub async fn for_harness(
-        seed: NewSeed,
+        seed: Seed,
         env_config: EnvConfig,
         db_path: PathBuf,
         bob_bitcoin_wallet: Arc<bitcoin::Wallet>,
@@ -553,7 +553,7 @@ impl fmt::Debug for Context {
 
 async fn init_bitcoin_wallet(
     electrum_rpc_urls: Vec<String>,
-    seed: &NewSeed,
+    seed: &Seed,
     data_dir: &Path,
     env_config: EnvConfig,
     bitcoin_target_block: u16,
@@ -673,7 +673,7 @@ fn env_config_from(testnet: bool) -> EnvConfig {
 }
 
 impl Config {
-    pub fn for_harness(seed: NewSeed, env_config: EnvConfig) -> Self {
+    pub fn for_harness(seed: Seed, env_config: EnvConfig) -> Self {
         let data_dir = data::data_dir_from(None, false).expect("Could not find data directory");
 
         Self {
@@ -718,14 +718,16 @@ pub mod api_test {
     pub const SWAP_ID: &str = "ea030832-3be9-454f-bb98-5ea9a788406b";
 
     impl Config {
-        pub fn default(
+        pub async fn default(
             is_testnet: bool,
             data_dir: Option<PathBuf>,
             debug: bool,
             json: bool,
         ) -> Self {
             let data_dir = data::data_dir_from(data_dir, is_testnet).unwrap();
-            let seed = NewSeed::from_file_or_generate(data_dir.as_path()).unwrap();
+            let seed = Seed::from_file_or_generate(data_dir.as_path(), None)
+                .await
+                .unwrap();
             let env_config = env_config_from(is_testnet);
 
             Self {
