@@ -77,7 +77,7 @@ export default function SeedSelectionDialog() {
             value={customSeed}
             onChange={(e) => setCustomSeed(e.target.value)}
             sx={{ mt: 2 }}
-            placeholder="Enter your 12 or 24 word seed phrase..."
+            placeholder="Enter your Monero 25 words seed phrase..."
           />
         )}
       </DialogContent>
