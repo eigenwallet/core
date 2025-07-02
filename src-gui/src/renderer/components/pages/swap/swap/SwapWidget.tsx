@@ -1,4 +1,4 @@
-import { Box, Dialog, Paper } from "@mui/material";
+import { Box, Button, Dialog, DialogActions, Paper } from "@mui/material";
 import { useActiveSwapInfo, useAppSelector } from "store/hooks";
 import SwapStatePage from "renderer/components/pages/swap/swap/SwapStatePage";
 import CancelButton from "./CancelButton";
@@ -17,8 +17,11 @@ export default function SwapWidget() {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}>
       <SwapStatusAlert swap={swapInfo} onlyShowIfUnusualAmountOfTimeHasPassed />
-      <Dialog open={debug} onClose={() => setDebug(false)}>
+      <Dialog fullWidth maxWidth="md" open={debug} onClose={() => setDebug(false)}>
         <DebugPage />
+        <DialogActions>
+        <Button variant="outlined" onClick={() => setDebug(false)}>Close</Button>
+        </DialogActions>
       </Dialog>
       <Paper
         elevation={3}

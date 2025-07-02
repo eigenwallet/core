@@ -12,7 +12,7 @@ export default function DebugPage() {
   const cliState = useActiveSwapInfo();
 
   return (
-    <Box>
+    <Box sx={{ padding: 2, display: "flex", flexDirection: "column", gap: 2 }}>
       <DialogContentText>
         <Box
           style={{
