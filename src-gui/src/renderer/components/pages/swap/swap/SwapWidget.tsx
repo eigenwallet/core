@@ -11,7 +11,7 @@ import { useState } from "react";
 export default function SwapWidget() {
   const swap = useAppSelector((state) => state.swap);
   const swapInfo = useActiveSwapInfo();
-  
+
   const [debug, setDebug] = useState(false);
 
   return (
@@ -26,25 +26,29 @@ export default function SwapWidget() {
           borderRadius: 2,
           padding: 2,
           display: "flex",
-                flexDirection: "column",
-                gap: 2,
-                justifyContent: "space-between",
-                flex: 1,
+          flexDirection: "column",
+          gap: 2,
+          justifyContent: "space-between",
+          flex: 1,
         }}
       >
-        {
-          debug ? (
-            <DebugPage />
-          ) : (
-            <>
-              <SwapStatePage state={swap.state} />
-            </>
-          )
-        }
+        {debug ? (
+          <DebugPage />
+        ) : (
+          <>
+            <SwapStatePage state={swap.state} />
+          </>
+        )}
         {swap.state !== null && (
           <>
             <SwapStateStepper state={swap.state} />
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
               <CancelButton />
               <DebugPageSwitchBadge enabled={debug} setEnabled={setDebug} />
             </Box>

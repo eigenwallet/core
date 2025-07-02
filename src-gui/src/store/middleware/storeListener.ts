@@ -24,7 +24,10 @@ import {
 import { TauriContextStatusEvent } from "models/tauriModel";
 
 // Create a Map to store throttled functions per swap_id
-const throttledGetSwapInfoFunctions = new Map<string, ReturnType<typeof throttle>>();
+const throttledGetSwapInfoFunctions = new Map<
+  string,
+  ReturnType<typeof throttle>
+>();
 
 // Function to get or create a throttled getSwapInfo for a specific swap_id
 const getThrottledSwapInfoUpdater = (swapId: string) => {
@@ -35,15 +38,15 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
       logger.debug(`Executing getSwapInfo for swap ${swapId}`);
       getSwapInfo(swapId);
     }, 3000); // 3 seconds debounce for rapid calls
-    
+
     const throttledFunction = throttle(debouncedGetSwapInfo, 2000, {
-      leading: true,  // Execute immediately on first call
-      trailing: true  // Execute on trailing edge if needed
+      leading: true, // Execute immediately on first call
+      trailing: true, // Execute on trailing edge if needed
     });
-    
+
     throttledGetSwapInfoFunctions.set(swapId, throttledFunction);
   }
-  
+
   return throttledGetSwapInfoFunctions.get(swapId)!;
 };
 
@@ -83,8 +86,12 @@ export function createMainListeners() {
       }
 
       // Update the swap info using throttled function
-      logger.info("Swap progress event received, scheduling throttled swap info update...");
-      const throttledUpdater = getThrottledSwapInfoUpdater(action.payload.swap_id);
+      logger.info(
+        "Swap progress event received, scheduling throttled swap info update...",
+      );
+      const throttledUpdater = getThrottledSwapInfoUpdater(
+        action.payload.swap_id,
+      );
       throttledUpdater();
     },
   });

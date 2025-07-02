@@ -39,11 +39,11 @@ export default function CancelButton() {
         sx={{ display: "flex", justifyContent: "flex-start", width: "100%" }}
       >
         <Button variant="outlined" onClick={onCancel}>
-          {
-            hasFundsBeenLocked && swap.state?.curr.type !== "Released" ? "Suspend" :
-            swap.state?.curr.type === "Released" ? "Close" :
-            "Cancel"
-          }
+          {hasFundsBeenLocked && swap.state?.curr.type !== "Released"
+            ? "Suspend"
+            : swap.state?.curr.type === "Released"
+              ? "Close"
+              : "Cancel"}
         </Button>
       </Box>
     </>

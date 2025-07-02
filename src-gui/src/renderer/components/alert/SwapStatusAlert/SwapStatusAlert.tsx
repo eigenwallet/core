@@ -255,13 +255,11 @@ export default function SwapStatusAlert({
 
   const hasUnusualAmountOfTimePassed =
     swap.timelock.type === "None" &&
-    swap.timelock.content.blocks_left > UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD;
+    swap.timelock.content.blocks_left >
+      UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD;
 
   // If we are only showing if an unusual amount of time has passed, we need to check if the swap has been running for a while
-  if (
-    onlyShowIfUnusualAmountOfTimeHasPassed &&
-    hasUnusualAmountOfTimePassed
-  ) {
+  if (onlyShowIfUnusualAmountOfTimeHasPassed && hasUnusualAmountOfTimePassed) {
     return null;
   }
 
@@ -281,9 +279,11 @@ export default function SwapStatusAlert({
     >
       <AlertTitle>
         {isRunning ? (
-          hasUnusualAmountOfTimePassed
-            ? "Swap has been running for a while"
-            : "Swap is running"
+          hasUnusualAmountOfTimePassed ? (
+            "Swap has been running for a while"
+          ) : (
+            "Swap is running"
+          )
         ) : (
           <>
             Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running

@@ -69,7 +69,9 @@ export function useIsSwapRunning() {
 /// that swap has any funds locked
 export function useIsSwapRunningAndHasFundsLocked() {
   const swapInfo = useActiveSwapInfo();
-  const swapTauriState = useAppSelector((state) => state.swap.state?.curr ?? null);
+  const swapTauriState = useAppSelector(
+    (state) => state.swap.state?.curr ?? null,
+  );
 
   // If the swap is in the Released state, we return false
   if (swapTauriState?.type === "Released") {

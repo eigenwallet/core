@@ -96,15 +96,13 @@ pub async fn list_sellers_init(
 
             // Get peers from the database, add them to the dial queue
             let mut external_dial_queue = match db {
-                Some(db) => {
-                    match db.get_all_peer_addresses().await {
-                        Ok(peers) => VecDeque::from(peers),
-                        Err(err) => {
-                            tracing::error!(%err, "Failed to get peers from database for list_sellers");
-                            VecDeque::new()
-                        }
+                Some(db) => match db.get_all_peer_addresses().await {
+                    Ok(peers) => VecDeque::from(peers),
+                    Err(err) => {
+                        tracing::error!(%err, "Failed to get peers from database for list_sellers");
+                        VecDeque::new()
                     }
-                }
+                },
                 None => VecDeque::new(),
             };
 
@@ -678,9 +676,11 @@ impl EventLoop {
                     quote: *quote,
                     version: version.clone(),
                 })),
-                PeerState::Failed { peer_id, .. } => Some(SellerStatus::Unreachable(UnreachableSeller {
-                    peer_id: *peer_id,
-                })),
+                PeerState::Failed { peer_id, .. } => {
+                    Some(SellerStatus::Unreachable(UnreachableSeller {
+                        peer_id: *peer_id,
+                    }))
+                }
                 _ => None, // Skip pending states for partial updates
             })
             .collect();
@@ -689,14 +689,20 @@ impl EventLoop {
         sellers
     }
 
-    fn emit_partial_update(&self, sender: &Option<::tokio::sync::watch::Sender<Vec<SellerStatus>>>) {
+    fn emit_partial_update(
+        &self,
+        sender: &Option<::tokio::sync::watch::Sender<Vec<SellerStatus>>>,
+    ) {
         if let Some(sender) = sender {
             let current_sellers = self.build_current_sellers();
             let _ = sender.send(current_sellers);
         }
     }
 
-    async fn run(mut self, sender: Option<::tokio::sync::watch::Sender<Vec<SellerStatus>>>) -> Vec<SellerStatus> {
+    async fn run(
+        mut self,
+        sender: Option<::tokio::sync::watch::Sender<Vec<SellerStatus>>>,
+    ) -> Vec<SellerStatus> {
         // Dial all rendezvous points initially
         for (peer_id, multiaddr) in &self.rendezvous_points {
             let dial_opts = DialOpts::peer_id(*peer_id)

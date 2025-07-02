@@ -40,7 +40,14 @@ export default function SwapSuspendAlert({
               <ListItemIcon sx={{ minWidth: "30px" }}>
                 <CircleIcon sx={{ fontSize: "8px" }} />
               </ListItemIcon>
-              <ListItemText primary={<>Refund timelocks will <strong>not</strong> be paused. They will continue to count down until they expire</>} />
+              <ListItemText
+                primary={
+                  <>
+                    Refund timelocks will <strong>not</strong> be paused. They
+                    will continue to count down until they expire
+                  </>
+                }
+              />
             </ListItem>
             <ListItem sx={{ pl: 0 }}>
               <ListItemIcon sx={{ minWidth: "30px" }}>

@@ -44,7 +44,10 @@ export default function DepositAndChooseOfferPage({
   const endIndex = startIndex + offersPerPage;
   const paginatedOffers = makerOffers.slice(startIndex, endIndex);
 
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+  const handlePageChange = (
+    event: React.ChangeEvent<unknown>,
+    value: number,
+  ) => {
     setCurrentPage(value);
   };
 
@@ -140,9 +143,11 @@ export default function DepositAndChooseOfferPage({
                     );
                   })}
                 </Box>
-                
+
                 {totalPages > 1 && (
-                  <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                  <Box
+                    sx={{ display: "flex", justifyContent: "center", mt: 2 }}
+                  >
                     <Pagination
                       count={totalPages}
                       page={currentPage}

@@ -13,7 +13,11 @@ import {
 } from "models/tauriModelExt";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resumeSwap, suspendCurrentSwap } from "renderer/rpc";
-import { useIsSpecificSwapRunning, useIsSwapRunning, useIsSwapRunningAndHasFundsLocked } from "store/hooks";
+import {
+  useIsSpecificSwapRunning,
+  useIsSwapRunning,
+  useIsSwapRunningAndHasFundsLocked,
+} from "store/hooks";
 import { useNavigate } from "react-router-dom";
 
 export function SwapResumeButton({
@@ -29,7 +33,8 @@ export function SwapResumeButton({
   // If another swap is running, we can resume but only if no funds have been locked
   // for that swap. If funds have been locked, we cannot resume. If no funds have been locked,
   // we suspend the other swap and resume this one.
-  const isAnotherSwapRunningAndHasFundsLocked = useIsSwapRunningAndHasFundsLocked() && !isAlreadyRunning;
+  const isAnotherSwapRunningAndHasFundsLocked =
+    useIsSwapRunningAndHasFundsLocked() && !isAlreadyRunning;
 
   async function resume() {
     // We always suspend the current swap first
@@ -45,13 +50,21 @@ export function SwapResumeButton({
     navigate(`/swap`);
   }
 
-  const tooltipTitle = isAlreadyRunning ? "This swap is already running" : (isAnotherSwapRunningAndHasFundsLocked ? "Another swap is running. Suspend it first before resuming this one" : undefined);
+  const tooltipTitle = isAlreadyRunning
+    ? "This swap is already running"
+    : isAnotherSwapRunningAndHasFundsLocked
+      ? "Another swap is running. Suspend it first before resuming this one"
+      : undefined;
 
   return (
     <PromiseInvokeButton
       variant="contained"
       color="primary"
-      disabled={swap.completed || isAlreadyRunning || isAnotherSwapRunningAndHasFundsLocked}
+      disabled={
+        swap.completed ||
+        isAlreadyRunning ||
+        isAnotherSwapRunningAndHasFundsLocked
+      }
       tooltipTitle={tooltipTitle}
       endIcon={<PlayArrowIcon />}
       onInvoke={resume}
