@@ -20,30 +20,20 @@ export default function SeedSelectionDialog() {
   const [selectedOption, setSelectedOption] = useState<string>("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
-  const [isCheckingSeed, setIsCheckingSeed] = useState<boolean>(false);
   const approval = pendingApprovals[0]; // Handle the first pending approval
 
   useEffect(() => {
-    let cancelled = false;
     if (selectedOption === "FromSeed" && customSeed.trim()) {
-      setIsCheckingSeed(true);
       checkSeed(customSeed.trim())
         .then((valid) => {
-          if (!cancelled) setIsSeedValid(valid);
+          setIsSeedValid(valid);
         })
         .catch(() => {
-          if (!cancelled) setIsSeedValid(false);
+          setIsSeedValid(false);
         })
-        .finally(() => {
-          if (!cancelled) setIsCheckingSeed(false);
-        });
     } else {
       setIsSeedValid(false);
-      setIsCheckingSeed(false);
     }
-    return () => {
-      cancelled = true;
-    };
   }, [customSeed, selectedOption]);
 
   const handleClose = async (accept: boolean) => {
@@ -68,10 +58,10 @@ export default function SeedSelectionDialog() {
 
   return (
     <Dialog open={true} maxWidth="sm" fullWidth>
-      <DialogTitle>Seed Selection</DialogTitle>
+      <DialogTitle>Monero Wallet</DialogTitle>
       <DialogContent>
         <Typography variant="body1" sx={{ mb: 2 }}>
-          Choose how to handle the wallet seed:
+          Choose what seed to use for the wallet.
         </Typography>
         
         <FormControl component="fieldset">
@@ -82,12 +72,12 @@ export default function SeedSelectionDialog() {
             <FormControlLabel
               value="RandomSeed"
               control={<Radio />}
-              label="Generate a random seed (recommended)"
+              label="Create a new wallet"
             />
             <FormControlLabel
               value="FromSeed"
               control={<Radio />}
-              label="Use custom seed"
+              label="Restore wallet from seed"
             />
           </RadioGroup>
         </FormControl>
@@ -102,8 +92,8 @@ export default function SeedSelectionDialog() {
             onChange={(e) => setCustomSeed(e.target.value)}
             sx={{ mt: 2 }}
             placeholder="Enter your Monero 25 words seed phrase..."
-            error={!isSeedValid}
-            helperText={isCheckingSeed ? "Checking seed..." : (isSeedValid ? "Seed is valid" : "Seed is invalid")}
+            error={!isSeedValid && customSeed.length > 0}
+            helperText={isSeedValid ? "Seed is valid" : (customSeed.length > 0 ? "Seed is invalid" : "")}
           />
         )}
       </DialogContent>
@@ -112,9 +102,8 @@ export default function SeedSelectionDialog() {
           onClick={() => handleClose(true)} 
           variant="contained"
           disabled={
-            isCheckingSeed ||
             selectedOption === "FromSeed"
-              ? (!customSeed.trim() || !isSeedValid || isCheckingSeed)
+              ? (!customSeed.trim() || !isSeedValid)
               : false 
           }
         >
