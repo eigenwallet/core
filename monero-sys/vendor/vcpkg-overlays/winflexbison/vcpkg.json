@@ -1,0 +1,8 @@
+{
+    "name": "winflexbison",
+    "version-string": "2.5.25",
+    "homepage": "https://github.com/lexxmark/winflexbison",
+    "description": "Windows port of Flex (the fast lexical analyser) and GNU Bison (parser generator)",
+    "license": "GPL-3.0-or-later",
+    "supports": "windows"
+}

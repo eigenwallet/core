@@ -3,7 +3,7 @@ use cmake::Config;
 fn main() {
     // On windows we use vcpkg to build the monero dependencies -- not on macos or linux because
     // its not absolutely necessary and takes a long time to build
-    // #[cfg(target_os = "windows")]
+    #[cfg(target_os = "windows")]
     {
         println!("cargo:debug=Building Monero dependencies with vcpkg");
 
@@ -15,7 +15,7 @@ fn main() {
             .args(["--verbose", "build"])
             .env(
                 "VCPKG_OVERLAY_PORTS",
-                "../../monero-sys/vendor/vcpkg-overlays/unbound", // starts at core/target/vcpkg/
+                "../../monero-sys/vendor/vcpkg-overlays/unbound;../../monero-sys/vendor/vcpkg-overlays/unbound", // starts at core/target/vcpkg/
             )
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
