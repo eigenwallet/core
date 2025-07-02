@@ -1,7 +1,7 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
-    ApprovalRequestDetails, SelectMakerDetails, TauriEmitter, TauriSwapProgressEvent,
+    SelectMakerDetails, TauriEmitter, TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
 use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
@@ -25,6 +25,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use libp2p::core::Multiaddr;
 use libp2p::{identity, PeerId};
+use monero_seed::{Language, Seed as MoneroSeed};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -42,6 +43,7 @@ use tracing::Span;
 use typeshare::typeshare;
 use url::Url;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// This trait is implemented by all types of request args that
 /// the CLI can handle.
@@ -728,15 +730,13 @@ pub async fn buy_xmr(
             |quote_with_address| {
                 let tauri_handle = context.tauri_handle.clone();
                 Box::new(async move {
-                    let details = ApprovalRequestDetails::SelectMaker(
-                        SelectMakerDetails {
-                            swap_id,
-                            btc_amount_to_swap: quote_with_address.quote.max_quantity,
-                            maker: quote_with_address,
-                        }
-                    );
+                    let details = SelectMakerDetails {
+                        swap_id,
+                        btc_amount_to_swap: quote_with_address.quote.max_quantity,
+                        maker: quote_with_address,
+                    };
 
-                    tauri_handle.request_approval(details, 300).await
+                    tauri_handle.request_maker_selection(details, 300).await
                 }) as Box<dyn Future<Output = Result<bool>> + Send>
             },
         ) => {
@@ -1627,10 +1627,11 @@ impl CheckElectrumNodeArgs {
 }
 
 #[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ResolveApprovalArgs {
     pub request_id: String,
-    pub accept: bool,
+    #[typeshare(serialized_as = "object")]
+    pub accept: serde_json::Value,
 }
 
 #[typeshare]
@@ -1639,10 +1640,23 @@ pub struct ResolveApprovalResponse {
     pub success: bool,
 }
 
-impl Request for ResolveApprovalArgs {
-    type Response = ResolveApprovalResponse;
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CheckSeedArgs {
+    pub seed: String,
+}
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        resolve_approval_request(self, ctx).await
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CheckSeedResponse {
+    pub available: bool,
+}
+
+impl CheckSeedArgs {
+    pub async fn request(self) -> Result<CheckSeedResponse> {
+        let seed = MoneroSeed::from_string(Language::English, Zeroizing::new(self.seed));
+        Ok(CheckSeedResponse {
+            available: seed.is_ok(),
+        })
     }
 }

@@ -5,11 +5,13 @@ import {
   isBitcoinSyncProgress,
   isPendingBackgroundProcess,
   isPendingLockBitcoinApprovalEvent,
+  isPendingSeedSelectionApprovalEvent,
   PendingApprovalRequest,
   PendingLockBitcoinApprovalRequest,
   PendingSelectMakerApprovalRequest,
   isPendingSelectMakerApprovalEvent,
   haveFundsBeenLocked,
+  PendingSeedSelectionApprovalRequest,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -195,7 +197,9 @@ export function useNodes<T>(selector: (nodes: NodesSlice) => T): T {
 
 export function usePendingApprovals(): PendingApprovalRequest[] {
   const approvals = useAppSelector((state) => state.rpc.state.approvalRequests);
-  return Object.values(approvals).filter((c) => c.state === "Pending");
+  return Object.values(approvals).filter(
+    (c) => c.request_status.state === "Pending",
+  ) as PendingApprovalRequest[];
 }
 
 export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalRequest[] {
@@ -206,6 +210,11 @@ export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalReque
 export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSelectMakerApprovalEvent(c));
+}
+
+export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
 }
 
 /// Returns all the pending background processes
