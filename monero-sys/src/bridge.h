@@ -236,6 +236,14 @@ namespace Monero
         }
         return std::unique_ptr<TransactionHistory>(wallet->history());
     }
+
+    /**
+     * Get the hash of a transaction from TransactionInfo.
+     */
+    inline std::unique_ptr<std::string> transactionInfoHash(const TransactionInfo &tx_info)
+    {
+        return std::make_unique<std::string>(tx_info.hash());
+    }
 }
 
 #include "easylogging++.h"

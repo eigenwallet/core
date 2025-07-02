@@ -44,15 +44,12 @@ import {
   rpcSetApprovalItems,
 } from "store/features/rpcSlice";
 import {
-  setLoading,
   setRefreshing,
   setSending,
-  setError,
   setMainAddress,
   setBalance,
   setSyncProgress,
   setHistory,
-  setSendResult,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
 import { Maker } from "models/apiModel";
@@ -446,9 +443,6 @@ export async function getApprovalItems(): Promise<GetApprovalItemsResponse> {
 
 // Wallet management functions that handle Redux dispatching
 export async function initializeMoneroWallet() {
-  store.dispatch(setLoading(true));
-  store.dispatch(setError(null));
-
   try {
     const [
       addressResponse,
@@ -468,16 +462,11 @@ export async function initializeMoneroWallet() {
     store.dispatch(setHistory(historyResponse));
   } catch (err) {
     console.error("Failed to fetch Monero wallet data:", err);
-    store.dispatch(setError("Failed to fetch Monero wallet data."));
-  } finally {
-    store.dispatch(setLoading(false));
   }
 }
 
 export async function refreshMoneroWallet() {
   store.dispatch(setRefreshing(true));
-  store.dispatch(setError(null));
-  store.dispatch(setSendResult(null));
 
   try {
     const [
@@ -498,7 +487,6 @@ export async function refreshMoneroWallet() {
     store.dispatch(setHistory(historyResponse));
   } catch (err) {
     console.error("Failed to refresh Monero wallet data:", err);
-    store.dispatch(setError("Failed to refresh Monero wallet data."));
   } finally {
     store.dispatch(setRefreshing(false));
   }
@@ -508,11 +496,9 @@ export async function sendMoneroTransaction(
   args: SendMoneroArgs,
 ): Promise<void> {
   store.dispatch(setSending(true));
-  store.dispatch(setSendResult(null));
 
   try {
-    const result = await sendMonero(args);
-    store.dispatch(setSendResult(result));
+    await sendMonero(args);
 
     // Refresh balance and history after sending
     const [newBalance, newHistory] = await Promise.all([
@@ -523,7 +509,6 @@ export async function sendMoneroTransaction(
     store.dispatch(setHistory(newHistory));
   } catch (err) {
     console.error("Failed to send Monero:", err);
-    store.dispatch(setError("Failed to send Monero transaction."));
   } finally {
     store.dispatch(setSending(false));
   }

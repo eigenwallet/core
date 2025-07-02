@@ -134,6 +134,7 @@ pub struct TransactionInfo {
     pub amount: monero::Amount,
     #[typeshare(serialized_as = "number")]
     pub confirmations: u64,
+    pub tx_hash: String,
 }
 
 /// A wrapper around a pending transaction.
@@ -1352,8 +1353,6 @@ impl FfiWallet {
     /// Returns the height of the blockchain, if connected.
     /// Returns None if not connected.
     fn daemon_blockchain_height(&self) -> Option<u64> {
-        tracing::trace!(connected=%self.connected(), "Getting daemon blockchain height");
-
         // Here we actually use the _target_ height -- incase the remote node is
         // currently catching up we want to work with the height it ends up at.
         match self
@@ -1747,8 +1746,6 @@ impl FfiWallet {
         let history_handle = TransactionHistoryHandle(history_ptr.into_raw());
         let count = history_handle.count();
 
-        println!("history_handle.count(): {}", count);
-
         let mut transactions = Vec::with_capacity(count as usize);
         for i in 0..count {
             if let Some(tx_info_handle) = history_handle.transaction(i) {
@@ -2023,15 +2020,29 @@ impl TransactionInfoHandle {
         unsafe { self.0.as_ref().map(|info| info.confirmations()) }
     }
 
+    /// Get the hash of the transaction.
+    pub fn hash(&self) -> Option<String> {
+        // Safety: self.0 is a valid *mut ffi::TransactionInfo
+        // The bridged method is safe to call on a valid reference.
+        unsafe {
+            self.0.as_ref().map(|info| {
+                let hash_ptr = ffi::transactionInfoHash(info);
+                hash_ptr.as_ref().map(|s| s.to_string()).unwrap_or_default()
+            })
+        }
+    }
+
     pub fn serialize(&self) -> Option<TransactionInfo> {
         let fee = self.fee()?;
         let amount = self.amount()?;
         let block_height = self.confirmations()?;
+        let tx_hash = self.hash().unwrap_or_default();
 
         Some(TransactionInfo {
             fee: monero::Amount::from_pico(fee),
             amount: monero::Amount::from_pico(amount),
             confirmations: block_height,
+            tx_hash,
         })
     }
 }

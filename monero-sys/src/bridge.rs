@@ -294,6 +294,9 @@ pub mod ffi {
 
         /// Get the confirmations of the transaction.
         fn confirmations(self: &TransactionInfo) -> u64;
+
+        /// Get the hash of the transaction.
+        fn transactionInfoHash(tx_info: &TransactionInfo) -> UniquePtr<CxxString>;
     }
 }
 
