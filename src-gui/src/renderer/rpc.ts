@@ -17,6 +17,8 @@ import {
   GetSwapInfoArgs,
   ExportBitcoinWalletResponse,
   CheckMoneroNodeArgs,
+  CheckSeedArgs,
+  CheckSeedResponse,
   CheckMoneroNodeResponse,
   TauriSettings,
   CheckElectrumNodeArgs,
@@ -355,6 +357,13 @@ export async function resolveApproval(
     "resolve_approval_request",
     { request_id: requestId, accept },
   );
+}
+
+export async function checkSeed(seed: string): Promise<boolean> {
+  const response = await invoke<CheckSeedArgs, CheckSeedResponse>("check_seed", {
+    seed,
+  });
+  return response.available;
 }
 
 export async function saveLogFiles(

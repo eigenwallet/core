@@ -11,16 +11,40 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
-import { resolveApproval } from "renderer/rpc";
+import { resolveApproval, checkSeed } from "renderer/rpc";
 
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
   const [selectedOption, setSelectedOption] = useState<string>("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
-
+  const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
+  const [isCheckingSeed, setIsCheckingSeed] = useState<boolean>(false);
   const approval = pendingApprovals[0]; // Handle the first pending approval
+
+  useEffect(() => {
+    let cancelled = false;
+    if (selectedOption === "FromSeed" && customSeed.trim()) {
+      setIsCheckingSeed(true);
+      checkSeed(customSeed.trim())
+        .then((valid) => {
+          if (!cancelled) setIsSeedValid(valid);
+        })
+        .catch(() => {
+          if (!cancelled) setIsSeedValid(false);
+        })
+        .finally(() => {
+          if (!cancelled) setIsCheckingSeed(false);
+        });
+    } else {
+      setIsSeedValid(false);
+      setIsCheckingSeed(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [customSeed, selectedOption]);
 
   const handleClose = async (accept: boolean) => {
     if (!approval) return;
@@ -78,6 +102,8 @@ export default function SeedSelectionDialog() {
             onChange={(e) => setCustomSeed(e.target.value)}
             sx={{ mt: 2 }}
             placeholder="Enter your Monero 25 words seed phrase..."
+            error={!isSeedValid}
+            helperText={isCheckingSeed ? "Checking seed..." : (isSeedValid ? "Seed is valid" : "Seed is invalid")}
           />
         )}
       </DialogContent>
@@ -85,7 +111,12 @@ export default function SeedSelectionDialog() {
         <Button 
           onClick={() => handleClose(true)} 
           variant="contained"
-          disabled={selectedOption === "FromSeed" && !customSeed.trim()}
+          disabled={
+            isCheckingSeed ||
+            selectedOption === "FromSeed"
+              ? (!customSeed.trim() || !isSeedValid || isCheckingSeed)
+              : false 
+          }
         >
           Confirm
         </Button>

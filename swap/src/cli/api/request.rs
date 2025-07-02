@@ -36,6 +36,8 @@ use tracing::Span;
 use typeshare::typeshare;
 use url::Url;
 use uuid::Uuid;
+use zeroize::Zeroizing;
+use monero_seed::{Language, Seed as MoneroSeed};
 
 /// This trait is implemented by all types of request args that
 /// the CLI can handle.
@@ -1449,4 +1451,25 @@ pub struct ResolveApprovalArgs {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ResolveApprovalResponse {
     pub success: bool,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CheckSeedArgs {
+    pub seed: String,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CheckSeedResponse {
+    pub available: bool,
+}
+
+impl CheckSeedArgs {
+    pub async fn request(self) -> Result<CheckSeedResponse> {
+        let seed = MoneroSeed::from_string(Language::English, Zeroizing::new(self.seed));
+        Ok(CheckSeedResponse {
+            available: seed.is_ok()
+        })
+    }
 }

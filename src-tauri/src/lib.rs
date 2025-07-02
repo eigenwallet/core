@@ -9,10 +9,10 @@ use swap::cli::{
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
             CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse,
-            ExportBitcoinWalletArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
-            MoneroRecoveryArgs, RedactArgs, ResolveApprovalArgs, ResumeSwapArgs,
-            SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            CheckSeedArgs, CheckSeedResponse, ExportBitcoinWalletArgs, GetDataDirArgs,
+            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            ResolveApprovalArgs, ResumeSwapArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -199,6 +199,7 @@ pub fn run() {
             resolve_approval_request,
             redact,
             save_txt_files,
+            check_seed,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -269,6 +270,14 @@ async fn check_electrum_node(
     args: CheckElectrumNodeArgs,
     _: tauri::State<'_, RwLock<State>>,
 ) -> Result<CheckElectrumNodeResponse, String> {
+    args.request().await.to_string_result()
+}
+
+#[tauri::command]
+async fn check_seed(
+    args: CheckSeedArgs,
+    _: tauri::State<'_, RwLock<State>>,
+) -> Result<CheckSeedResponse, String> {
     args.request().await.to_string_result()
 }
 
