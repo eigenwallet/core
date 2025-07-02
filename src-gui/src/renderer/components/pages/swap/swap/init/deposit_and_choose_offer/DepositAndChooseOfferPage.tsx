@@ -5,8 +5,8 @@ import { usePendingSelectMakerApproval } from "store/hooks";
 import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
-import _, { sortBy } from "lodash";
 import { useState } from "react";
+import { sortApprovalsAndKnownQuotes } from "utils/sortUtils";
 
 export default function DepositAndChooseOfferPage({
   deposit_address,
@@ -17,26 +17,10 @@ export default function DepositAndChooseOfferPage({
   const [currentPage, setCurrentPage] = useState(1);
   const offersPerPage = 3;
 
-  const makerOffers = _.chain(
-    sortBy(
-      pendingSelectMakerApprovals,
-      (approval) => -approval.content.expiration_ts,
-    ),
-  )
-    .map((approval) => ({
-      quoteWithAddress: approval.content.details.content.maker,
-      requestId: approval.content.request_id,
-    }))
-    .concat(
-      known_quotes.map((quote) => ({
-        quoteWithAddress: quote,
-        requestId: null,
-      })),
-    )
-    .sortBy((quote) => quote.quoteWithAddress.quote.price)
-    .sortBy((quote) => (quote.requestId ? 0 : 1))
-    // .uniqBy((quote) => quote.quoteWithAddress.peer_id)
-    .value();
+  const makerOffers = sortApprovalsAndKnownQuotes(
+    pendingSelectMakerApprovals,
+    known_quotes,
+  );
 
   // Pagination calculations
   const totalPages = Math.ceil(makerOffers.length / offersPerPage);
@@ -137,8 +121,8 @@ export default function DepositAndChooseOfferPage({
                     return (
                       <MakerOfferItem
                         key={startIndex + index}
-                        quoteWithAddress={quote.quoteWithAddress}
-                        requestId={quote.requestId}
+                        quoteWithAddress={quote}
+                        requestId={quote.request_id}
                       />
                     );
                   })}

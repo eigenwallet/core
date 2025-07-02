@@ -19,7 +19,6 @@ import { isCliLogRelatedToSwap } from "models/cliModel";
 import { SettingsState } from "./features/settingsSlice";
 import { NodesSlice } from "./features/nodesSlice";
 import { RatesState } from "./features/ratesSlice";
-import { sortMakerList } from "utils/sortUtils";
 import {
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
@@ -144,9 +143,7 @@ export function useAllMakers() {
   return useAppSelector((state) => {
     const registryMakers = state.makers.registry.makers || [];
     const listSellersMakers = state.makers.rendezvous.makers || [];
-    const all = [...registryMakers, ...listSellersMakers];
-
-    return sortMakerList(all);
+    return [...registryMakers, ...listSellersMakers];
   });
 }
 

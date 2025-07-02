@@ -4,6 +4,7 @@ import {
   ExpiredTimelocks,
   GetSwapInfoResponse,
   PendingCompleted,
+  QuoteWithAddress,
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
 } from "./tauriModel";
@@ -298,6 +299,11 @@ export type PendingSelectMakerApprovalRequest = PendingApprovalRequest & {
     details: { type: "SelectMaker" };
   };
 };
+
+export interface SortableQuoteWithAddress extends QuoteWithAddress {
+  expiration_ts?: number;
+  request_id?: string;
+}
 
 export function isPendingSelectMakerApprovalEvent(
   event: ApprovalRequest,
