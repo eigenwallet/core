@@ -50,13 +50,15 @@ export default function SwapSetupInflightPage({
   // Display a loading spinner to the user for as long as the swap_setup request is in flight
   if (!request) {
     return (
+      <Box sx={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <CircularProgressWithSubtitle
         description={
           <>
             Negotiating offer for <SatsAmount amount={btc_lock_amount} />
           </>
         }
-      />
+        />
+      </Box>
     );
   }
 
@@ -77,15 +79,15 @@ export default function SwapSetupInflightPage({
         {/* Grid layout for perfect alignment */}
         <Box
           sx={{
-            display: "grid",
-            gridTemplateColumns: "max-content auto max-content",
+            display: "flex",
+            flexDirection: {xs: "column", lg: "row"},
             gap: "1.5rem",
             alignItems: "stretch",
-            justifyContent: "center",
+            justifyContent: "space-between",
           }}
         >
           {/* Row 1: Bitcoin box */}
-          <Box sx={{ height: "100%" }}>
+          <Box sx={{ height: "100%", flex: "0 0 auto" }}>
             <BitcoinMainBox
               btc_lock_amount={btc_lock_amount}
               btc_network_fee={btc_network_fee}
@@ -104,7 +106,7 @@ export default function SwapSetupInflightPage({
           </Box>
 
           {/* Row 1: Monero main box */}
-          <Box>
+          <Box sx={{ flex: "0 0 auto" }}>
             <MoneroMainBox
               monero_receive_pool={monero_receive_pool}
               xmr_receive_amount={xmr_receive_amount}
@@ -114,12 +116,15 @@ export default function SwapSetupInflightPage({
 
         <Box
           sx={{
-            marginTop: 2,
+            marginTop: 4,
             display: "flex",
-            justifyContent: "center",
-            gap: 2,
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 1.5,
           }}
         >
+          <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
+
           <PromiseInvokeButton
             variant="text"
             size="large"
@@ -127,7 +132,7 @@ export default function SwapSetupInflightPage({
             onInvoke={() => resolveApproval(request.content.request_id, false)}
             displayErrorSnackbar
             requiresContext
-          >
+            >
             Deny
           </PromiseInvokeButton>
 
@@ -139,9 +144,13 @@ export default function SwapSetupInflightPage({
             displayErrorSnackbar
             requiresContext
             endIcon={<CheckIcon />}
-          >
-            {`Confirm (${timeLeft}s)`}
+            >
+            {`Confirm`}
           </PromiseInvokeButton>
+            </Box>
+          <Typography variant="caption" sx={{ textAlign: "center", color: (theme) => theme.palette.text.secondary }}>
+            {`Offer expires in ${timeLeft}s`}
+          </Typography>
         </Box>
       </Box>
   );
@@ -167,7 +176,7 @@ const BitcoinMainBox = ({
   btc_lock_amount: number;
   btc_network_fee: number;
 }) => (
-  <Box sx={{ position: "relative", height: "100%" }}>
+  <Box sx={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", gap: 1 }}>
     <Box
       sx={{
         display: "flex",
@@ -178,10 +187,10 @@ const BitcoinMainBox = ({
         gap: "0.5rem 1rem",
         borderColor: "warning.main",
         borderRadius: 1,
+        flexGrow: 1,
         backgroundColor: (theme) => theme.palette.warning.light + "10",
         background: (theme) =>
           `linear-gradient(135deg, ${theme.palette.warning.light}20, ${theme.palette.warning.light}05)`,
-        height: "100%", // Match the height of the Monero box
       }}
     >
       <Typography
@@ -207,10 +216,6 @@ const BitcoinMainBox = ({
     {/* Network fee box attached to the bottom */}
     <Box
       sx={{
-        position: "absolute",
-        bottom: "calc(-50%)",
-        left: "50%",
-        transform: "translateX(-50%)",
         padding: "0.25rem 0.75rem",
         backgroundColor: (theme) => theme.palette.warning.main,
         color: (theme) => theme.palette.warning.contrastText,
@@ -261,7 +266,7 @@ const PoolBreakdown = ({
             display: "flex",
             justifyContent: "flex-start",
             alignItems: "stretch",
-            padding: pool.percentage >= 0.05 ? 1.5 : 1.2,
+            padding: pool.percentage >= 0.05 ? 1.5 : "0.25rem 0.75rem",
             border: 1,
             borderColor:
               pool.percentage >= 0.05 ? "success.main" : "success.light",
@@ -273,7 +278,6 @@ const PoolBreakdown = ({
             width: "100%", // Ensure full width
             minWidth: 0,
             opacity: pool.percentage >= 0.05 ? 1 : 0.75,
-            transform: pool.percentage >= 0.05 ? "scale(1)" : "scale(0.95)",
             animation:
               pool.percentage >= 0.05
                 ? "poolPulse 2s ease-in-out infinite"
@@ -298,6 +302,7 @@ const PoolBreakdown = ({
             sx={{
               display: "flex",
               flexDirection: "column",
+              justifyContent: "center",
               gap: 0.5,
               flex: "1 1 0",
               minWidth: 0,
@@ -313,18 +318,20 @@ const PoolBreakdown = ({
             >
               {pool.label === "user address" ? "Your Wallet" : pool.label}
             </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                fontFamily: "monospace",
-                fontSize: "0.75rem",
-                color: (theme) => theme.palette.text.secondary,
-              }}
-            >
-              <TruncatedText truncateMiddle limit={15}>
-                {pool.address}
-              </TruncatedText>
-            </Typography>
+            {pool.label === "user address" &&
+              <Typography
+                variant="body2"
+                sx={{
+                  fontFamily: "monospace",
+                  fontSize: "0.75rem",
+                  color: (theme) => theme.palette.text.secondary,
+                }}
+              >
+                <TruncatedText truncateMiddle limit={15}>
+                  {pool.address}
+                </TruncatedText>
+              </Typography>
+            }
           </Box>
           <Box
             sx={{
@@ -383,7 +390,7 @@ const MoneroMainBox = ({
   );
 
   return (
-    <Box sx={{ position: "relative" }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
       <Box
         sx={{
           display: "flex",
@@ -450,20 +457,10 @@ const MoneroMainBox = ({
       </Box>
 
       {/* Secondary Monero content attached to the bottom */}
-      <Box
-        sx={{
-          position: "absolute",
-          bottom: "calc(-100%)",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 1,
-        }}
-      >
         <MoneroSecondaryContent
           monero_receive_pool={monero_receive_pool}
           xmr_receive_amount={xmr_receive_amount}
         />
-      </Box>
     </Box>
   );
 };
@@ -507,6 +504,7 @@ const AnimatedArrow = () => (
       justifyContent: "center",
       alignSelf: "center",
       flex: "0 0 auto",
+      transform: {xs: "rotate(90deg)", lg: "rotate(0deg)"},
     }}
   >
     <ArrowRightAltIcon sx={arrowSx} />
