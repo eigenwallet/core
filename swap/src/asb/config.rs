@@ -378,15 +378,19 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
         let prompt = format!(
             "Enter additional Electrum RPC URL ({electrum_number}). Or just hit Enter to continue."
         );
-        let electrum_url = Input::<Url>::with_theme(&ColorfulTheme::default())
+        let electrum_url = Input::<String>::with_theme(&ColorfulTheme::default())
             .with_prompt(prompt)
             .allow_empty(true)
             .interact_text()?;
         if electrum_url.as_str().is_empty() {
             electrum_done = true;
-        } else if electrum_rpc_urls.contains(&electrum_url) {
+        } else if electrum_rpc_urls
+            .iter()
+            .any(|url| url.to_string() == electrum_url)
+        {
             println!("That Electrum URL is already in the list.");
         } else {
+            let electrum_url = Url::parse(&electrum_url).context("Invalid Electrum URL")?;
             electrum_rpc_urls.push(electrum_url);
             electrum_number += 1;
         }

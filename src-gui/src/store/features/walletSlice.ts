@@ -65,7 +65,7 @@ export const walletSlice = createSlice({
     // Reset actions
     resetWalletState(slice) {
       slice.state = initialState.state;
-    }
+    },
   },
 });
 

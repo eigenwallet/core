@@ -17,6 +17,8 @@ import {
   GetSwapInfoArgs,
   ExportBitcoinWalletResponse,
   CheckMoneroNodeArgs,
+  CheckSeedArgs,
+  CheckSeedResponse,
   CheckMoneroNodeResponse,
   TauriSettings,
   CheckElectrumNodeArgs,
@@ -325,10 +327,16 @@ export async function initializeContext() {
 
   logger.info("Initializing context with settings", tauriSettings);
 
-  await invokeUnsafe<void>("initialize_context", {
-    settings: tauriSettings,
-    testnet,
-  });
+  try {
+    await invokeUnsafe<void>("initialize_context", {
+      settings: tauriSettings,
+      testnet,
+    });
+  } catch (error) {
+    throw new Error("Couldn't initialize context: " + error);
+  }
+
+  logger.info("Initialized context");
 }
 
 export async function getWalletDescriptor() {
@@ -549,14 +557,24 @@ export async function getDataDir(): Promise<string> {
   });
 }
 
-export async function resolveApproval(
+export async function resolveApproval<T>(
   requestId: string,
-  accept: boolean,
+  accept: T,
 ): Promise<void> {
   await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
     "resolve_approval_request",
-    { request_id: requestId, accept },
+    { request_id: requestId, accept: accept as unknown as object },
   );
+}
+
+export async function checkSeed(seed: string): Promise<boolean> {
+  const response = await invoke<CheckSeedArgs, CheckSeedResponse>(
+    "check_seed",
+    {
+      seed,
+    },
+  );
+  return response.available;
 }
 
 export async function saveLogFiles(
