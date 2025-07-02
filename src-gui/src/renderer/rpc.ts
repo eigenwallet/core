@@ -213,10 +213,6 @@ export async function listSellersAtRendezvousPoint(
   });
 }
 
-export async function initializeHandle() {
-  await invokeUnsafe<void>("initialize_handle");
-}
-
 export async function initializeContext() {
   const network = getNetwork();
   const testnet = isTestnet();

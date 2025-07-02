@@ -82,7 +82,6 @@ export default function SeedSelectionDialog() {
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => handleClose(false)}>Cancel</Button>
         <Button 
           onClick={() => handleClose(true)} 
           variant="contained"

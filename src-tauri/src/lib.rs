@@ -93,15 +93,15 @@ macro_rules! tauri_command {
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
     pub context: Option<Arc<Context>>,
-    pub handle: Option<TauriHandle>,
+    pub handle: TauriHandle,
 }
 
 impl State {
     /// Creates a new State instance with no Context
-    fn new() -> Self {
+    fn new(handle: TauriHandle) -> Self {
         Self {
             context: None,
-            handle: None,
+            handle,
         }
     }
 
@@ -110,10 +110,6 @@ impl State {
     /// in the setup function
     fn set_context(&mut self, context: impl Into<Option<Arc<Context>>>) {
         self.context = context.into();
-    }
-
-    fn set_handle(&mut self, handle: TauriHandle) {
-        self.handle = Some(handle);
     }
 
     /// Attempts to retrieve the context
@@ -149,7 +145,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // We need to set a value for the Tauri state right at the start
     // If we don't do this, Tauri commands will panic at runtime if no value is present
-    let state = RwLock::new(State::new());
+    let handle = TauriHandle::new(app_handle.clone());
+    let state = RwLock::new(State::new(handle));
     app_handle.manage::<RwLock<State>>(state);
 
     Ok(())
@@ -195,7 +192,6 @@ pub fn run() {
             cancel_and_refund,
             is_context_available,
             initialize_context,
-            initialize_handle,
             check_monero_node,
             check_electrum_node,
             get_wallet_descriptor,
@@ -344,26 +340,11 @@ async fn resolve_approval_request(
     let lock = state.read().await;
 
     lock.handle
-        .as_ref()
-        .unwrap()
         .resolve_approval(args.request_id.parse().unwrap(), args.accept)
         .await
         .to_string_result()?;
     println!("Resolved approval request");
 
-    Ok(())
-}
-
-#[tauri::command]
-async fn initialize_handle(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, RwLock<State>>,
-) -> Result<(), String> {
-    let handle = TauriHandle::new(app_handle);
-    println!("Initializing handle");
-    let mut lock = state.write().await;
-    lock.set_handle(handle);
-    println!("Initialized handle");
     Ok(())
 }
 
@@ -407,8 +388,7 @@ async fn initialize_context(
         .context("Context is already being initialized")
         .to_string_result()?
         .handle
-        .clone()
-        .unwrap_or_else(|| TauriHandle::new(app_handle.clone()));
+        .clone();
 
     // Notify frontend that the context is being initialized
     tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Initializing);
