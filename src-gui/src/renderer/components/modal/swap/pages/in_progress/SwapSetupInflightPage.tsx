@@ -34,15 +34,12 @@ export default function SwapSetupInflightPage({
 }: TauriSwapProgressEventContent<"SwapSetupInflight">) {
   const request = useActiveLockBitcoinApprovalRequest();
 
-  if (request === null) { 
-    return null;
-  }
-
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
-  const expiresAtMs = request?.content?.content?.expiration_ts * 1000 || 0;
 
   useEffect(() => {
+    const expiresAtMs = request?.content?.content?.expiration_ts * 1000 || 0;
+
     const tick = () => {
       const remainingMs = Math.max(expiresAtMs - Date.now(), 0);
       setTimeLeft(Math.ceil(remainingMs / 1000));
@@ -51,7 +48,11 @@ export default function SwapSetupInflightPage({
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [expiresAtMs]);
+  }, [request]);
+
+  if (request === null) { 
+    return null;
+  }
 
   // If we do not have an approval request yet for the Bitcoin lock transaction, we haven't received the offer from Alice yet
   // Display a loading spinner to the user for as long as the swap_setup request is in flight
