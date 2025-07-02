@@ -15,7 +15,7 @@ fn main() {
             .args(["--verbose", "build"])
             .env(
                 "VCPKG_OVERLAY_PORTS",
-                "../../monero-sys/vendor/vcpkg-overlays/unbound;../../monero-sys/vendor/vcpkg-overlays/unbound", // starts at core/target/vcpkg/
+                "../../monero-sys/vendor/vcpkg-overlays/unbound,../../monero-sys/vendor/vcpkg-overlays/unbound", // starts at core/target/vcpkg/
             )
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
