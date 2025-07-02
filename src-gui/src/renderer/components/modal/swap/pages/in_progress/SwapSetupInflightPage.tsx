@@ -35,10 +35,14 @@ export default function SwapSetupInflightPage({
   const request = useActiveLockBitcoinApprovalRequest();
 
   const [timeLeft, setTimeLeft] = useState<number>(0);
-
+  const expirationTs = request?.request_status.state === "Pending" ? request.request_status.content.expiration_ts : null;
 
   useEffect(() => {
-    const expiresAtMs = request?.content?.content?.expiration_ts * 1000 || 0;
+    if (expirationTs == null) {
+      return;
+    }
+
+    const expiresAtMs = expirationTs * 1000 || 0;
 
     const tick = () => {
       const remainingMs = Math.max(expiresAtMs - Date.now(), 0);
@@ -48,15 +52,11 @@ export default function SwapSetupInflightPage({
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [request]);
-
-  if (request === null) { 
-    return null;
-  }
+  }, [request, expirationTs]);
 
   // If we do not have an approval request yet for the Bitcoin lock transaction, we haven't received the offer from Alice yet
   // Display a loading spinner to the user for as long as the swap_setup request is in flight
-  if (!request) {
+  if (request == null) {
     return (
       <CircularProgressWithSubtitle
         description={
