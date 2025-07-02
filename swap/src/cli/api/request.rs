@@ -7,6 +7,7 @@ use crate::cli::{list_sellers as list_sellers_impl, EventLoop, SellerStatus};
 use crate::common::{get_logs, redact};
 use crate::libp2p_ext::MultiAddrExt;
 use crate::monero::wallet_rpc::MoneroDaemon;
+use crate::monero::MoneroAddressPool;
 use crate::network::quote::{BidQuote, ZeroQuoteReceived};
 use crate::network::swarm;
 use crate::protocol::bob::{BobState, Swap};
@@ -18,6 +19,7 @@ use ::monero::Network;
 use anyhow::{bail, Context as AnyContext, Result};
 use libp2p::core::Multiaddr;
 use libp2p::PeerId;
+use monero_seed::{Language, Seed as MoneroSeed};
 use once_cell::sync::Lazy;
 use qrcode::render::unicode;
 use qrcode::QrCode;
@@ -37,7 +39,6 @@ use typeshare::typeshare;
 use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroizing;
-use monero_seed::{Language, Seed as MoneroSeed};
 
 /// This trait is implemented by all types of request args that
 /// the CLI can handle.
@@ -61,8 +62,7 @@ pub struct BuyXmrArgs {
     pub seller: Multiaddr,
     #[typeshare(serialized_as = "Option<string>")]
     pub bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
-    #[typeshare(serialized_as = "string")]
-    pub monero_receive_address: monero::Address,
+    pub monero_receive_pool: MoneroAddressPool,
 }
 
 #[typeshare]
@@ -233,6 +233,7 @@ pub struct GetSwapInfoResponse {
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     pub timelock: Option<ExpiredTimelocks>,
+    pub monero_receive_pool: MoneroAddressPool,
 }
 
 impl Request for GetSwapInfoArgs {
@@ -561,6 +562,8 @@ pub async fn get_swap_info(
 
     let timelock = swap_state.expired_timelocks(bitcoin_wallet.clone()).await?;
 
+    let monero_receive_pool = context.db.get_monero_address_pool(args.swap_id).await?;
+
     Ok(GetSwapInfoResponse {
         swap_id: args.swap_id,
         seller: AliceAddress {
@@ -580,6 +583,7 @@ pub async fn get_swap_info(
         cancel_timelock,
         punish_timelock,
         timelock,
+        monero_receive_pool,
     })
 }
 
@@ -592,8 +596,11 @@ pub async fn buy_xmr(
     let BuyXmrArgs {
         seller,
         bitcoin_change_address,
-        monero_receive_address,
+        monero_receive_pool,
     } = buy_xmr;
+
+    monero_receive_pool.assert_network(context.config.env_config.monero_network)?;
+    monero_receive_pool.assert_sum_to_one()?;
 
     let bitcoin_wallet = Arc::clone(
         context
@@ -655,7 +662,7 @@ pub async fn buy_xmr(
 
     context
         .db
-        .insert_monero_address(swap_id, monero_receive_address)
+        .insert_monero_address_pool(swap_id, monero_receive_pool.clone())
         .await?;
 
     tracing::debug!(peer_id = %swarm.local_peer_id(), "Network layer initialized");
@@ -771,7 +778,7 @@ pub async fn buy_xmr(
                     monero_wallet,
                     env_config,
                     event_loop_handle,
-                    monero_receive_address,
+                    monero_receive_pool.clone(),
                     bitcoin_change_address,
                     tx_lock_amount,
                     tx_lock_fee
@@ -849,7 +856,7 @@ pub async fn resume_swap(
     let (event_loop, event_loop_handle) =
         EventLoop::new(swap_id, swarm, seller_peer_id, context.db.clone())?;
 
-    let monero_receive_address = context.db.get_monero_address(swap_id).await?;
+    let monero_receive_pool = context.db.get_monero_address_pool(swap_id).await?;
 
     let swap = Swap::from_db(
         Arc::clone(&context.db),
@@ -867,7 +874,7 @@ pub async fn resume_swap(
             .clone(),
         context.config.env_config,
         event_loop_handle,
-        monero_receive_address,
+        monero_receive_pool,
     )
     .await?
     .with_event_emitter(context.tauri_handle.clone());
@@ -1444,6 +1451,7 @@ impl CheckElectrumNodeArgs {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResolveApprovalArgs {
     pub request_id: String,
+    #[typeshare(serialized_as = "object")]
     pub accept: serde_json::Value,
 }
 
@@ -1469,7 +1477,7 @@ impl CheckSeedArgs {
     pub async fn request(self) -> Result<CheckSeedResponse> {
         let seed = MoneroSeed::from_string(Language::English, Zeroizing::new(self.seed));
         Ok(CheckSeedResponse {
-            available: seed.is_ok()
+            available: seed.is_ok(),
         })
     }
 }

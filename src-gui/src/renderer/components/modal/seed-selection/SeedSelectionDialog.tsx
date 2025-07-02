@@ -30,7 +30,7 @@ export default function SeedSelectionDialog() {
         })
         .catch(() => {
           setIsSeedValid(false);
-        })
+        });
     } else {
       setIsSeedValid(false);
     }
@@ -63,7 +63,7 @@ export default function SeedSelectionDialog() {
         <Typography variant="body1" sx={{ mb: 2 }}>
           Choose what seed to use for the wallet.
         </Typography>
-        
+
         <FormControl component="fieldset">
           <RadioGroup
             value={selectedOption}
@@ -93,18 +93,24 @@ export default function SeedSelectionDialog() {
             sx={{ mt: 2 }}
             placeholder="Enter your Monero 25 words seed phrase..."
             error={!isSeedValid && customSeed.length > 0}
-            helperText={isSeedValid ? "Seed is valid" : (customSeed.length > 0 ? "Seed is invalid" : "")}
+            helperText={
+              isSeedValid
+                ? "Seed is valid"
+                : customSeed.length > 0
+                  ? "Seed is invalid"
+                  : ""
+            }
           />
         )}
       </DialogContent>
       <DialogActions>
-        <Button 
-          onClick={() => handleClose(true)} 
+        <Button
+          onClick={() => handleClose(true)}
           variant="contained"
           disabled={
             selectedOption === "FromSeed"
-              ? (!customSeed.trim() || !isSeedValid)
-              : false 
+              ? !customSeed.trim() || !isSeedValid
+              : false
           }
         >
           Confirm
@@ -112,4 +118,4 @@ export default function SeedSelectionDialog() {
       </DialogActions>
     </Dialog>
   );
-} 
+}
