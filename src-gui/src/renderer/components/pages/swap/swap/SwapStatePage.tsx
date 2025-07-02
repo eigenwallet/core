@@ -25,7 +25,7 @@ import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/
 import InitPage from "./init/InitPage";
 import { Box } from "@mui/material";
 
-function getPageForState(state: SwapState) {
+export default function SwapStatePage({ state }: { state: SwapState | null }) {
   if (state === null) {
     return <InitPage />;
   }
@@ -130,12 +130,4 @@ function getPageForState(state: SwapState) {
     default:
       return exhaustiveGuard(type);
   }
-}
-
-export default function SwapStatePage({ state }: { state: SwapState | null }) {
-  return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      {getPageForState(state)}
-    </Box>
-  );
 }

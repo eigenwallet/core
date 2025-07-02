@@ -3,7 +3,6 @@ import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { formatConfirmations } from "utils/formatUtils";
 import MoneroTransactionInfoBox from "../components/MoneroTransactionInfoBox";
 import CancelButton from "../CancelButton";
-import SwapBasePage from "../components/SwapBasePage";
 
 export default function XmrLockTxInMempoolPage({
   xmr_lock_tx_confirmations,

@@ -12,7 +12,6 @@ import CircularProgressWithSubtitle from "../components/CircularProgressWithSubt
 import CheckIcon from "@mui/icons-material/Check";
 import ArrowRightAltIcon from "@mui/icons-material/ArrowRightAlt";
 import TruncatedText from "renderer/components/other/TruncatedText";
-import SwapBasePage from "../components/SwapBasePage";
 
 /// A hook that returns the LockBitcoin confirmation request for the active swap
 /// Returns null if no confirmation request is found
@@ -65,7 +64,6 @@ export default function SwapSetupInflightPage({
     request.content.details.content;
 
   return (
-    <SwapBasePage showCancelButton={false}>
       <Box
         sx={{
           display: "flex",
@@ -146,7 +144,6 @@ export default function SwapSetupInflightPage({
           </PromiseInvokeButton>
         </Box>
       </Box>
-    </SwapBasePage>
   );
 }
 

@@ -6,7 +6,6 @@ import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressText
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { buyXmr } from "renderer/rpc";
 import { useSettings } from "store/hooks";
-import SwapBasePage from "../components/SwapBasePage";
 
 export default function InitPage() {
   const [redeemAddress, setRedeemAddress] = useState("");

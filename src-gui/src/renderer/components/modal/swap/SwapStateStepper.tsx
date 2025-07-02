@@ -56,9 +56,8 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     case "RequestingQuote":
     case "ReceivedQuote":
     case "WaitingForBtcDeposit":
-      return null; // No funds have been locked yet
     case "SwapSetupInflight":
-      return [PathType.HAPPY_PATH, 0, isReleased];
+      return null; // No funds have been locked yet
 
     // Step 1: Waiting for Bitcoin lock confirmation
     // Bitcoin has been locked, waiting for the counterparty to lock their XMR

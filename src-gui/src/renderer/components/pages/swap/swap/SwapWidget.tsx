@@ -1,4 +1,4 @@
-import { Box, Paper } from "@mui/material";
+import { Box, Dialog, Paper } from "@mui/material";
 import { useActiveSwapInfo, useAppSelector } from "store/hooks";
 import SwapStatePage from "renderer/components/pages/swap/swap/SwapStatePage";
 import CancelButton from "./CancelButton";
@@ -15,15 +15,18 @@ export default function SwapWidget() {
   const [debug, setDebug] = useState(false);
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}>
       <SwapStatusAlert swap={swapInfo} onlyShowIfUnusualAmountOfTimeHasPassed />
+      <Dialog open={debug} onClose={() => setDebug(false)}>
+        <DebugPage />
+      </Dialog>
       <Paper
         elevation={3}
         sx={{
           width: "100%",
           maxWidth: 800,
-          margin: "0 auto",
           borderRadius: 2,
+          margin: "0 auto",
           padding: 2,
           display: "flex",
           flexDirection: "column",
@@ -32,13 +35,7 @@ export default function SwapWidget() {
           flex: 1,
         }}
       >
-        {debug ? (
-          <DebugPage />
-        ) : (
-          <>
-            <SwapStatePage state={swap.state} />
-          </>
-        )}
+        <SwapStatePage state={swap.state} />
         {swap.state !== null && (
           <>
             <SwapStateStepper state={swap.state} />

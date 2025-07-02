@@ -36,7 +36,6 @@ export default function DepositAndChooseOfferPage({
   };
 
   return (
-    <>
       <Box
         sx={{
           display: "flex",
@@ -161,6 +160,5 @@ export default function DepositAndChooseOfferPage({
           </Box>
         </Box>
       </Box>
-    </>
   );
 }
