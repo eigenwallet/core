@@ -24,7 +24,7 @@ function useActiveLockBitcoinApprovalRequest(): PendingLockBitcoinApprovalReques
 
   return (
     approvals?.find(
-      (r) => r.content.content.details.swap_id === activeSwapId,
+      (r) => r.request.content.swap_id === activeSwapId,
     ) || null
   );
 }
@@ -145,7 +145,7 @@ export default function SwapSetupInflightPage({
             size="large"
             sx={(theme) => ({ color: theme.palette.text.secondary })}
             onInvoke={() =>
-              resolveApproval(request.content.content.request_id, false)
+              resolveApproval(request.request_id, false as unknown as object)
             }
             displayErrorSnackbar
             requiresContext
@@ -158,7 +158,7 @@ export default function SwapSetupInflightPage({
             color="primary"
             size="large"
             onInvoke={() =>
-              resolveApproval(request.content.content.request_id, true)
+              resolveApproval(request.request_id, true as unknown as object)
             }
             displayErrorSnackbar
             requiresContext

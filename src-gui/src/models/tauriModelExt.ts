@@ -258,7 +258,7 @@ export type PendingApprovalRequest = ApprovalRequest & {
 };
 
 export type PendingLockBitcoinApprovalRequest = ApprovalRequest & {
-  type: "LockBitcoin";
+  request: Extract<ApprovalRequest["request"], { type: "LockBitcoin" }>;
   content: Extract<ApprovalRequest["request_status"], { state: "Pending" }>;
 };
 
