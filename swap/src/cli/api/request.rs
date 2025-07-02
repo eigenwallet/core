@@ -1303,7 +1303,7 @@ pub async fn fetch_quotes_task(
             let sellers = fetch_fn().await;
             let _ = tx.send(sellers);
 
-            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(90)).await;
         }
     });
 
