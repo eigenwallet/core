@@ -1,30 +1,30 @@
-vcpkg_from_github(
+# Download pre-built binaries instead of building from source
+vcpkg_download_distfile(ARCHIVE
+    URLS "https://github.com/lexxmark/winflexbison/releases/download/v2.5.25/win_flex_bison-2.5.25.zip"
+    FILENAME "win_flex_bison-2.5.25.zip"
+    SHA512 2a829eb05003178c89f891dd0a67add360c112e74821ff28e38feb61dac5b66e9d3d5636ff9eef055616aaf282ee8d6be9f14c6ae4577f60bdcec96cec9f364e
+)
+
+# Extract the archive
+vcpkg_extract_source_archive_ex(
     OUT_SOURCE_PATH SOURCE_PATH
-    REPO lexxmark/winflexbison
-    REF v2.5.25
-    SHA512 7a797d5a1aef21786b4ce8bc8f2a31c4957e55012a4d29b14fbe6d89c1b8ad33e7ab6d1afec6b37ddccd1696dc5b861da568fc8a14d22bb33aa7c1116172d7cf
-    HEAD_REF master
+    ARCHIVE ${ARCHIVE}
+    NO_REMOVE_ONE_LEVEL
 )
-
-# Use CMake build
-vcpkg_configure_cmake(
-    SOURCE_PATH ${SOURCE_PATH}
-    PREFER_NINJA
-)
-
-vcpkg_install_cmake()
 
 # Install tools to the tools directory
 file(INSTALL 
-    "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/win_flex.exe"
-    "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/win_bison.exe"
+    "${SOURCE_PATH}/win_flex.exe"
+    "${SOURCE_PATH}/win_bison.exe"
     DESTINATION "${CURRENT_PACKAGES_DIR}/tools/winflexbison"
 )
 
-# Install copyright file
-file(INSTALL "${SOURCE_PATH}/COPYING" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)
+# Install license (create a simple one if not present)
+if(EXISTS "${SOURCE_PATH}/COPYING")
+    file(INSTALL "${SOURCE_PATH}/COPYING" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)
+else()
+    file(WRITE "${CURRENT_PACKAGES_DIR}/share/${PORT}/copyright" "GPL-3.0-or-later")
+endif()
 
 # Make tools available for host
-if(NOT VCPKG_TARGET_IS_WINDOWS OR VCPKG_HOST_IS_WINDOWS)
-    set(VCPKG_POLICY_EMPTY_PACKAGE enabled)
-endif()
+set(VCPKG_POLICY_EMPTY_PACKAGE enabled)

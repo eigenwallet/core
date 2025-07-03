@@ -1,91 +1,37 @@
-vcpkg_from_github(
-    OUT_SOURCE_PATH SOURCE_PATH
-    REPO NLnetLabs/unbound
-    REF release-1.23.0
-    SHA512 760425c0d045c3b99952666256483fdd722c7181a355df87a160718835288ce1a9efcbb9bb2c9e1ef27b0991e3acb1e1ec0d256d370d4ec370daded26d723719
-    HEAD_REF master
+# Download prebuilt Windows binary from NLnet Labs
+vcpkg_download_distfile(ARCHIVE
+    URLS https://nlnetlabs.nl/downloads/unbound/unbound-1.23.0-w32.zip
+    FILENAME unbound-1.23.0-w32.zip
+    SKIP_SHA512
 )
 
-# Apply any necessary patches for Windows builds
-# vcpkg_apply_patches(
-#     SOURCE_PATH ${SOURCE_PATH}
-#     PATCHES
-#         fix-windows-build.patch
-# )
-
-# Set up build environment
-if(VCPKG_TARGET_IS_WINDOWS)
-    set(ENV{OPENSSL_ROOT_DIR} ${CURRENT_INSTALLED_DIR})
-    set(ENV{OPENSSL_LIBDIR} ${CURRENT_INSTALLED_DIR}/lib)
-    set(ENV{OPENSSL_INCLUDEDIR} ${CURRENT_INSTALLED_DIR}/include)
-
-    # Ensure Flex & Bison tools (provided by winflexbison) are in PATH so that
-    # Unbound's autotools build can find them. These tools are installed for the
-    # host triplet, therefore we refer to CURRENT_HOST_INSTALLED_DIR.
-    vcpkg_add_to_path(${CURRENT_HOST_INSTALLED_DIR}/tools/winflexbison)
-
-    # Autotools checks use the LEX and YACC env vars. Point them to the
-    # canonical executable names expected by the build system.
-    set(ENV{LEX} win_flex.exe)
-    set(ENV{YACC} win_bison.exe)
-endif()
-
-# Check for features
-vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
-    FEATURES
-    libevent WITH_LIBEVENT
+vcpkg_extract_source_archive(SOURCE_PATH 
+    ARCHIVE ${ARCHIVE}
+    NO_REMOVE_ONE_LEVEL
 )
 
-set(CONFIGURE_OPTIONS
-    --with-ssl=${CURRENT_INSTALLED_DIR}
-    --with-libexpat=${CURRENT_INSTALLED_DIR}
-    --disable-shared
-    --enable-static
-    --disable-rpath
-    --with-libunbound-only
-)
+# Since the .def file approach isn't working, let's try using the existing MinGW static library
+# Copy the static library with the correct name for MSVC
+configure_file("${SOURCE_PATH}/libunbound/libunbound.a" "${SOURCE_PATH}/libunbound/unbound.lib" COPYONLY)
 
-if("libevent" IN_LIST FEATURES)
-    list(APPEND CONFIGURE_OPTIONS --with-libevent=${CURRENT_INSTALLED_DIR})
-else()
-    list(APPEND CONFIGURE_OPTIONS --without-libevent)
-endif()
+# Install the header file
+file(INSTALL "${SOURCE_PATH}/libunbound/unbound.h" DESTINATION "${CURRENT_PACKAGES_DIR}/include")
+file(INSTALL "${SOURCE_PATH}/libunbound/unbound.h" DESTINATION "${CURRENT_PACKAGES_DIR}/debug/include")
 
-if(VCPKG_TARGET_IS_WINDOWS)
-    list(APPEND CONFIGURE_OPTIONS 
-        --with-ssl-dir=${CURRENT_INSTALLED_DIR}
-        ac_cv_func_getaddrinfo=yes
-        ac_cv_func_getnameinfo=yes
-    )
-endif()
+# Install the MSVC-compatible import library
+file(INSTALL "${SOURCE_PATH}/libunbound/unbound.lib" DESTINATION "${CURRENT_PACKAGES_DIR}/lib")
+file(INSTALL "${SOURCE_PATH}/libunbound/unbound.lib" DESTINATION "${CURRENT_PACKAGES_DIR}/debug/lib")
 
-vcpkg_configure_make(
-    SOURCE_PATH ${SOURCE_PATH}
-    AUTOCONFIG
-    OPTIONS 
-        ${CONFIGURE_OPTIONS}
-)
+# Install the DLL
+file(INSTALL "${SOURCE_PATH}/libunbound/libunbound-8.dll" DESTINATION "${CURRENT_PACKAGES_DIR}/bin")
+file(INSTALL "${SOURCE_PATH}/libunbound/libunbound-8.dll" DESTINATION "${CURRENT_PACKAGES_DIR}/debug/bin")
 
-vcpkg_install_make()
+# Create a minimal CMake config file
+file(WRITE "${CURRENT_PACKAGES_DIR}/share/unbound/unbound-config.cmake" "
+set(UNBOUND_FOUND TRUE)
+set(UNBOUND_INCLUDE_DIRS \"\${CMAKE_CURRENT_LIST_DIR}/../../include\")
+set(UNBOUND_LIBRARIES \"\${CMAKE_CURRENT_LIST_DIR}/../../lib/unbound.lib\")
+set(UNBOUND_LIBRARY \"\${CMAKE_CURRENT_LIST_DIR}/../../lib/unbound.lib\")
+")
 
-# Clean up
-vcpkg_fixup_pkgconfig()
-
-# Remove debug binaries if not needed
-if(EXISTS ${CURRENT_PACKAGES_DIR}/debug/bin)
-    file(GLOB DEBUG_BINARIES ${CURRENT_PACKAGES_DIR}/debug/bin/*)
-    if(DEBUG_BINARIES)
-        file(REMOVE ${DEBUG_BINARIES})
-    endif()
-endif()
-
-# Remove executables from release if we only want the library
-if(EXISTS ${CURRENT_PACKAGES_DIR}/bin)
-    file(GLOB RELEASE_BINARIES ${CURRENT_PACKAGES_DIR}/bin/unbound*)
-    if(RELEASE_BINARIES)
-        file(REMOVE ${RELEASE_BINARIES})
-    endif()
-endif()
-
-# Install license
-vcpkg_install_copyright(FILE_LIST ${SOURCE_PATH}/LICENSE)
+file(INSTALL "${CURRENT_PACKAGES_DIR}/share/unbound/unbound-config.cmake" DESTINATION "${CURRENT_PACKAGES_DIR}/debug/share/unbound") 

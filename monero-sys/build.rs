@@ -10,9 +10,24 @@ fn main() {
         use std::io::{BufRead, BufReader};
         use std::process::{Command, Stdio};
 
+        // Get the current PATH and remove msys64 entries to avoid cmake conflicts
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let filtered_path = current_path
+            .split(';')
+            .filter(|p| !p.to_lowercase().contains("msys64"))
+            .collect::<Vec<_>>()
+            .join(";");
+
+        // Set the custom triplet path
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let triplet_path = format!("{}/x64-windows-static-md.cmake", manifest_dir);
+        
         // Build dependencies, stream output to the console
         let mut child = Command::new("cargo-vcpkg")
             .args(["--verbose", "build"])
+            .env("PATH", filtered_path)
+            .env("VCPKG_DEFAULT_TRIPLET", "x64-windows-static-md")
+            .env("VCPKG_OVERLAY_TRIPLETS", &manifest_dir)
             .env(
                 "VCPKG_OVERLAY_PORTS",
                 
@@ -51,13 +66,23 @@ fn main() {
 
         println!("cargo:debug=Finding vcpkg dependencies");
 
-        vcpkg::find_package("zeromq").unwrap();
-        vcpkg::find_package("unbound").unwrap();
-        vcpkg::find_package("openssl").unwrap();
-        vcpkg::find_package("boost").unwrap();
-        vcpkg::find_package("libusb").unwrap();
-        vcpkg::find_package("libsodium").unwrap();
-        vcpkg::find_package("protobuf-c").unwrap();
+        // Set environment variable to indicate we want static libraries
+        std::env::set_var("VCPKGRS_DYNAMIC", "0");
+
+        // Configure vcpkg to use the correct triplet and root
+        let mut config = vcpkg::Config::new();
+        config.target_triplet("x64-windows-static-md");
+        config.cargo_metadata(true);
+        config.copy_dlls(false); // We want static libraries
+        
+        config.find_package("zeromq").unwrap();
+        config.find_package("openssl").unwrap();
+        config.find_package("boost").unwrap();
+        config.find_package("libusb").unwrap();
+        config.find_package("libsodium").unwrap();
+        config.find_package("protobuf-c").unwrap();
+        config.find_package("expat").unwrap();
+        config.find_package("unbound").unwrap();
     }
 
     println!("cargo:warn=Building Monero");
@@ -70,6 +95,63 @@ fn main() {
 
     // Build with the monero library all dependencies required
     let mut config = Config::new("monero");
+    
+    // On Windows, configure CMake to use vcpkg toolchain
+    #[cfg(target_os = "windows")]
+    {
+        let vcpkg_root = std::env::var("CARGO_MANIFEST_DIR").unwrap() + "/../target/vcpkg";
+        let toolchain_file = format!("{}/scripts/buildsystems/vcpkg.cmake", vcpkg_root);
+        let vcpkg_installed = format!("{}/installed/x64-windows-static-md", vcpkg_root);
+        
+        config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file);
+        config.define("VCPKG_TARGET_TRIPLET", "x64-windows-static-md");
+        
+        // Explicitly set OpenSSL paths for CMake
+        config.define("OPENSSL_ROOT_DIR", &vcpkg_installed);
+        config.define("OPENSSL_INCLUDE_DIR", format!("{}/include", &vcpkg_installed));
+        config.define("OPENSSL_CRYPTO_LIBRARY", format!("{}/lib/libcrypto.lib", &vcpkg_installed));
+        config.define("OPENSSL_SSL_LIBRARY", format!("{}/lib/libssl.lib", &vcpkg_installed));
+        
+        // Explicitly set unbound paths for CMake
+        config.define("UNBOUND_ROOT_DIR", &vcpkg_installed);
+        config.define("UNBOUND_INCLUDE_DIR", format!("{}/include", &vcpkg_installed));
+        config.define("UNBOUND_LIBRARY", format!("{}/lib/unbound.lib", &vcpkg_installed));
+        config.define("UNBOUND_LIBRARIES", format!("{}/lib/unbound.lib", &vcpkg_installed));
+        
+        // Explicitly set ZeroMQ paths for CMake
+        config.define("ZMQ_ROOT", &vcpkg_installed);
+        config.define("ZMQ_INCLUDE_PATH", format!("{}/include", &vcpkg_installed));
+        config.define("ZMQ_LIB", format!("{}/lib/libzmq-mt-4_3_5.lib", &vcpkg_installed));
+        
+        // Explicitly set libsodium paths for CMake
+        config.define("SODIUM_LIBRARY", format!("{}/lib/sodium.lib", &vcpkg_installed));
+        config.define("SODIUM_INCLUDE_PATH", format!("{}/include", &vcpkg_installed));
+        
+        // Explicitly set Boost paths for CMake - vcpkg uses different paths than FindBoost
+        config.define("BOOST_ROOT", &vcpkg_installed);
+        config.define("Boost_INCLUDE_DIR", format!("{}/include", &vcpkg_installed));
+        config.define("Boost_LIBRARY_DIR", format!("{}/lib", &vcpkg_installed));
+        config.define("Boost_USE_STATIC_LIBS", "ON");
+        config.define("Boost_USE_STATIC_RUNTIME", "OFF"); // We're using dynamic CRT
+        config.define("Boost_USE_MULTITHREADED", "ON");
+        config.define("Boost_NO_SYSTEM_PATHS", "ON");
+        
+        // Add required Boost components
+        config.define("Boost_THREAD_LIBRARY", format!("{}/lib/boost_thread.lib", &vcpkg_installed));
+        
+        // Let CMake find the Boost libraries automatically
+        // We've already set BOOST_ROOT and other paths above
+
+        // Ensure Boost headers see we're linking statically and disable auto-linking
+        config.define(
+            "CMAKE_CXX_FLAGS",
+            "/DBOOST_ALL_NO_LIB /DBOOST_ALL_STATIC_LINK /DBOOST_THREAD_USE_LIB /DBOOST_SERIALIZATION_STATIC_LINK",
+        );
+        
+        // Force static runtime for all builds
+        config.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+    }
+    
     let output_directory = config
         .build_target("wallet_api")
         // Builds currently fail in Release mode
@@ -97,12 +179,17 @@ fn main() {
         .define("CMAKE_DISABLE_FIND_PACKAGE_HIDAPI", "ON")
         .define("GTEST_HAS_ABSL", "OFF")
         // Use lightweight crypto library
-        .define("MONERO_WALLET_CRYPTO_LIBRARY", "cn")
-        .build_arg(match is_github_actions {
-            true => "-j1",
-            false => "-j",
-        })
-        .build();
+        .define("MONERO_WALLET_CRYPTO_LIBRARY", "cn");
+        
+    // Don't pass Make/Ninja specific flags to MSBuild on Windows
+    #[cfg(not(target_os = "windows"))]
+    let output_directory = config.build_arg(match is_github_actions {
+        true => "-j1",
+        false => "-j",
+    }).build();
+    
+    #[cfg(target_os = "windows")]
+    let output_directory = config.build();
 
     let monero_build_dir = output_directory.join("build");
 
@@ -264,11 +351,53 @@ fn main() {
     println!("cargo:rustc-link-lib=static=mnemonics");
     println!("cargo:rustc-link-lib=static=rpc_base");
 
-    // Static linking for boost
-    println!("cargo:rustc-link-lib=static=boost_serialization");
-    println!("cargo:rustc-link-lib=static=boost_filesystem");
-    println!("cargo:rustc-link-lib=static=boost_thread");
-    println!("cargo:rustc-link-lib=static=boost_chrono");
+    // Static linking for boost (vcpkg naming convention)
+    #[cfg(target_os = "windows")]
+    {
+        use std::fs;
+        use std::path::Path;
+        
+        // Find the actual boost libraries installed by vcpkg
+        let vcpkg_root = std::env::var("CARGO_MANIFEST_DIR").unwrap() + "/../target/vcpkg";
+        let boost_lib_dir = format!("{}/installed/x64-windows-static-md/lib", vcpkg_root);
+        
+        // Helper function to find boost library
+        let find_boost_lib = |prefix: &str| -> Option<String> {
+            if let Ok(entries) = fs::read_dir(&boost_lib_dir) {
+                for entry in entries.flatten() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if name.starts_with(&format!("boost_{}-", prefix)) && name.ends_with(".lib") && !name.contains("-gd-") {
+                            return Some(name.trim_end_matches(".lib").to_string());
+                        }
+                    }
+                }
+            }
+            None
+        };
+        
+        // Link the boost libraries we find
+        for lib in &["serialization", "filesystem", "thread", "chrono", "system", "date_time", "program_options", "locale"] {
+            if let Some(lib_name) = find_boost_lib(lib) {
+                println!("cargo:rustc-link-lib=static={}", lib_name);
+            } else {
+                // Fallback to generic name
+                println!("cargo:rustc-link-lib=static=boost_{}", lib);
+            }
+        }
+    }
+    
+    // Static linking for boost (standard naming on non-Windows)
+    #[cfg(not(target_os = "windows"))]
+    {
+        println!("cargo:rustc-link-lib=static=boost_serialization");
+        println!("cargo:rustc-link-lib=static=boost_filesystem");
+        println!("cargo:rustc-link-lib=static=boost_thread");
+        println!("cargo:rustc-link-lib=static=boost_chrono");
+        println!("cargo:rustc-link-lib=static=boost_system");
+        println!("cargo:rustc-link-lib=static=boost_date_time");
+        println!("cargo:rustc-link-lib=static=boost_locale");
+        println!("cargo:rustc-link-lib=static=boost_program_options");
+    }
 
     // Link libsodium statically
     println!("cargo:rustc-link-lib=static=sodium");
@@ -308,9 +437,53 @@ fn main() {
         .include("src") // Include the bridge.h file
         .include("monero/src") // Includes the monero headers
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
-        .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
-        .include("/opt/homebrew/include") // Homebrew include path for Boost
-        .flag("-fPIC"); // Position independent code
+        .include("monero/contrib/epee/include"); // Includes the epee headers for net/http_client.h
+        
+    // Add platform-specific include paths
+    #[cfg(target_os = "windows")]
+    {
+        let vcpkg_root = std::env::var("CARGO_MANIFEST_DIR").unwrap() + "/../target/vcpkg";
+        let vcpkg_installed = format!("{}/installed/x64-windows-static-md", vcpkg_root);
+        build.include(format!("{}/include", vcpkg_installed));
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        build.include("/opt/homebrew/include"); // Homebrew include path for Boost
+    }
+    
+    // Position independent code (not needed on Windows)
+    #[cfg(not(target_os = "windows"))]
+    build.flag("-fPIC");
+        
+    // Windows-specific flags for static linking
+    #[cfg(target_os = "windows")]
+    {
+        build
+            .flag("/DBOOST_ALL_NO_LIB")
+            .flag("/DBOOST_ALL_STATIC_LINK")
+            .flag("/DBOOST_THREAD_USE_LIB")
+            .flag("/DBOOST_THREAD_BUILD_LIB")
+            .flag("/DBOOST_SERIALIZATION_STATIC_LINK")
+            .flag("/DBOOST_SYSTEM_STATIC_LINK")
+            .flag("/DBOOST_FILESYSTEM_STATIC_LINK")
+            .flag("/DBOOST_CHRONO_STATIC_LINK")
+            .flag("/DBOOST_DATE_TIME_STATIC_LINK")
+            .flag("/DBOOST_LOCALE_STATIC_LINK")
+            .flag("/DBOOST_PROGRAM_OPTIONS_STATIC_LINK")
+            .flag("/D_WIN32_WINNT=0x0601")  // Windows 7 minimum
+            .flag("/DWIN32_LEAN_AND_MEAN");
+    }
+    
+    // Non-Windows flags
+    #[cfg(not(target_os = "windows"))]
+    {
+        build
+            .flag("-DBOOST_ALL_NO_LIB")
+            .flag("-DBOOST_ARCHIVE_STATIC_LINK")
+            .flag("-DBOOST_SERIALIZATION_STATIC_LINK")
+            .flag("-DBOOST_USE_STATIC_LIBS");
+    }
 
     #[cfg(target_os = "macos")]
     {
