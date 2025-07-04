@@ -22,6 +22,7 @@ import {
   getSwapInfo,
   initializeContext,
   listSellersAtRendezvousPoint,
+  refreshApprovals,
   updateAllNodeStatuses,
   fetchAndUpdateBackgroundItems,
   fetchAndUpdateApprovalItems,
@@ -46,8 +47,8 @@ const UPDATE_RATE_INTERVAL = 5 * 60 * 1_000;
 // Fetch all conversations every 10 minutes
 const FETCH_CONVERSATIONS_INTERVAL = 10 * 60 * 1_000;
 
-// Fetch background and approval items every 10 seconds
-const FETCH_BACKGROUND_APPROVAL_INTERVAL = 10 * 1_000;
+// Fetch pending approvals every 2 seconds
+const FETCH_PENDING_APPROVALS_INTERVAL = 2 * 1_000;
 
 function setIntervalImmediate(callback: () => void, interval: number): void {
   callback();
@@ -65,10 +66,7 @@ export async function setupBackgroundTasks(): Promise<void> {
       listSellersAtRendezvousPoint(store.getState().settings.rendezvousPoints),
     DISCOVER_PEERS_INTERVAL,
   );
-  setIntervalImmediate(async () => {
-    await fetchAndUpdateBackgroundItems();
-    await fetchAndUpdateApprovalItems();
-  }, FETCH_BACKGROUND_APPROVAL_INTERVAL);
+  setIntervalImmediate(refreshApprovals, FETCH_PENDING_APPROVALS_INTERVAL);
 
   // Fetch all alerts
   updateAlerts();

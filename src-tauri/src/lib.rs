@@ -9,13 +9,12 @@ use swap::cli::{
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
             CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
-            CheckSeedResponse, ExportBitcoinWalletArgs, GetApprovalItemsArgs,
-            GetBackgroundItemsArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
-            GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetSwapInfoArgs,
-            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SuspendCurrentSwapArgs,
-            WithdrawBtcArgs,
+            CheckSeedResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs,
+            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, 
+            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, 
+            MoneroRecoveryArgs, RedactArgs, ResolveApprovalArgs, ResumeSwapArgs, 
+            SendMoneroArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -208,9 +207,8 @@ pub fn run() {
             get_monero_balance,
             send_monero,
             get_monero_sync_progress,
-            get_background_items,
-            get_approval_items,
             check_seed,
+            get_pending_approvals,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -265,10 +263,6 @@ tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
 
 // Add the new command for getting Monero main address
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
-
-// Add new commands for fetching background and approval items
-tauri_command!(get_background_items, GetBackgroundItemsArgs, no_args);
-tauri_command!(get_approval_items, GetApprovalItemsArgs, no_args);
 
 /// Here we define Tauri commands whose implementation is not delegated to the Request trait
 #[tauri::command]
@@ -372,9 +366,23 @@ async fn resolve_approval_request(
         .resolve_approval(args.request_id.parse().unwrap(), args.accept)
         .await
         .to_string_result()?;
-    println!("Resolved approval request");
 
     Ok(())
+}
+
+#[tauri::command]
+async fn get_pending_approvals(
+    state: tauri::State<'_, RwLock<State>>,
+) -> Result<GetPendingApprovalsResponse, String> {
+    let approvals = state
+        .read()
+        .await
+        .handle
+        .get_pending_approvals()
+        .await
+        .to_string_result()?;
+
+    Ok(GetPendingApprovalsResponse { approvals })
 }
 
 /// Tauri command to initialize the Context
