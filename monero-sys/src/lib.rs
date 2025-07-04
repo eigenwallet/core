@@ -502,15 +502,17 @@ impl WalletHandle {
     }
 
     /// Sweep all funds to a set of addresses.
+    /// If the address is `None`, the address will be set to the primary address of the
+    /// wallet
     pub async fn sweep_multi(
         &self,
         addresses: &[monero::Address],
         percentages: &[f64],
     ) -> anyhow::Result<Vec<TxReceipt>> {
-        let addresses = addresses.to_vec();
-        let percentages = percentages.to_vec();
-
         tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping multi");
+        
+        let percentages = percentages.to_vec();
+        let addresses = addresses.to_vec();
 
         self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
             .await
