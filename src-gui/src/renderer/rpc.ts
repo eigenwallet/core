@@ -37,14 +37,13 @@ import {
   SendMoneroArgs,
   SendMoneroResponse,
   GetMoneroSyncProgressResponse,
-  GetBackgroundItemsResponse,
-  GetApprovalItemsResponse,
+  GetPendingApprovalsArgs,
+  GetPendingApprovalsResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
   rpcSetSwapInfo,
-  rpcSetBackgroundItems,
-  rpcSetApprovalItems,
+  approvalRequestsReplaced,
 } from "store/features/rpcSlice";
 import {
   setRefreshing,
@@ -458,14 +457,6 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
   );
 }
 
-export async function getBackgroundItems(): Promise<GetBackgroundItemsResponse> {
-  return await invokeNoArgs<GetBackgroundItemsResponse>("get_background_items");
-}
-
-export async function getApprovalItems(): Promise<GetApprovalItemsResponse> {
-  return await invokeNoArgs<GetApprovalItemsResponse>("get_approval_items");
-}
-
 // Wallet management functions that handle Redux dispatching
 export async function initializeMoneroWallet() {
   try {
@@ -548,24 +539,6 @@ export async function updateMoneroSyncProgress() {
   }
 }
 
-// Background and approval management functions
-export async function fetchAndUpdateBackgroundItems() {
-  try {
-    const response = await getBackgroundItems();
-    store.dispatch(rpcSetBackgroundItems(response.background));
-  } catch (err) {
-    console.error("Failed to fetch background items:", err);
-  }
-}
-
-export async function fetchAndUpdateApprovalItems() {
-  try {
-    const response = await getApprovalItems();
-    store.dispatch(rpcSetApprovalItems(response.approvals));
-  } catch (err) {
-    console.error("Failed to fetch approval items:", err);
-  }
-}
 
 export async function getDataDir(): Promise<string> {
   const testnet = isTestnet();
@@ -578,10 +551,23 @@ export async function resolveApproval<T>(
   requestId: string,
   accept: T,
 ): Promise<void> {
-  await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
-    "resolve_approval_request",
-    { request_id: requestId, accept: accept as unknown as object },
+  try {
+    await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
+      "resolve_approval_request",
+      { request_id: requestId, accept },
+    );
+  } catch (error) {
+    // Refresh approval list when resolve fails to keep UI in sync
+    await refreshApprovals();
+    throw error;
+  }
+}
+
+export async function refreshApprovals(): Promise<void> {
+  const response = await invokeNoArgs<GetPendingApprovalsResponse>(
+    "get_pending_approvals",
   );
+  store.dispatch(approvalRequestsReplaced(response.approvals));
 }
 
 export async function checkSeed(seed: string): Promise<boolean> {
