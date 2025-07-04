@@ -62,7 +62,7 @@ async fn main() {
     tracing::info!("Transferring 1 XMR to ourselves");
 
     wallet
-        .transfer(&wallet.main_address().await, transfer_amount)
+        .transfer(&wallet.main_address().await, transfer_amount, false)
         .await
         .unwrap();
 

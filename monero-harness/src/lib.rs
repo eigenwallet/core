@@ -483,7 +483,7 @@ impl MoneroWallet {
         );
         let amount = Amount::from_pico(amount_pico);
         self.wallet
-            .transfer(address, amount)
+            .transfer(address, amount, false)
             .await
             .context("Failed to perform transfer")
     }

@@ -160,22 +160,22 @@ namespace Monero
         // Build the actual multi‐dest transaction
         // No change left -> wallet drops it
         // N outputs, fee should be the same as the one estimated above
-        
+
         // Find the highest output and choose it for subtract_fee_indices
         std::set<uint32_t> subtract_fee_indices;
         auto max_it = std::max_element(amounts.begin(), amounts.end());
         size_t max_index = std::distance(amounts.begin(), max_it);
         subtract_fee_indices.insert(static_cast<uint32_t>(max_index));
-        
+
         return wallet.createTransactionMultDest(
             dest_addresses,
             "", // No Payment ID
             Monero::optional<std::vector<uint64_t>>(amounts),
             0, // No mixin count
             PendingTransaction::Priority_Default,
-            0, // subaddr_account
+            0,  // subaddr_account
             {}, // subaddr_indices
-            subtract_fee_indices); // Subtract fee from all outputs
+            subtract_fee_indices);
     }
 
     inline bool setWalletDaemon(Wallet &wallet, const std::string &daemon_address)

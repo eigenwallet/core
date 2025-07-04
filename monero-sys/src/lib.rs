@@ -396,11 +396,12 @@ impl WalletHandle {
         &self,
         address: &monero::Address,
         amount: monero::Amount,
+        minimize_change: bool,
     ) -> anyhow::Result<TxReceipt> {
         let address = *address;
 
         retry_notify(backoff(None, None), || async {
-            self.call(move |wallet| wallet.transfer(&address, amount))
+            self.call(move |wallet| wallet.transfer(&address, amount, minimize_change))
                 .await
                 .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
@@ -1401,19 +1402,22 @@ impl FfiWallet {
     /// Transfer a specified amount of monero to a specified address and return a receipt containing
     /// the transaction id, transaction key and current blockchain height. This can be used later
     /// to prove the transfer or to wait for confirmations.
+    ///
+    /// If `minimize_change` is enabled, the change will be sent to multiple smaller outputs.
+    /// This helps avoiding locking large UTXOs for small transfers for 10 blocks.
     fn transfer(
         &mut self,
         address: &monero::Address,
         amount: monero::Amount,
+        minimize_change: bool,
     ) -> anyhow::Result<TxReceipt> {
         let_cxx_string!(address = address.to_string());
         let amount = amount.as_pico();
 
         // First we need to create a pending transaction.
-        let mut pending_tx = PendingTransaction(
-            ffi::createTransaction(self.inner.pinned(), &address, amount)
-                .context("Failed to create transaction: FFI call failed with exception")?,
-        );
+        let raw_transaction = ffi::createTransaction(self.inner.pinned(), &address, amount)
+            .context("Failed to create transaction: FFI call failed with exception")?;
+        let mut pending_tx = PendingTransaction(raw_transaction);
 
         // Get the txid from the pending transaction before we publish,
         // otherwise it might be null.
@@ -1613,7 +1617,7 @@ impl FfiWallet {
     /// # Arguments
     ///
     /// * `balance` - The total balance to distribute
-    /// * `percentages` - A slice of percentages that must sum to 100.0
+    /// * `ratios` - A slice of ratios that must sum to 1
     ///
     /// # Returns
     ///
@@ -1623,16 +1627,16 @@ impl FfiWallet {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Percentages don't sum to 1.0
+    /// - Ratios don't sum to 1.0
     /// - Balance is zero
     /// - There are more outputs than piconeros in balance
-    fn distribute(balance: monero::Amount, percentages: &[f64]) -> Result<Vec<monero::Amount>> {
-        if percentages.is_empty() {
+    fn distribute(balance: monero::Amount, ratios: &[f64]) -> Result<Vec<monero::Amount>> {
+        if ratios.is_empty() {
             bail!("No ratios to distribute to");
         }
 
         const TOLERANCE: f64 = 1e-6;
-        let sum: f64 = percentages.iter().sum();
+        let sum: f64 = ratios.iter().sum();
         if (sum - 1.0).abs() > TOLERANCE {
             bail!("Percentages must sum to 1 (actual sum: {})", sum);
         }
@@ -1643,7 +1647,7 @@ impl FfiWallet {
         }
 
         // Check if the distributable amount is enough to cover at least one piconero per output
-        if balance.as_pico() < percentages.len() as u64 {
+        if balance.as_pico() < ratios.len() as u64 {
             bail!("More outputs than piconeros in balance");
         }
 
@@ -1651,7 +1655,7 @@ impl FfiWallet {
         let mut total = Amount::ZERO;
 
         // Distribute amounts according to ratios, except for the last one
-        for &percentage in &percentages[..percentages.len() - 1] {
+        for &percentage in &ratios[..ratios.len() - 1] {
             let amount_pico = ((balance.as_pico() as f64) * percentage).floor() as u64;
             let amount = Amount::from_pico(amount_pico);
             amounts.push(amount);

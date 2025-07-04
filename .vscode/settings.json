@@ -73,7 +73,10 @@
         "shared_mutex": "cpp",
         "source_location": "cpp",
         "strstream": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "hash_map": "cpp",
+        "hash_set": "cpp",
+        "*.ipp": "cpp"
     },
     "rust-analyzer.cargo.extraEnv": {
         "CARGO_TARGET_DIR": "target-check"

@@ -163,7 +163,7 @@ where
                     let receipt = monero_wallet
                         .main_wallet()
                         .await
-                        .transfer(&address, amount)
+                        .transfer(&address, amount, true)
                         .await
                         .map_err(|e| tracing::error!(err=%e, "Failed to lock Monero"))
                         .ok();
