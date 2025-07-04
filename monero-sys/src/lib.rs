@@ -11,6 +11,8 @@
 //! internally communicate with the wallet thread.
 
 mod bridge;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 
 use std::{
     any::Any, cmp::Ordering, fmt::Display, ops::Deref, path::PathBuf, pin::Pin, str::FromStr,
@@ -68,6 +70,10 @@ type AnyBox = Box<dyn Any + Send>;
 struct WalletManager {
     /// A wrapper around the raw C++ wallet manager pointer.
     inner: RawWalletManager,
+}
+
+struct WalletListener {
+    inner: *mut ffi::WalletListener,
 }
 
 /// This is our own wrapper around a raw C++ wallet manager pointer.
@@ -1023,13 +1029,49 @@ impl WalletManager {
         let network_type = network_type.into();
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
 
+        unsafe extern "C" fn on_spent(txid: *const c_char, amount: u64) {
+            let txid_str = if txid.is_null() {
+                "<null>".into()
+            } else {
+                // безопасное преобразование в строку
+                CStr::from_ptr(txid).to_string_lossy().into_owned()
+            };
+            println!("Spent {amount} in {txid_str}");
+        }
+
+        unsafe extern "C" fn on_received(txid: *const c_char, amount: u64) {
+            let txid_str = if txid.is_null() {
+                "<null>".into()
+            } else {
+                CStr::from_ptr(txid).to_string_lossy().into_owned()
+            };
+        }
+
+        unsafe extern "C" fn on_updated() {
+            println!("Updated");
+        }
+
+        let listener = unsafe {
+            ffi::create_listener(
+                on_spent as usize,
+                on_received as usize,
+                0 as usize,
+                0 as usize,
+                on_updated as usize,
+                0 as usize,
+                0 as usize,
+                0 as usize,
+                0 as usize,
+            )
+        };
+
         let wallet_pointer = unsafe {
             self.inner.pinned().openWallet(
                 &path,
                 &password,
                 network_type,
                 kdf_rounds,
-                std::ptr::null_mut(),
+                listener,
             )
         }
         .context("Failed to open wallet: FFI call failed with exception")?;

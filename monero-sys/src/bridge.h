@@ -244,6 +244,184 @@ namespace Monero
     {
         return std::make_unique<std::string>(tx_info.hash());
     }
+
+    /**
+     * Create a wallet listener.
+     */
+
+//     class MyListener : public WalletListener {
+//         public:
+//             ~MyListener() override {};
+
+//             void moneySpent(const std::string &txId, uint64_t amount) override {
+//                 std::cout << "Money spent: " << txId << " " << amount << std::endl;
+//             }
+            
+//             void moneyReceived(const std::string &txId, uint64_t amount) override {
+//                 std::cout << "Money received: " << txId << " " << amount << std::endl;
+//             }
+            
+//             void unconfirmedMoneyReceived(const std::string &txId, uint64_t amount) override {
+//                 std::cout << "Unconfirmed money received: " << txId << " " << amount << std::endl;
+//             }
+
+//             void newBlock(uint64_t height) override {
+//                 std::cout << "New block: " << height << std::endl;
+//             }
+            
+//             void updated() override {
+//                 std::cout << "Updated" << std::endl;
+//             }
+            
+//             void refreshed() override {
+//                 std::cout << "Refreshed" << std::endl;
+//             }
+
+//             void onSetWallet(Wallet *wallet) override {
+//                 std::cout << "Set wallet" << std::endl;
+//             }
+
+//             void onReorg(uint64_t height, uint64_t blocks_detached, std::size_t transfers_detached) override {
+//                 std::cout << "Reorg: " << height << " " << blocks_detached << " " << transfers_detached << std::endl;
+//             }
+
+//             void onPoolTxRemoved(const std::string &txid) override {
+//                 std::cout << "Pool tx removed: " << txid << std::endl;
+//             }
+//     };
+
+    // bridge.h
+#pragma once
+#include <string>
+#include <cstdint>
+#include "wallet/api/wallet2_api.h"
+
+
+using CB_StringU64                = uintptr_t;
+using CB_U64                      = uintptr_t;
+using CB_Void                     = uintptr_t;
+using CB_Reorg                    = uintptr_t;
+using CB_String                   = uintptr_t;
+using CB_GetPassword              = uintptr_t;
+
+class FunctionBasedListener final : public Monero::WalletListener {
+public:
+    FunctionBasedListener(
+        CB_StringU64                      on_spent,
+        CB_StringU64                      on_received,
+        CB_StringU64                      on_unconfirmed_received,
+        CB_U64                            on_new_block,
+        CB_Void                           on_updated,
+        CB_Void                           on_refreshed,
+        CB_Reorg                          on_reorg,
+        CB_String                         on_pool_tx_removed,
+        CB_GetPassword                    on_get_password)
+        : 
+          on_spent_(on_spent),
+          on_received_(on_received),
+          on_unconfirmed_received_(on_unconfirmed_received),
+          on_new_block_(on_new_block),
+          on_updated_(on_updated),
+          on_refreshed_(on_refreshed),
+          on_reorg_(on_reorg),
+          on_pool_tx_removed_(on_pool_tx_removed),
+          on_get_password_(on_get_password) {}
+
+    void moneySpent(const std::string& txid, uint64_t amt) override { 
+        if (on_spent_) {
+            auto* spent = reinterpret_cast<void(*)(const std::string&, uint64_t)>(on_spent_);
+            spent(txid, amt); 
+        }
+    }
+
+    void moneyReceived(const std::string& txid, uint64_t amt) override
+        { if (on_received_) {
+            auto* received = reinterpret_cast<void(*)(const std::string&, uint64_t)>(on_received_);
+            received(txid, amt); 
+        }
+    }
+
+    void unconfirmedMoneyReceived(const std::string& txid, uint64_t amt) override
+        { if (on_unconfirmed_received_) {
+            auto* unconfirmed_received = reinterpret_cast<void(*)(const std::string&, uint64_t)>(on_unconfirmed_received_);
+            unconfirmed_received(txid, amt); 
+        }
+    }
+
+    void newBlock(uint64_t h) override
+        { if (on_new_block_) {
+            auto* new_block = reinterpret_cast<void(*)(uint64_t)>(on_new_block_);
+            new_block(h); 
+        }
+    }
+
+    void updated() override
+        { if (on_updated_) {
+            auto* updated = reinterpret_cast<void(*)()>(on_updated_);
+            updated(); 
+        }
+    }
+
+    void refreshed() override
+        { if (on_refreshed_) {
+            auto* refreshed = reinterpret_cast<void(*)()>(on_refreshed_);
+            refreshed(); 
+        }
+    }
+
+    void onReorg(uint64_t h, uint64_t d, size_t t) override
+        { if (on_reorg_) {
+            auto* reorg = reinterpret_cast<void(*)(uint64_t, uint64_t, size_t)>(on_reorg_);
+            reorg(h, d, t); 
+        }
+    }
+
+    void onPoolTxRemoved(const std::string& txid) override
+        { if (on_pool_tx_removed_) {
+            auto* pool_tx_removed = reinterpret_cast<void(*)(const std::string&)>(on_pool_tx_removed_);
+            pool_tx_removed(txid); 
+        }
+    }
+
+    optional<std::string> onGetPassword(const char* reason) override {
+        if (on_get_password_) {
+            auto* get_password = reinterpret_cast<const char*(*)(const std::string&)>(on_get_password_);
+            return std::string(get_password(reason));
+        }
+        return optional<std::string>();
+    }
+
+private:
+    CB_StringU64       on_spent_;
+    CB_StringU64       on_received_;
+    CB_StringU64       on_unconfirmed_received_;
+    CB_U64             on_new_block_;
+    CB_Void            on_updated_;
+    CB_Void            on_refreshed_;
+    CB_Reorg           on_reorg_;
+    CB_String          on_pool_tx_removed_;
+    CB_GetPassword     on_get_password_;
+};
+
+extern "C" {
+    WalletListener* create_listener(
+        CB_StringU64 on_spent,
+        CB_StringU64 on_received,
+        CB_StringU64 on_unconfirmed_received,
+        CB_U64       on_new_block,
+        CB_Void      on_updated,
+        CB_Void      on_refreshed,
+        CB_Reorg     on_reorg,
+        CB_String    on_pool_tx_removed,
+        CB_GetPassword on_get_password)
+    {
+        return new FunctionBasedListener(
+            on_spent,on_received,on_unconfirmed_received,on_new_block,
+            on_updated,on_refreshed,on_reorg,on_pool_tx_removed,on_get_password);
+    }
+
+    void destroy_listener(FunctionBasedListener* p) { delete p; }
+}
 }
 
 #include "easylogging++.h"

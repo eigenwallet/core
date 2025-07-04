@@ -1,7 +1,7 @@
 //! This module contains the bridge between the Monero C++ API and the Rust code.
 //! It uses the [cxx](https://cxx.rs) crate to generate the actual bindings.
 
-use cxx::CxxString;
+use cxx::{CxxString, UniquePtr};
 use tracing::Level;
 
 /// This is the main ffi module that exposes the Monero C++ API to Rust.
@@ -60,11 +60,6 @@ pub mod ffi {
         /// A struct containing a single transaction.
         type TransactionInfo;
 
-        /// A wallet listener.
-        ///
-        /// Can be attached to a wallet and will get notified upon specific events.
-        type WalletListener;
-
         /// Get the wallet manager.
         fn getWalletManager() -> Result<*mut WalletManager>;
 
@@ -105,6 +100,24 @@ pub mod ffi {
             kdf_rounds: u64,
             seed_offset: &CxxString,
         ) -> Result<*mut Wallet>;
+
+        type FunctionBasedListener;
+
+        type WalletListener;
+
+        unsafe fn create_listener(
+            on_spent:    usize,
+            on_received: usize,
+            on_unconfirmed_received: usize,
+            on_new_block: usize,
+            on_updated: usize,
+            on_refreshed: usize,
+            on_reorg: usize,
+            on_pool_tx_removed: usize,
+            on_get_password: usize,
+        ) -> *mut WalletListener;
+
+        unsafe fn destroy_listener(ptr: *mut FunctionBasedListener);
 
         ///virtual Wallet * openWallet(const std::string &path, const std::string &password, NetworkType nettype, uint64_t kdf_rounds = 1, WalletListener * listener = nullptr) = 0;
         unsafe fn openWallet(
