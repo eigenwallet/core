@@ -396,12 +396,12 @@ impl WalletHandle {
         &self,
         address: &monero::Address,
         amount: monero::Amount,
-        minimize_change: bool,
+        split_change: bool,
     ) -> anyhow::Result<TxReceipt> {
         let address = *address;
 
         retry_notify(backoff(None, None), || async {
-            self.call(move |wallet| wallet.transfer(&address, amount, minimize_change))
+            self.call(move |wallet| wallet.transfer(&address, amount, split_change))
                 .await
                 .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
@@ -1409,8 +1409,12 @@ impl FfiWallet {
         &mut self,
         address: &monero::Address,
         amount: monero::Amount,
-        minimize_change: bool,
+        split_change: bool,
     ) -> anyhow::Result<TxReceipt> {
+        // Maximum change amount we leave untouched
+        const MAX_CHANGE_AMOUNT: monero::Amount = monero::Amount::ONE_XMR;
+        const EXTRA_CHANGE_OUTPUTS: usize = 3;
+
         let_cxx_string!(address = address.to_string());
         let amount = amount.as_pico();
 
@@ -1418,6 +1422,42 @@ impl FfiWallet {
         let raw_transaction = ffi::createTransaction(self.inner.pinned(), &address, amount)
             .context("Failed to create transaction: FFI call failed with exception")?;
         let mut pending_tx = PendingTransaction(raw_transaction);
+
+        // If `split_change` is enabled, we split the change into 3 extra outputs
+        if split_change {
+            // 1. Get the change amount from the pending transaction
+            let change_amount = ffi::pendingTransactionChangeAmount(&pending_tx)
+                .context("Failed to get change amount from pending transaction: FFI call failed with exception")?;
+
+            // If the change is >1XMR, we create a new transaction with 3 extra outputs to ourselves to split the change outputs into 4
+            if change_amount > MAX_CHANGE_AMOUNT {
+                let main_address = self.main_address();
+                let_cxx_string!(main_address = main_address.to_string());
+                let output_addreses = vec![&address, &main_address, &main_address, &main_address]; // add 3 outputs to us
+                let output_amounts = vec![
+                    amount,
+                    change_amount / 4,
+                    change_amount / 4,
+                    change_amount / 4,
+                ];
+                let raw_transaction = ffi::createTransactionMultiDest(
+                    self.inner.pinned(),
+                    &output_addreses,
+                    &output_amounts,
+                )
+                .context("Failed to create transaction: FFI call failed with exception");
+                if raw_transaction.is_err() || raw_transaction.unwrap().is_null() {
+                    self.dispose_transaction(pending_tx);
+                    self.check_error().context("Failed to create transaction")?;
+                    anyhow::bail!("Failed to create transaction");
+                }
+
+                let mut tx = PendingTransaction(raw_transaction.unwrap());
+
+                std::mem::swap(&mut pending_tx, &mut tx);
+                self.dispose_transaction(tx); // don't forget to dispose the old transaction
+            }
+        }
 
         // Get the txid from the pending transaction before we publish,
         // otherwise it might be null.
