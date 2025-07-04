@@ -39,7 +39,12 @@ import {
 import { isTestnet } from "store/config";
 import PromiseInvokeButton from "../../PromiseInvokeButton";
 import { useAppSelector } from "store/hooks";
-import { updateMoneroSyncProgress, initializeMoneroWallet, sendMoneroTransaction, refreshMoneroWallet } from "renderer/rpc";
+import {
+  updateMoneroSyncProgress,
+  initializeMoneroWallet,
+  sendMoneroTransaction,
+  refreshMoneroWallet,
+} from "renderer/rpc";
 
 // Component for displaying wallet address and balance
 function WalletOverview({ mainAddress, balance, isRefreshing, onRefresh }) {

@@ -5,8 +5,13 @@ import {
   isBitcoinSyncProgress,
   isPendingBackgroundProcess,
   isPendingLockBitcoinApprovalEvent,
+  isPendingSeedSelectionApprovalEvent,
   PendingApprovalRequest,
   PendingLockBitcoinApprovalRequest,
+  PendingSelectMakerApprovalRequest,
+  isPendingSelectMakerApprovalEvent,
+  haveFundsBeenLocked,
+  PendingSeedSelectionApprovalRequest,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -16,7 +21,6 @@ import { isCliLogRelatedToSwap } from "models/cliModel";
 import { SettingsState } from "./features/settingsSlice";
 import { NodesSlice } from "./features/nodesSlice";
 import { RatesState } from "./features/ratesSlice";
-import { sortMakerList } from "utils/sortUtils";
 import {
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
@@ -54,11 +58,51 @@ export function useResumeableSwapsCountExcludingPunished() {
   );
 }
 
-/// Returns true if we have a swap that is running
+/// Returns true if we have any swap that is running
 export function useIsSwapRunning() {
   return useAppSelector(
     (state) =>
       state.swap.state !== null && state.swap.state.curr.type !== "Released",
+  );
+}
+
+/// Returns true if we have a swap that is running and
+/// that swap has any funds locked
+export function useIsSwapRunningAndHasFundsLocked() {
+  const swapInfo = useActiveSwapInfo();
+  const swapTauriState = useAppSelector(
+    (state) => state.swap.state?.curr ?? null,
+  );
+
+  // If the swap is in the Released state, we return false
+  if (swapTauriState?.type === "Released") {
+    return false;
+  }
+
+  // If the tauri state tells us that funds have been locked, we return true
+  if (haveFundsBeenLocked(swapTauriState)) {
+    return true;
+  }
+
+  // If we have a database entry (swapInfo) for this swap, we return true
+  if (swapInfo != null) {
+    return true;
+  }
+
+  return false;
+}
+
+/// Returns true if we have a swap that is running
+export function useIsSpecificSwapRunning(swapId: string | null) {
+  if (swapId == null) {
+    return false;
+  }
+
+  return useAppSelector(
+    (state) =>
+      state.swap.state !== null &&
+      state.swap.state.swapId === swapId &&
+      state.swap.state.curr.type !== "Released",
   );
 }
 
@@ -101,9 +145,7 @@ export function useAllMakers() {
   return useAppSelector((state) => {
     const registryMakers = state.makers.registry.makers || [];
     const listSellersMakers = state.makers.rendezvous.makers || [];
-    const all = [...registryMakers, ...listSellersMakers];
-
-    return sortMakerList(all);
+    return [...registryMakers, ...listSellersMakers];
   });
 }
 
@@ -155,12 +197,24 @@ export function useNodes<T>(selector: (nodes: NodesSlice) => T): T {
 
 export function usePendingApprovals(): PendingApprovalRequest[] {
   const approvals = useAppSelector((state) => state.rpc.state.approvalRequests);
-  return Object.values(approvals).filter((c) => c.state === "Pending");
+  return Object.values(approvals).filter(
+    (c) => c.request_status.state === "Pending",
+  ) as PendingApprovalRequest[];
 }
 
 export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c));
+}
+
+export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSelectMakerApprovalEvent(c));
+}
+
+export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
 }
 
 /// Returns all the pending background processes

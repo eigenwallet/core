@@ -21,6 +21,7 @@ import "@fontsource/roboto";
 import FeedbackPage from "./pages/feedback/FeedbackPage";
 import IntroductionModal from "./modal/introduction/IntroductionModal";
 import MoneroWalletPage from "./pages/monero/MoneroWalletPage";
+import SeedSelectionDialog from "./modal/seed-selection/SeedSelectionDialog";
 
 declare module "@mui/material/styles" {
   interface Theme {
@@ -47,6 +48,7 @@ export default function App() {
         <CssBaseline />
         <GlobalSnackbarProvider>
           <IntroductionModal />
+          <SeedSelectionDialog />
           <Router>
             <Navigation />
             <InnerContent />
@@ -71,7 +73,7 @@ function InnerContent() {
       <Routes>
         <Route path="/swap" element={<SwapPage />} />
         <Route path="/history" element={<HistoryPage />} />
-        <Route path="/wallet" element={<WalletPage />} />
+        <Route path="/bitcoin-wallet" element={<WalletPage />} />
         <Route path="/monero-wallet" element={<MoneroWalletPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />

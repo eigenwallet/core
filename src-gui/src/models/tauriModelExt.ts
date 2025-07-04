@@ -4,6 +4,8 @@ import {
   ExpiredTimelocks,
   GetSwapInfoResponse,
   PendingCompleted,
+  QuoteWithAddress,
+  SelectMakerDetails,
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
 } from "./tauriModel";
@@ -253,27 +255,38 @@ export function isGetSwapInfoResponseWithTimelock(
   return response.timelock !== null;
 }
 
-export type PendingApprovalRequest = Extract<
-  ApprovalRequest,
-  { state: "Pending" }
->;
+export type PendingApprovalRequest = ApprovalRequest & {
+  content: Extract<ApprovalRequest["request_status"], { state: "Pending" }>;
+};
 
-export type PendingLockBitcoinApprovalRequest = PendingApprovalRequest & {
-  content: {
-    details: { type: "LockBitcoin" };
-  };
+export type PendingLockBitcoinApprovalRequest = ApprovalRequest & {
+  request: Extract<ApprovalRequest["request"], { type: "LockBitcoin" }>;
+  content: Extract<ApprovalRequest["request_status"], { state: "Pending" }>;
+};
+
+export type PendingSeedSelectionApprovalRequest = ApprovalRequest & {
+  type: "SeedSelection";
+  content: Extract<ApprovalRequest["request_status"], { state: "Pending" }>;
 };
 
 export function isPendingLockBitcoinApprovalEvent(
   event: ApprovalRequest,
 ): event is PendingLockBitcoinApprovalRequest {
-  // Check if the request is pending
-  if (event.state !== "Pending") {
-    return false;
-  }
+  // Check if the request is a LockBitcoin request and is pending
+  return (
+    event.request.type === "LockBitcoin" &&
+    event.request_status.state === "Pending"
+  );
+}
 
-  // Check if the request is a LockBitcoin request
-  return event.content.details.type === "LockBitcoin";
+export function isPendingSeedSelectionApprovalEvent(
+  event: ApprovalRequest,
+): event is PendingSeedSelectionApprovalRequest {
+  // Check if the request is a SeedSelection request and is pending
+  return (
+    event.request.type === "SeedSelection" &&
+    event.request_status.state === "Pending"
+  );
 }
 
 export function isPendingBackgroundProcess(
@@ -291,4 +304,50 @@ export function isBitcoinSyncProgress(
   progress: TauriBackgroundProgress,
 ): progress is TauriBitcoinSyncProgress {
   return progress.componentName === "SyncingBitcoinWallet";
+}
+
+export type PendingSelectMakerApprovalRequest = PendingApprovalRequest & {
+  request: { type: "SelectMaker"; content: SelectMakerDetails };
+};
+
+export interface SortableQuoteWithAddress extends QuoteWithAddress {
+  expiration_ts?: number;
+  request_id?: string;
+}
+
+export function isPendingSelectMakerApprovalEvent(
+  event: ApprovalRequest,
+): event is PendingSelectMakerApprovalRequest {
+  // Check if the request is pending
+  if (event.request_status.state !== "Pending") {
+    return false;
+  }
+
+  // Check if the request is a SelectMaker request
+  return event.request.type === "SelectMaker";
+}
+
+/**
+ * Checks if any funds have been locked yet based on the swap progress event
+ * Returns true for events where funds have been locked
+ * @param event The TauriSwapProgressEvent to check
+ * @returns True if funds have been locked, false otherwise
+ */
+export function haveFundsBeenLocked(
+  event: TauriSwapProgressEvent | null,
+): boolean {
+  if (event === null) {
+    return false;
+  }
+
+  switch (event.type) {
+    case "RequestingQuote":
+    case "Resuming":
+    case "ReceivedQuote":
+    case "WaitingForBtcDeposit":
+    case "SwapSetupInflight":
+      return false;
+  }
+
+  return true;
 }

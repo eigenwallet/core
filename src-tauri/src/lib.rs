@@ -8,11 +8,12 @@ use swap::cli::{
         data,
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
-            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse,
-            ExportBitcoinWalletArgs, GetApprovalItemsArgs, GetBackgroundItemsArgs, GetDataDirArgs,
-            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
-            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
+            CheckSeedResponse, ExportBitcoinWalletArgs, GetApprovalItemsArgs,
+            GetBackgroundItemsArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
+            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
+            GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
             ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SuspendCurrentSwapArgs,
             WithdrawBtcArgs,
         },
@@ -95,12 +96,16 @@ macro_rules! tauri_command {
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
     pub context: Option<Arc<Context>>,
+    pub handle: TauriHandle,
 }
 
 impl State {
     /// Creates a new State instance with no Context
-    fn new() -> Self {
-        Self { context: None }
+    fn new(handle: TauriHandle) -> Self {
+        Self {
+            context: None,
+            handle,
+        }
     }
 
     /// Sets the context for the application state
@@ -143,7 +148,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // We need to set a value for the Tauri state right at the start
     // If we don't do this, Tauri commands will panic at runtime if no value is present
-    let state = RwLock::new(State::new());
+    let handle = TauriHandle::new(app_handle.clone());
+    let state = RwLock::new(State::new(handle));
     app_handle.manage::<RwLock<State>>(state);
 
     Ok(())
@@ -192,6 +198,7 @@ pub fn run() {
             check_monero_node,
             check_electrum_node,
             get_wallet_descriptor,
+            get_current_swap,
             get_data_dir,
             resolve_approval_request,
             redact,
@@ -203,6 +210,7 @@ pub fn run() {
             get_monero_sync_progress,
             get_background_items,
             get_approval_items,
+            check_seed,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -243,7 +251,6 @@ tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);
 tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
-tauri_command!(resolve_approval_request, ResolveApprovalArgs);
 tauri_command!(redact, RedactArgs);
 
 // These commands require no arguments
@@ -254,6 +261,7 @@ tauri_command!(get_swap_infos_all, GetSwapInfosAllArgs, no_args);
 tauri_command!(get_history, GetHistoryArgs, no_args);
 tauri_command!(get_monero_addresses, GetMoneroAddressesArgs, no_args);
 tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
+tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
 
 // Add the new command for getting Monero main address
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
@@ -282,6 +290,14 @@ async fn check_electrum_node(
     args: CheckElectrumNodeArgs,
     _: tauri::State<'_, RwLock<State>>,
 ) -> Result<CheckElectrumNodeResponse, String> {
+    args.request().await.to_string_result()
+}
+
+#[tauri::command]
+async fn check_seed(
+    args: CheckSeedArgs,
+    _: tauri::State<'_, RwLock<State>>,
+) -> Result<CheckSeedResponse, String> {
     args.request().await.to_string_result()
 }
 
@@ -344,12 +360,28 @@ async fn save_txt_files(
     Ok(())
 }
 
+#[tauri::command]
+async fn resolve_approval_request(
+    args: ResolveApprovalArgs,
+    state: tauri::State<'_, RwLock<State>>,
+) -> Result<(), String> {
+    println!("Resolving approval request");
+    let lock = state.read().await;
+
+    lock.handle
+        .resolve_approval(args.request_id.parse().unwrap(), args.accept)
+        .await
+        .to_string_result()?;
+    println!("Resolved approval request");
+
+    Ok(())
+}
+
 /// Tauri command to initialize the Context
 #[tauri::command]
 async fn initialize_context(
     settings: TauriSettings,
     testnet: bool,
-    app_handle: tauri::AppHandle,
     state: tauri::State<'_, RwLock<State>>,
 ) -> Result<(), String> {
     // When the app crashes, the monero-wallet-rpc process may not be killed
@@ -378,14 +410,13 @@ async fn initialize_context(
         }
     }
 
-    // Acquire a write lock on the state
-    let mut state_write_lock = state
-        .try_write()
-        .context("Context is already being initialized")
-        .to_string_result()?;
-
     // Get app handle and create a Tauri handle
-    let tauri_handle = TauriHandle::new(app_handle.clone());
+    let tauri_handle = state
+        .try_read()
+        .context("Context is already being initialized")
+        .to_string_result()?
+        .handle
+        .clone();
 
     // Notify frontend that the context is being initialized
     tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Initializing);
@@ -405,7 +436,11 @@ async fn initialize_context(
 
     match context_result {
         Ok(context_instance) => {
-            state_write_lock.set_context(Arc::new(context_instance));
+            state
+                .try_write()
+                .context("Context is already being initialized")
+                .to_string_result()?
+                .set_context(Arc::new(context_instance));
 
             tracing::info!("Context initialized");
 
