@@ -436,6 +436,8 @@ impl WalletHandle {
     }
 
     /// Sweep all funds to a set of addresses.
+    /// If the address is `None`, the address will be set to the primary address of the
+    /// wallet
     pub async fn sweep_multi(
         &self,
         addresses: &[Option<monero::Address>],
