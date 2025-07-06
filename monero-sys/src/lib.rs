@@ -441,7 +441,7 @@ impl WalletHandle {
     /// wallet
     pub async fn sweep_multi(
         &self,
-        addresses: &[Option<monero::Address>],
+        addresses: &[monero::Address],
         percentages: &[f64],
     ) -> anyhow::Result<Vec<TxReceipt>> {
         tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping multi");
