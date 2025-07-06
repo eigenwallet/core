@@ -39,6 +39,7 @@ import {
   GetMoneroSyncProgressResponse,
   GetPendingApprovalsArgs,
   GetPendingApprovalsResponse,
+  DfxAuthenticateResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -591,4 +592,8 @@ export async function saveFilesInDialog(files: Record<string, string>) {
   await invokeUnsafe<void>("save_txt_files", {
     files,
   });
+}
+
+export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
+  return await invokeNoArgs<DfxAuthenticateResponse>("dfx_authenticate");
 }

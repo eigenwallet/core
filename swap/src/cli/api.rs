@@ -187,7 +187,7 @@ pub struct Context {
     pub tasks: Arc<PendingTaskList>,
     tauri_handle: Option<TauriHandle>,
     bitcoin_wallet: Option<Arc<bitcoin::Wallet>>,
-    monero_manager: Option<Arc<monero::Wallets>>,
+    pub monero_manager: Option<Arc<monero::Wallets>>,
     tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     #[allow(dead_code)]
     monero_rpc_pool_handle: Option<Arc<monero_rpc_pool::PoolHandle>>,
@@ -536,6 +536,7 @@ impl Context {
     pub fn tauri_handle(&self) -> Option<TauriHandle> {
         self.tauri_handle.clone()
     }
+
 }
 
 impl fmt::Debug for Context {
