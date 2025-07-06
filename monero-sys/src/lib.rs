@@ -1437,7 +1437,9 @@ impl FfiWallet {
         amount: monero::Amount,
         split_change: bool,
     ) -> anyhow::Result<TxReceipt> {
-        const MAX_EXTRA_CHANGE_OUTPUTS: u64 = 3;
+        const EXTRA_CHANGE_OUTPUTS: u64 = 3;
+        
+        tracing::debug!(destination_address=%address, "Transferring {}", amount);
         
         let_cxx_string!(address = address.to_string());
         let amount = amount.as_pico();
@@ -1449,12 +1451,40 @@ impl FfiWallet {
 
         // If `split_change` is enabled, we split the change into 3 extra outputs
         if split_change {
-            let change = Amount::from_pico(pending_tx.change().context("Failed to get change amount: FFI call failed with exception")?);
-            let extra_change_outputs = (
-                change.as_pico() / Amount::ONE_XMR.as_pico()
-            ).min(MAX_EXTRA_CHANGE_OUTPUTS);
+            let change = pending_tx.change().context("Failed to get change amount: FFI call failed with exception")?;
+            let extra_change_outputs = if change > monero::Amount::ONE_XMR { EXTRA_CHANGE_OUTPUTS } else { 0 };
+            let change_per_extra_output = change / (extra_change_outputs + 1); // won't panic: always > 0
+
+            tracing::debug!("Splitting change into {} outputs", extra_change_outputs + 1);
             
-        }
+            // Create a multi dest tx which spends the specified amount to the destination address
+            // and splits the change into extra outputs.
+            let mut addresses = CxxVector::<CxxString>::new();
+
+            // Add the destination address
+            let self_address = self.main_address();
+            let_cxx_string!(self_address = self_address.to_string());
+            ffi::vector_string_push_back(addresses.pin_mut(), &self_address);
+
+            // Add the extra change outputs
+            for _ in 0..extra_change_outputs {
+                ffi::vector_string_push_back(addresses.pin_mut(), &self_address);
+            }
+            
+            // Add the amounts
+            let mut amounts = CxxVector::<u64>::new();
+            amounts.pin_mut().push(amount);
+            for _ in 0..extra_change_outputs {
+                amounts.pin_mut().push(change_per_extra_output.as_pico());
+            }
+            
+            let mut tx = PendingTransaction(
+                ffi::createTransactionMultiDest(self.inner.pinned(), &addresses, &amounts)
+            );
+
+            std::mem::swap(&mut pending_tx, &mut tx); // swap the pending transaction with the new one
+            self.dispose_transaction(tx); // dispose the old transaction
+       }
 
         // Get the txid from the pending transaction before we publish,
         // otherwise it might be null.
@@ -1827,6 +1857,30 @@ impl PendingTransaction {
         ))
     }
 
+    /// Get the output amount of the pending transaction.
+    fn output_amount(&self) -> anyhow::Result<monero::Amount> {
+        let output_amount = self.deref().amount().context("Failed to get output amount: FFI call failed with exception")?;
+        Ok(monero::Amount::from_pico(output_amount))
+    }
+
+    /// Get the change amount of the pending transaction.
+    fn change(&self) -> anyhow::Result<monero::Amount> {
+        let change = self.deref().change().context("Failed to get change amount: FFI call failed with exception")?;
+        Ok(monero::Amount::from_pico(change))
+    }
+
+    /// Get the fee of the pending transaction.
+    fn fee(&self) -> anyhow::Result<monero::Amount> {
+        let fee = self.deref().fee().context("Failed to get fee: FFI call failed with exception")?;
+        Ok(monero::Amount::from_pico(fee))
+    }
+
+    /// Get the dust of the pending transaction.
+    fn dust(&self) -> anyhow::Result<monero::Amount> {
+        let dust = self.deref().dust().context("Failed to get dust: FFI call failed with exception")?;
+        Ok(monero::Amount::from_pico(dust))
+    }
+    
     /// Publish this transaction to the blockchain or return an error.
     ///
     /// **Important**: you still have to dispose the transaction.
