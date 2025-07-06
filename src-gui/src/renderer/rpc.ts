@@ -29,9 +29,16 @@ import {
   ResolveApprovalResponse,
   RedactArgs,
   RedactResponse,
+  GetCurrentSwapResponse,
   LabeledMoneroAddress,
+  GetPendingApprovalsArgs,
+  GetPendingApprovalsResponse,
 } from "models/tauriModel";
-import { rpcSetBalance, rpcSetSwapInfo } from "store/features/rpcSlice";
+import {
+  rpcSetBalance,
+  rpcSetSwapInfo,
+  approvalRequestsReplaced,
+} from "store/features/rpcSlice";
 import { store } from "./store/storeRenderer";
 import { Maker } from "models/apiModel";
 import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
@@ -174,11 +181,22 @@ export async function withdrawBtc(address: string): Promise<string> {
 }
 
 export async function buyXmr(
-  seller: Maker,
   bitcoin_change_address: string | null,
   monero_receive_address: string,
   donation_percentage: DonateToDevelopmentTip,
 ) {
+  // Get all available makers from the Redux store
+  const state = store.getState();
+  const allMakers = [
+    ...(state.makers.registry.makers || []),
+    ...state.makers.rendezvous.makers,
+  ];
+
+  // Convert all makers to multiaddr format
+  const sellers = allMakers.map((maker) =>
+    providerToConcatenatedMultiAddr(maker),
+  );
+
   const address_pool: LabeledMoneroAddress[] = [];
   if (donation_percentage !== false) {
     const donation_address = isTestnet()
@@ -206,7 +224,8 @@ export async function buyXmr(
   }
 
   await invoke<BuyXmrArgs, BuyXmrResponse>("buy_xmr", {
-    seller: providerToConcatenatedMultiAddr(seller),
+    rendezvous_points: PRESET_RENDEZVOUS_POINTS,
+    sellers,
     monero_receive_pool: address_pool,
     bitcoin_change_address,
   });
@@ -220,6 +239,10 @@ export async function resumeSwap(swapId: string) {
 
 export async function suspendCurrentSwap() {
   await invokeNoArgs<SuspendCurrentSwapResponse>("suspend_current_swap");
+}
+
+export async function getCurrentSwapId() {
+  return await invokeNoArgs<GetCurrentSwapResponse>("get_current_swap");
 }
 
 export async function getMoneroRecoveryKeys(
@@ -405,10 +428,23 @@ export async function resolveApproval(
   requestId: string,
   accept: object,
 ): Promise<void> {
-  await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
-    "resolve_approval_request",
-    { request_id: requestId, accept },
+  try {
+    await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
+      "resolve_approval_request",
+      { request_id: requestId, accept },
+    );
+  } catch (error) {
+    // Refresh approval list when resolve fails to keep UI in sync
+    await refreshApprovals();
+    throw error;
+  }
+}
+
+export async function refreshApprovals(): Promise<void> {
+  const response = await invokeNoArgs<GetPendingApprovalsResponse>(
+    "get_pending_approvals",
   );
+  store.dispatch(approvalRequestsReplaced(response.approvals));
 }
 
 export async function checkSeed(seed: string): Promise<boolean> {

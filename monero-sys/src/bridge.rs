@@ -274,6 +274,13 @@ pub mod ffi {
             tx: *mut PendingTransaction,
         ) -> Result<()>;
 
+        /// Sign a message with the wallet's private key.
+        fn signMessage(
+            wallet: Pin<&mut Wallet>,
+            message: &CxxString,
+            address: &CxxString,
+            sign_with_view_key: bool,
+        ) -> Result<UniquePtr<CxxString>>;
     }
 }
 
