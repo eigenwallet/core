@@ -4,7 +4,6 @@
 
 #include "../monero/src/wallet/api/wallet2_api.h"
 #include "../monero/src/wallet/api/wallet_manager.h"
-#include "../monero/src/wallet/api/pending_transaction.h"
 
 /**
  * This file contains some C++ glue code needed to make the FFI work.
@@ -213,36 +212,6 @@ namespace Monero
     inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxIds(const PendingTransaction &tx)
     {
         return std::make_unique<std::vector<std::string>>(tx.txid());
-    }
-
-    /**
-     * Get the change amount from a pending transaction.
-     * This requires accessing the internal PendingTransactionImpl as the public API doesn't expose change information.
-     *
-     * Returns the total change amount across all change outputs, or 0 if there's no change.
-     */
-    inline uint64_t pendingTransactionChangeAmount(const PendingTransaction &tx)
-    {
-        // Cast to the implementation to access internal data
-        // Note: This assumes PendingTransactionImpl is the concrete implementation
-        const auto *impl = dynamic_cast<const PendingTransactionImpl *>(&tx);
-        if (!impl)
-        {
-            return 0;
-        }
-
-        // Access the internal transaction data
-        // Each pending_tx in m_pending_tx has a change_dts field that contains the change destination
-        uint64_t total_change = 0;
-
-        // Iterate through all pending transactions (in case of split transactions)
-        for (const auto &ptx : impl->m_pending_tx)
-        {
-            // The change amount is stored in the change_dts (change destination) field
-            total_change += ptx.change_dts.amount;
-        }
-
-        return total_change;
     }
 
     inline std::unique_ptr<std::string> walletFilename(const Wallet &wallet)

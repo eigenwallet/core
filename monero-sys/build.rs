@@ -25,7 +25,13 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[embedded_patch!(
     "wallet2_api_allow_subtract_from_fee",
     "Adds subtract_fee_from_outputs parameter to wallet2_api transaction creation methods",
     "patches/wallet2_api_allow_subtract_from_fee.patch"
-)];
+),
+embedded_patch!(
+    "wallet2_api_expose_pending_tx_change",
+    "Exposes the change amount of a pending transaction",
+    "patches/wallet2_api_expose_pending_tx_change.patch"
+),
+];
 
 fn main() {
     let is_github_actions: bool = std::env::var("GITHUB_ACTIONS").is_ok();
@@ -242,6 +248,7 @@ fn main() {
 
     // Static linking for boost
     println!("cargo:rustc-link-lib=static=boost_serialization");
+    println!("cargo:rustc-link-lib=static=boost_wserialization");
     println!("cargo:rustc-link-lib=static=boost_filesystem");
     println!("cargo:rustc-link-lib=static=boost_thread");
     println!("cargo:rustc-link-lib=static=boost_chrono");
@@ -283,6 +290,7 @@ fn main() {
         .flag_if_supported("-std=c++17")
         .include("src") // Include the bridge.h file
         .include("monero/src") // Includes the monero headers
+        .include("monero/external") // Includes the monero external headers (for boost)
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
         .include("/opt/homebrew/include") // Homebrew include path for Boost
@@ -300,6 +308,7 @@ fn main() {
             .unwrap_or_else(|| "/opt/homebrew".into());
 
         build.include(format!("{}/include", brew_prefix)); // Homebrew include path for Boost
+        build.include("monero/external"); // Includes the monero external headers (for boost)
     }
 
     build.compile("monero-sys");

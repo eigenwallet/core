@@ -1,0 +1,48 @@
+# For out Monero output management, we need to know the change amount of a pending transaction.
+# This patch adds a change() method to the PendingTransaction interface that simply returns
+# the sum of the change outputs of the transactions.
+
+diff --git a/src/wallet/api/pending_transaction.cpp b/src/wallet/api/pending_transaction.cpp
+index 2dd118ea3..a6d103718 100644
+--- a/src/wallet/api/pending_transaction.cpp
++++ b/src/wallet/api/pending_transaction.cpp
+@@ -185,6 +185,15 @@ std::string PendingTransactionImpl::convertTxToStr()
+     return ""; // m_status != Status_Ok
+ }
+ 
++uint64_t PendingTransactionImpl::change() const
++{
++    uint64_t result = 0;
++    for (const auto &ptx : m_pending_tx) {
++        result += ptx.change_dts.amount;
++    }
++    return result;
++}
++
+ uint64_t PendingTransactionImpl::amount() const
+ {
+     uint64_t result = 0;
+diff --git a/src/wallet/api/pending_transaction.h b/src/wallet/api/pending_transaction.h
+index c5f4328a8..8312a07a5 100644
+--- a/src/wallet/api/pending_transaction.h
++++ b/src/wallet/api/pending_transaction.h
+@@ -46,6 +46,7 @@ public:
+     int status() const override;
+     std::string errorString() const override;
+     bool commit(const std::string &filename = "", bool overwrite = false) override;
++    uint64_t change() const override;
+     uint64_t amount() const override;
+     uint64_t dust() const override;
+     uint64_t fee() const override;
+diff --git a/src/wallet/api/wallet2_api.h b/src/wallet/api/wallet2_api.h
+index ca807ac87..321bb3a9c 100644
+--- a/src/wallet/api/wallet2_api.h
++++ b/src/wallet/api/wallet2_api.h
+@@ -127,6 +127,7 @@ struct PendingTransaction
+     virtual std::string errorString() const = 0;
+     // commit transaction or save to file if filename is provided.
+     virtual bool commit(const std::string &filename = "", bool overwrite = false) = 0;
++    virtual uint64_t change() const = 0;
+     virtual uint64_t amount() const = 0;
+     virtual uint64_t dust() const = 0;
+     virtual uint64_t fee() const = 0;
