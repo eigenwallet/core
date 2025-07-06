@@ -516,7 +516,7 @@ impl WalletHandle {
         percentages: &[f64],
     ) -> anyhow::Result<Vec<TxReceipt>> {
         tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping multi");
-        
+
         let percentages = percentages.to_vec();
         let addresses = addresses.to_vec();
 
@@ -755,12 +755,12 @@ impl WalletHandle {
     }
 
     /// Sign a message with the wallet's private key.
-    /// 
+    ///
     /// # Arguments
     /// * `message` - The message to sign (arbitrary byte data)
     /// * `address` - The address to use for signing (uses main address if None)
     /// * `sign_with_view_key` - Whether to sign with view key instead of spend key (default: false)
-    /// 
+    ///
     /// # Returns
     /// A proof type prefix + base58 encoded signature
     pub async fn sign_message(
@@ -771,7 +771,7 @@ impl WalletHandle {
     ) -> anyhow::Result<String> {
         let message = message.to_string();
         let address = address.map(|s| s.to_string());
-        
+
         self.call(move |wallet| {
             wallet.sign_message(&message, address.as_deref(), sign_with_view_key)
         })
@@ -1092,13 +1092,9 @@ impl WalletManager {
         };
 
         let wallet_pointer = unsafe {
-            self.inner.pinned().openWallet(
-                &path,
-                &password,
-                network_type,
-                kdf_rounds,
-                listener,
-            )
+            self.inner
+                .pinned()
+                .openWallet(&path, &password, network_type, kdf_rounds, listener)
         }
         .context("Failed to open wallet: FFI call failed with exception")?;
 
@@ -1884,12 +1880,12 @@ impl FfiWallet {
     }
 
     /// Sign a message with the wallet's private key.
-    /// 
+    ///
     /// # Arguments
     /// * `message` - The message to sign (arbitrary byte data)
     /// * `address` - The address to use for signing (uses main address if None)
     /// * `sign_with_view_key` - Whether to sign with view key instead of spend key (default: false)
-    /// 
+    ///
     /// # Returns
     /// A proof type prefix + base58 encoded signature
     pub fn sign_message(
@@ -1900,16 +1896,21 @@ impl FfiWallet {
     ) -> anyhow::Result<String> {
         let_cxx_string!(message_cxx = message);
         let_cxx_string!(address_cxx = address.unwrap_or(""));
-        
-        let signature = ffi::signMessage(self.inner.pinned(), &message_cxx, &address_cxx, sign_with_view_key)
-            .context("Failed to sign message: FFI call failed with exception")?
-            .to_string();
-        
+
+        let signature = ffi::signMessage(
+            self.inner.pinned(),
+            &message_cxx,
+            &address_cxx,
+            sign_with_view_key,
+        )
+        .context("Failed to sign message: FFI call failed with exception")?
+        .to_string();
+
         if signature.is_empty() {
             self.check_error().context("Failed to sign message")?;
             anyhow::bail!("Failed to sign message (no signature returned)");
         }
-        
+
         Ok(signature)
     }
 }

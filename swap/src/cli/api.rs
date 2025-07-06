@@ -536,7 +536,6 @@ impl Context {
     pub fn tauri_handle(&self) -> Option<TauriHandle> {
         self.tauri_handle.clone()
     }
-
 }
 
 impl fmt::Debug for Context {

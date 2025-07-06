@@ -1,7 +1,7 @@
 //! This module contains the bridge between the Monero C++ API and the Rust code.
 //! It uses the [cxx](https://cxx.rs) crate to generate the actual bindings.
 
-use cxx::{CxxString};
+use cxx::CxxString;
 use tracing::Level;
 
 /// This is the main ffi module that exposes the Monero C++ API to Rust.
@@ -106,7 +106,7 @@ pub mod ffi {
         type WalletListener;
 
         unsafe fn create_listener(
-            on_spent:    usize,
+            on_spent: usize,
             on_received: usize,
             on_unconfirmed_received: usize,
             on_new_block: usize,

@@ -52,6 +52,71 @@ import {
   dfxAuthenticate,
 } from "renderer/rpc";
 
+// Component for DFX button and modal
+function DfxButton() {
+  const [dfxUrl, setDfxUrl] = useState<string | null>(null);
+
+  const handleOpenDfx = async () => {
+    // Get authentication token and URL (this will initialize DFX if needed)
+    const response = await dfxAuthenticate();
+    setDfxUrl(response.kyc_url);
+    return response;
+  };
+
+  const handleCloseModal = () => {
+    setDfxUrl(null);
+  };
+
+  return (
+    <>
+      <PromiseInvokeButton
+        variant="outlined"
+        size="small"
+        startIcon={<DfxIcon />}
+        onInvoke={handleOpenDfx}
+        displayErrorSnackbar={true}
+      >
+        Buy Monero
+      </PromiseInvokeButton>
+
+      <Dialog
+        open={dfxUrl != null}
+        onClose={handleCloseModal}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            DFX Swiss
+            <Button onClick={handleCloseModal} size="small">
+              Close
+            </Button>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, height: "min(40rem, 80vh)" }}>
+          {dfxUrl && (
+            <iframe
+              src={dfxUrl}
+              style={{
+                width: "100%",
+                height: "100%",
+                border: "none",
+              }}
+              title="DFX Swiss"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // Component for displaying wallet address and balance
 function WalletOverview({ mainAddress, balance, isRefreshing, onRefresh }) {
   return (
@@ -70,21 +135,24 @@ function WalletOverview({ mainAddress, balance, isRefreshing, onRefresh }) {
               }}
             >
               <Typography variant="h6">Balance</Typography>
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={
-                  isRefreshing ? (
-                    <CircularProgress size={16} />
-                  ) : (
-                    <RefreshIcon />
-                  )
-                }
-                onClick={onRefresh}
-                disabled={isRefreshing}
-              >
-                {isRefreshing ? "Refreshing..." : "Refresh"}
-              </Button>
+              <Stack direction="row" spacing={1}>
+                <DfxButton />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={
+                    isRefreshing ? (
+                      <CircularProgress size={16} />
+                    ) : (
+                      <RefreshIcon />
+                    )
+                  }
+                  onClick={onRefresh}
+                  disabled={isRefreshing}
+                >
+                  {isRefreshing ? "Refreshing..." : "Refresh"}
+                </Button>
+              </Stack>
             </Box>
             <Divider />
             <Box
@@ -358,89 +426,6 @@ function TransactionHistory({ history }) {
   );
 }
 
-// Component for DFX integration
-function DfxIntegration() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [dfxUrl, setDfxUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleOpenDfx = async () => {
-    setIsLoading(true);
-    try {
-      // Get authentication token and URL (this will initialize DFX if needed)
-      const response = await dfxAuthenticate();
-      setDfxUrl(response.kyc_url);
-      setIsModalOpen(true);
-    } catch (error) {
-      console.error("Failed to authenticate with DFX:", error);
-      // You might want to show an error snackbar here
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setDfxUrl(null);
-  };
-
-  return (
-    <>
-      <Card>
-        <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <Typography variant="h6">DFX Swiss</Typography>
-          <Divider />
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Typography variant="body2" color="text.secondary">
-              Buy and sell crypto with traditional banking
-            </Typography>
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={isLoading ? <CircularProgress size={16} /> : <DfxIcon />}
-              onClick={handleOpenDfx}
-              disabled={isLoading}
-            >
-              {isLoading ? "Opening..." : "Open DFX"}
-            </Button>
-          </Box>
-        </CardContent>
-      </Card>
-
-      <Dialog 
-        open={isModalOpen} 
-        onClose={handleCloseModal}
-        maxWidth="lg"
-        fullWidth
-        sx={{
-        }}
-      >
-        <DialogTitle>
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            DFX Swiss
-            <Button onClick={handleCloseModal} size="small">
-              Close
-            </Button>
-          </Box>
-        </DialogTitle>
-        <DialogContent sx={{ p: 0, height: 'min(40rem, 80vh)' }}>
-          {dfxUrl && (
-            <iframe
-              src={dfxUrl}
-              style={{
-                width: "100%",
-                height: "100%",
-                border: "none",
-              }}
-              title="DFX Swiss"
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
   const { mainAddress, balance, syncProgress, history, isRefreshing } =
@@ -486,8 +471,6 @@ export default function MoneroWalletPage() {
       />
 
       <SyncProgress syncProgress={syncProgress} />
-
-      <DfxIntegration />
 
       <SendTransaction balance={balance} onSend={handleSendTransaction} />
 
