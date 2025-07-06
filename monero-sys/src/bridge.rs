@@ -54,6 +54,9 @@ pub mod ffi {
         /// A pending transaction.
         type PendingTransaction;
 
+        /// A UTXO.
+        type EnoteDetails;
+
         /// A wallet listener.
         ///
         /// Can be attached to a wallet and will get notified upon specific events.
@@ -282,6 +285,24 @@ pub mod ffi {
             self: Pin<&mut Wallet>,
             tx: *mut PendingTransaction,
         ) -> Result<()>;
+
+        /// The amount of an enote.
+        fn amount(self: &EnoteDetails) -> Result<u64>;
+
+        /// The blockheight when the enote was created.
+        fn blockHeight(self: &EnoteDetails) -> Result<u64>;
+
+        /// Global index of this enote.
+        fn globalEnoteIndex(self: &EnoteDetails) -> Result<u64>;
+
+        /// Internal index of this enote.
+        fn internalEnoteIndex(self: &EnoteDetails) -> Result<u64>;
+
+        /// Whether or not this enote was spent.
+        fn isSpent(self: &EnoteDetails) -> Result<bool>;
+
+        /// Whether or not this enote is frozen.
+        fn isFrozen(self: &EnoteDetails) -> Result<bool>;
 
         /// Sign a message with the wallet's private key.
         fn signMessage(
