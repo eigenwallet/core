@@ -9,7 +9,7 @@ const STAGENET_WALLET_RESTORE_HEIGHT: u64 = 1728128;
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,simple=trace,monero_sys=trace",
+            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_cpp=error,split_change=trace,monero_sys=trace",
         )
         .with_test_writer()
         .init();
@@ -31,7 +31,10 @@ async fn main() {
         STAGENET_WALLET_RESTORE_HEIGHT,
         true,
         daemon,
-        ChangeManagement::Default,
+        ChangeManagement::Split {
+            extra_outputs: 5,
+            threshold: Amount::ZERO,
+        },
     )
     .await
     .expect("Failed to recover wallet");
@@ -57,7 +60,7 @@ async fn main() {
     tracing::info!("Unlocked balance: {}", unlocked_balance);
 
     assert!(balance > Amount::ZERO);
-    assert!(unlocked_balance > Amount::ZERO);
+    assert!(unlocked_balance > Amount::ONE_XMR);
 
     let transfer_amount = Amount::ONE_XMR;
     tracing::info!("Transferring 1 XMR to ourselves");

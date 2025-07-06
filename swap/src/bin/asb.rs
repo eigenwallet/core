@@ -15,7 +15,7 @@
 use anyhow::{bail, Context, Result};
 use comfy_table::Table;
 use libp2p::Swarm;
-use monero_sys::Daemon;
+use monero_sys::{ChangeManagement, Daemon};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::convert::TryInto;
@@ -480,6 +480,19 @@ async fn init_monero_wallet(
 ) -> Result<Arc<monero::Wallets>> {
     tracing::debug!("Initializing Monero wallets");
 
+    // Choose a change management strategy based on the config
+    let change_management = match (
+        config.monero.change.extra_outputs,
+        config.monero.change.threshold,
+    ) {
+        (Some(extra_outputs), threshold) => ChangeManagement::Split {
+            extra_outputs,
+            threshold: ::monero::Amount::from_xmr(threshold.unwrap_or(0.))
+                .context("Couldn't parse change splitting threshold from specified number")?,
+        },
+        _ => ChangeManagement::Default,
+    };
+
     let daemon = if config.monero.monero_node_pool {
         // Start the monero-rpc-pool and use it
         tracing::info!("Starting Monero RPC Pool for ASB");
@@ -522,6 +535,7 @@ async fn init_monero_wallet(
         env_config.monero_network,
         false,
         None,
+        change_management,
     )
     .await
     .context("Failed to initialize Monero wallets")?;

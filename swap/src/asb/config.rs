@@ -80,7 +80,7 @@ const DEFAULT_MIN_BUY_AMOUNT: f64 = 0.002f64;
 const DEFAULT_MAX_BUY_AMOUNT: f64 = 0.02f64;
 const DEFAULT_SPREAD: f64 = 0.02f64;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub data: Data,
@@ -235,7 +235,7 @@ fn default_use_mempool_space_fee_estimation() -> bool {
     true
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Monero {
     pub daemon_url: Url,
@@ -244,10 +244,38 @@ pub struct Monero {
     pub network: monero::Network,
     #[serde(default = "default_monero_node_pool")]
     pub monero_node_pool: bool,
+    pub change: Change
 }
 
 fn default_monero_node_pool() -> bool {
     false
+}
+
+/// Specify a strategy for handling change.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Change {
+    #[serde(default = "default_change_extra_outputs")]
+    pub extra_outputs: Option<usize>,
+    #[serde(default = "default_change_threshold")]
+    pub threshold: Option<f64>,
+}
+
+fn default_change_extra_outputs() -> Option<usize> {
+    Some(3)
+}
+
+fn default_change_threshold() -> Option<f64> {
+    Some(1.0)
+}
+
+impl Default for Change {
+    fn default() -> Self {
+        Self {
+            extra_outputs: default_change_extra_outputs(),
+            threshold: default_change_threshold(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -472,6 +500,7 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
             finality_confirmations: None,
             network: monero_network,
             monero_node_pool: false,
+            change: Change::default()
         },
         tor: TorConf {
             register_hidden_service,
@@ -523,6 +552,7 @@ mod tests {
                 finality_confirmations: None,
                 network: monero::Network::Stagenet,
                 monero_node_pool: false,
+                change: Change::default(),
             },
             tor: Default::default(),
             maker: Maker {
@@ -569,6 +599,7 @@ mod tests {
                 finality_confirmations: None,
                 network: monero::Network::Mainnet,
                 monero_node_pool: false,
+                change: Change::default(),
             },
             tor: Default::default(),
             maker: Maker {
@@ -625,6 +656,7 @@ mod tests {
                 finality_confirmations: None,
                 network: monero::Network::Mainnet,
                 monero_node_pool: false,
+                change: Change::default(),
             },
             tor: Default::default(),
             maker: Maker {

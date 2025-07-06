@@ -1,4 +1,4 @@
-use monero_sys::{Daemon, WalletHandle};
+use monero_sys::{ChangeManagement, Daemon, WalletHandle};
 
 const STAGENET_REMOTE_NODE: &str = "node.sethforprivacy.com:38089";
 
@@ -21,6 +21,7 @@ async fn main() {
             daemon.clone(),
             monero::Network::Stagenet,
             true,
+            ChangeManagement::Default,
         )
         .await
         .expect("Failed to create wallet");
@@ -41,6 +42,7 @@ async fn main() {
             daemon.clone(),
             monero::Network::Stagenet,
             true,
+            ChangeManagement::Default,
         )
         .await
         .expect("Failed to create wallet");

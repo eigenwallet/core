@@ -1,4 +1,4 @@
-use monero_sys::{Daemon, WalletHandle};
+use monero_sys::{ChangeManagement, Daemon, WalletHandle};
 
 const PLACEHOLDER_NODE: &str = "http://127.0.0.1:18081";
 
@@ -24,6 +24,7 @@ async fn test_sign_message() {
         daemon,
         monero::Network::Stagenet,
         false, // No background sync
+        ChangeManagement::Default,
     )
     .await
     .expect("Failed to create wallet");

@@ -1,5 +1,5 @@
 use monero::Network;
-use monero_sys::{Daemon, WalletHandle};
+use monero_sys::{ChangeManagement, Daemon, WalletHandle};
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -30,6 +30,7 @@ async fn test_wallet_with_special_paths() {
                     daemon,
                     Network::Mainnet,
                     true,
+                    ChangeManagement::Default,
                 )
                 .await;
 

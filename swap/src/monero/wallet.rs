@@ -9,6 +9,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use monero::{Address, Network};
+use monero_sys::ChangeManagement;
 pub use monero_sys::{Daemon, WalletHandle as Wallet};
 use uuid::Uuid;
 
@@ -34,6 +35,8 @@ pub struct Wallets {
     /// waiting for a transaction to be confirmed.
     #[expect(dead_code)]
     tauri_handle: Option<TauriHandle>,
+    /// The strategy to use for change management.
+    change_management: ChangeManagement,
 }
 
 /// A request to watch for a transfer.
@@ -69,12 +72,14 @@ impl Wallets {
         network: Network,
         regtest: bool,
         tauri_handle: Option<TauriHandle>,
+        change_management: ChangeManagement,
     ) -> Result<Self> {
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
             daemon.clone(),
             network,
             true,
+            change_management,
         )
         .await
         .context("Failed to open main wallet")?;
@@ -92,6 +97,7 @@ impl Wallets {
             main_wallet,
             regtest,
             tauri_handle,
+            change_management,
         };
 
         Ok(wallets)
@@ -134,6 +140,7 @@ impl Wallets {
             blockheight,
             false, // We don't sync the swap wallet, just import the transaction
             self.daemon.clone(),
+            self.change_management.clone(),
         )
         .await
         .context(format!(

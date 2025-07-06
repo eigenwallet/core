@@ -15,6 +15,7 @@ use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
 use futures::future::try_join_all;
+use monero_sys::ChangeManagement;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -620,6 +621,7 @@ async fn init_monero_wallet(
         network,
         false,
         tauri_handle,
+        ChangeManagement::Default,
     )
     .await
     .context("Failed to initialize Monero wallets")?;

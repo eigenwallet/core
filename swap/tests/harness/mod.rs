@@ -9,7 +9,7 @@ use get_port::get_port;
 use libp2p::core::Multiaddr;
 use libp2p::PeerId;
 use monero_harness::{image, Monero};
-use monero_sys::Daemon;
+use monero_sys::{ChangeManagement, Daemon};
 use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
@@ -314,6 +314,10 @@ async fn init_test_wallets(
         monero::Network::Mainnet,
         true,
         None,
+        ChangeManagement::Split {
+            extra_outputs: 3,
+            threshold: ::monero::Amount::ONE_XMR,
+        },
     )
     .await
     .unwrap();

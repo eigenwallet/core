@@ -415,6 +415,7 @@ impl MoneroWallet {
             daemon,
             monero::Network::Mainnet,
             true,
+            ChangeManagement::Default,
         )
         .await
         .context("Failed to create or open wallet")?;
@@ -483,7 +484,7 @@ impl MoneroWallet {
         );
         let amount = Amount::from_pico(amount_pico);
         self.wallet
-            .transfer(address, amount, ChangeManagement::Default)
+            .transfer(address, amount)
             .await
             .context("Failed to perform transfer")
     }
