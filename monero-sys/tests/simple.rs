@@ -1,5 +1,5 @@
 use monero::Amount;
-use monero_sys::{Daemon, SyncProgress, WalletHandle};
+use monero_sys::{ChangeManagement, Daemon, SyncProgress, WalletHandle};
 
 const STAGENET_REMOTE_NODE: &str = "http://node.sethforprivacy.com:38089";
 const STAGENET_WALLET_SEED: &str = "echo ourselves ruined oven masterful wives enough addicted future cottage illness adopt lucky movement tiger taboo imbalance antics iceberg hobby oval aloof tuesday uttered oval";
@@ -62,7 +62,7 @@ async fn main() {
     tracing::info!("Transferring 1 XMR to ourselves");
 
     wallet
-        .transfer(&wallet.main_address().await, transfer_amount, false)
+        .transfer(&wallet.main_address().await, transfer_amount, ChangeManagement::Default)
         .await
         .unwrap();
 

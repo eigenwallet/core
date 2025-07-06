@@ -30,7 +30,7 @@ use tokio::time;
 use monero::{Address, Amount};
 use monero_rpc::monerod::MonerodRpc as _;
 use monero_rpc::monerod::{self, GenerateBlocks};
-use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, WalletHandle};
+use monero_sys::{no_listener, ChangeManagement, Daemon, SyncProgress, TxReceipt, WalletHandle};
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
 
@@ -483,7 +483,7 @@ impl MoneroWallet {
         );
         let amount = Amount::from_pico(amount_pico);
         self.wallet
-            .transfer(address, amount, false)
+            .transfer(address, amount, ChangeManagement::Default)
             .await
             .context("Failed to perform transfer")
     }

@@ -123,6 +123,21 @@ pub struct Daemon {
     pub ssl: bool,
 }
 
+/// Configure how the wallet will handle change, if any.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum ChangeManagement {
+    /// Handle change as usual.
+    #[default]
+    Default,
+    /// Split change into `extra_outputs + 1` outputs, if it's more than a specified threshold
+    Split {
+        /// The number of extra outputs to create.
+        extra_outputs: usize,
+        /// The change is only split, if it's more than this threshold.
+        threshold: monero::Amount,
+    }
+}
+
 /// A wrapper around a pending transaction.
 pub struct PendingTransaction(*mut ffi::PendingTransaction);
 
@@ -396,12 +411,12 @@ impl WalletHandle {
         &self,
         address: &monero::Address,
         amount: monero::Amount,
-        split_change: bool,
+        change_management: ChangeManagement,
     ) -> anyhow::Result<TxReceipt> {
         let address = *address;
 
         retry_notify(backoff(None, None), || async {
-            self.call(move |wallet| wallet.transfer(&address, amount, split_change))
+            self.call(move |wallet| wallet.transfer(&address, amount, change_management))
                 .await
                 .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
@@ -1435,10 +1450,8 @@ impl FfiWallet {
         &mut self,
         address: &monero::Address,
         amount: monero::Amount,
-        split_change: bool,
+        change_management: ChangeManagement,
     ) -> anyhow::Result<TxReceipt> {
-        const EXTRA_CHANGE_OUTPUTS: u64 = 3;
-        
         tracing::debug!(destination_address=%address, "Transferring {}", amount);
         
         let_cxx_string!(address = address.to_string());
@@ -1449,42 +1462,47 @@ impl FfiWallet {
             .context("Failed to create transaction: FFI call failed with exception")?;
         let mut pending_tx = PendingTransaction(raw_transaction);
 
-        // If `split_change` is enabled, we split the change into 3 extra outputs
-        if split_change {
-            let change = pending_tx.change().context("Failed to get change amount: FFI call failed with exception")?;
-            let extra_change_outputs = if change > monero::Amount::ONE_XMR { EXTRA_CHANGE_OUTPUTS } else { 0 };
-            let change_per_extra_output = change / (extra_change_outputs + 1); // won't panic: always > 0
+        match change_management {
+            // Default behavior: let Monero handle change
+            ChangeManagement::Default => {
+            }
+            // If `split_change` is enabled, we split the change into multiple outputs
+            ChangeManagement::Split { extra_outputs, threshold } => {
+                let change = pending_tx.change().context("Failed to get change amount: FFI call failed with exception")?;
+                let extra_change_outputs = if change > threshold { extra_outputs } else { 0 };
+                let change_per_extra_output = change / (extra_change_outputs + 1) as u64; // won't panic: always > 0
 
-            tracing::debug!("Splitting change into {} outputs", extra_change_outputs + 1);
-            
-            // Create a multi dest tx which spends the specified amount to the destination address
-            // and splits the change into extra outputs.
-            let mut addresses = CxxVector::<CxxString>::new();
+                tracing::debug!("Splitting change into {} outputs", extra_change_outputs + 1);
 
-            // Add the destination address
-            let self_address = self.main_address();
-            let_cxx_string!(self_address = self_address.to_string());
-            ffi::vector_string_push_back(addresses.pin_mut(), &self_address);
+                // Create a multi dest tx which spends the specified amount to the destination address
+                // and splits the change into extra outputs.
+                let mut addresses = CxxVector::<CxxString>::new();
 
-            // Add the extra change outputs
-            for _ in 0..extra_change_outputs {
+                // Add the destination address
+                let self_address = self.main_address();
+                let_cxx_string!(self_address = self_address.to_string());
                 ffi::vector_string_push_back(addresses.pin_mut(), &self_address);
-            }
-            
-            // Add the amounts
-            let mut amounts = CxxVector::<u64>::new();
-            amounts.pin_mut().push(amount);
-            for _ in 0..extra_change_outputs {
-                amounts.pin_mut().push(change_per_extra_output.as_pico());
-            }
-            
-            let mut tx = PendingTransaction(
-                ffi::createTransactionMultiDest(self.inner.pinned(), &addresses, &amounts)
-            );
 
-            std::mem::swap(&mut pending_tx, &mut tx); // swap the pending transaction with the new one
-            self.dispose_transaction(tx); // dispose the old transaction
-       }
+                // Add the extra change outputs
+                for _ in 0..extra_change_outputs {
+                    ffi::vector_string_push_back(addresses.pin_mut(), &self_address);
+                }
+
+                // Add the amounts
+                let mut amounts = CxxVector::<u64>::new();
+                amounts.pin_mut().push(amount);
+                for _ in 0..extra_change_outputs {
+                    amounts.pin_mut().push(change_per_extra_output.as_pico());
+                }
+
+                let mut tx = PendingTransaction(
+                    ffi::createTransactionMultiDest(self.inner.pinned(), &addresses, &amounts)
+                );
+
+                std::mem::swap(&mut pending_tx, &mut tx); // swap the pending transaction with the new one
+                self.dispose_transaction(tx); // dispose the old transaction
+            },
+        }
 
         // Get the txid from the pending transaction before we publish,
         // otherwise it might be null.

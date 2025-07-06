@@ -13,6 +13,7 @@ use crate::protocol::alice::{AliceState, Swap};
 use crate::{bitcoin, monero};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
+use monero_sys::ChangeManagement;
 use tokio::select;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -163,7 +164,7 @@ where
                     let receipt = monero_wallet
                         .main_wallet()
                         .await
-                        .transfer(&address, amount, true)
+                        .transfer(&address, amount, ChangeManagement::Split { extra_outputs: 3, threshold: ::monero::Amount::ONE_XMR })
                         .await
                         .map_err(|e| tracing::error!(err=%e, "Failed to lock Monero"))
                         .ok();
