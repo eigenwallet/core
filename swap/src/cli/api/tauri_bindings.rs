@@ -331,7 +331,6 @@ impl TauriHandle {
             }
         }
     }
-
 }
 
 impl Display for ApprovalRequest {
@@ -554,7 +553,6 @@ impl TauriEmitter for Option<TauriHandle> {
 }
 
 impl TauriHandle {
-
     #[cfg(feature = "tauri")]
     pub async fn get_pending_approvals(&self) -> Result<Vec<ApprovalRequest>> {
         let pending_map = self

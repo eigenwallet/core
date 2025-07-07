@@ -266,7 +266,11 @@ impl LabeledMoneroAddress {
         })
     }
 
-    pub fn with_address(address: monero::Address, percentage: Decimal, label: String) -> Result<Self> {
+    pub fn with_address(
+        address: monero::Address,
+        percentage: Decimal,
+        label: String,
+    ) -> Result<Self> {
         Self::new(address, percentage, label)
     }
 
@@ -374,11 +378,13 @@ impl MoneroAddressPool {
         Ok(())
     }
 
-    /// Returns 
+    /// Returns
     pub fn fill_empty_addresses(&self, primary_address: monero::Address) -> Vec<monero::Address> {
-        self.0.iter().map(|address| address.address().unwrap_or(primary_address)).collect()
+        self.0
+            .iter()
+            .map(|address| address.address().unwrap_or(primary_address))
+            .collect()
     }
-
 }
 
 impl From<::monero::Address> for MoneroAddressPool {

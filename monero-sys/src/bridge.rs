@@ -363,11 +363,20 @@ pub mod wallet_listener {
         // Callback methods invoked from C++
         fn money_spent(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64);
         fn money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64);
-        fn unconfirmed_money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64);
+        fn unconfirmed_money_received(
+            listener: &mut WalletListenerBox,
+            txid: &CxxString,
+            amount: u64,
+        );
         fn new_block(listener: &mut WalletListenerBox, height: u64);
         fn updated(listener: &mut WalletListenerBox);
         fn refreshed(listener: &mut WalletListenerBox);
-        fn on_reorg(listener: &mut WalletListenerBox, height: u64, blocks_detached: u64, transfers_detached: usize);
+        fn on_reorg(
+            listener: &mut WalletListenerBox,
+            height: u64,
+            blocks_detached: u64,
+            transfers_detached: usize,
+        );
         fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString);
     }
 
@@ -382,7 +391,9 @@ pub mod wallet_listener {
 
         // Functions implemented in bridge.h that create / destroy the adapter.
         #[namespace = "wallet_listener"]
-        unsafe fn create_rust_listener_adapter(listener: Box<WalletListenerBox>) -> *mut MoneroWalletListener;
+        unsafe fn create_rust_listener_adapter(
+            listener: Box<WalletListenerBox>,
+        ) -> *mut MoneroWalletListener;
         #[namespace = "wallet_listener"]
         unsafe fn destroy_rust_listener_adapter(ptr: *mut MoneroWalletListener);
     }
@@ -438,7 +449,8 @@ impl WalletEventListener for WalletListenerBox {
     }
 
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
-        self.inner.on_reorg(height, blocks_detached, transfers_detached);
+        self.inner
+            .on_reorg(height, blocks_detached, transfers_detached);
     }
 
     fn on_pool_tx_removed(&self, txid: &str) {
@@ -463,7 +475,6 @@ impl TraceListener {
     pub fn new_default() -> Self {
         Self::new("unknown".to_string())
     }
-
 }
 
 impl Default for TraceListener {
@@ -475,27 +486,27 @@ impl Default for TraceListener {
 impl WalletEventListener for TraceListener {
     fn on_money_spent(&self, txid: &str, amount: u64) {
         tracing::info!(
-            "[{}] Money spent: {} XMR in transaction {}", 
+            "[{}] Money spent: {} XMR in transaction {}",
             self.filename,
-            amount as f64 / 1e12, 
+            amount as f64 / 1e12,
             txid
         );
     }
 
     fn on_money_received(&self, txid: &str, amount: u64) {
         tracing::info!(
-            "[{}] Money received: {} XMR in transaction {}", 
+            "[{}] Money received: {} XMR in transaction {}",
             self.filename,
-            amount as f64 / 1e12, 
+            amount as f64 / 1e12,
             txid
         );
     }
 
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
         tracing::info!(
-            "[{}] Unconfirmed money received: {} XMR in transaction {}", 
+            "[{}] Unconfirmed money received: {} XMR in transaction {}",
             self.filename,
-            amount as f64 / 1e12, 
+            amount as f64 / 1e12,
             txid
         );
     }
@@ -521,7 +532,7 @@ impl WalletEventListener for TraceListener {
 
     fn on_pool_tx_removed(&self, txid: &str) {
         tracing::info!(
-            "[{}] Transaction removed from pool: {}", 
+            "[{}] Transaction removed from pool: {}",
             self.filename,
             txid
         );
@@ -553,7 +564,12 @@ pub fn refreshed(listener: &mut WalletListenerBox) {
     listener.on_refreshed();
 }
 
-pub fn on_reorg(listener: &mut WalletListenerBox, height: u64, blocks_detached: u64, transfers_detached: usize) {
+pub fn on_reorg(
+    listener: &mut WalletListenerBox,
+    height: u64,
+    blocks_detached: u64,
+    transfers_detached: usize,
+) {
     listener.on_reorg(height, blocks_detached, transfers_detached);
 }
 

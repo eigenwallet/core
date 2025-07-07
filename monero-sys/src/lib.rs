@@ -12,7 +12,7 @@
 
 mod bridge;
 pub use bridge::wallet_listener;
-pub use bridge::{TraceListener, WalletListenerBox, WalletEventListener};
+pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 
 use std::sync::{Arc, Mutex};
 use std::{
@@ -39,7 +39,7 @@ pub struct WalletHandle {
 }
 
 impl WalletHandle {
-    pub fn new(call_sender: UnboundedSender<Call>) -> Self {
+    fn new(call_sender: UnboundedSender<Call>) -> Self {
         Self { call_sender }
     }
 }
@@ -78,7 +78,6 @@ struct WalletManager {
     /// A wrapper around the raw C++ wallet manager pointer.
     inner: RawWalletManager,
 }
-
 
 /// This is our own wrapper around a raw C++ wallet manager pointer.
 struct RawWalletManager {
@@ -205,7 +204,7 @@ impl WalletHandle {
 
         // Ensure the wallet was created successfully by performing a dummy call
         let wallet = WalletHandle::new(call_sender);
-        
+
         wallet
             .check_wallet()
             .await
@@ -523,7 +522,7 @@ impl WalletHandle {
         percentages: &[f64],
     ) -> anyhow::Result<Vec<TxReceipt>> {
         tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping multi");
-        
+
         let percentages = percentages.to_vec();
         let addresses = addresses.to_vec();
 
@@ -850,7 +849,14 @@ impl WalletManager {
             tracing::debug!(wallet=%path, "Wallet already exists, opening it");
 
             return self
-                .open_wallet(path, password, network, background_sync, daemon, Box::new(TraceListener::new(path.to_string())))
+                .open_wallet(
+                    path,
+                    password,
+                    network,
+                    background_sync,
+                    daemon,
+                    Box::new(TraceListener::new(path.to_string())),
+                )
                 .context(format!("Failed to open wallet `{}`", &path));
         }
 
@@ -907,7 +913,14 @@ impl WalletManager {
             tracing::info!(wallet=%path, "Wallet already exists, opening it");
 
             return self
-                .open_wallet(path, password, network, background_sync, daemon.clone(), Box::new(TraceListener::new(path.to_string())))
+                .open_wallet(
+                    path,
+                    password,
+                    network,
+                    background_sync,
+                    daemon.clone(),
+                    Box::new(TraceListener::new(path.to_string())),
+                )
                 .context(format!("Failed to open wallet `{}`", &path));
         }
 
@@ -1116,50 +1129,48 @@ impl WalletEventListener for Arc<Mutex<Vec<Box<dyn WalletEventListener>>>> {
             listener.on_money_spent(txid, amount);
         }
     }
-    
+
     fn on_money_received(&self, txid: &str, amount: u64) {
         for listener in self.lock().unwrap().iter() {
             listener.on_money_received(txid, amount);
         }
     }
-    
+
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
         for listener in self.lock().unwrap().iter() {
             listener.on_unconfirmed_money_received(txid, amount);
         }
     }
-    
+
     fn on_new_block(&self, height: u64) {
         for listener in self.lock().unwrap().iter() {
             listener.on_new_block(height);
         }
     }
-    
+
     fn on_updated(&self) {
         for listener in self.lock().unwrap().iter() {
             listener.on_updated();
         }
     }
-    
+
     fn on_refreshed(&self) {
         for listener in self.lock().unwrap().iter() {
             listener.on_refreshed();
         }
     }
-    
+
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
         for listener in self.lock().unwrap().iter() {
             listener.on_reorg(height, blocks_detached, transfers_detached);
         }
     }
-    
+
     fn on_pool_tx_removed(&self, txid: &str) {
         for listener in self.lock().unwrap().iter() {
             listener.on_pool_tx_removed(txid);
         }
     }
-
-    
 }
 
 impl FfiWallet {
@@ -1171,8 +1182,11 @@ impl FfiWallet {
             anyhow::bail!("Failed to create wallet: got null pointer");
         }
 
-        let mut wallet = Self { inner, listeners: Arc::new(Mutex::new(vec![Box::new(TraceListener::new_default())])) };
-        
+        let mut wallet = Self {
+            inner,
+            listeners: Arc::new(Mutex::new(vec![Box::new(TraceListener::new_default())])),
+        };
+
         wallet
             .check_error()
             .context("Something went wrong while creating the wallet (not null pointer, though)")?;
@@ -1200,7 +1214,6 @@ impl FfiWallet {
             wallet.start_refresh_thread();
             wallet.force_background_refresh();
         }
-
 
         wallet.set_single_listener(Box::new(wallet.listeners.clone()));
 
@@ -1292,12 +1305,16 @@ impl FfiWallet {
         Ok(())
     }
 
-
     /// Set a listener to the wallet.
     pub fn set_single_listener(&mut self, listener: Box<dyn WalletEventListener>) {
         unsafe {
-            let listener = bridge::wallet_listener::create_rust_listener_adapter(bridge::make_custom_listener(listener)) as *mut bridge::ffi::WalletListener;
-            self.inner.pinned().setListener(listener).expect("Shouldn't panic");
+            let listener = bridge::wallet_listener::create_rust_listener_adapter(
+                bridge::make_custom_listener(listener),
+            ) as *mut bridge::ffi::WalletListener;
+            self.inner
+                .pinned()
+                .setListener(listener)
+                .expect("Shouldn't panic");
         }
     }
 

@@ -13,7 +13,10 @@ use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet};
 use uuid::Uuid;
 
-use crate::cli::api::{request::GetMoneroBalanceResponse, tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle}};
+use crate::cli::api::{
+    request::GetMoneroBalanceResponse,
+    tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle},
+};
 
 use super::{BlockHeight, TransferProof, TxHash};
 
@@ -66,7 +69,11 @@ impl TauriWalletListener {
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
 
-        Self { tauri_handle, wallet, rt_handle }
+        Self {
+            tauri_handle,
+            wallet,
+            rt_handle,
+        }
     }
 
     fn send_balance_update(&self) {
@@ -82,7 +89,9 @@ impl TauriWalletListener {
                 unlocked_balance: unlocked_balance.into(),
             };
 
-            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(MoneroWalletUpdate::BalanceChange(response)));
+            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+                MoneroWalletUpdate::BalanceChange(response),
+            ));
         });
     }
 }
@@ -97,32 +106,35 @@ impl WalletEventListener for TauriWalletListener {
         println!("money_received: {} {}", txid, amount);
         self.send_balance_update();
     }
-    
+
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
         println!("unconfirmed_money_received: {} {}", txid, amount);
         self.send_balance_update();
     }
-    
-    fn on_new_block(&self, height: u64) {
-        println!("new_block: {}", height);
+
+    fn on_new_block(&self, _height: u64) {
+        // We send an update here because a new might mean that funds have been unlocked
+        // because a UTXO reached 10 confirmations.
+        self.send_balance_update();
     }
-    
+
     fn on_updated(&self) {
-        println!("updated");
         self.send_balance_update();
     }
-    
+
     fn on_refreshed(&self) {
-        println!("refreshed");
         self.send_balance_update();
     }
-    
-    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
-        println!("reorg: {} {} {}", height, blocks_detached, transfers_detached);
+
+    fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) {
+        // We send an update here because a reorg might mean that a UTXO has been double spent
+        // or that a UTXO has been confirmed is now unconfirmed.
+        self.send_balance_update();
     }
-    
-    fn on_pool_tx_removed(&self, txid: &str) {
-        println!("pool_tx_removed: {}", txid);
+
+    fn on_pool_tx_removed(&self, _txid: &str) {
+        // We send an update here because a pool tx removed might mean that our unconfirmed
+        // balance has gone down because a UTXO has been removed from the pool.
         self.send_balance_update();
     }
 }
@@ -158,11 +170,14 @@ impl Wallets {
         let main_wallet = Arc::new(main_wallet);
 
         if let Some(tauri_handle) = tauri_handle.clone() {
-            let tauri_wallet_listener = TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
+            let tauri_wallet_listener =
+                TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
-            main_wallet.call(move |wallet| {
-                wallet.add_listener(Box::new(tauri_wallet_listener));
-            }).await;
+            main_wallet
+                .call(move |wallet| {
+                    wallet.add_listener(Box::new(tauri_wallet_listener));
+                })
+                .await;
         }
 
         let wallets = Self {
