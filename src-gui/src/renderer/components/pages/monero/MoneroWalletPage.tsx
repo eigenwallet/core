@@ -5,15 +5,13 @@ import {
   updateMoneroSyncProgress,
   initializeMoneroWallet,
   sendMoneroTransaction,
-  refreshMoneroWallet,
 } from "renderer/rpc";
 import {
   WalletOverview,
-  SyncProgress,
   SendTransaction,
   TransactionHistory,
+  WalletActionButtons,
 } from "./components";
-import { GetMoneroBalanceResponse } from "models/tauriModel";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
@@ -37,10 +35,6 @@ export default function MoneroWalletPage() {
     initializeMoneroWallet();
   }, []);
 
-  const handleSendTransaction = async (transactionData) => {
-    await sendMoneroTransaction(transactionData);
-  };
-
   return (
     <Box
       sx={{
@@ -54,8 +48,7 @@ export default function MoneroWalletPage() {
     >
       <Typography variant="h4">Wallet</Typography>
       <WalletOverview balance={balance} syncProgress={syncProgress} />
-
-      <SendTransaction balance={balance} onSend={handleSendTransaction} />
+      <WalletActionButtons />
 
       <TransactionHistory history={history} />
     </Box>

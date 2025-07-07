@@ -37,7 +37,7 @@ export default function WalletOverview({
   const blocksLeft = syncProgress?.target_block - syncProgress?.current_block;
 
   return (
-    <Card sx={{ p: 2, position: "relative" }}>
+    <Card sx={{ p: 2, position: "relative", borderRadius: 2 }} elevation={4}>
       {/* Balance */}
       <Box
         sx={{

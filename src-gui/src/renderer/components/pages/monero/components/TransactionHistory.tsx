@@ -39,25 +39,18 @@ export default function TransactionHistory({
 }: TransactionHistoryProps) {
   if (!history || !history.transactions || history.transactions.length === 0) {
     return (
-      <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Transaction History
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            No transactions found
-          </Typography>
-        </CardContent>
-      </Card>
+      <Typography variant="h5">
+      Transaction History
+    </Typography>
     );
   }
 
   return (
-    <Card>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
+    <>
+        <Typography variant="h4">
           Transaction History
         </Typography>
+
         <TableContainer component={Paper} variant="outlined">
           <Table size="small">
             <TableHead>
@@ -114,7 +107,6 @@ export default function TransactionHistory({
             </TableBody>
           </Table>
         </TableContainer>
-      </CardContent>
-    </Card>
+        </>
   );
 }

@@ -1,6 +1,13 @@
 import { createTheme, ThemeOptions } from "@mui/material";
 import { indigo } from "@mui/material/colors";
 
+// Extend the theme to include custom chip variants
+declare module "@mui/material/Chip" {
+  interface ChipPropsVariantOverrides {
+    button: true;
+  }
+}
+
 export enum Theme {
   Light = "light",
   Dark = "dark",
@@ -34,6 +41,20 @@ const baseTheme: ThemeOptions = {
           },
         },
       },
+    },
+    MuiChip: {
+      variants: [
+        {
+          props: { variant: "button" },
+          style: ({ theme }) => ({
+            padding: "12px 16px",
+            cursor: "pointer",
+          }),
+          defaultProps: {
+            clickable: true,
+          },
+        },
+      ],
     },
     MuiDialog: {
       defaultProps: {
