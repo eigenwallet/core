@@ -1,7 +1,7 @@
 //! This module contains the bridge between the Monero C++ API and the Rust code.
 //! It uses the [cxx](https://cxx.rs) crate to generate the actual bindings.
 
-use cxx::{CxxString, UniquePtr};
+use cxx::CxxString;
 use tracing::Level;
 
 /// This is the main ffi module that exposes the Monero C++ API to Rust.
@@ -101,9 +101,8 @@ pub mod ffi {
             seed_offset: &CxxString,
         ) -> Result<*mut Wallet>;
 
-        type FunctionBasedListener;
-
         type WalletListener;
+        type FunctionBasedListener;
 
         unsafe fn create_listener(
             on_spent:    usize,
@@ -364,6 +363,211 @@ pub mod log {
         fn install_log_callback(span_name: &CxxString) -> Result<()>;
         fn uninstall_log_callback() -> Result<()>;
     }
+}
+
+/// Wallet listener bridge using cxx's virtual table approach
+#[cxx::bridge(namespace = "wallet_listener")]
+pub mod wallet_listener {
+    extern "Rust" {
+        // Opaque Rust type owned by C++
+        type DummyListener;
+
+        // Callback methods invoked from C++
+        fn money_spent(listener: &mut DummyListener, txid: &CxxString, amount: u64);
+        fn money_received(listener: &mut DummyListener, txid: &CxxString, amount: u64);
+        fn unconfirmed_money_received(listener: &mut DummyListener, txid: &CxxString, amount: u64);
+        fn new_block(listener: &mut DummyListener, height: u64);
+        fn updated(listener: &mut DummyListener);
+        fn refreshed(listener: &mut DummyListener);
+        fn on_reorg(listener: &mut DummyListener, height: u64, blocks_detached: u64, transfers_detached: usize);
+        fn pool_tx_removed(listener: &mut DummyListener, txid: &CxxString);
+
+        // Factory function – creates a boxed listener
+        fn make_listener() -> Box<DummyListener>;
+    }
+
+    unsafe extern "C++" {
+        include!("wallet/api/wallet2_api.h");
+        include!("bridge.h");
+
+        // The C++ WalletListener type lives in the Monero namespace.
+        #[namespace = "Monero"]
+        #[rust_name = "MoneroWalletListener"]
+        type WalletListener;
+
+        // Functions implemented in bridge.h that create / destroy the adapter.
+        #[namespace = "wallet_listener"]
+        unsafe fn create_rust_listener_adapter(listener: Box<DummyListener>) -> *mut MoneroWalletListener;
+        #[namespace = "wallet_listener"]
+        unsafe fn destroy_rust_listener_adapter(ptr: *mut MoneroWalletListener);
+    }
+}
+
+/// Trait for wallet event listeners - allows custom callback implementations
+pub trait WalletEventListener {
+    fn on_money_spent(&self, txid: &str, amount: u64);
+    fn on_money_received(&self, txid: &str, amount: u64);
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64);
+    fn on_new_block(&self, height: u64);
+    fn on_updated(&self);
+    fn on_refreshed(&self);
+    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize);
+    fn on_pool_tx_removed(&self, txid: &str);
+}
+
+/// Listener implementation that logs all wallet events using tracing with filename context.
+pub struct DummyListener {
+    /// The wallet filename for logging context
+    pub filename: String,
+}
+
+impl DummyListener {
+    /// Creates a new DummyListener with a filename for logging context.
+    pub fn new(filename: String) -> Self {
+        tracing::debug!("Creating new DummyListener for wallet: {}", filename);
+        DummyListener { filename }
+    }
+
+    /// Creates a new DummyListener with "unknown" as the filename.
+    pub fn new_default() -> Self {
+        Self::new("unknown".to_string())
+    }
+
+    // Event handler methods - delegate to CxxString conversion then call trait methods
+    pub fn handle_money_spent(&self, txid: &CxxString, amount: u64) {
+        self.on_money_spent(txid.to_str().unwrap_or("<invalid>"), amount);
+    }
+
+    pub fn handle_money_received(&self, txid: &CxxString, amount: u64) {
+        self.on_money_received(txid.to_str().unwrap_or("<invalid>"), amount);
+    }
+
+    pub fn handle_unconfirmed_money_received(&self, txid: &CxxString, amount: u64) {
+        self.on_unconfirmed_money_received(txid.to_str().unwrap_or("<invalid>"), amount);
+    }
+
+    pub fn handle_new_block(&self, height: u64) {
+        self.on_new_block(height);
+    }
+
+    pub fn handle_updated(&self) {
+        self.on_updated();
+    }
+
+    pub fn handle_refreshed(&self) {
+        self.on_refreshed();
+    }
+
+    pub fn handle_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
+        self.on_reorg(height, blocks_detached, transfers_detached);
+    }
+
+    pub fn handle_pool_tx_removed(&self, txid: &CxxString) {
+        self.on_pool_tx_removed(txid.to_str().unwrap_or("<invalid>"));
+    }
+}
+
+impl Default for DummyListener {
+    fn default() -> Self {
+        Self::new_default()
+    }
+}
+
+impl WalletEventListener for DummyListener {
+    fn on_money_spent(&self, txid: &str, amount: u64) {
+        tracing::info!(
+            "[{}] Money spent: {} XMR in transaction {}", 
+            self.filename,
+            amount as f64 / 1e12, 
+            txid
+        );
+    }
+
+    fn on_money_received(&self, txid: &str, amount: u64) {
+        tracing::info!(
+            "[{}] Money received: {} XMR in transaction {}", 
+            self.filename,
+            amount as f64 / 1e12, 
+            txid
+        );
+    }
+
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+        tracing::info!(
+            "[{}] Unconfirmed money received: {} XMR in transaction {}", 
+            self.filename,
+            amount as f64 / 1e12, 
+            txid
+        );
+    }
+
+    fn on_new_block(&self, height: u64) {
+        tracing::info!("[{}] New block at height: {}", self.filename, height);
+    }
+
+    fn on_updated(&self) {
+        tracing::debug!("[{}] Wallet updated", self.filename);
+    }
+
+    fn on_refreshed(&self) {
+        tracing::info!("[{}] Wallet refreshed", self.filename);
+    }
+
+    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
+        tracing::warn!(
+            "[{}] Blockchain reorganization at height {}: {} blocks detached, {} transfers detached", 
+            self.filename, height, blocks_detached, transfers_detached
+        );
+    }
+
+    fn on_pool_tx_removed(&self, txid: &str) {
+        tracing::info!(
+            "[{}] Transaction removed from pool: {}", 
+            self.filename,
+            txid
+        );
+    }
+}
+
+// Free function implementations for CXX bridge - these delegate to the DummyListener methods
+pub fn money_spent(listener: &mut DummyListener, txid: &CxxString, amount: u64) {
+    listener.handle_money_spent(txid, amount);
+}
+
+pub fn money_received(listener: &mut DummyListener, txid: &CxxString, amount: u64) {
+    listener.handle_money_received(txid, amount);
+}
+
+pub fn unconfirmed_money_received(listener: &mut DummyListener, txid: &CxxString, amount: u64) {
+    listener.handle_unconfirmed_money_received(txid, amount);
+}
+
+pub fn new_block(listener: &mut DummyListener, height: u64) {
+    listener.handle_new_block(height);
+}
+
+pub fn updated(listener: &mut DummyListener) {
+    listener.handle_updated();
+}
+
+pub fn refreshed(listener: &mut DummyListener) {
+    listener.handle_refreshed();
+}
+
+pub fn on_reorg(listener: &mut DummyListener, height: u64, blocks_detached: u64, transfers_detached: usize) {
+    listener.handle_reorg(height, blocks_detached, transfers_detached);
+}
+
+pub fn pool_tx_removed(listener: &mut DummyListener, txid: &CxxString) {
+    listener.handle_pool_tx_removed(txid);
+}
+
+pub fn make_listener() -> Box<DummyListener> {
+    Box::new(DummyListener::new_default())
+}
+
+pub fn make_listener_with_filename(filename: String) -> Box<DummyListener> {
+    Box::new(DummyListener::new(filename))
 }
 
 /// This is the actual rust function that forwards the c++ log messages to tracing.

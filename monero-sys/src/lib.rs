@@ -11,8 +11,8 @@
 //! internally communicate with the wallet thread.
 
 mod bridge;
-use std::ffi::CStr;
-use std::os::raw::c_char;
+pub use bridge::wallet_listener;
+pub use bridge::{DummyListener, WalletEventListener, make_listener, make_listener_with_filename};
 
 use std::{
     any::Any, cmp::Ordering, fmt::Display, ops::Deref, path::PathBuf, pin::Pin, str::FromStr,
@@ -1031,40 +1031,10 @@ impl WalletManager {
         let network_type = network_type.into();
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
 
-        unsafe extern "C" fn on_spent(txid: *const c_char, amount: u64) {
-            let txid_str = if txid.is_null() {
-                "<null>".into()
-            } else {
-                // безопасное преобразование в строку
-                CStr::from_ptr(txid).to_string_lossy().into_owned()
-            };
-            println!("Spent {amount} in {txid_str}");
-        }
-
-        unsafe extern "C" fn on_received(txid: *const c_char, amount: u64) {
-            let txid_str = if txid.is_null() {
-                "<null>".into()
-            } else {
-                CStr::from_ptr(txid).to_string_lossy().into_owned()
-            };
-        }
-
-        unsafe extern "C" fn on_updated() {
-            println!("Updated");
-        }
-
+        // Create a Rust-side listener and wrap it in a C++ adapter.
+        let filename = path.to_str().unwrap_or("unknown").to_string();
         let listener = unsafe {
-            ffi::create_listener(
-                on_spent as usize,
-                on_received as usize,
-                0 as usize,
-                0 as usize,
-                on_updated as usize,
-                0 as usize,
-                0 as usize,
-                0 as usize,
-                0 as usize,
-            )
+            bridge::wallet_listener::create_rust_listener_adapter(Box::new(DummyListener::new(filename))) as *mut bridge::ffi::WalletListener
         };
 
         let wallet_pointer = unsafe {
