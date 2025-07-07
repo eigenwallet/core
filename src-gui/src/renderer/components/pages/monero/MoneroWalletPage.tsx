@@ -51,6 +51,15 @@ import {
   refreshMoneroWallet,
   dfxAuthenticate,
 } from "renderer/rpc";
+import DFXSwissLogo from "assets/dfx-logo.svg";
+
+function DFXLogo({ height = 24 }: { height?: number }) {
+  return (
+    <Box sx={{ backgroundColor: "white", borderRadius: 1, display: "flex", alignItems: "center", padding: 1, height }}>
+      <img src={DFXSwissLogo} alt="DFX Swiss" style={{ height: "100%", flex: 1 }} />
+    </Box>
+  );
+}
 
 // Component for DFX button and modal
 function DfxButton() {
@@ -72,11 +81,11 @@ function DfxButton() {
       <PromiseInvokeButton
         variant="outlined"
         size="small"
-        startIcon={<DfxIcon />}
+        startIcon={<DFXLogo height={12} />}
         onInvoke={handleOpenDfx}
         displayErrorSnackbar={true}
       >
-        Buy Monero
+        Fiat Conversion
       </PromiseInvokeButton>
 
       <Dialog
@@ -93,8 +102,8 @@ function DfxButton() {
               alignItems: "center",
             }}
           >
-            DFX Swiss
-            <Button onClick={handleCloseModal} size="small">
+            <DFXLogo />
+            <Button onClick={handleCloseModal} variant="outlined">
               Close
             </Button>
           </Box>

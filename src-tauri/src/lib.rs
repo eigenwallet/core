@@ -551,7 +551,7 @@ async fn dfx_authenticate(
         .ok_or("No access token available after authentication")?
         .clone();
 
-    let kyc_url = format!("https://app.dfx.swiss/kyc?session={}", access_token);
+    let kyc_url = format!("https://app.dfx.swiss/buy?session={}", access_token);
 
     tracing::info!("DFX authentication completed successfully");
 
