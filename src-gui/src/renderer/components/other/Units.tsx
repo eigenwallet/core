@@ -32,13 +32,39 @@ export function AmountWithUnit({
   return (
     <Tooltip arrow title={title}>
       <span>
-        {amount != null
-          ? Number.parseFloat(amount.toFixed(fixedPrecision))
-          : "?"}{" "}
-        {unit}
+        {amount != null ? amount.toFixed(fixedPrecision) : "?"} {unit}
         {parenthesisText != null ? ` (${parenthesisText})` : null}
       </span>
     </Tooltip>
+  );
+}
+
+export function FiatMoneroAmount({
+  amount,
+  fixedPrecision = 2,
+}: {
+  amount: Amount;
+  fixedPrecision?: number;
+}) {
+  const xmrRate = useAppSelector((state) => state.rates.xmrPrice);
+  const [fetchFiatPrices, fiatCurrency] = useSettings((settings) => [
+    settings.fetchFiatPrices,
+    settings.fiatCurrency,
+  ]);
+
+  if (
+    !fetchFiatPrices ||
+    fiatCurrency == null ||
+    amount == null ||
+    xmrRate == null
+  ) {
+    return null;
+  }
+
+  return (
+    <span>
+      {(amount * xmrRate).toFixed(fixedPrecision)} {fiatCurrency}
+    </span>
   );
 }
 
@@ -59,14 +85,20 @@ export function BitcoinAmount({ amount }: { amount: Amount }) {
   );
 }
 
-export function MoneroAmount({ amount }: { amount: Amount }) {
+export function MoneroAmount({
+  amount,
+  fixedPrecision = 4,
+}: {
+  amount: Amount;
+  fixedPrecision?: number;
+}) {
   const xmrRate = useAppSelector((state) => state.rates.xmrPrice);
 
   return (
     <AmountWithUnit
       amount={amount}
       unit="XMR"
-      fixedPrecision={4}
+      fixedPrecision={fixedPrecision}
       exchangeRate={xmrRate}
     />
   );
@@ -128,8 +160,17 @@ export function SatsAmount({ amount }: { amount: Amount }) {
   return <BitcoinAmount amount={btcAmount} />;
 }
 
-export function PiconeroAmount({ amount }: { amount: Amount }) {
+export function PiconeroAmount({
+  amount,
+  fixedPrecision = 4,
+}: {
+  amount: Amount;
+  fixedPrecision?: number;
+}) {
   return (
-    <MoneroAmount amount={amount == null ? null : piconerosToXmr(amount)} />
+    <MoneroAmount
+      amount={amount == null ? null : piconerosToXmr(amount)}
+      fixedPrecision={fixedPrecision}
+    />
   );
 }
