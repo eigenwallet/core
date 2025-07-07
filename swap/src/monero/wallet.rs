@@ -13,7 +13,7 @@ use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet};
 use uuid::Uuid;
 
-use crate::cli::api::{request::GetMoneroBalanceResponse, tauri_bindings::TauriHandle};
+use crate::cli::api::{request::GetMoneroBalanceResponse, tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle}};
 
 use super::{BlockHeight, TransferProof, TxHash};
 
@@ -59,36 +59,48 @@ pub struct TransferRequest {
 struct TauriWalletListener {
     tauri_handle: TauriHandle,
     wallet: Arc<Wallet>,
+    rt_handle: tokio::runtime::Handle,
 }
 
 impl TauriWalletListener {
-    pub fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
-        Self { tauri_handle, wallet }
+    pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
+        let rt_handle = tokio::runtime::Handle::current();
+
+        Self { tauri_handle, wallet, rt_handle }
     }
 
     fn send_balance_update(&self) {
-        let balance = tokio::block_in_place(async || self.wallet.total_balance().await);
-        
-        let response = GetMoneroBalanceResponse {
-            total_balance: balance.total_balance,
-            unlocked_balance: balance.unlocked_balance,
-        };
+        let wallet = self.wallet.clone();
+        let tauri_handle = self.tauri_handle.clone();
 
-        self.tauri_handle.send_message("monero_balance_update", response);
+        self.rt_handle.spawn(async move {
+            let total_balance = wallet.total_balance().await;
+            let unlocked_balance = wallet.unlocked_balance().await;
+
+            let response = GetMoneroBalanceResponse {
+                total_balance: total_balance.into(),
+                unlocked_balance: unlocked_balance.into(),
+            };
+
+            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(MoneroWalletUpdate::BalanceChange(response)));
+        });
     }
 }
 
 impl WalletEventListener for TauriWalletListener {
     fn on_money_spent(&self, txid: &str, amount: u64) {
         println!("money_spent: {} {}", txid, amount);
+        self.send_balance_update();
     }
 
     fn on_money_received(&self, txid: &str, amount: u64) {
         println!("money_received: {} {}", txid, amount);
+        self.send_balance_update();
     }
     
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
         println!("unconfirmed_money_received: {} {}", txid, amount);
+        self.send_balance_update();
     }
     
     fn on_new_block(&self, height: u64) {
@@ -97,10 +109,12 @@ impl WalletEventListener for TauriWalletListener {
     
     fn on_updated(&self) {
         println!("updated");
+        self.send_balance_update();
     }
     
     fn on_refreshed(&self) {
         println!("refreshed");
+        self.send_balance_update();
     }
     
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
@@ -109,6 +123,7 @@ impl WalletEventListener for TauriWalletListener {
     
     fn on_pool_tx_removed(&self, txid: &str) {
         println!("pool_tx_removed: {}", txid);
+        self.send_balance_update();
     }
 }
 
@@ -143,7 +158,7 @@ impl Wallets {
         let main_wallet = Arc::new(main_wallet);
 
         if let Some(tauri_handle) = tauri_handle.clone() {
-            let tauri_wallet_listener = TauriWalletListener::new(tauri_handle, main_wallet.clone());
+            let tauri_wallet_listener = TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
             main_wallet.call(move |wallet| {
                 wallet.add_listener(Box::new(tauri_wallet_listener));
