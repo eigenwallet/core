@@ -4,6 +4,8 @@
 use cxx::CxxString;
 use tracing::Level;
 
+use crate::WalletHandle;
+
 /// This is the main ffi module that exposes the Monero C++ API to Rust.
 /// See [cxx.rs](https://cxx.rs/book/ffi-modules.html) for more information
 /// on how this works exactly.
@@ -183,6 +185,9 @@ pub mod ffi {
 
         /// Get the current blockchain height.
         fn blockChainHeight(self: &Wallet) -> Result<u64>;
+
+        /// Set a listener to the wallet.
+        unsafe fn setListener(self: Pin<&mut Wallet>, listener: *mut WalletListener) -> Result<()>;
 
         /// Get the daemon's blockchain height.
         fn daemonBlockChainTargetHeight(self: &Wallet) -> Result<u64>;
@@ -398,6 +403,18 @@ pub trait WalletEventListener {
     fn on_refreshed(&self);
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize);
     fn on_pool_tx_removed(&self, txid: &str);
+}
+
+/// Trait for wallet event listeners - allows custom callback implementations
+pub trait WalletEventListenerWithHandle {
+    fn on_money_spent(&self, txid: &str, amount: u64, handle: &WalletHandle);
+    fn on_money_received(&self, txid: &str, amount: u64, handle: &WalletHandle);
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64, handle: &WalletHandle);
+    fn on_new_block(&self, height: u64, handle: &WalletHandle);
+    fn on_updated(&self, handle: &WalletHandle);
+    fn on_refreshed(&self, handle: &WalletHandle);
+    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize, handle: &WalletHandle);
+    fn on_pool_tx_removed(&self, txid: &str, handle: &WalletHandle);
 }
 
 /// Generic wrapper that can hold any WalletEventListener implementation
