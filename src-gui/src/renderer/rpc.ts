@@ -539,7 +539,6 @@ export async function updateMoneroSyncProgress() {
   }
 }
 
-
 export async function getDataDir(): Promise<string> {
   const testnet = isTestnet();
   return await invoke<GetDataDirArgs, string>("get_data_dir", {

@@ -61,8 +61,9 @@ export default function InitPage() {
               />
             ) : (
               <Typography variant="caption">
-                The Monero will be sent to the internal Monero wallet of the GUI. 
-                You can then withdraw them from there or use them for another swap directly.
+                The Monero will be sent to the internal Monero wallet of the
+                GUI. You can then withdraw them from there or use them for
+                another swap directly.
               </Typography>
             )}
           </Box>

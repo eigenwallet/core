@@ -516,7 +516,7 @@ impl WalletHandle {
         percentages: &[f64],
     ) -> anyhow::Result<Vec<TxReceipt>> {
         tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping multi");
-        
+
         let percentages = percentages.to_vec();
         let addresses = addresses.to_vec();
 
@@ -1068,13 +1068,9 @@ impl WalletManager {
         };
 
         let wallet_pointer = unsafe {
-            self.inner.pinned().openWallet(
-                &path,
-                &password,
-                network_type,
-                kdf_rounds,
-                listener,
-            )
+            self.inner
+                .pinned()
+                .openWallet(&path, &password, network_type, kdf_rounds, listener)
         }
         .context("Failed to open wallet: FFI call failed with exception")?;
 

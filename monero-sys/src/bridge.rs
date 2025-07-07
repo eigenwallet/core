@@ -106,7 +106,7 @@ pub mod ffi {
         type WalletListener;
 
         unsafe fn create_listener(
-            on_spent:    usize,
+            on_spent: usize,
             on_received: usize,
             on_unconfirmed_received: usize,
             on_new_block: usize,

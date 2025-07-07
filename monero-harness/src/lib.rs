@@ -503,7 +503,11 @@ impl MoneroWallet {
     /// Sweep multiple addresses with different ratios
     /// If the address is `None`, the address will be set to the primary address of the
     /// main wallet.
-    pub async fn sweep_multi(&self, addresses: &[impl Into<Option<Address>> + Clone], ratios: &[f64]) -> Result<TxReceipt> {
+    pub async fn sweep_multi(
+        &self,
+        addresses: &[impl Into<Option<Address>> + Clone],
+        ratios: &[f64],
+    ) -> Result<TxReceipt> {
         tracing::info!("`{}` sweeping multi ({:?})", self.name, ratios);
         self.balance().await?;
 
