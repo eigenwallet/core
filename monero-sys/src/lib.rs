@@ -12,7 +12,7 @@
 
 mod bridge;
 pub use bridge::wallet_listener;
-pub use bridge::{DummyListener, WalletEventListener, make_listener, make_listener_with_filename};
+pub use bridge::{TraceListener, WalletEventListener, make_trace_listener};
 
 use std::{
     any::Any, cmp::Ordering, fmt::Display, ops::Deref, path::PathBuf, pin::Pin, str::FromStr,
@@ -72,9 +72,6 @@ struct WalletManager {
     inner: RawWalletManager,
 }
 
-struct WalletListener {
-    inner: *mut ffi::WalletListener,
-}
 
 /// This is our own wrapper around a raw C++ wallet manager pointer.
 struct RawWalletManager {
@@ -1034,7 +1031,7 @@ impl WalletManager {
         // Create a Rust-side listener and wrap it in a C++ adapter.
         let filename = path.to_str().unwrap_or("unknown").to_string();
         let listener = unsafe {
-            bridge::wallet_listener::create_rust_listener_adapter(Box::new(DummyListener::new(filename))) as *mut bridge::ffi::WalletListener
+            bridge::wallet_listener::create_rust_listener_adapter(bridge::make_trace_listener(filename)) as *mut bridge::ffi::WalletListener
         };
 
         let wallet_pointer = unsafe {
