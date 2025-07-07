@@ -9,10 +9,11 @@ use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use monero::{Address, Network};
+use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet};
 use uuid::Uuid;
 
-use crate::cli::api::tauri_bindings::TauriHandle;
+use crate::cli::api::{request::GetMoneroBalanceResponse, tauri_bindings::TauriHandle};
 
 use super::{BlockHeight, TransferProof, TxHash};
 
@@ -55,6 +56,62 @@ pub struct TransferRequest {
     pub amount: monero::Amount,
 }
 
+struct TauriWalletListener {
+    tauri_handle: TauriHandle,
+    wallet: Arc<Wallet>,
+}
+
+impl TauriWalletListener {
+    pub fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
+        Self { tauri_handle, wallet }
+    }
+
+    fn send_balance_update(&self) {
+        let balance = tokio::block_in_place(async || self.wallet.total_balance().await);
+        
+        let response = GetMoneroBalanceResponse {
+            total_balance: balance.total_balance,
+            unlocked_balance: balance.unlocked_balance,
+        };
+
+        self.tauri_handle.send_message("monero_balance_update", response);
+    }
+}
+
+impl WalletEventListener for TauriWalletListener {
+    fn on_money_spent(&self, txid: &str, amount: u64) {
+        println!("money_spent: {} {}", txid, amount);
+    }
+
+    fn on_money_received(&self, txid: &str, amount: u64) {
+        println!("money_received: {} {}", txid, amount);
+    }
+    
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+        println!("unconfirmed_money_received: {} {}", txid, amount);
+    }
+    
+    fn on_new_block(&self, height: u64) {
+        println!("new_block: {}", height);
+    }
+    
+    fn on_updated(&self) {
+        println!("updated");
+    }
+    
+    fn on_refreshed(&self) {
+        println!("refreshed");
+    }
+    
+    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
+        println!("reorg: {} {} {}", height, blocks_detached, transfers_detached);
+    }
+    
+    fn on_pool_tx_removed(&self, txid: &str) {
+        println!("pool_tx_removed: {}", txid);
+    }
+}
+
 impl Wallets {
     /// Create a new `Wallets` instance.
     /// Wallets will be opened on the specified network, connected to the specified daemon
@@ -84,6 +141,14 @@ impl Wallets {
         }
 
         let main_wallet = Arc::new(main_wallet);
+
+        if let Some(tauri_handle) = tauri_handle.clone() {
+            let tauri_wallet_listener = TauriWalletListener::new(tauri_handle, main_wallet.clone());
+
+            main_wallet.call(move |wallet| {
+                wallet.add_listener(Box::new(tauri_wallet_listener));
+            }).await;
+        }
 
         let wallets = Self {
             wallet_dir,

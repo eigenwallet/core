@@ -12,7 +12,7 @@
 
 mod bridge;
 pub use bridge::wallet_listener;
-pub use bridge::{TraceListener, WalletListenerBox, WalletEventListener, make_trace_listener, make_custom_listener};
+pub use bridge::{TraceListener, WalletListenerBox, WalletEventListener};
 
 use std::sync::{Arc, Mutex};
 use std::{
@@ -1030,7 +1030,7 @@ impl WalletManager {
         network_type: monero::Network,
         background_sync: bool,
         daemon: Daemon,
-        listener: Box<dyn WalletEventListener + Send + Sync>,
+        listener: Box<dyn WalletEventListener>,
     ) -> anyhow::Result<FfiWallet> {
         tracing::debug!(%path, "Opening wallet");
 
@@ -1038,11 +1038,6 @@ impl WalletManager {
         let_cxx_string!(password = password.unwrap_or(""));
         let network_type = network_type.into();
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
-
-        // // Create a Rust-side listener and wrap it in a C++ adapter.
-        // let listener = unsafe {
-        //     bridge::wallet_listener::create_rust_listener_adapter(bridge::make_custom_listener(listener)) as *mut bridge::ffi::WalletListener
-        // };
 
         let wallet_pointer = unsafe {
             self.inner.pinned().openWallet(
@@ -1299,7 +1294,7 @@ impl FfiWallet {
 
 
     /// Set a listener to the wallet.
-    pub fn set_single_listener(&mut self, listener: Box<dyn WalletEventListener + Send + Sync>) {
+    pub fn set_single_listener(&mut self, listener: Box<dyn WalletEventListener>) {
         unsafe {
             let listener = bridge::wallet_listener::create_rust_listener_adapter(bridge::make_custom_listener(listener)) as *mut bridge::ffi::WalletListener;
             self.inner.pinned().setListener(listener).expect("Shouldn't panic");
@@ -1307,7 +1302,7 @@ impl FfiWallet {
     }
 
     /// Add a listener to the wallet.
-    pub fn add_listener(&self, listener: Box<dyn WalletEventListener + Send + Sync>) {
+    pub fn add_listener(&self, listener: Box<dyn WalletEventListener>) {
         self.listeners.lock().unwrap().push(listener);
     }
 

@@ -4,8 +4,6 @@
 use cxx::CxxString;
 use tracing::Level;
 
-use crate::WalletHandle;
-
 /// This is the main ffi module that exposes the Monero C++ API to Rust.
 /// See [cxx.rs](https://cxx.rs/book/ffi-modules.html) for more information
 /// on how this works exactly.
@@ -371,9 +369,6 @@ pub mod wallet_listener {
         fn refreshed(listener: &mut WalletListenerBox);
         fn on_reorg(listener: &mut WalletListenerBox, height: u64, blocks_detached: u64, transfers_detached: usize);
         fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString);
-
-        // Factory function – creates a boxed listener
-        fn make_trace_listener(filename: String) -> Box<WalletListenerBox>;
     }
 
     unsafe extern "C++" {
@@ -407,12 +402,12 @@ pub trait WalletEventListener: Send + Sync {
 
 /// Generic wrapper that can hold any WalletEventListener implementation
 pub struct WalletListenerBox {
-    inner: Box<dyn WalletEventListener + Send + Sync>,
+    inner: Box<dyn WalletEventListener>,
 }
 
 impl WalletListenerBox {
     /// Create a new wrapper around any WalletEventListener implementation
-    pub fn new(listener: Box<dyn WalletEventListener + Send + Sync>) -> Self {
+    pub fn new(listener: Box<dyn WalletEventListener>) -> Self {
         WalletListenerBox { inner: listener }
     }
 }
@@ -566,12 +561,7 @@ pub fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString) {
     listener.on_pool_tx_removed(txid.to_str().unwrap_or("<invalid>"));
 }
 
-pub fn make_trace_listener(filename: String) -> Box<WalletListenerBox> {
-    let trace_listener = TraceListener::new(filename);
-    Box::new(WalletListenerBox::new(Box::new(trace_listener)))
-}
-
-pub fn make_custom_listener(listener: Box<dyn WalletEventListener + Send + Sync>) -> Box<WalletListenerBox> {
+pub fn make_custom_listener(listener: Box<dyn WalletEventListener>) -> Box<WalletListenerBox> {
     Box::new(WalletListenerBox::new(listener))
 }
 
