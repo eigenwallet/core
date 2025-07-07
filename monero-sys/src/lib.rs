@@ -12,7 +12,7 @@
 
 mod bridge;
 pub use bridge::wallet_listener;
-pub use bridge::{TraceListener, WalletEventListener, make_trace_listener};
+pub use bridge::{TraceListener, WalletListenerBox, WalletEventListener, make_trace_listener, make_custom_listener};
 
 use std::{
     any::Any, cmp::Ordering, fmt::Display, ops::Deref, path::PathBuf, pin::Pin, str::FromStr,

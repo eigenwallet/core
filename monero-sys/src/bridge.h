@@ -555,7 +555,7 @@ namespace Monero {
 // Adapter class that forwards Monero::WalletListener callbacks to Rust
 class RustListenerAdapter final : public Monero::WalletListener {
 public:
-    explicit RustListenerAdapter(rust::Box<wallet_listener::TraceListener> listener)
+    explicit RustListenerAdapter(rust::Box<wallet_listener::WalletListenerBox> listener)
         : inner_(std::move(listener)) {}
 
     // --- Required overrides ------------------------------------------------
@@ -596,13 +596,13 @@ public:
     }
 
 private:
-    rust::Box<wallet_listener::TraceListener> inner_;
+    rust::Box<wallet_listener::WalletListenerBox> inner_;
 };
 
 } // namespace Monero
 
 namespace wallet_listener {
-    Monero::WalletListener* create_rust_listener_adapter(rust::Box<TraceListener> listener) {
+    Monero::WalletListener* create_rust_listener_adapter(rust::Box<WalletListenerBox> listener) {
         return new Monero::RustListenerAdapter(std::move(listener));
     }
 

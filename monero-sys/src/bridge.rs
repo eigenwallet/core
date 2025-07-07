@@ -355,20 +355,20 @@ pub mod log {
 pub mod wallet_listener {
     extern "Rust" {
         // Opaque Rust type owned by C++
-        type TraceListener;
+        type WalletListenerBox;
 
         // Callback methods invoked from C++
-        fn money_spent(listener: &mut TraceListener, txid: &CxxString, amount: u64);
-        fn money_received(listener: &mut TraceListener, txid: &CxxString, amount: u64);
-        fn unconfirmed_money_received(listener: &mut TraceListener, txid: &CxxString, amount: u64);
-        fn new_block(listener: &mut TraceListener, height: u64);
-        fn updated(listener: &mut TraceListener);
-        fn refreshed(listener: &mut TraceListener);
-        fn on_reorg(listener: &mut TraceListener, height: u64, blocks_detached: u64, transfers_detached: usize);
-        fn pool_tx_removed(listener: &mut TraceListener, txid: &CxxString);
+        fn money_spent(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64);
+        fn money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64);
+        fn unconfirmed_money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64);
+        fn new_block(listener: &mut WalletListenerBox, height: u64);
+        fn updated(listener: &mut WalletListenerBox);
+        fn refreshed(listener: &mut WalletListenerBox);
+        fn on_reorg(listener: &mut WalletListenerBox, height: u64, blocks_detached: u64, transfers_detached: usize);
+        fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString);
 
         // Factory function – creates a boxed listener
-        fn make_trace_listener(filename: String) -> Box<TraceListener>;
+        fn make_trace_listener(filename: String) -> Box<WalletListenerBox>;
     }
 
     unsafe extern "C++" {
@@ -382,7 +382,7 @@ pub mod wallet_listener {
 
         // Functions implemented in bridge.h that create / destroy the adapter.
         #[namespace = "wallet_listener"]
-        unsafe fn create_rust_listener_adapter(listener: Box<TraceListener>) -> *mut MoneroWalletListener;
+        unsafe fn create_rust_listener_adapter(listener: Box<WalletListenerBox>) -> *mut MoneroWalletListener;
         #[namespace = "wallet_listener"]
         unsafe fn destroy_rust_listener_adapter(ptr: *mut MoneroWalletListener);
     }
@@ -398,6 +398,52 @@ pub trait WalletEventListener {
     fn on_refreshed(&self);
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize);
     fn on_pool_tx_removed(&self, txid: &str);
+}
+
+/// Generic wrapper that can hold any WalletEventListener implementation
+pub struct WalletListenerBox {
+    inner: Box<dyn WalletEventListener + Send + Sync>,
+}
+
+impl WalletListenerBox {
+    /// Create a new wrapper around any WalletEventListener implementation
+    pub fn new(listener: Box<dyn WalletEventListener + Send + Sync>) -> Self {
+        WalletListenerBox { inner: listener }
+    }
+}
+
+impl WalletEventListener for WalletListenerBox {
+    fn on_money_spent(&self, txid: &str, amount: u64) {
+        self.inner.on_money_spent(txid, amount);
+    }
+
+    fn on_money_received(&self, txid: &str, amount: u64) {
+        self.inner.on_money_received(txid, amount);
+    }
+
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+        self.inner.on_unconfirmed_money_received(txid, amount);
+    }
+
+    fn on_new_block(&self, height: u64) {
+        self.inner.on_new_block(height);
+    }
+
+    fn on_updated(&self) {
+        self.inner.on_updated();
+    }
+
+    fn on_refreshed(&self) {
+        self.inner.on_refreshed();
+    }
+
+    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
+        self.inner.on_reorg(height, blocks_detached, transfers_detached);
+    }
+
+    fn on_pool_tx_removed(&self, txid: &str) {
+        self.inner.on_pool_tx_removed(txid);
+    }
 }
 
 /// Listener implementation that logs all wallet events using tracing with filename context.
@@ -482,41 +528,46 @@ impl WalletEventListener for TraceListener {
     }
 }
 
-// Free function implementations for CXX bridge - these call trait methods directly
-pub fn money_spent(listener: &mut TraceListener, txid: &CxxString, amount: u64) {
+// Free function implementations for CXX bridge - these work with any WalletEventListener
+pub fn money_spent(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
     listener.on_money_spent(txid.to_str().unwrap_or("<invalid>"), amount);
 }
 
-pub fn money_received(listener: &mut TraceListener, txid: &CxxString, amount: u64) {
+pub fn money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
     listener.on_money_received(txid.to_str().unwrap_or("<invalid>"), amount);
 }
 
-pub fn unconfirmed_money_received(listener: &mut TraceListener, txid: &CxxString, amount: u64) {
+pub fn unconfirmed_money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
     listener.on_unconfirmed_money_received(txid.to_str().unwrap_or("<invalid>"), amount);
 }
 
-pub fn new_block(listener: &mut TraceListener, height: u64) {
+pub fn new_block(listener: &mut WalletListenerBox, height: u64) {
     listener.on_new_block(height);
 }
 
-pub fn updated(listener: &mut TraceListener) {
+pub fn updated(listener: &mut WalletListenerBox) {
     listener.on_updated();
 }
 
-pub fn refreshed(listener: &mut TraceListener) {
+pub fn refreshed(listener: &mut WalletListenerBox) {
     listener.on_refreshed();
 }
 
-pub fn on_reorg(listener: &mut TraceListener, height: u64, blocks_detached: u64, transfers_detached: usize) {
+pub fn on_reorg(listener: &mut WalletListenerBox, height: u64, blocks_detached: u64, transfers_detached: usize) {
     listener.on_reorg(height, blocks_detached, transfers_detached);
 }
 
-pub fn pool_tx_removed(listener: &mut TraceListener, txid: &CxxString) {
+pub fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString) {
     listener.on_pool_tx_removed(txid.to_str().unwrap_or("<invalid>"));
 }
 
-pub fn make_trace_listener(filename: String) -> Box<TraceListener> {
-    Box::new(TraceListener::new(filename))
+pub fn make_trace_listener(filename: String) -> Box<WalletListenerBox> {
+    let trace_listener = TraceListener::new(filename);
+    Box::new(WalletListenerBox::new(Box::new(trace_listener)))
+}
+
+pub fn make_custom_listener(listener: Box<dyn WalletEventListener + Send + Sync>) -> Box<WalletListenerBox> {
+    Box::new(WalletListenerBox::new(listener))
 }
 
 /// This is the actual rust function that forwards the c++ log messages to tracing.
