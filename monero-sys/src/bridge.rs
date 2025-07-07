@@ -394,7 +394,7 @@ pub mod wallet_listener {
 }
 
 /// Trait for wallet event listeners - allows custom callback implementations
-pub trait WalletEventListener {
+pub trait WalletEventListener: Send + Sync {
     fn on_money_spent(&self, txid: &str, amount: u64);
     fn on_money_received(&self, txid: &str, amount: u64);
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64);
@@ -403,18 +403,6 @@ pub trait WalletEventListener {
     fn on_refreshed(&self);
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize);
     fn on_pool_tx_removed(&self, txid: &str);
-}
-
-/// Trait for wallet event listeners - allows custom callback implementations
-pub trait WalletEventListenerWithHandle {
-    fn on_money_spent(&self, txid: &str, amount: u64, handle: &WalletHandle);
-    fn on_money_received(&self, txid: &str, amount: u64, handle: &WalletHandle);
-    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64, handle: &WalletHandle);
-    fn on_new_block(&self, height: u64, handle: &WalletHandle);
-    fn on_updated(&self, handle: &WalletHandle);
-    fn on_refreshed(&self, handle: &WalletHandle);
-    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize, handle: &WalletHandle);
-    fn on_pool_tx_removed(&self, txid: &str, handle: &WalletHandle);
 }
 
 /// Generic wrapper that can hold any WalletEventListener implementation

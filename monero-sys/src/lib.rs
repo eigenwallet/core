@@ -33,9 +33,6 @@ use tokio::sync::{
 use bridge::ffi::{self, TransactionHistory};
 use typeshare::typeshare;
 
-use crate::bridge::ffi::WalletListener;
-use crate::bridge::WalletEventListenerWithHandle;
-
 /// A handle which can communicate with the wallet thread via channels.
 pub struct WalletHandle {
     call_sender: UnboundedSender<Call>,
@@ -853,7 +850,7 @@ impl WalletManager {
             tracing::debug!(wallet=%path, "Wallet already exists, opening it");
 
             return self
-                .open_wallet(path, password, network, background_sync, daemon, Box::new(TraceListener::new_default()))
+                .open_wallet(path, password, network, background_sync, daemon, Box::new(TraceListener::new(path.to_string())))
                 .context(format!("Failed to open wallet `{}`", &path));
         }
 
@@ -910,7 +907,7 @@ impl WalletManager {
             tracing::info!(wallet=%path, "Wallet already exists, opening it");
 
             return self
-                .open_wallet(path, password, network, background_sync, daemon.clone(), Box::new(TraceListener::new_default()))
+                .open_wallet(path, password, network, background_sync, daemon.clone(), Box::new(TraceListener::new(path.to_string())))
                 .context(format!("Failed to open wallet `{}`", &path));
         }
 
@@ -1208,6 +1205,7 @@ impl FfiWallet {
             wallet.start_refresh_thread();
             wallet.force_background_refresh();
         }
+
 
         wallet.set_single_listener(Box::new(wallet.listeners.clone()));
 
