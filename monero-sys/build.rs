@@ -21,16 +21,17 @@ macro_rules! embedded_patch {
 }
 
 /// Embedded patches applied at compile time
-const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[embedded_patch!(
-    "wallet2_api_allow_subtract_from_fee",
-    "Adds subtract_fee_from_outputs parameter to wallet2_api transaction creation methods",
-    "patches/wallet2_api_allow_subtract_from_fee.patch"
-),
-embedded_patch!(
-    "wallet2_api_expose_pending_tx_change",
-    "Exposes the change amount of a pending transaction",
-    "patches/wallet2_api_expose_pending_tx_change.patch"
-),
+const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
+    embedded_patch!(
+        "wallet2_api_allow_subtract_from_fee",
+        "Adds subtract_fee_from_outputs parameter to wallet2_api transaction creation methods",
+        "patches/wallet2_api_allow_subtract_from_fee.patch"
+    ),
+    embedded_patch!(
+        "wallet2_api_expose_pending_tx_change",
+        "Exposes the change amount of a pending transaction",
+        "patches/wallet2_api_expose_pending_tx_change.patch"
+    ),
 ];
 
 fn main() {
