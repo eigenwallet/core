@@ -528,10 +528,9 @@ impl Request for GetMoneroMainAddressArgs {
 pub struct GetMoneroBalanceArgs;
 
 #[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GetMoneroBalanceResponse {
     #[typeshare(serialized_as = "string")]
-    // Assuming monero::Amount serializes to string via typeshare
     pub total_balance: crate::monero::Amount,
     #[typeshare(serialized_as = "string")]
     pub unlocked_balance: crate::monero::Amount,

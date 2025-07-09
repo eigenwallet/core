@@ -1,5 +1,6 @@
 use super::request::BalanceResponse;
 use crate::bitcoin;
+use crate::cli::api::request::GetMoneroBalanceResponse;
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::{bitcoin::ExpiredTimelocks, monero, network::quote::BidQuote};
@@ -31,6 +32,14 @@ pub enum TauriEvent {
     Approval(ApprovalRequest),
     BackgroundProgress(TauriBackgroundProgressWrapper),
     PoolStatusUpdate(PoolStatus),
+    MoneroWalletUpdate(MoneroWalletUpdate),
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "content")]
+pub enum MoneroWalletUpdate {
+    BalanceChange(GetMoneroBalanceResponse),
 }
 
 const TAURI_UNIFIED_EVENT_NAME: &str = "tauri-unified-event";

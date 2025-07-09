@@ -18,19 +18,6 @@ export default function MoneroWalletPage() {
   const { mainAddress, balance, syncProgress, history, isRefreshing } =
     useAppSelector((state) => state.wallet.state);
 
-  // Auto-refresh sync progress every 5 seconds if not fully synced
-  useEffect(() => {
-    if (!syncProgress || syncProgress.progress_percentage >= 100) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      updateMoneroSyncProgress();
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [syncProgress]);
-
   useEffect(() => {
     initializeMoneroWallet();
   }, []);

@@ -356,7 +356,9 @@ public:
     }
 
     void updated() override
-        { if (on_updated_) {
+        { 
+            std::cout << "WalletListener::Updated" << std::endl;
+            if (on_updated_) {
             auto* updated = reinterpret_cast<void(*)()>(on_updated_);
             updated(); 
         }
@@ -547,3 +549,64 @@ using StringMap = std::map<String, String>;
 using StringVec = std::vector<String>;
 
 static std::pair<StringMap, StringVec> _monero_sys_pair_instantiation;
+
+namespace Monero {
+
+// Adapter class that forwards Monero::WalletListener callbacks to Rust
+class RustListenerAdapter final : public Monero::WalletListener {
+public:
+    explicit RustListenerAdapter(rust::Box<wallet_listener::WalletListenerBox> listener)
+        : inner_(std::move(listener)) {}
+
+    // --- Required overrides ------------------------------------------------
+    void moneySpent(const std::string &txid, uint64_t amount) override {
+        wallet_listener::money_spent(*inner_, txid, amount);
+    }
+
+    void moneyReceived(const std::string &txid, uint64_t amount) override {
+        wallet_listener::money_received(*inner_, txid, amount);
+    }
+
+    void unconfirmedMoneyReceived(const std::string &txid, uint64_t amount) override {
+        wallet_listener::unconfirmed_money_received(*inner_, txid, amount);
+    }
+
+    void newBlock(uint64_t height) override {
+        wallet_listener::new_block(*inner_, height);
+    }
+
+    void updated() override {
+        wallet_listener::updated(*inner_);
+    }
+
+    void refreshed() override {
+        wallet_listener::refreshed(*inner_);
+    }
+
+    void onReorg(std::uint64_t height, std::uint64_t blocks_detached, std::size_t transfers_detached) override {
+        wallet_listener::on_reorg(*inner_, height, blocks_detached, transfers_detached);
+    }
+
+    optional<std::string> onGetPassword(const char * /*reason*/) override {
+        return optional<std::string>(); // Not implemented
+    }
+
+    void onPoolTxRemoved(const std::string &txid) override {
+        wallet_listener::pool_tx_removed(*inner_, txid);
+    }
+
+private:
+    rust::Box<wallet_listener::WalletListenerBox> inner_;
+};
+
+} // namespace Monero
+
+namespace wallet_listener {
+    Monero::WalletListener* create_rust_listener_adapter(rust::Box<WalletListenerBox> listener) {
+        return new Monero::RustListenerAdapter(std::move(listener));
+    }
+
+    void destroy_rust_listener_adapter(Monero::WalletListener* ptr) {
+        delete ptr;
+    }
+}
