@@ -35,7 +35,7 @@ export default function MoneroWalletPage() {
     >
       <Typography variant="h4">Wallet</Typography>
       <WalletOverview balance={balance} syncProgress={syncProgress} />
-      <WalletActionButtons />
+      <WalletActionButtons balance={balance} />
 
       <TransactionHistory history={history} />
     </Box>

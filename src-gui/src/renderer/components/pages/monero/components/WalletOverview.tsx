@@ -73,11 +73,7 @@ export default function WalletOverview({
         {pendingBalance > 0 && (
           <>
             <Box sx={{ gridColumn: "2", gridRow: "1", alignSelf: "end" }}>
-              <Typography
-                variant="body2"
-                color="warning"
-                sx={{ mb: 1 }}
-              >
+              <Typography variant="body2" color="warning" sx={{ mb: 1 }}>
                 Pending
               </Typography>
               <Typography variant="h6" sx={{ gridColumn: "2", gridRow: "2" }}>
