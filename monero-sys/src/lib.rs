@@ -131,7 +131,7 @@ pub enum ChangeManagement {
     /// Handle change as usual.
     #[default]
     Default,
-    /// Split change into `extra_outputs + 1` outputs, if it's more than a specified threshold
+    /// Split change equally(ish) into `extra_outputs + 1` outputs, if it's more than a specified threshold
     Split {
         /// The number of extra outputs to create.
         extra_outputs: usize,
@@ -140,8 +140,14 @@ pub enum ChangeManagement {
     },
 }
 
+/// An e-note belonging to this wallet.
+/// Roughly equivalent to a UTXO.
+pub struct Enote {
+    inner: ffi::EnoteDetailsWrapper,
+}
+
 /// A wrapper around a pending transaction.
-pub struct PendingTransaction(*mut ffi::PendingTransaction);
+struct PendingTransaction(*mut ffi::PendingTransaction);
 
 impl WalletHandle {
     /// Open an existing wallet or create a new one, with a random seed.
@@ -490,6 +496,11 @@ impl WalletHandle {
     /// Get the total balance of the wallet.
     pub async fn total_balance(&self) -> monero::Amount {
         self.call(move |wallet| wallet.total_balance()).await
+    }
+
+    /// Get all enotes of this wallet.
+    pub async fn enotes(&self) -> Vec<Enote> {
+        self.call(move |wallet| wallet.enotes()).await
     }
 
     /// Check if the wallet is synchronized.
@@ -1372,6 +1383,31 @@ impl FfiWallet {
         monero::Amount::from_pico(balance)
     }
 
+    /// Get all enotes of this wallet.
+    fn enotes(&mut self) -> Vec<Enote> {
+        let Ok(mut pointer) = ffi::walletGetEnoteDetails(&self.inner) else {
+            tracing::error!(
+                "Failed to get enotes: FFI call failed with exception, returning empty vector"
+            );
+            return Vec::new();
+        };
+
+        let Some(mut cxx_vector) = pointer.as_mut() else {
+            tracing::error!(
+                "Failed to get enotes: FFI call failed with exception, returning empty vector"
+            );
+            return Vec::new();
+        };
+
+        // Copy enotes into a Rust vector
+        let mut enotes = Vec::new();
+        while let Some(enote) = cxx_vector.as_mut().pop() {
+            enotes.push(Enote::new(enote));
+        }
+
+        enotes
+    }
+
     /// Check if the wallet is synced with the daemon.
     fn synchronized(&self) -> bool {
         self.inner
@@ -1964,6 +2000,62 @@ impl PendingTransaction {
     }
 }
 
+impl Enote {
+    fn new(inner: ffi::EnoteDetailsWrapper) -> Self {
+        assert!(!inner.ptr.is_null(), "enote pointer not to be null");
+
+        Self { inner }
+    }
+
+    fn pinned(&mut self) -> Pin<&mut ffi::EnoteDetailsWrapper> {
+        Pin::new(&mut self.inner)
+    }
+
+    /// The amount stored in the enote.
+    pub fn amount(&self) -> monero::Amount {
+        monero::Amount::from_pico(
+            self.deref()
+                .amount()
+                .expect("FFI call failed with exception"),
+        )
+    }
+
+    /// The blockchain height when the enote was created.
+    pub fn blockchain_height(&self) -> u64 {
+        self.deref()
+            .blockHeight()
+            .expect("FFI call failed with exception")
+    }
+
+    /// Global index of this enote. Unique across the entire blockchain.
+    pub fn global_enote_index(&self) -> u64 {
+        self.deref()
+            .globalEnoteIndex()
+            .expect("FFI call failed with exception")
+    }
+
+    /// Internal index of this enote. Unique per transaction.
+    pub fn internal_enote_index(&self) -> u64 {
+        self.deref()
+            .internalEnoteIndex()
+            .expect("FFI call failed with exception")
+    }
+
+    /// Whether or not this enote was already spent.
+    pub fn is_spent(&self) -> bool {
+        self.deref()
+            .isSpent()
+            .expect("FFI call failed with exception")
+    }
+
+    /// Whether or not this enote is frozen (marked unspendable).
+    pub fn is_frozen(&self) -> bool {
+        self.deref()
+            .isFrozen()
+            .expect("FFI call failed with exception")
+    }
+}
+
 impl SyncProgress {
     /// Create a new sync progress object.
     fn new(current_block: u64, target_block: u64) -> Self {
@@ -2063,6 +2155,27 @@ impl Deref for PendingTransaction {
             self.0
                 .as_ref()
                 .expect("pending transaction pointer not to be null")
+        }
+    }
+}
+
+/// Safety: the C++ EnoteDetailsImpl only contains deep copied strings/vectors/uint64s which may be
+/// destroyed from any thread. It doesn't access thread-local state.
+/// !!Check this when updating, as it isn't an explicit guarantee of wallet2_api.h but rather an implementation detail.!!
+unsafe impl Send for Enote {}
+
+impl Deref for Enote {
+    type Target = ffi::EnoteDetails;
+
+    fn deref(&self) -> &ffi::EnoteDetails {
+        &self.inner.ptr
+    }
+}
+
+impl Drop for Enote {
+    fn drop(&mut self) {
+        if let Err(e) = ffi::destroyEnoteDetails(self.pinned()) {
+            tracing::error!(error = %e, "Failed to drop enote, continuing anyway");
         }
     }
 }

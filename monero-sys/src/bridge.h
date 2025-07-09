@@ -5,6 +5,14 @@
 #include "../monero/src/wallet/api/wallet2_api.h"
 #include "../monero/src/wallet/api/wallet_manager.h"
 
+// Define ConnectionStatus alias early so it exists before including generated header
+namespace Monero
+{
+    using ConnectionStatus = Wallet::ConnectionStatus;
+}
+
+#include "monero-sys/src/bridge.rs.h"
+
 /**
  * This file contains some C++ glue code needed to make the FFI work.
  * This consists mainly of two use-cases:
@@ -31,8 +39,6 @@
  */
 namespace Monero
 {
-    using ConnectionStatus = Wallet::ConnectionStatus;
-
     /**
      * CXX doesn't support static methods as yet, so we define free functions here that simply
      * call the appropriate static methods.
@@ -234,11 +240,44 @@ namespace Monero
     {
         v.push_back(s);
     }
+
+    /**
+     * Return a vector of EnoteDetailsWrapper. This is a wrapper around EnoteDetails, which represents a (U)TXO.
+     * Don't forget to call `destroyEnoteDetails` on Drop for each EnoteDetailsWrapper instance.
+     */
+    inline std::unique_ptr<std::vector<EnoteDetailsWrapper>> walletGetEnoteDetails(const Wallet &wallet)
+    {
+        std::vector<std::unique_ptr<EnoteDetails>> enotes = std::vector<std::unique_ptr<EnoteDetails>>();
+        wallet.getEnoteDetails(enotes);
+
+        std::vector<EnoteDetailsWrapper> result;
+        for (auto &enote_ptr : enotes)
+            if (enote_ptr)
+                result.push_back(EnoteDetailsWrapper{std::move(enote_ptr)});
+
+        return std::make_unique<std::vector<EnoteDetailsWrapper>>(std::move(result));
+    }
+
+    /**
+     * Free the memory allocated for the EnoteDetailsWrapper.
+     */
+    inline void destroyEnoteDetails(EnoteDetailsWrapper &wrapper)
+    {
+        wrapper.ptr.reset();
+    }
 }
 
 #include "easylogging++.h"
 #include "bridge.h"
-#include "monero-sys/src/bridge.rs.h"
+#include <map>
+#include <vector>
+#include <string>
+
+using String = std::string;
+using StringMap = std::map<String, String>;
+using StringVec = std::vector<String>;
+
+static std::pair<StringMap, StringVec> _monero_sys_pair_instantiation;
 
 /**
  * This section is us capturing the log messages from easylogging++
@@ -348,14 +387,3 @@ namespace monero_rust_log
         installed = false;
     }
 } // namespace
-
-#include <map>
-#include <vector>
-#include <string>
-
-// The following is a hack to ensure the linker includes the pair destructor in the binary
-using String = std::string;
-using StringMap = std::map<String, String>;
-using StringVec = std::vector<String>;
-
-static std::pair<StringMap, StringVec> _monero_sys_pair_instantiation;

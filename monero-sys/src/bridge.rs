@@ -35,6 +35,10 @@ pub mod ffi {
         ConnectionStatus_WrongVersion = 2,
     }
 
+    struct EnoteDetailsWrapper {
+        ptr: UniquePtr<EnoteDetails>,
+    }
+
     unsafe extern "C++" {
         include!("wallet/api/wallet2_api.h");
         include!("bridge.h");
@@ -207,6 +211,14 @@ pub mod ffi {
             self: Pin<&mut Wallet>,
             allow_mismatch: bool,
         ) -> Result<()>;
+
+        /// Get the enotes of the wallet.
+        fn walletGetEnoteDetails(
+            wallet: &Wallet,
+        ) -> Result<UniquePtr<CxxVector<EnoteDetailsWrapper>>>;
+
+        /// Destroy the EnoteDetailsWrapper.
+        fn destroyEnoteDetails(wrapper: Pin<&mut EnoteDetailsWrapper>) -> Result<()>;
 
         /// Check whether a transaction is in the mempool / confirmed.
         fn checkTxKey(
