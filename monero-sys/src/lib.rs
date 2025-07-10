@@ -11,8 +11,11 @@
 //! internally communicate with the wallet thread.
 
 mod bridge;
+pub mod database;
+
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
+pub use database::{Database, RecentWallet};
 
 use std::sync::{Arc, Mutex};
 use std::{
@@ -295,26 +298,24 @@ impl WalletHandle {
                 // from the mnemonic.
                 let wallet = if manager.wallet_exists(&path) {
                     // Existing wallet – open it.
-                    manager
-                        .open_or_create_wallet(
-                            &path,
-                            None,
-                            network,
-                            background_sync,
-                            daemon.clone(),
-                        )
+                    manager.open_or_create_wallet(
+                        &path,
+                        None,
+                        network,
+                        background_sync,
+                        daemon.clone(),
+                    )
                 } else {
                     // Wallet does not exist – recover it from the seed.
-                    manager
-                        .recover_wallet(
-                            &path,
-                            None,
-                            &mnemonic,
-                            network,
-                            restore_height,
-                            background_sync,
-                            daemon.clone(),
-                        )
+                    manager.recover_wallet(
+                        &path,
+                        None,
+                        &mnemonic,
+                        network,
+                        restore_height,
+                        background_sync,
+                        daemon.clone(),
+                    )
                 };
 
                 if let Err(e) = wallet {
@@ -404,18 +405,17 @@ impl WalletHandle {
 
                 let mut manager = manager.expect("wallet manager to be created");
 
-                let wallet = manager
-                    .open_or_create_wallet_from_keys(
-                        &path,
-                        password.as_deref(),
-                        network,
-                        &address,
-                        view_key,
-                        spend_key,
-                        restore_height,
-                        background_sync,
-                        daemon.clone(),
-                    );
+                let wallet = manager.open_or_create_wallet_from_keys(
+                    &path,
+                    password.as_deref(),
+                    network,
+                    &address,
+                    view_key,
+                    spend_key,
+                    restore_height,
+                    background_sync,
+                    daemon.clone(),
+                );
 
                 if let Err(e) = wallet {
                     wallet_created_sender

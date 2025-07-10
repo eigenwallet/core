@@ -355,6 +355,20 @@ impl ContextBuilder {
             ssl: false,
         };
 
+        // Initialize wallet database for tracking recent wallets
+        let wallet_database = monero_sys::Database::new(eigenwallet_data_dir.clone())
+            .await
+            .context("Failed to initialize wallet database")?;
+
+        // Get recent wallets from database
+        let recent_wallets = wallet_database
+            .get_recent_wallets(5)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|w| w.wallet_path)
+            .collect();
+
         // Handle seed selection - return wallet struct
         let wallet = match &self.tauri_handle {
             Some(tauri_handle) => {
@@ -364,7 +378,9 @@ impl ContextBuilder {
                         (),
                     );
 
-                let seed_choice = tauri_handle.request_seed_selection().await?;
+                let seed_choice = tauri_handle
+                    .request_seed_selection_with_recent_wallets(recent_wallets)
+                    .await?;
 
                 match seed_choice {
                     SeedChoice::RandomSeed => {
@@ -450,6 +466,8 @@ impl ContextBuilder {
             "Using wallet-specific data directory"
         );
 
+        let wallet_database = Some(Arc::new(wallet_database));
+
         // Create the monero wallet manager
         let monero_manager = Some(Arc::new(
             monero::Wallets::new_with_existing_wallet(
@@ -459,6 +477,7 @@ impl ContextBuilder {
                 false,
                 self.tauri_handle.clone(),
                 wallet,
+                wallet_database,
             )
             .await
             .context("Failed to initialize Monero wallets with existing wallet")?,
@@ -658,87 +677,6 @@ async fn init_bitcoin_wallet(
         .context("Failed to initialize Bitcoin wallet")?;
 
     Ok(wallet)
-}
-
-async fn init_monero_wallet(
-    data_dir: &Path,
-    monero_daemon_address: String,
-    env_config: EnvConfig,
-    tauri_handle: Option<TauriHandle>,
-    wallet_path: Option<String>,
-) -> Result<Arc<Wallets>> {
-    let network = env_config.monero_network;
-    let wallet_dir = data_dir.join("monero").join("monero-data");
-
-    let daemon = monero_sys::Daemon {
-        address: monero_daemon_address,
-        ssl: false,
-    };
-
-    // This is the name of a wallet we only use for blockchain monitoring
-    const DEFAULT_WALLET: &str = "swap-tool-blockchain-monitoring-wallet";
-
-    // Remove the monitoring wallet if it exists
-    // It doesn't contain any coins
-    // Deleting it ensures we never have issues at startup
-    // And we reset the restore height
-    // let wallet_path = wallet_dir.join(DEFAULT_WALLET);
-    // if wallet_path.exists() {
-    //     tracing::debug!(
-    //         wallet_path = %wallet_path.display(),
-    //         "Removing monitoring wallet"
-    //     );
-    //     let _ = tokio::fs::remove_file(&wallet_path).await;
-    // }
-    // let keys_path = wallet_path.with_extension("keys");
-    // if keys_path.exists() {
-    //     tracing::debug!(
-    //         keys_path = %keys_path.display(),
-    //         "Removing monitoring wallet keys"
-    //     );
-    //     let _ = tokio::fs::remove_file(keys_path).await;
-    // }
-
-    let wallets = match wallet_path {
-        Some(path) => {
-            // Open existing wallet from provided path with background sync enabled
-            let main_wallet = monero::Wallet::open_or_create(
-                path,
-                daemon.clone(),
-                network,
-                true, // Enable background sync for main wallet
-            )
-            .await
-            .context("Failed to open wallet from provided path")?;
-
-            // Create Wallets instance using the opened wallet as main_wallet
-            monero::Wallets::new_with_existing_wallet(
-                wallet_dir,
-                daemon,
-                network,
-                false,
-                tauri_handle,
-                main_wallet,
-            )
-            .await
-            .context("Failed to initialize Monero wallets with existing wallet")?
-        }
-        None => {
-            // Default behavior - create new wallet
-            monero::Wallets::new(
-                wallet_dir,
-                DEFAULT_WALLET.to_string(),
-                daemon,
-                network,
-                false,
-                tauri_handle,
-            )
-            .await
-            .context("Failed to initialize Monero wallets")?
-        }
-    };
-
-    Ok(Arc::new(wallets))
 }
 
 pub mod data {

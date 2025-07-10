@@ -38,6 +38,8 @@ pub struct Wallets {
     /// waiting for a transaction to be confirmed.
     #[expect(dead_code)]
     tauri_handle: Option<TauriHandle>,
+    /// Database for tracking wallet usage history.
+    wallet_database: Option<Arc<monero_sys::Database>>,
 }
 
 /// A request to watch for a transfer.
@@ -153,6 +155,7 @@ impl Wallets {
         network: Network,
         regtest: bool,
         tauri_handle: Option<TauriHandle>,
+        wallet_database: Option<Arc<monero_sys::Database>>,
     ) -> Result<Self> {
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
@@ -187,7 +190,12 @@ impl Wallets {
             main_wallet,
             regtest,
             tauri_handle,
+            wallet_database,
         };
+
+        // Record wallet access in database
+        let wallet_path = wallets.main_wallet.path().await;
+        let _ = wallets.record_wallet_access(&wallet_path).await;
 
         Ok(wallets)
     }
@@ -201,6 +209,7 @@ impl Wallets {
         regtest: bool,
         tauri_handle: Option<TauriHandle>,
         existing_wallet: Wallet,
+        wallet_database: Option<Arc<monero_sys::Database>>,
     ) -> Result<Self> {
         if regtest {
             existing_wallet.unsafe_prepare_for_regtest().await;
@@ -226,7 +235,12 @@ impl Wallets {
             main_wallet,
             regtest,
             tauri_handle,
+            wallet_database,
         };
+
+        // Record wallet access in database
+        let wallet_path = wallets.main_wallet.path().await;
+        let _ = wallets.record_wallet_access(&wallet_path).await;
 
         Ok(wallets)
     }
@@ -349,6 +363,24 @@ impl Wallets {
                 .await
                 .context("Failed to get blockchain height")?,
         })
+    }
+
+    /// Get the last 5 recently used wallets
+    pub async fn get_recent_wallets(&self) -> Result<Vec<String>> {
+        if let Some(db) = &self.wallet_database {
+            let recent_wallets = db.get_recent_wallets(5).await?;
+            Ok(recent_wallets.into_iter().map(|w| w.wallet_path).collect())
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    /// Record that a wallet was accessed
+    pub async fn record_wallet_access(&self, wallet_path: &str) -> Result<()> {
+        if let Some(db) = &self.wallet_database {
+            db.record_wallet_access(wallet_path).await?;
+        }
+        Ok(())
     }
 }
 

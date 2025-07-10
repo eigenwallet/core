@@ -82,6 +82,13 @@ pub enum SeedChoice {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeedSelectionDetails {
+    /// List of recently used wallet paths
+    pub recent_wallets: Vec<String>,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApprovalRequest {
     request: ApprovalRequestType,
     request_status: RequestStatus,
@@ -101,7 +108,7 @@ pub enum ApprovalRequestType {
     SelectMaker(SelectMakerDetails),
     /// Request seed selection from user.
     /// User can choose between random seed, provide their own, or select wallet file.
-    SeedSelection,
+    SeedSelection(SeedSelectionDetails),
 }
 
 #[typeshare]
@@ -339,7 +346,7 @@ impl Display for ApprovalRequest {
         match self.request {
             ApprovalRequestType::LockBitcoin(..) => write!(f, "LockBitcoin()"),
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
-            ApprovalRequestType::SeedSelection => write!(f, "SeedSelection()"),
+            ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
         }
     }
 }
@@ -359,6 +366,11 @@ pub trait TauriEmitter {
     ) -> Result<bool>;
 
     async fn request_seed_selection(&self) -> Result<SeedChoice>;
+
+    async fn request_seed_selection_with_recent_wallets(
+        &self,
+        recent_wallets: Vec<String>,
+    ) -> Result<SeedChoice>;
 
     fn emit_tauri_event<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()>;
 
@@ -455,7 +467,16 @@ impl TauriEmitter for TauriHandle {
     }
 
     async fn request_seed_selection(&self) -> Result<SeedChoice> {
-        self.request_approval(ApprovalRequestType::SeedSelection, None)
+        self.request_seed_selection_with_recent_wallets(vec![])
+            .await
+    }
+
+    async fn request_seed_selection_with_recent_wallets(
+        &self,
+        recent_wallets: Vec<String>,
+    ) -> Result<SeedChoice> {
+        let details = SeedSelectionDetails { recent_wallets };
+        self.request_approval(ApprovalRequestType::SeedSelection(details), None)
             .await
     }
 
@@ -524,6 +545,20 @@ impl TauriEmitter for Option<TauriHandle> {
     async fn request_seed_selection(&self) -> Result<SeedChoice> {
         match self {
             Some(tauri) => tauri.request_seed_selection().await,
+            None => bail!("No Tauri handle available"),
+        }
+    }
+
+    async fn request_seed_selection_with_recent_wallets(
+        &self,
+        recent_wallets: Vec<String>,
+    ) -> Result<SeedChoice> {
+        match self {
+            Some(tauri) => {
+                tauri
+                    .request_seed_selection_with_recent_wallets(recent_wallets)
+                    .await
+            }
             None => bail!("No Tauri handle available"),
         }
     }

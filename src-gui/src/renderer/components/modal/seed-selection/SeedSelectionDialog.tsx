@@ -11,6 +11,11 @@ import {
   Typography,
   Button,
   Box,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  Divider,
 } from "@mui/material";
 import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
@@ -29,6 +34,12 @@ export default function SeedSelectionDialog() {
   const [walletPath, setWalletPath] = useState<string>("");
 
   const approval = pendingApprovals[0];
+
+  // Extract recent wallets from the approval request content
+  const recentWallets =
+    approval?.request?.type === "SeedSelection"
+      ? approval.request.content.recent_wallets
+      : [];
 
   useEffect(() => {
     if (selectedOption === "FromSeed" && customSeed.trim()) {
@@ -137,10 +148,7 @@ export default function SeedSelectionDialog() {
         )}
 
         {selectedOption === "FromWalletPath" && (
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Select your existing Monero wallet file:
-            </Typography>
+          <Box sx={{ mt: 2, gap: 1, display: "flex", flexDirection: "column" }}>
             <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
               <TextField
                 fullWidth
@@ -160,6 +168,51 @@ export default function SeedSelectionDialog() {
                 Browse
               </Button>
             </Box>
+            {recentWallets.length > 0 && (
+              <Box sx={{ mb: 2 }}>
+                <Box
+                  sx={{
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    maxHeight: 200,
+                    overflow: "auto",
+                  }}
+                >
+                  <List disablePadding>
+                    {recentWallets.map((path, index) => (
+                      <Box key={index}>
+                        <ListItem disablePadding>
+                          <ListItemButton
+                            selected={walletPath === path}
+                            onClick={() => setWalletPath(path)}
+                            sx={{ py: 1 }}
+                          >
+                            <ListItemText
+                              primary={path.split("/").pop() || path}
+                              secondary={path}
+                              primaryTypographyProps={{
+                                fontWeight: walletPath === path ? 600 : 400,
+                                fontSize: "0.9rem",
+                              }}
+                              secondaryTypographyProps={{
+                                fontSize: "0.75rem",
+                                sx: {
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                },
+                              }}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                        {index < recentWallets.length - 1 && <Divider />}
+                      </Box>
+                    ))}
+                  </List>
+                </Box>
+              </Box>
+            )}
           </Box>
         )}
       </DialogContent>
