@@ -553,12 +553,17 @@ export async function resolveApproval<T>(
   try {
     await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
       "resolve_approval_request",
-      { request_id: requestId, accept },
+      { request_id: requestId, accept: accept as object },
     );
   } catch (error) {
-    // Refresh approval list when resolve fails to keep UI in sync
-    await refreshApprovals();
     throw error;
+  } finally {
+    // Always refresh the approval list
+    await refreshApprovals();
+
+    setTimeout(() => {
+      refreshApprovals();
+    }, 200);
   }
 }
 
