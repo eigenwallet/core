@@ -35,6 +35,7 @@ use config::Config;
 use database::Database;
 use pool::{NodePool, PoolStatus};
 use proxy::{proxy_handler, stats_handler};
+use url::Url;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -57,6 +58,12 @@ impl Drop for PoolHandle {
 pub struct ServerInfo {
     pub port: u16,
     pub host: String,
+}
+
+impl Into<String> for ServerInfo {
+    fn into(self) -> String {
+        format!("http://{}:{}", self.host, self.port)
+    }
 }
 
 async fn create_app_with_receiver(
