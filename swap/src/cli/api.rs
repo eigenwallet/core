@@ -8,7 +8,6 @@ use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
 use crate::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use crate::fs::system_data_dir;
-use crate::monero::Wallets;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
@@ -360,27 +359,27 @@ impl ContextBuilder {
             .await
             .context("Failed to initialize wallet database")?;
 
-        // Get recent wallets from database
-        let recent_wallets = wallet_database
-            .get_recent_wallets(5)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|w| w.wallet_path)
-            .collect();
-
-        // Handle seed selection - return wallet struct
+        // Let the user choose what wallet to open
         let wallet = match &self.tauri_handle {
             Some(tauri_handle) => {
+                // Get recent wallets from database
+                let recent_wallets = wallet_database
+                    .get_recent_wallets(5)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|w| w.wallet_path)
+                    .collect();
+
+                let seed_choice = tauri_handle
+                    .request_seed_selection_with_recent_wallets(recent_wallets)
+                    .await?;
+
                 let _monero_progress_handle = tauri_handle
                     .new_background_process_with_initial_progress(
                         TauriBackgroundProgress::OpeningMoneroWallet,
                         (),
                     );
-
-                let seed_choice = tauri_handle
-                    .request_seed_selection_with_recent_wallets(recent_wallets)
-                    .await?;
 
                 match seed_choice {
                     SeedChoice::RandomSeed => {
@@ -570,8 +569,6 @@ impl ContextBuilder {
             }
         }
 
-        tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
-
         let context = Context {
             db,
             bitcoin_wallet,
@@ -591,6 +588,8 @@ impl ContextBuilder {
             tor_client: tor,
             monero_rpc_pool_handle,
         };
+
+        tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
 
         Ok(context)
     }

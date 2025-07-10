@@ -35,7 +35,6 @@ use config::Config;
 use database::Database;
 use pool::{NodePool, PoolStatus};
 use proxy::{proxy_handler, stats_handler};
-use url::Url;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -55,6 +55,14 @@ export default function SeedSelectionDialog() {
     }
   }, [customSeed, selectedOption]);
 
+  // Auto-select the first recent wallet if available
+  useEffect(() => {
+    if (recentWallets.length > 0) {
+      setSelectedOption("FromWalletPath");
+      setWalletPath(recentWallets[0]);
+    }
+  }, [recentWallets.length]);
+
   const selectWalletFile = async () => {
     const selected = await open({
       multiple: false,
