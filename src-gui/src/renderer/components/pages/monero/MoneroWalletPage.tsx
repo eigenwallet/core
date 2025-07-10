@@ -22,6 +22,10 @@ export default function MoneroWalletPage() {
     initializeMoneroWallet();
   }, []);
 
+  if (mainAddress === null || balance === null || syncProgress === null) {
+    return <div>Loading...</div>;
+  }
+
   return (
     <Box
       sx={{
@@ -36,7 +40,6 @@ export default function MoneroWalletPage() {
       <Typography variant="h4">Wallet</Typography>
       <WalletOverview balance={balance} syncProgress={syncProgress} />
       <WalletActionButtons balance={balance} />
-
       <TransactionHistory history={history} />
     </Box>
   );

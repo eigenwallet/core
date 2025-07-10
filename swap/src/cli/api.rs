@@ -398,7 +398,7 @@ impl ContextBuilder {
                             wallet_path.display().to_string(),
                             daemon.clone(),
                             env_config.monero_network,
-                            false,
+                            true,
                         )
                         .await
                         .context("Failed to create wallet from random seed")?
@@ -420,7 +420,7 @@ impl ContextBuilder {
                             mnemonic,
                             env_config.monero_network,
                             0,
-                            false,
+                            true,
                             daemon.clone(),
                         )
                         .await
@@ -432,7 +432,7 @@ impl ContextBuilder {
                             wallet_path.clone(),
                             daemon.clone(),
                             env_config.monero_network,
-                            false,
+                            true,
                         )
                         .await
                         .context("Failed to open wallet from provided path")?

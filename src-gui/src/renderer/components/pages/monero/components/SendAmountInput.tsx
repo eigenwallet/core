@@ -1,6 +1,6 @@
 import { Box, Button, Card, Typography } from "@mui/material";
 import NumberInput from "./NumberInput";
-import SwapVertIcon from '@mui/icons-material/SwapVert';
+import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useState } from "react";
 
 interface SendAmountInputProps {
@@ -14,7 +14,7 @@ export default function SendAmountInput({
   amount,
   onAmountChange,
 }: SendAmountInputProps) {
-    const [primaryCurrency, setPrimaryCurrency] = useState<string>("XMR");
+  const [primaryCurrency, setPrimaryCurrency] = useState<string>("XMR");
   const displayBalance = (parseFloat(balance) / 1000000000000).toFixed(3);
 
   return (
@@ -30,7 +30,9 @@ export default function SendAmountInput({
         height: 250,
       }}
     >
-      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <Box
+        sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}
+      >
         <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
           <NumberInput
             value={amount}
@@ -48,8 +50,14 @@ export default function SendAmountInput({
           </Typography>
         </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-            <SwapVertIcon onClick={() => setPrimaryCurrency(primaryCurrency === "XMR" ? "fiat" : "XMR")}/>
-            <Typography color="text.secondary">{primaryCurrency === "XMR" ? "0.00 USD" : "0.00 XMR"}</Typography>
+          <SwapVertIcon
+            onClick={() =>
+              setPrimaryCurrency(primaryCurrency === "XMR" ? "fiat" : "XMR")
+            }
+          />
+          <Typography color="text.secondary">
+            {primaryCurrency === "XMR" ? "0.00 USD" : "0.00 XMR"}
+          </Typography>
         </Box>
       </Box>
 
