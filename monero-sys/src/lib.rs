@@ -270,11 +270,9 @@ impl WalletHandle {
         // Capture current dispatcher before spawning
         let current_dispatcher = tracing::dispatcher::get_default(|d| d.clone());
 
-        // Spawn the wallet thread – all interactions with the wallet must
-        // happen on the same OS thread.
+        // Oneshot channel to wait for the wallet to be opened or created
+        let (wallet_created_sender, wallet_created_receiver) = oneshot::channel::<Result<()>>();
 
-
-        // TODO: Use a oneshot channel to wait for the wallet to be created (like in the open_or_create function)
         std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
@@ -282,8 +280,16 @@ impl WalletHandle {
                 let _guard = tracing::dispatcher::set_default(&current_dispatcher);
 
                 // Create the wallet manager in this thread first.
-                let mut manager = WalletManager::new(daemon.clone(), &wallet_name)
-                    .expect("wallet manager to be created");
+                let manager = WalletManager::new(daemon.clone(), &wallet_name);
+
+                if let Err(e) = manager {
+                    wallet_created_sender
+                        .send(Err(e.context("failed to create wallet manager")))
+                        .unwrap();
+                    return;
+                }
+
+                let mut manager = manager.expect("wallet manager to be created");
 
                 // Decide whether we have to open an existing wallet or recover it
                 // from the mnemonic.
@@ -297,7 +303,6 @@ impl WalletHandle {
                             background_sync,
                             daemon.clone(),
                         )
-                        .expect("wallet to be opened")
                 } else {
                     // Wallet does not exist – recover it from the seed.
                     manager
@@ -310,14 +315,30 @@ impl WalletHandle {
                             background_sync,
                             daemon.clone(),
                         )
-                        .expect("wallet to be recovered from seed")
                 };
 
+                if let Err(e) = wallet {
+                    wallet_created_sender
+                        .send(Err(e.context("failed to open or create wallet from seed")))
+                        .unwrap();
+                    return;
+                }
+
+                let wallet = wallet.expect("wallet to be created");
+
                 let mut wrapped_wallet = Wallet::new(wallet, manager, call_receiver);
+
+                wallet_created_sender.send(Ok(())).unwrap();
 
                 wrapped_wallet.run();
             })
             .context("Couldn't start wallet thread")?;
+
+        // Wait for the wallet creation to complete
+        let wallet_created = wallet_created_receiver
+            .await
+            .expect("wallet creation to complete");
+        wallet_created?;
 
         let wallet = WalletHandle::new(call_sender);
         // Make a test call to ensure that the wallet is created.
@@ -357,7 +378,9 @@ impl WalletHandle {
         // Capture current dispatcher before spawning
         let current_dispatcher = tracing::dispatcher::get_default(|d| d.clone());
 
-        // TODO: Use a oneshot channel to wait for the wallet to be created (like in the open_or_create function)
+        // Oneshot channel to wait for the wallet to be opened or created
+        let (wallet_created_sender, wallet_created_receiver) = oneshot::channel::<Result<()>>();
+
         std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
@@ -370,8 +393,16 @@ impl WalletHandle {
                     .map(ToString::to_string)
                     .unwrap_or(path.clone());
 
-                let mut manager = WalletManager::new(daemon.clone(), &wallet_name)
-                    .expect("wallet manager to be created");
+                let manager = WalletManager::new(daemon.clone(), &wallet_name);
+
+                if let Err(e) = manager {
+                    wallet_created_sender
+                        .send(Err(e.context("failed to create wallet manager")))
+                        .unwrap();
+                    return;
+                }
+
+                let mut manager = manager.expect("wallet manager to be created");
 
                 let wallet = manager
                     .open_or_create_wallet_from_keys(
@@ -384,14 +415,30 @@ impl WalletHandle {
                         restore_height,
                         background_sync,
                         daemon.clone(),
-                    )
-                    .expect("wallet to be opened or created from keys");
+                    );
+
+                if let Err(e) = wallet {
+                    wallet_created_sender
+                        .send(Err(e.context("failed to open or create wallet from keys")))
+                        .unwrap();
+                    return;
+                }
+
+                let wallet = wallet.expect("wallet to be created");
 
                 let mut wrapped_wallet = Wallet::new(wallet, manager, call_receiver);
+
+                wallet_created_sender.send(Ok(())).unwrap();
 
                 wrapped_wallet.run();
             })
             .context("Couldn't start wallet thread")?;
+
+        // Wait for the wallet creation to complete
+        let wallet_created = wallet_created_receiver
+            .await
+            .expect("wallet creation to complete");
+        wallet_created?;
 
         let wallet = WalletHandle::new(call_sender);
 
