@@ -163,6 +163,9 @@ pub mod ffi {
         /// Get the seed of the wallet.
         fn walletSeed(wallet: &Wallet, seed_offset: &CxxString) -> Result<UniquePtr<CxxString>>;
 
+        /// Set the seed language of the wallet.
+        fn setSeedLanguage(self: Pin<&mut Wallet>, language: &CxxString) -> Result<()>;
+
         /// Get the wallet creation height.
         fn getRefreshFromBlockHeight(self: &Wallet) -> Result<u64>;
 
@@ -399,6 +402,44 @@ pub mod wallet_listener {
     }
 }
 
+// Callback functions called from C++ - these bridge the C++ callbacks to Rust trait methods
+pub fn money_spent(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
+    listener.on_money_spent(&txid.to_string(), amount);
+}
+
+pub fn money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
+    listener.on_money_received(&txid.to_string(), amount);
+}
+
+pub fn unconfirmed_money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
+    listener.on_unconfirmed_money_received(&txid.to_string(), amount);
+}
+
+pub fn new_block(listener: &mut WalletListenerBox, height: u64) {
+    listener.on_new_block(height);
+}
+
+pub fn updated(listener: &mut WalletListenerBox) {
+    listener.on_updated();
+}
+
+pub fn refreshed(listener: &mut WalletListenerBox) {
+    listener.on_refreshed();
+}
+
+pub fn on_reorg(
+    listener: &mut WalletListenerBox,
+    height: u64,
+    blocks_detached: u64,
+    transfers_detached: usize,
+) {
+    listener.on_reorg(height, blocks_detached, transfers_detached);
+}
+
+pub fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString) {
+    listener.on_pool_tx_removed(&txid.to_string());
+}
+
 /// Trait for wallet event listeners - allows custom callback implementations
 pub trait WalletEventListener: Send + Sync {
     fn on_money_spent(&self, txid: &str, amount: u64);
@@ -467,27 +508,15 @@ pub struct TraceListener {
 impl TraceListener {
     /// Creates a new TraceListener with a filename for logging context.
     pub fn new(filename: String) -> Self {
-        tracing::debug!("Creating new TraceListener for wallet: {}", filename);
         TraceListener { filename }
-    }
-
-    /// Creates a new TraceListener with "unknown" as the filename.
-    pub fn new_default() -> Self {
-        Self::new("unknown".to_string())
-    }
-}
-
-impl Default for TraceListener {
-    fn default() -> Self {
-        Self::new_default()
     }
 }
 
 impl WalletEventListener for TraceListener {
     fn on_money_spent(&self, txid: &str, amount: u64) {
         tracing::info!(
-            "[{}] Money spent: {} XMR in transaction {}",
-            self.filename,
+            wallet = self.filename,
+            "Money spent: {} XMR in transaction {}",
             amount as f64 / 1e12,
             txid
         );
@@ -495,8 +524,8 @@ impl WalletEventListener for TraceListener {
 
     fn on_money_received(&self, txid: &str, amount: u64) {
         tracing::info!(
-            "[{}] Money received: {} XMR in transaction {}",
-            self.filename,
+            wallet = self.filename,
+            "Money received: {} XMR in transaction {}",
             amount as f64 / 1e12,
             txid
         );
@@ -504,77 +533,42 @@ impl WalletEventListener for TraceListener {
 
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
         tracing::info!(
-            "[{}] Unconfirmed money received: {} XMR in transaction {}",
-            self.filename,
+            wallet = self.filename,
+            "Unconfirmed money received: {} XMR in transaction {}",
             amount as f64 / 1e12,
             txid
         );
     }
 
     fn on_new_block(&self, height: u64) {
-        tracing::info!("[{}] New block at height: {}", self.filename, height);
+        tracing::info!(wallet = self.filename, "New block at height: {}", height);
     }
 
     fn on_updated(&self) {
-        tracing::debug!("[{}] Wallet updated", self.filename);
+        tracing::debug!(wallet = self.filename, "Wallet updated");
     }
 
     fn on_refreshed(&self) {
-        tracing::info!("[{}] Wallet refreshed", self.filename);
+        tracing::info!(wallet = self.filename, "Wallet refreshed");
     }
 
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
         tracing::warn!(
-            "[{}] Blockchain reorganization at height {}: {} blocks detached, {} transfers detached", 
-            self.filename, height, blocks_detached, transfers_detached
+            wallet = self.filename,
+            "Blockchain reorganization at height {}: {} blocks detached, {} transfers detached",
+            height,
+            blocks_detached,
+            transfers_detached
         );
     }
 
     fn on_pool_tx_removed(&self, txid: &str) {
         tracing::info!(
-            "[{}] Transaction removed from pool: {}",
-            self.filename,
+            wallet = self.filename,
+            "Transaction removed from pool: {}",
             txid
         );
     }
-}
-
-// Free function implementations for CXX bridge - these work with any WalletEventListener
-pub fn money_spent(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
-    listener.on_money_spent(txid.to_str().unwrap_or("<invalid>"), amount);
-}
-
-pub fn money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
-    listener.on_money_received(txid.to_str().unwrap_or("<invalid>"), amount);
-}
-
-pub fn unconfirmed_money_received(listener: &mut WalletListenerBox, txid: &CxxString, amount: u64) {
-    listener.on_unconfirmed_money_received(txid.to_str().unwrap_or("<invalid>"), amount);
-}
-
-pub fn new_block(listener: &mut WalletListenerBox, height: u64) {
-    listener.on_new_block(height);
-}
-
-pub fn updated(listener: &mut WalletListenerBox) {
-    listener.on_updated();
-}
-
-pub fn refreshed(listener: &mut WalletListenerBox) {
-    listener.on_refreshed();
-}
-
-pub fn on_reorg(
-    listener: &mut WalletListenerBox,
-    height: u64,
-    blocks_detached: u64,
-    transfers_detached: usize,
-) {
-    listener.on_reorg(height, blocks_detached, transfers_detached);
-}
-
-pub fn pool_tx_removed(listener: &mut WalletListenerBox, txid: &CxxString) {
-    listener.on_pool_tx_removed(txid.to_str().unwrap_or("<invalid>"));
 }
 
 pub fn make_custom_listener(listener: Box<dyn WalletEventListener>) -> Box<WalletListenerBox> {

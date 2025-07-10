@@ -9,12 +9,15 @@ import {
   RadioGroup,
   TextField,
   Typography,
+  Button,
+  Box,
 } from "@mui/material";
 import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import { open } from "@tauri-apps/plugin-dialog";
 
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
@@ -23,6 +26,7 @@ export default function SeedSelectionDialog() {
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
+  const [walletPath, setWalletPath] = useState<string>("");
 
   const approval = pendingApprovals[0];
 
@@ -40,6 +44,17 @@ export default function SeedSelectionDialog() {
     }
   }, [customSeed, selectedOption]);
 
+  const selectWalletFile = async () => {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+    });
+
+    if (selected) {
+      setWalletPath(selected);
+    }
+  };
+
   const accept = async () => {
     if (!approval)
       throw new Error("No approval request found for seed selection");
@@ -47,7 +62,9 @@ export default function SeedSelectionDialog() {
     const seedChoice: SeedChoice =
       selectedOption === "RandomSeed"
         ? { type: "RandomSeed" }
-        : { type: "FromSeed", content: { seed: customSeed } };
+        : selectedOption === "FromSeed"
+          ? { type: "FromSeed", content: { seed: customSeed } }
+          : { type: "FromWalletPath", content: { wallet_path: walletPath } };
 
     await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
   };
@@ -57,10 +74,13 @@ export default function SeedSelectionDialog() {
   }
 
   // Disable the button if the user is restoring from a seed and the seed is invalid
+  // or if selecting wallet path and no path is selected
   const isDisabled =
     selectedOption === "FromSeed"
       ? customSeed.trim().length === 0 || !isSeedValid
-      : false;
+      : selectedOption === "FromWalletPath"
+        ? !walletPath
+        : false;
 
   return (
     <Dialog open={true} maxWidth="sm" fullWidth>
@@ -87,6 +107,11 @@ export default function SeedSelectionDialog() {
               control={<Radio />}
               label="Restore wallet from seed"
             />
+            <FormControlLabel
+              value="FromWalletPath"
+              control={<Radio />}
+              label="Open existing wallet file"
+            />
           </RadioGroup>
         </FormControl>
 
@@ -109,6 +134,33 @@ export default function SeedSelectionDialog() {
                   : ""
             }
           />
+        )}
+
+        {selectedOption === "FromWalletPath" && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Select your existing Monero wallet file:
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+              <TextField
+                fullWidth
+                label="Wallet file path"
+                value={walletPath || ""}
+                placeholder="Select a wallet file..."
+                InputProps={{
+                  readOnly: true,
+                }}
+              />
+              <Button
+                variant="outlined"
+                onClick={selectWalletFile}
+                sx={{ minWidth: "120px" }}
+                size="large"
+              >
+                Browse
+              </Button>
+            </Box>
+          </Box>
         )}
       </DialogContent>
       <DialogActions>

@@ -192,6 +192,45 @@ impl Wallets {
         Ok(wallets)
     }
 
+    /// Create a new `Wallets` instance with an existing wallet as the main wallet.
+    /// This is used when we want to use a user-selected wallet instead of creating a new one.
+    pub async fn new_with_existing_wallet(
+        wallet_dir: PathBuf,
+        daemon: Daemon,
+        network: Network,
+        regtest: bool,
+        tauri_handle: Option<TauriHandle>,
+        existing_wallet: Wallet,
+    ) -> Result<Self> {
+        if regtest {
+            existing_wallet.unsafe_prepare_for_regtest().await;
+        }
+
+        let main_wallet = Arc::new(existing_wallet);
+
+        if let Some(tauri_handle) = tauri_handle.clone() {
+            let tauri_wallet_listener =
+                TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
+
+            main_wallet
+                .call(move |wallet| {
+                    wallet.add_listener(Box::new(tauri_wallet_listener));
+                })
+                .await;
+        }
+
+        let wallets = Self {
+            wallet_dir,
+            network,
+            daemon,
+            main_wallet,
+            regtest,
+            tauri_handle,
+        };
+
+        Ok(wallets)
+    }
+
     /// Open the lock wallet of a specific swap.
     /// Used to redeem (Bob) or refund (Alice) the Monero.
     pub async fn swap_wallet(

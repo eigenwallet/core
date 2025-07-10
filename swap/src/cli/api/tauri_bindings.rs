@@ -77,6 +77,7 @@ pub struct SelectMakerDetails {
 pub enum SeedChoice {
     RandomSeed,
     FromSeed { seed: String },
+    FromWalletPath { wallet_path: String },
 }
 
 #[typeshare]
@@ -99,7 +100,7 @@ pub enum ApprovalRequestType {
     /// Contains available makers and swap details.
     SelectMaker(SelectMakerDetails),
     /// Request seed selection from user.
-    /// User can choose between random seed or provide their own.
+    /// User can choose between random seed, provide their own, or select wallet file.
     SeedSelection,
 }
 

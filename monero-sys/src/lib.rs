@@ -184,23 +184,56 @@ impl WalletHandle {
         // Capture current dispatcher before spawning
         let current_dispatcher = tracing::dispatcher::get_default(|d| d.clone());
 
+        // Oneshot channel to wait for the wallet to be opened or created
+        let (wallet_created_sender, wallet_created_receiver) = oneshot::channel::<Result<()>>();
+
         std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
                 // Set the dispatcher for this thread
                 let _guard = tracing::dispatcher::set_default(&current_dispatcher);
 
-                let mut manager = WalletManager::new(daemon.clone(), &wallet_name)
-                    .expect("wallet manager to be created");
-                let wallet = manager
-                    .open_or_create_wallet(&path, None, network, background_sync, daemon.clone())
-                    .expect("wallet to be created");
+                let manager = WalletManager::new(daemon.clone(), &wallet_name);
+
+                if let Err(e) = manager {
+                    wallet_created_sender
+                        .send(Err(e.context("failed to create wallet manager")))
+                        .unwrap();
+                    return;
+                }
+
+                let mut manager = manager.expect("wallet manager to be created");
+
+                let wallet = manager.open_or_create_wallet(
+                    &path,
+                    None,
+                    network,
+                    background_sync,
+                    daemon.clone(),
+                );
+
+                if let Err(e) = wallet {
+                    wallet_created_sender
+                        .send(Err(e.context("failed to open or create wallet")))
+                        .unwrap();
+                    return;
+                }
+
+                let wallet = wallet.expect("wallet to be created");
 
                 let mut wrapped_wallet = Wallet::new(wallet, manager, call_receiver);
+
+                wallet_created_sender.send(Ok(())).unwrap();
 
                 wrapped_wallet.run();
             })
             .context("Couldn't start wallet thread")?;
+
+        // Wait for the wallet creation to complete
+        let wallet_created = wallet_created_receiver
+            .await
+            .expect("wallet creation to complete");
+        wallet_created?;
 
         // Ensure the wallet was created successfully by performing a dummy call
         let wallet = WalletHandle::new(call_sender);
@@ -239,6 +272,9 @@ impl WalletHandle {
 
         // Spawn the wallet thread – all interactions with the wallet must
         // happen on the same OS thread.
+
+
+        // TODO: Use a oneshot channel to wait for the wallet to be created (like in the open_or_create function)
         std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
@@ -321,6 +357,7 @@ impl WalletHandle {
         // Capture current dispatcher before spawning
         let current_dispatcher = tracing::dispatcher::get_default(|d| d.clone());
 
+        // TODO: Use a oneshot channel to wait for the wallet to be created (like in the open_or_create function)
         std::thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
@@ -504,7 +541,7 @@ impl WalletHandle {
     }
 
     /// Get the seed of the wallet.
-    pub async fn seed(&self) -> String {
+    pub async fn seed(&self) -> anyhow::Result<String> {
         self.call(move |wallet| wallet.seed()).await
     }
 
@@ -1184,7 +1221,7 @@ impl FfiWallet {
 
         let mut wallet = Self {
             inner,
-            listeners: Arc::new(Mutex::new(vec![Box::new(TraceListener::new_default())])),
+            listeners: Arc::new(Mutex::new(vec![])),
         };
 
         wallet
@@ -1912,12 +1949,24 @@ impl FfiWallet {
     }
 
     /// Get the seed of the wallet.
-    fn seed(&self) -> String {
-        let_cxx_string!(seed = "");
-        ffi::walletSeed(&self.inner, &seed)
+    fn seed(&mut self) -> anyhow::Result<String> {
+        let_cxx_string!(language = "English");
+        self.inner
+            .pinned()
+            .setSeedLanguage(&language)
+            .context("Failed to set seed language")?;
+
+        let_cxx_string!(seed_offset = "");
+        let seed = ffi::walletSeed(&self.inner, &seed_offset)
             .context("Failed to get wallet seed: FFI call failed with exception")
             .expect("Shouldn't panic")
-            .to_string()
+            .to_string();
+
+        if seed.is_empty() {
+            bail!("Failed to get wallet seed");
+        }
+
+        Ok(seed)
     }
 }
 
