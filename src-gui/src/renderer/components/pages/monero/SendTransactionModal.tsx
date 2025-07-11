@@ -1,16 +1,17 @@
 import {
   Button,
+  Box,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
 } from "@mui/material";
 import { useState } from "react";
-import {
-  xmrToPiconeros,
-  piconerosToXmr,
-} from "../../../../utils/conversionUtils";
+import { xmrToPiconeros } from "../../../../utils/conversionUtils";
 import SendAmountInput from "./components/SendAmountInput";
+import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import { sendMoneroTransaction } from "renderer/rpc";
 
 interface SendTransactionModalProps {
   open: boolean;
@@ -18,64 +19,68 @@ interface SendTransactionModalProps {
   balance: {
     unlocked_balance: string;
   };
-  onSend: (transactionData: {
-    address: string;
-    amount: number;
-  }) => Promise<void>;
 }
 
 export default function SendTransactionModal({
   balance,
-  onSend,
   open,
   onClose,
 }: SendTransactionModalProps) {
   const [sendAddress, setSendAddress] = useState("");
   const [sendAmount, setSendAmount] = useState("");
+  const [enableSend, setEnableSend] = useState(false);
 
   const handleSend = async () => {
     if (!sendAddress || !sendAmount) {
       throw new Error("Address and amount are required");
     }
 
-    return onSend({
+    return sendMoneroTransaction({
       address: sendAddress,
       amount: xmrToPiconeros(parseFloat(sendAmount)),
     });
   };
 
+
   const handleSendSuccess = () => {
     // Clear form after successful send
-    setSendAddress("");
-    setSendAmount("");
-  };
-
-  const handleMaxAmount = () => {
-    if (balance?.unlocked_balance) {
-      // TODO: We need to use a real fee here and call sweep(...) instead of just subtracting a fixed amount
-      const unlocked = parseFloat(balance.unlocked_balance);
-      const maxAmount = piconerosToXmr(unlocked - 10000000000); // Subtract ~0.01 XMR for fees
-      setSendAmount(Math.max(0, maxAmount).toString());
-    }
+    handleClear();
+    onClose();
   };
 
   const handleClear = () => {
     setSendAddress("");
     setSendAmount("");
   };
+
   return (
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>Send</DialogTitle>
       <DialogContent>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <SendAmountInput
-          balance={balance.unlocked_balance}
+          balance={balance}
           amount={sendAmount}
           onAmountChange={setSendAmount}
         />
+        <MoneroAddressTextField
+          address={sendAddress}
+          onAddressChange={setSendAddress}
+          onAddressValidityChange={setEnableSend}
+          label="Send to"
+          fullWidth
+        />
+        </Box>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={onClose}>Send</Button>
+        <PromiseInvokeButton
+          onInvoke={handleSend}
+          disabled={!enableSend}
+          onSuccess={handleSendSuccess}
+        >
+          Send
+        </PromiseInvokeButton>
       </DialogActions>
     </Dialog>
   );

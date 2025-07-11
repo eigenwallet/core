@@ -21,15 +21,11 @@ export default function WalletActionButtons({
 }: WalletActionButtonsProps) {
   const navigate = useNavigate();
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
-  const handleSendTransaction = async (transactionData) => {
-    await sendMoneroTransaction(transactionData);
-  };
 
   return (
     <>
       <SendTransactionModal
         balance={balance}
-        onSend={handleSendTransaction}
         open={sendDialogOpen}
         onClose={() => setSendDialogOpen(false)}
       />
