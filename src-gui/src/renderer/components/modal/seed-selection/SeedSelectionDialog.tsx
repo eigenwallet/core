@@ -16,6 +16,8 @@ import {
   ListItemButton,
   ListItemText,
   Divider,
+  Card,
+  CardContent,
 } from "@mui/material";
 import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
@@ -23,6 +25,10 @@ import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { open } from "@tauri-apps/plugin-dialog";
+import AddIcon from '@mui/icons-material/Add';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import SearchIcon from '@mui/icons-material/Search';
 
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
@@ -102,33 +108,88 @@ export default function SeedSelectionDialog() {
         : false;
 
   return (
-    <Dialog open={true} maxWidth="sm" fullWidth>
-      <DialogTitle>Monero Wallet</DialogTitle>
-      <DialogContent>
-        <FormControl component="fieldset">
-          <RadioGroup
-            value={selectedOption}
-            onChange={(e) =>
-              setSelectedOption(e.target.value as SeedChoice["type"])
-            }
+    <Dialog 
+      open={true} 
+      maxWidth="sm" 
+      fullWidth 
+      sx={{ '& .MuiDialog-paper': { minHeight: 'min(32rem, 80vh)' } }}
+      BackdropProps={{
+        sx: {
+          backdropFilter: 'blur(8px)',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)'
+        }
+      }}
+    >
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2 }}>
+          {/* Open existing wallet option */}
+          <Card 
+            sx={{ 
+              cursor: 'pointer', 
+              border: selectedOption === 'FromWalletPath' ? 2 : 1,
+              borderColor: selectedOption === 'FromWalletPath' ? 'primary.main' : 'divider',
+              '&:hover': { borderColor: 'primary.main' },
+              flex: 1
+            }}
+            onClick={() => setSelectedOption('FromWalletPath')}
           >
-            <FormControlLabel
-              value="RandomSeed"
-              control={<Radio />}
-              label="Create a new wallet"
-            />
-            <FormControlLabel
-              value="FromSeed"
-              control={<Radio />}
-              label="Restore wallet from seed"
-            />
-            <FormControlLabel
-              value="FromWalletPath"
-              control={<Radio />}
-              label="Open existing wallet file"
-            />
-          </RadioGroup>
-        </FormControl>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+              <FolderOpenIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                Open wallet file
+              </Typography>
+            </CardContent>
+          </Card>
+
+          {/* Create new wallet option */}
+          <Card 
+            sx={{ 
+              cursor: 'pointer', 
+              border: selectedOption === 'RandomSeed' ? 2 : 1,
+              borderColor: selectedOption === 'RandomSeed' ? 'primary.main' : 'divider',
+              '&:hover': { borderColor: 'primary.main' },
+              flex: 1
+            }}
+            onClick={() => setSelectedOption('RandomSeed')}
+          >
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+              <AddIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                Create new wallet
+              </Typography>
+            </CardContent>
+          </Card>
+
+          {/* Restore from seed option */}
+          <Card 
+            sx={{ 
+              cursor: 'pointer', 
+              border: selectedOption === 'FromSeed' ? 2 : 1,
+              borderColor: selectedOption === 'FromSeed' ? 'primary.main' : 'divider',
+              '&:hover': { borderColor: 'primary.main' },
+              flex: 1
+            }}
+            onClick={() => setSelectedOption('FromSeed')}
+          >
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+              <RefreshIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                Restore from seed
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        {selectedOption === "RandomSeed" && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+              A new wallet with a random seed phrase will be generated.
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+              You will have the option to back it up later.
+            </Typography>
+          </Box>
+        )}
 
         {selectedOption === "FromSeed" && (
           <TextField
@@ -138,7 +199,6 @@ export default function SeedSelectionDialog() {
             label="Enter your seed phrase"
             value={customSeed}
             onChange={(e) => setCustomSeed(e.target.value)}
-            sx={{ mt: 2 }}
             placeholder="Enter your Monero 25 words seed phrase..."
             error={!isSeedValid && customSeed.length > 0}
             helperText={
@@ -152,7 +212,7 @@ export default function SeedSelectionDialog() {
         )}
 
         {selectedOption === "FromWalletPath" && (
-          <Box sx={{ mt: 2, gap: 1, display: "flex", flexDirection: "column" }}>
+          <Box sx={{ gap: 2, display: "flex", flexDirection: "column" }}>
             <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
               <TextField
                 fullWidth
@@ -166,21 +226,44 @@ export default function SeedSelectionDialog() {
               <Button
                 variant="outlined"
                 onClick={selectWalletFile}
-                sx={{ minWidth: "120px" }}
-                size="large"
+                sx={{ minWidth: "120px", height: "56px" }}
+                startIcon={<SearchIcon />}
               >
                 Browse
               </Button>
             </Box>
             {recentWallets.length > 0 && (
-              <Box sx={{ mb: 2 }}>
+              <Box>
                 <Box
                   sx={{
                     border: 1,
                     borderColor: "divider",
                     borderRadius: 1,
                     maxHeight: 200,
-                    overflow: "auto",
+                    overflowY: "scroll",
+                    "&::-webkit-scrollbar": {
+                      display: "block !important",
+                      width: "8px !important",
+                    },
+                    "&::-webkit-scrollbar-track": {
+                      display: "block !important",
+                      background: "rgba(255,255,255,.1) !important",
+                      borderRadius: "4px",
+                    },
+                    "&::-webkit-scrollbar-thumb": {
+                      display: "block !important",
+                      background: "rgba(255,255,255,.6) !important",
+                      borderRadius: "4px",
+                      minHeight: "20px !important",
+                    },
+                    "&::-webkit-scrollbar-thumb:hover": {
+                      background: "rgba(255,255,255,.8) !important",
+                    },
+                    "&::-webkit-scrollbar-corner": {
+                      background: "transparent !important",
+                    },
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "rgba(255,255,255,.6) rgba(255,255,255,.1)",
                   }}
                 >
                   <List disablePadding>
@@ -189,8 +272,9 @@ export default function SeedSelectionDialog() {
                         <ListItem disablePadding>
                           <ListItemButton
                             selected={walletPath === path}
-                            onClick={() => setWalletPath(path)}
-                            sx={{ py: 1 }}
+                            onClick={() => 
+                              setWalletPath(path)
+                            }
                           >
                             <ListItemText
                               primary={path.split("/").pop() || path}
