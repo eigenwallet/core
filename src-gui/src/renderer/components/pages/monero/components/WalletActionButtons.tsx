@@ -8,6 +8,7 @@ import SendTransaction from "./SendTransaction";
 import { useState } from "react";
 import { sendMoneroTransaction } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";
+import { useNavigate } from "react-router-dom";
 
 interface WalletActionButtonsProps {
   balance: {
@@ -18,11 +19,12 @@ interface WalletActionButtonsProps {
 export default function WalletActionButtons({
   balance,
 }: WalletActionButtonsProps) {
+  const navigate = useNavigate();
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
-
   const handleSendTransaction = async (transactionData) => {
     await sendMoneroTransaction(transactionData);
   };
+
   return (
     <>
       <SendTransactionModal
@@ -40,7 +42,13 @@ export default function WalletActionButtons({
           onClick={() => setSendDialogOpen(true)}
         />
         <Chip icon={<InputIcon />} label="Receive" variant="button" clickable />
-        <Chip icon={<SwapIcon />} label="Swap" variant="button" clickable />
+        <Chip
+          onClick={() => navigate("/swap")}
+          icon={<SwapIcon />}
+          label="Swap"
+          variant="button"
+          clickable
+        />
       </Box>
     </>
   );
