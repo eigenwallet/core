@@ -5,7 +5,6 @@ import {
   SwapHoriz as SwapIcon,
   Restore as RestoreIcon,
 } from "@mui/icons-material";
-import SendTransaction from "./SendTransaction";
 import { useState } from "react";
 import { sendMoneroTransaction, setMoneroRestoreHeight } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";

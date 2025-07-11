@@ -29,6 +29,16 @@ export default function SendTransactionModal({
   const [sendAddress, setSendAddress] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [enableSend, setEnableSend] = useState(false);
+  const [currency, setCurrency] = useState("XMR");
+
+  const handleCurrencyChange = (newCurrency: string) => {
+    if (sendAmount === "" || parseFloat(sendAmount) === 0) {
+      setSendAmount(newCurrency === "XMR" ? "0.000" : "0.00");
+    } else {
+      setSendAmount(newCurrency === "XMR" ? (parseFloat(sendAmount) / 150).toFixed(3) : (parseFloat(sendAmount) * 150).toFixed(2));
+    }
+    setCurrency(newCurrency);
+  };
 
   const handleSend = async () => {
     if (!sendAddress || !sendAmount) {
@@ -62,6 +72,8 @@ export default function SendTransactionModal({
           balance={balance}
           amount={sendAmount}
           onAmountChange={setSendAmount}
+          currency={currency}
+          onCurrencyChange={handleCurrencyChange}
         />
         <MoneroAddressTextField
           address={sendAddress}
