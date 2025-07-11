@@ -477,7 +477,7 @@ impl Request for GetMoneroAddressesArgs {
 pub struct GetMoneroHistoryArgs;
 
 #[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct GetMoneroHistoryResponse {
     pub transactions: Vec<monero_sys::TransactionInfo>,
 }
@@ -1793,7 +1793,7 @@ impl CheckSeedArgs {
 pub struct GetMoneroSyncProgressArgs;
 
 #[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Clone, Deserialize, Debug)]
 pub struct GetMoneroSyncProgressResponse {
     #[typeshare(serialized_as = "number")]
     pub current_block: u64,

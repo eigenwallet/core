@@ -636,7 +636,7 @@ impl WalletHandle {
     }
 
     /// Get the sync progress of the wallet.
-    async fn sync_progress(&self) -> SyncProgress {
+    pub async fn sync_progress(&self) -> SyncProgress {
         self.call(move |wallet| wallet.sync_progress()).await
     }
 

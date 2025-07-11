@@ -29,7 +29,7 @@ import {
 } from "./rpc";
 import { store } from "./store/storeRenderer";
 import { exhaustiveGuard } from "utils/typescriptUtils";
-import { setBalance } from "store/features/walletSlice";
+import { setBalance, setHistory, setSyncProgress } from "store/features/walletSlice";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 
@@ -144,6 +144,12 @@ export async function setupBackgroundTasks(): Promise<void> {
         console.log("MoneroWalletUpdate", eventData);
         if (eventData.type === "BalanceChange") {
           store.dispatch(setBalance(eventData.content));
+        }
+        if (eventData.type === "HistoryUpdate") {
+          store.dispatch(setHistory(eventData.content));
+        }
+        if (eventData.type === "SyncProgress") {
+          store.dispatch(setSyncProgress(eventData.content));
         }
         break;
 

@@ -1,6 +1,6 @@
 use super::request::BalanceResponse;
 use crate::bitcoin;
-use crate::cli::api::request::GetMoneroBalanceResponse;
+use crate::cli::api::request::{GetMoneroBalanceResponse, GetMoneroSyncProgressResponse, GetMoneroHistoryResponse};
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::{bitcoin::ExpiredTimelocks, monero, network::quote::BidQuote};
@@ -40,6 +40,8 @@ pub enum TauriEvent {
 #[serde(tag = "type", content = "content")]
 pub enum MoneroWalletUpdate {
     BalanceChange(GetMoneroBalanceResponse),
+    SyncProgress(GetMoneroSyncProgressResponse),
+    HistoryUpdate(GetMoneroHistoryResponse),
 }
 
 const TAURI_UNIFIED_EVENT_NAME: &str = "tauri-unified-event";
@@ -109,6 +111,8 @@ pub enum ApprovalRequestType {
     /// Request seed selection from user.
     /// User can choose between random seed, provide their own, or select wallet file.
     SeedSelection(SeedSelectionDetails),
+    /// Request restore height from user.
+    RestoreHeight,
 }
 
 #[typeshare]
@@ -347,6 +351,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::LockBitcoin(..) => write!(f, "LockBitcoin()"),
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
+            ApprovalRequestType::RestoreHeight => write!(f, "RestoreHeight()"),
         }
     }
 }
@@ -371,6 +376,7 @@ pub trait TauriEmitter {
         &self,
         recent_wallets: Vec<String>,
     ) -> Result<SeedChoice>;
+    async fn request_restore_height(&self) -> Result<u64>;
 
     fn emit_tauri_event<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()>;
 
@@ -480,6 +486,11 @@ impl TauriEmitter for TauriHandle {
             .await
     }
 
+    async fn request_restore_height(&self) -> Result<u64> {
+        self.request_approval(ApprovalRequestType::RestoreHeight, None)
+            .await
+    }
+
     fn emit_tauri_event<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
         self.emit_tauri_event(event, payload)
     }
@@ -558,7 +569,14 @@ impl TauriEmitter for Option<TauriHandle> {
                 tauri
                     .request_seed_selection_with_recent_wallets(recent_wallets)
                     .await
-            }
+            },
+            None => bail!("No Tauri handle available"),
+        }
+    }
+
+    async fn request_restore_height(&self) -> Result<u64> {
+        match self {
+            Some(tauri) => tauri.request_restore_height().await,
             None => bail!("No Tauri handle available"),
         }
     }

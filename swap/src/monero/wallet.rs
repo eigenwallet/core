@@ -14,7 +14,7 @@ pub use monero_sys::{Daemon, WalletHandle as Wallet};
 use uuid::Uuid;
 
 use crate::cli::api::{
-    request::GetMoneroBalanceResponse,
+    request::{GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse},
     tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle},
 };
 
@@ -96,28 +96,68 @@ impl TauriWalletListener {
             ));
         });
     }
+    
+    fn send_sync_progress(&self) {
+        let wallet = self.wallet.clone();
+        let tauri_handle = self.tauri_handle.clone();
+
+        self.rt_handle.spawn(async move {
+            let sync_progress = wallet.sync_progress().await;
+
+            let progress_percentage = sync_progress.percentage();
+
+            let response = GetMoneroSyncProgressResponse {
+                current_block: sync_progress.current_block,
+                target_block: sync_progress.target_block,
+                progress_percentage: progress_percentage,
+            };
+
+            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+                MoneroWalletUpdate::SyncProgress(response),
+            ));
+        });
+    }
+
+    fn send_history_update(&self) {
+        let wallet = self.wallet.clone();
+        let tauri_handle = self.tauri_handle.clone();
+
+        self.rt_handle.spawn(async move {
+            let transactions = wallet.history().await;
+            let response = GetMoneroHistoryResponse { transactions };
+
+            println!("history_update: {:?}", response);
+
+            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+                MoneroWalletUpdate::HistoryUpdate(response),
+            ));
+        });
+    }
 }
 
 impl WalletEventListener for TauriWalletListener {
     fn on_money_spent(&self, txid: &str, amount: u64) {
         println!("money_spent: {} {}", txid, amount);
         self.send_balance_update();
+        self.send_history_update();
     }
 
     fn on_money_received(&self, txid: &str, amount: u64) {
         println!("money_received: {} {}", txid, amount);
         self.send_balance_update();
+        self.send_history_update();
     }
 
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
         println!("unconfirmed_money_received: {} {}", txid, amount);
         self.send_balance_update();
+        self.send_history_update();
     }
 
     fn on_new_block(&self, _height: u64) {
         // We send an update here because a new might mean that funds have been unlocked
         // because a UTXO reached 10 confirmations.
-        self.send_balance_update();
+        self.send_sync_progress();
     }
 
     fn on_updated(&self) {
@@ -126,6 +166,7 @@ impl WalletEventListener for TauriWalletListener {
 
     fn on_refreshed(&self) {
         self.send_balance_update();
+        self.send_history_update();
     }
 
     fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) {
@@ -272,6 +313,15 @@ impl Wallets {
             .await
             .context("Couldn't fetch blockchain height")?;
 
+        // get a desired restore height from user
+        let restore_height = match &self.tauri_handle {
+            Some(tauri_handle) => {
+                let restore_height = tauri_handle.request_restore_height().await?;
+                restore_height
+            }
+            None => blockheight,
+        };
+
         let wallet = Wallet::open_or_create_from_keys(
             wallet_path.clone(),
             None,
@@ -279,7 +329,7 @@ impl Wallets {
             address,
             view_key.into(),
             spend_key,
-            blockheight,
+            restore_height,
             false, // We don't sync the swap wallet, just import the transaction
             self.daemon.clone(),
         )
