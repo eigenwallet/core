@@ -75,7 +75,7 @@ export default function WalletActionButtons({
         open={sendDialogOpen}
         onClose={() => setSendDialogOpen(false)}
       />
-      <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}>
         <Chip
           icon={<SendIcon />}
           label="Send"
