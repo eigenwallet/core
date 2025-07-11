@@ -73,7 +73,6 @@ export default function WalletActionButtons({
       />
       <SendTransactionModal
         balance={balance}
-        onSend={handleSendTransaction}
         open={sendDialogOpen}
         onClose={() => setSendDialogOpen(false)}
       />

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { darken, useTheme } from "@mui/material";
+import { useTheme } from "@mui/material";
 
 interface NumberInputProps {
   value: string;
@@ -21,7 +21,7 @@ export default function NumberInput({
   placeholder = "0.00",
   fontSize = "2em",
   fontWeight = 600,
-  textAlign = "center",
+  textAlign = "right",
   minWidth = 60,
   step = 0.001,
   largeStep = 0.1,
@@ -32,43 +32,55 @@ export default function NumberInput({
   const [inputWidth, setInputWidth] = useState(minWidth);
   const measureRef = useRef<HTMLSpanElement>(null);
 
+  // Calculate precision from step value
+  const getDecimalPrecision = (num: number): number => {
+    const str = num.toString();
+    if (str.includes('.')) {
+      return str.split('.')[1].length;
+    }
+    return 0;
+  };
+
+  const [userPrecision, setUserPrecision] = useState(() => getDecimalPrecision(step)); // Track user's decimal precision
+  const [minPrecision, setMinPrecision] = useState(3);
+  const appliedPrecision = userPrecision > minPrecision ? userPrecision : minPrecision;
+  
+
   const theme = useTheme();
 
-  // Convert integer value to display value (divide by 1000)
-  const displayValue = value
-    ? (parseInt(value) / 1000).toFixed(3)
-    : placeholder;
-
-  // Convert placeholder to integer equivalent
-  const placeholderAsInteger = (parseFloat(placeholder) * 1000).toString();
-
-  // Initialize value to placeholder if empty
+  // Update precision when step changes
   useEffect(() => {
-    if (!value) {
-      onChange(placeholderAsInteger);
-    }
-  }, [placeholder, placeholderAsInteger, value, onChange]);
+    setUserPrecision(getDecimalPrecision(step));
+    setMinPrecision(getDecimalPrecision(step));
+  }, [step]);
 
   // Measure text width to size input dynamically
   useEffect(() => {
     if (measureRef.current) {
-      const text = displayValue;
+      const text = value || placeholder;
       measureRef.current.textContent = text;
       const textWidth = measureRef.current.offsetWidth;
       setInputWidth(Math.max(textWidth + 5, minWidth)); // Add padding and minimum width
     }
-  }, [displayValue, minWidth]);
+  }, [value, placeholder, minWidth]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+
+    if (e.key === "ArrowLeft" && (!value || value.trim() === "")) {
+      onChange(placeholder);
+      return;
+    }
+
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault();
-      const currentValue = parseInt(value) || 0;
-      const increment = e.shiftKey ? largeStep * 1000 : step * 1000;
+      const currentValue = parseFloat(value) || 0;
+      const increment = e.shiftKey ? largeStep : step;
       const newValue =
         e.key === "ArrowUp"
           ? currentValue + increment
           : Math.max(0, currentValue - increment);
-      onChange(newValue.toString());
+      // Use the user's precision for formatting
+      onChange(newValue.toFixed(appliedPrecision));
     }
   };
 
@@ -76,33 +88,30 @@ export default function NumberInput({
     const inputValue = e.target.value;
     // Allow empty string, numbers, and decimal points
     if (inputValue === "" || /^\d*\.?\d*$/.test(inputValue)) {
-      if (inputValue === "") {
-        onChange("");
-      } else {
-        // Convert display value to integer (multiply by 1000)
-        const integerValue = Math.round(parseFloat(inputValue) * 1000);
-        onChange(integerValue.toString());
+      onChange(inputValue);
+      
+      // Track the user's decimal precision
+      if (inputValue.includes('.')) {
+        const decimalPart = inputValue.split('.')[1];
+        setUserPrecision(decimalPart ? decimalPart.length : 0);
+      } else if (inputValue && !isNaN(parseFloat(inputValue))) {
+        // No decimal point, so precision is 0
+        setUserPrecision(0);
       }
     }
   };
 
   const handleBlur = () => {
-    // If input is empty, set it back to placeholder
-    if (!value || value.trim() === "") {
-      onChange(placeholderAsInteger);
-    }
-    // No need to format here since we're storing as integer
-  };
-
-  const handleFocus = () => {
-    // If the current value is the placeholder, clear it for editing
-    if (value === placeholderAsInteger) {
+    // Clear input if value is zero or empty to show placeholder
+    if (!value || value.trim() === "" || parseFloat(value) === 0) {
       onChange("");
+    } else if (!isNaN(parseFloat(value))) {
+      // Format valid numbers on blur using user's precision
+      const formatted = parseFloat(value).toFixed(appliedPrecision);
+      // Remove trailing zeros if precision allows
+      onChange(parseFloat(formatted).toString());
     }
   };
-
-  // Determine if we should show placeholder styling
-  const isPlaceholderValue = value === placeholderAsInteger;
 
   const defaultStyle: React.CSSProperties = {
     fontSize,
@@ -114,11 +123,9 @@ export default function NumberInput({
     width: `${inputWidth}px`,
     minWidth: `${minWidth}px`,
     fontFamily: "inherit",
-    color: isPlaceholderValue
-      ? darken(theme.palette.text.primary, 0.5)
-      : theme.palette.text.primary,
+    color: theme.palette.text.primary,
     padding: "4px 0",
-    transition: "width 0.2s ease, color 0.2s ease",
+    transition: "color 0.2s ease",
     ...style,
   };
 
@@ -141,11 +148,11 @@ export default function NumberInput({
         ref={inputRef}
         type="text"
         inputMode="decimal"
-        value={displayValue}
+        placeholder={placeholder}
+        value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
-        onFocus={handleFocus}
         className={className}
         style={defaultStyle}
       />

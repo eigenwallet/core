@@ -1,10 +1,14 @@
 import { Box, Button, Card, Typography } from "@mui/material";
-import NumberInput from "./NumberInput";
+import NumberInput from "../../../inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useState } from "react";
+import { useTheme } from "@mui/material/styles";
+import { piconerosToXmr } from "../../../../../utils/conversionUtils";
 
 interface SendAmountInputProps {
-  balance: string;
+  balance: {
+    unlocked_balance: string;
+  };
   amount: string;
   onAmountChange: (amount: string) => void;
 }
@@ -14,18 +18,30 @@ export default function SendAmountInput({
   amount,
   onAmountChange,
 }: SendAmountInputProps) {
+  const theme = useTheme();
   const [primaryCurrency, setPrimaryCurrency] = useState<string>("XMR");
-  const displayBalance = (parseFloat(balance) / 1000000000000).toFixed(3);
+  const displayBalance = (parseFloat(balance.unlocked_balance) / 1000000000000).toFixed(3);
+
+  const handleMaxAmount = () => {
+    if (balance?.unlocked_balance) {
+      // TODO: We need to use a real fee here and call sweep(...) instead of just subtracting a fixed amount
+      const unlocked = parseFloat(balance.unlocked_balance);
+      const maxAmount = piconerosToXmr(unlocked - 10000000000); // Subtract ~0.01 XMR for fees
+      onAmountChange(Math.max(0, maxAmount).toString());
+    }
+  };
 
   return (
     <Card
-      elevation={2}
+      elevation={0}
+      tabIndex={0}
       sx={{
         position: "relative",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
+        border: `1px solid ${theme.palette.grey[800]}`,
         width: 500,
         height: 250,
       }}
@@ -40,7 +56,6 @@ export default function SendAmountInput({
             placeholder="0.00"
             fontSize="3em"
             fontWeight={600}
-            textAlign="center"
             minWidth={60}
             step={0.001}
             largeStep={0.1}
@@ -78,7 +93,7 @@ export default function SendAmountInput({
           <Typography color="text.primary">{displayBalance}</Typography>
           <Typography color="text.secondary">XMR</Typography>
         </Box>
-        <Button variant="secondary" size="tiny">
+        <Button variant="secondary" size="tiny" onClick={handleMaxAmount}>
           Max
         </Button>
       </Box>
