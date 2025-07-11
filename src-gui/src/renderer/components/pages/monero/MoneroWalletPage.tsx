@@ -12,6 +12,8 @@ import {
   TransactionHistory,
   WalletActionButtons,
 } from "./components";
+import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
+import TruncatedText from "renderer/components/other/TruncatedText";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
@@ -37,8 +39,11 @@ export default function MoneroWalletPage() {
         pb: 2,
       }}
     >
-      <Typography variant="h4">Wallet</Typography>
       <WalletOverview balance={balance} syncProgress={syncProgress} />
+      <ActionableMonospaceTextBox
+        content={mainAddress}
+        displayCopyIcon={true}
+      />
       <WalletActionButtons balance={balance} />
       <TransactionHistory history={history} />
     </Box>
