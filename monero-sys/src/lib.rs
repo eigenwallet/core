@@ -635,6 +635,15 @@ impl WalletHandle {
         self.call(move |wallet| wallet.synchronized()).await
     }
 
+    /// Get the restore height of the wallet.
+    pub async fn set_restore_height(&self, height: u64) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.set_restore_height(height)).await
+            .context("Failed to set restore height: FFI call failed with exception")
+            .expect("Shouldn't panic");
+
+        Ok(())
+    }
+
     /// Get the sync progress of the wallet.
     pub async fn sync_progress(&self) -> SyncProgress {
         self.call(move |wallet| wallet.sync_progress()).await
@@ -1480,6 +1489,17 @@ impl FfiWallet {
             .setRefreshFromBlockHeight(0)
             .context("Failed to set refresh from block height: FFI call failed with exception")
             .expect("Shouldn't panic");
+    }
+
+    /// Set the restore height of the wallet.
+    pub fn set_restore_height(&mut self, height: u64) -> anyhow::Result<()> {
+        self.inner
+            .pinned()
+            .setRefreshFromBlockHeight(height)
+            .context("Failed to set restore height: FFI call failed with exception")
+            .expect("Shouldn't panic");
+
+        Ok(())
     }
 
     /// Start the background refresh thread (refreshes every 10 seconds).

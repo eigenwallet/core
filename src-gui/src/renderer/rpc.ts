@@ -39,6 +39,8 @@ import {
   GetMoneroSyncProgressResponse,
   GetPendingApprovalsArgs,
   GetPendingApprovalsResponse,
+  SetRestoreHeightArgs,
+  SetRestoreHeightResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -429,6 +431,17 @@ export async function updateAllNodeStatuses() {
 
 export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> {
   return await invokeNoArgs<GetMoneroAddressesResponse>("get_monero_addresses");
+}
+
+export async function setMoneroRestoreHeight(
+  height: number,
+): Promise<SetRestoreHeightResponse> {
+  return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
+    "set_monero_restore_height",
+    {
+      height,
+    },
+  );
 }
 
 export async function getMoneroHistory(): Promise<GetMoneroHistoryResponse> {

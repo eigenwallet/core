@@ -522,6 +522,34 @@ impl Request for GetMoneroMainAddressArgs {
     }
 }
 
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetRestoreHeightArgs {
+    #[typeshare(serialized_as = "number")]
+    pub height: u64,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetRestoreHeightResponse {
+    pub success: bool,
+}
+
+impl Request for SetRestoreHeightArgs {
+    type Response = SetRestoreHeightResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
+        let wallet = wallet.main_wallet().await;
+        wallet.set_restore_height(self.height).await?;
+        Ok(SetRestoreHeightResponse { success: true })
+    }
+}
+
+
 // New request type for Monero balance
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]

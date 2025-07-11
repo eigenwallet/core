@@ -111,8 +111,6 @@ pub enum ApprovalRequestType {
     /// Request seed selection from user.
     /// User can choose between random seed, provide their own, or select wallet file.
     SeedSelection(SeedSelectionDetails),
-    /// Request restore height from user.
-    RestoreHeight,
 }
 
 #[typeshare]
@@ -351,7 +349,6 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::LockBitcoin(..) => write!(f, "LockBitcoin()"),
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
-            ApprovalRequestType::RestoreHeight => write!(f, "RestoreHeight()"),
         }
     }
 }
@@ -376,7 +373,6 @@ pub trait TauriEmitter {
         &self,
         recent_wallets: Vec<String>,
     ) -> Result<SeedChoice>;
-    async fn request_restore_height(&self) -> Result<u64>;
 
     fn emit_tauri_event<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()>;
 
@@ -486,11 +482,6 @@ impl TauriEmitter for TauriHandle {
             .await
     }
 
-    async fn request_restore_height(&self) -> Result<u64> {
-        self.request_approval(ApprovalRequestType::RestoreHeight, None)
-            .await
-    }
-
     fn emit_tauri_event<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
         self.emit_tauri_event(event, payload)
     }
@@ -570,13 +561,6 @@ impl TauriEmitter for Option<TauriHandle> {
                     .request_seed_selection_with_recent_wallets(recent_wallets)
                     .await
             },
-            None => bail!("No Tauri handle available"),
-        }
-    }
-
-    async fn request_restore_height(&self) -> Result<u64> {
-        match self {
-            Some(tauri) => tauri.request_restore_height().await,
             None => bail!("No Tauri handle available"),
         }
     }

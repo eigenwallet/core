@@ -1,14 +1,16 @@
-import { Box, Chip, Dialog } from "@mui/material";
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
 import {
   Send as SendIcon,
   Input as InputIcon,
   SwapHoriz as SwapIcon,
+  Restore as RestoreIcon,
 } from "@mui/icons-material";
 import SendTransaction from "./SendTransaction";
 import { useState } from "react";
-import { sendMoneroTransaction } from "renderer/rpc";
+import { sendMoneroTransaction, setMoneroRestoreHeight } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";
 import { useNavigate } from "react-router-dom";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
 interface WalletActionButtonsProps {
   balance: {
@@ -16,17 +18,59 @@ interface WalletActionButtonsProps {
   };
 }
 
+function RestoreHeightDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [restoreHeight, setRestoreHeight] = useState(0);
+
+  const handleRestoreHeight = async () => {
+    await setMoneroRestoreHeight(restoreHeight);
+    onClose();
+  };
+
+  return <Dialog open={true} onClose={() => {}}>
+    <DialogTitle>Restore Height</DialogTitle>
+    <DialogContent>
+      <TextField
+        label="Restore Height"
+        type="number"
+        value={restoreHeight}
+        onChange={(e) => setRestoreHeight(Number(e.target.value))}
+      />
+    </DialogContent>
+    <DialogActions>
+      <Button onClick={onClose}>Cancel</Button>
+      <PromiseInvokeButton
+        onInvoke={handleRestoreHeight}
+        displayErrorSnackbar={true}
+        variant="contained"
+      >
+        Restore
+      </PromiseInvokeButton>
+    </DialogActions>
+  </Dialog>;
+}
+
 export default function WalletActionButtons({
   balance,
 }: WalletActionButtonsProps) {
   const navigate = useNavigate();
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
   const handleSendTransaction = async (transactionData) => {
     await sendMoneroTransaction(transactionData);
   };
 
   return (
     <>
+      <RestoreHeightDialog
+        open={restoreHeightDialogOpen}
+        onClose={() => setRestoreHeightDialogOpen(false)}
+      />
       <SendTransactionModal
         balance={balance}
         onSend={handleSendTransaction}
@@ -46,6 +90,13 @@ export default function WalletActionButtons({
           onClick={() => navigate("/swap")}
           icon={<SwapIcon />}
           label="Swap"
+          variant="button"
+          clickable
+        />
+        <Chip
+          onClick={() => setRestoreHeightDialogOpen(true)}
+          icon={<RestoreIcon />}
+          label="Restore Height"
           variant="button"
           clickable
         />

@@ -313,15 +313,6 @@ impl Wallets {
             .await
             .context("Couldn't fetch blockchain height")?;
 
-        // get a desired restore height from user
-        let restore_height = match &self.tauri_handle {
-            Some(tauri_handle) => {
-                let restore_height = tauri_handle.request_restore_height().await?;
-                restore_height
-            }
-            None => blockheight,
-        };
-
         let wallet = Wallet::open_or_create_from_keys(
             wallet_path.clone(),
             None,
@@ -329,7 +320,7 @@ impl Wallets {
             address,
             view_key.into(),
             spend_key,
-            restore_height,
+            blockheight,
             false, // We don't sync the swap wallet, just import the transaction
             self.daemon.clone(),
         )
