@@ -12,6 +12,9 @@ interface SendAmountInputProps {
   onAmountChange: (amount: string) => void;
   currency: string;
   onCurrencyChange: (currency: string) => void;
+  fiatCurrency: string;
+  xmrPrice: number;
+  showFiatRate: boolean;
 }
 
 export default function SendAmountInput({
@@ -20,12 +23,12 @@ export default function SendAmountInput({
   currency,
   onCurrencyChange,
   onAmountChange,
+  fiatCurrency,
+  xmrPrice,
+  showFiatRate,
 }: SendAmountInputProps) {
   const theme = useTheme();
   const displayBalance = (parseFloat(balance.unlocked_balance) / 1000000000000).toFixed(3);
-  
-  // TODO: Replace with real exchange rate from API
-  const xmrToUsdRate = 150; // Placeholder rate
 
   // Calculate secondary amount for display
   const secondaryAmount = (() => {
@@ -36,10 +39,10 @@ export default function SendAmountInput({
     const primaryValue = parseFloat(amount);
     if (currency === "XMR") {
       // Primary is XMR, secondary is USD
-      return (primaryValue * xmrToUsdRate).toFixed(2);
+      return (primaryValue * xmrPrice).toFixed(2);
     } else {
       // Primary is USD, secondary is XMR
-      return (primaryValue / xmrToUsdRate).toFixed(3);
+      return (primaryValue / xmrPrice).toFixed(3);
     }
   })();
 
@@ -53,14 +56,14 @@ export default function SendAmountInput({
         onAmountChange(Math.max(0, maxAmountXmr).toString());
       } else {
         // Convert to USD for display
-        const maxAmountUsd = maxAmountXmr * xmrToUsdRate;
+        const maxAmountUsd = maxAmountXmr * xmrPrice;
         onAmountChange(Math.max(0, maxAmountUsd).toString());
       }
     }
   };
 
   const handleCurrencySwap = () => {
-    onCurrencyChange(currency === "XMR" ? "USD" : "XMR");
+    onCurrencyChange(currency === "XMR" ? fiatCurrency : "XMR");
   };
 
   return (
@@ -96,15 +99,17 @@ export default function SendAmountInput({
             {currency}
           </Typography>
         </Box>
+        {showFiatRate && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
           <SwapVertIcon
             onClick={handleCurrencySwap}
             sx={{ cursor: "pointer" }}
           />
           <Typography color="text.secondary">
-            {secondaryAmount} {currency === "XMR" ? "USD" : "XMR"}
+            {secondaryAmount} {currency === "XMR" ? fiatCurrency : "XMR"}
           </Typography>
         </Box>
+        )}
       </Box>
 
       <Box

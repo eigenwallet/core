@@ -12,6 +12,7 @@ import SendAmountInput from "./components/SendAmountInput";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { sendMoneroTransaction } from "renderer/rpc";
+import { useAppSelector } from "store/hooks";
 
 interface SendTransactionModalProps {
   open: boolean;
@@ -31,11 +32,19 @@ export default function SendTransactionModal({
   const [enableSend, setEnableSend] = useState(false);
   const [currency, setCurrency] = useState("XMR");
 
+  const showFiatRate = useAppSelector((state) => state.settings.fetchFiatPrices);
+  const fiatCurrency = useAppSelector((state) => state.settings.fiatCurrency);
+  const xmrPrice = useAppSelector((state) => state.rates.xmrPrice);
+
   const handleCurrencyChange = (newCurrency: string) => {
+    if(!showFiatRate || !xmrPrice) {
+      return;
+    }
+
     if (sendAmount === "" || parseFloat(sendAmount) === 0) {
       setSendAmount(newCurrency === "XMR" ? "0.000" : "0.00");
     } else {
-      setSendAmount(newCurrency === "XMR" ? (parseFloat(sendAmount) / 150).toFixed(3) : (parseFloat(sendAmount) * 150).toFixed(2));
+      setSendAmount(newCurrency === "XMR" ? (parseFloat(sendAmount) / xmrPrice).toFixed(3) : (parseFloat(sendAmount) * xmrPrice).toFixed(2));
     }
     setCurrency(newCurrency);
   };
@@ -73,6 +82,9 @@ export default function SendTransactionModal({
           amount={sendAmount}
           onAmountChange={setSendAmount}
           currency={currency}
+          fiatCurrency={fiatCurrency}
+          xmrPrice={xmrPrice}
+          showFiatRate={showFiatRate}
           onCurrencyChange={handleCurrencyChange}
         />
         <MoneroAddressTextField

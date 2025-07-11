@@ -8,7 +8,6 @@ import {
 } from "renderer/rpc";
 import {
   WalletOverview,
-  SendTransaction,
   TransactionHistory,
   WalletActionButtons,
 } from "./components";
