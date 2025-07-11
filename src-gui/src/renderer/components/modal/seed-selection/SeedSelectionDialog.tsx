@@ -105,10 +105,6 @@ export default function SeedSelectionDialog() {
     <Dialog open={true} maxWidth="sm" fullWidth>
       <DialogTitle>Monero Wallet</DialogTitle>
       <DialogContent>
-        <Typography variant="body1" sx={{ mb: 2 }}>
-          Choose what seed to use for the wallet.
-        </Typography>
-
         <FormControl component="fieldset">
           <RadioGroup
             value={selectedOption}
