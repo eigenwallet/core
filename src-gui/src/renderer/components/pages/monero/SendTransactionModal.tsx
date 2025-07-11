@@ -5,6 +5,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Zoom,
+  Typography,
 } from "@mui/material";
 import { useState } from "react";
 import { xmrToPiconeros } from "../../../../utils/conversionUtils";
@@ -49,6 +51,8 @@ export default function SendTransactionModal({
     setCurrency(newCurrency);
   };
 
+  const moneroAmount = currency === "XMR" ? parseFloat(sendAmount) : parseFloat(sendAmount) / xmrPrice;
+
   const handleSend = async () => {
     if (!sendAddress || !sendAmount) {
       throw new Error("Address and amount are required");
@@ -56,7 +60,7 @@ export default function SendTransactionModal({
 
     return sendMoneroTransaction({
       address: sendAddress,
-      amount: xmrToPiconeros(parseFloat(sendAmount)),
+      amount: xmrToPiconeros(moneroAmount),
     });
   };
 

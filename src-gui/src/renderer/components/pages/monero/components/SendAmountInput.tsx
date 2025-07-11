@@ -1,4 +1,4 @@
-import { Box, Button, Card, Typography } from "@mui/material";
+import { Box, Button, Card, Grow, Typography } from "@mui/material";
 import NumberInput from "../../../inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useTheme } from "@mui/material/styles";
@@ -66,6 +66,8 @@ export default function SendAmountInput({
     onCurrencyChange(currency === "XMR" ? fiatCurrency : "XMR");
   };
 
+  const isAmountTooHigh = currency === "XMR" ? parseFloat(amount) > parseFloat(balance.unlocked_balance) : parseFloat(amount) / xmrPrice > parseFloat(balance.unlocked_balance);
+
   return (
     <Card
       elevation={0}
@@ -84,6 +86,11 @@ export default function SendAmountInput({
       <Box
         sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}
       >
+        {isAmountTooHigh && (
+          <Grow in style={{ transitionDelay: isAmountTooHigh ? "100ms" : "0ms"}}>
+            <Typography variant="caption" align="center" color="error">You don't have enough<br/> unlocked balance to send this amount.</Typography>
+          </Grow>
+        )}
         <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
           <NumberInput
             value={amount}
