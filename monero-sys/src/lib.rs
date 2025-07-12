@@ -2046,7 +2046,11 @@ impl FfiWallet {
 
     /// Get the transaction history.
     fn history(&self) -> Vec<TransactionInfo> {
-        let history_ptr = unsafe { ffi::walletHistory(self.inner.inner) };
+        let mut history_ptr = unsafe { ffi::walletHistory(self.inner.inner) };
+
+        // Refresh the history to match the wallet cache
+        let _ = history_ptr.pin_mut().refresh();
+
         let history_handle = TransactionHistoryHandle(history_ptr.into_raw());
         let count = history_handle.count();
 

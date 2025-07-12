@@ -292,6 +292,9 @@ pub mod ffi {
         /// Get a transaction from the history by index.
         unsafe fn transaction(self: &TransactionHistory, index: i32) -> *mut TransactionInfo;
 
+        /// Refresh the transaction history so it contains the latest transactions (including unconfirmed).
+        fn refresh(self: Pin<&mut TransactionHistory>) -> Result<()>;
+
         /// Get the amount of the transaction.
         fn amount(self: &TransactionInfo) -> u64;
 
