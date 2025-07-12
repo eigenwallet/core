@@ -391,7 +391,7 @@ where
                             // If we are in either of these states, the punish timelock has expired
                             // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
                             // Therefore it is safe to reveal s_a to let him redeem the Monero
-                            let State::Alice (AliceState::BtcPunished { state3, transfer_proof, .. } | AliceState::BtcPunishable { state3, transfer_proof, .. }) = swap_state else {
+                            let State::Alice (AliceState::BtcPunished { state3, transfer_proofs, .. } | AliceState::BtcPunishable { state3, transfer_proofs, .. }) = swap_state else {
                                 tracing::warn!(
                                     swap_id = %swap_id,
                                     reason = "swap is in invalid state",
@@ -403,7 +403,7 @@ where
                                 continue;
                             };
 
-                            if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Fullfilled { swap_id, s_a: state3.s_a, lock_transfer_proof: transfer_proof }).is_err() {
+                            if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Fullfilled { swap_id, s_a: state3.s_a, lock_transfer_proofs: transfer_proofs }).is_err() {
                                 tracing::error!(peer = %peer, "Failed to respond to cooperative XMR redeem request");
                                 continue;
                             }
@@ -694,11 +694,11 @@ pub struct EventLoopHandle {
 impl EventLoopHandle {
     fn build_transfer_proof_request(
         &self,
-        transfer_proof: monero::TransferProof,
+        transfer_proofs: Vec<monero::TransferProof>,
     ) -> transfer_proof::Request {
         transfer_proof::Request {
             swap_id: self.swap_id,
-            tx_lock_proof: transfer_proof,
+            tx_lock_proofs: transfer_proofs,
         }
     }
 
@@ -732,7 +732,7 @@ impl EventLoopHandle {
     /// This will fail if
     /// 1. the transfer proof has already been sent once
     /// 2. there is an error with the bmrng channel
-    pub async fn send_transfer_proof(&mut self, msg: monero::TransferProof) -> Result<()> {
+    pub async fn send_transfer_proof(&mut self, msg: Vec<monero::TransferProof>) -> Result<()> {
         let sender = self
             .transfer_proof_sender
             .as_ref()

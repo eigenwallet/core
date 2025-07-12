@@ -41,7 +41,7 @@ pub enum Response {
     Fullfilled {
         swap_id: Uuid,
         s_a: Scalar,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proofs: Vec<TransferProof>,
     },
     Rejected {
         swap_id: Uuid,
@@ -97,12 +97,12 @@ impl From<(PeerId, Message)> for cli::OutEvent {
                 Response::Fullfilled {
                     swap_id,
                     s_a,
-                    lock_transfer_proof,
+                    lock_transfer_proofs,
                 } => Self::CooperativeXmrRedeemFulfilled {
                     id: request_id,
                     swap_id,
                     s_a,
-                    lock_transfer_proof,
+                    lock_transfer_proofs,
                 },
                 Response::Rejected {
                     swap_id,

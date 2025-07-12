@@ -24,7 +24,7 @@ impl AsRef<str> for TransferProofProtocol {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Request {
     pub swap_id: Uuid,
-    pub tx_lock_proof: monero::TransferProof,
+    pub tx_lock_proofs: Vec<monero::TransferProof>,
 }
 
 pub fn alice() -> Behaviour {

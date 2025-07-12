@@ -57,7 +57,7 @@ pub struct EventLoop {
 
     /// The sender we will use to relay incoming transfer proofs to the EventLoopHandle
     /// The corresponding receiver is stored in the EventLoopHandle
-    transfer_proof_sender: bmrng::RequestSender<monero::TransferProof, ()>,
+    transfer_proof_sender: bmrng::RequestSender<Vec<monero::TransferProof>, ()>,
 
     /// The future representing the successful handling of an incoming transfer
     /// proof.
@@ -172,7 +172,7 @@ impl EventLoop {
                                     }
                                 }
 
-                                let mut responder = match self.transfer_proof_sender.send(msg.tx_lock_proof).await {
+                                let mut responder = match self.transfer_proof_sender.send(msg.tx_lock_proofs).await {
                                     Ok(responder) => responder,
                                     Err(e) => {
                                         tracing::warn!("Failed to pass on transfer proof: {:#}", e);
@@ -192,7 +192,7 @@ impl EventLoop {
                                     Ok(buffer_swap_alice_peer_id) => {
                                         if buffer_swap_alice_peer_id == self.alice_peer_id {
                                             // Save transfer proof in the database such that we can process it later when we resume the swap
-                                            match self.db.insert_buffered_transfer_proof(swap_id, msg.tx_lock_proof).await {
+                                            match self.db.insert_buffered_transfer_proof(swap_id, msg.tx_lock_proofs).await {
                                                 Ok(_) => {
                                                     tracing::info!("Received transfer proof for swap {} while running swap {}. Buffering this transfer proof in the database for later retrieval", swap_id, self.swap_id);
                                                     let _ = self.swarm.behaviour_mut().transfer_proof.send_response(channel, ());
@@ -225,9 +225,9 @@ impl EventLoop {
                                 let _ = responder.respond(Ok(()));
                             }
                         }
-                        SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemFulfilled { id, swap_id, s_a, lock_transfer_proof }) => {
+                        SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemFulfilled { id, swap_id, s_a, lock_transfer_proofs }) => {
                             if let Some(responder) = self.inflight_cooperative_xmr_redeem_requests.remove(&id) {
-                                let _ = responder.respond(Ok(Response::Fullfilled { s_a, swap_id, lock_transfer_proof }));
+                                let _ = responder.respond(Ok(Response::Fullfilled { s_a, swap_id, lock_transfer_proofs }));
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemRejected { id, swap_id, reason }) => {
@@ -367,7 +367,7 @@ pub struct EventLoopHandle {
     /// Receiver for incoming Monero transfer proofs from Alice.
     /// When a proof is received, we process it and acknowledge receipt back to the EventLoop
     /// The EventLoop will then send an acknowledgment back to Alice over the network
-    transfer_proof_receiver: bmrng::RequestReceiver<monero::TransferProof, ()>,
+    transfer_proof_receiver: bmrng::RequestReceiver<Vec<monero::TransferProof>, ()>,
 
     /// When an encrypted signature is sent into this channel, the EventLoop will:
     /// 1. Send the encrypted signature to Alice over the network
@@ -434,8 +434,8 @@ impl EventLoopHandle {
         .context("Failed to setup swap after retries")
     }
 
-    pub async fn recv_transfer_proof(&mut self) -> Result<monero::TransferProof> {
-        let (transfer_proof, responder) = self
+    pub async fn recv_transfer_proof(&mut self) -> Result<Vec<monero::TransferProof>> {
+        let (transfer_proofs, responder) = self
             .transfer_proof_receiver
             .recv()
             .await
@@ -445,7 +445,7 @@ impl EventLoopHandle {
             .respond(())
             .context("Failed to acknowledge receipt of transfer proof")?;
 
-        Ok(transfer_proof)
+        Ok(transfer_proofs)
     }
 
     pub async fn request_quote(&mut self) -> Result<BidQuote> {

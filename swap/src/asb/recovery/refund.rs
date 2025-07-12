@@ -33,24 +33,24 @@ pub async fn refund(
 ) -> Result<AliceState> {
     let state = db.get_state(swap_id).await?.try_into()?;
 
-    let (transfer_proof, state3) = match state {
+    let (transfer_proofs, state3) = match state {
         // In case no XMR has been locked, move to Safely Aborted
         AliceState::Started { .. }
         | AliceState::BtcLockTransactionSeen { .. }
         | AliceState::BtcLocked { .. } => bail!(Error::NoXmrLocked(state)),
 
         // Refund potentially possible (no knowledge of cancel transaction)
-        AliceState::XmrLockTransactionSent { transfer_proof, state3, .. }
-        | AliceState::XmrLocked { transfer_proof, state3, .. }
-        | AliceState::XmrLockTransferProofSent { transfer_proof, state3, .. }
-        | AliceState::EncSigLearned { transfer_proof, state3, .. }
-        | AliceState::CancelTimelockExpired { transfer_proof, state3, .. }
+        AliceState::XmrLockTransactionSent { transfer_proofs, state3, .. }
+        | AliceState::XmrLocked { transfer_proofs, state3, .. }
+        | AliceState::XmrLockTransferProofSent { transfer_proofs, state3, .. }
+        | AliceState::EncSigLearned { transfer_proofs, state3, .. }
+        | AliceState::CancelTimelockExpired { transfer_proofs, state3, .. }
 
         // Refund possible due to cancel transaction already being published
-        | AliceState::BtcCancelled { transfer_proof, state3, .. }
-        | AliceState::BtcRefunded { transfer_proof, state3, .. }
-        | AliceState::BtcPunishable { transfer_proof, state3, .. } => {
-            (transfer_proof, state3)
+        | AliceState::BtcCancelled { transfer_proofs, state3, .. }
+        | AliceState::BtcRefunded { transfer_proofs, state3, .. }
+        | AliceState::BtcPunishable { transfer_proofs, state3, .. } => {
+            (transfer_proofs, state3)
         }
 
         // Alice already in final state
@@ -83,7 +83,7 @@ pub async fn refund(
                     monero_wallet.clone(),
                     swap_id,
                     spend_key,
-                    transfer_proof.clone(),
+                    transfer_proofs.clone(),
                 )
                 .await
                 .map_err(backoff::Error::transient)

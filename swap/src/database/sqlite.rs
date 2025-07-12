@@ -428,11 +428,12 @@ impl Database for SqliteDatabase {
     async fn insert_buffered_transfer_proof(
         &self,
         swap_id: Uuid,
-        proof: TransferProof,
+        proofs: Vec<TransferProof>,
     ) -> Result<()> {
         let swap_id = swap_id.to_string();
-        let proof = serde_json::to_string(&proof)?;
+        let proofs = serde_json::to_string(&proofs)?;
 
+        compile_error!("TODO: add migration");
         sqlx::query!(
             r#"
             INSERT INTO buffered_transfer_proofs (
@@ -441,7 +442,7 @@ impl Database for SqliteDatabase {
                 ) VALUES (?, ?);
         "#,
             swap_id,
-            proof
+            proofs
         )
         .execute(&self.pool)
         .await?;
@@ -449,7 +450,10 @@ impl Database for SqliteDatabase {
         Ok(())
     }
 
-    async fn get_buffered_transfer_proof(&self, swap_id: Uuid) -> Result<Option<TransferProof>> {
+    async fn get_buffered_transfer_proof(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<Option<Vec<TransferProof>>> {
         let swap_id = swap_id.to_string();
 
         let row = sqlx::query!(

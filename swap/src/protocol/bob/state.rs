@@ -692,7 +692,7 @@ pub struct State5 {
     xmr: monero::Amount,
     tx_lock: bitcoin::TxLock,
     pub monero_wallet_restore_blockheight: BlockHeight,
-    pub lock_transfer_proof: TransferProof,
+    pub lock_transfer_proof: Vec<TransferProof>,
 }
 
 impl State5 {
@@ -736,13 +736,14 @@ impl State5 {
 
         tracing::debug!(%swap_id, "Opening temporary Monero wallet");
 
+        let tx_lock_ids = self
+            .lock_transfer_proof
+            .iter()
+            .map(|proof| proof.tx_hash())
+            .collect();
+
         let wallet = monero_wallet
-            .swap_wallet(
-                swap_id,
-                spend_key,
-                view_key,
-                self.lock_transfer_proof.tx_hash(),
-            )
+            .swap_wallet(swap_id, spend_key, view_key, tx_lock_ids)
             .await
             .context("Failed to open Monero wallet")?;
 

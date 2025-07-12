@@ -158,10 +158,10 @@ pub trait Database {
     async fn insert_buffered_transfer_proof(
         &self,
         swap_id: Uuid,
-        proof: monero::TransferProof,
+        proofs: Vec<monero::TransferProof>,
     ) -> Result<()>;
     async fn get_buffered_transfer_proof(
         &self,
         swap_id: Uuid,
-    ) -> Result<Option<monero::TransferProof>>;
+    ) -> Result<Option<Vec<monero::TransferProof>>>;
 }

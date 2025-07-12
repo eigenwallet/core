@@ -431,7 +431,7 @@ impl WalletHandle {
         &self,
         address: &monero::Address,
         amount: monero::Amount,
-    ) -> anyhow::Result<TxReceipt> {
+    ) -> anyhow::Result<Vec<TxReceipt>> {
         let address = *address;
 
         retry_notify(backoff(None, None), || async {
@@ -1504,7 +1504,7 @@ impl FfiWallet {
         address: &monero::Address,
         amount: monero::Amount,
         change_management: ChangeManagement,
-    ) -> anyhow::Result<TxReceipt> {
+    ) -> anyhow::Result<Vec<TxReceipt>> {
         tracing::debug!(destination_address=%address, "Transferring {}", amount);
 
         let_cxx_string!(address = address.to_string());
@@ -1513,6 +1513,13 @@ impl FfiWallet {
         // First we need to create a pending transaction.
         let raw_transaction = ffi::createTransaction(self.inner.pinned(), &address, amount)
             .context("Failed to create transaction: FFI call failed with exception")?;
+
+        if raw_transaction.is_null() {
+            self.check_error()
+                .context("Failed to create transaction: ffi call returned null")?;
+            anyhow::bail!("Failed to create transaction: ffi call returned null (no reason given)");
+        }
+
         let mut pending_tx = PendingTransaction(raw_transaction);
 
         match change_management {
@@ -1559,16 +1566,26 @@ impl FfiWallet {
                     &amounts,
                 ));
 
+                if raw_transaction.is_null() {
+                    self.check_error()
+                        .context("Failed to create transaction: ffi call returned null")?;
+                    anyhow::bail!(
+                        "Failed to create transaction: ffi call returned null (no reason given)"
+                    );
+                }
+
                 std::mem::swap(&mut pending_tx, &mut tx); // swap the pending transaction with the new one
                 self.dispose_transaction(tx); // dispose the old transaction
             }
         }
 
-        // Get the txid from the pending transaction before we publish,
+        // Get the txids from the pending transaction before we publish,
         // otherwise it might be null.
-        let txid = ffi::pendingTransactionTxId(&pending_tx)
+        let txids: Vec<String> = ffi::pendingTransactionTxIds(&pending_tx)
             .context("Failed to get txid from pending transaction: FFI call failed with exception")?
-            .to_string();
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
 
         // Publish the transaction
         let result = pending_tx
@@ -1581,23 +1598,29 @@ impl FfiWallet {
             return Err(result.expect_err("result is an error as per the check above"));
         }
 
-        // Fetch the tx key from the wallet.
-        let_cxx_string!(txid_cxx = txid.clone());
-        let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
-            .context("Failed to get tx key from wallet: FFI call failed with exception")?
-            .to_string();
-
         // Get current blockchain height (wallet height).
         let height = self.blockchain_height();
+
+        let mut receipts = Vec::new();
+
+        for txid in &txids {
+            // Fetch the tx key from the wallet.
+            let_cxx_string!(txid_cxx = txid.clone());
+            let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
+                .context("Failed to get tx key from wallet: FFI call failed with exception")?
+                .to_string();
+
+            receipts.push(TxReceipt {
+                txid: txid.clone(),
+                tx_key,
+                height,
+            });
+        }
 
         // Dispose the pending transaction object to avoid memory leak.
         self.dispose_transaction(pending_tx);
 
-        Ok(TxReceipt {
-            txid,
-            tx_key,
-            height,
-        })
+        Ok(receipts)
     }
 
     /// Sweep all funds from the wallet to a specified address.

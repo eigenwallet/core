@@ -23,42 +23,42 @@ pub enum Alice {
     },
     XmrLockTransactionSent {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         state3: alice::State3,
     },
     XmrLocked {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         state3: alice::State3,
     },
     XmrLockTransferProofSent {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         state3: alice::State3,
     },
     EncSigLearned {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         encrypted_signature: EncryptedSignature,
         state3: alice::State3,
     },
     BtcRedeemTransactionPublished {
         state3: alice::State3,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
     },
     CancelTimelockExpired {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         state3: alice::State3,
     },
     BtcCancelled {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         state3: alice::State3,
     },
     BtcPunishable {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         state3: alice::State3,
     },
     BtcEarlyRefundable {
@@ -66,7 +66,7 @@ pub enum Alice {
     },
     BtcRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
         state3: alice::State3,
         #[serde(with = "monero_private_key")]
         spend_key: monero::PrivateKey,
@@ -84,7 +84,7 @@ pub enum AliceEndState {
     },
     BtcPunished {
         state3: alice::State3,
-        transfer_proof: TransferProof,
+        transfer_proofs: Vec<TransferProof>,
     },
 }
 
@@ -102,67 +102,67 @@ impl From<AliceState> for Alice {
             },
             AliceState::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => Alice::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state3.as_ref().clone(),
             },
             AliceState::XmrLocked {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => Alice::XmrLocked {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state3.as_ref().clone(),
             },
             AliceState::XmrLockTransferProofSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => Alice::XmrLockTransferProofSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state3.as_ref().clone(),
             },
             AliceState::EncSigLearned {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
                 encrypted_signature,
             } => Alice::EncSigLearned {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state3.as_ref().clone(),
                 encrypted_signature: encrypted_signature.as_ref().clone(),
             },
             AliceState::BtcRedeemTransactionPublished {
                 state3,
-                transfer_proof,
+                transfer_proofs,
             } => Alice::BtcRedeemTransactionPublished {
                 state3: state3.as_ref().clone(),
-                transfer_proof,
+                transfer_proofs,
             },
             AliceState::BtcRedeemed => Alice::Done(AliceEndState::BtcRedeemed),
             AliceState::BtcCancelled {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => Alice::BtcCancelled {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state3.as_ref().clone(),
             },
             AliceState::BtcRefunded {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 spend_key,
                 state3,
             } => Alice::BtcRefunded {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 spend_key,
                 state3: state3.as_ref().clone(),
             },
@@ -174,29 +174,29 @@ impl From<AliceState> for Alice {
             }),
             AliceState::BtcPunishable {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => Alice::BtcPunishable {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state3.as_ref().clone(),
             },
             AliceState::XmrRefunded => Alice::Done(AliceEndState::XmrRefunded),
             AliceState::CancelTimelockExpired {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => Alice::CancelTimelockExpired {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state3.as_ref().clone(),
             },
             AliceState::BtcPunished {
                 state3,
-                transfer_proof,
+                transfer_proofs,
             } => Alice::Done(AliceEndState::BtcPunished {
                 state3: state3.as_ref().clone(),
-                transfer_proof,
+                transfer_proofs,
             }),
             AliceState::SafelyAborted => Alice::Done(AliceEndState::SafelyAborted),
         }
@@ -217,84 +217,84 @@ impl From<Alice> for AliceState {
             },
             Alice::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => AliceState::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: Box::new(state3),
             },
             Alice::XmrLocked {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => AliceState::XmrLocked {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: Box::new(state3),
             },
             Alice::XmrLockTransferProofSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => AliceState::XmrLockTransferProofSent {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: Box::new(state3),
             },
             Alice::EncSigLearned {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: state,
                 encrypted_signature,
             } => AliceState::EncSigLearned {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: Box::new(state),
                 encrypted_signature: Box::new(encrypted_signature),
             },
             Alice::BtcRedeemTransactionPublished {
                 state3,
-                transfer_proof,
+                transfer_proofs,
             } => AliceState::BtcRedeemTransactionPublished {
                 state3: Box::new(state3),
-                transfer_proof,
+                transfer_proofs,
             },
             Alice::CancelTimelockExpired {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => AliceState::CancelTimelockExpired {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: Box::new(state3),
             },
             Alice::BtcCancelled {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => AliceState::BtcCancelled {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: Box::new(state3),
             },
             Alice::BtcPunishable {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3,
             } => AliceState::BtcPunishable {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 state3: Box::new(state3),
             },
             Alice::BtcRefunded {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 spend_key,
                 state3,
             } => AliceState::BtcRefunded {
                 monero_wallet_restore_blockheight,
-                transfer_proof,
+                transfer_proofs,
                 spend_key,
                 state3: Box::new(state3),
             },
@@ -307,10 +307,10 @@ impl From<Alice> for AliceState {
                 AliceEndState::XmrRefunded => AliceState::XmrRefunded,
                 AliceEndState::BtcPunished {
                     state3,
-                    transfer_proof,
+                    transfer_proofs,
                 } => AliceState::BtcPunished {
                     state3: Box::new(state3),
-                    transfer_proof,
+                    transfer_proofs,
                 },
                 AliceEndState::BtcEarlyRefunded { state3 } => {
                     AliceState::BtcEarlyRefunded(Box::new(state3))

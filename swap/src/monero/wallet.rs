@@ -110,7 +110,7 @@ impl Wallets {
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         view_key: super::PrivateViewKey,
-        tx_lock_id: TxHash,
+        tx_lock_ids: Vec<TxHash>,
     ) -> Result<Arc<Wallet>> {
         // Derive wallet address from the keys
         let address = {
@@ -157,10 +157,13 @@ impl Wallets {
             "Opened temporary Monero wallet, loading lock transaction"
         );
 
-        wallet
-            .scan_transaction(tx_lock_id.0.clone())
-            .await
-            .context("Couldn't import Monero lock transaction")?;
+        // Import the lock transaction(s)
+        for tx_lock_id in tx_lock_ids {
+            wallet
+                .scan_transaction(tx_lock_id.0.clone())
+                .await
+                .context("Couldn't import Monero lock transaction")?;
+        }
 
         Ok(Arc::new(wallet))
     }
