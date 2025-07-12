@@ -75,6 +75,20 @@ pub struct SelectMakerDetails {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SendMoneroDetails {
+    /// Destination address for the Monero transfer
+    #[typeshare(serialized_as = "string")]
+    pub address: String,
+    /// Amount to send
+    #[typeshare(serialized_as = "number")]
+    pub amount: monero::Amount,
+    /// Transaction fee
+    #[typeshare(serialized_as = "number")]
+    pub fee: monero::Amount,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "content")]
 pub enum SeedChoice {
     RandomSeed,
@@ -111,6 +125,8 @@ pub enum ApprovalRequestType {
     /// Request seed selection from user.
     /// User can choose between random seed, provide their own, or select wallet file.
     SeedSelection(SeedSelectionDetails),
+    /// Request approval for publishing a Monero transaction.
+    SendMonero(SendMoneroDetails),
 }
 
 #[typeshare]
@@ -349,6 +365,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::LockBitcoin(..) => write!(f, "LockBitcoin()"),
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
+            ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
         }
     }
 }

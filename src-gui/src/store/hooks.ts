@@ -12,6 +12,8 @@ import {
   isPendingSelectMakerApprovalEvent,
   haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
+  PendingSendMoneroApprovalRequest,
+  isPendingSendMoneroApprovalEvent,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -205,6 +207,11 @@ export function usePendingApprovals(): PendingApprovalRequest[] {
 export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c));
+}
+
+export function usePendingSendMoneroApproval(): PendingSendMoneroApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSendMoneroApprovalEvent(c));
 }
 
 export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {

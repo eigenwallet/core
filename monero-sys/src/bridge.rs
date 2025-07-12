@@ -264,6 +264,9 @@ pub mod ffi {
             tx: &PendingTransaction,
         ) -> Result<UniquePtr<CxxVector<CxxString>>>;
 
+        /// Get the fee of a pending transaction.
+        fn pendingTransactionFee(tx: &PendingTransaction) -> Result<u64>;
+
         /// Get the transaction key (r) for a given txid.
         fn walletGetTxKey(wallet: &Wallet, txid: &CxxString) -> Result<UniquePtr<CxxString>>;
 

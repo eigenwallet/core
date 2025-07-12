@@ -214,6 +214,11 @@ namespace Monero
         return std::make_unique<std::vector<std::string>>(tx.txid());
     }
 
+    inline uint64_t pendingTransactionFee(const PendingTransaction &tx)
+    {
+        return tx.fee();
+    }
+
     inline std::unique_ptr<std::string> walletFilename(const Wallet &wallet)
     {
         return std::make_unique<std::string>(wallet.filename());

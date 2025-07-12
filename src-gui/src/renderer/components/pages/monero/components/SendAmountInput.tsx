@@ -79,7 +79,7 @@ export default function SendAmountInput({
         alignItems: "center",
         justifyContent: "center",
         border: `1px solid ${theme.palette.grey[800]}`,
-        width: 500,
+        width: "100%",
         height: 250,
       }}
     >

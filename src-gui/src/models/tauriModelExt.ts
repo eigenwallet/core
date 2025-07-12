@@ -8,6 +8,7 @@ import {
   SelectMakerDetails,
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
+  SendMoneroDetails,
 } from "./tauriModel";
 
 export type TauriSwapProgressEventType = TauriSwapProgressEvent["type"];
@@ -310,6 +311,10 @@ export type PendingSelectMakerApprovalRequest = PendingApprovalRequest & {
   request: { type: "SelectMaker"; content: SelectMakerDetails };
 };
 
+export type PendingSendMoneroApprovalRequest = PendingApprovalRequest & {
+  request: { type: "SendMonero"; content: SendMoneroDetails };
+};
+
 export interface SortableQuoteWithAddress extends QuoteWithAddress {
   expiration_ts?: number;
   request_id?: string;
@@ -325,6 +330,18 @@ export function isPendingSelectMakerApprovalEvent(
 
   // Check if the request is a SelectMaker request
   return event.request.type === "SelectMaker";
+}
+
+export function isPendingSendMoneroApprovalEvent(
+  event: ApprovalRequest,
+): event is PendingSendMoneroApprovalRequest {
+  // Check if the request is pending
+  if (event.request_status.state !== "Pending") {
+    return false;
+  }
+
+  // Check if the request is a SendMonero request
+  return event.request.type === "SendMonero";
 }
 
 /**
