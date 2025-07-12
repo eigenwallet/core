@@ -658,7 +658,8 @@ impl Request for SendMoneroArgs {
         // once the user approves, the transaction is published
         let receipt = wallet
             .transfer_with_approval(&address, self.amount.into(), approval_callback)
-            .await?;
+            .await?
+            .context("Transaction was not approved by user")?;
 
         Ok(SendMoneroResponse {
             tx_hash: receipt.txid,

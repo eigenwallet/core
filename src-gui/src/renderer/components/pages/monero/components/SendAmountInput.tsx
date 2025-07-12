@@ -28,14 +28,16 @@ export default function SendAmountInput({
   showFiatRate,
 }: SendAmountInputProps) {
   const theme = useTheme();
-  const displayBalance = (parseFloat(balance.unlocked_balance) / 1000000000000).toFixed(3);
+  const displayBalance = (
+    parseFloat(balance.unlocked_balance) / 1000000000000
+  ).toFixed(3);
 
   // Calculate secondary amount for display
   const secondaryAmount = (() => {
     if (!amount || amount === "" || isNaN(parseFloat(amount))) {
       return "0.00";
     }
-    
+
     const primaryValue = parseFloat(amount);
     if (currency === "XMR") {
       // Primary is XMR, secondary is USD
@@ -47,11 +49,14 @@ export default function SendAmountInput({
   })();
 
   const handleMaxAmount = () => {
-    if (balance?.unlocked_balance !== undefined && balance?.unlocked_balance !== null) {
+    if (
+      balance?.unlocked_balance !== undefined &&
+      balance?.unlocked_balance !== null
+    ) {
       // TODO: We need to use a real fee here and call sweep(...) instead of just subtracting a fixed amount
       const unlocked = parseFloat(balance.unlocked_balance);
       const maxAmountXmr = piconerosToXmr(unlocked - 10000000000); // Subtract ~0.01 XMR for fees
-      
+
       if (currency === "XMR") {
         onAmountChange(Math.max(0, maxAmountXmr).toString());
       } else {
@@ -66,7 +71,10 @@ export default function SendAmountInput({
     onCurrencyChange(currency === "XMR" ? fiatCurrency : "XMR");
   };
 
-  const isAmountTooHigh = currency === "XMR" ? parseFloat(amount) > parseFloat(balance.unlocked_balance) : parseFloat(amount) / xmrPrice > parseFloat(balance.unlocked_balance);
+  const isAmountTooHigh =
+    currency === "XMR"
+      ? parseFloat(amount) > parseFloat(balance.unlocked_balance)
+      : parseFloat(amount) / xmrPrice > parseFloat(balance.unlocked_balance);
 
   return (
     <Card
@@ -87,8 +95,14 @@ export default function SendAmountInput({
         sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}
       >
         {isAmountTooHigh && (
-          <Grow in style={{ transitionDelay: isAmountTooHigh ? "100ms" : "0ms"}}>
-            <Typography variant="caption" align="center" color="error">You don't have enough<br/> unlocked balance to send this amount.</Typography>
+          <Grow
+            in
+            style={{ transitionDelay: isAmountTooHigh ? "100ms" : "0ms" }}
+          >
+            <Typography variant="caption" align="center" color="error">
+              You don't have enough
+              <br /> unlocked balance to send this amount.
+            </Typography>
           </Grow>
         )}
         <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
@@ -107,15 +121,15 @@ export default function SendAmountInput({
           </Typography>
         </Box>
         {showFiatRate && (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          <SwapVertIcon
-            onClick={handleCurrencySwap}
-            sx={{ cursor: "pointer" }}
-          />
-          <Typography color="text.secondary">
-            {secondaryAmount} {currency === "XMR" ? fiatCurrency : "XMR"}
-          </Typography>
-        </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <SwapVertIcon
+              onClick={handleCurrencySwap}
+              sx={{ cursor: "pointer" }}
+            />
+            <Typography color="text.secondary">
+              {secondaryAmount} {currency === "XMR" ? fiatCurrency : "XMR"}
+            </Typography>
+          </Box>
         )}
       </Box>
 

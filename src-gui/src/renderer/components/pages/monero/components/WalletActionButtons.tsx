@@ -1,4 +1,13 @@
-import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
+import {
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  TextField,
+} from "@mui/material";
 import {
   Send as SendIcon,
   Input as InputIcon,
@@ -31,27 +40,29 @@ function RestoreHeightDialog({
     onClose();
   };
 
-  return <Dialog open={open} onClose={onClose}>
-    <DialogTitle>Restore Height</DialogTitle>
-    <DialogContent>
-      <TextField
-        label="Restore Height"
-        type="number"
-        value={restoreHeight}
-        onChange={(e) => setRestoreHeight(Number(e.target.value))}
-      />
-    </DialogContent>
-    <DialogActions>
-      <Button onClick={onClose}>Cancel</Button>
-      <PromiseInvokeButton
-        onInvoke={handleRestoreHeight}
-        displayErrorSnackbar={true}
-        variant="contained"
-      >
-        Restore
-      </PromiseInvokeButton>
-    </DialogActions>
-  </Dialog>;
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <DialogTitle>Restore Height</DialogTitle>
+      <DialogContent>
+        <TextField
+          label="Restore Height"
+          type="number"
+          value={restoreHeight}
+          onChange={(e) => setRestoreHeight(Number(e.target.value))}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <PromiseInvokeButton
+          onInvoke={handleRestoreHeight}
+          displayErrorSnackbar={true}
+          variant="contained"
+        >
+          Restore
+        </PromiseInvokeButton>
+      </DialogActions>
+    </Dialog>
+  );
 }
 
 export default function WalletActionButtons({
