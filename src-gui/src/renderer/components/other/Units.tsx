@@ -162,7 +162,7 @@ export function SatsAmount({ amount }: { amount: Amount }) {
 
 export function PiconeroAmount({
   amount,
-  fixedPrecision = 4,
+  fixedPrecision = 8,
 }: {
   amount: Amount;
   fixedPrecision?: number;
