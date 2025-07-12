@@ -19,17 +19,12 @@ import { open } from "@tauri-apps/plugin-shell";
 import { PiconeroAmount } from "../../../other/Units";
 import { getMoneroTxExplorerUrl } from "../../../../../utils/conversionUtils";
 import { isTestnet } from "store/config";
+import { TransactionInfo } from "models/tauriModel";
 
-interface Transaction {
-  amount: number;
-  fee: number;
-  confirmations: number;
-  tx_hash?: string;
-}
 
 interface TransactionHistoryProps {
   history?: {
-    transactions: Transaction[];
+    transactions: TransactionInfo[];
   };
 }
 
@@ -56,14 +51,16 @@ export default function TransactionHistory({
             </TableRow>
           </TableHead>
           <TableBody>
-            {history.transactions.map((tx, index) => (
+            {[...history.transactions]
+              .sort((a, b) => a.confirmations - b.confirmations)
+              .map((tx, index) => (
               <TableRow key={index}>
                 <TableCell>
                   <Stack direction="row" spacing={1} alignItems="center">
                     <PiconeroAmount amount={tx.amount} />
                     <Chip
-                      label={tx.amount >= 0 ? "Received" : "Sent"}
-                      color={tx.amount >= 0 ? "success" : "default"}
+                      label={tx.direction === "In" ? "Received" : "Sent"}
+                      color={tx.direction === "In" ? "success" : "default"}
                       size="small"
                     />
                   </Stack>

@@ -19,8 +19,8 @@ pub use database::{Database, RecentWallet};
 
 use std::sync::{Arc, Mutex};
 use std::{
-    any::Any, cmp::Ordering, fmt::Display, ops::Deref, path::PathBuf, pin::Pin, str::FromStr,
-    time::Duration,
+    any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
+    path::PathBuf, pin::Pin, str::FromStr, time::Duration,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -35,6 +35,27 @@ use tokio::sync::{
 
 use bridge::ffi::{self, TransactionHistory};
 use typeshare::typeshare;
+use uuid::Uuid;
+
+/// Error type for user cancellation
+#[derive(Debug, Clone)]
+pub struct UserCancelledError;
+
+impl std::fmt::Display for UserCancelledError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Transaction cancelled by user")
+    }
+}
+
+impl std::error::Error for UserCancelledError {}
+
+/// Approval callback for transactions
+/// The callback receives (txid, amount, fee) and returns whether to proceed with the transaction
+pub type ApprovalCallback = Arc<
+    dyn Fn(String, monero::Amount, monero::Amount) -> Pin<Box<dyn Future<Output = bool> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// A handle which can communicate with the wallet thread via channels.
 pub struct WalletHandle {
@@ -66,11 +87,14 @@ pub struct Wallet {
     wallet: FfiWallet,
     manager: WalletManager,
     call_receiver: UnboundedReceiver<Call>,
+    pending_transactions: Arc<Mutex<HashMap<Uuid, PendingTransaction>>>,
 }
 
 /// A function call to be executed on the wallet and a channel to send the result back.
 struct Call {
-    function: Box<dyn FnOnce(&mut FfiWallet) -> AnyBox + Send>,
+    function: Box<
+        dyn FnOnce(&mut FfiWallet, &Arc<Mutex<HashMap<Uuid, PendingTransaction>>>) -> AnyBox + Send,
+    >,
     sender: oneshot::Sender<AnyBox>,
 }
 
@@ -148,6 +172,14 @@ pub struct TransactionInfo {
     #[typeshare(serialized_as = "number")]
     pub confirmations: u64,
     pub tx_hash: String,
+    pub direction: TransactionDirection,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TransactionDirection {
+    In,
+    Out,
 }
 
 /// A wrapper around a pending transaction.
@@ -465,7 +497,39 @@ impl WalletHandle {
         // Send the function call to the wallet thread (wrapped in a Box)
         self.call_sender
             .send(Call {
-                function: Box::new(move |wallet| Box::new(function(wallet)) as Box<dyn Any + Send>),
+                function: Box::new(move |wallet, _pending_txs| {
+                    Box::new(function(wallet)) as Box<dyn Any + Send>
+                }),
+                sender,
+            })
+            .inspect_err(|e| tracing::error!(error=%e, "failed to send call"))
+            .expect("channel to be open");
+
+        // Wait for the result and cast back to the expected type
+        *receiver
+            .await
+            .expect("channel to be open")
+            .downcast::<R>() // We know that F returns R
+            .expect("return type to be consistent")
+    }
+
+    /// Call a function on the wallet with access to pending transactions storage.
+    pub async fn call_with_pending_txs<F, R>(&self, function: F) -> R
+    where
+        F: FnOnce(&mut FfiWallet, &Arc<Mutex<HashMap<Uuid, PendingTransaction>>>) -> R
+            + Send
+            + 'static,
+        R: Sized + Send + 'static,
+    {
+        // Create a oneshot channel for the result
+        let (sender, receiver) = oneshot::channel();
+
+        // Send the function call to the wallet thread (wrapped in a Box)
+        self.call_sender
+            .send(Call {
+                function: Box::new(move |wallet, pending_txs| {
+                    Box::new(function(wallet, pending_txs)) as Box<dyn Any + Send>
+                }),
                 sender,
             })
             .inspect_err(|e| tracing::error!(error=%e, "failed to send call"))
@@ -514,7 +578,7 @@ impl WalletHandle {
         bail!("Failed to get blockchain height after 5 attempts");
     }
 
-    /// Transfer funds to an address.
+    /// Transfer funds to an address without approval.
     pub async fn transfer(
         &self,
         address: &monero::Address,
@@ -531,45 +595,6 @@ impl WalletHandle {
         })
         .await
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e}"))
-    }
-
-    /// Transfer funds to an address with limited retries for GUI usage.
-    /// Only retries once instead of the default exponential backoff strategy.
-    pub async fn transfer_gui(
-        &self,
-        address: &monero::Address,
-        amount: monero::Amount,
-    ) -> anyhow::Result<TxReceipt> {
-        let address = *address;
-
-        // Try the transfer
-        match self
-            .call(move |wallet| wallet.transfer(&address, amount))
-            .await
-        {
-            Ok(receipt) => Ok(receipt),
-            Err(first_error) => {
-                tracing::warn!(error=%first_error, "First transfer attempt failed, retrying once");
-
-                // Single retry
-                match self
-                    .call(move |wallet| wallet.transfer(&address, amount))
-                    .await
-                {
-                    Ok(receipt) => {
-                        tracing::info!("Transfer succeeded on retry");
-                        Ok(receipt)
-                    }
-                    Err(second_error) => {
-                        tracing::error!(first_error=%first_error, second_error=%second_error, "Transfer failed after single retry");
-                        Err(anyhow!(
-                            "Failed to transfer funds after single retry: {}",
-                            second_error
-                        ))
-                    }
-                }
-            }
-        }
     }
 
     /// Sweep all funds to an address.
@@ -637,7 +662,8 @@ impl WalletHandle {
 
     /// Get the restore height of the wallet.
     pub async fn set_restore_height(&self, height: u64) -> anyhow::Result<()> {
-        self.call(move |wallet| wallet.set_restore_height(height)).await
+        self.call(move |wallet| wallet.set_restore_height(height))
+            .await
             .context("Failed to set restore height: FFI call failed with exception")
             .expect("Shouldn't panic");
 
@@ -661,7 +687,7 @@ impl WalletHandle {
 
         self.call_sender
             .send(Call {
-                function: Box::new(move |wallet| {
+                function: Box::new(move |wallet, _pending_txs| {
                     Box::new(wallet.check_error()) as Box<dyn Any + Send>
                 }),
                 sender,
@@ -852,6 +878,71 @@ impl WalletHandle {
         // Signal success
         Ok(())
     }
+
+    /// Transfer funds with async approval callback.
+    /// Creates pending transaction, gets approval, then publishes or cancels.
+    /// The pending transaction is stored in wallet thread during approval.
+    pub async fn transfer_with_approval(
+        &self,
+        address: &monero::Address,
+        amount: monero::Amount,
+        approval_callback: ApprovalCallback,
+    ) -> anyhow::Result<TxReceipt> {
+        let address = *address;
+
+        // Step 1: Create and store pending transaction, get UUID, txid, and fee
+        let (uuid, txid, fee) = self
+            .call_with_pending_txs(move |wallet, pending_txs| {
+                let pending_tx = wallet.create_pending_transaction(&address, amount)?;
+
+                // Get txid and fee before storing
+                let txid = ffi::pendingTransactionTxId(&pending_tx)
+                    .context("Failed to get txid from pending transaction")?
+                    .to_string();
+
+                let fee_pico = ffi::pendingTransactionFee(&pending_tx)
+                    .context("Failed to get fee from pending transaction")?;
+                let fee = monero::Amount::from_pico(fee_pico);
+
+                // Generate UUID and store
+                let uuid = Uuid::new_v4();
+                pending_txs.lock().unwrap().insert(uuid, pending_tx);
+
+                Ok::<(Uuid, String, monero::Amount), anyhow::Error>((uuid, txid, fee))
+            })
+            .await?;
+
+        // Step 2: Get approval asynchronously (no wallet thread blocking)
+        let approved = approval_callback(txid, amount, fee).await;
+
+        // Step 3: Publish or cancel based on approval
+        if approved {
+            self.call_with_pending_txs(move |wallet, pending_txs| {
+                let mut pending_tx =
+                    pending_txs.lock().unwrap().remove(&uuid).ok_or_else(|| {
+                        anyhow!("Pending transaction not found for UUID: {}", uuid)
+                    })?;
+
+                let result = wallet.publish_pending_transaction(&mut pending_tx);
+                wallet.dispose_pending_transaction(pending_tx);
+                result
+            })
+            .await
+        } else {
+            // Cancel the transaction
+            self.call_with_pending_txs(move |wallet, pending_txs| {
+                let pending_tx =
+                    pending_txs.lock().unwrap().remove(&uuid).ok_or_else(|| {
+                        anyhow!("Pending transaction not found for UUID: {}", uuid)
+                    })?;
+
+                wallet.dispose_pending_transaction(pending_tx);
+                Ok::<(), anyhow::Error>(())
+            })
+            .await?;
+            Err(UserCancelledError.into())
+        }
+    }
 }
 
 impl Wallet {
@@ -864,12 +955,13 @@ impl Wallet {
             wallet,
             manager,
             call_receiver,
+            pending_transactions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     fn run(&mut self) {
         while let Some(call) = self.call_receiver.blocking_recv() {
-            let result = (call.function)(&mut self.wallet);
+            let result = (call.function)(&mut self.wallet, &self.pending_transactions);
 
             // TODO: Do not panic here
             call.sender
@@ -1687,49 +1779,65 @@ impl FfiWallet {
         address: &monero::Address,
         amount: monero::Amount,
     ) -> anyhow::Result<TxReceipt> {
-        let_cxx_string!(address = address.to_string());
-        let amount = amount.as_pico();
+        let mut pending_tx = self.create_pending_transaction(address, amount)?;
+        let result = self.publish_pending_transaction(&mut pending_tx);
+        self.dispose_pending_transaction(pending_tx);
+        result
+    }
 
-        // First we need to create a pending transaction.
-        let mut pending_tx = PendingTransaction(
-            ffi::createTransaction(self.inner.pinned(), &address, amount)
+    /// Create a pending transaction without publishing it.
+    /// Returns the pending transaction that can be inspected before publishing.
+    fn create_pending_transaction(
+        &mut self,
+        address: &monero::Address,
+        amount: monero::Amount,
+    ) -> anyhow::Result<PendingTransaction> {
+        let_cxx_string!(address_str = address.to_string());
+        let amount_pico = amount.as_pico();
+
+        let pending_tx = PendingTransaction(
+            ffi::createTransaction(self.inner.pinned(), &address_str, amount_pico)
                 .context("Failed to create transaction: FFI call failed with exception")?,
         );
 
-        // Get the txid from the pending transaction before we publish,
-        // otherwise it might be null.
-        let txid = ffi::pendingTransactionTxId(&pending_tx)
+        Ok(pending_tx)
+    }
+
+    /// Publish a pending transaction and return a receipt.
+    /// Note: Caller is responsible for disposing the pending transaction afterwards.
+    fn publish_pending_transaction(
+        &mut self,
+        pending_tx: &mut PendingTransaction,
+    ) -> anyhow::Result<TxReceipt> {
+        // Get the txid from the pending transaction before we publish
+        let txid = ffi::pendingTransactionTxId(pending_tx)
             .context("Failed to get txid from pending transaction: FFI call failed with exception")?
             .to_string();
 
         // Publish the transaction
-        let result = pending_tx
+        pending_tx
             .publish()
-            .context("Failed to publish transaction");
+            .context("Failed to publish transaction")?;
 
-        // Check for errors (make sure to dispose the transaction)
-        if result.is_err() {
-            self.dispose_transaction(pending_tx);
-            return Err(result.expect_err("result is an error as per the check above"));
-        }
-
-        // Fetch the tx key from the wallet.
+        // Fetch the tx key from the wallet
         let_cxx_string!(txid_cxx = txid.clone());
         let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
             .context("Failed to get tx key from wallet: FFI call failed with exception")?
             .to_string();
 
-        // Get current blockchain height (wallet height).
+        // Get current blockchain height
         let height = self.blockchain_height();
-
-        // Dispose the pending transaction object to avoid memory leak.
-        self.dispose_transaction(pending_tx);
 
         Ok(TxReceipt {
             txid,
             tx_key,
             height,
         })
+    }
+
+    /// Dispose of a pending transaction to free memory.
+    fn dispose_pending_transaction(&mut self, pending_tx: PendingTransaction) {
+        self.dispose_transaction(pending_tx);
     }
 
     /// Sweep all funds from the wallet to a specified address.
@@ -2253,17 +2361,32 @@ impl TransactionInfoHandle {
         }
     }
 
+    /// Get the direction of the transaction.
+    pub fn direction(&self) -> Option<TransactionDirection> {
+        // Safety: self.0 is a valid *mut ffi::TransactionInfo
+        // The bridged method is safe to call on a valid reference.
+        unsafe {
+            self.0.as_ref().and_then(|info| match info.direction() {
+                0 => Some(TransactionDirection::In),
+                1 => Some(TransactionDirection::Out),
+                _ => None,
+            })
+        }
+    }
+
     pub fn serialize(&self) -> Option<TransactionInfo> {
         let fee = self.fee()?;
         let amount = self.amount()?;
         let block_height = self.confirmations()?;
-        let tx_hash = self.hash().unwrap_or_default();
+        let tx_hash = self.hash()?;
+        let direction = self.direction()?;
 
         Some(TransactionInfo {
             fee: monero::Amount::from_pico(fee),
             amount: monero::Amount::from_pico(amount),
             confirmations: block_height,
             tx_hash,
+            direction,
         })
     }
 }

@@ -35,6 +35,8 @@ pub mod ffi {
         ConnectionStatus_WrongVersion = 2,
     }
 
+
+
     unsafe extern "C++" {
         include!("wallet/api/wallet2_api.h");
         include!("bridge.h");
@@ -300,6 +302,9 @@ pub mod ffi {
 
         /// Get the confirmations of the transaction.
         fn confirmations(self: &TransactionInfo) -> u64;
+
+        /// Get the direction of the transaction.
+        fn direction(self: &TransactionInfo) -> i32;
 
         /// Get the hash of the transaction.
         fn transactionInfoHash(tx_info: &TransactionInfo) -> UniquePtr<CxxString>;
