@@ -126,8 +126,6 @@ impl TauriWalletListener {
             let transactions = wallet.history().await;
             let response = GetMoneroHistoryResponse { transactions };
 
-            println!("history_update: {:?}", response);
-
             tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
                 MoneroWalletUpdate::HistoryUpdate(response),
             ));

@@ -125,7 +125,7 @@ pub mod ffi {
 
         /// Verify the password for a wallet at the given path.
         fn verifyWalletPassword(
-            self: Pin<&mut WalletManager>, 
+            self: &WalletManager, 
             keys_file_name: &CxxString, 
             password: &CxxString, 
             no_spend_key: bool, 

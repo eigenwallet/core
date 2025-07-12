@@ -91,6 +91,13 @@ pub struct SendMoneroDetails {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PasswordRequestDetails {
+    /// The wallet file path that requires a password
+    pub wallet_path: String,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "content")]
 pub enum SeedChoice {
     RandomSeed,
@@ -129,6 +136,9 @@ pub enum ApprovalRequestType {
     SeedSelection(SeedSelectionDetails),
     /// Request approval for publishing a Monero transaction.
     SendMonero(SendMoneroDetails),
+    /// Request password for wallet file.
+    /// User must provide password to unlock the selected wallet.
+    PasswordRequest(PasswordRequestDetails),
 }
 
 #[typeshare]
@@ -359,6 +369,41 @@ impl TauriHandle {
             }
         }
     }
+
+    pub async fn reject_approval(&self, request_id: Uuid) -> Result<()> {
+        #[cfg(not(feature = "tauri"))]
+        {
+            Err(anyhow!(
+                "Cannot reject approval: Tauri feature not enabled."
+            ))
+        }
+
+        #[cfg(feature = "tauri")]
+        {
+            let mut pending_map = self
+                .0
+                .pending_approvals
+                .lock()
+                .map_err(|e| anyhow!("Failed to acquire approval lock: {}", e))?;
+            if let Some(mut pending) = pending_map.remove(&request_id) {
+                // Send rejection through oneshot channel
+                if let Some(responder) = pending.responder.take() {
+                    let _ = responder.send(serde_json::Value::Null);
+                    
+                    // Emit the rejection event
+                    let mut approval = pending.request.clone();
+                    approval.request_status = RequestStatus::Rejected;
+                    self.emit_approval(approval);
+                    
+                    Ok(())
+                } else {
+                    Err(anyhow!("Approval responder was already consumed"))
+                }
+            } else {
+                Err(anyhow!("Approval not found or already handled"))
+            }
+        }
+    }
 }
 
 impl Display for ApprovalRequest {
@@ -368,6 +413,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
+            ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
         }
     }
 }
@@ -392,6 +438,8 @@ pub trait TauriEmitter {
         &self,
         recent_wallets: Vec<String>,
     ) -> Result<SeedChoice>;
+
+    async fn request_password(&self, wallet_path: String) -> Result<String>;
 
     fn emit_tauri_event<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()>;
 
@@ -501,6 +549,12 @@ impl TauriEmitter for TauriHandle {
             .await
     }
 
+    async fn request_password(&self, wallet_path: String) -> Result<String> {
+        let details = PasswordRequestDetails { wallet_path };
+        self.request_approval(ApprovalRequestType::PasswordRequest(details), None)
+            .await
+    }
+
     fn emit_tauri_event<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
         self.emit_tauri_event(event, payload)
     }
@@ -580,6 +634,13 @@ impl TauriEmitter for Option<TauriHandle> {
                     .request_seed_selection_with_recent_wallets(recent_wallets)
                     .await
             }
+            None => bail!("No Tauri handle available"),
+        }
+    }
+
+    async fn request_password(&self, wallet_path: String) -> Result<String> {
+        match self {
+            Some(tauri) => tauri.request_password(wallet_path).await,
             None => bail!("No Tauri handle available"),
         }
     }

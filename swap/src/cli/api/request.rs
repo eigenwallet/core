@@ -1445,23 +1445,6 @@ pub async fn get_current_swap(context: Arc<Context>) -> Result<GetCurrentSwapRes
     Ok(GetCurrentSwapResponse { swap_id })
 }
 
-pub async fn resolve_approval_request(
-    resolve_approval: ResolveApprovalArgs,
-    ctx: Arc<Context>,
-) -> Result<ResolveApprovalResponse> {
-    let request_id = Uuid::parse_str(&resolve_approval.request_id).context("Invalid request ID")?;
-
-    if let Some(handle) = ctx.tauri_handle.clone() {
-        handle
-            .resolve_approval(request_id, resolve_approval.accept)
-            .await?;
-    } else {
-        bail!("Cannot resolve approval without a Tauri handle");
-    }
-
-    Ok(ResolveApprovalResponse { success: true })
-}
-
 pub async fn fetch_quotes_task(
     rendezvous_points: Vec<Multiaddr>,
     namespace: XmrBtcNamespace,
@@ -1832,6 +1815,18 @@ pub struct ResolveApprovalArgs {
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ResolveApprovalResponse {
+    pub success: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RejectApprovalArgs {
+    pub request_id: String,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RejectApprovalResponse {
     pub success: bool,
 }
 

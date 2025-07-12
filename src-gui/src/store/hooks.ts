@@ -14,6 +14,8 @@ import {
   PendingSeedSelectionApprovalRequest,
   PendingSendMoneroApprovalRequest,
   isPendingSendMoneroApprovalEvent,
+  PendingPasswordApprovalRequest,
+  isPendingPasswordApprovalEvent,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -222,6 +224,11 @@ export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalReque
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
+}
+
+export function usePendingPasswordApproval(): PendingPasswordApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingPasswordApprovalEvent(c));
 }
 
 /// Returns all the pending background processes

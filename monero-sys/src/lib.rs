@@ -206,6 +206,17 @@ impl WalletHandle {
         network: monero::Network,
         background_sync: bool,
     ) -> anyhow::Result<Self> {
+        Self::open_or_create_with_password(path, None, daemon, network, background_sync).await
+    }
+
+    /// Open an existing wallet or create a new one, with a specified password.
+    pub async fn open_or_create_with_password(
+        path: String,
+        password: impl Into<Option<String>>,
+        daemon: Daemon,
+        network: monero::Network,
+        background_sync: bool,
+    ) -> anyhow::Result<Self> {
         let (call_sender, call_receiver) = unbounded_channel();
 
         let wallet_name = path
@@ -213,6 +224,8 @@ impl WalletHandle {
             .last()
             .map(ToString::to_string)
             .unwrap_or(path.clone());
+
+        let password: Option<String> = password.into();
 
         let thread_name = format!("wallet-{}", wallet_name);
 
@@ -241,7 +254,7 @@ impl WalletHandle {
 
                 let wallet = manager.open_or_create_wallet(
                     &path,
-                    None,
+                    password.map(|s| s.to_string()).as_ref(),
                     network,
                     background_sync,
                     daemon.clone(),
@@ -439,7 +452,7 @@ impl WalletHandle {
 
                 let wallet = manager.open_or_create_wallet_from_keys(
                     &path,
-                    password.as_deref(),
+                    password.as_ref().map(|s| s.as_str()),
                     network,
                     &address,
                     view_key,
@@ -930,6 +943,44 @@ impl WalletHandle {
             Ok(None)
         }
     }
+
+    /// Verify the password for a wallet at the given path.
+    /// This function spawns a thread to perform the verification and returns the result via a oneshot channel.
+    /// Returns `Ok(true)` if the password is correct, `Ok(false)` if incorrect.
+    pub fn verify_wallet_password(
+        path: String,
+        password: String,
+    ) -> anyhow::Result<bool> {
+        use std::sync::mpsc;
+        
+        // Get the keys file path from the wallet path (simply append .keys to the path)
+        let keys_file_path = format!("{}.keys", path);
+
+        let (sender, receiver) = mpsc::channel();
+        
+        std::thread::spawn(move || {
+            let wallet_name = path
+                .split('/')
+                .last()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "wallet".to_string());
+
+            let result = (|| -> anyhow::Result<bool> {
+                let mut manager = WalletManager::new(
+                    // Dummy daemon address
+                    Daemon { address: "localhost:18081".to_string(), ssl: false }, 
+                    &wallet_name
+                )?;
+
+                manager.verify_wallet_password(&keys_file_path, &password)
+            })();
+
+            let _ = sender.send(result);
+        });
+
+        receiver.recv()
+            .context("Failed to receive password verification result from thread")?
+    }
 }
 
 impl Wallet {
@@ -1009,7 +1060,7 @@ impl WalletManager {
     pub fn open_or_create_wallet(
         &mut self,
         path: &str,
-        password: Option<&str>,
+        password: Option<&String>,
         network: monero::Network,
         background_sync: bool,
         daemon: Daemon,
@@ -1044,7 +1095,7 @@ impl WalletManager {
         // Otherwise, create (and open) a new wallet.
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
         let_cxx_string!(path = path);
-        let_cxx_string!(password = password.unwrap_or(""));
+        let_cxx_string!(password = password.map_or("", |s| s.as_str()));
         let_cxx_string!(language = "English");
         let network_type = network.into();
 
@@ -1087,7 +1138,7 @@ impl WalletManager {
             return self
                 .open_wallet(
                     path,
-                    password,
+                    password.map(|s| s.to_string()).as_ref(),
                     network,
                     background_sync,
                     daemon.clone(),
@@ -1211,7 +1262,7 @@ impl WalletManager {
     fn open_wallet(
         &mut self,
         path: &str,
-        password: Option<&str>,
+        password: Option<&String>,
         network_type: monero::Network,
         background_sync: bool,
         daemon: Daemon,
@@ -1220,7 +1271,7 @@ impl WalletManager {
         tracing::debug!(%path, "Opening wallet");
 
         let_cxx_string!(path = path);
-        let_cxx_string!(password = password.unwrap_or(""));
+        let_cxx_string!(password = password.map_or("", |s| s.as_str()));
         let network_type = network_type.into();
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
 
@@ -1280,10 +1331,14 @@ impl WalletManager {
         let_cxx_string!(path = path);
         let_cxx_string!(password = password);
         
-        self.inner
-            .pinned()
-            .verifyWalletPassword(&path, &password, false, Self::DEFAULT_KDF_ROUNDS)
-            .context("Failed to verify wallet password: FFI call failed with exception")
+        unsafe {
+            self.inner
+                .inner
+                .as_ref()
+                .expect("wallet manager pointer not to be null")
+                .verifyWalletPassword(&path, &password, false, Self::DEFAULT_KDF_ROUNDS)
+                .context("Failed to verify wallet password: FFI call failed with exception")
+        }
     }
 }
 

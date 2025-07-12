@@ -315,10 +315,9 @@ export type PendingSendMoneroApprovalRequest = PendingApprovalRequest & {
   request: { type: "SendMonero"; content: SendMoneroDetails };
 };
 
-export interface SortableQuoteWithAddress extends QuoteWithAddress {
-  expiration_ts?: number;
-  request_id?: string;
-}
+export type PendingPasswordApprovalRequest = PendingApprovalRequest & {
+  request: { type: "PasswordRequest"; content: { wallet_path: string } };
+};
 
 export function isPendingSelectMakerApprovalEvent(
   event: ApprovalRequest,
@@ -342,6 +341,18 @@ export function isPendingSendMoneroApprovalEvent(
 
   // Check if the request is a SendMonero request
   return event.request.type === "SendMonero";
+}
+
+export function isPendingPasswordApprovalEvent(
+  event: ApprovalRequest,
+): event is PendingPasswordApprovalRequest {
+  // Check if the request is pending
+  if (event.request_status.state !== "Pending") {
+    return false;
+  }
+
+  // Check if the request is a PasswordRequest request
+  return event.request.type === "PasswordRequest";
 }
 
 /**

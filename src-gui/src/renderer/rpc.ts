@@ -37,8 +37,9 @@ import {
   SendMoneroArgs,
   SendMoneroResponse,
   GetMoneroSyncProgressResponse,
-  GetPendingApprovalsArgs,
   GetPendingApprovalsResponse,
+  RejectApprovalArgs,
+  RejectApprovalResponse,
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
 } from "models/tauriModel";
@@ -578,6 +579,16 @@ export async function resolveApproval<T>(
       refreshApprovals();
     }, 200);
   }
+}
+
+export async function rejectApproval<T>(
+  requestId: string,
+  reject: T,
+): Promise<void> {
+  await invoke<RejectApprovalArgs, RejectApprovalResponse>(
+    "reject_approval_request",
+    { request_id: requestId },
+  );
 }
 
 export async function refreshApprovals(): Promise<void> {
