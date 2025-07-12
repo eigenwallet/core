@@ -36,22 +36,27 @@ export default function NumberInput({
   // Calculate precision from step value
   const getDecimalPrecision = (num: number): number => {
     const str = num.toString();
-    if (str.includes('.')) {
-      return str.split('.')[1].length;
+    if (str.includes(".")) {
+      return str.split(".")[1].length;
     }
     return 0;
   };
 
-  const [userPrecision, setUserPrecision] = useState(() => getDecimalPrecision(step)); // Track user's decimal precision
+  const [userPrecision, setUserPrecision] = useState(() =>
+    getDecimalPrecision(step),
+  ); // Track user's decimal precision
   const [minPrecision, setMinPrecision] = useState(3);
-  const appliedPrecision = userPrecision > minPrecision ? userPrecision : minPrecision;
-  
+  const appliedPrecision =
+    userPrecision > minPrecision ? userPrecision : minPrecision;
 
   const theme = useTheme();
 
   // Initialize with placeholder if no value provided
   useEffect(() => {
-    if ((!value || value.trim() === "" || parseFloat(value) === 0) && !isFocused) {
+    if (
+      (!value || value.trim() === "" || parseFloat(value) === 0) &&
+      !isFocused
+    ) {
       onChange(placeholder);
     }
   }, [placeholder, isFocused, value, onChange]);
@@ -91,10 +96,10 @@ export default function NumberInput({
     // Allow empty string, numbers, and decimal points
     if (inputValue === "" || /^\d*\.?\d*$/.test(inputValue)) {
       onChange(inputValue);
-      
+
       // Track the user's decimal precision
-      if (inputValue.includes('.')) {
-        const decimalPart = inputValue.split('.')[1];
+      if (inputValue.includes(".")) {
+        const decimalPart = inputValue.split(".")[1];
         setUserPrecision(decimalPart ? decimalPart.length : 0);
       } else if (inputValue && !isNaN(parseFloat(inputValue))) {
         // No decimal point, so precision is 0
@@ -133,7 +138,7 @@ export default function NumberInput({
     width: `${inputWidth}px`,
     minWidth: `${minWidth}px`,
     fontFamily: "inherit",
-    color: isShowingPlaceholder 
+    color: isShowingPlaceholder
       ? darken(theme.palette.text.primary, 0.5)
       : theme.palette.text.primary,
     padding: "4px 0",

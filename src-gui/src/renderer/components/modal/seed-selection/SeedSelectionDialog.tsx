@@ -25,10 +25,10 @@ import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { open } from "@tauri-apps/plugin-dialog";
-import AddIcon from '@mui/icons-material/Add';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import SearchIcon from '@mui/icons-material/Search';
+import AddIcon from "@mui/icons-material/Add";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import SearchIcon from "@mui/icons-material/Search";
 
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
@@ -108,72 +108,113 @@ export default function SeedSelectionDialog() {
         : false;
 
   return (
-    <Dialog 
-      open={true} 
-      maxWidth="sm" 
-      fullWidth 
-      sx={{ '& .MuiDialog-paper': { minHeight: 'min(32rem, 80vh)' } }}
+    <Dialog
+      open={true}
+      maxWidth="sm"
+      fullWidth
+      sx={{ "& .MuiDialog-paper": { minHeight: "min(32rem, 80vh)" } }}
       BackdropProps={{
         sx: {
-          backdropFilter: 'blur(8px)',
-          backgroundColor: 'rgba(0, 0, 0, 0.5)'
-        }
+          backdropFilter: "blur(8px)",
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+        },
       }}
     >
-      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2 }}>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
           {/* Open existing wallet option */}
-          <Card 
-            sx={{ 
-              cursor: 'pointer', 
-              border: selectedOption === 'FromWalletPath' ? 2 : 1,
-              borderColor: selectedOption === 'FromWalletPath' ? 'primary.main' : 'divider',
-              '&:hover': { borderColor: 'primary.main' },
-              flex: 1
+          <Card
+            sx={{
+              cursor: "pointer",
+              border: selectedOption === "FromWalletPath" ? 2 : 1,
+              borderColor:
+                selectedOption === "FromWalletPath"
+                  ? "primary.main"
+                  : "divider",
+              "&:hover": { borderColor: "primary.main" },
+              flex: 1,
             }}
-            onClick={() => setSelectedOption('FromWalletPath')}
+            onClick={() => setSelectedOption("FromWalletPath")}
           >
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-              <FolderOpenIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
-              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+            <CardContent
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+              }}
+            >
+              <FolderOpenIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textAlign: "center" }}
+              >
                 Open wallet file
               </Typography>
             </CardContent>
           </Card>
 
           {/* Create new wallet option */}
-          <Card 
-            sx={{ 
-              cursor: 'pointer', 
-              border: selectedOption === 'RandomSeed' ? 2 : 1,
-              borderColor: selectedOption === 'RandomSeed' ? 'primary.main' : 'divider',
-              '&:hover': { borderColor: 'primary.main' },
-              flex: 1
+          <Card
+            sx={{
+              cursor: "pointer",
+              border: selectedOption === "RandomSeed" ? 2 : 1,
+              borderColor:
+                selectedOption === "RandomSeed" ? "primary.main" : "divider",
+              "&:hover": { borderColor: "primary.main" },
+              flex: 1,
             }}
-            onClick={() => setSelectedOption('RandomSeed')}
+            onClick={() => setSelectedOption("RandomSeed")}
           >
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-              <AddIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
-              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+            <CardContent
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+              }}
+            >
+              <AddIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textAlign: "center" }}
+              >
                 Create new wallet
               </Typography>
             </CardContent>
           </Card>
 
           {/* Restore from seed option */}
-          <Card 
-            sx={{ 
-              cursor: 'pointer', 
-              border: selectedOption === 'FromSeed' ? 2 : 1,
-              borderColor: selectedOption === 'FromSeed' ? 'primary.main' : 'divider',
-              '&:hover': { borderColor: 'primary.main' },
-              flex: 1
+          <Card
+            sx={{
+              cursor: "pointer",
+              border: selectedOption === "FromSeed" ? 2 : 1,
+              borderColor:
+                selectedOption === "FromSeed" ? "primary.main" : "divider",
+              "&:hover": { borderColor: "primary.main" },
+              flex: 1,
             }}
-            onClick={() => setSelectedOption('FromSeed')}
+            onClick={() => setSelectedOption("FromSeed")}
           >
-            <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-              <RefreshIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
-              <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+            <CardContent
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+              }}
+            >
+              <RefreshIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textAlign: "center" }}
+              >
                 Restore from seed
               </Typography>
             </CardContent>
@@ -181,11 +222,19 @@ export default function SeedSelectionDialog() {
         </Box>
 
         {selectedOption === "RandomSeed" && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ textAlign: "center" }}
+            >
               A new wallet with a random seed phrase will be generated.
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ textAlign: "center" }}
+            >
               You will have the option to back it up later.
             </Typography>
           </Box>
@@ -272,9 +321,7 @@ export default function SeedSelectionDialog() {
                         <ListItem disablePadding>
                           <ListItemButton
                             selected={walletPath === path}
-                            onClick={() => 
-                              setWalletPath(path)
-                            }
+                            onClick={() => setWalletPath(path)}
                           >
                             <ListItemText
                               primary={path.split("/").pop() || path}

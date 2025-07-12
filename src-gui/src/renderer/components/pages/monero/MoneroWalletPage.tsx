@@ -1,9 +1,7 @@
 import { useEffect } from "react";
 import { Box } from "@mui/material";
 import { useAppSelector } from "store/hooks";
-import {
-  initializeMoneroWallet,
-} from "renderer/rpc";
+import { initializeMoneroWallet } from "renderer/rpc";
 import {
   WalletOverview,
   TransactionHistory,

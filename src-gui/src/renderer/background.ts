@@ -29,7 +29,11 @@ import {
 } from "./rpc";
 import { store } from "./store/storeRenderer";
 import { exhaustiveGuard } from "utils/typescriptUtils";
-import { setBalance, setHistory, setSyncProgress } from "store/features/walletSlice";
+import {
+  setBalance,
+  setHistory,
+  setSyncProgress,
+} from "store/features/walletSlice";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 

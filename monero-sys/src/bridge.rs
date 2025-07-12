@@ -35,8 +35,6 @@ pub mod ffi {
         ConnectionStatus_WrongVersion = 2,
     }
 
-
-
     unsafe extern "C++" {
         include!("wallet/api/wallet2_api.h");
         include!("bridge.h");
