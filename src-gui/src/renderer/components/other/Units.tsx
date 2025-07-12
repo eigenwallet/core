@@ -39,7 +39,7 @@ export function AmountWithUnit({
   );
 }
 
-export function FiatMoneroAmount({
+export function FiatPiconeroAmount({
   amount,
   fixedPrecision = 2,
 }: {
@@ -63,7 +63,7 @@ export function FiatMoneroAmount({
 
   return (
     <span>
-      {(amount * xmrRate).toFixed(fixedPrecision)} {fiatCurrency}
+      {(piconerosToXmr(amount) * xmrRate).toFixed(fixedPrecision)} {fiatCurrency}
     </span>
   );
 }

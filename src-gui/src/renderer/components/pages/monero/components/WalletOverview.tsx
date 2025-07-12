@@ -10,7 +10,7 @@ import {
   LinearProgress,
 } from "@mui/material";
 import { PiconeroAmount } from "../../../other/Units";
-import { FiatMoneroAmount } from "../../../other/Units";
+import { FiatPiconeroAmount } from "../../../other/Units";
 import StateIndicator from "./StateIndicator";
 
 interface WalletOverviewProps {
@@ -68,7 +68,7 @@ export default function WalletOverview({
           color="text.secondary"
           sx={{ gridColumn: "1", gridRow: "2" }}
         >
-          <FiatMoneroAmount amount={parseFloat(balance.unlocked_balance)} />
+          <FiatPiconeroAmount amount={parseFloat(balance.unlocked_balance)} />
         </Typography>
         {pendingBalance > 0 && (
           <>
@@ -85,7 +85,7 @@ export default function WalletOverview({
               color="text.secondary"
               sx={{ gridColumn: "2", gridRow: "2" }}
             >
-              <FiatMoneroAmount amount={pendingBalance} />
+              <FiatPiconeroAmount amount={pendingBalance} />
             </Typography>
           </>
         )}
