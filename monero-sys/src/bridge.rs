@@ -123,6 +123,15 @@ pub mod ffi {
         /// Check whether a wallet exists at the given path.
         fn walletExists(self: Pin<&mut WalletManager>, path: &CxxString) -> Result<bool>;
 
+        /// Verify the password for a wallet at the given path.
+        fn verifyWalletPassword(
+            self: Pin<&mut WalletManager>, 
+            keys_file_name: &CxxString, 
+            password: &CxxString, 
+            no_spend_key: bool, 
+            kdf_rounds: u64
+        ) -> Result<bool>;
+
         /// Set the address of the remote node ("daemon").
         fn setDaemonAddress(self: Pin<&mut WalletManager>, address: &CxxString) -> Result<()>;
 

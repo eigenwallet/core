@@ -1273,6 +1273,18 @@ impl WalletManager {
             .context("Failed to check if wallet exists: FFI call failed with exception")
             .expect("Wallet check should never fail")
     }
+
+    /// Verify the password for a wallet at the given path.
+    /// Returns `Ok(true)` if the password is correct, `Ok(false)` if incorrect.
+    pub fn verify_wallet_password(&mut self, path: &str, password: &str) -> anyhow::Result<bool> {
+        let_cxx_string!(path = path);
+        let_cxx_string!(password = password);
+        
+        self.inner
+            .pinned()
+            .verifyWalletPassword(&path, &password, false, Self::DEFAULT_KDF_ROUNDS)
+            .context("Failed to verify wallet password: FFI call failed with exception")
+    }
 }
 
 impl RawWalletManager {
