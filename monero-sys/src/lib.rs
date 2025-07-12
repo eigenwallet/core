@@ -1405,6 +1405,9 @@ impl FfiWallet {
             enotes.push(Enote::new(enote));
         }
 
+        // Sort enotes by blockchain height (ascending)
+        enotes.sort_by_key(Enote::blockchain_height);
+
         enotes
     }
 
@@ -2156,6 +2159,24 @@ impl Deref for PendingTransaction {
                 .as_ref()
                 .expect("pending transaction pointer not to be null")
         }
+    }
+}
+
+impl std::fmt::Debug for Enote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl Display for Enote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Enote(amount: {}, height: {}, spent: {})",
+            self.amount(),
+            self.blockchain_height(),
+            self.is_spent(),
+        )
     }
 }
 

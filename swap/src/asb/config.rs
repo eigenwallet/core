@@ -244,7 +244,8 @@ pub struct Monero {
     pub network: monero::Network,
     #[serde(default = "default_monero_node_pool")]
     pub monero_node_pool: bool,
-    pub change: Change
+    #[serde(default = "Change::default")]
+    pub change: Change,
 }
 
 fn default_monero_node_pool() -> bool {
@@ -500,7 +501,7 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
             finality_confirmations: None,
             network: monero_network,
             monero_node_pool: false,
-            change: Change::default()
+            change: Change::default(),
         },
         tor: TorConf {
             register_hidden_service,
