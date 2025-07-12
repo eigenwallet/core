@@ -7,7 +7,15 @@ use swap::cli::{
     api::{
         data,
         request::{
-            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs
+            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
+            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
+            CheckSeedResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs,
+            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
+            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
+            MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
+            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
+            SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -372,15 +380,13 @@ async fn reject_approval_request(
     state: tauri::State<'_, RwLock<State>>,
 ) -> Result<RejectApprovalResponse, String> {
     let lock = state.read().await;
-    
+
     lock.handle
         .reject_approval(args.request_id.parse().unwrap())
         .await
         .to_string_result()?;
 
-    Ok(RejectApprovalResponse {
-        success: true,
-    })
+    Ok(RejectApprovalResponse { success: true })
 }
 
 #[tauri::command]

@@ -947,17 +947,14 @@ impl WalletHandle {
     /// Verify the password for a wallet at the given path.
     /// This function spawns a thread to perform the verification and returns the result via a oneshot channel.
     /// Returns `Ok(true)` if the password is correct, `Ok(false)` if incorrect.
-    pub fn verify_wallet_password(
-        path: String,
-        password: String,
-    ) -> anyhow::Result<bool> {
+    pub fn verify_wallet_password(path: String, password: String) -> anyhow::Result<bool> {
         use std::sync::mpsc;
-        
+
         // Get the keys file path from the wallet path (simply append .keys to the path)
         let keys_file_path = format!("{}.keys", path);
 
         let (sender, receiver) = mpsc::channel();
-        
+
         std::thread::spawn(move || {
             let wallet_name = path
                 .split('/')
@@ -968,8 +965,11 @@ impl WalletHandle {
             let result = (|| -> anyhow::Result<bool> {
                 let mut manager = WalletManager::new(
                     // Dummy daemon address
-                    Daemon { address: "localhost:18081".to_string(), ssl: false }, 
-                    &wallet_name
+                    Daemon {
+                        address: "localhost:18081".to_string(),
+                        ssl: false,
+                    },
+                    &wallet_name,
                 )?;
 
                 manager.verify_wallet_password(&keys_file_path, &password)
@@ -978,7 +978,8 @@ impl WalletHandle {
             let _ = sender.send(result);
         });
 
-        receiver.recv()
+        receiver
+            .recv()
             .context("Failed to receive password verification result from thread")?
     }
 }
@@ -1330,7 +1331,7 @@ impl WalletManager {
     pub fn verify_wallet_password(&mut self, path: &str, password: &str) -> anyhow::Result<bool> {
         let_cxx_string!(path = path);
         let_cxx_string!(password = password);
-        
+
         unsafe {
             self.inner
                 .inner

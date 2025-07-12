@@ -436,8 +436,10 @@ impl ContextBuilder {
                                 .context("Failed to get password from user")?;
 
                             // Verify the password using monero-sys
-                            match monero_sys::WalletHandle::verify_wallet_password(wallet_path.clone(), password.clone())
-                            {
+                            match monero_sys::WalletHandle::verify_wallet_password(
+                                wallet_path.clone(),
+                                password.clone(),
+                            ) {
                                 Ok(true) => {
                                     break Some(password);
                                 }

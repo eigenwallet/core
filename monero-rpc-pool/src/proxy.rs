@@ -336,7 +336,10 @@ async fn sequential_requests(
                     record_failure(state, &node.0, &node.1, node.2).await;
 
                     return Err(HandlerError::AllRequestsFailed(
-                        collected_errors.into_iter().map(|(node, error)| (node, error.to_string())).collect()
+                        collected_errors
+                            .into_iter()
+                            .map(|(node, error)| (node, error.to_string()))
+                            .collect(),
                     ));
                 }
 
@@ -370,7 +373,10 @@ async fn sequential_requests(
     }
 
     Err(HandlerError::AllRequestsFailed(
-        collected_errors.into_iter().map(|(node, error)| (node, error.to_string())).collect()
+        collected_errors
+            .into_iter()
+            .map(|(node, error)| (node, error.to_string()))
+            .collect(),
     ))
 }
 

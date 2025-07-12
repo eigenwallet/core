@@ -61,7 +61,10 @@ export default function PasswordEntryDialog() {
   }
 
   return (
-    <Dialog open={true} maxWidth="sm" fullWidth
+    <Dialog
+      open={true}
+      maxWidth="sm"
+      fullWidth
       BackdropProps={{
         sx: {
           backdropFilter: "blur(8px)",
@@ -70,7 +73,7 @@ export default function PasswordEntryDialog() {
       }}
     >
       <DialogTitle>Enter Wallet Password</DialogTitle>
-      
+
       <DialogContent>
         <TextField
           fullWidth
@@ -120,4 +123,4 @@ export default function PasswordEntryDialog() {
       </DialogActions>
     </Dialog>
   );
-} 
+}

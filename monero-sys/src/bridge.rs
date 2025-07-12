@@ -125,11 +125,11 @@ pub mod ffi {
 
         /// Verify the password for a wallet at the given path.
         fn verifyWalletPassword(
-            self: &WalletManager, 
-            keys_file_name: &CxxString, 
-            password: &CxxString, 
-            no_spend_key: bool, 
-            kdf_rounds: u64
+            self: &WalletManager,
+            keys_file_name: &CxxString,
+            password: &CxxString,
+            no_spend_key: bool,
+            kdf_rounds: u64,
         ) -> Result<bool>;
 
         /// Set the address of the remote node ("daemon").

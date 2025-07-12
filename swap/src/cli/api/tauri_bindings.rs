@@ -389,12 +389,12 @@ impl TauriHandle {
                 // Send rejection through oneshot channel
                 if let Some(responder) = pending.responder.take() {
                     let _ = responder.send(serde_json::Value::Null);
-                    
+
                     // Emit the rejection event
                     let mut approval = pending.request.clone();
                     approval.request_status = RequestStatus::Rejected;
                     self.emit_approval(approval);
-                    
+
                     Ok(())
                 } else {
                     Err(anyhow!("Approval responder was already consumed"))

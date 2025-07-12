@@ -71,9 +71,6 @@ export default function WalletActionButtons({
   const navigate = useNavigate();
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
-  const handleSendTransaction = async (transactionData) => {
-    await sendMoneroTransaction(transactionData);
-  };
 
   return (
     <>
@@ -94,7 +91,6 @@ export default function WalletActionButtons({
           clickable
           onClick={() => setSendDialogOpen(true)}
         />
-        <Chip icon={<InputIcon />} label="Receive" variant="button" clickable />
         <Chip
           onClick={() => navigate("/swap")}
           icon={<SwapIcon />}
