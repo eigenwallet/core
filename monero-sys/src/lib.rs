@@ -491,26 +491,9 @@ impl WalletHandle {
         F: FnOnce(&mut FfiWallet) -> R + Send + 'static,
         R: Sized + Send + 'static,
     {
-        // Create a oneshot channel for the result
-        let (sender, receiver) = oneshot::channel();
-
-        // Send the function call to the wallet thread (wrapped in a Box)
-        self.call_sender
-            .send(Call {
-                function: Box::new(move |wallet, _pending_txs| {
-                    Box::new(function(wallet)) as Box<dyn Any + Send>
-                }),
-                sender,
-            })
-            .inspect_err(|e| tracing::error!(error=%e, "failed to send call"))
-            .expect("channel to be open");
-
-        // Wait for the result and cast back to the expected type
-        *receiver
+        // Delegate to call_with_pending_txs but ignore the pending_txs parameter
+        self.call_with_pending_txs(move |wallet, _pending_txs| function(wallet))
             .await
-            .expect("channel to be open")
-            .downcast::<R>() // We know that F returns R
-            .expect("return type to be consistent")
     }
 
     /// Call a function on the wallet with access to pending transactions storage.
@@ -879,18 +862,18 @@ impl WalletHandle {
         Ok(())
     }
 
-    /// Transfer funds with async approval callback.
-    /// Creates pending transaction, gets approval, then publishes or cancels.
-    /// The pending transaction is stored in wallet thread during approval.
+    /// Creates pending transaction, gets approval, then publishes or disposes based on approval.
+    /// Return `None` if the transaction is not published, `Some(receipt)` if it is published.
     pub async fn transfer_with_approval(
         &self,
         address: &monero::Address,
         amount: monero::Amount,
         approval_callback: ApprovalCallback,
-    ) -> anyhow::Result<TxReceipt> {
+    ) -> anyhow::Result<Option<TxReceipt>> {
         let address = *address;
 
-        // Step 1: Create and store pending transaction, get UUID, txid, and fee
+        // Construct and sign the transaction. Do not publish the transaction yet
+        // Store the pending transaction in the wallet thread inside the [`pending_txs`] map
         let (uuid, txid, fee) = self
             .call_with_pending_txs(move |wallet, pending_txs| {
                 let pending_tx = wallet.create_pending_transaction(&address, amount)?;
@@ -912,24 +895,27 @@ impl WalletHandle {
             })
             .await?;
 
-        // Step 2: Get approval asynchronously (no wallet thread blocking)
+        // Get approval asynchronously (no wallet thread blocking)
         let approved = approval_callback(txid, amount, fee).await;
 
-        // Step 3: Publish or cancel based on approval
         if approved {
-            self.call_with_pending_txs(move |wallet, pending_txs| {
-                let mut pending_tx =
-                    pending_txs.lock().unwrap().remove(&uuid).ok_or_else(|| {
-                        anyhow!("Pending transaction not found for UUID: {}", uuid)
-                    })?;
+            // Publish the transaction
+            let receipt = self
+                .call_with_pending_txs(move |wallet, pending_txs| {
+                    let mut pending_tx =
+                        pending_txs.lock().unwrap().remove(&uuid).ok_or_else(|| {
+                            anyhow!("Pending transaction not found for UUID: {}", uuid)
+                        })?;
 
-                let result = wallet.publish_pending_transaction(&mut pending_tx);
-                wallet.dispose_pending_transaction(pending_tx);
-                result
-            })
-            .await
+                    let result = wallet.publish_pending_transaction(&mut pending_tx);
+                    wallet.dispose_pending_transaction(pending_tx);
+                    result
+                })
+                .await?;
+
+            Ok(Some(receipt))
         } else {
-            // Cancel the transaction
+            // Dispose the pending transaction without publishing
             self.call_with_pending_txs(move |wallet, pending_txs| {
                 let pending_tx =
                     pending_txs.lock().unwrap().remove(&uuid).ok_or_else(|| {
@@ -940,7 +926,8 @@ impl WalletHandle {
                 Ok::<(), anyhow::Error>(())
             })
             .await?;
-            Err(UserCancelledError.into())
+
+            Ok(None)
         }
     }
 }
