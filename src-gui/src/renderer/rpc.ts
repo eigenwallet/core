@@ -37,9 +37,12 @@ import {
   SendMoneroArgs,
   SendMoneroResponse,
   GetMoneroSyncProgressResponse,
-  GetPendingApprovalsArgs,
   GetPendingApprovalsResponse,
   DfxAuthenticateResponse,
+  RejectApprovalArgs,
+  RejectApprovalResponse,
+  SetRestoreHeightArgs,
+  SetRestoreHeightResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -432,6 +435,17 @@ export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> 
   return await invokeNoArgs<GetMoneroAddressesResponse>("get_monero_addresses");
 }
 
+export async function setMoneroRestoreHeight(
+  height: number,
+): Promise<SetRestoreHeightResponse> {
+  return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
+    "set_monero_restore_height",
+    {
+      height,
+    },
+  );
+}
+
 export async function getMoneroHistory(): Promise<GetMoneroHistoryResponse> {
   return await invokeNoArgs<GetMoneroHistoryResponse>("get_monero_history");
 }
@@ -554,13 +568,28 @@ export async function resolveApproval<T>(
   try {
     await invoke<ResolveApprovalArgs, ResolveApprovalResponse>(
       "resolve_approval_request",
-      { request_id: requestId, accept },
+      { request_id: requestId, accept: accept as object },
     );
   } catch (error) {
-    // Refresh approval list when resolve fails to keep UI in sync
-    await refreshApprovals();
     throw error;
+  } finally {
+    // Always refresh the approval list
+    await refreshApprovals();
+
+    setTimeout(() => {
+      refreshApprovals();
+    }, 200);
   }
+}
+
+export async function rejectApproval<T>(
+  requestId: string,
+  reject: T,
+): Promise<void> {
+  await invoke<RejectApprovalArgs, RejectApprovalResponse>(
+    "reject_approval_request",
+    { request_id: requestId },
+  );
 }
 
 export async function refreshApprovals(): Promise<void> {

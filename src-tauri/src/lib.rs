@@ -7,15 +7,7 @@ use swap::cli::{
     api::{
         data,
         request::{
-            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
-            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
-            CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs,
-            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
-            GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SuspendCurrentSwapArgs,
-            WithdrawBtcArgs,
+            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -211,6 +203,8 @@ pub fn run() {
             check_seed,
             get_pending_approvals,
             dfx_authenticate,
+            set_monero_restore_height,
+            reject_approval_request
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -262,6 +256,7 @@ tauri_command!(get_history, GetHistoryArgs, no_args);
 tauri_command!(get_monero_addresses, GetMoneroAddressesArgs, no_args);
 tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
 tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
+tauri_command!(set_monero_restore_height, SetRestoreHeightArgs);
 
 // Add the new command for getting Monero main address
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
@@ -370,6 +365,21 @@ async fn resolve_approval_request(
         .to_string_result()?;
 
     Ok(())
+}
+
+#[tauri::command]
+async fn reject_approval_request(
+    args: RejectApprovalArgs,
+    state: tauri::State<'_, RwLock<State>>,
+) -> Result<RejectApprovalResponse, String> {
+    let lock = state.read().await;
+
+    lock.handle
+        .reject_approval(args.request_id.parse().unwrap())
+        .await
+        .to_string_result()?;
+
+    Ok(RejectApprovalResponse { success: true })
 }
 
 #[tauri::command]

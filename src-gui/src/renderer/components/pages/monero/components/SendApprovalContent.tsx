@@ -1,0 +1,163 @@
+import { useState, useEffect } from "react";
+import {
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Typography,
+  Box,
+  Divider,
+  CircularProgress,
+} from "@mui/material";
+import CheckIcon from "@mui/icons-material/Check";
+import CloseIcon from "@mui/icons-material/Close";
+import { resolveApproval } from "renderer/rpc";
+import { usePendingSendMoneroApproval } from "store/hooks";
+import { PiconeroAmount } from "renderer/components/other/Units";
+import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
+
+export default function SendApprovalContent() {
+  const pendingApprovals = usePendingSendMoneroApproval();
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const approval = pendingApprovals[0]; // Handle the first approval request
+
+  useEffect(() => {
+    if (
+      !approval?.request_status ||
+      approval.request_status.state !== "Pending"
+    ) {
+      return;
+    }
+
+    const expirationTs = approval.request_status.content.expiration_ts;
+    const expiresAtMs = expirationTs * 1000;
+
+    const tick = () => {
+      const remainingMs = Math.max(expiresAtMs - Date.now(), 0);
+      setTimeLeft(Math.ceil(remainingMs / 1000));
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [approval]);
+
+  const handleApprove = async () => {
+    if (!approval) return;
+
+    setIsProcessing(true);
+    try {
+      await resolveApproval(approval.request_id, true);
+    } catch (error) {
+      console.error("Failed to approve Monero transaction:", error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!approval) return;
+
+    setIsProcessing(true);
+    try {
+      await resolveApproval(approval.request_id, false);
+    } catch (error) {
+      console.error("Failed to reject Monero transaction:", error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  if (!approval) {
+    return null;
+  }
+
+  const { address, amount, fee } = approval.request.content;
+
+  return (
+    <>
+      <DialogTitle>
+        <Typography variant="h6" component="div">
+          Confirm Monero Transfer
+        </Typography>
+      </DialogTitle>
+
+      <DialogContent>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {/* Amount */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Amount to Send
+            </Typography>
+            <Typography variant="h6" color="primary">
+              <PiconeroAmount amount={amount} fixedPrecision={4} />
+            </Typography>
+          </Box>
+
+          {/* Fee */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Network Fee
+            </Typography>
+            <Typography variant="h6" color="text.secondary">
+              <PiconeroAmount amount={fee} fixedPrecision={12} />
+            </Typography>
+          </Box>
+
+          {/* Destination Address */}
+          <Box>
+            <Typography variant="subtitle2" gutterBottom>
+              Destination Address
+            </Typography>
+            <Typography variant="h6" color="text.secondary">
+              <ActionableMonospaceTextBox
+                content={address}
+                displayCopyIcon={true}
+                enableQrCode={false}
+                light={true}
+              />
+            </Typography>
+          </Box>
+
+          {/* Time remaining */}
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ textAlign: "center" }}
+          >
+            {timeLeft > 0
+              ? `Request expires in ${timeLeft}s`
+              : "Request expired"}
+          </Typography>
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ p: 3, gap: 1 }}>
+        <Button
+          onClick={handleReject}
+          disabled={isProcessing || timeLeft === 0}
+          variant="outlined"
+          color="error"
+          startIcon={
+            isProcessing ? <CircularProgress size={16} /> : <CloseIcon />
+          }
+        >
+          Reject
+        </Button>
+        <Button
+          onClick={handleApprove}
+          disabled={isProcessing || timeLeft === 0}
+          variant="contained"
+          color="primary"
+          startIcon={
+            isProcessing ? <CircularProgress size={16} /> : <CheckIcon />
+          }
+        >
+          Approve & Send
+        </Button>
+      </DialogActions>
+    </>
+  );
+}

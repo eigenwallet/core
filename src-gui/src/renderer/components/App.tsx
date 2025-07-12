@@ -22,6 +22,7 @@ import FeedbackPage from "./pages/feedback/FeedbackPage";
 import IntroductionModal from "./modal/introduction/IntroductionModal";
 import MoneroWalletPage from "./pages/monero/MoneroWalletPage";
 import SeedSelectionDialog from "./modal/seed-selection/SeedSelectionDialog";
+import PasswordEntryDialog from "./modal/password-entry/PasswordEntryDialog";
 
 declare module "@mui/material/styles" {
   interface Theme {
@@ -49,6 +50,7 @@ export default function App() {
         <GlobalSnackbarProvider>
           <IntroductionModal />
           <SeedSelectionDialog />
+          <PasswordEntryDialog />
           <Router>
             <Navigation />
             <InnerContent />
@@ -71,13 +73,13 @@ function InnerContent() {
       }}
     >
       <Routes>
+        <Route path="/" element={<MoneroWalletPage />} />
+        <Route path="/monero-wallet" element={<MoneroWalletPage />} />
         <Route path="/swap" element={<SwapPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/bitcoin-wallet" element={<WalletPage />} />
-        <Route path="/monero-wallet" element={<MoneroWalletPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />
-        <Route path="/" element={<SwapPage />} />
       </Routes>
     </Box>
   );

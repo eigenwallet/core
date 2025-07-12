@@ -17,19 +17,19 @@ export default function NavigationHeader() {
   return (
     <Box>
       <List>
-        <RouteListItemIconButton name="Swap" route="/swap">
+        <RouteListItemIconButton name="Wallet" route={["/monero-wallet", "/"]}>
+          <MoneroIcon />
+        </RouteListItemIconButton>
+        <RouteListItemIconButton name="Wallet" route="/bitcoin-wallet">
+          <BitcoinIcon />
+        </RouteListItemIconButton>
+        <RouteListItemIconButton name="Swap" route={["/swap"]}>
           <SwapHorizOutlinedIcon />
         </RouteListItemIconButton>
         <RouteListItemIconButton name="History" route="/history">
           <UnfinishedSwapsBadge>
             <HistoryOutlinedIcon />
           </UnfinishedSwapsBadge>
-        </RouteListItemIconButton>
-        <RouteListItemIconButton name="Wallet" route="/monero-wallet">
-          <MoneroIcon />
-        </RouteListItemIconButton>
-        <RouteListItemIconButton name="Wallet" route="/bitcoin-wallet">
-          <BitcoinIcon />
         </RouteListItemIconButton>
         <RouteListItemIconButton name="Feedback" route="/feedback">
           <Badge

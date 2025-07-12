@@ -6109,6 +6109,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "backoff",
+ "chrono",
  "cmake",
  "cxx",
  "cxx-build",
@@ -6118,6 +6119,7 @@ dependencies = [
  "quickcheck",
  "quickcheck_macros",
  "serde",
+ "sqlx",
  "tempfile",
  "testcontainers",
  "tokio",

@@ -59,6 +59,12 @@ pub struct ServerInfo {
     pub host: String,
 }
 
+impl Into<String> for ServerInfo {
+    fn into(self) -> String {
+        format!("http://{}:{}", self.host, self.port)
+    }
+}
+
 async fn create_app_with_receiver(
     config: Config,
     network: Network,
