@@ -96,7 +96,7 @@ impl TauriWalletListener {
             ));
         });
     }
-    
+
     fn send_sync_progress(&self) {
         let wallet = self.wallet.clone();
         let tauri_handle = self.tauri_handle.clone();

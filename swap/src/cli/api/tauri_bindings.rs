@@ -1,6 +1,8 @@
 use super::request::BalanceResponse;
 use crate::bitcoin;
-use crate::cli::api::request::{GetMoneroBalanceResponse, GetMoneroSyncProgressResponse, GetMoneroHistoryResponse};
+use crate::cli::api::request::{
+    GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse,
+};
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::{bitcoin::ExpiredTimelocks, monero, network::quote::BidQuote};
@@ -577,7 +579,7 @@ impl TauriEmitter for Option<TauriHandle> {
                 tauri
                     .request_seed_selection_with_recent_wallets(recent_wallets)
                     .await
-            },
+            }
             None => bail!("No Tauri handle available"),
         }
     }
