@@ -38,6 +38,19 @@ export default function WalletOverview({
 
   return (
     <Card sx={{ p: 2, position: "relative", borderRadius: 2 }} elevation={4}>
+      {syncProgress && syncProgress.progress_percentage < 100 && (
+        <LinearProgress
+          value={syncProgress.progress_percentage}
+          variant="determinate"
+          sx={{
+            width: "100%",
+            position: "absolute",
+            top: 0,
+            left: 0,
+          }}
+        />
+      )}
+
       {/* Balance */}
       <Box
         sx={{
@@ -73,7 +86,11 @@ export default function WalletOverview({
         {pendingBalance > 0 && (
           <>
             <Box sx={{ gridColumn: "2", gridRow: "1", alignSelf: "end" }}>
-              <Typography variant="body2" color="warning" sx={{ mb: 1 }}>
+              <Typography
+                variant="body2"
+                color="warning"
+                sx={{ mb: 1, animation: "pulse 2s infinite" }}
+              >
                 Pending
               </Typography>
               <Typography variant="h6" sx={{ gridColumn: "2", gridRow: "2" }}>
@@ -120,20 +137,6 @@ export default function WalletOverview({
           )}
         </Box>
       </Box>
-
-      {/* Syncing State */}
-      {syncProgress && syncProgress.progress_percentage < 100 && (
-        <LinearProgress
-          value={syncProgress.progress_percentage}
-          variant="determinate"
-          sx={{
-            width: "100%",
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-          }}
-        />
-      )}
     </Card>
   );
 }

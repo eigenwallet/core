@@ -22,6 +22,8 @@ import FeedbackPage from "./pages/feedback/FeedbackPage";
 import IntroductionModal from "./modal/introduction/IntroductionModal";
 import MoneroWalletPage from "./pages/monero/MoneroWalletPage";
 import SeedSelectionDialog from "./modal/seed-selection/SeedSelectionDialog";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import PasswordEntryDialog from "./modal/password-entry/PasswordEntryDialog";
 
 declare module "@mui/material/styles" {
@@ -46,17 +48,19 @@ export default function App() {
   return (
     <StyledEngineProvider injectFirst>
       <ThemeProvider theme={currentTheme}>
-        <CssBaseline />
-        <GlobalSnackbarProvider>
-          <IntroductionModal />
-          <SeedSelectionDialog />
-          <PasswordEntryDialog />
-          <Router>
-            <Navigation />
-            <InnerContent />
-            <UpdaterDialog />
-          </Router>
-        </GlobalSnackbarProvider>
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+          <CssBaseline />
+          <GlobalSnackbarProvider>
+            <IntroductionModal />
+            <SeedSelectionDialog />
+            <PasswordEntryDialog />
+            <Router>
+              <Navigation />
+              <InnerContent />
+              <UpdaterDialog />
+            </Router>
+          </GlobalSnackbarProvider>
+        </LocalizationProvider>
       </ThemeProvider>
     </StyledEngineProvider>
   );

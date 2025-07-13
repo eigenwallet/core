@@ -28,7 +28,9 @@ export default function SendAmountInput({
   showFiatRate,
 }: SendAmountInputProps) {
   const theme = useTheme();
-  const displayBalance = piconerosToXmr(parseFloat(balance.unlocked_balance)).toFixed(3);
+  const displayBalance = piconerosToXmr(
+    parseFloat(balance.unlocked_balance),
+  ).toFixed(3);
 
   // Calculate secondary amount for display
   const secondaryAmount = (() => {
@@ -71,8 +73,10 @@ export default function SendAmountInput({
 
   const isAmountTooHigh =
     currency === "XMR"
-      ? parseFloat(amount) > piconerosToXmr(parseFloat(balance.unlocked_balance))
-      : parseFloat(amount) / xmrPrice > piconerosToXmr(parseFloat(balance.unlocked_balance));
+      ? parseFloat(amount) >
+        piconerosToXmr(parseFloat(balance.unlocked_balance))
+      : parseFloat(amount) / xmrPrice >
+        piconerosToXmr(parseFloat(balance.unlocked_balance));
 
   return (
     <Card
