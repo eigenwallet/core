@@ -37,16 +37,10 @@ dialoguer = "0.11"
 ecdsa_fun = { version = "0.10", default-features = false, features = ["libsecp_compat", "serde", "adaptor"] }
 ed25519-dalek = "1"
 electrum-pool = { path = "../electrum-pool" }
-<<<<<<< HEAD
-futures = { version = "0.3", default-features = false, features = ["std"] }
-hex = "0.4"
-libp2p = { version = "0.53.2", features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
-=======
 fns = "0.0.7"
 futures = { workspace = true }
 hex = { workspace = true }
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
->>>>>>> 59829bf53 (refactor: swap-fs, swap-env, swap-serde subcrates, move dependencies into workspace root)
 libp2p-community-tor = { git = "https://github.com/umgefahren/libp2p-tor", rev = "e6b913e0f1ac1fc90b3ee4dd31b5511140c4a9af", features = ["listen-onion-service"] }
 moka = { version = "0.12", features = ["sync", "future"] }
 monero = { workspace = true }
@@ -88,11 +82,7 @@ tower-http = { version = "0.3.4", features = ["full"] }
 tracing = { workspace = true }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
-<<<<<<< HEAD
-typeshare = "1.0.3"
-=======
 typeshare = { workspace = true }
->>>>>>> 59829bf53 (refactor: swap-fs, swap-env, swap-serde subcrates, move dependencies into workspace root)
 unsigned-varint = { version = "0.8.0", features = ["codec", "asynchronous_codec"] }
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
