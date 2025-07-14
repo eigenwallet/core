@@ -1,4 +1,3 @@
-use anyhow::Context as AnyhowContext;
 use std::collections::HashMap;
 use std::io::Write;
 use std::result::Result;
@@ -67,11 +66,11 @@ macro_rules! tauri_command {
     ($fn_name:ident, $request_name:ident) => {
         #[tauri::command]
         async fn $fn_name(
-            context: tauri::State<'_, RwLock<State>>,
+            state: tauri::State<'_, State>,
             args: $request_name,
         ) -> Result<<$request_name as swap::cli::api::request::Request>::Response, String> {
             // Throw error if context is not available
-            let context = context.read().await.try_get_context()?;
+            let context = state.try_get_context()?;
 
             <$request_name as swap::cli::api::request::Request>::request(args, context)
                 .await
@@ -81,10 +80,10 @@ macro_rules! tauri_command {
     ($fn_name:ident, $request_name:ident, no_args) => {
         #[tauri::command]
         async fn $fn_name(
-            context: tauri::State<'_, RwLock<State>>,
+            state: tauri::State<'_, State>,
         ) -> Result<<$request_name as swap::cli::api::request::Request>::Response, String> {
             // Throw error if context is not available
-            let context = context.read().await.try_get_context()?;
+            let context = state.try_get_context()?;
 
             <$request_name as swap::cli::api::request::Request>::request($request_name {}, context)
                 .await
@@ -95,7 +94,7 @@ macro_rules! tauri_command {
 
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
-    pub context: Option<Arc<Context>>,
+    pub context: RwLock<Option<Arc<Context>>>,
     pub handle: TauriHandle,
 }
 
@@ -103,22 +102,17 @@ impl State {
     /// Creates a new State instance with no Context
     fn new(handle: TauriHandle) -> Self {
         Self {
-            context: None,
+            context: RwLock::new(None),
             handle,
         }
-    }
-
-    /// Sets the context for the application state
-    /// This is typically called after the Context has been initialized
-    /// in the setup function
-    fn set_context(&mut self, context: impl Into<Option<Arc<Context>>>) {
-        self.context = context.into();
     }
 
     /// Attempts to retrieve the context
     /// Returns an error if the context is not available
     fn try_get_context(&self) -> Result<Arc<Context>, String> {
         self.context
+            .try_read()
+            .map_err(|_| "Context is being modified".to_string())?
             .clone()
             .ok_or("Context not available".to_string())
     }
@@ -149,8 +143,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // We need to set a value for the Tauri state right at the start
     // If we don't do this, Tauri commands will panic at runtime if no value is present
     let handle = TauriHandle::new(app_handle.clone());
-    let state = RwLock::new(State::new(handle));
-    app_handle.manage::<RwLock<State>>(state);
+    let state = State::new(handle);
+    app_handle.manage::<State>(state);
 
     Ok(())
 }
@@ -222,18 +216,17 @@ pub fn run() {
                 // This is necessary to among other things stop the monero-wallet-rpc process
                 // If the application is forcibly closed, this may not be called.
                 // TODO: fix that
-                let context = app.state::<RwLock<State>>().inner().try_read();
+                let state = app.state::<State>();
+                let context_to_cleanup = if let Ok(context_lock) = state.context.try_read() {
+                    context_lock.clone()
+                } else {
+                    println!("Failed to acquire lock on context");
+                    None
+                };
 
-                match context {
-                    Ok(context) => {
-                        if let Some(context) = context.context.as_ref() {
-                            if let Err(err) = context.cleanup() {
-                                println!("Cleanup failed {}", err);
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        println!("Failed to acquire lock on context: {}", err);
+                if let Some(context) = context_to_cleanup {
+                    if let Err(err) = context.cleanup() {
+                        println!("Cleanup failed {}", err);
                     }
                 }
             }
@@ -270,15 +263,15 @@ tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 
 /// Here we define Tauri commands whose implementation is not delegated to the Request trait
 #[tauri::command]
-async fn is_context_available(context: tauri::State<'_, RwLock<State>>) -> Result<bool, String> {
+async fn is_context_available(state: tauri::State<'_, State>) -> Result<bool, String> {
     // TODO: Here we should return more information about status of the context (e.g. initializing, failed)
-    Ok(context.read().await.try_get_context().is_ok())
+    Ok(state.try_get_context().is_ok())
 }
 
 #[tauri::command]
 async fn check_monero_node(
     args: CheckMoneroNodeArgs,
-    _: tauri::State<'_, RwLock<State>>,
+    _: tauri::State<'_, State>,
 ) -> Result<CheckMoneroNodeResponse, String> {
     args.request().await.to_string_result()
 }
@@ -286,7 +279,7 @@ async fn check_monero_node(
 #[tauri::command]
 async fn check_electrum_node(
     args: CheckElectrumNodeArgs,
-    _: tauri::State<'_, RwLock<State>>,
+    _: tauri::State<'_, State>,
 ) -> Result<CheckElectrumNodeResponse, String> {
     args.request().await.to_string_result()
 }
@@ -294,7 +287,7 @@ async fn check_electrum_node(
 #[tauri::command]
 async fn check_seed(
     args: CheckSeedArgs,
-    _: tauri::State<'_, RwLock<State>>,
+    _: tauri::State<'_, State>,
 ) -> Result<CheckSeedResponse, String> {
     args.request().await.to_string_result()
 }
@@ -303,10 +296,7 @@ async fn check_seed(
 // This is independent of the context to ensure the user can open the directory even if the context cannot
 // be initialized (for troubleshooting purposes)
 #[tauri::command]
-async fn get_data_dir(
-    args: GetDataDirArgs,
-    _: tauri::State<'_, RwLock<State>>,
-) -> Result<String, String> {
+async fn get_data_dir(args: GetDataDirArgs, _: tauri::State<'_, State>) -> Result<String, String> {
     Ok(data::data_dir_from(None, args.is_testnet)
         .to_string_result()?
         .to_string_lossy()
@@ -361,12 +351,10 @@ async fn save_txt_files(
 #[tauri::command]
 async fn resolve_approval_request(
     args: ResolveApprovalArgs,
-    state: tauri::State<'_, RwLock<State>>,
+    state: tauri::State<'_, State>,
 ) -> Result<(), String> {
-    println!("Resolving approval request");
-    let lock = state.read().await;
-
-    lock.handle
+    state
+        .handle
         .resolve_approval(args.request_id.parse().unwrap(), args.accept)
         .await
         .to_string_result()?;
@@ -377,11 +365,10 @@ async fn resolve_approval_request(
 #[tauri::command]
 async fn reject_approval_request(
     args: RejectApprovalArgs,
-    state: tauri::State<'_, RwLock<State>>,
+    state: tauri::State<'_, State>,
 ) -> Result<RejectApprovalResponse, String> {
-    let lock = state.read().await;
-
-    lock.handle
+    state
+        .handle
         .reject_approval(args.request_id.parse().unwrap())
         .await
         .to_string_result()?;
@@ -391,11 +378,9 @@ async fn reject_approval_request(
 
 #[tauri::command]
 async fn get_pending_approvals(
-    state: tauri::State<'_, RwLock<State>>,
+    state: tauri::State<'_, State>,
 ) -> Result<GetPendingApprovalsResponse, String> {
     let approvals = state
-        .read()
-        .await
         .handle
         .get_pending_approvals()
         .await
@@ -409,17 +394,21 @@ async fn get_pending_approvals(
 async fn initialize_context(
     settings: TauriSettings,
     testnet: bool,
-    state: tauri::State<'_, RwLock<State>>,
+    state: tauri::State<'_, State>,
 ) -> Result<(), String> {
+    // Lock at the beginning - fail immediately if already locked
+    let mut context_lock = state
+        .context
+        .try_write()
+        .map_err(|_| "Context is already being initialized".to_string())?;
+
+    // Fail if the context is already initialized
+    if context_lock.is_some() {
+        return Err("Context is already initialized".to_string());
     }
 
-    // Get app handle and create a Tauri handle
-    let tauri_handle = state
-        .try_read()
-        .context("Context is already being initialized")
-        .to_string_result()?
-        .handle
-        .clone();
+    // Get tauri handle from the state
+    let tauri_handle = state.handle.clone();
 
     // Notify frontend that the context is being initialized
     tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Initializing);
@@ -439,11 +428,7 @@ async fn initialize_context(
 
     match context_result {
         Ok(context_instance) => {
-            state
-                .try_write()
-                .context("Context is already being initialized")
-                .to_string_result()?
-                .set_context(Arc::new(context_instance));
+            *context_lock = Some(Arc::new(context_instance));
 
             tracing::info!("Context initialized");
 
