@@ -10,22 +10,6 @@ pub enum network {
     Testnet,
 }
 
-// pub mod network {
-//     use super::*;
-
-//     pub fn serialize<S>(x: &monero::Network, s: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         let str = match x {
-//             Network::Mainnet => "mainnet",
-//             Network::Stagenet => "stagenet",
-//             Network::Testnet => "testnet",
-//         };
-//         s.serialize_str(str)
-//     }
-// }
-
 pub mod private_key {
     use monero::consensus::{Decodable, Encodable};
     use monero::PrivateKey;
