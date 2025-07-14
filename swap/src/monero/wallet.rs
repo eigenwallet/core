@@ -10,7 +10,7 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_sys::WalletEventListener;
-pub use monero_sys::{Daemon, WalletHandle as Wallet};
+pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 use uuid::Uuid;
 
 use crate::cli::api::{
@@ -157,6 +157,7 @@ impl WalletEventListener for TauriWalletListener {
     fn on_new_block(&self, _height: u64) {
         // We send an update here because a new might mean that funds have been unlocked
         // because a UTXO reached 10 confirmations.
+        tracing::info!("new_block: {}", _height);
         self.send_sync_progress();
     }
 
@@ -165,6 +166,7 @@ impl WalletEventListener for TauriWalletListener {
     }
 
     fn on_refreshed(&self) {
+        //self.wallet.start_refresh_thread();
         self.send_balance_update();
         self.send_history_update();
     }
@@ -217,9 +219,12 @@ impl Wallets {
             let tauri_wallet_listener =
                 TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
+            let handle_listener = WalletHandleListener::new(main_wallet.clone());
+
             main_wallet
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
+                    wallet.add_listener(Box::new(handle_listener));
                 })
                 .await;
         }
@@ -262,9 +267,12 @@ impl Wallets {
             let tauri_wallet_listener =
                 TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
+            let handle_listener = WalletHandleListener::new(main_wallet.clone());
+
             main_wallet
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
+                    wallet.add_listener(Box::new(handle_listener));
                 })
                 .await;
         }

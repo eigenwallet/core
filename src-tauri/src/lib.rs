@@ -209,6 +209,7 @@ pub fn run() {
             get_monero_sync_progress,
             check_seed,
             get_pending_approvals,
+            set_monero_restore_height,
         ])
         .setup(setup)
         .build(tauri::generate_context!())

@@ -32,7 +32,7 @@ function RestoreHeightDialog({
     onClose();
   };
 
-  return <Dialog open={true} onClose={() => {}}>
+  return <Dialog open={open} onClose={onClose}>
     <DialogTitle>Restore Height</DialogTitle>
     <DialogContent>
       <TextField

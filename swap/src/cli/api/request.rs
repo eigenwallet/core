@@ -545,6 +545,16 @@ impl Request for SetRestoreHeightArgs {
             .context("Monero wallet manager not available")?;
         let wallet = wallet.main_wallet().await;
         wallet.set_restore_height(self.height).await?;
+        
+        tracing::info!("Rescanning blockchain from height {}", self.height);
+        wallet.pause_refresh().await;
+        wallet.stop().await;
+        tracing::debug!("Background refresh stopped");
+
+        wallet.rescan_blockchain_async().await;
+        wallet.start_refresh().await;
+        tracing::info!("Rescanning blockchain from height {} completed", self.height);
+
         Ok(SetRestoreHeightResponse { success: true })
     }
 }

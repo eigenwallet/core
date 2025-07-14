@@ -37,6 +37,7 @@ use bridge::ffi::{self, TransactionHistory};
 use typeshare::typeshare;
 
 /// A handle which can communicate with the wallet thread via channels.
+#[derive(Clone)]
 pub struct WalletHandle {
     call_sender: UnboundedSender<Call>,
 }
@@ -642,6 +643,31 @@ impl WalletHandle {
             .expect("Shouldn't panic");
 
         Ok(())
+    }
+
+    /// Rescan the blockchain asynchronously.
+    pub async fn rescan_blockchain_async(&self) {
+        self.call(move |wallet| wallet.rescan_blockchain_async()).await
+    }
+
+    /// Start the refresh.
+    pub async fn start_refresh(&self) {
+        self.call(move |wallet| wallet.start_refresh()).await
+    }
+
+    /// Pause the background refresh.
+    pub async fn pause_refresh(&self) {
+        self.call(move |wallet| wallet.pause_refresh()).await
+    }
+
+    /// Start the background refresh thread.
+    pub async fn start_refresh_thread(&self) {
+        self.call(move |wallet| wallet.start_refresh_thread()).await
+    }
+
+    /// Stop the background refresh once (doesn't stop background refresh thread).
+    pub async fn stop(&self) {
+        self.call(move |wallet| wallet.stop()).await
     }
 
     /// Get the sync progress of the wallet.
@@ -1502,6 +1528,30 @@ impl FfiWallet {
         Ok(())
     }
 
+    /// Rescan the blockchain asynchronously.
+    fn rescan_blockchain_async(&mut self) {
+        self.inner.pinned().rescanBlockchainAsync();
+    }
+
+    /// Start the refresh.
+    fn start_refresh(&mut self) {
+        self.inner
+            .pinned()
+            .startRefresh()
+            .context("Failed to start refresh: FFI call failed with exception")
+            .expect("Shouldn't panic");
+    }
+
+    /// Pause the background refresh.
+    fn pause_refresh(&mut self) {
+        self.inner.pinned().pauseRefresh();
+    }
+
+    /// Stop the background refresh once (doesn't stop background refresh thread).
+    fn stop(&mut self) {
+        self.inner.pinned().stop();
+    }
+
     /// Start the background refresh thread (refreshes every 10 seconds).
     fn start_refresh_thread(&mut self) {
         self.inner
@@ -2265,6 +2315,57 @@ impl TransactionInfoHandle {
             confirmations: block_height,
             tx_hash,
         })
+    }
+}
+
+pub struct WalletHandleListener {
+    handle: Arc<WalletHandle>,
+    rt_handle: tokio::runtime::Handle,
+}
+
+impl WalletHandleListener {
+    pub fn new(handle: Arc<WalletHandle>) -> Self {
+        let rt_handle = tokio::runtime::Handle::current();
+        Self { handle, rt_handle }
+    }
+}
+
+impl WalletEventListener for WalletHandleListener {
+    fn on_money_spent(&self, txid: &str, amount: u64) {
+        tracing::info!("money_spent: {} {}", txid, amount);
+    }
+
+    fn on_money_received(&self, txid: &str, amount: u64) {
+        tracing::info!("money_received: {} {}", txid, amount);
+    }
+    
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+        tracing::info!("unconfirmed_money_received: {} {}", txid, amount);
+    }
+    
+    fn on_new_block(&self, height: u64) {
+        tracing::info!("new_block: {}", height);
+    }
+    
+    fn on_updated(&self) {
+        tracing::info!("updated");
+    }
+
+    fn on_refreshed(&self) {
+        tracing::info!("refreshed");
+        let handle = self.handle.clone();
+        self.rt_handle.spawn(async move {
+
+            handle.start_refresh_thread().await;
+        });
+    }
+    
+    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
+        tracing::info!("reorg: {} {} {}", height, blocks_detached, transfers_detached);
+    }
+    
+    fn on_pool_tx_removed(&self, txid: &str) {
+        tracing::info!("pool_tx_removed: {}", txid);
     }
 }
 

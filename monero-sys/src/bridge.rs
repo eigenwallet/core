@@ -208,6 +208,15 @@ pub mod ffi {
         /// Force a specific restore height.
         fn setRefreshFromBlockHeight(self: Pin<&mut Wallet>, height: u64) -> Result<()>;
 
+        /// Rescan the blockchain asynchronously.
+        fn rescanBlockchainAsync(self: Pin<&mut Wallet>);
+
+        /// Pause the background refresh.
+        fn pauseRefresh(self: Pin<&mut Wallet>);
+
+        /// Stop the background refresh once (doesn't stop background refresh thread).
+        fn stop(self: Pin<&mut Wallet>);
+
         /// Set whether to allow mismatched daemon versions.
         fn setAllowMismatchedDaemonVersion(
             self: Pin<&mut Wallet>,
@@ -541,7 +550,7 @@ impl WalletEventListener for TraceListener {
     }
 
     fn on_new_block(&self, height: u64) {
-        tracing::info!(wallet = self.filename, "New block at height: {}", height);
+        tracing::trace!(wallet = self.filename, "New block at height: {}", height);
     }
 
     fn on_updated(&self) {
