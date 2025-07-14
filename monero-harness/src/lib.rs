@@ -316,6 +316,7 @@ fn random_prefix() -> String {
     rand::thread_rng()
         .sample_iter(rand::distributions::Alphanumeric)
         .take(4)
+        .map(char::from)
         .collect()
 }
 
@@ -503,12 +504,16 @@ impl MoneroWallet {
     /// Sweep multiple addresses with different ratios
     /// If the address is `None`, the address will be set to the primary address of the
     /// main wallet.
-    pub async fn sweep_multi(&self, addresses: &[Address], ratios: &[f64]) -> Result<TxReceipt> {
+    pub async fn sweep_multi(
+        &self,
+        addresses: &[Address],
+        ratios: &[f64],
+    ) -> Result<TxReceipt> {
         tracing::info!("`{}` sweeping multi ({:?})", self.name, ratios);
         self.balance().await?;
 
         self.wallet
-            .sweep_multi(&addresses, ratios)
+            .sweep_multi(addresses, ratios)
             .await
             .context("Failed to perform sweep")?
             .into_iter()

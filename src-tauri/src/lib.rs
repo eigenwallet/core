@@ -14,7 +14,7 @@ use swap::cli::{
             GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
             MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
             ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
-            SuspendCurrentSwapArgs, WithdrawBtcArgs, GetRestoreHeightArgs, GetRestoreHeightResponse,
+            SuspendCurrentSwapArgs, WithdrawBtcArgs, GetRestoreHeightArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,

@@ -329,6 +329,14 @@ pub mod ffi {
 
         /// Get the hash of the transaction.
         fn transactionInfoHash(tx_info: &TransactionInfo) -> UniquePtr<CxxString>;
+        
+        /// Sign a message with the wallet's private key.
+        fn signMessage(
+            wallet: Pin<&mut Wallet>,
+            message: &CxxString,
+            address: &CxxString,
+            sign_with_view_key: bool,
+        ) -> Result<UniquePtr<CxxString>>;
     }
 }
 

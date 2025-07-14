@@ -6,8 +6,8 @@ use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::init_tor_client;
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
-use crate::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
-use crate::fs::system_data_dir;
+use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
+use swap_fs::system_data_dir;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
@@ -381,7 +381,7 @@ impl ContextBuilder {
             .join(primary_address.to_string());
 
         // Ensure the identity directory exists
-        crate::fs::ensure_directory_exists(&data_dir)
+        swap_fs::ensure_directory_exists(&data_dir)
             .context("Failed to create identity directory")?;
 
         tracing::info!(
@@ -656,7 +656,7 @@ async fn request_and_open_monero_wallet(
                     let wallet_path = eigenwallet_wallets_dir.join(format!("wallet_{}", timestamp));
 
                     if let Some(parent) = wallet_path.parent() {
-                        crate::fs::ensure_directory_exists(parent)
+                        swap_fs::ensure_directory_exists(parent)
                             .context("Failed to create wallet directory")?;
                     }
 
@@ -787,7 +787,7 @@ pub mod data {
 }
 
 pub mod eigenwallet_data {
-    use crate::fs::system_data_dir_eigenwallet;
+    use swap_fs::system_data_dir_eigenwallet;
 
     use super::*;
 

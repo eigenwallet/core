@@ -5,7 +5,7 @@
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
 
-use std::{path::PathBuf, sync::Arc, time::Duration, rc::Rc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use monero::{Address, Network};

@@ -24,7 +24,7 @@ use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
 use swap::asb::command::{parse_args, Arguments, Command};
-use swap::asb::config::{
+use swap_env::config::{
     initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
 };
 use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, Finality, KrakenRate};
@@ -189,7 +189,7 @@ pub async fn main() -> Result<()> {
             }
 
             // Initialize Bitcoin wallet
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, false).await?;
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
@@ -337,7 +337,7 @@ pub async fn main() -> Result<()> {
             }
         }
         Command::WithdrawBtc { amount, address } => {
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
 
             let withdraw_tx_unsigned = match amount {
                 Some(amount) => {
@@ -363,7 +363,7 @@ pub async fn main() -> Result<()> {
             let monero_balance = monero_wallet.main_wallet().await.total_balance().await;
             tracing::info!(%monero_balance);
 
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance);
             tracing::info!(%bitcoin_balance, %monero_balance, "Current balance");
@@ -371,7 +371,7 @@ pub async fn main() -> Result<()> {
         Command::Cancel { swap_id } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
 
             let (txid, _) = cancel(swap_id, Arc::new(bitcoin_wallet), db).await?;
 
@@ -380,7 +380,7 @@ pub async fn main() -> Result<()> {
         Command::Refund { swap_id } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
             let monero_wallet = init_monero_wallet(&config, env_config).await?;
 
             refund(swap_id, Arc::new(bitcoin_wallet), monero_wallet.clone(), db).await?;
@@ -390,7 +390,7 @@ pub async fn main() -> Result<()> {
         Command::Punish { swap_id } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
 
             let (txid, _) = punish(swap_id, Arc::new(bitcoin_wallet), db).await?;
 
@@ -409,7 +409,7 @@ pub async fn main() -> Result<()> {
         } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
 
             let (txid, _) = redeem(
                 swap_id,
@@ -422,7 +422,7 @@ pub async fn main() -> Result<()> {
             tracing::info!("Redeem transaction successfully published with id {}", txid);
         }
         Command::ExportBitcoinWallet => {
-            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, false).await?;
             let wallet_export = bitcoin_wallet.wallet_export("asb").await?;
             println!("{}", wallet_export)
         }
@@ -444,7 +444,8 @@ pub async fn main() -> Result<()> {
 async fn init_bitcoin_wallet(
     config: &Config,
     seed: &Seed,
-    env_config: swap::env::Config,
+    env_config: swap_env::env::Config,
+    sync: bool,
 ) -> Result<bitcoin::Wallet> {
     tracing::debug!("Opening Bitcoin wallet");
     let wallet = bitcoin::wallet::WalletBuilder::default()
@@ -469,14 +470,18 @@ async fn init_bitcoin_wallet(
         .await
         .context("Failed to initialize Bitcoin wallet")?;
 
-    wallet.sync().await?;
+    if sync {
+        wallet.sync().await?;
+    } else {
+        tracing::info!("Skipping Bitcoin wallet sync because we are only using it for receiving funds");
+    }
 
     Ok(wallet)
 }
 
 async fn init_monero_wallet(
     config: &Config,
-    env_config: swap::env::Config,
+    env_config: swap_env::env::Config,
 ) -> Result<Arc<monero::Wallets>> {
     tracing::debug!("Initializing Monero wallets");
 
