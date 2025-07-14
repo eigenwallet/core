@@ -1,5 +1,6 @@
 pub mod tor;
 pub mod tracing_util;
+pub mod throttle;
 
 use anyhow::anyhow;
 use std::{collections::HashMap, future::Future, path::PathBuf, time::Duration};

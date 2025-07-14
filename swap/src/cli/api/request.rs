@@ -457,6 +457,29 @@ impl Request for RedactArgs {
 
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetRestoreHeightArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetRestoreHeightResponse {
+    #[typeshare(serialized_as = "number")]
+    pub height: u64,
+}
+
+impl Request for GetRestoreHeightArgs {
+    type Response = GetRestoreHeightResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet = wallet.main_wallet().await;
+        let height = wallet.get_restore_height().await?;
+
+        Ok(GetRestoreHeightResponse { height })
+    }
+}
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GetMoneroAddressesArgs;
 
 #[typeshare]
@@ -527,9 +550,11 @@ impl Request for GetMoneroMainAddressArgs {
 
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
-pub struct SetRestoreHeightArgs {
+pub enum SetRestoreHeightArgs {
     #[typeshare(serialized_as = "number")]
-    pub height: u64,
+    Height(u64),
+    #[typeshare(serialized_as = "string")]
+    Date(String),
 }
 
 #[typeshare]
@@ -547,16 +572,49 @@ impl Request for SetRestoreHeightArgs {
             .as_ref()
             .context("Monero wallet manager not available")?;
         let wallet = wallet.main_wallet().await;
-        wallet.set_restore_height(self.height).await?;
+
+        let height = match self {
+            SetRestoreHeightArgs::Height(height) => height,
+            SetRestoreHeightArgs::Date(date) => {
+                // Parse the date string in MM-DD-YYYY format
+                if date.len() != 10 || &date[2..3] != "-" || &date[5..6] != "-" {
+                    bail!("Date format must be MM-DD-YYYY");
+                }
+                
+                let month_str = &date[0..2];
+                let day_str = &date[3..5];
+                let year_str = &date[6..10];
+                
+                let year: u16 = year_str.parse().context("Invalid year in date")?;
+                let month: u8 = month_str.parse().context("Invalid month in date")?;
+                let day: u8 = day_str.parse().context("Invalid day in date")?;
+                
+                // Validate ranges
+                if month < 1 || month > 12 {
+                    bail!("Month must be between 1 and 12");
+                }
+                if day < 1 || day > 31 {
+                    bail!("Day must be between 1 and 31");
+                }
+                
+                tracing::info!("Getting blockchain height for date: {}-{}-{}", year, month, day);
+
+                let height = wallet.get_blockchain_height_by_date(year, month, day).await
+                    .with_context(|| format!("Failed to get blockchain height for date {}-{}-{}", year, month, day))?;
+                tracing::info!("Blockchain height for date {}-{}-{}: {}", year, month, day, height);
+                height
+            }
+        };
+
+        wallet.set_restore_height(height).await?;
         
-        tracing::info!("Rescanning blockchain from height {}", self.height);
         wallet.pause_refresh().await;
         wallet.stop().await;
         tracing::debug!("Background refresh stopped");
 
         wallet.rescan_blockchain_async().await;
         wallet.start_refresh().await;
-        tracing::info!("Rescanning blockchain from height {} completed", self.height);
+        tracing::info!("Rescanning blockchain from height {} completed", height);
 
         Ok(SetRestoreHeightResponse { success: true })
     }

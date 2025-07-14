@@ -3258,6 +3258,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fns"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9d318f82a68feac152dab48e8a6f1eb665a915ea6a0c76e4ad5ed137f80c368"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9802,6 +9811,7 @@ dependencies = [
  "ecdsa_fun",
  "ed25519-dalek 1.0.1",
  "electrum-pool",
+ "fns",
  "futures",
  "get-port",
  "hex",

@@ -12,10 +12,11 @@ import {
 } from "@mui/material";
 
 import { DialogTitle } from "@mui/material";
-import { useState } from "react";
-import { setMoneroRestoreHeight } from "renderer/rpc";
+import { useState, useEffect } from "react";
+import { getRestoreHeight, setMoneroRestoreHeight } from "renderer/rpc";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { Dayjs } from "dayjs";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
 enum RestoreOption {
   BlockHeight = "blockHeight",
@@ -32,10 +33,35 @@ export default function SetRestoreHeightModal({
   const [restoreOption, setRestoreOption] = useState(RestoreOption.BlockHeight);
   const [restoreHeight, setRestoreHeight] = useState(0);
   const [restoreDate, setRestoreDate] = useState<Dayjs | null>(null);
+  const [isPending, setIsPending] = useState(false);
+  const [currentRestoreHeight, setCurrentRestoreHeight] = useState<string>("Loading...");
+
   const handleRestoreHeight = async () => {
-    await setMoneroRestoreHeight(restoreHeight);
-    onClose();
+    if (restoreOption === RestoreOption.BlockHeight) {
+      await setMoneroRestoreHeight(restoreHeight);
+    } else if (restoreOption === RestoreOption.RestoreDate) {
+      const formattedDate = restoreDate?.format('MM-DD-YYYY');
+      if (formattedDate) {
+        await setMoneroRestoreHeight(formattedDate);
+      }
+    }
   };
+
+  useEffect(() => {
+    const fetchCurrentRestoreHeight = async () => {
+      try {
+        const response = await getRestoreHeight();
+        setCurrentRestoreHeight(response.height.toString());
+      } catch (error) {
+        console.error("Failed to fetch restore height:", error);
+        setCurrentRestoreHeight("Error");
+      }
+    };
+
+    if (open) {
+      fetchCurrentRestoreHeight();
+    }
+  }, [open, isPending]);
 
   const accordionStyle = {
     "& .MuiAccordionSummary-content": {
@@ -51,7 +77,7 @@ export default function SetRestoreHeightModal({
 
   return (
     <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Set Restore Height</DialogTitle>
+      <DialogTitle>Set Restore Height (Current: {currentRestoreHeight})</DialogTitle>
       <DialogContent sx={{ minWidth: "500px", minHeight: "300px" }}>
         <Accordion
           elevation={0}
@@ -96,7 +122,14 @@ export default function SetRestoreHeightModal({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleRestoreHeight}>Confirm</Button>
+        <PromiseInvokeButton
+          onInvoke={handleRestoreHeight}
+          onSuccess={onClose}
+          displayErrorSnackbar={true}
+          onPendingChange={setIsPending}
+        >
+          Confirm
+        </PromiseInvokeButton>
       </DialogActions>
     </Dialog>
   );

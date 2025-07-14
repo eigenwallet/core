@@ -25,7 +25,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
-use cxx::{let_cxx_string, CxxString, CxxVector, UniquePtr};
+use cxx::{let_cxx_string, CxxString, CxxVector, Exception, UniquePtr};
 use monero::Amount;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{
@@ -665,6 +665,19 @@ impl WalletHandle {
             .expect("Shouldn't panic");
 
         Ok(())
+    }
+
+    /// Get the restore height of the wallet.
+    pub async fn get_restore_height(&self) -> anyhow::Result<u64> {
+        self.call(move |wallet| wallet.get_restore_height())
+            .await
+            .map_err(|e| anyhow!("Failed to get restore height: FFI call failed with exception: {e}"))
+    }
+
+    pub async fn get_blockchain_height_by_date(&self, year: u16, month: u8, day: u8) -> Result<u64> {
+        self.call(move |wallet| wallet.get_blockchain_height_by_date(year, month, day))
+            .await
+            .map_err(|e| anyhow!("Failed to get blockchain height by date: FFI call failed with exception: {e}"))
     }
 
     /// Rescan the blockchain asynchronously.
@@ -1675,6 +1688,20 @@ impl FfiWallet {
         Ok(())
     }
 
+    pub fn get_restore_height(&mut self) -> anyhow::Result<u64> {
+        Ok(self.inner
+            .pinned()
+            .getRefreshFromBlockHeight()
+            .context("Failed to get restore height: FFI call failed with exception")
+            .expect("Shouldn't panic"))
+    }
+
+    pub fn get_blockchain_height_by_date(&mut self, year: u16, month: u8, day: u8) -> Result<u64, Exception> {
+        self.inner
+            .pinned()
+            .getBlockchainHeightByDate(year, month, day)
+    }
+
     /// Rescan the blockchain asynchronously.
     fn rescan_blockchain_async(&mut self) {
         self.inner.pinned().rescanBlockchainAsync();
@@ -2526,7 +2553,7 @@ impl WalletEventListener for WalletHandleListener {
     }
     
     fn on_new_block(&self, height: u64) {
-        tracing::info!("new_block: {}", height);
+        //tracing::info!("new_block: {}", height);
     }
     
     fn on_updated(&self) {

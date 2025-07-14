@@ -15,7 +15,7 @@ use swap::cli::{
             GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
             MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
             ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
-            SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            SuspendCurrentSwapArgs, WithdrawBtcArgs, GetRestoreHeightArgs, GetRestoreHeightResponse,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -211,7 +211,8 @@ pub fn run() {
             check_seed,
             get_pending_approvals,
             set_monero_restore_height,
-            reject_approval_request
+            reject_approval_request,
+            get_restore_height
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -264,6 +265,7 @@ tauri_command!(get_monero_addresses, GetMoneroAddressesArgs, no_args);
 tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
 tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
 tauri_command!(set_monero_restore_height, SetRestoreHeightArgs);
+tauri_command!(get_restore_height, GetRestoreHeightArgs, no_args);
 
 // Add the new command for getting Monero main address
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);

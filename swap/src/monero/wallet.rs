@@ -5,13 +5,14 @@
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration, rc::Rc};
 
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 use uuid::Uuid;
+use crate::common::{throttle::throttle, throttle::Throttle};
 
 use crate::cli::api::{
     request::{GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse},
@@ -62,89 +63,126 @@ pub struct TransferRequest {
 }
 
 struct TauriWalletListener {
-    tauri_handle: TauriHandle,
-    wallet: Arc<Wallet>,
-    rt_handle: tokio::runtime::Handle,
+    
+    
+    // one throttle wrapper per expensive update
+    balance_throttle: Throttle<()>,
+    history_throttle: Throttle<()>,
+    sync_throttle:    Throttle<()>,
 }
 
 impl TauriWalletListener {
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
 
+        let balance_job = {
+            let wallet = wallet.clone();
+            let tauri = tauri_handle.clone();
+            let rt = rt_handle.clone();
+            move |()| {
+                let wallet = wallet.clone();
+                let tauri = tauri.clone();
+                let rt = rt.clone();
+                rt.spawn(async move {
+                    let response = GetMoneroBalanceResponse {
+                        total_balance:   wallet.total_balance().await.into(),
+                        unlocked_balance: wallet.unlocked_balance().await.into(),
+                    };
+                    tauri.emit_unified_event(
+                        TauriEvent::MoneroWalletUpdate(
+                            MoneroWalletUpdate::BalanceChange(response)
+                        )
+                    );
+                });
+            }
+        };
+
+        let history_job = {
+            let wallet = wallet.clone();
+            let tauri = tauri_handle.clone();
+            let rt = rt_handle.clone();
+            move |()| {
+                let wallet = wallet.clone();
+                let tauri = tauri.clone();
+                let rt = rt.clone();
+                rt.spawn(async move {
+                    let transactions = wallet.history().await;
+                    let response = GetMoneroHistoryResponse { transactions };
+
+                    tauri.emit_unified_event(
+                        TauriEvent::MoneroWalletUpdate(
+                            MoneroWalletUpdate::HistoryUpdate(response)
+                        )
+                    );
+                });
+            }
+        };
+
+        let sync_job = {
+            let wallet = wallet.clone();
+            let tauri = tauri_handle.clone();
+            let rt = rt_handle.clone();
+            move |()| {
+                let wallet = wallet.clone();
+                let tauri = tauri.clone();
+                let rt = rt.clone();
+                rt.spawn(async move {
+                    let sync_progress = wallet.sync_progress().await;
+
+                    let progress_percentage = sync_progress.percentage();
+
+                    let response = GetMoneroSyncProgressResponse {
+                        current_block: sync_progress.current_block,
+                        target_block: sync_progress.target_block,
+                        progress_percentage: progress_percentage,
+                    };
+
+                    tracing::debug!("sync_progress: {:?}", response);
+
+                    tauri.emit_unified_event(
+                        TauriEvent::MoneroWalletUpdate(
+                            MoneroWalletUpdate::SyncProgress(response)
+                        )
+                    );
+                });
+            }
+        };
+
         Self {
-            tauri_handle,
-            wallet,
-            rt_handle,
+            balance_throttle: throttle(balance_job,  Duration::from_millis(2000)),
+            history_throttle: throttle(history_job,  Duration::from_millis(2000)),
+            sync_throttle:    throttle(sync_job,     Duration::from_millis(2000)),
         }
     }
 
     fn send_balance_update(&self) {
-        let wallet = self.wallet.clone();
-        let tauri_handle = self.tauri_handle.clone();
-
-        self.rt_handle.spawn(async move {
-            let total_balance = wallet.total_balance().await;
-            let unlocked_balance = wallet.unlocked_balance().await;
-
-            let response = GetMoneroBalanceResponse {
-                total_balance: total_balance.into(),
-                unlocked_balance: unlocked_balance.into(),
-            };
-
-            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                MoneroWalletUpdate::BalanceChange(response),
-            ));
-        });
-    }
-
-    fn send_sync_progress(&self) {
-        let wallet = self.wallet.clone();
-        let tauri_handle = self.tauri_handle.clone();
-
-        self.rt_handle.spawn(async move {
-            let sync_progress = wallet.sync_progress().await;
-
-            let progress_percentage = sync_progress.percentage();
-
-            let response = GetMoneroSyncProgressResponse {
-                current_block: sync_progress.current_block,
-                target_block: sync_progress.target_block,
-                progress_percentage: progress_percentage,
-            };
-
-            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                MoneroWalletUpdate::SyncProgress(response),
-            ));
-        });
+        self.balance_throttle.call(());
     }
 
     fn send_history_update(&self) {
-        let wallet = self.wallet.clone();
-        let tauri_handle = self.tauri_handle.clone();
+        self.history_throttle.call(());
+    }
 
-        self.rt_handle.spawn(async move {
-            let transactions = wallet.history().await;
-            let response = GetMoneroHistoryResponse { transactions };
-
-            tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                MoneroWalletUpdate::HistoryUpdate(response),
-            ));
-        });
+    fn send_sync_progress(&self) {
+        self.sync_throttle.call(());
     }
 }
 
 impl WalletEventListener for TauriWalletListener {
-    fn on_money_spent(&self, _txid: &str, _amount: u64) {
+    fn on_money_spent(&self, txid: &str, amount: u64) {
+        tracing::debug!("money_spent: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
     }
 
-    fn on_money_received(&self, _txid: &str, _amount: u64) {
+    fn on_money_received(&self, txid: &str, amount: u64) {
+        tracing::debug!("money_received: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
     }
 
-    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+        tracing::debug!("unconfirmed_money_received: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
     }
@@ -152,13 +190,11 @@ impl WalletEventListener for TauriWalletListener {
     fn on_new_block(&self, _height: u64) {
         // We send an update here because a new might mean that funds have been unlocked
         // because a UTXO reached 10 confirmations.
-        tracing::info!("new_block: {}", _height);
         self.send_sync_progress();
     }
 
     fn on_updated(&self) {
         self.send_balance_update();
-        self.send_history_update();
     }
 
     fn on_refreshed(&self) {

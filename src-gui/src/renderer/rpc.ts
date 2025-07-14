@@ -42,6 +42,7 @@ import {
   RejectApprovalResponse,
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
+  GetRestoreHeightResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -434,14 +435,20 @@ export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> 
   return await invokeNoArgs<GetMoneroAddressesResponse>("get_monero_addresses");
 }
 
+export async function getRestoreHeight(): Promise<GetRestoreHeightResponse> {
+  return await invokeNoArgs<GetRestoreHeightResponse>("get_restore_height");
+}
+
 export async function setMoneroRestoreHeight(
-  height: number,
+  height: number | string,
 ): Promise<SetRestoreHeightResponse> {
+  const args: SetRestoreHeightArgs = typeof height === 'number' 
+    ? { Height: height }
+    : { Date: height };
+    
   return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
     "set_monero_restore_height",
-    {
-      height,
-    },
+    args,
   );
 }
 
