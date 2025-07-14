@@ -1,4 +1,4 @@
-use crate::fs::ensure_directory_exists;
+use swap_fs::ensure_directory_exists;
 use ::bitcoin::bip32::Xpriv as ExtendedPrivKey;
 use anyhow::{Context as AnyContext, Result};
 use bitcoin::hashes::{sha256, Hash, HashEngine};

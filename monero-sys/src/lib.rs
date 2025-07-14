@@ -166,9 +166,9 @@ pub struct Daemon {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare]
 pub struct TransactionInfo {
-    #[serde(with = "monero_serde")]
+    #[serde(with = "swap_serde::monero::amount")]
     pub fee: monero::Amount,
-    #[serde(with = "monero_serde")]
+    #[serde(with = "swap_serde::monero::amount")]
     pub amount: monero::Amount,
     #[typeshare(serialized_as = "number")]
     pub confirmations: u64,

@@ -6,8 +6,8 @@ use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::init_tor_client;
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
-use crate::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
-use crate::fs::system_data_dir;
+use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
+use swap_fs::system_data_dir;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
@@ -381,7 +381,7 @@ impl ContextBuilder {
             .join(primary_address.to_string());
 
         // Ensure the identity directory exists
-        crate::fs::ensure_directory_exists(&data_dir)
+        swap_fs::ensure_directory_exists(&data_dir)
             .context("Failed to create identity directory")?;
 
         tracing::info!(
@@ -656,7 +656,7 @@ async fn request_and_open_monero_wallet(
                     let wallet_path = eigenwallet_wallets_dir.join(format!("wallet_{}", timestamp));
 
                     if let Some(parent) = wallet_path.parent() {
-                        crate::fs::ensure_directory_exists(parent)
+                        swap_fs::ensure_directory_exists(parent)
                             .context("Failed to create wallet directory")?;
                     }
 
@@ -695,44 +695,57 @@ async fn request_and_open_monero_wallet(
                         .context("Failed to create wallet from provided seed")?
                     }
                     SeedChoice::FromWalletPath { wallet_path } => {
-                        // Request and verify password before opening wallet
-                        let wallet_password: Option<String> = loop {
-                            // Request password from user
-                            let password = tauri_handle
-                                .request_password(wallet_path.clone())
-                                .await
-                                .inspect_err(|e| {
-                                    tracing::error!("Failed to get password from user: {}", e);
-                                })
-                                .ok();
-
-                            // If the user rejects the password request (presses cancel)
-                            // We prompt him to select a wallet again
-                            let password = match password {
-                                Some(password) => password,
-                                None => break Ok(None),
-                            };
-
-                            // Verify the password using monero-sys
-                            match monero_sys::WalletHandle::verify_wallet_password(
+                        // Helper function to verify password
+                        let verify_password = |password: String| -> Result<bool> {
+                            monero_sys::WalletHandle::verify_wallet_password(
                                 wallet_path.clone(),
-                                password.clone(),
-                            ) {
-                                Ok(true) => {
-                                    break Ok(Some(password));
-                                }
-                                Ok(false) => {
-                                    // Continue loop to request password again
-                                    continue;
-                                }
-                                Err(e) => {
-                                    break Err(anyhow::anyhow!(
-                                        "Failed to verify wallet password: {}",
-                                        e
-                                    ));
+                                password,
+                            )
+                            .map_err(|e| anyhow::anyhow!("Failed to verify wallet password: {}", e))
+                        };
+
+                        // Request and verify password before opening wallet
+                        let wallet_password: Option<String> = {
+                            const EMPTY_PASSWORD: &str = "";
+
+                            // First try empty password
+                            if verify_password(EMPTY_PASSWORD.to_string())? {
+                                Some(EMPTY_PASSWORD.to_string())
+                            } else {
+                                // If empty password fails, ask user for password
+                                loop {
+                                    // Request password from user
+                                    let password = tauri_handle
+                                        .request_password(wallet_path.clone())
+                                        .await
+                                        .inspect_err(|e| {
+                                            tracing::error!("Failed to get password from user: {}", e);
+                                        })
+                                        .ok();
+
+                                    // If the user rejects the password request (presses cancel)
+                                    // We prompt him to select a wallet again
+                                    let password = match password {
+                                        Some(password) => password,
+                                        None => break None,
+                                    };
+
+                                    // Verify the password using the helper function
+                                    match verify_password(password.clone()) {
+                                        Ok(true) => {
+                                            break Some(password);
+                                        }
+                                        Ok(false) => {
+                                            // Continue loop to request password again
+                                            continue;
+                                        }
+                                        Err(e) => {
+                                            return Err(e);
+                                        }
+                                    }
                                 }
                             }
-                        }?;
+                        };
 
                         let password = match wallet_password {
                             Some(password) => password,
@@ -787,7 +800,7 @@ pub mod data {
 }
 
 pub mod eigenwallet_data {
-    use crate::fs::system_data_dir_eigenwallet;
+    use swap_fs::system_data_dir_eigenwallet;
 
     use super::*;
 

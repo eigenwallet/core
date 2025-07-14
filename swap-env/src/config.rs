@@ -1,5 +1,5 @@
 use crate::env::{Mainnet, Testnet};
-use crate::fs::{ensure_directory_exists, system_config_dir, system_data_dir};
+use swap_fs::{ensure_directory_exists, system_config_dir, system_data_dir};
 use anyhow::{bail, Context, Result};
 use config::ConfigError;
 use dialoguer::theme::ColorfulTheme;
@@ -128,104 +128,22 @@ pub struct Data {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Network {
-    #[serde(deserialize_with = "addr_list::deserialize")]
+    #[serde(deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize")]
     pub listen: Vec<Multiaddr>,
-    #[serde(default, deserialize_with = "addr_list::deserialize")]
+    #[serde(default, deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize")]
     pub rendezvous_point: Vec<Multiaddr>,
-    #[serde(default, deserialize_with = "addr_list::deserialize")]
+    #[serde(default, deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize")]
     pub external_addresses: Vec<Multiaddr>,
-}
-
-mod addr_list {
-    use libp2p::Multiaddr;
-    use serde::de::Unexpected;
-    use serde::{de, Deserialize, Deserializer};
-    use serde_json::Value;
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Multiaddr>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = Value::deserialize(deserializer)?;
-        match s {
-            Value::String(s) => {
-                let list: Result<Vec<_>, _> = s
-                    .split(',')
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.trim().parse().map_err(de::Error::custom))
-                    .collect();
-                Ok(list?)
-            }
-            Value::Array(a) => {
-                let list: Result<Vec<_>, _> = a
-                    .iter()
-                    .map(|v| {
-                        if let Value::String(s) = v {
-                            s.trim().parse().map_err(de::Error::custom)
-                        } else {
-                            Err(de::Error::custom("expected a string"))
-                        }
-                    })
-                    .collect();
-                Ok(list?)
-            }
-            value => Err(de::Error::invalid_type(
-                Unexpected::Other(&value.to_string()),
-                &"a string or array",
-            )),
-        }
-    }
-}
-
-mod electrum_urls {
-    use serde::de::Unexpected;
-    use serde::{de, Deserialize, Deserializer};
-    use serde_json::Value;
-    use url::Url;
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Url>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = Value::deserialize(deserializer)?;
-        match s {
-            Value::String(s) => {
-                let list: Result<Vec<_>, _> = s
-                    .split(',')
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.trim().parse().map_err(de::Error::custom))
-                    .collect();
-                Ok(list?)
-            }
-            Value::Array(a) => {
-                let list: Result<Vec<_>, _> = a
-                    .iter()
-                    .map(|v| {
-                        if let Value::String(s) = v {
-                            s.trim().parse().map_err(de::Error::custom)
-                        } else {
-                            Err(de::Error::custom("expected a string"))
-                        }
-                    })
-                    .collect();
-                Ok(list?)
-            }
-            value => Err(de::Error::invalid_type(
-                Unexpected::Other(&value.to_string()),
-                &"a string or array",
-            )),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bitcoin {
-    #[serde(deserialize_with = "electrum_urls::deserialize")]
+    #[serde(deserialize_with = "swap_serde::electrum::urls::deserialize")]
     pub electrum_rpc_urls: Vec<Url>,
     pub target_block: u16,
     pub finality_confirmations: Option<u32>,
-    #[serde(with = "crate::bitcoin::network")]
+    #[serde(with = "swap_serde::bitcoin::network")]
     pub network: bitcoin::Network,
     #[serde(default = "default_use_mempool_space_fee_estimation")]
     pub use_mempool_space_fee_estimation: bool,
@@ -240,7 +158,7 @@ fn default_use_mempool_space_fee_estimation() -> bool {
 pub struct Monero {
     pub daemon_url: Url,
     pub finality_confirmations: Option<u64>,
-    #[serde(with = "crate::monero::network")]
+    #[serde(with = "swap_serde::monero::network")]
     pub network: monero::Network,
     #[serde(default = "default_monero_node_pool")]
     pub monero_node_pool: bool,
@@ -266,7 +184,7 @@ pub struct Maker {
     pub max_buy_btc: bitcoin::Amount,
     pub ask_spread: Decimal,
     pub price_ticker_ws_url: Url,
-    #[serde(default, with = "crate::bitcoin::address_serde::option")]
+    #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
 }
 

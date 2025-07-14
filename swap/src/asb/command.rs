@@ -1,7 +1,7 @@
-use crate::asb::config::GetDefaults;
+use swap_env::config::GetDefaults;
 use crate::bitcoin::{bitcoin_address, Amount};
-use crate::env;
-use crate::env::GetConfig;
+use swap_env::env;
+use swap_env::env::GetConfig;
 use anyhow::Result;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
@@ -182,9 +182,9 @@ fn env_config(is_testnet: bool) -> env::Config {
 #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[error("Invalid Bitcoin address provided, expected address on network {expected:?}  but address provided is on {actual:?}")]
 pub struct BitcoinAddressNetworkMismatch {
-    #[serde(with = "crate::bitcoin::network")]
+    #[serde(with = "swap_serde::bitcoin::network")]
     expected: bitcoin::Network,
-    #[serde(with = "crate::bitcoin::network")]
+    #[serde(with = "swap_serde::bitcoin::network")]
     actual: bitcoin::Network,
 }
 
