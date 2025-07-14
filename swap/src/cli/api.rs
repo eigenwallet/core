@@ -714,57 +714,44 @@ async fn init_monero_wallet(
                         .context("Failed to create wallet from provided seed")?
                     }
                     SeedChoice::FromWalletPath { wallet_path } => {
-                        // Helper function to verify password
-                        let verify_password = |password: String| -> Result<bool> {
-                            monero_sys::WalletHandle::verify_wallet_password(
-                                wallet_path.clone(),
-                                password,
-                            )
-                            .map_err(|e| anyhow::anyhow!("Failed to verify wallet password: {}", e))
-                        };
-
                         // Request and verify password before opening wallet
-                        let wallet_password: Option<String> = {
-                            const EMPTY_PASSWORD: &str = "";
+                        let wallet_password: Option<String> = loop {
+                            // Request password from user
+                            let password = tauri_handle
+                                .request_password(wallet_path.clone())
+                                .await
+                                .inspect_err(|e| {
+                                    tracing::error!("Failed to get password from user: {}", e);
+                                })
+                                .ok();
 
-                            // First try empty password
-                            if verify_password(EMPTY_PASSWORD.to_string())? {
-                                Some(EMPTY_PASSWORD.to_string())
-                            } else {
-                                // If empty password fails, ask user for password
-                                loop {
-                                    // Request password from user
-                                    let password = tauri_handle
-                                        .request_password(wallet_path.clone())
-                                        .await
-                                        .inspect_err(|e| {
-                                            tracing::error!("Failed to get password from user: {}", e);
-                                        })
-                                        .ok();
+                            // If the user rejects the password request (presses cancel)
+                            // We prompt him to select a wallet again
+                            let password = match password {
+                                Some(password) => password,
+                                None => break Ok(None),
+                            };
 
-                                    // If the user rejects the password request (presses cancel)
-                                    // We prompt him to select a wallet again
-                                    let password = match password {
-                                        Some(password) => password,
-                                        None => break None,
-                                    };
-
-                                    // Verify the password using the helper function
-                                    match verify_password(password.clone()) {
-                                        Ok(true) => {
-                                            break Some(password);
-                                        }
-                                        Ok(false) => {
-                                            // Continue loop to request password again
-                                            continue;
-                                        }
-                                        Err(e) => {
-                                            return Err(e);
-                                        }
-                                    }
+                            // Verify the password using monero-sys
+                            match monero_sys::WalletHandle::verify_wallet_password(
+                                wallet_path.clone(),
+                                password.clone(),
+                            ) {
+                                Ok(true) => {
+                                    break Ok(Some(password));
+                                }
+                                Ok(false) => {
+                                    // Continue loop to request password again
+                                    continue;
+                                }
+                                Err(e) => {
+                                    break Err(anyhow::anyhow!(
+                                        "Failed to verify wallet password: {}",
+                                        e
+                                    ));
                                 }
                             }
-                        };
+                        }?;
 
                         let password = match wallet_password {
                             Some(password) => password,
