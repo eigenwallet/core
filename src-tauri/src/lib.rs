@@ -411,30 +411,6 @@ async fn initialize_context(
     testnet: bool,
     state: tauri::State<'_, RwLock<State>>,
 ) -> Result<(), String> {
-    // When the app crashes, the monero-wallet-rpc process may not be killed
-    // This can lead to issues when the app is restarted
-    // because the monero-wallet-rpc has a lock on the wallet
-    // this will prevent the newly spawned instance from opening the wallet
-    // To fix this, we kill any running monero-wallet-rpc processes
-    let sys = sysinfo::System::new_with_specifics(
-        sysinfo::RefreshKind::new().with_processes(sysinfo::ProcessRefreshKind::new()),
-    );
-
-    for (pid, process) in sys.processes() {
-        if process
-            .name()
-            .to_string_lossy()
-            .starts_with("monero-wallet-rpc")
-        {
-            #[cfg(not(debug_assertions))]
-            {
-                println!("Killing monero-wallet-rpc process with pid: {}", pid);
-                process.kill();
-            }
-
-            #[cfg(debug_assertions)]
-            println!("Would kill monero-wallet-rpc process with pid: {}", pid);
-        }
     }
 
     // Get app handle and create a Tauri handle
