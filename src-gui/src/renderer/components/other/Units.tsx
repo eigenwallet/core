@@ -39,14 +39,14 @@ export function AmountWithUnit({
   );
 }
 
-export function FiatMoneroAmount({
+export function FiatPiconeroAmount({
   amount,
   fixedPrecision = 2,
 }: {
   amount: Amount;
   fixedPrecision?: number;
 }) {
-  const xmrRate = useAppSelector((state) => state.rates.xmrPrice);
+  const xmrPrice = useAppSelector((state) => state.rates.xmrPrice);
   const [fetchFiatPrices, fiatCurrency] = useSettings((settings) => [
     settings.fetchFiatPrices,
     settings.fiatCurrency,
@@ -56,14 +56,15 @@ export function FiatMoneroAmount({
     !fetchFiatPrices ||
     fiatCurrency == null ||
     amount == null ||
-    xmrRate == null
+    xmrPrice == null
   ) {
     return null;
   }
 
   return (
     <span>
-      {(amount * xmrRate).toFixed(fixedPrecision)} {fiatCurrency}
+      {(piconerosToXmr(amount) * xmrPrice).toFixed(fixedPrecision)}{" "}
+      {fiatCurrency}
     </span>
   );
 }
@@ -162,7 +163,7 @@ export function SatsAmount({ amount }: { amount: Amount }) {
 
 export function PiconeroAmount({
   amount,
-  fixedPrecision = 4,
+  fixedPrecision = 8,
 }: {
   amount: Amount;
   fixedPrecision?: number;

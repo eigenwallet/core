@@ -1,19 +1,13 @@
 import { useEffect } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 import { useAppSelector } from "store/hooks";
-import {
-  updateMoneroSyncProgress,
-  initializeMoneroWallet,
-  sendMoneroTransaction,
-} from "renderer/rpc";
+import { initializeMoneroWallet } from "renderer/rpc";
 import {
   WalletOverview,
-  SendTransaction,
   TransactionHistory,
   WalletActionButtons,
 } from "./components";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
-import TruncatedText from "renderer/components/other/TruncatedText";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {

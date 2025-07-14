@@ -1,17 +1,7 @@
-import {
-  Button,
-  Box,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-} from "@mui/material";
-import { useState } from "react";
-import { xmrToPiconeros } from "../../../../utils/conversionUtils";
-import SendAmountInput from "./components/SendAmountInput";
-import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { sendMoneroTransaction } from "renderer/rpc";
+import { Dialog } from "@mui/material";
+import { usePendingSendMoneroApproval } from "store/hooks";
+import SendTransactionContent from "./components/SendTransactionContent";
+import SendApprovalContent from "./components/SendApprovalContent";
 
 interface SendTransactionModalProps {
   open: boolean;
@@ -26,62 +16,27 @@ export default function SendTransactionModal({
   open,
   onClose,
 }: SendTransactionModalProps) {
-  const [sendAddress, setSendAddress] = useState("");
-  const [sendAmount, setSendAmount] = useState("");
-  const [enableSend, setEnableSend] = useState(false);
+  const pendingApprovals = usePendingSendMoneroApproval();
+  const hasPendingApproval = pendingApprovals.length > 0;
 
-  const handleSend = async () => {
-    if (!sendAddress || !sendAmount) {
-      throw new Error("Address and amount are required");
-    }
-
-    return sendMoneroTransaction({
-      address: sendAddress,
-      amount: xmrToPiconeros(parseFloat(sendAmount)),
-    });
-  };
-
-
-  const handleSendSuccess = () => {
-    // Clear form after successful send
-    handleClear();
-    onClose();
-  };
-
-  const handleClear = () => {
-    setSendAddress("");
-    setSendAmount("");
-  };
+  // Force dialog to stay open if there's a pending approval
+  const shouldShowDialog = open || hasPendingApproval;
 
   return (
-    <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Send</DialogTitle>
-      <DialogContent>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <SendAmountInput
-          balance={balance}
-          amount={sendAmount}
-          onAmountChange={setSendAmount}
-        />
-        <MoneroAddressTextField
-          address={sendAddress}
-          onAddressChange={setSendAddress}
-          onAddressValidityChange={setEnableSend}
-          label="Send to"
-          fullWidth
-        />
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <PromiseInvokeButton
-          onInvoke={handleSend}
-          disabled={!enableSend}
-          onSuccess={handleSendSuccess}
-        >
-          Send
-        </PromiseInvokeButton>
-      </DialogActions>
+    <Dialog
+      open={shouldShowDialog}
+      onClose={hasPendingApproval ? undefined : onClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: { borderRadius: 2 },
+      }}
+    >
+      {hasPendingApproval ? (
+        <SendApprovalContent />
+      ) : (
+        <SendTransactionContent balance={balance} onClose={onClose} />
+      )}
     </Dialog>
   );
 }

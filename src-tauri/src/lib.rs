@@ -13,8 +13,9 @@ use swap::cli::{
             GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
             GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs,
             GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
-            MoneroRecoveryArgs, RedactArgs, ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs,
-            SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
+            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
+            SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -210,6 +211,7 @@ pub fn run() {
             check_seed,
             get_pending_approvals,
             set_monero_restore_height,
+            reject_approval_request
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -370,6 +372,21 @@ async fn resolve_approval_request(
         .to_string_result()?;
 
     Ok(())
+}
+
+#[tauri::command]
+async fn reject_approval_request(
+    args: RejectApprovalArgs,
+    state: tauri::State<'_, RwLock<State>>,
+) -> Result<RejectApprovalResponse, String> {
+    let lock = state.read().await;
+
+    lock.handle
+        .reject_approval(args.request_id.parse().unwrap())
+        .await
+        .to_string_result()?;
+
+    Ok(RejectApprovalResponse { success: true })
 }
 
 #[tauri::command]

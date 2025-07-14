@@ -1,6 +1,9 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
-use crate::cli::api::tauri_bindings::{SelectMakerDetails, TauriEmitter, TauriSwapProgressEvent};
+use crate::cli::api::tauri_bindings::{
+    ApprovalRequestType, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
+    TauriSwapProgressEvent,
+};
 use crate::cli::api::Context;
 use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
 use crate::cli::{list_sellers as list_sellers_impl, EventLoop, SellerStatus};
@@ -559,7 +562,6 @@ impl Request for SetRestoreHeightArgs {
     }
 }
 
-
 // New request type for Monero balance
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -624,15 +626,54 @@ impl Request for SendMoneroArgs {
         let address = monero::Address::from_str(&self.address)
             .map_err(|e| anyhow::anyhow!("Invalid Monero address: {}", e))?;
 
-        // Convert our amount to monero-sys amount
-        let amount = monero::Amount::from_piconero(self.amount.as_piconero());
+        let tauri_handle = ctx
+            .tauri_handle()
+            .context("Tauri needs to be available to approve transactions")?;
 
-        // Send the transaction with GUI-specific retry logic (single retry only)
-        let receipt = wallet.transfer_gui(&address, amount.into()).await?;
+        // This is a closure that will be called by the monero-sys library to get approval for the transaction
+        // It sends an approval request to the frontend and returns true if the user approves the transaction
+        let approval_callback: Arc<
+            dyn Fn(
+                    String,
+                    ::monero::Amount,
+                    ::monero::Amount,
+                )
+                    -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>
+                + Send
+                + Sync,
+        > = std::sync::Arc::new(
+            move |_txid: String, amount: ::monero::Amount, fee: ::monero::Amount| {
+                let tauri_handle = tauri_handle.clone();
+
+                Box::pin(async move {
+                    let details = SendMoneroDetails {
+                        address: address.to_string(),
+                        amount: amount.into(),
+                        fee: fee.into(),
+                    };
+
+                    tauri_handle
+                        .request_approval::<bool>(
+                            ApprovalRequestType::SendMonero(details),
+                            Some(60 * 5),
+                        )
+                        .await
+                        .unwrap_or(false)
+                })
+            },
+        );
+
+        // This is the actual call to the monero-sys library to send the transaction
+        // monero-sys will call the approval callback after it has constructed and signed the transaction
+        // once the user approves, the transaction is published
+        let receipt = wallet
+            .transfer_with_approval(&address, self.amount.into(), approval_callback)
+            .await?
+            .context("Transaction was not approved by user")?;
 
         Ok(SendMoneroResponse {
             tx_hash: receipt.txid,
-            amount_sent: crate::monero::Amount::from_piconero(amount.as_piconero()),
+            amount_sent: self.amount,
         })
     }
 }
@@ -1414,23 +1455,6 @@ pub async fn get_current_swap(context: Arc<Context>) -> Result<GetCurrentSwapRes
     Ok(GetCurrentSwapResponse { swap_id })
 }
 
-pub async fn resolve_approval_request(
-    resolve_approval: ResolveApprovalArgs,
-    ctx: Arc<Context>,
-) -> Result<ResolveApprovalResponse> {
-    let request_id = Uuid::parse_str(&resolve_approval.request_id).context("Invalid request ID")?;
-
-    if let Some(handle) = ctx.tauri_handle.clone() {
-        handle
-            .resolve_approval(request_id, resolve_approval.accept)
-            .await?;
-    } else {
-        bail!("Cannot resolve approval without a Tauri handle");
-    }
-
-    Ok(ResolveApprovalResponse { success: true })
-}
-
 pub async fn fetch_quotes_task(
     rendezvous_points: Vec<Multiaddr>,
     namespace: XmrBtcNamespace,
@@ -1801,6 +1825,18 @@ pub struct ResolveApprovalArgs {
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ResolveApprovalResponse {
+    pub success: bool,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RejectApprovalArgs {
+    pub request_id: String,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RejectApprovalResponse {
     pub success: bool,
 }
 

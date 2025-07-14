@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useTheme } from "@mui/material";
+import { darken, useTheme } from "@mui/material";
 
 interface NumberInputProps {
   value: string;
@@ -30,23 +30,36 @@ export default function NumberInput({
 }: NumberInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputWidth, setInputWidth] = useState(minWidth);
+  const [isFocused, setIsFocused] = useState(false);
   const measureRef = useRef<HTMLSpanElement>(null);
 
   // Calculate precision from step value
   const getDecimalPrecision = (num: number): number => {
     const str = num.toString();
-    if (str.includes('.')) {
-      return str.split('.')[1].length;
+    if (str.includes(".")) {
+      return str.split(".")[1].length;
     }
     return 0;
   };
 
-  const [userPrecision, setUserPrecision] = useState(() => getDecimalPrecision(step)); // Track user's decimal precision
+  const [userPrecision, setUserPrecision] = useState(() =>
+    getDecimalPrecision(step),
+  ); // Track user's decimal precision
   const [minPrecision, setMinPrecision] = useState(3);
-  const appliedPrecision = userPrecision > minPrecision ? userPrecision : minPrecision;
-  
+  const appliedPrecision =
+    userPrecision > minPrecision ? userPrecision : minPrecision;
 
   const theme = useTheme();
+
+  // Initialize with placeholder if no value provided
+  useEffect(() => {
+    if (
+      (!value || value.trim() === "" || parseFloat(value) === 0) &&
+      !isFocused
+    ) {
+      onChange(placeholder);
+    }
+  }, [placeholder, isFocused, value, onChange]);
 
   // Update precision when step changes
   useEffect(() => {
@@ -57,7 +70,7 @@ export default function NumberInput({
   // Measure text width to size input dynamically
   useEffect(() => {
     if (measureRef.current) {
-      const text = value || placeholder;
+      const text = value;
       measureRef.current.textContent = text;
       const textWidth = measureRef.current.offsetWidth;
       setInputWidth(Math.max(textWidth + 5, minWidth)); // Add padding and minimum width
@@ -65,12 +78,6 @@ export default function NumberInput({
   }, [value, placeholder, minWidth]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-
-    if (e.key === "ArrowLeft" && (!value || value.trim() === "")) {
-      onChange(placeholder);
-      return;
-    }
-
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault();
       const currentValue = parseFloat(value) || 0;
@@ -89,10 +96,10 @@ export default function NumberInput({
     // Allow empty string, numbers, and decimal points
     if (inputValue === "" || /^\d*\.?\d*$/.test(inputValue)) {
       onChange(inputValue);
-      
+
       // Track the user's decimal precision
-      if (inputValue.includes('.')) {
-        const decimalPart = inputValue.split('.')[1];
+      if (inputValue.includes(".")) {
+        const decimalPart = inputValue.split(".")[1];
         setUserPrecision(decimalPart ? decimalPart.length : 0);
       } else if (inputValue && !isNaN(parseFloat(inputValue))) {
         // No decimal point, so precision is 0
@@ -102,9 +109,10 @@ export default function NumberInput({
   };
 
   const handleBlur = () => {
-    // Clear input if value is zero or empty to show placeholder
+    setIsFocused(false);
+    // Reset to placeholder if value is zero or empty
     if (!value || value.trim() === "" || parseFloat(value) === 0) {
-      onChange("");
+      onChange(placeholder);
     } else if (!isNaN(parseFloat(value))) {
       // Format valid numbers on blur using user's precision
       const formatted = parseFloat(value).toFixed(appliedPrecision);
@@ -112,6 +120,13 @@ export default function NumberInput({
       onChange(parseFloat(formatted).toString());
     }
   };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  // Determine if we should show placeholder styling
+  const isShowingPlaceholder = value === placeholder && !isFocused;
 
   const defaultStyle: React.CSSProperties = {
     fontSize,
@@ -123,7 +138,9 @@ export default function NumberInput({
     width: `${inputWidth}px`,
     minWidth: `${minWidth}px`,
     fontFamily: "inherit",
-    color: theme.palette.text.primary,
+    color: isShowingPlaceholder
+      ? darken(theme.palette.text.primary, 0.5)
+      : theme.palette.text.primary,
     padding: "4px 0",
     transition: "color 0.2s ease",
     ...style,
@@ -148,11 +165,11 @@ export default function NumberInput({
         ref={inputRef}
         type="text"
         inputMode="decimal"
-        placeholder={placeholder}
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
+        onFocus={handleFocus}
         className={className}
         style={defaultStyle}
       />

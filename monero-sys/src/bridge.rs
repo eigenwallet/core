@@ -123,6 +123,15 @@ pub mod ffi {
         /// Check whether a wallet exists at the given path.
         fn walletExists(self: Pin<&mut WalletManager>, path: &CxxString) -> Result<bool>;
 
+        /// Verify the password for a wallet at the given path.
+        fn verifyWalletPassword(
+            self: &WalletManager,
+            keys_file_name: &CxxString,
+            password: &CxxString,
+            no_spend_key: bool,
+            kdf_rounds: u64,
+        ) -> Result<bool>;
+
         /// Set the address of the remote node ("daemon").
         fn setDaemonAddress(self: Pin<&mut WalletManager>, address: &CxxString) -> Result<()>;
 
@@ -273,6 +282,9 @@ pub mod ffi {
             tx: &PendingTransaction,
         ) -> Result<UniquePtr<CxxVector<CxxString>>>;
 
+        /// Get the fee of a pending transaction.
+        fn pendingTransactionFee(tx: &PendingTransaction) -> Result<u64>;
+
         /// Get the transaction key (r) for a given txid.
         fn walletGetTxKey(wallet: &Wallet, txid: &CxxString) -> Result<UniquePtr<CxxString>>;
 
@@ -298,6 +310,9 @@ pub mod ffi {
         /// Get a transaction from the history by index.
         unsafe fn transaction(self: &TransactionHistory, index: i32) -> *mut TransactionInfo;
 
+        /// Refresh the transaction history so it contains the latest transactions (including unconfirmed).
+        fn refresh(self: Pin<&mut TransactionHistory>) -> Result<()>;
+
         /// Get the amount of the transaction.
         fn amount(self: &TransactionInfo) -> u64;
 
@@ -306,6 +321,9 @@ pub mod ffi {
 
         /// Get the confirmations of the transaction.
         fn confirmations(self: &TransactionInfo) -> u64;
+
+        /// Get the direction of the transaction.
+        fn direction(self: &TransactionInfo) -> i32;
 
         /// Get the hash of the transaction.
         fn transactionInfoHash(tx_info: &TransactionInfo) -> UniquePtr<CxxString>;

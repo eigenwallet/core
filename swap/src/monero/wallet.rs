@@ -96,7 +96,7 @@ impl TauriWalletListener {
             ));
         });
     }
-    
+
     fn send_sync_progress(&self) {
         let wallet = self.wallet.clone();
         let tauri_handle = self.tauri_handle.clone();
@@ -126,8 +126,6 @@ impl TauriWalletListener {
             let transactions = wallet.history().await;
             let response = GetMoneroHistoryResponse { transactions };
 
-            println!("history_update: {:?}", response);
-
             tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
                 MoneroWalletUpdate::HistoryUpdate(response),
             ));
@@ -136,20 +134,17 @@ impl TauriWalletListener {
 }
 
 impl WalletEventListener for TauriWalletListener {
-    fn on_money_spent(&self, txid: &str, amount: u64) {
-        println!("money_spent: {} {}", txid, amount);
+    fn on_money_spent(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
     }
 
-    fn on_money_received(&self, txid: &str, amount: u64) {
-        println!("money_received: {} {}", txid, amount);
+    fn on_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
     }
 
-    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
-        println!("unconfirmed_money_received: {} {}", txid, amount);
+    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
     }
@@ -163,6 +158,7 @@ impl WalletEventListener for TauriWalletListener {
 
     fn on_updated(&self) {
         self.send_balance_update();
+        self.send_history_update();
     }
 
     fn on_refreshed(&self) {

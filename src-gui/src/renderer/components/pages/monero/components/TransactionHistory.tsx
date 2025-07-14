@@ -19,17 +19,11 @@ import { open } from "@tauri-apps/plugin-shell";
 import { PiconeroAmount } from "../../../other/Units";
 import { getMoneroTxExplorerUrl } from "../../../../../utils/conversionUtils";
 import { isTestnet } from "store/config";
-
-interface Transaction {
-  amount: number;
-  fee: number;
-  confirmations: number;
-  tx_hash?: string;
-}
+import { TransactionInfo } from "models/tauriModel";
 
 interface TransactionHistoryProps {
   history?: {
-    transactions: Transaction[];
+    transactions: TransactionInfo[];
   };
 }
 
@@ -56,48 +50,50 @@ export default function TransactionHistory({
             </TableRow>
           </TableHead>
           <TableBody>
-            {history.transactions.map((tx, index) => (
-              <TableRow key={index}>
-                <TableCell>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <PiconeroAmount amount={tx.amount} />
+            {[...history.transactions]
+              .sort((a, b) => a.confirmations - b.confirmations)
+              .map((tx, index) => (
+                <TableRow key={index}>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <PiconeroAmount amount={tx.amount} />
+                      <Chip
+                        label={tx.direction === "In" ? "Received" : "Sent"}
+                        color={tx.direction === "In" ? "success" : "default"}
+                        size="small"
+                      />
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <PiconeroAmount amount={tx.fee} />
+                  </TableCell>
+                  <TableCell align="right">
                     <Chip
-                      label={tx.amount >= 0 ? "Received" : "Sent"}
-                      color={tx.amount >= 0 ? "success" : "default"}
+                      label={tx.confirmations}
+                      color={tx.confirmations >= 10 ? "success" : "warning"}
                       size="small"
                     />
-                  </Stack>
-                </TableCell>
-                <TableCell>
-                  <PiconeroAmount amount={tx.fee} />
-                </TableCell>
-                <TableCell align="right">
-                  <Chip
-                    label={tx.confirmations}
-                    color={tx.confirmations >= 10 ? "success" : "warning"}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell align="center">
-                  {tx.tx_hash && (
-                    <Tooltip title="View on block explorer">
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          const url = getMoneroTxExplorerUrl(
-                            tx.tx_hash,
-                            isTestnet(),
-                          );
-                          open(url);
-                        }}
-                      >
-                        <OpenInNewIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell align="center">
+                    {tx.tx_hash && (
+                      <Tooltip title="View on block explorer">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const url = getMoneroTxExplorerUrl(
+                              tx.tx_hash,
+                              isTestnet(),
+                            );
+                            open(url);
+                          }}
+                        >
+                          <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
           </TableBody>
         </Table>
       </TableContainer>

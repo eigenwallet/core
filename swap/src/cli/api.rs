@@ -427,9 +427,39 @@ impl ContextBuilder {
                         .context("Failed to create wallet from provided seed")?
                     }
                     SeedChoice::FromWalletPath { wallet_path } => {
-                        // Open existing wallet
-                        monero::Wallet::open_or_create(
+                        // Request and verify password before opening wallet
+                        let wallet_password = loop {
+                            // Request password from user
+                            let password = tauri_handle
+                                .request_password(wallet_path.clone())
+                                .await
+                                .context("Failed to get password from user")?;
+
+                            // Verify the password using monero-sys
+                            match monero_sys::WalletHandle::verify_wallet_password(
+                                wallet_path.clone(),
+                                password.clone(),
+                            ) {
+                                Ok(true) => {
+                                    break Some(password);
+                                }
+                                Ok(false) => {
+                                    // Continue loop to request password again
+                                    continue;
+                                }
+                                Err(e) => {
+                                    return Err(anyhow::anyhow!(
+                                        "Failed to verify wallet password: {}",
+                                        e
+                                    ));
+                                }
+                            }
+                        };
+
+                        // Open existing wallet with verified password
+                        monero::Wallet::open_or_create_with_password(
                             wallet_path.clone(),
+                            wallet_password,
                             daemon.clone(),
                             env_config.monero_network,
                             true,
