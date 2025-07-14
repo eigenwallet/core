@@ -14,6 +14,6 @@ monero-sys = { path = "../monero-sys" }
 rand = { workspace = true }
 reqwest = { workspace = true }
 testcontainers = "0.15"
-tokio = { workspace = true, default-features = false, features = ["rt-multi-thread", "time", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros"] }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "tracing-log"] }

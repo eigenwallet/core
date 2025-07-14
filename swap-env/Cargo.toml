@@ -15,7 +15,6 @@ swap-fs = { path = "../swap-fs" }
 dialoguer = "0.11"
 config = { version = "0.14", default-features = false, features = ["toml"] }
 libp2p = { workspace = true, features = ["serde"] }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true }
 url = { workspace = true }

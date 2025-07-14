@@ -15,7 +15,7 @@ use std::str::FromStr;
 use url::Url;
 
 pub trait GetDefaults {
-    fn getConfigFileDefaults() -> Result<Defaults>;
+    fn get_config_file_defaults() -> Result<Defaults>;
 }
 
 pub struct Defaults {
@@ -29,7 +29,7 @@ pub struct Defaults {
 }
 
 impl GetDefaults for Testnet {
-    fn getConfigFileDefaults() -> Result<Defaults> {
+    fn get_config_file_defaults() -> Result<Defaults> {
         let defaults = Defaults {
             config_path: default_asb_config_dir()?
                 .join("testnet")
@@ -47,7 +47,7 @@ impl GetDefaults for Testnet {
 }
 
 impl GetDefaults for Mainnet {
-    fn getConfigFileDefaults() -> Result<Defaults> {
+    fn get_config_file_defaults() -> Result<Defaults> {
         let defaults = Defaults {
             config_path: default_asb_config_dir()?
                 .join("mainnet")
@@ -236,14 +236,14 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
 
         let bitcoin_network = bitcoin::Network::Testnet;
         let monero_network = monero::Network::Stagenet;
-        let defaults = Testnet::getConfigFileDefaults()?;
+        let defaults = Testnet::get_config_file_defaults()?;
 
         (bitcoin_network, monero_network, defaults)
     } else {
         tracing::info!("Running initial setup for mainnet");
         let bitcoin_network = bitcoin::Network::Bitcoin;
         let monero_network = monero::Network::Mainnet;
-        let defaults = Mainnet::getConfigFileDefaults()?;
+        let defaults = Mainnet::get_config_file_defaults()?;
 
         (bitcoin_network, monero_network, defaults)
     };
@@ -300,7 +300,8 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
             .with_prompt(prompt)
             .allow_empty(true)
             .interact_text()?;
-        if electrum_url.as_str().is_empty() {
+
+        if electrum_url.is_empty() {
             electrum_done = true;
         } else if electrum_rpc_urls
             .iter()
@@ -418,7 +419,7 @@ mod tests {
         let temp_dir = tempdir().unwrap().path().to_path_buf();
         let config_path = Path::join(&temp_dir, "config.toml");
 
-        let defaults = Testnet::getConfigFileDefaults().unwrap();
+        let defaults = Testnet::get_config_file_defaults().unwrap();
 
         let expected = Config {
             data: Data {
@@ -464,7 +465,7 @@ mod tests {
         let temp_dir = tempdir().unwrap().path().to_path_buf();
         let config_path = Path::join(&temp_dir, "config.toml");
 
-        let defaults = Mainnet::getConfigFileDefaults().unwrap();
+        let defaults = Mainnet::get_config_file_defaults().unwrap();
 
         let expected = Config {
             data: Data {
@@ -510,7 +511,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap().path().to_path_buf();
         let config_path = Path::join(&temp_dir, "config.toml");
 
-        let defaults = Mainnet::getConfigFileDefaults().unwrap();
+        let defaults = Mainnet::get_config_file_defaults().unwrap();
 
         let dir = PathBuf::from("/tmp/dir");
         std::env::set_var("ASB__DATA__DIR", dir.clone());
