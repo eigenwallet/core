@@ -244,14 +244,16 @@ impl WalletHandle {
 
                 let manager = WalletManager::new(daemon.clone(), &wallet_name);
 
-                if let Err(e) = manager {
-                    wallet_created_sender
-                        .send(Err(e.context("failed to create wallet manager")))
-                        .unwrap();
-                    return;
-                }
+                let mut manager = match manager {
+                    Ok(manager) => manager,
+                    Err(e) => {
+                        wallet_created_sender
+                            .send(Err(e.context("failed to create wallet manager")))
+                            .expect("Failed to send wallet manager error through oneshot channel");
 
-                let mut manager = manager.expect("wallet manager to be created");
+                        return;
+                    }
+                };
 
                 let wallet = manager.open_or_create_wallet(
                     &path,
@@ -261,14 +263,16 @@ impl WalletHandle {
                     daemon.clone(),
                 );
 
-                if let Err(e) = wallet {
-                    wallet_created_sender
-                        .send(Err(e.context("failed to open or create wallet")))
-                        .unwrap();
-                    return;
-                }
+                let wallet = match wallet {
+                    Ok(wallet) => wallet,
+                    Err(e) => {
+                        wallet_created_sender
+                            .send(Err(e.context("failed to open or create wallet")))
+                            .expect("Failed to send wallet error through oneshot channel");
 
-                let wallet = wallet.expect("wallet to be created");
+                        return;
+                    }
+                };
 
                 let mut wrapped_wallet = Wallet::new(wallet, manager, call_receiver);
 
@@ -281,7 +285,8 @@ impl WalletHandle {
         // Wait for the wallet creation to complete
         let wallet_created = wallet_created_receiver
             .await
-            .expect("wallet creation to complete");
+            .context("Failed to get result from wallet creation thread through oneshot channel")?;
+        
         wallet_created?;
 
         // Ensure the wallet was created successfully by performing a dummy call
@@ -331,14 +336,16 @@ impl WalletHandle {
                 // Create the wallet manager in this thread first.
                 let manager = WalletManager::new(daemon.clone(), &wallet_name);
 
-                if let Err(e) = manager {
-                    wallet_created_sender
-                        .send(Err(e.context("failed to create wallet manager")))
-                        .unwrap();
-                    return;
-                }
+                let mut manager = match manager {
+                    Ok(manager) => manager,
+                    Err(e) => {
+                        wallet_created_sender
+                            .send(Err(e.context("failed to create wallet manager")))
+                            .expect("Failed to send wallet manager error through oneshot channel");
 
-                let mut manager = manager.expect("wallet manager to be created");
+                        return;
+                    }
+                };
 
                 // Decide whether we have to open an existing wallet or recover it
                 // from the mnemonic.
@@ -364,14 +371,16 @@ impl WalletHandle {
                     )
                 };
 
-                if let Err(e) = wallet {
-                    wallet_created_sender
-                        .send(Err(e.context("failed to open or create wallet from seed")))
-                        .unwrap();
-                    return;
-                }
+                let wallet = match wallet {
+                    Ok(wallet) => wallet,
+                    Err(e) => {
+                        wallet_created_sender
+                            .send(Err(e.context("failed to open or create wallet from seed")))
+                            .expect("Failed to send wallet error through oneshot channel");
 
-                let wallet = wallet.expect("wallet to be created");
+                        return;
+                    }
+                };
 
                 let mut wrapped_wallet = Wallet::new(wallet, manager, call_receiver);
 
@@ -384,10 +393,12 @@ impl WalletHandle {
         // Wait for the wallet creation to complete
         let wallet_created = wallet_created_receiver
             .await
-            .expect("wallet creation to complete");
+            .context("Failed to get result from wallet creation thread through oneshot channel")?;
+
         wallet_created?;
 
         let wallet = WalletHandle::new(call_sender);
+
         // Make a test call to ensure that the wallet is created.
         wallet
             .check_wallet()
@@ -442,14 +453,16 @@ impl WalletHandle {
 
                 let manager = WalletManager::new(daemon.clone(), &wallet_name);
 
-                if let Err(e) = manager {
-                    wallet_created_sender
-                        .send(Err(e.context("failed to create wallet manager")))
-                        .unwrap();
-                    return;
-                }
+                let mut manager = match manager {
+                    Ok(manager) => manager,
+                    Err(e) => {
+                        wallet_created_sender
+                            .send(Err(e.context("failed to create wallet manager")))
+                            .expect("Failed to send wallet manager error through oneshot channel");
 
-                let mut manager = manager.expect("wallet manager to be created");
+                        return;
+                    }
+                };
 
                 let wallet = manager.open_or_create_wallet_from_keys(
                     &path,
@@ -463,14 +476,16 @@ impl WalletHandle {
                     daemon.clone(),
                 );
 
-                if let Err(e) = wallet {
-                    wallet_created_sender
-                        .send(Err(e.context("failed to open or create wallet from keys")))
-                        .unwrap();
-                    return;
-                }
+                let wallet = match wallet {
+                    Ok(wallet) => wallet,
+                    Err(e) => {
+                        wallet_created_sender
+                            .send(Err(e.context("failed to open or create wallet from keys")))
+                            .expect("Failed to send wallet error through oneshot channel");
 
-                let wallet = wallet.expect("wallet to be created");
+                        return;
+                    }
+                };
 
                 let mut wrapped_wallet = Wallet::new(wallet, manager, call_receiver);
 
@@ -483,7 +498,8 @@ impl WalletHandle {
         // Wait for the wallet creation to complete
         let wallet_created = wallet_created_receiver
             .await
-            .expect("wallet creation to complete");
+            .context("Failed to get result from wallet creation thread through oneshot channel")?;
+
         wallet_created?;
 
         let wallet = WalletHandle::new(call_sender);
@@ -1021,7 +1037,7 @@ impl WalletHandle {
             .recv()
             .context("Failed to receive password verification result from thread")?
     }
-    
+
     /// Sign a message with the wallet's private key.
     /// 
     /// # Arguments
