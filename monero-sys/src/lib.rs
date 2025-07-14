@@ -283,11 +283,10 @@ impl WalletHandle {
             .context("Couldn't start wallet thread")?;
 
         // Wait for the wallet creation to complete
-        let wallet_created = wallet_created_receiver
+        wallet_created_receiver
             .await
-            .context("Failed to get result from wallet creation thread through oneshot channel")?;
-        
-        wallet_created?;
+            .context("Failed to get result from wallet creation thread through oneshot channel")?
+            .context("Failed to open or create wallet")?;
 
         // Ensure the wallet was created successfully by performing a dummy call
         let wallet = WalletHandle::new(call_sender);
@@ -295,7 +294,7 @@ impl WalletHandle {
         wallet
             .check_wallet()
             .await
-            .context("failed to create wallet")?;
+            .context("Failed to open wallet because health check failed")?;
 
         Ok(wallet)
     }
@@ -391,11 +390,10 @@ impl WalletHandle {
             .context("Couldn't start wallet thread")?;
 
         // Wait for the wallet creation to complete
-        let wallet_created = wallet_created_receiver
+        wallet_created_receiver
             .await
-            .context("Failed to get result from wallet creation thread through oneshot channel")?;
-
-        wallet_created?;
+            .context("Failed to get result from wallet creation thread through oneshot channel")?
+            .context("Failed to open or create wallet from seed")?;
 
         let wallet = WalletHandle::new(call_sender);
 
@@ -403,7 +401,7 @@ impl WalletHandle {
         wallet
             .check_wallet()
             .await
-            .context("failed to create wallet")?;
+            .context("Failed to open or create wallet from seed because health check failed")?;
 
         Ok(wallet)
     }
@@ -496,11 +494,10 @@ impl WalletHandle {
             .context("Couldn't start wallet thread")?;
 
         // Wait for the wallet creation to complete
-        let wallet_created = wallet_created_receiver
+        wallet_created_receiver
             .await
-            .context("Failed to get result from wallet creation thread through oneshot channel")?;
-
-        wallet_created?;
+            .context("Failed to get result from wallet creation thread through oneshot channel")?
+            .context("Failed to open or create wallet from keys")?;
 
         let wallet = WalletHandle::new(call_sender);
 
@@ -508,7 +505,7 @@ impl WalletHandle {
         wallet
             .check_wallet()
             .await
-            .context("Failed to create wallet")?;
+            .context("Failed to open or create wallet from keys because health check failed")?;
 
         Ok(wallet)
     }
