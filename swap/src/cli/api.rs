@@ -311,59 +311,7 @@ impl ContextBuilder {
         let env_config = env_config_from(self.is_testnet);
         let seed = &Seed::from_file_or_generate(data_dir.as_path(), self.tauri_handle.clone())
             .await
-<<<<<<< HEAD
             .context("Failed to read seed in file")?;
-=======
-            .context("Failed to initialize wallet database")?;
-
-        // Prompt the user to open/create a Monero wallet
-        let wallet = request_and_open_monero_wallet(
-            self.tauri_handle.clone(),
-            eigenwallet_data_dir,
-            env_config,
-            &daemon,
-            &wallet_database,
-        )
-        .await?;
-
-        // Extract seed and primary address from the wallet
-        let seed = Seed::from_monero_wallet(&wallet)
-            .await
-            .context("Failed to extract seed from wallet")?;
-        let primary_address = wallet.main_address().await;
-
-        // Derive data directory from primary address
-        let data_dir = base_data_dir
-            .join("identities")
-            .join(primary_address.to_string());
-
-        // Ensure the identity directory exists
-        swap_fs::ensure_directory_exists(&data_dir)
-            .context("Failed to create identity directory")?;
-
-        tracing::info!(
-            primary_address = %primary_address,
-            data_dir = %data_dir.display(),
-            "Using wallet-specific data directory"
-        );
-
-        let wallet_database = Some(Arc::new(wallet_database));
-
-        // Create the monero wallet manager
-        let monero_manager = Some(Arc::new(
-            monero::Wallets::new_with_existing_wallet(
-                eigenwallet_data_dir.to_path_buf(),
-                daemon.clone(),
-                env_config.monero_network,
-                false,
-                self.tauri_handle.clone(),
-                wallet,
-                wallet_database,
-            )
-            .await
-            .context("Failed to initialize Monero wallets with existing wallet")?,
-        ));
->>>>>>> 59829bf53 (refactor: swap-fs, swap-env, swap-serde subcrates, move dependencies into workspace root)
 
         // Create the data structure we use to manage the swap lock
         let swap_lock = Arc::new(SwapLock::new());
@@ -635,153 +583,9 @@ async fn init_monero_wallet(
     let network = env_config.monero_network;
     let wallet_dir = data_dir.join("monero").join("monero-data");
 
-<<<<<<< HEAD
     let daemon = monero_sys::Daemon {
         address: monero_daemon_address,
         ssl: false,
-=======
-    let wallet = match tauri_handle {
-        Some(tauri_handle) => {
-            // Get recent wallets from database
-            let recent_wallets: Vec<String> = wallet_database
-                .get_recent_wallets(5)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(|w| w.wallet_path)
-                .collect();
-
-            // This loop continually requests the user to select a wallet file
-            // It then requests the user to provide a password.
-            // It repeats until the user provides a valid password or rejects the password request
-            // When the user rejects the password request, we prompt him to select a wallet again
-            loop {
-                let seed_choice = tauri_handle
-                    .request_seed_selection_with_recent_wallets(recent_wallets.clone())
-                    .await?;
-
-                let _monero_progress_handle = tauri_handle
-                    .new_background_process_with_initial_progress(
-                        TauriBackgroundProgress::OpeningMoneroWallet,
-                        (),
-                    );
-
-                fn new_wallet_path(eigenwallet_wallets_dir: &PathBuf) -> Result<PathBuf> {
-                    let timestamp = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
-
-                    let wallet_path = eigenwallet_wallets_dir.join(format!("wallet_{}", timestamp));
-
-                    if let Some(parent) = wallet_path.parent() {
-                        swap_fs::ensure_directory_exists(parent)
-                            .context("Failed to create wallet directory")?;
-                    }
-
-                    Ok(wallet_path)
-                }
-
-                let wallet = match seed_choice {
-                    SeedChoice::RandomSeed => {
-                        // Create wallet with Unix timestamp as name
-                        let wallet_path = new_wallet_path(&eigenwallet_wallets_dir)
-                            .context("Failed to determine path for new wallet")?;
-
-                        monero::Wallet::open_or_create(
-                            wallet_path.display().to_string(),
-                            daemon.clone(),
-                            env_config.monero_network,
-                            true,
-                        )
-                        .await
-                        .context("Failed to create wallet from random seed")?
-                    }
-                    SeedChoice::FromSeed { seed: mnemonic } => {
-                        // Create wallet from provided seed
-                        let wallet_path = new_wallet_path(&eigenwallet_wallets_dir)
-                            .context("Failed to determine path for new wallet")?;
-
-                        monero::Wallet::open_or_create_from_seed(
-                            wallet_path.display().to_string(),
-                            mnemonic,
-                            env_config.monero_network,
-                            0,
-                            true,
-                            daemon.clone(),
-                        )
-                        .await
-                        .context("Failed to create wallet from provided seed")?
-                    }
-                    SeedChoice::FromWalletPath { wallet_path } => {
-                        // Request and verify password before opening wallet
-                        let wallet_password: Option<String> = loop {
-                            // Request password from user
-                            let password = tauri_handle
-                                .request_password(wallet_path.clone())
-                                .await
-                                .inspect_err(|e| {
-                                    tracing::error!("Failed to get password from user: {}", e);
-                                })
-                                .ok();
-
-                            // If the user rejects the password request (presses cancel)
-                            // We prompt him to select a wallet again
-                            let password = match password {
-                                Some(password) => password,
-                                None => break Ok(None),
-                            };
-
-                            // Verify the password using monero-sys
-                            match monero_sys::WalletHandle::verify_wallet_password(
-                                wallet_path.clone(),
-                                password.clone(),
-                            ) {
-                                Ok(true) => {
-                                    break Ok(Some(password));
-                                }
-                                Ok(false) => {
-                                    // Continue loop to request password again
-                                    continue;
-                                }
-                                Err(e) => {
-                                    break Err(anyhow::anyhow!(
-                                        "Failed to verify wallet password: {}",
-                                        e
-                                    ));
-                                }
-                            }
-                        }?;
-
-                        let password = match wallet_password {
-                            Some(password) => password,
-                            // None means the user rejected the password request
-                            // We prompt him to select a wallet again
-                            None => {
-                                continue;
-                            }
-                        };
-
-                        // Open existing wallet with verified password
-                        monero::Wallet::open_or_create_with_password(
-                            wallet_path.clone(),
-                            password,
-                            daemon.clone(),
-                            env_config.monero_network,
-                            true,
-                        )
-                        .await
-                        .context("Failed to open wallet from provided path")?
-                    }
-                };
-
-                break wallet;
-            }
-        }
-        None => {
-            todo!("not implemented yet")
-        }
->>>>>>> 59829bf53 (refactor: swap-fs, swap-env, swap-serde subcrates, move dependencies into workspace root)
     };
 
     // This is the name of a wallet we only use for blockchain monitoring
@@ -841,19 +645,6 @@ pub mod data {
     }
 }
 
-<<<<<<< HEAD
-=======
-pub mod eigenwallet_data {
-    use swap_fs::system_data_dir_eigenwallet;
-
-    use super::*;
-
-    pub fn new(testnet: bool) -> Result<PathBuf> {
-        Ok(system_data_dir_eigenwallet(testnet)?)
-    }
-}
-
->>>>>>> 59829bf53 (refactor: swap-fs, swap-env, swap-serde subcrates, move dependencies into workspace root)
 fn env_config_from(testnet: bool) -> EnvConfig {
     if testnet {
         Testnet::get_config()

@@ -123,26 +123,6 @@ pub struct Daemon {
     pub ssl: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[typeshare]
-pub struct TransactionInfo {
-    #[serde(with = "swap_serde::monero::amount")]
-    pub fee: monero::Amount,
-    #[serde(with = "swap_serde::monero::amount")]
-    pub amount: monero::Amount,
-    #[typeshare(serialized_as = "number")]
-    pub confirmations: u64,
-    pub tx_hash: String,
-    pub direction: TransactionDirection,
-}
-
-#[typeshare]
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum TransactionDirection {
-    In,
-    Out,
-}
-
 /// A wrapper around a pending transaction.
 pub struct PendingTransaction(*mut ffi::PendingTransaction);
 
