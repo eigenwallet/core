@@ -111,7 +111,7 @@ export default function PasswordEntryDialog() {
 
       <DialogActions>
         <Button onClick={reject} variant="outlined">
-          Cancel
+          Change wallet
         </Button>
         <PromiseInvokeButton
           onInvoke={accept}
