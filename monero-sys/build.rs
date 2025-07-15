@@ -198,7 +198,10 @@ fn main() {
         "cargo:rustc-link-search=native={}",
         monero_build_dir.join("external/randomx").display()
     );
-    println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
+
+    if target.contains("linux") {
+        println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
+    }
 
     println!(
         "cargo:rustc-link-search=native={}",
@@ -262,13 +265,12 @@ fn main() {
         monero_build_dir.join("src/rpc").display()
     );
 
-    #[cfg(target_os = "macos")]
-    {
-        // Add search paths for clang runtime libraries
-        println !("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/15.0.0/lib/darwin");
-        println !("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/16.0.0/lib/darwin");
-        println !("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/17.0.0/lib/darwin");
-        println !("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/18.0.0/lib/darwin");
+    // Add search paths for clang runtime libraries on macOS (not iOS)
+    if target.contains("apple-darwin") {
+        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/15.0.0/lib/darwin");
+        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/16.0.0/lib/darwin");
+        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/17.0.0/lib/darwin");
+        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/18.0.0/lib/darwin");
     }
 
     // Link libwallet and libwallet_api statically
@@ -321,18 +323,14 @@ fn main() {
     // Link protobuf statically
     // println!("cargo:rustc-link-lib=static=protobuf");
 
-    #[cfg(target_os = "macos")]
-    {
-        // Minimum OS version you already add:
-        println!("cargo:rustc-link-arg=-mmacosx-version-min=11.0");
-    }
-
     // Build the CXX bridge
     let mut build = cxx_build::bridge("src/bridge.rs");
 
-    #[cfg(target_os = "macos")]
-    {
-        build.flag_if_supported("-mmacosx-version-min=11.0");
+    if target.contains("apple-ios") {
+        // required for ___chkstk_darwin to be available
+        build.flag_if_supported("-mios-version-min=13.0"); 
+        println!("cargo:rustc-link-arg=-mios-version-min=13.0");
+        println!("cargo:rustc-env=IPHONEOS_DEPLOYMENT_TARGET=13.0");
     }
 
     build
