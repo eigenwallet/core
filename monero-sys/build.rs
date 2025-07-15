@@ -42,6 +42,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Includes locale only when targeting WIN32 to fix cross-platform build issues",
         "patches/0003-include-locale-only-when-targeting-WIN32.patch"
     ),
+    embedded_patch!(
+        "0004-fix-___isPlatformVersionAtLeast.patch",
+        "Fixes ___isPlatformVersionAtLeast being called",
+        "patches/0004-fix-___isPlatformVersionAtLeast.patch"
+    ),
 ];
 
 fn main() {
