@@ -67,19 +67,16 @@ fn main() {
     apply_embedded_patches().expect("Failed to apply embedded patches");
 
     let contrib_depends_dir = std::env::current_dir()
-        .expect("Failed to get current directory")
+        .expect("current directory to be accessible")
         .join("monero_c/contrib/depends");
 
     let mut target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
-    if target == "aarch64-unknown-linux-gnu" {
-        target = "aarch64-linux-gnu".to_string();
-    }
-    if target == "armv7-linux-androideabi" {
-        target = "armv7a-linux-androideabi".to_string();
-    }
-    if target == "x86_64-pc-windows-gnu" {
-        target = "x86_64-w64-mingw32".to_string();
-    }
+    target = match target.as_str() {
+        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu".to_string(),
+        "armv7-linux-androideabi" => "armv7a-linux-androideabi".to_string(),
+        "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32".to_string(),
+        _ => target,
+    };
     println!("cargo:warning=Building for target: {}", target);
 
     match target.as_str() {
@@ -95,7 +92,7 @@ fn main() {
                 // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
                 .current_dir(&contrib_depends_dir)
                 .status()
-                .expect("Failed to execute make command");
+                .expect("make command to be executable");
 
             if !status.success() {
                 eprintln!("make command failed with exit code: {:?}", status.code());
@@ -202,7 +199,7 @@ fn main() {
         monero_build_dir.join("external/randomx").display()
     );
 
-    if target.contains("linux") {
+    if target.contains("linux") && target.contains("x86_64") {
         println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
     }
 
