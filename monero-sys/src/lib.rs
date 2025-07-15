@@ -2503,46 +2503,29 @@ impl WalletHandleListener {
 }
 
 impl WalletEventListener for WalletHandleListener {
-    fn on_money_spent(&self, txid: &str, amount: u64) {
-        tracing::info!("money_spent: {} {}", txid, amount);
-    }
+    fn on_money_spent(&self, _txid: &str, _amount: u64) { }
 
-    fn on_money_received(&self, txid: &str, amount: u64) {
-        tracing::info!("money_received: {} {}", txid, amount);
-    }
+    fn on_money_received(&self, _txid: &str, _amount: u64) { }
 
-    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
-        tracing::info!("unconfirmed_money_received: {} {}", txid, amount);
-    }
+    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) { }
 
-    fn on_new_block(&self, height: u64) {
-        //tracing::info!("new_block: {}", height);
-    }
+    fn on_new_block(&self, _height: u64) { }
 
-    fn on_updated(&self) {
-        tracing::info!("updated");
-    }
+    fn on_updated(&self) { }
 
     fn on_refreshed(&self) {
-        tracing::info!("refreshed");
+        // When the wallet finishes refreshing, we start the refresh thread again.
+        // The purpose of this is to ensure that if the user does a rescan (restore height changed)
+        // We start the refresh thread again after the rescan is complete.
         let handle = self.handle.clone();
         self.rt_handle.spawn(async move {
             handle.start_refresh_thread().await;
         });
     }
 
-    fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
-        tracing::info!(
-            "reorg: {} {} {}",
-            height,
-            blocks_detached,
-            transfers_detached
-        );
-    }
+    fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) { }
 
-    fn on_pool_tx_removed(&self, txid: &str) {
-        tracing::info!("pool_tx_removed: {}", txid);
-    }
+    fn on_pool_tx_removed(&self, _txid: &str) {}
 }
 
 pub mod monero_serde {
