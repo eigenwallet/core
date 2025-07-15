@@ -20,15 +20,6 @@ use typeshare::typeshare;
 
 pub const PICONERO_OFFSET: u64 = 1_000_000_000_000;
 
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "Network")]
-#[allow(non_camel_case_types)]
-pub enum network {
-    Mainnet,
-    Stagenet,
-    Testnet,
-}
-
 /// A Monero block height.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockHeight {

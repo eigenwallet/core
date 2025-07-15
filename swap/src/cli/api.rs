@@ -850,25 +850,6 @@ impl From<Monero> for Option<MoneroNodeConfig> {
     }
 }
 
-/// Migrate the existing data to the new identities system.
-/// This involves the following steps:
-///
-/// Only start the migration if:
-/// 1. the .multi_wallet_migration_done file does not exist.
-/// 2. the seed.pem file exists.
-///
-/// To migrate, we:
-/// 1. Read the seed.pem file.
-/// 2. Derive a Monero seedphrase from the seed.pem file (using the seed crate)
-/// 3. Create a new wallet in the eigenwallet directory
-///     - Use the seed from step 2 to recover the wallet
-/// 4. Get the primary address of the new wallet
-/// 5. Copy all files inside the top level data dir (sqlite, monero folder, ...) into the corresponding identities subdirectory.
-/// 6. Create a .multi_wallet_migration_done to signify that the migration is complete.
-fn migrate_to_identities_system() {
-    todo!("implement migration system")
-}
-
 #[cfg(test)]
 pub mod api_test {
     use super::*;
