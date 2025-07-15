@@ -107,4 +107,4 @@ testcontainers = "0.15"
 
 [build-dependencies]
 anyhow = "1"
-vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
+vergen-git2 = { version = "1", features = ["build"] }

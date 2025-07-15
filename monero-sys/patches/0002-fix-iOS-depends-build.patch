@@ -1,0 +1,101 @@
+From 73d6ad9d513f776afb1c1f5f2d74e3b06fad7eeb Mon Sep 17 00:00:00 2001
+From: Czarek Nakamoto <cyjan@mrcyjanek.net>
+Date: Thu, 21 Nov 2024 06:05:03 -0500
+Subject: [PATCH 12/17] fix iOS depends build
+
+---
+ CMakeLists.txt                      | 4 ----
+ src/checkpoints/CMakeLists.txt      | 6 +++++-
+ src/cryptonote_basic/CMakeLists.txt | 6 +++++-
+ src/cryptonote_basic/miner.cpp      | 8 ++++----
+ 4 files changed, 14 insertions(+), 10 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9406e57b4..1eac121db 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -39,10 +39,6 @@ include(CheckLibraryExists)
+ include(CheckFunctionExists)
+ include(FindPythonInterp)
+ 
+-if (IOS)
+-    INCLUDE(CmakeLists_IOS.txt)
+-endif()
+-
+ cmake_minimum_required(VERSION 3.5)
+ message(STATUS "CMake version ${CMAKE_VERSION}")
+ 
+diff --git a/src/checkpoints/CMakeLists.txt b/src/checkpoints/CMakeLists.txt
+index 665441f62..841df3256 100644
+--- a/src/checkpoints/CMakeLists.txt
++++ b/src/checkpoints/CMakeLists.txt
+@@ -28,7 +28,11 @@
+ 
+ if(APPLE)
+   if(DEPENDS)
+-    list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework ApplicationServices -framework AppKit -framework IOKit")
++    if(${CMAKE_SYSTEM_NAME} STREQUAL "iOS")
++      list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework IOKit")
++    else()
++      list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework ApplicationServices -framework AppKit -framework IOKit")
++    endif()
+   else()
+     find_library(IOKIT_LIBRARY IOKit)
+     mark_as_advanced(IOKIT_LIBRARY)
+diff --git a/src/cryptonote_basic/CMakeLists.txt b/src/cryptonote_basic/CMakeLists.txt
+index 414936a05..81c81767f 100644
+--- a/src/cryptonote_basic/CMakeLists.txt
++++ b/src/cryptonote_basic/CMakeLists.txt
+@@ -28,7 +28,11 @@
+ 
+ if(APPLE)
+   if(DEPENDS)
+-    list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework ApplicationServices -framework AppKit -framework IOKit")
++    if(${CMAKE_SYSTEM_NAME} STREQUAL "iOS")
++      list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework IOKit")
++    else()
++      list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework ApplicationServices -framework AppKit -framework IOKit")
++    endif()
+   else()
+     find_library(IOKIT_LIBRARY IOKit)
+     mark_as_advanced(IOKIT_LIBRARY)
+diff --git a/src/cryptonote_basic/miner.cpp b/src/cryptonote_basic/miner.cpp
+index 71b8f78cc..0f53f024e 100644
+--- a/src/cryptonote_basic/miner.cpp
++++ b/src/cryptonote_basic/miner.cpp
+@@ -45,7 +45,7 @@
+ #include "boost/logic/tribool.hpp"
+ #include <boost/filesystem.hpp>
+ 
+-#ifdef __APPLE__
++#if defined(__APPLE__) && !defined(TARGET_OS_IPHONE)
+   #include <sys/times.h>
+   #include <IOKit/IOKitLib.h>
+   #include <IOKit/ps/IOPSKeys.h>
+@@ -883,7 +883,7 @@ namespace cryptonote
+ 
+       return true;
+ 
+-    #elif defined(__APPLE__)
++    #elif defined(__APPLE__) && !defined(TARGET_OS_IPHONE)
+ 
+       mach_msg_type_number_t count;
+       kern_return_t status;
+@@ -949,7 +949,7 @@ namespace cryptonote
+         return true;
+       }
+ 
+-    #elif (defined(__linux__) && defined(_SC_CLK_TCK)) || defined(__APPLE__) || defined(__FreeBSD__)
++    #elif (defined(__linux__) && defined(_SC_CLK_TCK)) || (defined(__APPLE__) && !defined(TARGET_OS_IPHONE)) || defined(__FreeBSD__)
+ 
+       struct tms tms;
+       if ( times(&tms) != (clock_t)-1 )
+@@ -978,7 +978,7 @@ namespace cryptonote
+         return boost::logic::tribool(power_status.ACLineStatus != 1);
+     	}
+ 
+-    #elif defined(__APPLE__) 
++    #elif defined(__APPLE__) && !defined(TARGET_OS_IPHONE)
+       
+       #if TARGET_OS_MAC && (!defined(MAC_OS_X_VERSION_MIN_REQUIRED) || MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7)
+         return boost::logic::tribool(IOPSGetTimeRemainingEstimate() != kIOPSTimeRemainingUnlimited);

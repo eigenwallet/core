@@ -21,11 +21,28 @@ macro_rules! embedded_patch {
 }
 
 /// Embedded patches applied at compile time
-const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[embedded_patch!(
-    "wallet2_api_allow_subtract_from_fee",
-    "Adds subtract_fee_from_outputs parameter to wallet2_api transaction creation methods",
-    "patches/wallet2_api_allow_subtract_from_fee.patch"
-)];
+const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
+    embedded_patch!(
+        "wallet2_api_allow_subtract_from_fee",
+        "Adds subtract_fee_from_outputs parameter to wallet2_api transaction creation methods",
+        "patches/wallet2_api_allow_subtract_from_fee.patch"
+    ),
+    embedded_patch!(
+        "0001-fix-dummy-translation-generator.patch",
+        "Creates dummy translation generator",
+        "patches/0001-fix-dummy-translation-generator.patch"
+    ),
+    embedded_patch!(
+        "0002-fix-iOS-depends-build.patch",
+        "Fixes iOS depends build",
+        "patches/0002-fix-iOS-depends-build.patch"
+    ),
+    embedded_patch!(
+        "0003-include-locale-only-when-targeting-WIN32.patch",
+        "Includes locale only when targeting WIN32 to fix cross-platform build issues",
+        "patches/0003-include-locale-only-when-targeting-WIN32.patch"
+    ),
+];
 
 fn main() {
     let is_github_actions: bool = std::env::var("GITHUB_ACTIONS").is_ok();
@@ -44,9 +61,75 @@ fn main() {
     // Apply embedded patches before building
     apply_embedded_patches().expect("Failed to apply embedded patches");
 
+    let contrib_depends_dir = std::env::current_dir()
+        .expect("Failed to get current directory")
+        .join("monero_c/contrib/depends");
+
+    let mut target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
+    if target == "aarch64-unknown-linux-gnu" {
+        target = "aarch64-linux-gnu".to_string();
+    }
+    if target == "armv7-linux-androideabi" {
+        target = "armv7a-linux-androideabi".to_string();
+    }
+    if target == "x86_64-pc-windows-gnu" {
+        target = "x86_64-w64-mingw32".to_string();
+    }
+    println!("cargo:warning=Building for target: {}", target);
+
+    match target.as_str() {
+        "x86_64-apple-darwin" | "aarch64-apple-darwin" | "aarch64-apple-ios"
+        | "x86_64-unknown-linux-gnu" | "aarch64-linux-gnu"
+        | "aarch64-linux-android" | "x86_64-linux-android" | "armv7a-linux-androideabi"
+        | "x86_64-w64-mingw32" => {
+            println!("cargo:warning=Running make HOST={} in contrib/depends", target);
+
+            let output = std::process::Command::new("make")
+                .arg(format!("HOST={}", target))
+                .arg("DEBUG=")
+                // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
+                .current_dir(&contrib_depends_dir)
+                .output()
+                .expect("Failed to execute make command");
+
+            if !output.status.success() {
+                eprintln!("make command failed with exit code: {:?}", output.status.code());
+                eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+                eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+                panic!("make command failed");
+            }
+
+            println!("cargo:warning=make command completed successfully");
+        }
+        _ => {
+            panic!("target unsupported: {}", target);
+        }
+    }
+
+    
+
     // Build with the monero library all dependencies required
     let mut config = Config::new("monero");
 
+    match target.as_str() {
+        "x86_64-apple-darwin" | "aarch64-apple-darwin" | "aarch64-apple-ios" 
+        | "x86_64-unknown-linux-gnu" | "aarch64-linux-gnu"
+        | "aarch64-linux-android" | "x86_64-linux-android" | "armv7a-linux-androideabi" 
+        | "x86_64-w64-mingw32" => {
+            let toolchain_file = contrib_depends_dir.join(format!("{}/share/toolchain.cmake", target)).display().to_string();
+            config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
+            println!("cargo:warning=Using toolchain file: {}", toolchain_file);
+            println!(
+                "cargo:rustc-link-search=native={}",
+                contrib_depends_dir.join(format!("{}/lib", target)).display()
+            );
+        }
+        _ => {
+            panic!("No toolchain file configured for target: {}", target);
+        }
+    }
+
+    
     let output_directory = config
         .build_target("wallet_api")
         // Builds currently fail in Release mode
@@ -56,10 +139,6 @@ fn main() {
         .define("STATIC", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("BUILD_TESTS", "OFF")
-        .define("Boost_USE_STATIC_LIBS", "ON")
-        .define("Boost_USE_STATIC_RUNTIME", "ON")
-        //// Disable support for ALL hardware wallets
-        // Disable Trezor support completely
         .define("USE_DEVICE_TREZOR", "OFF")
         .define("USE_DEVICE_TREZOR_MANDATORY", "OFF")
         .define("USE_DEVICE_TREZOR_PROTOBUF_TEST", "OFF")
@@ -73,14 +152,18 @@ fn main() {
         .define("USE_DEVICE_LEDGER", "OFF")
         .define("CMAKE_DISABLE_FIND_PACKAGE_HIDAPI", "ON")
         .define("GTEST_HAS_ABSL", "OFF")
+        .define("SODIUM_LIBRARY", "libsodium.a")
         // Use lightweight crypto library
         .define("MONERO_WALLET_CRYPTO_LIBRARY", "cn")
+        .define("CMAKE_CROSSCOMPILING", "OFF")
+        .define("SODIUM_INCLUDE_PATH", contrib_depends_dir.join(format!("{}/include", target)).display().to_string()) // This is needed for libsodium.a to be found on mingw-w64
         .build_arg("-Wno-dev") // Disable warnings we can't fix anyway
         .build_arg(match (is_github_actions, is_docker_build) {
             (true, _) => "-j1",
             (_, true) => "-j1",
             (_, _) => "-j4",
         })
+        .build_arg(format!("-I."))
         .build();
 
     let monero_build_dir = output_directory.join("build");
@@ -181,30 +264,6 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     {
-        // Dynamically detect Homebrew installation prefix (works on both Apple Silicon and Intel Macs)
-        let brew_prefix = std::process::Command::new("brew")
-            .arg("--prefix")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "/opt/homebrew".into());
-
-        // add homebrew search paths using dynamic prefix
-        println!("cargo:rustc-link-search=native={}/lib", brew_prefix);
-        println!(
-            "cargo:rustc-link-search=native={}/opt/unbound/lib",
-            brew_prefix
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/opt/expat/lib",
-            brew_prefix
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/Cellar/protobuf@21/21.12_1/lib/",
-            brew_prefix
-        );
-
         // Add search paths for clang runtime libraries
         println !("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/15.0.0/lib/darwin");
         println !("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/16.0.0/lib/darwin");
@@ -256,17 +315,14 @@ fn main() {
     // Link unbound statically
     println!("cargo:rustc-link-lib=static=unbound");
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
-    println!("cargo:rustc-link-lib=static=nghttp2");
-    println!("cargo:rustc-link-lib=static=event");
+    // println!("cargo:rustc-link-lib=static=nghttp2");
+    // println!("cargo:rustc-link-lib=static=event");
 
     // Link protobuf statically
-    println!("cargo:rustc-link-lib=static=protobuf");
+    // println!("cargo:rustc-link-lib=static=protobuf");
 
     #[cfg(target_os = "macos")]
     {
-        // Static archive is always present, dylib only on some versions.
-        println!("cargo:rustc-link-lib=static=clang_rt.osx");
-
         // Minimum OS version you already add:
         println!("cargo:rustc-link-arg=-mmacosx-version-min=11.0");
     }
@@ -285,22 +341,10 @@ fn main() {
         .include("monero/src") // Includes the monero headers
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
-        .include("/opt/homebrew/include") // Homebrew include path for Boost
+        .include(contrib_depends_dir.join(format!("{}/include", target)).display().to_string())
+        .include(output_directory)
         .flag("-fPIC"); // Position independent code
 
-    #[cfg(target_os = "macos")]
-    {
-        // Use the same dynamic brew prefix for include paths
-        let brew_prefix = std::process::Command::new("brew")
-            .arg("--prefix")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "/opt/homebrew".into());
-
-        build.include(format!("{}/include", brew_prefix)); // Homebrew include path for Boost
-    }
 
     build.compile("monero-sys");
 }
