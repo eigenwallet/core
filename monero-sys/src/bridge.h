@@ -248,6 +248,11 @@ namespace Monero
         return tx.fee();
     }
 
+    inline uint64_t pendingTransactionAmount(const PendingTransaction &tx)
+    {
+        return tx.amount();
+    }
+
     inline std::unique_ptr<std::string> walletFilename(const Wallet &wallet)
     {
         return std::make_unique<std::string>(wallet.filename());

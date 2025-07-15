@@ -92,7 +92,7 @@ export default function SendApprovalContent() {
               Amount to Send
             </Typography>
             <Typography variant="h6" color="primary">
-              <PiconeroAmount amount={amount} fixedPrecision={4} />
+              <PiconeroAmount amount={amount} fixedPrecision={12} />
             </Typography>
           </Box>
 

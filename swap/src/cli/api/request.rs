@@ -550,9 +550,10 @@ impl Request for GetMoneroMainAddressArgs {
 
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type", content = "height")]
 pub enum SetRestoreHeightArgs {
     #[typeshare(serialized_as = "number")]
-    Height(u64),
+    Height(u32),
     #[typeshare(serialized_as = "string")]
     Date(String),
 }
@@ -574,7 +575,7 @@ impl Request for SetRestoreHeightArgs {
         let wallet = wallet.main_wallet().await;
 
         let height = match self {
-            SetRestoreHeightArgs::Height(height) => height,
+            SetRestoreHeightArgs::Height(height) => height as u64,
             SetRestoreHeightArgs::Date(date) => {
                 // Parse the date string in MM-DD-YYYY format
                 if date.len() != 10 || &date[2..3] != "-" || &date[5..6] != "-" {
@@ -602,6 +603,7 @@ impl Request for SetRestoreHeightArgs {
                 let height = wallet.get_blockchain_height_by_date(year, month, day).await
                     .with_context(|| format!("Failed to get blockchain height for date {}-{}-{}", year, month, day))?;
                 tracing::info!("Blockchain height for date {}-{}-{}: {}", year, month, day, height);
+
                 height
             }
         };
@@ -654,13 +656,20 @@ impl Request for GetMoneroBalanceArgs {
     }
 }
 
-// New request type for sending Monero
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendMoneroArgs {
     #[typeshare(serialized_as = "String")]
     pub address: String,
-    pub amount: crate::monero::Amount,
+    pub amount: SendMoneroAmount,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "amount")]
+pub enum SendMoneroAmount {
+    Sweep,
+    Specific(crate::monero::Amount),
 }
 
 #[typeshare]
@@ -668,6 +677,7 @@ pub struct SendMoneroArgs {
 pub struct SendMoneroResponse {
     pub tx_hash: String,
     pub amount_sent: crate::monero::Amount,
+    pub fee: crate::monero::Amount,
 }
 
 impl Request for SendMoneroArgs {
@@ -721,17 +731,23 @@ impl Request for SendMoneroArgs {
             },
         );
 
+        let amount = match self.amount {
+            SendMoneroAmount::Sweep => None,
+            SendMoneroAmount::Specific(amount) => Some(amount.into()),
+        };
+
         // This is the actual call to the monero-sys library to send the transaction
         // monero-sys will call the approval callback after it has constructed and signed the transaction
         // once the user approves, the transaction is published
-        let receipt = wallet
-            .transfer_with_approval(&address, self.amount.into(), approval_callback)
+        let (receipt, amount_sent, fee) = wallet
+            .transfer_with_approval(&address, amount, approval_callback)
             .await?
             .context("Transaction was not approved by user")?;
 
         Ok(SendMoneroResponse {
             tx_hash: receipt.txid,
-            amount_sent: self.amount,
+            amount_sent: amount_sent.into(),
+            fee: fee.into(),
         })
     }
 }

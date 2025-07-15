@@ -20,7 +20,7 @@ import {
   MoreHoriz as MoreHorizIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
-import { sendMoneroTransaction, setMoneroRestoreHeight } from "renderer/rpc";
+import { setMoneroRestoreHeight } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";
 import { useNavigate } from "react-router-dom";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";

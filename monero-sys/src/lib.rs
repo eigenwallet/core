@@ -786,34 +786,46 @@ impl WalletHandle {
 
     /// Creates pending transaction, gets approval, then publishes or disposes based on approval.
     /// Return `None` if the transaction is not published, `Some(receipt)` if it is published.
+    /// If the amount is `None`, the transaction will be a sweep (whole balance)
+    /// 
+    /// Returns (TxReceipt, amount, fee) if the transaction is published, `None` otherwise.
     pub async fn transfer_with_approval(
         &self,
         address: &monero::Address,
-        amount: monero::Amount,
+        amount: Option<monero::Amount>,
         approval_callback: ApprovalCallback,
-    ) -> anyhow::Result<Option<TxReceipt>> {
+    ) -> anyhow::Result<Option<(TxReceipt, monero::Amount, monero::Amount)>> {
         let address = *address;
 
         // Construct and sign the transaction. Do not publish the transaction yet
         // Store the pending transaction in the wallet thread inside the [`pending_txs`] map
-        let (uuid, txid, fee) = self
+        let (uuid, txid, amount, fee) = self
             .call_with_pending_txs(move |wallet, pending_txs| {
-                let pending_tx = wallet.create_pending_transaction(&address, amount)?;
+                let pending_tx = match amount {
+                    Some(amount) => wallet.create_pending_transaction(&address, amount)?,
+                    None => wallet.create_pending_sweep_transaction(&address)?,
+                };
 
-                // Get txid and fee before storing
+                // Get txid
                 let txid = ffi::pendingTransactionTxId(&pending_tx)
                     .context("Failed to get txid from pending transaction")?
                     .to_string();
 
-                let fee_pico = ffi::pendingTransactionFee(&pending_tx)
-                    .context("Failed to get fee from pending transaction")?;
-                let fee = monero::Amount::from_pico(fee_pico);
+                // Get the amount
+                let amount = ffi::pendingTransactionAmount(&pending_tx)
+                    .context("Failed to get amount from pending transaction")?;
+                let amount = monero::Amount::from_pico(amount);
 
-                // Generate UUID and store
+                // Get the fee
+                let fee = ffi::pendingTransactionFee(&pending_tx)
+                    .context("Failed to get fee from pending transaction")?;
+                let fee = monero::Amount::from_pico(fee);
+
+                // Generate UUID and store it in the pending transactions map
                 let uuid = Uuid::new_v4();
                 pending_txs.lock().unwrap().insert(uuid, pending_tx);
 
-                Ok::<(Uuid, String, monero::Amount), anyhow::Error>((uuid, txid, fee))
+                Ok::<(Uuid, String, monero::Amount, monero::Amount), anyhow::Error>((uuid, txid, amount, fee))
             })
             .await?;
 
@@ -835,7 +847,7 @@ impl WalletHandle {
                 })
                 .await?;
 
-            Ok(Some(receipt))
+            Ok(Some((receipt, amount, fee)))
         } else {
             // Dispose the pending transaction without publishing
             self.call_with_pending_txs(move |wallet, pending_txs| {
@@ -1830,6 +1842,22 @@ impl FfiWallet {
         let pending_tx = PendingTransaction(
             ffi::createTransaction(self.inner.pinned(), &address_str, amount_pico)
                 .context("Failed to create transaction: FFI call failed with exception")?,
+        );
+
+        Ok(pending_tx)
+    }
+
+    /// Create a pending sweep transaction without publishing it.
+    /// Returns the pending transaction that can be inspected before publishing.
+    fn create_pending_sweep_transaction(
+        &mut self,
+        address: &monero::Address,
+    ) -> anyhow::Result<PendingTransaction> {
+        let_cxx_string!(address_str = address.to_string());
+
+        let pending_tx = PendingTransaction(
+            ffi::createSweepTransaction(self.inner.pinned(), &address_str)
+                .context("Failed to create sweep transaction: FFI call failed with exception")?,
         );
 
         Ok(pending_tx)

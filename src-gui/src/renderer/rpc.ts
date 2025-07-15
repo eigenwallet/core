@@ -443,8 +443,8 @@ export async function setMoneroRestoreHeight(
   height: number | string,
 ): Promise<SetRestoreHeightResponse> {
   const args: SetRestoreHeightArgs = typeof height === 'number' 
-    ? { Height: height }
-    : { Date: height };
+    ? { type: "Height", height: height }
+    : { type: "Date", height: height };
     
   return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
     "set_monero_restore_height",
