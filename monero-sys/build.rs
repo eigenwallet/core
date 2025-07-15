@@ -89,18 +89,16 @@ fn main() {
         | "x86_64-w64-mingw32" => {
             println!("cargo:warning=Running make HOST={} in contrib/depends", target);
 
-            let output = std::process::Command::new("make")
+            let status = std::process::Command::new("make")
                 .arg(format!("HOST={}", target))
                 .arg("DEBUG=")
                 // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
                 .current_dir(&contrib_depends_dir)
-                .output()
+                .status()
                 .expect("Failed to execute make command");
 
-            if !output.status.success() {
-                eprintln!("make command failed with exit code: {:?}", output.status.code());
-                eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-                eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+            if !status.success() {
+                eprintln!("make command failed with exit code: {:?}", status.code());
                 panic!("make command failed");
             }
 
@@ -311,6 +309,12 @@ fn main() {
     println!("cargo:rustc-link-lib=static=boost_filesystem");
     println!("cargo:rustc-link-lib=static=boost_thread");
     println!("cargo:rustc-link-lib=static=boost_chrono");
+
+    if target.contains("w64-mingw32") {
+        println!("cargo:rustc-link-lib=static=boost_locale");
+        println!("cargo:rustc-link-lib=static=boost_program_options");
+        println!("cargo:rustc-link-lib=static=iconv");
+    }
 
     // Link libsodium statically
     println!("cargo:rustc-link-lib=static=sodium");
