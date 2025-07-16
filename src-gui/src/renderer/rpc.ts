@@ -50,8 +50,6 @@ import {
   approvalRequestsReplaced,
 } from "store/features/rpcSlice";
 import {
-  setRefreshing,
-  setSending,
   setMainAddress,
   setBalance,
   setSyncProgress,
@@ -502,38 +500,9 @@ export async function initializeMoneroWallet() {
   }
 }
 
-export async function refreshMoneroWallet() {
-  store.dispatch(setRefreshing(true));
-
-  try {
-    const [
-      addressResponse,
-      balanceResponse,
-      syncProgressResponse,
-      historyResponse,
-    ] = await Promise.all([
-      getMoneroMainAddress(),
-      getMoneroBalance(),
-      getMoneroSyncProgress(),
-      getMoneroHistory(),
-    ]);
-
-    store.dispatch(setMainAddress(addressResponse.address));
-    store.dispatch(setBalance(balanceResponse));
-    store.dispatch(setSyncProgress(syncProgressResponse));
-    store.dispatch(setHistory(historyResponse));
-  } catch (err) {
-    console.error("Failed to refresh Monero wallet data:", err);
-  } finally {
-    store.dispatch(setRefreshing(false));
-  }
-}
-
 export async function sendMoneroTransaction(
   args: SendMoneroArgs,
 ): Promise<void> {
-  store.dispatch(setSending(true));
-
   try {
     await sendMonero(args);
 
@@ -546,8 +515,6 @@ export async function sendMoneroTransaction(
     store.dispatch(setHistory(newHistory));
   } catch (err) {
     console.error("Failed to send Monero:", err);
-  } finally {
-    store.dispatch(setSending(false));
   }
 }
 
