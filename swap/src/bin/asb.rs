@@ -24,9 +24,6 @@ use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
 use swap::asb::command::{parse_args, Arguments, Command};
-use swap_env::config::{
-    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
-};
 use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, Finality, KrakenRate};
 use swap::common::tor::init_tor_client;
 use swap::common::tracing_util::Format;
@@ -39,6 +36,9 @@ use swap::protocol::alice::{run, AliceState};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap::{bitcoin, kraken, monero};
+use swap_env::config::{
+    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
+};
 use tracing_subscriber::filter::LevelFilter;
 use uuid::Uuid;
 
@@ -473,7 +473,9 @@ async fn init_bitcoin_wallet(
     if sync {
         wallet.sync().await?;
     } else {
-        tracing::info!("Skipping Bitcoin wallet sync because we are only using it for receiving funds");
+        tracing::info!(
+            "Skipping Bitcoin wallet sync because we are only using it for receiving funds"
+        );
     }
 
     Ok(wallet)

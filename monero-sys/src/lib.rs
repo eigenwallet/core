@@ -81,9 +81,8 @@ pub struct Wallet {
 
 /// A function call to be executed on the wallet and a channel to send the result back.
 struct Call {
-    function: Box<
-        dyn FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> AnyBox + Send,
-    >,
+    function:
+        Box<dyn FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> AnyBox + Send>,
     sender: oneshot::Sender<AnyBox>,
 }
 
@@ -354,9 +353,7 @@ impl WalletHandle {
     /// Call a function on the wallet with access to pending transactions storage.
     pub async fn call_with_pending_txs<F, R>(&self, function: F) -> R
     where
-        F: FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> R
-            + Send
-            + 'static,
+        F: FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> R + Send + 'static,
         R: Sized + Send + 'static,
     {
         // Create a oneshot channel for the result
@@ -821,10 +818,9 @@ impl WalletHandle {
             // Publish the transaction
             let receipt = self
                 .call_with_pending_txs(move |wallet, pending_txs| {
-                    let mut pending_tx =
-                        pending_txs.remove(&uuid).ok_or_else(|| {
-                            anyhow!("Pending transaction not found for UUID: {}", uuid)
-                        })?;
+                    let mut pending_tx = pending_txs.remove(&uuid).ok_or_else(|| {
+                        anyhow!("Pending transaction not found for UUID: {}", uuid)
+                    })?;
 
                     let result = wallet.publish_pending_transaction(&mut pending_tx);
                     wallet.dispose_pending_transaction(pending_tx);
@@ -836,10 +832,9 @@ impl WalletHandle {
         } else {
             // Dispose the pending transaction without publishing
             self.call_with_pending_txs(move |wallet, pending_txs| {
-                let pending_tx =
-                    pending_txs.remove(&uuid).ok_or_else(|| {
-                        anyhow!("Pending transaction not found for UUID: {}", uuid)
-                    })?;
+                let pending_tx = pending_txs
+                    .remove(&uuid)
+                    .ok_or_else(|| anyhow!("Pending transaction not found for UUID: {}", uuid))?;
 
                 wallet.dispose_pending_transaction(pending_tx);
                 Ok::<(), anyhow::Error>(())

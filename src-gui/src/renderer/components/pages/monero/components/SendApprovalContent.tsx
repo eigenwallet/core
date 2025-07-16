@@ -15,7 +15,15 @@ import { PiconeroAmount } from "renderer/components/other/Units";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
-export default function SendApprovalContent() {
+interface SendApprovalContentProps {
+  onClose: () => void;
+  onSuccess: ({ address, amount }: { address: string; amount: number }) => void;
+}
+
+export default function SendApprovalContent({
+  onClose,
+  onSuccess,
+}: SendApprovalContentProps) {
   const pendingApprovals = usePendingSendMoneroApproval();
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
@@ -57,6 +65,10 @@ export default function SendApprovalContent() {
   }
 
   const { address, amount, fee } = approval.request.content;
+
+  const handleSuccess = () => {
+    onSuccess({ address, amount });
+  };
 
   return (
     <>
@@ -119,6 +131,7 @@ export default function SendApprovalContent() {
       <DialogActions sx={{ p: 3, gap: 1 }}>
         <PromiseInvokeButton
           onInvoke={handleReject}
+          onSuccess={onClose}
           disabled={timeLeft === 0}
           variant="outlined"
           color="error"
@@ -130,6 +143,7 @@ export default function SendApprovalContent() {
         </PromiseInvokeButton>
         <PromiseInvokeButton
           onInvoke={handleApprove}
+          onSuccess={handleSuccess}
           disabled={timeLeft === 0}
           variant="contained"
           color="primary"

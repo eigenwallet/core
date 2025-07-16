@@ -7,8 +7,6 @@ use crate::common::tor::init_tor_client;
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
 use crate::monero::Wallets;
-use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
-use swap_fs::system_data_dir;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
@@ -20,6 +18,8 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
+use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
+use swap_fs::system_data_dir;
 use tauri_bindings::{
     MoneroNodeConfig, TauriBackgroundProgress, TauriContextStatusEvent, TauriEmitter, TauriHandle,
 };
@@ -722,7 +722,10 @@ async fn request_and_open_monero_wallet(
                                         .request_password(wallet_path.clone())
                                         .await
                                         .inspect_err(|e| {
-                                            tracing::error!("Failed to get password from user: {}", e);
+                                            tracing::error!(
+                                                "Failed to get password from user: {}",
+                                                e
+                                            );
                                         })
                                         .ok();
 

@@ -11,10 +11,10 @@ use swap::cli::{
             CheckSeedResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs,
             GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
             GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs,
-            GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
-            MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
-            SuspendCurrentSwapArgs, WithdrawBtcArgs, GetRestoreHeightArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
+            SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -356,9 +356,11 @@ async fn resolve_approval_request(
     args: ResolveApprovalArgs,
     state: tauri::State<'_, State>,
 ) -> Result<(), String> {
-    let request_id = args.request_id.parse()
+    let request_id = args
+        .request_id
+        .parse()
         .map_err(|e| format!("Invalid request ID '{}': {}", args.request_id, e))?;
-    
+
     state
         .handle
         .resolve_approval(request_id, args.accept)
@@ -373,9 +375,11 @@ async fn reject_approval_request(
     args: RejectApprovalArgs,
     state: tauri::State<'_, State>,
 ) -> Result<RejectApprovalResponse, String> {
-    let request_id = args.request_id.parse()
+    let request_id = args
+        .request_id
+        .parse()
         .map_err(|e| format!("Invalid request ID '{}': {}", args.request_id, e))?;
-    
+
     state
         .handle
         .reject_approval(request_id)

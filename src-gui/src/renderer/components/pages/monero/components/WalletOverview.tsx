@@ -86,19 +86,28 @@ export default function WalletOverview({
             <Typography
               variant="body2"
               color="warning"
-              sx={{ mb: 1, animation: "pulse 2s infinite", gridColumn: "2", gridRow: "1", alignSelf: "end" }}
+              sx={{
+                mb: 1,
+                animation: "pulse 2s infinite",
+                gridColumn: "2",
+                gridRow: "1",
+                alignSelf: "end",
+              }}
             >
               Pending
             </Typography>
 
-            <Typography variant="h5" sx={{ gridColumn: "2", gridRow: "2", alignSelf: "center" }}>
+            <Typography
+              variant="h5"
+              sx={{ gridColumn: "2", gridRow: "2", alignSelf: "center" }}
+            >
               <PiconeroAmount amount={pendingBalance} fixedPrecision={4} />
             </Typography>
             <Typography
               variant="body2"
               color="text.secondary"
               sx={{ gridColumn: "2", gridRow: "3" }}
-              >
+            >
               <FiatPiconeroAmount amount={pendingBalance} />
             </Typography>
           </>

@@ -46,27 +46,29 @@ function RestoreHeightDialog({
     onClose();
   };
 
-  return <Dialog open={open} onClose={onClose}>
-    <DialogTitle>Restore Height</DialogTitle>
-    <DialogContent>
-      <TextField
-        label="Restore Height"
-        type="number"
-        value={restoreHeight}
-        onChange={(e) => setRestoreHeight(Number(e.target.value))}
-      />
-    </DialogContent>
-    <DialogActions>
-      <Button onClick={onClose}>Cancel</Button>
-      <PromiseInvokeButton
-        onInvoke={handleRestoreHeight}
-        displayErrorSnackbar={true}
-        variant="contained"
-      >
-        Restore
-      </PromiseInvokeButton>
-    </DialogActions>
-  </Dialog>;
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <DialogTitle>Restore Height</DialogTitle>
+      <DialogContent>
+        <TextField
+          label="Restore Height"
+          type="number"
+          value={restoreHeight}
+          onChange={(e) => setRestoreHeight(Number(e.target.value))}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <PromiseInvokeButton
+          onInvoke={handleRestoreHeight}
+          displayErrorSnackbar={true}
+          variant="contained"
+        >
+          Restore
+        </PromiseInvokeButton>
+      </DialogActions>
+    </Dialog>
+  );
 }
 
 export default function WalletActionButtons({
@@ -124,10 +126,12 @@ export default function WalletActionButtons({
           <MoreHorizIcon />
         </IconButton>
         <Menu anchorEl={menuAnchorEl} open={menuOpen} onClose={handleMenuClose}>
-          <MenuItem onClick={() => {
-            setRestoreHeightDialogOpen(true);
-            handleMenuClose();
-          }}>
+          <MenuItem
+            onClick={() => {
+              setRestoreHeightDialogOpen(true);
+              handleMenuClose();
+            }}
+          >
             <ListItemIcon>
               <RestoreIcon />
             </ListItemIcon>

@@ -442,14 +442,18 @@ export async function getRestoreHeight(): Promise<GetRestoreHeightResponse> {
 export async function setMoneroRestoreHeight(
   height: number | Date,
 ): Promise<SetRestoreHeightResponse> {
-  const args: SetRestoreHeightArgs = typeof height === 'number' 
-    ? { type: "Height", height: height }
-    : { type: "Date", height: { 
-        year: height.getFullYear(), 
-        month: height.getMonth() + 1, // JavaScript months are 0-indexed, but we want 1-indexed
-        day: height.getDate() 
-      } };
-    
+  const args: SetRestoreHeightArgs =
+    typeof height === "number"
+      ? { type: "Height", height: height }
+      : {
+          type: "Date",
+          height: {
+            year: height.getFullYear(),
+            month: height.getMonth() + 1, // JavaScript months are 0-indexed, but we want 1-indexed
+            day: height.getDate(),
+          },
+        };
+
   return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
     "set_monero_restore_height",
     args,

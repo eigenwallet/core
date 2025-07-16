@@ -470,7 +470,10 @@ impl Request for GetRestoreHeightArgs {
     type Response = GetRestoreHeightResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet = ctx.monero_manager.as_ref().context("Monero wallet manager not available")?;
+        let wallet = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
         let wallet = wallet.main_wallet().await;
         let height = wallet.get_restore_height().await?;
 
@@ -591,7 +594,7 @@ impl Request for SetRestoreHeightArgs {
                 let year: u16 = date.year;
                 let month: u8 = date.month;
                 let day: u8 = date.day;
-                
+
                 // Validate ranges
                 if month < 1 || month > 12 {
                     bail!("Month must be between 1 and 12");
@@ -599,19 +602,37 @@ impl Request for SetRestoreHeightArgs {
                 if day < 1 || day > 31 {
                     bail!("Day must be between 1 and 31");
                 }
-                
-                tracing::info!("Getting blockchain height for date: {}-{}-{}", year, month, day);
 
-                let height = wallet.get_blockchain_height_by_date(year, month, day).await
-                    .with_context(|| format!("Failed to get blockchain height for date {}-{}-{}", year, month, day))?;
-                tracing::info!("Blockchain height for date {}-{}-{}: {}", year, month, day, height);
+                tracing::info!(
+                    "Getting blockchain height for date: {}-{}-{}",
+                    year,
+                    month,
+                    day
+                );
+
+                let height = wallet
+                    .get_blockchain_height_by_date(year, month, day)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to get blockchain height for date {}-{}-{}",
+                            year, month, day
+                        )
+                    })?;
+                tracing::info!(
+                    "Blockchain height for date {}-{}-{}: {}",
+                    year,
+                    month,
+                    day,
+                    height
+                );
 
                 height
             }
         };
 
         wallet.set_restore_height(height).await?;
-        
+
         wallet.pause_refresh().await;
         wallet.stop().await;
         tracing::debug!("Background refresh stopped");

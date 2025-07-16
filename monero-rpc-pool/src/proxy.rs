@@ -73,7 +73,6 @@ async fn raw_http_request(
     headers: &HeaderMap,
     body: Option<&[u8]>,
 ) -> Result<Response, HandlerError> {
-
     let (scheme, host, port) = &node_url;
     let url = format!("{}://{}:{}{}", scheme, host, port, path);
 
@@ -288,7 +287,16 @@ async fn sequential_requests(
             ),
         }
 
-        match single_raw_request(&state.http_client, node.clone(), path, method, headers, body).await {
+        match single_raw_request(
+            &state.http_client,
+            node.clone(),
+            path,
+            method,
+            headers,
+            body,
+        )
+        .await
+        {
             Ok((response, winning_node, latency_ms)) => {
                 let (scheme, host, port) = &winning_node;
                 let winning_node_display = format!("{}://{}:{}", scheme, host, port);
@@ -354,7 +362,6 @@ async fn sequential_requests(
             }
         }
     }
-
 
     // Record failures for all nodes that were tried
     for (node, _) in collected_errors.iter() {

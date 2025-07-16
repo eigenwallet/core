@@ -12,14 +12,15 @@ import WalletPageLoadingState from "./components/WalletPageLoadingState";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
-  const { mainAddress, balance, syncProgress, history} =
-    useAppSelector((state) => state.wallet.state);
+  const { mainAddress, balance, syncProgress, history } = useAppSelector(
+    (state) => state.wallet.state,
+  );
 
   useEffect(() => {
     initializeMoneroWallet();
   }, []);
 
-  const isLoading = balance === null
+  const isLoading = balance === null;
 
   if (isLoading) {
     return <WalletPageLoadingState />;

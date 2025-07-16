@@ -1,5 +1,4 @@
 use crate::env::{Mainnet, Testnet};
-use swap_fs::{ensure_directory_exists, system_config_dir, system_data_dir};
 use anyhow::{bail, Context, Result};
 use config::ConfigError;
 use dialoguer::theme::ColorfulTheme;
@@ -12,6 +11,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use swap_fs::{ensure_directory_exists, system_config_dir, system_data_dir};
 use url::Url;
 
 pub trait GetDefaults {
@@ -130,9 +130,15 @@ pub struct Data {
 pub struct Network {
     #[serde(deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize")]
     pub listen: Vec<Multiaddr>,
-    #[serde(default, deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize")]
+    #[serde(
+        default,
+        deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize"
+    )]
     pub rendezvous_point: Vec<Multiaddr>,
-    #[serde(default, deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize")]
+    #[serde(
+        default,
+        deserialize_with = "swap_serde::libp2p::multiaddresses::deserialize"
+    )]
     pub external_addresses: Vec<Multiaddr>,
 }
 

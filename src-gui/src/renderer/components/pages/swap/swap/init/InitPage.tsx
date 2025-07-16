@@ -15,7 +15,7 @@ export default function InitPage() {
 
   // We force this to true for now because the internal wallet is not really accessible from the GUI yet
   const [useExternalRedeemAddress, setUseExternalRedeemAddress] =
-    useState(true); 
+    useState(true);
 
   const [redeemAddressValid, setRedeemAddressValid] = useState(false);
   const [refundAddressValid, setRefundAddressValid] = useState(false);
