@@ -307,15 +307,15 @@ pub mod ffi {
         ) -> Result<()>;
 
         /// Get the transaction history.
-        unsafe fn walletHistory(wallet: *mut Wallet) -> UniquePtr<TransactionHistory>;
+        fn history(self: Pin<&mut Wallet>) -> Result<*mut TransactionHistory>;
 
         /// Get the transaction history count.
         fn count(self: &TransactionHistory) -> i32;
 
         /// Get a transaction from the history by index.
-        unsafe fn transaction(self: &TransactionHistory, index: i32) -> *mut TransactionInfo;
+        fn transaction(self: &TransactionHistory, index: i32) -> *mut TransactionInfo;
 
-        /// Refresh the transaction history so it contains the latest transactions (including unconfirmed).
+        /// Refresh the transaction history so it contains the latest transactions.
         fn refresh(self: Pin<&mut TransactionHistory>) -> Result<()>;
 
         /// Get the amount of the transaction.
@@ -332,7 +332,7 @@ pub mod ffi {
 
         /// Get the hash of the transaction.
         fn transactionInfoHash(tx_info: &TransactionInfo) -> UniquePtr<CxxString>;
-        
+
         /// Sign a message with the wallet's private key.
         fn signMessage(
             wallet: Pin<&mut Wallet>,
@@ -434,7 +434,7 @@ pub mod wallet_listener {
 
         // Functions implemented in bridge.h that create / destroy the adapter.
         #[namespace = "wallet_listener"]
-        unsafe fn create_rust_listener_adapter(
+        fn create_rust_listener_adapter(
             listener: Box<WalletListenerBox>,
         ) -> *mut MoneroWalletListener;
         #[namespace = "wallet_listener"]
