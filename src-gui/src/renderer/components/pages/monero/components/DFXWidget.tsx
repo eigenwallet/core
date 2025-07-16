@@ -1,7 +1,7 @@
-import { Box, Dialog, DialogTitle, Button, DialogContent } from "@mui/material";
+import { Box, Dialog, DialogTitle, Button, DialogContent, Chip } from "@mui/material";
+import { EuroSymbol as EuroIcon } from "@mui/icons-material";
 import DFXSwissLogo from "assets/dfx-logo.svg";
 import { useState } from "react";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { dfxAuthenticate } from "renderer/rpc";
 
 function DFXLogo({ height = 24 }: { height?: number }) {
@@ -17,10 +17,16 @@ export default function DfxButton() {
   const [dfxUrl, setDfxUrl] = useState<string | null>(null);
 
   const handleOpenDfx = async () => {
-    // Get authentication token and URL (this will initialize DFX if needed)
-    const response = await dfxAuthenticate();
-    setDfxUrl(response.kyc_url);
-    return response;
+    try {
+      // Get authentication token and URL (this will initialize DFX if needed)
+      const response = await dfxAuthenticate();
+      setDfxUrl(response.kyc_url);
+      return response;
+    } catch (error) {
+      console.error('DFX authentication failed:', error);
+      // TODO: Show error snackbar if needed
+      throw error;
+    }
   };
 
   const handleCloseModal = () => {
@@ -29,15 +35,13 @@ export default function DfxButton() {
 
   return (
     <>
-      <PromiseInvokeButton
-        variant="outlined"
-        size="small"
-        startIcon={<DFXLogo height={12} />}
-        onInvoke={handleOpenDfx}
-        displayErrorSnackbar={true}
-      >
-        Fiat Conversion
-      </PromiseInvokeButton>
+      <Chip
+        variant="button"
+        icon={<EuroIcon />}
+        label="Buy Monero"
+        clickable
+        onClick={handleOpenDfx}
+      />
 
       <Dialog
         open={dfxUrl != null}

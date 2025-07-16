@@ -6,15 +6,7 @@ use swap::cli::{
     api::{
         data,
         request::{
-            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
-            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
-            CheckSeedResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs,
-            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
-            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs,
-            GetPendingApprovalsResponse, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
-            MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
-            SuspendCurrentSwapArgs, WithdrawBtcArgs, GetRestoreHeightArgs,
+            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -454,22 +446,17 @@ async fn initialize_context(
             Err(e.to_string())
         }
     }
-<<<<<<< HEAD
 }
-
-tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
-tauri_command!(send_monero, SendMoneroArgs);
-tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
 
 #[tauri::command]
 async fn dfx_authenticate(
-    context: tauri::State<'_, RwLock<State>>,
+    state: tauri::State<'_, State>,
 ) -> Result<DfxAuthenticateResponse, String> {
     use dfx_swiss_sdk::{DfxClient, SignRequest};
     use tokio::sync::{mpsc, oneshot};
     use tokio_util::task::AbortOnDropHandle;
 
-    let context = context.read().await.try_get_context()?;
+    let context = state.try_get_context()?;
 
     // Get the monero wallet manager
     let monero_manager = context
@@ -549,6 +536,3 @@ async fn dfx_authenticate(
         kyc_url,
     })
 }
-=======
-}
->>>>>>> feat/monero-wallet

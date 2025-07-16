@@ -29,6 +29,8 @@ tauri-plugin-process = "^2.0.0"
 tauri-plugin-shell = "^2.0.0"
 tauri-plugin-store = "^2.0.0"
 tauri-plugin-updater = "^2.0.0"
+tokio = { workspace = true, features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = { workspace = true }
 uuid = { workspace = true }
 zip = "4.0.0"

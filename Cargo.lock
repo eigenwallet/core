@@ -12548,6 +12548,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tauri-plugin-updater",
+ "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
  "zip 4.3.0",
