@@ -49,6 +49,45 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
     ),
 ];
 
+/// Execute a child process with piped stdout/stderr and display output in real-time
+fn execute_child_with_pipe(
+    mut child: std::process::Child,
+) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+    use std::io::{BufRead, BufReader};
+    use std::thread;
+
+    let stdout = child.stdout.take().expect("Failed to get stdout");
+    let stderr = child.stderr.take().expect("Failed to get stderr");
+
+    // Spawn threads to handle stdout and stderr
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("cargo:debug=[make stdout] {}", line);
+            }
+        }
+    });
+
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("cargo:debug=[make stderr] {}", line);
+            }
+        }
+    });
+
+    // Wait for the process to complete
+    let status = child.wait()?;
+
+    // Wait for output threads to complete
+    stdout_handle.join().unwrap();
+    stderr_handle.join().unwrap();
+
+    Ok(status)
+}
+
 fn main() {
     let is_github_actions: bool = std::env::var("GITHUB_ACTIONS").is_ok();
     let is_docker_build: bool = std::env::var("DOCKER_BUILD").is_ok();
@@ -75,61 +114,64 @@ fn main() {
         "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu".to_string(),
         "armv7-linux-androideabi" => "armv7a-linux-androideabi".to_string(),
         "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32".to_string(),
+        "aarch64-apple-ios-sim" => "aarch64-apple-ios".to_string(),
         _ => target,
     };
     println!("cargo:warning=Building for target: {}", target);
 
     match target.as_str() {
-        "x86_64-apple-darwin" | "aarch64-apple-darwin" | "aarch64-apple-ios"
-        | "x86_64-unknown-linux-gnu" | "aarch64-linux-gnu"
-        | "aarch64-linux-android" | "x86_64-linux-android" | "armv7a-linux-androideabi"
-        | "x86_64-w64-mingw32" => {
-            println!("cargo:warning=Running make HOST={} in contrib/depends", target);
-
-            let status = std::process::Command::new("make")
-                .arg(format!("HOST={}", target))
-                .arg("DEBUG=")
-                // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
-                .current_dir(&contrib_depends_dir)
-                .status()
-                .expect("make command to be executable");
-
-            if !status.success() {
-                eprintln!("make command failed with exit code: {:?}", status.code());
-                panic!("make command failed");
-            }
-
-            println!("cargo:warning=make command completed successfully");
-        }
-        _ => {
-            panic!("target unsupported: {}", target);
-        }
+        "x86_64-apple-darwin"
+        | "aarch64-apple-darwin"
+        | "aarch64-apple-ios"
+        | "x86_64-unknown-linux-gnu"
+        | "aarch64-linux-gnu"
+        | "aarch64-linux-android"
+        | "x86_64-linux-android"
+        | "armv7a-linux-androideabi"
+        | "x86_64-w64-mingw32" => {}
+        _ => panic!("target unsupported: {}", target),
     }
 
-    
+    println!(
+        "cargo:warning=Running make HOST={} in contrib/depends",
+        target
+    );
+
+    let child = std::process::Command::new("make")
+        .arg(format!("HOST={}", target))
+        .arg("DEBUG=")
+        // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
+        .current_dir(&contrib_depends_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("make command to be executable");
+
+    let status = execute_child_with_pipe(child).expect("Failed to execute make command");
+
+    if !status.success() {
+        eprintln!("make command failed with exit code: {:?}", status.code());
+        panic!("make command failed");
+    }
+
+    println!("cargo:warning=make command completed successfully");
 
     // Build with the monero library all dependencies required
     let mut config = Config::new("monero");
 
-    match target.as_str() {
-        "x86_64-apple-darwin" | "aarch64-apple-darwin" | "aarch64-apple-ios" 
-        | "x86_64-unknown-linux-gnu" | "aarch64-linux-gnu"
-        | "aarch64-linux-android" | "x86_64-linux-android" | "armv7a-linux-androideabi" 
-        | "x86_64-w64-mingw32" => {
-            let toolchain_file = contrib_depends_dir.join(format!("{}/share/toolchain.cmake", target)).display().to_string();
-            config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
-            println!("cargo:warning=Using toolchain file: {}", toolchain_file);
-            println!(
-                "cargo:rustc-link-search=native={}",
-                contrib_depends_dir.join(format!("{}/lib", target)).display()
-            );
-        }
-        _ => {
-            panic!("No toolchain file configured for target: {}", target);
-        }
-    }
+    let toolchain_file = contrib_depends_dir
+        .join(format!("{}/share/toolchain.cmake", target))
+        .display()
+        .to_string();
+    config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
+    println!("cargo:warning=Using toolchain file: {}", toolchain_file);
+    println!(
+        "cargo:rustc-link-search=native={}",
+        contrib_depends_dir
+            .join(format!("{}/lib", target))
+            .display()
+    );
 
-    
     let output_directory = config
         .build_target("wallet_api")
         // Builds currently fail in Release mode
@@ -156,7 +198,13 @@ fn main() {
         // Use lightweight crypto library
         .define("MONERO_WALLET_CRYPTO_LIBRARY", "cn")
         .define("CMAKE_CROSSCOMPILING", "OFF")
-        .define("SODIUM_INCLUDE_PATH", contrib_depends_dir.join(format!("{}/include", target)).display().to_string()) // This is needed for libsodium.a to be found on mingw-w64
+        .define(
+            "SODIUM_INCLUDE_PATH",
+            contrib_depends_dir
+                .join(format!("{}/include", target))
+                .display()
+                .to_string(),
+        ) // This is needed for libsodium.a to be found on mingw-w64
         .build_arg("-Wno-dev") // Disable warnings we can't fix anyway
         .build_arg(match (is_github_actions, is_docker_build) {
             (true, _) => "-j1",
@@ -323,8 +371,8 @@ fn main() {
     // Link unbound statically
     println!("cargo:rustc-link-lib=static=unbound");
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
-    // println!("cargo:rustc-link-lib=static=nghttp2");
-    // println!("cargo:rustc-link-lib=static=event");
+                                                   // println!("cargo:rustc-link-lib=static=nghttp2");
+                                                   // println!("cargo:rustc-link-lib=static=event");
 
     // Link protobuf statically
     // println!("cargo:rustc-link-lib=static=protobuf");
@@ -334,7 +382,7 @@ fn main() {
 
     if target.contains("apple-ios") {
         // required for ___chkstk_darwin to be available
-        build.flag_if_supported("-mios-version-min=13.0"); 
+        build.flag_if_supported("-mios-version-min=13.0");
         println!("cargo:rustc-link-arg=-mios-version-min=13.0");
         println!("cargo:rustc-env=IPHONEOS_DEPLOYMENT_TARGET=13.0");
     }
@@ -345,10 +393,14 @@ fn main() {
         .include("monero/src") // Includes the monero headers
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
-        .include(contrib_depends_dir.join(format!("{}/include", target)).display().to_string())
+        .include(
+            contrib_depends_dir
+                .join(format!("{}/include", target))
+                .display()
+                .to_string(),
+        )
         .include(output_directory)
         .flag("-fPIC"); // Position independent code
-
 
     build.compile("monero-sys");
 }

@@ -1,0 +1,467 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		09A627D02012E7819DB4A2A8 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F954AC7BE42CF2E572299349 /* Metal.framework */; };
+		11BEC9791AF96103E67F2765 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BB915D2EC9C9B7F180DA3375 /* WebKit.framework */; };
+		2C81BE1380B57E3DE6A694A4 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D3EE4EC9AD601C0F19E5509E /* Security.framework */; };
+		346A2E39246F55B9C1151066 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 5B34251CDBA1018A7A5D131C /* LaunchScreen.storyboard */; };
+		49FD4B43F966894F49443DCE /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 6E09A9645CE4D27BFCB78793 /* assets */; };
+		694E9EC56BCBC2A42D248458 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11BF8F4B02219BA77A392759 /* libapp.a */; };
+		7F4454856C74B846200A2DFE /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F577B570410BAF3E9D30131F /* MetalKit.framework */; };
+		84F5A9AF4C43C05246689956 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7265BCBADDC8730706AD34C5 /* UIKit.framework */; };
+		908240DD0DFE8FFC272EC1AB /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E458837CF81144273F301AF /* QuartzCore.framework */; };
+		9C79D971C9D3803F5C610567 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F31D4B930C16DF4D911D7C4E /* Assets.xcassets */; };
+		D24C58F30DD30E3D08F43AD0 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = B5BAD180D2DD8B1951DC9056 /* main.mm */; };
+		F6343967F6DEA278AEF855E3 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 322E7CED96E55857CD2223A1 /* CoreGraphics.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0873204D97F8ADC544BB1EAD /* unstoppableswap-gui-rs_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "unstoppableswap-gui-rs_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		11BF8F4B02219BA77A392759 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		322E7CED96E55857CD2223A1 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		5038035B47679BD22BF1FA45 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		5B34251CDBA1018A7A5D131C /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		5E458837CF81144273F301AF /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		6AE1DCD0A33091CF4C9A8AE2 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		6E09A9645CE4D27BFCB78793 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		7265BCBADDC8730706AD34C5 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		9FD38E2E0A88B4E1F89A5F4B /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
+		AE2DAF3983C77C25AD046C01 /* unstoppableswap-gui-rs_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "unstoppableswap-gui-rs_iOS.entitlements"; sourceTree = "<group>"; };
+		B5BAD180D2DD8B1951DC9056 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		BB915D2EC9C9B7F180DA3375 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		D3EE4EC9AD601C0F19E5509E /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		F31D4B930C16DF4D911D7C4E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F577B570410BAF3E9D30131F /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		F954AC7BE42CF2E572299349 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		FA94C5B1F00F625AB1DB1400 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CFB3F65BA1030BD7FBBA2D92 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				694E9EC56BCBC2A42D248458 /* libapp.a in Frameworks */,
+				F6343967F6DEA278AEF855E3 /* CoreGraphics.framework in Frameworks */,
+				09A627D02012E7819DB4A2A8 /* Metal.framework in Frameworks */,
+				7F4454856C74B846200A2DFE /* MetalKit.framework in Frameworks */,
+				908240DD0DFE8FFC272EC1AB /* QuartzCore.framework in Frameworks */,
+				2C81BE1380B57E3DE6A694A4 /* Security.framework in Frameworks */,
+				84F5A9AF4C43C05246689956 /* UIKit.framework in Frameworks */,
+				11BEC9791AF96103E67F2765 /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		27EDF718D060AA95A5B01F4C /* unstoppableswap-gui-rs_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				FA94C5B1F00F625AB1DB1400 /* Info.plist */,
+				AE2DAF3983C77C25AD046C01 /* unstoppableswap-gui-rs_iOS.entitlements */,
+			);
+			path = "unstoppableswap-gui-rs_iOS";
+			sourceTree = "<group>";
+		};
+		406F3CF08CA9B65234C81C55 /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		43895AF50F1D2B69F1A802C9 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				715F27D94C0BD2845956A2D4 /* unstoppableswap-gui-rs */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		706CFB8BE715C477A63D0FF1 = {
+			isa = PBXGroup;
+			children = (
+				6E09A9645CE4D27BFCB78793 /* assets */,
+				F31D4B930C16DF4D911D7C4E /* Assets.xcassets */,
+				5B34251CDBA1018A7A5D131C /* LaunchScreen.storyboard */,
+				406F3CF08CA9B65234C81C55 /* Externals */,
+				43895AF50F1D2B69F1A802C9 /* Sources */,
+				793CD47C79F04EDB2C612F13 /* src */,
+				27EDF718D060AA95A5B01F4C /* unstoppableswap-gui-rs_iOS */,
+				CBC0F24668A0CE156C509554 /* Frameworks */,
+				AD6C23404C4E69D2E80EDC61 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		715F27D94C0BD2845956A2D4 /* unstoppableswap-gui-rs */ = {
+			isa = PBXGroup;
+			children = (
+				B5BAD180D2DD8B1951DC9056 /* main.mm */,
+				7396B01E5C98FBAB91CE0CAB /* bindings */,
+			);
+			path = "unstoppableswap-gui-rs";
+			sourceTree = "<group>";
+		};
+		7396B01E5C98FBAB91CE0CAB /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				5038035B47679BD22BF1FA45 /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		793CD47C79F04EDB2C612F13 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				9FD38E2E0A88B4E1F89A5F4B /* lib.rs */,
+				6AE1DCD0A33091CF4C9A8AE2 /* main.rs */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+		AD6C23404C4E69D2E80EDC61 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0873204D97F8ADC544BB1EAD /* unstoppableswap-gui-rs_iOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CBC0F24668A0CE156C509554 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				322E7CED96E55857CD2223A1 /* CoreGraphics.framework */,
+				11BF8F4B02219BA77A392759 /* libapp.a */,
+				F954AC7BE42CF2E572299349 /* Metal.framework */,
+				F577B570410BAF3E9D30131F /* MetalKit.framework */,
+				5E458837CF81144273F301AF /* QuartzCore.framework */,
+				D3EE4EC9AD601C0F19E5509E /* Security.framework */,
+				7265BCBADDC8730706AD34C5 /* UIKit.framework */,
+				BB915D2EC9C9B7F180DA3375 /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4939F521ABA845E0DCB692CB /* unstoppableswap-gui-rs_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 73AEF7ACBA6D3D1BDBD4D980 /* Build configuration list for PBXNativeTarget "unstoppableswap-gui-rs_iOS" */;
+			buildPhases = (
+				2C52FA80B8B24C5641BE2F24 /* Build Rust Code */,
+				47F6043D93907303525204A9 /* Sources */,
+				840BBF4F1C4F8B41D2C55C26 /* Resources */,
+				CFB3F65BA1030BD7FBBA2D92 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "unstoppableswap-gui-rs_iOS";
+			packageProductDependencies = (
+			);
+			productName = "unstoppableswap-gui-rs_iOS";
+			productReference = 0873204D97F8ADC544BB1EAD /* unstoppableswap-gui-rs_iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5174D8222CA6FF7559544EF6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 335C0B81ED4316B516375AD1 /* Build configuration list for PBXProject "unstoppableswap-gui-rs" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 706CFB8BE715C477A63D0FF1;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 54;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4939F521ABA845E0DCB692CB /* unstoppableswap-gui-rs_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		840BBF4F1C4F8B41D2C55C26 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9C79D971C9D3803F5C610567 /* Assets.xcassets in Resources */,
+				346A2E39246F55B9C1151066 /* LaunchScreen.storyboard in Resources */,
+				49FD4B43F966894F49443DCE /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		2C52FA80B8B24C5641BE2F24 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64-sim/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cargo tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		47F6043D93907303525204A9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D24C58F30DD30E3D08F43AD0 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		2597851890D4A68DB1F9C7A8 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+		27E0C7C8933E97BFB9A253D9 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+					"arm64-sim",
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "unstoppableswap-gui-rs_iOS/unstoppableswap-gui-rs_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = "arm64-sim x86_64";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "unstoppableswap-gui-rs_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64-sim]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64-sim/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = net.unstoppableswap.gui;
+				PRODUCT_NAME = UnstoppableSwap;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = "arm64  arm64-sim";
+			};
+			name = debug;
+		};
+		32B95E3AE8F98903B433561C /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+		4996951CBCACC79558090CE0 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+					"arm64-sim",
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "unstoppableswap-gui-rs_iOS/unstoppableswap-gui-rs_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = "arm64-sim x86_64";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "unstoppableswap-gui-rs_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64-sim]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64-sim/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = net.unstoppableswap.gui;
+				PRODUCT_NAME = UnstoppableSwap;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = "arm64  arm64-sim";
+			};
+			name = release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		335C0B81ED4316B516375AD1 /* Build configuration list for PBXProject "unstoppableswap-gui-rs" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				32B95E3AE8F98903B433561C /* debug */,
+				2597851890D4A68DB1F9C7A8 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		73AEF7ACBA6D3D1BDBD4D980 /* Build configuration list for PBXNativeTarget "unstoppableswap-gui-rs_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				27E0C7C8933E97BFB9A253D9 /* debug */,
+				4996951CBCACC79558090CE0 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5174D8222CA6FF7559544EF6 /* Project object */;
+}
