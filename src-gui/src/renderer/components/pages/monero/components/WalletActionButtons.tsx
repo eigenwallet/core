@@ -6,20 +6,26 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
+  ListItemIcon,
+  Menu,
+  MenuItem,
   TextField,
+  Typography,
 } from "@mui/material";
 import {
   Send as SendIcon,
-  Input as InputIcon,
   SwapHoriz as SwapIcon,
   Restore as RestoreIcon,
+  MoreHoriz as MoreHorizIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
-import { sendMoneroTransaction, setMoneroRestoreHeight } from "renderer/rpc";
+import { setMoneroRestoreHeight } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";
 import { useNavigate } from "react-router-dom";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import DfxButton from "./DFXWidget";
+import SetRestoreHeightModal from "../SetRestoreHeightModal";
 
 interface WalletActionButtonsProps {
   balance: {
@@ -41,29 +47,27 @@ function RestoreHeightDialog({
     onClose();
   };
 
-  return (
-    <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Restore Height</DialogTitle>
-      <DialogContent>
-        <TextField
-          label="Restore Height"
-          type="number"
-          value={restoreHeight}
-          onChange={(e) => setRestoreHeight(Number(e.target.value))}
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <PromiseInvokeButton
-          onInvoke={handleRestoreHeight}
-          displayErrorSnackbar={true}
-          variant="contained"
-        >
-          Restore
-        </PromiseInvokeButton>
-      </DialogActions>
-    </Dialog>
-  );
+  return <Dialog open={open} onClose={onClose}>
+    <DialogTitle>Restore Height</DialogTitle>
+    <DialogContent>
+      <TextField
+        label="Restore Height"
+        type="number"
+        value={restoreHeight}
+        onChange={(e) => setRestoreHeight(Number(e.target.value))}
+      />
+    </DialogContent>
+    <DialogActions>
+      <Button onClick={onClose}>Cancel</Button>
+      <PromiseInvokeButton
+        onInvoke={handleRestoreHeight}
+        displayErrorSnackbar={true}
+        variant="contained"
+      >
+        Restore
+      </PromiseInvokeButton>
+    </DialogActions>
+  </Dialog>;
 }
 
 export default function WalletActionButtons({
@@ -73,9 +77,18 @@ export default function WalletActionButtons({
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
 
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(menuAnchorEl);
+  const handleMenuClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setMenuAnchorEl(event.currentTarget);
+  };
+  const handleMenuClose = () => {
+    setMenuAnchorEl(null);
+  };
+
   return (
     <>
-      <RestoreHeightDialog
+      <SetRestoreHeightModal
         open={restoreHeightDialogOpen}
         onClose={() => setRestoreHeightDialogOpen(false)}
       />
@@ -84,7 +97,15 @@ export default function WalletActionButtons({
         open={sendDialogOpen}
         onClose={() => setSendDialogOpen(false)}
       />
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 1,
+          mb: 2,
+          alignItems: "center",
+        }}
+      >
         <Chip
           icon={<SendIcon />}
           label="Send"
@@ -99,6 +120,7 @@ export default function WalletActionButtons({
           variant="button"
           clickable
         />
+<<<<<<< HEAD
         <Chip
           onClick={() => setRestoreHeightDialogOpen(true)}
           icon={<RestoreIcon />}
@@ -107,6 +129,23 @@ export default function WalletActionButtons({
           clickable
         />
         <DfxButton />
+=======
+
+        <IconButton onClick={handleMenuClick}>
+          <MoreHorizIcon />
+        </IconButton>
+        <Menu anchorEl={menuAnchorEl} open={menuOpen} onClose={handleMenuClose}>
+          <MenuItem onClick={() => {
+            setRestoreHeightDialogOpen(true);
+            handleMenuClose();
+          }}>
+            <ListItemIcon>
+              <RestoreIcon />
+            </ListItemIcon>
+            <Typography>Restore Height</Typography>
+          </MenuItem>
+        </Menu>
+>>>>>>> feat/monero-wallet
       </Box>
     </>
   );

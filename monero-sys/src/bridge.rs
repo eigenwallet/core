@@ -229,6 +229,17 @@ pub mod ffi {
         /// Force a specific restore height.
         fn setRefreshFromBlockHeight(self: Pin<&mut Wallet>, height: u64) -> Result<()>;
 
+        fn getBlockchainHeightByDate(self: &Wallet, year: u16, month: u8, day: u8) -> Result<u64>;
+
+        /// Rescan the blockchain asynchronously.
+        fn rescanBlockchainAsync(self: Pin<&mut Wallet>);
+
+        /// Pause the background refresh.
+        fn pauseRefresh(self: Pin<&mut Wallet>);
+
+        /// Stop the background refresh once (doesn't stop background refresh thread).
+        fn stop(self: Pin<&mut Wallet>);
+
         /// Set whether to allow mismatched daemon versions.
         fn setAllowMismatchedDaemonVersion(
             self: Pin<&mut Wallet>,
@@ -288,6 +299,9 @@ pub mod ffi {
         /// Get the fee of a pending transaction.
         fn pendingTransactionFee(tx: &PendingTransaction) -> Result<u64>;
 
+        /// Get the amount of a pending transaction.
+        fn pendingTransactionAmount(tx: &PendingTransaction) -> Result<u64>;
+
         /// Get the transaction key (r) for a given txid.
         fn walletGetTxKey(wallet: &Wallet, txid: &CxxString) -> Result<UniquePtr<CxxString>>;
 
@@ -305,15 +319,15 @@ pub mod ffi {
         ) -> Result<()>;
 
         /// Get the transaction history.
-        unsafe fn walletHistory(wallet: *mut Wallet) -> UniquePtr<TransactionHistory>;
+        fn history(self: Pin<&mut Wallet>) -> Result<*mut TransactionHistory>;
 
         /// Get the transaction history count.
         fn count(self: &TransactionHistory) -> i32;
 
         /// Get a transaction from the history by index.
-        unsafe fn transaction(self: &TransactionHistory, index: i32) -> *mut TransactionInfo;
+        fn transaction(self: &TransactionHistory, index: i32) -> *mut TransactionInfo;
 
-        /// Refresh the transaction history so it contains the latest transactions (including unconfirmed).
+        /// Refresh the transaction history so it contains the latest transactions.
         fn refresh(self: Pin<&mut TransactionHistory>) -> Result<()>;
 
         /// Get the amount of the transaction.
@@ -432,7 +446,7 @@ pub mod wallet_listener {
 
         // Functions implemented in bridge.h that create / destroy the adapter.
         #[namespace = "wallet_listener"]
-        unsafe fn create_rust_listener_adapter(
+        fn create_rust_listener_adapter(
             listener: Box<WalletListenerBox>,
         ) -> *mut MoneroWalletListener;
         #[namespace = "wallet_listener"]
@@ -490,7 +504,7 @@ pub trait WalletEventListener: Send + Sync {
     fn on_pool_tx_removed(&self, txid: &str);
 }
 
-/// Generic wrapper that can hold any WalletEventListener implementation
+/// A wrapper around Box<dyn WalletEventListener> because CXX doesn't support trait objects (yet).
 pub struct WalletListenerBox {
     inner: Box<dyn WalletEventListener>,
 }
@@ -499,6 +513,11 @@ impl WalletListenerBox {
     /// Create a new wrapper around any WalletEventListener implementation
     pub fn new(listener: Box<dyn WalletEventListener>) -> Self {
         WalletListenerBox { inner: listener }
+    }
+
+    /// Create a new boxed wrapper around any WalletEventListener implementation
+    pub fn new_boxed(listener: Box<dyn WalletEventListener>) -> Box<Self> {
+        Box::new(Self::new(listener))
     }
 }
 
@@ -579,7 +598,7 @@ impl WalletEventListener for TraceListener {
     }
 
     fn on_new_block(&self, height: u64) {
-        tracing::info!(wallet = self.filename, "New block at height: {}", height);
+        tracing::trace!(wallet = self.filename, "New block at height: {}", height);
     }
 
     fn on_updated(&self) {
@@ -607,10 +626,6 @@ impl WalletEventListener for TraceListener {
             txid
         );
     }
-}
-
-pub fn make_custom_listener(listener: Box<dyn WalletEventListener>) -> Box<WalletListenerBox> {
-    Box::new(WalletListenerBox::new(listener))
 }
 
 /// This is the actual rust function that forwards the c++ log messages to tracing.

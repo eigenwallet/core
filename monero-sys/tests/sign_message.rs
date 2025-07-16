@@ -33,7 +33,6 @@ async fn test_sign_message() {
 
     // Test message to sign
     let test_message = "Hello, World! This is a test message for signing.";
-
     tracing::info!("Testing message signing with spend key (default address)");
     let signature_spend = wallet
         .sign_message(test_message, None, false)
@@ -89,6 +88,7 @@ async fn test_sign_message() {
         .sign_message("", None, false)
         .await
         .expect("Failed to sign empty message");
+<<<<<<< HEAD
 
     tracing::info!("Signature for empty message: {}", signature_empty);
     assert!(
@@ -98,3 +98,11 @@ async fn test_sign_message() {
 
     tracing::info!("All message signing tests passed!");
 }
+=======
+    
+    tracing::info!("Signature for empty message: {}", signature_empty);
+    assert!(!signature_empty.is_empty(), "Signature should not be empty even for empty message");
+
+    tracing::info!("All message signing tests passed!");
+} 
+>>>>>>> feat/monero-wallet

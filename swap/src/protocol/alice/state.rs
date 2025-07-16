@@ -2,7 +2,7 @@ use crate::bitcoin::{
     current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
     TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
 };
-use crate::env::Config;
+use swap_env::env::Config;
 use crate::monero::wallet::{TransferRequest, WatchRequest};
 use crate::monero::BlockHeight;
 use crate::monero::TransferProof;
@@ -170,8 +170,8 @@ impl State0 {
             punish_address,
             btc,
             xmr,
-            cancel_timelock: env_config.bitcoin_cancel_timelock,
-            punish_timelock: env_config.bitcoin_punish_timelock,
+            cancel_timelock: env_config.bitcoin_cancel_timelock.into(),
+            punish_timelock: env_config.bitcoin_punish_timelock.into(),
             tx_redeem_fee,
             tx_punish_fee,
         }
@@ -413,17 +413,17 @@ pub struct State3 {
     pub xmr: monero::Amount,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
-    #[serde(with = "crate::bitcoin::address_serde")]
+    #[serde(with = "swap_serde::bitcoin::address_serde")]
     refund_address: bitcoin::Address,
-    #[serde(with = "crate::bitcoin::address_serde")]
+    #[serde(with = "swap_serde::bitcoin::address_serde")]
     redeem_address: bitcoin::Address,
-    #[serde(with = "crate::bitcoin::address_serde")]
+    #[serde(with = "swap_serde::bitcoin::address_serde")]
     punish_address: bitcoin::Address,
     pub tx_lock: bitcoin::TxLock,
     tx_punish_sig_bob: bitcoin::Signature,
     tx_cancel_sig_bob: bitcoin::Signature,
     /// This field was added in this pull request:
-    /// https://github.com/UnstoppableSwap/core/pull/344
+    /// https://github.com/eigenwallet/core/pull/344
     ///
     /// Previously this did not exist. To avoid deserialization failing for
     /// older swaps we default it to None.

@@ -27,8 +27,11 @@ export default function SendTransactionContent({
 }: SendTransactionContentProps) {
   const [sendAddress, setSendAddress] = useState("");
   const [sendAmount, setSendAmount] = useState("");
+  const [previousAmount, setPreviousAmount] = useState("");
   const [enableSend, setEnableSend] = useState(false);
   const [currency, setCurrency] = useState("XMR");
+  const [isMaxSelected, setIsMaxSelected] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const showFiatRate = useAppSelector(
     (state) => state.settings.fetchFiatPrices,
@@ -37,7 +40,7 @@ export default function SendTransactionContent({
   const xmrPrice = useAppSelector((state) => state.rates.xmrPrice);
 
   const handleCurrencyChange = (newCurrency: string) => {
-    if (!showFiatRate || !xmrPrice) {
+    if (!showFiatRate || !xmrPrice || isMaxSelected || isSending) {
       return;
     }
 
@@ -53,20 +56,60 @@ export default function SendTransactionContent({
     setCurrency(newCurrency);
   };
 
+  const handleMaxToggled = () => {
+    if (isSending) return;
+    
+    if (isMaxSelected) {
+      // Disable MAX mode - restore previous amount
+      setIsMaxSelected(false);
+      setSendAmount(previousAmount);
+    } else {
+      // Enable MAX mode - save current amount first
+      setPreviousAmount(sendAmount);
+      setIsMaxSelected(true);
+      setSendAmount("<MAX>");
+    }
+  };
+
+  const handleAmountChange = (newAmount: string) => {
+    if (isSending) return;
+    
+    if (newAmount !== "<MAX>") {
+      setIsMaxSelected(false);
+    }
+    setSendAmount(newAmount);
+  };
+
+  const handleAddressChange = (newAddress: string) => {
+    if (isSending) return;
+    setSendAddress(newAddress);
+  };
+
   const moneroAmount =
     currency === "XMR"
       ? parseFloat(sendAmount)
       : parseFloat(sendAmount) / xmrPrice;
 
   const handleSend = async () => {
-    if (!sendAddress || !sendAmount) {
-      throw new Error("Address and amount are required");
+    if (!sendAddress) {
+      throw new Error("Address is required");
     }
 
-    return sendMoneroTransaction({
-      address: sendAddress,
-      amount: xmrToPiconeros(moneroAmount),
-    });
+    if (isMaxSelected) {
+      return sendMoneroTransaction({
+        address: sendAddress,
+        amount: { type: "Sweep" },
+      });
+    } else {
+      if (!sendAmount || sendAmount === "<MAX>") {
+        throw new Error("Amount is required");
+      }
+
+      return sendMoneroTransaction({
+        address: sendAddress,
+        amount: { type: "Specific", amount: xmrToPiconeros(moneroAmount) },
+      });
+    }
   };
 
   const handleSendSuccess = () => {
@@ -78,7 +121,11 @@ export default function SendTransactionContent({
   const handleClear = () => {
     setSendAddress("");
     setSendAmount("");
+    setPreviousAmount("");
+    setIsMaxSelected(false);
   };
+
+  const isSendDisabled = !enableSend || (!isMaxSelected && (!sendAmount || sendAmount === "<MAX>"));
 
   return (
     <>
@@ -88,19 +135,22 @@ export default function SendTransactionContent({
           <SendAmountInput
             balance={balance}
             amount={sendAmount}
-            onAmountChange={setSendAmount}
+            onAmountChange={handleAmountChange}
+            onMaxToggled={handleMaxToggled}
             currency={currency}
             fiatCurrency={fiatCurrency}
             xmrPrice={xmrPrice}
             showFiatRate={showFiatRate}
             onCurrencyChange={handleCurrencyChange}
+            disabled={isSending}
           />
           <MoneroAddressTextField
             address={sendAddress}
-            onAddressChange={setSendAddress}
+            onAddressChange={handleAddressChange}
             onAddressValidityChange={setEnableSend}
             label="Send to"
             fullWidth
+            disabled={isSending}
           />
         </Box>
       </DialogContent>
@@ -108,8 +158,9 @@ export default function SendTransactionContent({
         <Button onClick={onClose}>Cancel</Button>
         <PromiseInvokeButton
           onInvoke={handleSend}
-          disabled={!enableSend}
+          disabled={isSendDisabled}
           onSuccess={handleSendSuccess}
+          onPendingChange={setIsSending}
         >
           Send
         </PromiseInvokeButton>

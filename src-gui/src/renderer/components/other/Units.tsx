@@ -46,7 +46,7 @@ export function FiatPiconeroAmount({
   amount: Amount;
   fixedPrecision?: number;
 }) {
-  const xmrRate = useAppSelector((state) => state.rates.xmrPrice);
+  const xmrPrice = useAppSelector((state) => state.rates.xmrPrice);
   const [fetchFiatPrices, fiatCurrency] = useSettings((settings) => [
     settings.fetchFiatPrices,
     settings.fiatCurrency,
@@ -56,14 +56,15 @@ export function FiatPiconeroAmount({
     !fetchFiatPrices ||
     fiatCurrency == null ||
     amount == null ||
-    xmrRate == null
+    xmrPrice == null
   ) {
     return null;
   }
 
   return (
     <span>
-      {(piconerosToXmr(amount) * xmrRate).toFixed(fixedPrecision)} {fiatCurrency}
+      {(piconerosToXmr(amount) * xmrPrice).toFixed(fixedPrecision)}{" "}
+      {fiatCurrency}
     </span>
   );
 }

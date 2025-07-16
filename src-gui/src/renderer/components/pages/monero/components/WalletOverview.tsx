@@ -38,6 +38,19 @@ export default function WalletOverview({
 
   return (
     <Card sx={{ p: 2, position: "relative", borderRadius: 2 }} elevation={4}>
+      {syncProgress && syncProgress.progress_percentage < 100 && (
+        <LinearProgress
+          value={syncProgress.progress_percentage}
+          variant="determinate"
+          sx={{
+            width: "100%",
+            position: "absolute",
+            top: 0,
+            left: 0,
+          }}
+        />
+      )}
+
       {/* Balance */}
       <Box
         sx={{
@@ -48,43 +61,44 @@ export default function WalletOverview({
           mb: 1,
         }}
       >
-        <Box>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 1, gridColumn: "1", gridRow: "1" }}
-          >
-            Available Funds
-          </Typography>
-          <Typography variant="h4" sx={{ gridColumn: "1", gridRow: "2" }}>
-            <PiconeroAmount
-              amount={parseFloat(balance.unlocked_balance)}
-              fixedPrecision={4}
-            />
-          </Typography>
-        </Box>
         <Typography
           variant="body2"
           color="text.secondary"
-          sx={{ gridColumn: "1", gridRow: "2" }}
+          sx={{ mb: 1, gridColumn: "1", gridRow: "1" }}
+        >
+          Available Funds
+        </Typography>
+        <Typography variant="h4" sx={{ gridColumn: "1", gridRow: "2" }}>
+          <PiconeroAmount
+            amount={parseFloat(balance.unlocked_balance)}
+            fixedPrecision={4}
+          />
+        </Typography>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ gridColumn: "1", gridRow: "3" }}
         >
           <FiatPiconeroAmount amount={parseFloat(balance.unlocked_balance)} />
         </Typography>
         {pendingBalance > 0 && (
           <>
-            <Box sx={{ gridColumn: "2", gridRow: "1", alignSelf: "end" }}>
-              <Typography variant="body2" color="warning" sx={{ mb: 1 }}>
-                Pending
-              </Typography>
-              <Typography variant="h6" sx={{ gridColumn: "2", gridRow: "2" }}>
-                <PiconeroAmount amount={pendingBalance} fixedPrecision={4} />
-              </Typography>
-            </Box>
+            <Typography
+              variant="body2"
+              color="warning"
+              sx={{ mb: 1, animation: "pulse 2s infinite", gridColumn: "2", gridRow: "1", alignSelf: "end" }}
+            >
+              Pending
+            </Typography>
+
+            <Typography variant="h5" sx={{ gridColumn: "2", gridRow: "2", alignSelf: "center" }}>
+              <PiconeroAmount amount={pendingBalance} fixedPrecision={4} />
+            </Typography>
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ gridColumn: "2", gridRow: "2" }}
-            >
+              sx={{ gridColumn: "2", gridRow: "3" }}
+              >
               <FiatPiconeroAmount amount={pendingBalance} />
             </Typography>
           </>
@@ -120,20 +134,6 @@ export default function WalletOverview({
           )}
         </Box>
       </Box>
-
-      {/* Syncing State */}
-      {syncProgress && syncProgress.progress_percentage < 100 && (
-        <LinearProgress
-          value={syncProgress.progress_percentage}
-          variant="determinate"
-          sx={{
-            width: "100%",
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-          }}
-        />
-      )}
     </Card>
   );
 }

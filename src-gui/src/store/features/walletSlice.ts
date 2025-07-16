@@ -11,10 +11,7 @@ interface WalletState {
   balance: GetMoneroBalanceResponse | null;
   syncProgress: GetMoneroSyncProgressResponse | null;
   history: GetMoneroHistoryResponse | null;
-
-  // Loading states
-  isRefreshing: boolean;
-  isSending: boolean;
+  isLoading: boolean;
 }
 
 export interface WalletSlice {
@@ -28,10 +25,7 @@ const initialState: WalletSlice = {
     balance: null,
     syncProgress: null,
     history: null,
-
-    // Loading states
-    isRefreshing: false,
-    isSending: false,
+    isLoading: true,
   },
 };
 
@@ -41,9 +35,6 @@ export const walletSlice = createSlice({
   reducers: {
     setRefreshing(slice, action: PayloadAction<boolean>) {
       slice.state.isRefreshing = action.payload;
-    },
-    setSending(slice, action: PayloadAction<boolean>) {
-      slice.state.isSending = action.payload;
     },
 
     // Wallet data actions
@@ -62,6 +53,9 @@ export const walletSlice = createSlice({
     setHistory(slice, action: PayloadAction<GetMoneroHistoryResponse>) {
       slice.state.history = action.payload;
     },
+    setIsLoading(slice, action: PayloadAction<boolean>) {
+      slice.state.isLoading = action.payload;
+    },
     // Reset actions
     resetWalletState(slice) {
       slice.state = initialState.state;
@@ -71,12 +65,12 @@ export const walletSlice = createSlice({
 
 export const {
   setRefreshing,
-  setSending,
   setMainAddress,
   setBalance,
   setSyncProgress,
   setHistory,
   resetWalletState,
+  setIsLoading,
 } = walletSlice.actions;
 
 export default walletSlice.reducer;

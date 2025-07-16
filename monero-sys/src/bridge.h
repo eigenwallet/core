@@ -16,7 +16,9 @@
  *     - CXX doesn't support static methods as yet, so we define free functions here that
  *       simply call the appropriate static methods.
  *     - CXX also doesn't support returning strings by value from C++ to Rust, so we wrap
- *       those in a unique_ptr.
+ *       those in a unique_ptr/shared_ptr.
+ *       ATTENTION: unique_ptr will delete the object on drop,
+ *       verify that you actually OWN the object before wrapping it in a unique_ptr. Use shared_ptr otherwise
  *     - CXX doesn't support optional arguments, so we make thin wrapper functions that either
  *       take the argument or not.
  *
@@ -57,6 +59,26 @@ namespace Monero
     {
         auto addr = wallet.address(account_index, address_index);
         return std::make_unique<std::string>(addr);
+    }
+    
+    inline void rescanBlockchainAsync(Wallet &wallet)
+    {
+        wallet.rescanBlockchainAsync();
+    }
+
+    inline void pauseRefresh(Wallet &wallet)
+    {
+        wallet.pauseRefresh();
+    }
+
+    inline void stop(Wallet &wallet)
+    {
+        wallet.stop();
+    }
+
+    inline void startRefresh(Wallet &wallet)
+    {
+        wallet.startRefresh();
     }
 
     /**
@@ -228,6 +250,11 @@ namespace Monero
         return tx.fee();
     }
 
+    inline uint64_t pendingTransactionAmount(const PendingTransaction &tx)
+    {
+        return tx.amount();
+    }
+
     inline std::unique_ptr<std::string> walletFilename(const Wallet &wallet)
     {
         return std::make_unique<std::string>(wallet.filename());
@@ -241,68 +268,12 @@ namespace Monero
     }
 
     /**
-     * Get the transaction history.
-     */
-    inline std::unique_ptr<TransactionHistory> walletHistory(Wallet* wallet)
-    {
-        if (wallet == nullptr) {
-            return nullptr;
-        }
-        return std::unique_ptr<TransactionHistory>(wallet->history());
-    }
-
-    /**
      * Get the hash of a transaction from TransactionInfo.
      */
     inline std::unique_ptr<std::string> transactionInfoHash(const TransactionInfo &tx_info)
     {
         return std::make_unique<std::string>(tx_info.hash());
     }
-
-    /**
-     * Create a wallet listener.
-     */
-
-//     class MyListener : public WalletListener {
-//         public:
-//             ~MyListener() override {};
-
-//             void moneySpent(const std::string &txId, uint64_t amount) override {
-//                 std::cout << "Money spent: " << txId << " " << amount << std::endl;
-//             }
-            
-//             void moneyReceived(const std::string &txId, uint64_t amount) override {
-//                 std::cout << "Money received: " << txId << " " << amount << std::endl;
-//             }
-            
-//             void unconfirmedMoneyReceived(const std::string &txId, uint64_t amount) override {
-//                 std::cout << "Unconfirmed money received: " << txId << " " << amount << std::endl;
-//             }
-
-//             void newBlock(uint64_t height) override {
-//                 std::cout << "New block: " << height << std::endl;
-//             }
-            
-//             void updated() override {
-//                 std::cout << "Updated" << std::endl;
-//             }
-            
-//             void refreshed() override {
-//                 std::cout << "Refreshed" << std::endl;
-//             }
-
-//             void onSetWallet(Wallet *wallet) override {
-//                 std::cout << "Set wallet" << std::endl;
-//             }
-
-//             void onReorg(uint64_t height, uint64_t blocks_detached, std::size_t transfers_detached) override {
-//                 std::cout << "Reorg: " << height << " " << blocks_detached << " " << transfers_detached << std::endl;
-//             }
-
-//             void onPoolTxRemoved(const std::string &txid) override {
-//                 std::cout << "Pool tx removed: " << txid << std::endl;
-//             }
-//     };
 
     // bridge.h
 #pragma once

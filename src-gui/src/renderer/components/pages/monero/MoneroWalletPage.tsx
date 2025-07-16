@@ -8,18 +8,21 @@ import {
   WalletActionButtons,
 } from "./components";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
+import WalletPageLoadingState from "./components/WalletPageLoadingState";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
-  const { mainAddress, balance, syncProgress, history, isRefreshing } =
+  const { mainAddress, balance, syncProgress, history} =
     useAppSelector((state) => state.wallet.state);
 
   useEffect(() => {
     initializeMoneroWallet();
   }, []);
 
-  if (mainAddress === null || balance === null || syncProgress === null) {
-    return <div>Loading...</div>;
+  const isLoading = useAppSelector((state) => state.wallet?.state.isLoading);
+
+  if (isLoading) {
+    return <WalletPageLoadingState />;
   }
 
   return (
