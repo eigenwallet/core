@@ -124,7 +124,10 @@ export default function WalletActionButtons({
           <MoreHorizIcon />
         </IconButton>
         <Menu anchorEl={menuAnchorEl} open={menuOpen} onClose={handleMenuClose}>
-          <MenuItem onClick={() => setRestoreHeightDialogOpen(true)}>
+          <MenuItem onClick={() => {
+            setRestoreHeightDialogOpen(true);
+            handleMenuClose();
+          }}>
             <ListItemIcon>
               <RestoreIcon />
             </ListItemIcon>

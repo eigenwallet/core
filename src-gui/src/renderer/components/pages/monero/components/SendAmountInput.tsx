@@ -3,6 +3,7 @@ import NumberInput from "../../../inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useTheme } from "@mui/material/styles";
 import { piconerosToXmr } from "../../../../../utils/conversionUtils";
+import { MoneroAmount } from "renderer/components/other/Units";
 
 interface SendAmountInputProps {
   balance: {
@@ -34,9 +35,6 @@ export default function SendAmountInput({
   disabled = false,
 }: SendAmountInputProps) {
   const theme = useTheme();
-  const displayBalance = piconerosToXmr(
-    parseFloat(balance.unlocked_balance),
-  ).toFixed(3);
 
   const isMaxSelected = amount === "<MAX>";
 
@@ -206,7 +204,7 @@ export default function SendAmountInput({
       >
         <Typography color="text.secondary">Available</Typography>
         <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.5 }}>
-          <Typography color="text.primary">{displayBalance}</Typography>
+          <Typography color="text.primary"><MoneroAmount amount={piconerosToXmr(parseFloat(balance.unlocked_balance))}/></Typography>
           <Typography color="text.secondary">XMR</Typography>
         </Box>
         <Button 
