@@ -1189,8 +1189,6 @@ impl WalletManager {
     }
 
     /// Open a wallet. Only used internally. Use [`WalletManager::open_or_create_wallet`] instead.
-    ///
-    /// Todo: add listener support?
     fn open_wallet(
         &mut self,
         path: &str,

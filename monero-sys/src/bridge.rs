@@ -492,7 +492,7 @@ pub trait WalletEventListener: Send + Sync {
     fn on_pool_tx_removed(&self, txid: &str);
 }
 
-/// Generic wrapper that can hold any WalletEventListener implementation
+/// A wrapper around Box<dyn WalletEventListener> because CXX doesn't support trait objects (yet).
 pub struct WalletListenerBox {
     inner: Box<dyn WalletEventListener>,
 }
@@ -501,6 +501,11 @@ impl WalletListenerBox {
     /// Create a new wrapper around any WalletEventListener implementation
     pub fn new(listener: Box<dyn WalletEventListener>) -> Self {
         WalletListenerBox { inner: listener }
+    }
+
+    /// Create a new boxed wrapper around any WalletEventListener implementation
+    pub fn new_boxed(listener: Box<dyn WalletEventListener>) -> Box<Self> {
+        Box::new(Self::new(listener))
     }
 }
 
@@ -609,10 +614,6 @@ impl WalletEventListener for TraceListener {
             txid
         );
     }
-}
-
-pub fn make_custom_listener(listener: Box<dyn WalletEventListener>) -> Box<WalletListenerBox> {
-    Box::new(WalletListenerBox::new(listener))
 }
 
 /// This is the actual rust function that forwards the c++ log messages to tracing.
