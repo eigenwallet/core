@@ -31,14 +31,16 @@ export default function SetRestoreHeightModal({
   onClose: () => void;
 }) {
   const [restoreOption, setRestoreOption] = useState(RestoreOption.BlockHeight);
-  const [restoreHeight, setRestoreHeight] = useState(0);
+  const [restoreHeight, setRestoreHeight] = useState<number | "">("");
   const [restoreDate, setRestoreDate] = useState<Dayjs | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [currentRestoreHeight, setCurrentRestoreHeight] = useState<string>("Loading...");
 
   const handleRestoreHeight = async () => {
     if (restoreOption === RestoreOption.BlockHeight) {
-      await setMoneroRestoreHeight(restoreHeight);
+      if (typeof restoreHeight === 'number') {
+        await setMoneroRestoreHeight(restoreHeight);
+      }
     } else if (restoreOption === RestoreOption.RestoreDate) {
       const formattedDate = restoreDate?.format('MM-DD-YYYY');
       if (formattedDate) {
@@ -52,6 +54,7 @@ export default function SetRestoreHeightModal({
       try {
         const response = await getRestoreHeight();
         setCurrentRestoreHeight(response.height.toString());
+        setRestoreHeight(response.height); // Set the input field to current height
       } catch (error) {
         console.error("Failed to fetch restore height:", error);
         setCurrentRestoreHeight("Error");
@@ -77,7 +80,7 @@ export default function SetRestoreHeightModal({
 
   return (
     <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Set Restore Height (Current: {currentRestoreHeight})</DialogTitle>
+      <DialogTitle>Set Restore Height</DialogTitle>
       <DialogContent sx={{ minWidth: "500px", minHeight: "300px" }}>
         <Accordion
           elevation={0}
@@ -95,7 +98,10 @@ export default function SetRestoreHeightModal({
               label="Restore Height"
               type="number"
               value={restoreHeight}
-              onChange={(e) => setRestoreHeight(Number(e.target.value))}
+              onChange={(e) => {
+                const value = e.target.value;
+                setRestoreHeight(value === "" ? "" : Number(value));
+              }}
             />
           </AccordionDetails>
         </Accordion>
