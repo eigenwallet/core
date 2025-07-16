@@ -51,7 +51,6 @@ import {
 } from "store/features/rpcSlice";
 import {
   setRefreshing,
-  setSending,
   setMainAddress,
   setBalance,
   setSyncProgress,
@@ -440,11 +439,15 @@ export async function getRestoreHeight(): Promise<GetRestoreHeightResponse> {
 }
 
 export async function setMoneroRestoreHeight(
-  height: number | string,
+  height: number | Date,
 ): Promise<SetRestoreHeightResponse> {
   const args: SetRestoreHeightArgs = typeof height === 'number' 
     ? { type: "Height", height: height }
-    : { type: "Date", height: height };
+    : { type: "Date", height: { 
+        year: height.getFullYear(), 
+        month: height.getMonth() + 1, // JavaScript months are 0-indexed, but we want 1-indexed
+        day: height.getDate() 
+      } };
     
   return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
     "set_monero_restore_height",
@@ -532,8 +535,6 @@ export async function refreshMoneroWallet() {
 export async function sendMoneroTransaction(
   args: SendMoneroArgs,
 ): Promise<void> {
-  store.dispatch(setSending(true));
-
   try {
     await sendMonero(args);
 
@@ -547,7 +548,7 @@ export async function sendMoneroTransaction(
   } catch (err) {
     console.error("Failed to send Monero:", err);
   } finally {
-    store.dispatch(setSending(false));
+    // Do nothing
   }
 }
 
@@ -576,12 +577,12 @@ export async function resolveApproval<T>(
       "resolve_approval_request",
       { request_id: requestId, accept: accept as object },
     );
+  } catch (error) {
+    throw error;
   } finally {
     // Always refresh the approval list
     await refreshApprovals();
 
-    // Refresh the approval list a few miliseconds later to again
-    // Just to make sure :)
     setTimeout(() => {
       refreshApprovals();
     }, 200);

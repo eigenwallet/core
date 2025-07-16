@@ -247,6 +247,7 @@ tauri_command!(get_logs, GetLogsArgs);
 tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
 tauri_command!(redact, RedactArgs);
+tauri_command!(send_monero, SendMoneroArgs);
 
 // These commands require no arguments
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
@@ -259,9 +260,9 @@ tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
 tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
 tauri_command!(set_monero_restore_height, SetRestoreHeightArgs);
 tauri_command!(get_restore_height, GetRestoreHeightArgs, no_args);
-
-// Add the new command for getting Monero main address
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
+tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
+tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
 
 /// Here we define Tauri commands whose implementation is not delegated to the Request trait
 #[tauri::command]
@@ -355,9 +356,12 @@ async fn resolve_approval_request(
     args: ResolveApprovalArgs,
     state: tauri::State<'_, State>,
 ) -> Result<(), String> {
+    let request_id = args.request_id.parse()
+        .map_err(|e| format!("Invalid request ID '{}': {}", args.request_id, e))?;
+    
     state
         .handle
-        .resolve_approval(args.request_id.parse().unwrap(), args.accept)
+        .resolve_approval(request_id, args.accept)
         .await
         .to_string_result()?;
 
@@ -369,9 +373,12 @@ async fn reject_approval_request(
     args: RejectApprovalArgs,
     state: tauri::State<'_, State>,
 ) -> Result<RejectApprovalResponse, String> {
+    let request_id = args.request_id.parse()
+        .map_err(|e| format!("Invalid request ID '{}': {}", args.request_id, e))?;
+    
     state
         .handle
-        .reject_approval(args.request_id.parse().unwrap())
+        .reject_approval(request_id)
         .await
         .to_string_result()?;
 
@@ -447,7 +454,3 @@ async fn initialize_context(
         }
     }
 }
-
-tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
-tauri_command!(send_monero, SendMoneroArgs);
-tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);

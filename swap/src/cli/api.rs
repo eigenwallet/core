@@ -360,19 +360,16 @@ impl ContextBuilder {
             .context("Failed to initialize wallet database")?;
 
         // Prompt the user to open/create a Monero wallet
-        let wallet = request_and_open_monero_wallet(
+        let (wallet, seed) = request_and_open_monero_wallet(
             self.tauri_handle.clone(),
             eigenwallet_data_dir,
+            base_data_dir,
             env_config,
             &daemon,
             &wallet_database,
         )
         .await?;
 
-        // Extract seed and primary address from the wallet
-        let seed = Seed::from_monero_wallet(&wallet)
-            .await
-            .context("Failed to extract seed from wallet")?;
         let primary_address = wallet.main_address().await;
 
         // Derive data directory from primary address
@@ -553,7 +550,11 @@ impl Context {
 
     pub fn cleanup(&self) -> Result<()> {
         // TODO: close all monero wallets
-
+        // call store(..) on all wallets
+        // if let Some(monero_manager) = &self.monero_manager {
+        //     let wallet = monero_manager.main_wallet().await;
+        //     wallet.store().await?;
+        // }
         Ok(())
     }
 
@@ -615,10 +616,11 @@ async fn init_bitcoin_wallet(
 async fn request_and_open_monero_wallet(
     tauri_handle: Option<TauriHandle>,
     eigenwallet_data_dir: &PathBuf,
+    non_tauri_data_dir: &PathBuf,
     env_config: EnvConfig,
     daemon: &monero_sys::Daemon,
     wallet_database: &monero_sys::Database,
-) -> Result<monero_sys::WalletHandle, Error> {
+) -> Result<(monero_sys::WalletHandle, Seed), Error> {
     let eigenwallet_wallets_dir = eigenwallet_data_dir.join("wallets");
 
     let wallet = match tauri_handle {
@@ -769,11 +771,50 @@ async fn request_and_open_monero_wallet(
                     }
                 };
 
-                break wallet;
+                // Extract seed from the wallet
+                let seed = Seed::from_monero_wallet(&wallet)
+                    .await
+                    .context("Failed to extract seed from wallet")?;
+
+                break (wallet, seed);
             }
         }
+
+        // If we don't have a tauri handle, we use the seed.pem file
+        // This is used for the CLI to monitor the blockchain
         None => {
-            todo!("not implemented yet")
+            let wallet_path = non_tauri_data_dir.join("swap-tool-blockchain-monitoring-wallet");
+
+            if wallet_path.exists() {
+                tracing::debug!(
+                    wallet_path = %wallet_path.display(),
+                    "Removing monitoring wallet"
+                );
+                let _ = tokio::fs::remove_file(&wallet_path).await;
+            }
+            let keys_path = wallet_path.with_extension("keys");
+            if keys_path.exists() {
+                tracing::debug!(
+                    keys_path = %keys_path.display(),
+                    "Removing monitoring wallet keys"
+                );
+                let _ = tokio::fs::remove_file(keys_path).await;
+            }
+
+            let wallet = monero::Wallet::open_or_create(
+                wallet_path.display().to_string(),
+                daemon.clone(),
+                env_config.monero_network,
+                true,
+            )
+            .await
+            .context("Failed to create wallet")?;
+
+            let seed = Seed::from_monero_wallet(&wallet)
+                .await
+                .context("Failed to extract seed from wallet")?;
+
+            (wallet, seed)
         }
     };
 

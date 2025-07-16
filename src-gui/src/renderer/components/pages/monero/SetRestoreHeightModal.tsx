@@ -38,13 +38,12 @@ export default function SetRestoreHeightModal({
 
   const handleRestoreHeight = async () => {
     if (restoreOption === RestoreOption.BlockHeight) {
-      if (typeof restoreHeight === 'number') {
+      if (typeof restoreHeight === "number") {
         await setMoneroRestoreHeight(restoreHeight);
       }
     } else if (restoreOption === RestoreOption.RestoreDate) {
-      const formattedDate = restoreDate?.format('MM-DD-YYYY');
-      if (formattedDate) {
-        await setMoneroRestoreHeight(formattedDate);
+      if (restoreDate) {
+        await setMoneroRestoreHeight(restoreDate.toDate());
       }
     }
   };

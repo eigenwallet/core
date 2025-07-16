@@ -549,13 +549,24 @@ impl Request for GetMoneroMainAddressArgs {
 }
 
 #[typeshare]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Date {
+    #[typeshare(serialized_as = "number")]
+    pub year: u16,
+    #[typeshare(serialized_as = "number")]
+    pub month: u8,
+    #[typeshare(serialized_as = "number")]
+    pub day: u8,
+}
+
+#[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type", content = "height")]
 pub enum SetRestoreHeightArgs {
     #[typeshare(serialized_as = "number")]
     Height(u32),
-    #[typeshare(serialized_as = "string")]
-    Date(String),
+    #[typeshare(serialized_as = "object")]
+    Date(Date),
 }
 
 #[typeshare]
@@ -577,18 +588,9 @@ impl Request for SetRestoreHeightArgs {
         let height = match self {
             SetRestoreHeightArgs::Height(height) => height as u64,
             SetRestoreHeightArgs::Date(date) => {
-                // Parse the date string in MM-DD-YYYY format
-                if date.len() != 10 || &date[2..3] != "-" || &date[5..6] != "-" {
-                    bail!("Date format must be MM-DD-YYYY");
-                }
-                
-                let month_str = &date[0..2];
-                let day_str = &date[3..5];
-                let year_str = &date[6..10];
-                
-                let year: u16 = year_str.parse().context("Invalid year in date")?;
-                let month: u8 = month_str.parse().context("Invalid month in date")?;
-                let day: u8 = day_str.parse().context("Invalid day in date")?;
+                let year: u16 = date.year;
+                let month: u8 = date.month;
+                let day: u8 = date.day;
                 
                 // Validate ranges
                 if month < 1 || month > 12 {
