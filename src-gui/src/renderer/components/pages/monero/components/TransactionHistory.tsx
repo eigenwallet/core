@@ -37,7 +37,7 @@ export default function TransactionHistory({
 
   return (
     <>
-      <Typography variant="h4">Transaction History</Typography>
+      <Typography variant="h5">Transaction History</Typography>
 
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
