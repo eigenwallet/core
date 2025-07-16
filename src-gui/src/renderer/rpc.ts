@@ -576,12 +576,12 @@ export async function resolveApproval<T>(
       "resolve_approval_request",
       { request_id: requestId, accept: accept as object },
     );
-  } catch (error) {
-    throw error;
   } finally {
     // Always refresh the approval list
     await refreshApprovals();
 
+    // Refresh the approval list a few miliseconds later to again
+    // Just to make sure :)
     setTimeout(() => {
       refreshApprovals();
     }, 200);
