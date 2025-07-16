@@ -37,18 +37,6 @@ use bridge::ffi::{self, TransactionHistory};
 use typeshare::typeshare;
 use uuid::Uuid;
 
-/// Error type for user cancellation
-#[derive(Debug, Clone)]
-pub struct UserCancelledError;
-
-impl std::fmt::Display for UserCancelledError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Transaction cancelled by user")
-    }
-}
-
-impl std::error::Error for UserCancelledError {}
-
 /// Approval callback for transactions
 /// The callback receives (txid, amount, fee) and returns whether to proceed with the transaction
 pub type ApprovalCallback = Arc<
