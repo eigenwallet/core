@@ -16,7 +16,7 @@ export function piconerosToXmr(piconeros: number): number {
 }
 
 export function xmrToPiconeros(xmr: number): number {
-  return xmr * 1000000000000;
+  return Math.ceil(xmr * 1000000000000);
 }
 
 export function isXmrAddressValid(address: string, stagenet: boolean) {

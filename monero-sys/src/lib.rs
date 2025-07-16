@@ -37,18 +37,6 @@ use bridge::ffi::{self, TransactionHistory};
 use typeshare::typeshare;
 use uuid::Uuid;
 
-/// Error type for user cancellation
-#[derive(Debug, Clone)]
-pub struct UserCancelledError;
-
-impl std::fmt::Display for UserCancelledError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Transaction cancelled by user")
-    }
-}
-
-impl std::error::Error for UserCancelledError {}
-
 /// Approval callback for transactions
 /// The callback receives (txid, amount, fee) and returns whether to proceed with the transaction
 pub type ApprovalCallback = Arc<
@@ -88,13 +76,13 @@ pub struct Wallet {
     wallet: FfiWallet,
     manager: WalletManager,
     call_receiver: UnboundedReceiver<Call>,
-    pending_transactions: Arc<Mutex<HashMap<Uuid, PendingTransaction>>>,
+    pending_transactions: HashMap<Uuid, PendingTransaction>,
 }
 
 /// A function call to be executed on the wallet and a channel to send the result back.
 struct Call {
     function: Box<
-        dyn FnOnce(&mut FfiWallet, &Arc<Mutex<HashMap<Uuid, PendingTransaction>>>) -> AnyBox + Send,
+        dyn FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> AnyBox + Send,
     >,
     sender: oneshot::Sender<AnyBox>,
 }
@@ -371,7 +359,7 @@ impl WalletHandle {
     /// Call a function on the wallet with access to pending transactions storage.
     pub async fn call_with_pending_txs<F, R>(&self, function: F) -> R
     where
-        F: FnOnce(&mut FfiWallet, &Arc<Mutex<HashMap<Uuid, PendingTransaction>>>) -> R
+        F: FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> R
             + Send
             + 'static,
         R: Sized + Send + 'static,
@@ -823,7 +811,7 @@ impl WalletHandle {
 
                 // Generate UUID and store it in the pending transactions map
                 let uuid = Uuid::new_v4();
-                pending_txs.lock().unwrap().insert(uuid, pending_tx);
+                pending_txs.insert(uuid, pending_tx);
 
                 Ok::<(Uuid, String, monero::Amount, monero::Amount), anyhow::Error>((uuid, txid, amount, fee))
             })
@@ -837,7 +825,7 @@ impl WalletHandle {
             let receipt = self
                 .call_with_pending_txs(move |wallet, pending_txs| {
                     let mut pending_tx =
-                        pending_txs.lock().unwrap().remove(&uuid).ok_or_else(|| {
+                        pending_txs.remove(&uuid).ok_or_else(|| {
                             anyhow!("Pending transaction not found for UUID: {}", uuid)
                         })?;
 
@@ -852,7 +840,7 @@ impl WalletHandle {
             // Dispose the pending transaction without publishing
             self.call_with_pending_txs(move |wallet, pending_txs| {
                 let pending_tx =
-                    pending_txs.lock().unwrap().remove(&uuid).ok_or_else(|| {
+                    pending_txs.remove(&uuid).ok_or_else(|| {
                         anyhow!("Pending transaction not found for UUID: {}", uuid)
                     })?;
 
@@ -939,13 +927,13 @@ impl Wallet {
             wallet,
             manager,
             call_receiver,
-            pending_transactions: Arc::new(Mutex::new(HashMap::new())),
+            pending_transactions: HashMap::new(),
         }
     }
 
     fn run(&mut self) {
         while let Some(call) = self.call_receiver.blocking_recv() {
-            let result = (call.function)(&mut self.wallet, &self.pending_transactions);
+            let result = (call.function)(&mut self.wallet, &mut self.pending_transactions);
 
             // TODO: Do not panic here
             call.sender
