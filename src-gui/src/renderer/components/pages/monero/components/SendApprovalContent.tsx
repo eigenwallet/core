@@ -3,11 +3,9 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button,
   Typography,
   Box,
   Divider,
-  CircularProgress,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
@@ -15,11 +13,11 @@ import { resolveApproval } from "renderer/rpc";
 import { usePendingSendMoneroApproval } from "store/hooks";
 import { PiconeroAmount } from "renderer/components/other/Units";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
 export default function SendApprovalContent() {
   const pendingApprovals = usePendingSendMoneroApproval();
   const [timeLeft, setTimeLeft] = useState<number>(0);
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const approval = pendingApprovals[0]; // Handle the first approval request
 
@@ -45,29 +43,13 @@ export default function SendApprovalContent() {
   }, [approval]);
 
   const handleApprove = async () => {
-    if (!approval) return;
-
-    setIsProcessing(true);
-    try {
-      await resolveApproval(approval.request_id, true);
-    } catch (error) {
-      console.error("Failed to approve Monero transaction:", error);
-    } finally {
-      setIsProcessing(false);
-    }
+    if (!approval) throw new Error("No approval request available");
+    await resolveApproval(approval.request_id, true);
   };
 
   const handleReject = async () => {
-    if (!approval) return;
-
-    setIsProcessing(true);
-    try {
-      await resolveApproval(approval.request_id, false);
-    } catch (error) {
-      console.error("Failed to reject Monero transaction:", error);
-    } finally {
-      setIsProcessing(false);
-    }
+    if (!approval) throw new Error("No approval request available");
+    await resolveApproval(approval.request_id, false);
   };
 
   if (!approval) {
@@ -135,28 +117,28 @@ export default function SendApprovalContent() {
       </DialogContent>
 
       <DialogActions sx={{ p: 3, gap: 1 }}>
-        <Button
-          onClick={handleReject}
-          disabled={isProcessing || timeLeft === 0}
+        <PromiseInvokeButton
+          onInvoke={handleReject}
+          disabled={timeLeft === 0}
           variant="outlined"
           color="error"
-          startIcon={
-            isProcessing ? <CircularProgress size={16} /> : <CloseIcon />
-          }
+          startIcon={<CloseIcon />}
+          displayErrorSnackbar={true}
+          requiresContext={false}
         >
           Reject
-        </Button>
-        <Button
-          onClick={handleApprove}
-          disabled={isProcessing || timeLeft === 0}
+        </PromiseInvokeButton>
+        <PromiseInvokeButton
+          onInvoke={handleApprove}
+          disabled={timeLeft === 0}
           variant="contained"
           color="primary"
-          startIcon={
-            isProcessing ? <CircularProgress size={16} /> : <CheckIcon />
-          }
+          startIcon={<CheckIcon />}
+          displayErrorSnackbar={true}
+          requiresContext={false}
         >
-          Approve & Send
-        </Button>
+          Send
+        </PromiseInvokeButton>
       </DialogActions>
     </>
   );
