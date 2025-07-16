@@ -19,7 +19,7 @@ export default function MoneroWalletPage() {
     initializeMoneroWallet();
   }, []);
 
-  const isLoading = useAppSelector((state) => state.wallet?.state.isLoading);
+  const isLoading = balance === null
 
   if (isLoading) {
     return <WalletPageLoadingState />;

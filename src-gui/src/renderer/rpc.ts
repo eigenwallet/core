@@ -484,7 +484,6 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
 
 // Wallet management functions that handle Redux dispatching
 export async function initializeMoneroWallet() {
-  store.dispatch(setIsLoading(true));
   try {
     const [
       addressResponse,
@@ -502,9 +501,6 @@ export async function initializeMoneroWallet() {
     store.dispatch(setBalance(balanceResponse));
     store.dispatch(setSyncProgress(syncProgressResponse));
     store.dispatch(setHistory(historyResponse));
-    if (balanceResponse.unlocked_balance !== null) {
-      store.dispatch(setIsLoading(false));
-    }
   } catch (err) {
     console.error("Failed to fetch Monero wallet data:", err);
   }
