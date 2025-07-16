@@ -16,7 +16,9 @@
  *     - CXX doesn't support static methods as yet, so we define free functions here that
  *       simply call the appropriate static methods.
  *     - CXX also doesn't support returning strings by value from C++ to Rust, so we wrap
- *       those in a unique_ptr.
+ *       those in a unique_ptr/shared_ptr.
+ *       ATTENTION: unique_ptr will delete the object on drop,
+ *       verify that you actually OWN the object before wrapping it in a unique_ptr. Use shared_ptr otherwise
  *     - CXX doesn't support optional arguments, so we make thin wrapper functions that either
  *       take the argument or not.
  *
@@ -263,17 +265,6 @@ namespace Monero
         const std::string &s)
     {
         v.push_back(s);
-    }
-
-    /**
-     * Get the transaction history.
-     */
-    inline std::unique_ptr<TransactionHistory> walletHistory(Wallet* wallet)
-    {
-        if (wallet == nullptr) {
-            return nullptr;
-        }
-        return std::unique_ptr<TransactionHistory>(wallet->history());
     }
 
     /**

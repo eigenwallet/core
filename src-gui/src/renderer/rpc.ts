@@ -505,33 +505,6 @@ export async function initializeMoneroWallet() {
   }
 }
 
-export async function refreshMoneroWallet() {
-  store.dispatch(setRefreshing(true));
-
-  try {
-    const [
-      addressResponse,
-      balanceResponse,
-      syncProgressResponse,
-      historyResponse,
-    ] = await Promise.all([
-      getMoneroMainAddress(),
-      getMoneroBalance(),
-      getMoneroSyncProgress(),
-      getMoneroHistory(),
-    ]);
-
-    store.dispatch(setMainAddress(addressResponse.address));
-    store.dispatch(setBalance(balanceResponse));
-    store.dispatch(setSyncProgress(syncProgressResponse));
-    store.dispatch(setHistory(historyResponse));
-  } catch (err) {
-    console.error("Failed to refresh Monero wallet data:", err);
-  } finally {
-    store.dispatch(setRefreshing(false));
-  }
-}
-
 export async function sendMoneroTransaction(
   args: SendMoneroArgs,
 ): Promise<void> {
@@ -547,8 +520,6 @@ export async function sendMoneroTransaction(
     store.dispatch(setHistory(newHistory));
   } catch (err) {
     console.error("Failed to send Monero:", err);
-  } finally {
-    // Do nothing
   }
 }
 
@@ -577,12 +548,12 @@ export async function resolveApproval<T>(
       "resolve_approval_request",
       { request_id: requestId, accept: accept as object },
     );
-  } catch (error) {
-    throw error;
   } finally {
     // Always refresh the approval list
     await refreshApprovals();
 
+    // Refresh the approval list a few miliseconds later to again
+    // Just to make sure :)
     setTimeout(() => {
       refreshApprovals();
     }, 200);
