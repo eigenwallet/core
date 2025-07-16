@@ -1485,7 +1485,7 @@ impl FfiWallet {
     /// Set a listener to the wallet.
     pub fn set_single_listener(&mut self, listener: Box<dyn WalletEventListener>) {
         let cpp_listener = bridge::wallet_listener::create_rust_listener_adapter(
-            bridge::make_custom_listener(listener),
+            WalletListenerBox::new_boxed(listener),
         ) as *mut ffi::WalletListener;
 
         unsafe {
