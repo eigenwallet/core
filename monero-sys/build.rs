@@ -1,5 +1,6 @@
 use cmake::Config;
 use std::fs;
+use std::io::Write as _;
 use std::path::Path;
 
 /// Represents a patch to be applied to the Monero codebase
@@ -105,9 +106,31 @@ fn main() {
     // Apply embedded patches before building
     apply_embedded_patches().expect("Failed to apply embedded patches");
 
+    // flush std::out
+    std::io::stdout().flush().unwrap();
+    std::io::stderr().flush().unwrap();
+
     let contrib_depends_dir = std::env::current_dir()
         .expect("current directory to be accessible")
         .join("monero_c/contrib/depends");
+
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
+    let out_dir = Path::new(&out_dir);
+    let out_dir_depends = out_dir.join("depends");
+
+    if fs::exists(&out_dir_depends).unwrap_or(false) {
+        println!("cargo:debug=Detected depends directory in OUT_DIR, skipping copying");
+    } else {
+        // Copy the whole contrib/depends directory recursively to the out_dir/depends directory
+        fs_extra::copy_items(
+            &[&contrib_depends_dir],
+            &out_dir_depends,
+            &fs_extra::dir::CopyOptions::new().copy_inside(true),
+        )
+        .expect("Failed to copy contrib/depends to target dir");
+    }
+
+    let contrib_depends_dir = out_dir_depends;
 
     let mut target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
     target = match target.as_str() {
