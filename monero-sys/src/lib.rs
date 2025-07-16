@@ -172,6 +172,8 @@ pub enum TransactionDirection {
 }
 
 /// A wrapper around a pending transaction.
+///
+/// Safety: do _not_ implement copy, send, sync, ...
 pub struct PendingTransaction(*mut ffi::PendingTransaction);
 
 /// A struct containing transaction history.
@@ -179,13 +181,6 @@ pub struct TransactionHistoryHandle(*mut TransactionHistory);
 
 /// A struct containing a single transaction.
 pub struct TransactionInfoHandle(*mut ffi::TransactionInfo);
-
-// Safety: The underlying C++ object is thread-safe for immutable access once obtained from TransactionHistory.
-unsafe impl Send for TransactionHistoryHandle {}
-unsafe impl Sync for TransactionHistoryHandle {}
-
-unsafe impl Send for TransactionInfoHandle {}
-unsafe impl Sync for TransactionInfoHandle {}
 
 impl WalletHandle {
     /// Open an existing wallet or create a new one, with a random seed.
@@ -775,7 +770,7 @@ impl WalletHandle {
     /// Creates pending transaction, gets approval, then publishes or disposes based on approval.
     /// Return `None` if the transaction is not published, `Some(receipt)` if it is published.
     /// If the amount is `None`, the transaction will be a sweep (whole balance)
-    /// 
+    ///
     /// Returns (TxReceipt, amount, fee) if the transaction is published, `None` otherwise.
     pub async fn transfer_with_approval(
         &self,
@@ -813,7 +808,9 @@ impl WalletHandle {
                 let uuid = Uuid::new_v4();
                 pending_txs.insert(uuid, pending_tx);
 
-                Ok::<(Uuid, String, monero::Amount, monero::Amount), anyhow::Error>((uuid, txid, amount, fee))
+                Ok::<(Uuid, String, monero::Amount, monero::Amount), anyhow::Error>((
+                    uuid, txid, amount, fee,
+                ))
             })
             .await?;
 
@@ -1179,7 +1176,8 @@ impl WalletManager {
     fn close_wallet(&mut self, wallet: &mut FfiWallet) -> anyhow::Result<()> {
         tracing::info!(wallet=%wallet.filename(), "Closing wallet");
 
-        // Safety: we know we have a valid, unique pointer to the wallet
+        // Safety: we know we have a valid, unique pointer to the wallet and are on the same thread it
+        // was created on.
         let success = unsafe { self.inner.pinned().closeWallet(wallet.inner.inner, true) }
             .context("Failed to close wallet: Ffi call failed with exception")?;
 
@@ -1209,6 +1207,7 @@ impl WalletManager {
         let network_type = network_type.into();
         let kdf_rounds = Self::DEFAULT_KDF_ROUNDS;
 
+        // Safety: we pass a null pointer which is safe because we don't use it.
         let wallet_pointer = unsafe {
             self.inner.pinned().openWallet(
                 &path,
@@ -1265,14 +1264,11 @@ impl WalletManager {
         let_cxx_string!(path = path);
         let_cxx_string!(password = password);
 
-        unsafe {
-            self.inner
-                .inner
-                .as_ref()
-                .expect("wallet manager pointer not to be null")
-                .verifyWalletPassword(&path, &password, false, Self::DEFAULT_KDF_ROUNDS)
-                .context("Failed to verify wallet password: FFI call failed with exception")
-        }
+        // Safety: we know we have a valid, unique pointer to the wallet manager and are on its original thread.
+        self.inner
+            .deref()
+            .verifyWalletPassword(&path, &password, false, Self::DEFAULT_KDF_ROUNDS)
+            .context("Failed to verify wallet password: FFI call failed with exception")
     }
 }
 
@@ -1286,6 +1282,7 @@ impl RawWalletManager {
     /// the ffi interface mostly takes a Pin<&mut T> but
     /// we haven't figured out how to hold that in the struct.
     pub fn pinned(&mut self) -> Pin<&mut ffi::WalletManager> {
+        // Safety: we know it's a valid pointer on the original thread, we check for null pointers.
         unsafe {
             Pin::new_unchecked(
                 self.inner
@@ -1293,6 +1290,15 @@ impl RawWalletManager {
                     .expect("wallet manager pointer not to be null"),
             )
         }
+    }
+}
+
+impl Deref for RawWalletManager {
+    type Target = ffi::WalletManager;
+
+    fn deref(&self) -> &Self::Target {
+        // Safety: we know it's a valid pointer on the original thread, we check for null pointers.
+        unsafe { self.inner.as_ref().expect("wallet manager not to be null") }
     }
 }
 
@@ -1480,13 +1486,15 @@ impl FfiWallet {
 
     /// Set a listener to the wallet.
     pub fn set_single_listener(&mut self, listener: Box<dyn WalletEventListener>) {
+        let cpp_listener = bridge::wallet_listener::create_rust_listener_adapter(
+            bridge::make_custom_listener(listener),
+        ) as *mut ffi::WalletListener;
+
         unsafe {
-            let listener = bridge::wallet_listener::create_rust_listener_adapter(
-                bridge::make_custom_listener(listener),
-            ) as *mut bridge::ffi::WalletListener;
+            // Safety: we know that create_rust_listener_adapter returns a valid pointer to a c++ object extending Monero::WalletListener.
             self.inner
                 .pinned()
-                .setListener(listener)
+                .setListener(cpp_listener)
                 .expect("Shouldn't panic");
         }
     }
@@ -2106,16 +2114,38 @@ impl FfiWallet {
     }
 
     /// Get the transaction history.
-    fn history(&self) -> Vec<TransactionInfo> {
-        let mut history_ptr = unsafe { ffi::walletHistory(self.inner.inner) };
+    /// Returns an empty vector if the transaction history is missing.
+    fn history(&mut self) -> Vec<TransactionInfo> {
+        let history_ptr = self
+            .inner
+            .pinned()
+            .history()
+            .context("Failed to get transaction history: FFI call failed with exception");
 
-        // Refresh the history to match the wallet cache
-        let _ = history_ptr.pin_mut().refresh();
+        let Ok(history_ptr) = history_ptr else {
+            tracing::error!(error=%history_ptr.unwrap_err(), "Failed to get transaction history, proceeding with empty history");
+            return vec![];
+        };
 
-        let history_handle = TransactionHistoryHandle(history_ptr.into_raw());
+        let history = unsafe {
+            // Safety: the pointer is valid as long as the wallet is alive (which is is when we called this a millisecond ago)
+            Pin::new_unchecked(
+                history_ptr
+                    // Safety: this pointer isn't exclusive, however this is how we're supposed to do this according to the api
+                    .as_mut()
+                    .expect("history pointer to not be null after we just checked"),
+            )
+        };
+        // Ignore result, we'll proceed anyway
+        let _ = history
+            .refresh()
+            .context("Failed to refresh transaction history: FFI call failed with exception")
+            .inspect_err(|e| tracing::error!(error=%e,"Failed to refresh transaction history"));
+
+        let history_handle = TransactionHistoryHandle(history_ptr);
         let count = history_handle.count();
 
-        let mut transactions = Vec::with_capacity(count as usize);
+        let mut transactions = Vec::new();
         for i in 0..count {
             if let Some(tx_info_handle) = history_handle.transaction(i) {
                 if let Some(serialized_tx) = tx_info_handle.serialize() {
@@ -2130,6 +2160,7 @@ impl FfiWallet {
     /// Always call this before dropping a pending transaction object,
     /// otherwise we leak memory.
     fn dispose_transaction(&mut self, tx: PendingTransaction) {
+        // Safety: we pass a valid pointer and we verified it's not used again since PendingTransaction is moved into this function
         unsafe {
             self.inner
                 .pinned()
@@ -2231,9 +2262,6 @@ impl FfiWallet {
         Ok(signature)
     }
 }
-
-/// Safety: We check that it's never accessed outside the homethread at runtime.
-unsafe impl Send for RawWalletManager {}
 
 impl PendingTransaction {
     /// Return `Ok` when the pending transaction is ok, otherwise return the error.
@@ -2343,9 +2371,6 @@ impl PartialEq for SyncProgress {
     }
 }
 
-/// Safety: We check that it's never accessed outside the homethread at runtime.
-unsafe impl Send for RawWallet {}
-
 impl RawWallet {
     fn new(inner: *mut ffi::Wallet) -> Self {
         Self { inner }
@@ -2353,6 +2378,7 @@ impl RawWallet {
 
     /// Convenience method for getting a pinned reference to the inner (c++) wallet.
     fn pinned(&mut self) -> Pin<&mut ffi::Wallet> {
+        // Safety: we know this is a valid pointer in the original thread
         unsafe { Pin::new_unchecked(self.inner.as_mut().expect("wallet pointer not to be null")) }
     }
 }
@@ -2363,12 +2389,14 @@ impl Deref for RawWallet {
     type Target = ffi::Wallet;
 
     fn deref(&self) -> &ffi::Wallet {
+        // Safety: we know this is a valid pointer in the original thread
         unsafe { self.inner.as_ref().expect("wallet pointer not to be null") }
     }
 }
 
 impl PendingTransaction {
     fn pinned(&mut self) -> Pin<&mut ffi::PendingTransaction> {
+        // Safety: we know this is a valid pointer in the original thread
         unsafe {
             Pin::new_unchecked(
                 self.0
@@ -2383,6 +2411,7 @@ impl Deref for PendingTransaction {
     type Target = ffi::PendingTransaction;
 
     fn deref(&self) -> &ffi::PendingTransaction {
+        // Safety: we know this is a valid pointer in the original thread
         unsafe {
             self.0
                 .as_ref()
@@ -2394,16 +2423,12 @@ impl Deref for PendingTransaction {
 impl TransactionHistoryHandle {
     /// Get the number of transactions in the history.
     pub fn count(&self) -> i32 {
-        // Safety: self.0 is a valid *mut TransactionHistory
-        // The bridged count() method is safe to call on a valid reference.
-        unsafe { self.0.as_ref().unwrap().count() }
+        self.deref().count()
     }
 
     /// Get a transaction from the history by index.
     pub fn transaction(&self, index: i32) -> Option<TransactionInfoHandle> {
-        // Safety: self.0 is a valid *mut TransactionHistory.
-        // The bridged transaction() method returns a raw pointer, which we immediately wrap.
-        let tx_info_ptr = unsafe { self.0.as_ref().unwrap().transaction(index) };
+        let tx_info_ptr = self.deref().transaction(index);
 
         if tx_info_ptr.is_null() {
             None
@@ -2414,67 +2439,84 @@ impl TransactionHistoryHandle {
     }
 }
 
+impl Deref for TransactionHistoryHandle {
+    type Target = ffi::TransactionHistory;
+
+    fn deref(&self) -> &Self::Target {
+        // Safety: we know this is a valid pointer in the original thread
+        unsafe {
+            self.0
+                .as_ref()
+                .expect("transaction history pointer not to be null")
+        }
+    }
+}
+
 impl TransactionInfoHandle {
     /// Get the amount of the transaction.
-    pub fn amount(&self) -> Option<u64> {
-        // Safety: self.0 is a valid *mut ffi::TransactionInfo
-        // The bridged method is safe to call on a valid reference.
-        unsafe { self.0.as_ref().map(|info| info.amount()) }
+    pub fn amount(&self) -> u64 {
+        self.deref().amount()
     }
 
     /// Get the fee of the transaction.
-    pub fn fee(&self) -> Option<u64> {
-        // Safety: self.0 is a valid *mut ffi::TransactionInfo
-        // The bridged method is safe to call on a valid reference.
-        unsafe { self.0.as_ref().map(|info| info.fee()) }
+    pub fn fee(&self) -> u64 {
+        self.deref().fee()
     }
 
     /// Get the confirmations of the transaction.
-    pub fn confirmations(&self) -> Option<u64> {
-        // Safety: self.0 is a valid *mut ffi::TransactionInfo
-        // The bridged method is safe to call on a valid reference.
-        unsafe { self.0.as_ref().map(|info| info.confirmations()) }
+    pub fn confirmations(&self) -> u64 {
+        self.deref().confirmations()
     }
 
     /// Get the hash of the transaction.
-    pub fn hash(&self) -> Option<String> {
-        // Safety: self.0 is a valid *mut ffi::TransactionInfo
-        // The bridged method is safe to call on a valid reference.
-        unsafe {
-            self.0.as_ref().map(|info| {
-                let hash_ptr = ffi::transactionInfoHash(info);
-                hash_ptr.as_ref().map(|s| s.to_string()).unwrap_or_default()
-            })
-        }
+    pub fn hash(&self) -> String {
+        ffi::transactionInfoHash(self.deref()).to_string()
     }
 
     /// Get the direction of the transaction.
-    pub fn direction(&self) -> Option<TransactionDirection> {
-        // Safety: self.0 is a valid *mut ffi::TransactionInfo
-        // The bridged method is safe to call on a valid reference.
-        unsafe {
-            self.0.as_ref().and_then(|info| match info.direction() {
-                0 => Some(TransactionDirection::In),
-                1 => Some(TransactionDirection::Out),
-                _ => None,
-            })
+    pub fn direction(&self) -> Result<TransactionDirection> {
+        match self.deref().direction() {
+            0 => Ok(TransactionDirection::In),
+            1 => Ok(TransactionDirection::Out),
+            otherwise => bail!(
+                "Invalid transaction direction received from ffi call: `{}`",
+                otherwise
+            ),
         }
     }
 
     pub fn serialize(&self) -> Option<TransactionInfo> {
-        let fee = self.fee()?;
-        let amount = self.amount()?;
-        let block_height = self.confirmations()?;
-        let tx_hash = self.hash()?;
-        let direction = self.direction()?;
+        let fee = self.fee();
+        let amount = self.amount();
+        let confirmations = self.confirmations();
+        let tx_hash = self.hash();
+        let direction = self
+            .direction()
+            .inspect_err(
+                |e| tracing::error!(error=%e, %tx_hash, "Failed to get direction of transaction"),
+            )
+            .ok()?;
 
         Some(TransactionInfo {
             fee: monero::Amount::from_pico(fee),
             amount: monero::Amount::from_pico(amount),
-            confirmations: block_height,
+            confirmations,
             tx_hash,
             direction,
         })
+    }
+}
+
+impl Deref for TransactionInfoHandle {
+    type Target = ffi::TransactionInfo;
+
+    fn deref(&self) -> &Self::Target {
+        // Safety: we know this is a valid pointer in the original thread
+        unsafe {
+            self.0
+                .as_ref()
+                .expect("transaction info pointer not to be null")
+        }
     }
 }
 
@@ -2491,15 +2533,15 @@ impl WalletHandleListener {
 }
 
 impl WalletEventListener for WalletHandleListener {
-    fn on_money_spent(&self, _txid: &str, _amount: u64) { }
+    fn on_money_spent(&self, _txid: &str, _amount: u64) {}
 
-    fn on_money_received(&self, _txid: &str, _amount: u64) { }
+    fn on_money_received(&self, _txid: &str, _amount: u64) {}
 
-    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) { }
+    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {}
 
-    fn on_new_block(&self, _height: u64) { }
+    fn on_new_block(&self, _height: u64) {}
 
-    fn on_updated(&self) { }
+    fn on_updated(&self) {}
 
     fn on_refreshed(&self) {
         // When the wallet finishes refreshing, we start the refresh thread again.
@@ -2511,7 +2553,7 @@ impl WalletEventListener for WalletHandleListener {
         });
     }
 
-    fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) { }
+    fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) {}
 
     fn on_pool_tx_removed(&self, _txid: &str) {}
 }
