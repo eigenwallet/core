@@ -497,25 +497,17 @@ fn apply_embedded_patches() -> Result<(), Box<dyn std::error::Error>> {
             let current = fs::read_to_string(&target_path)
                 .map_err(|e| format!("Failed to read {}: {}", file_path, e))?;
 
-            let patched = match diffy::apply(&current, &patch) {
-                Ok(p) => p,
-                Err(_) => {
-                    // Try reversing the patch – if that succeeds the file already contains the changes
-                    if diffy::apply(&current, &patch.reverse()).is_ok() {
-                        println!(
-                            "cargo:warning=Patch for {} already applied – skipping",
-                            file_path
-                        );
-                        continue;
-                    } else {
-                        return Err(format!(
-                            "Failed to apply patch to {}: hunk mismatch (not already applied)",
-                            file_path
-                        )
-                        .into());
-                    }
-                }
-            };
+            // Check if patch is already applied by trying to reverse it
+            if diffy::apply(&current, &patch.reverse()).is_ok() {
+                println!(
+                    "cargo:warning=Patch for {} already applied – skipping",
+                    file_path
+                );
+                continue;
+            }
+
+            let patched = diffy::apply(&current, &patch)
+                .map_err(|e| format!("Failed to apply patch to {}: {}", file_path, e))?;
 
             fs::write(&target_path, patched)
                 .map_err(|e| format!("Failed to write {}: {}", file_path, e))?;
