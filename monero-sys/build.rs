@@ -137,7 +137,7 @@ fn main() {
         "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu".to_string(),
         "armv7-linux-androideabi" => "armv7a-linux-androideabi".to_string(),
         "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32".to_string(),
-        "aarch64-apple-ios-sim" => "aarch64-apple-ios".to_string(),
+        "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
         _ => target,
     };
     println!("cargo:warning=Building for target: {}", target);
@@ -146,6 +146,7 @@ fn main() {
         "x86_64-apple-darwin"
         | "aarch64-apple-darwin"
         | "aarch64-apple-ios"
+        | "aarch64-apple-iossimulator"
         | "x86_64-unknown-linux-gnu"
         | "aarch64-linux-gnu"
         | "aarch64-linux-android"
