@@ -107,7 +107,12 @@ export default function SendTransactionContent({
 
       return sendMoneroTransaction({
         address: sendAddress,
-        amount: { type: "Specific", amount: xmrToPiconeros(moneroAmount) },
+        amount: {
+          type: "Specific",
+          // Floor the amount to avoid rounding decimal amounts
+          // The amount is in piconeros, so it NEEDS to be a whole number
+          amount: Math.floor(xmrToPiconeros(moneroAmount)),
+        },
       });
     }
   };
