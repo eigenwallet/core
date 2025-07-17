@@ -580,7 +580,7 @@ async fn init_monero_wallet(
     monero_daemon_address: String,
     env_config: EnvConfig,
     tauri_handle: Option<TauriHandle>,
-) -> Result<Arc<Wallets>> {
+) -> Result<Arc<monero::Wallets>> {
     let network = env_config.monero_network;
     let wallet_dir = data_dir.join("monero").join("monero-data");
 
