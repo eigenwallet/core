@@ -349,8 +349,7 @@ public:
     }
 
     void updated() override
-        { 
-            std::cout << "WalletListener::Updated" << std::endl;
+        {
             if (on_updated_) {
             auto* updated = reinterpret_cast<void(*)()>(on_updated_);
             updated(); 

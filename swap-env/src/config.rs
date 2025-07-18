@@ -265,7 +265,7 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
                 .to_string(),
         )
         .interact_text()?;
-    let data_dir = data_dir.as_str().parse()?;
+    let data_dir: PathBuf = data_dir.as_str().parse()?;
 
     let target_block = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("How fast should your Bitcoin transactions be confirmed? Your transaction fee will be calculated based on this target. Hit return to use default")
@@ -379,7 +379,7 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
     println!();
 
     Ok(Config {
-        data: Data { dir: data_dir },
+        data: Data { dir: data_dir},
         network: Network {
             listen: listen_addresses,
             rendezvous_point: rendezvous_points, // keeping the singular key name for backcompat
