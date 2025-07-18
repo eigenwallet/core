@@ -362,11 +362,12 @@ export default function SeedSelectionDialog() {
       </DialogContent>
       <DialogActions sx={{ justifyContent: "space-between" }}>
         <PromiseInvokeButton
-          variant="outlined"
+          variant="text"
           onInvoke={Legacy}
           requiresContext={false}
+          color="inherit"
         >
-          Legacy
+          No wallet (Legacy)
         </PromiseInvokeButton>
         <PromiseInvokeButton
           onInvoke={accept}
