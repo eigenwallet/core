@@ -183,21 +183,18 @@ impl TauriWalletListener {
 
 impl WalletEventListener for TauriWalletListener {
     fn on_money_spent(&self, txid: &str, amount: u64) {
-        tracing::debug!("money_spent: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
         self.save_wallet();
     }
 
     fn on_money_received(&self, txid: &str, amount: u64) {
-        tracing::debug!("money_received: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
         self.save_wallet();
     }
 
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
-        tracing::debug!("unconfirmed_money_received: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
         self.save_wallet();
