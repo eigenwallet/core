@@ -182,19 +182,19 @@ impl TauriWalletListener {
 }
 
 impl WalletEventListener for TauriWalletListener {
-    fn on_money_spent(&self, txid: &str, amount: u64) {
+    fn on_money_spent(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
         self.save_wallet();
     }
 
-    fn on_money_received(&self, txid: &str, amount: u64) {
+    fn on_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
         self.save_wallet();
     }
 
-    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
         self.save_wallet();
