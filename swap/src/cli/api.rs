@@ -507,7 +507,7 @@ impl ContextBuilder {
                 data_dir: data_dir.clone(),
                 log_dir: log_dir.clone(),
             },
-            swap_lock,  
+            swap_lock,
             tasks,
             tauri_handle: self.tauri_handle,
             tor_client: tor,

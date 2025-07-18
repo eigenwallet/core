@@ -191,7 +191,8 @@ pub async fn main() -> Result<()> {
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
             // Connect to Kraken
-            let kraken_price_updates = swap_feed::connect_kraken(config.maker.price_ticker_ws_url.clone())?;
+            let kraken_price_updates =
+                swap_feed::connect_kraken(config.maker.price_ticker_ws_url.clone())?;
 
             let kraken_rate = KrakenRate::new(config.maker.ask_spread, kraken_price_updates);
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
