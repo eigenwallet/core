@@ -67,6 +67,7 @@ struct TauriWalletListener {
     balance_throttle: Throttle<()>,
     history_throttle: Throttle<()>,
     sync_throttle: Throttle<()>,
+    save_throttle: Throttle<()>,
 }
 
 impl TauriWalletListener {
@@ -140,10 +141,23 @@ impl TauriWalletListener {
             }
         };
 
+        let save_job = {
+            let wallet = wallet.clone();
+            let rt = rt_handle.clone();
+            move |()| {
+                let wallet = wallet.clone();
+                let rt = rt.clone();
+                rt.spawn(async move {
+                    wallet.store("").await;
+                });
+            }
+        };
+
         Self {
             balance_throttle: throttle(balance_job, Duration::from_millis(2000)),
             history_throttle: throttle(history_job, Duration::from_millis(2000)),
             sync_throttle: throttle(sync_job, Duration::from_millis(2000)),
+            save_throttle: throttle(save_job, Duration::from_millis(10000)),
         }
     }
 
@@ -158,6 +172,10 @@ impl TauriWalletListener {
     fn send_sync_progress(&self) {
         self.sync_throttle.call(());
     }
+
+    fn save_wallet(&self) {
+        self.save_throttle.call(());
+    }
 }
 
 impl WalletEventListener for TauriWalletListener {
@@ -165,18 +183,21 @@ impl WalletEventListener for TauriWalletListener {
         tracing::debug!("money_spent: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
+        self.save_wallet();
     }
 
     fn on_money_received(&self, txid: &str, amount: u64) {
         tracing::debug!("money_received: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
+        self.save_wallet();
     }
 
     fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
         tracing::debug!("unconfirmed_money_received: {} {}", txid, amount);
         self.send_balance_update();
         self.send_history_update();
+        self.save_wallet();
     }
 
     fn on_new_block(&self, _height: u64) {
@@ -193,6 +214,7 @@ impl WalletEventListener for TauriWalletListener {
         //self.wallet.start_refresh_thread();
         self.send_balance_update();
         self.send_history_update();
+        self.save_wallet();
     }
 
     fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) {

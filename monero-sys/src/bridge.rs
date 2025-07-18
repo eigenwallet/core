@@ -120,6 +120,9 @@ pub mod ffi {
             store: bool,
         ) -> Result<bool>;
 
+        /// Store the wallet state.
+        fn store(self: Pin<&mut Wallet>, path: &CxxString) -> Result<bool>;
+
         /// Check whether a wallet exists at the given path.
         fn walletExists(self: Pin<&mut WalletManager>, path: &CxxString) -> Result<bool>;
 

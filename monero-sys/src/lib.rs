@@ -555,6 +555,12 @@ impl WalletHandle {
         self.call(move |wallet| wallet.stop()).await
     }
 
+    /// Store the wallet state.
+    pub async fn store(&self, path: &str) {
+        let path = path.to_string();
+        self.call(move |wallet| wallet.store(&path)).await
+    }
+
     /// Get the sync progress of the wallet.
     pub async fn sync_progress(&self) -> SyncProgress {
         self.call(move |wallet| wallet.sync_progress()).await
@@ -1625,6 +1631,14 @@ impl FfiWallet {
     /// Stop the background refresh once (doesn't stop background refresh thread).
     fn stop(&mut self) {
         self.inner.pinned().stop();
+    }
+
+    /// Store the wallet state.
+    fn store(&mut self, path: &str) {
+        let_cxx_string!(path = path);
+        self.inner.pinned().store(&path)
+            .context("Failed to store wallet: FFI call failed with exception")
+            .expect("Shouldn't panic");
     }
 
     /// Start the background refresh thread (refreshes every 10 seconds).
