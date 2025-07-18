@@ -7,7 +7,7 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use crate::common::{throttle::throttle, throttle::Throttle};
+use throttle::{throttle, Throttle};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_sys::WalletEventListener;
