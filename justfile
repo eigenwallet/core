@@ -7,9 +7,10 @@ help:
 #	just update_submodules
 #	cd monero-sys/monero && make -j8 release
 
-# Clean the Monero C++ Codebase
-clean_monero_cpp:
-	rm -rf monero-sys/monero/
+# Clean the Monero C++ Codebase and build cache
+clean:
+	cargo clean
+	cd monero-sys && rm -rf monero monero_c
 	just update_submodules
 
 # Builds the Rust bindings for Monero
