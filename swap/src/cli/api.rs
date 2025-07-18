@@ -559,7 +559,7 @@ impl Context {
         tokio::spawn(async move {
             if let Some(monero_manager) = monero_manager {
                 let wallet = monero_manager.main_wallet().await;
-                wallet.store(Some("")).await;
+                wallet.store(None).await;
             }
         });
 
