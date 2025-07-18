@@ -71,6 +71,11 @@ struct TauriWalletListener {
 }
 
 impl TauriWalletListener {
+    const BALANCE_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
+    const HISTORY_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
+    const SYNC_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
+    const SAVE_UPDATE_THROTTLE: Duration = Duration::from_millis(10 * 1000);
+
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
 
@@ -146,16 +151,16 @@ impl TauriWalletListener {
                 let wallet = wallet.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
-                    wallet.store("").await;
+                    wallet.store(None).await;
                 });
             }
         };
 
         Self {
-            balance_throttle: throttle(balance_job, Duration::from_millis(2000)),
-            history_throttle: throttle(history_job, Duration::from_millis(2000)),
-            sync_throttle: throttle(sync_job, Duration::from_millis(2000)),
-            save_throttle: throttle(save_job, Duration::from_millis(10000)),
+            balance_throttle: throttle(balance_job, Self::BALANCE_UPDATE_THROTTLE),
+            history_throttle: throttle(history_job, Self::HISTORY_UPDATE_THROTTLE),
+            sync_throttle: throttle(sync_job, Self::SYNC_UPDATE_THROTTLE),
+            save_throttle: throttle(save_job, Self::SAVE_UPDATE_THROTTLE),
         }
     }
 

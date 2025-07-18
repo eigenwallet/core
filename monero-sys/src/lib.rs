@@ -556,9 +556,10 @@ impl WalletHandle {
     }
 
     /// Store the wallet state.
-    pub async fn store(&self, path: &str) {
-        let path = path.to_string();
-        self.call(move |wallet| wallet.store(&path)).await
+    /// If `path` is `None`, the wallet will be stored in the location it was opened from.
+    pub async fn store(&self, path: Option<&str>) {
+        let path = path.unwrap_or("").to_string();
+        self.call(move |wallet| wallet.store(&path)).await;
     }
 
     /// Get the sync progress of the wallet.
