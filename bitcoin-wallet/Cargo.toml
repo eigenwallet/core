@@ -12,22 +12,16 @@ bitcoin = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
-tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
-tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 derive_builder = "0.20.2"
 moka = { version = "0.12", features = ["sync", "future"] }
 tracing = { workspace = true }
-tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
 anyhow = { workspace = true }
 futures = { workspace = true }
 ecdsa_fun = { version = "0.10", default-features = false, features = ["libsecp_compat", "serde", "adaptor"] }
 rand = { workspace = true }
 rand_chacha = "0.3"
 serde = { workspace = true }
-serde_cbor = "0.11"
 serde_json = { workspace = true }
-serde_with = { version = "1", features = ["macros"] }
 sha2 = "0.10"
 backoff = { version = "0.4", features = ["tokio"] }
 thiserror = { workspace = true }
@@ -35,7 +29,7 @@ typeshare = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 
 electrum-pool = { path = "../electrum-pool" }
-monero-seed = { version = "0.1.0", path = "../monero-seed" }
+swap-seed = { version = "0.1.0", path = "../swap-seed" }
 monero = { workspace = true }
 swap-serde = { path = "../swap-serde" }
 swap-env = { path = "../swap-env" }

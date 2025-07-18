@@ -1,9 +1,6 @@
 use crate::address::revalidate_network;
 use crate::ext::{parse_rpc_error_code, Address, Amount, RpcErrorCode, Transaction};
-use crate::cli::api::tauri_bindings::{
-    TauriBackgroundProgress, TauriBitcoinFullScanProgress, TauriBitcoinSyncProgress, TauriEmitter,
-    TauriHandle,
-};
+use crate::listener::{BitcoinWalletListener, BitcoinFullScanProgress, BitcoinSyncProgress, NoOpListener};
 use crate::timelocks::BlockHeight;
 use anyhow::{anyhow, bail, Context, Result};
 use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
@@ -22,7 +19,7 @@ use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Txid};
 use bitcoin::{ScriptBuf, Weight};
-use monero_seed::Seed;
+use swap_seed::Seed;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -80,8 +77,8 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// We want our transactions to be confirmed after this many blocks
     /// (used for fee estimation).
     target_block: u32,
-    /// The Tauri handle
-    tauri_handle: Option<TauriHandle>,
+    /// The wallet listener for progress updates
+    listener: Arc<dyn BitcoinWalletListener>,
 }
 
 /// This is our wrapper around a bdk electrum client.
@@ -123,8 +120,8 @@ pub struct WalletConfig {
     finality_confirmations: u32,
     target_block: u32,
     sync_interval: Duration,
-    #[builder(default)]
-    tauri_handle: Option<TauriHandle>,
+    #[builder(default = "Arc::new(NoOpListener)")]
+    listener: Arc<dyn BitcoinWalletListener>,
     #[builder(default = "true")]
     use_mempool_space_fee_estimation: bool,
 }
@@ -175,7 +172,7 @@ impl WalletBuilder {
                         connection,
                         config.finality_confirmations,
                         config.target_block,
-                        config.tauri_handle.clone(),
+                        config.listener.clone(),
                         config.use_mempool_space_fee_estimation,
                     )
                     .await
@@ -197,7 +194,7 @@ impl WalletBuilder {
                         config.finality_confirmations,
                         config.target_block,
                         old_wallet_export,
-                        config.tauri_handle.clone(),
+                        config.listener.clone(),
                         config.use_mempool_space_fee_estimation,
                     )
                     .await
@@ -221,7 +218,7 @@ impl WalletBuilder {
                     config.finality_confirmations,
                     config.target_block,
                     None,
-                    config.tauri_handle.clone(),
+                    config.listener.clone(),
                     config.use_mempool_space_fee_estimation,
                 )
                 .await
@@ -441,7 +438,7 @@ impl Wallet {
         target_block: u32,
         sync_interval: Duration,
         env_config: swap_env::env::Config,
-        tauri_handle: Option<TauriHandle>,
+        listener: Arc<dyn BitcoinWalletListener>,
     ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>> {
         // Construct the private key, directory and wallet file for the new (>= 1.0.0) bdk wallet
         let xprivkey = seed.derive_extended_private_key(env_config.bitcoin_network)?;
@@ -470,7 +467,7 @@ impl Wallet {
                 connection()?,
                 finality_confirmations,
                 target_block,
-                tauri_handle,
+                listener,
                 true, // default to true for mempool space fee estimation
             )
             .await
@@ -487,7 +484,7 @@ impl Wallet {
                 finality_confirmations,
                 target_block,
                 export,
-                tauri_handle,
+                listener,
                 true, // default to true for mempool space fee estimation
             )
             .await
@@ -504,7 +501,7 @@ impl Wallet {
         finality_confirmations: u32,
         target_block: u32,
         sync_interval: Duration,
-        tauri_handle: Option<TauriHandle>,
+        listener: Arc<dyn BitcoinWalletListener>,
     ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>> {
         Self::create_new(
             seed.derive_extended_private_key(network)?,
@@ -519,7 +516,7 @@ impl Wallet {
             finality_confirmations,
             target_block,
             None,
-            tauri_handle,
+            listener,
             true, // default to true for mempool space fee estimation
         )
         .await
@@ -536,7 +533,7 @@ impl Wallet {
         finality_confirmations: u32,
         target_block: u32,
         old_wallet: Option<pre_1_0_0_bdk::Export>,
-        tauri_handle: Option<TauriHandle>,
+        listener: Arc<dyn BitcoinWalletListener>,
         use_mempool_space_fee_estimation: bool,
     ) -> Result<Wallet<Persister, Client>>
     where
@@ -575,17 +572,14 @@ impl Wallet {
 
         tracing::info!("Starting initial Bitcoin wallet scan. This might take a while...");
 
-        let progress_handle = tauri_handle.new_background_process_with_initial_progress(
-            TauriBackgroundProgress::FullScanningBitcoinWallet,
-            TauriBitcoinFullScanProgress::Unknown,
-        );
+        let progress_handle = listener.start_full_scan_process();
+        progress_handle.update(BitcoinFullScanProgress::Unknown);
 
-        let progress_handle_clone = progress_handle.clone();
-
+        let progress_handle_clone = progress_handle.clone_handle();
         let callback = sync_ext::InnerSyncCallback::new(move |consumed, total| {
-            progress_handle_clone.update(TauriBitcoinFullScanProgress::Known {
-                current_index: consumed,
-                assumed_total: total,
+            progress_handle_clone.update(BitcoinFullScanProgress::Known {
+                current_index: consumed as u32,
+                assumed_total: total as u32,
             });
         }).chain(sync_ext::InnerSyncCallback::new(move |consumed, total| {
             tracing::debug!(
@@ -641,7 +635,7 @@ impl Wallet {
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator,
             persister: persister.into_arc_mutex_async(),
-            tauri_handle,
+            listener,
             network,
             finality_confirmations,
             target_block,
@@ -657,7 +651,7 @@ impl Wallet {
         mut persister: Persister,
         finality_confirmations: u32,
         target_block: u32,
-        tauri_handle: Option<TauriHandle>,
+        listener: Arc<dyn BitcoinWalletListener>,
         use_mempool_space_fee_estimation: bool,
     ) -> Result<Wallet<Persister, Client>>
     where
@@ -700,7 +694,7 @@ impl Wallet {
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(cached_mempool_fee_estimator),
             persister: persister.into_arc_mutex_async(),
-            tauri_handle,
+            listener,
             network,
             finality_confirmations,
             target_block,
@@ -1077,19 +1071,13 @@ impl Wallet {
     /// Perform a single sync of the wallet with the blockchain
     /// and emit progress events to the UI.
     async fn sync_once(&self) -> Result<()> {
-        let background_process_handle = self
-            .tauri_handle
-            .new_background_process_with_initial_progress(
-                TauriBackgroundProgress::SyncingBitcoinWallet,
-                TauriBitcoinSyncProgress::Unknown,
-            );
-
-        let background_process_handle_clone = background_process_handle.clone();
+        let sync_handle = self.listener.start_sync_process();
+        sync_handle.update(BitcoinSyncProgress::Unknown);
 
         // We want to update the UI as often as possible
+        let sync_handle_clone = sync_handle.clone_handle();
         let tauri_callback = sync_ext::InnerSyncCallback::new(move |consumed, total| {
-            background_process_handle_clone
-                .update(TauriBitcoinSyncProgress::Known { consumed, total });
+            sync_handle_clone.update(BitcoinSyncProgress::Known { consumed, total });
         });
 
         // We throttle the tracing logging to 10% increments
@@ -1102,7 +1090,7 @@ impl Wallet {
         self.chunked_sync_with_callback(tauri_callback.chain(tracing_callback).finalize())
             .await?;
 
-        background_process_handle.finish();
+        sync_handle.finish();
 
         Ok(())
     }

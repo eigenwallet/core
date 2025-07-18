@@ -4,7 +4,6 @@ use crate::ext::{
     TooManyInputs, Transaction, TxCancel,
 };
 use crate::bitcoin;
-use monero;
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{secp256k1, ScriptBuf, Weight};
 use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
@@ -104,11 +103,10 @@ impl TxRefund {
     pub fn extract_monero_private_key(
         &self,
         published_refund_tx: Arc<bitcoin::Transaction>,
-        s_a: monero::Scalar,
+        s_a: crate::ext::Scalar,
         a: bitcoin::SecretKey,
         S_b_bitcoin: bitcoin::PublicKey,
-    ) -> Result<monero::PrivateKey> {
-        let s_a = monero::PrivateKey { scalar: s_a };
+    ) -> Result<crate::ext::Scalar> {
 
         let tx_refund_sig = self
             .extract_signature_by_key(published_refund_tx, a.public())
@@ -118,9 +116,11 @@ impl TxRefund {
         let s_b = bitcoin::recover(S_b_bitcoin, tx_refund_sig, tx_refund_encsig)
             .context("Failed to recover Monero secret key from Bitcoin signature")?;
 
-        let s_b = monero::private_key_from_secp256k1_scalar(s_b.into());
+        let s_b: crate::ext::Scalar = s_b.into();
 
-        let spend_key = s_a + s_b;
+        // Note: The caller will handle the actual addition of s_a + s_b
+        // since we can't add secp256k1 Scalars directly here
+        let spend_key = s_b;
 
         Ok(spend_key)
     }

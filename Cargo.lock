@@ -1149,26 +1149,20 @@ dependencies = [
  "futures",
  "moka",
  "monero",
- "monero-seed",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "reqwest",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
- "serde_cbor",
  "serde_json",
- "serde_with 1.14.0",
  "sha2 0.10.9",
  "swap-env",
+ "swap-seed",
  "swap-serde",
  "thiserror 1.0.69",
  "tokio",
- "tokio-tungstenite",
- "tokio-util",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
  "typeshare",
 ]
 
@@ -9938,6 +9932,25 @@ dependencies = [
  "anyhow",
  "directories-next",
  "tracing",
+]
+
+[[package]]
+name = "swap-seed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bdk",
+ "bitcoin 0.32.6",
+ "libp2p",
+ "monero-seed",
+ "pem",
+ "rand 0.8.5",
+ "serde",
+ "swap-fs",
+ "thiserror 1.0.69",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]

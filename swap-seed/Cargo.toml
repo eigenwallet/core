@@ -1,0 +1,22 @@
+[package]
+name = "swap-seed"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitcoin = { workspace = true }
+bdk = { version = "0.28" }
+monero-seed = { version = "0.1.0", path = "../monero-seed" }
+swap-fs = { path = "../swap-fs" }
+anyhow = { workspace = true }
+pem = { workspace = true }
+rand = { workspace = true }
+zeroize = { workspace = true }
+base64 = { workspace = true }
+libp2p = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
