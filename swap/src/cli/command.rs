@@ -31,7 +31,7 @@ pub const DEFAULT_BITCOIN_CONFIRMATION_TARGET_TESTNET: u16 = 1;
 #[derive(Debug)]
 pub enum ParseResult {
     /// The arguments we were invoked in.
-    Success(Arc<Context>),
+    Success(Arc<RwLock<Context>>),
     /// A flag or command was given that does not need further processing other
     /// than printing the provided message.
     ///
@@ -58,7 +58,7 @@ where
     let json = args.json;
     let is_testnet = args.testnet;
     let data = args.data;
-    let result: Result<Arc<Context>> = match args.cmd {
+    let result: Result<Arc<RwLock<Context>>> = match args.cmd {
         CliCommand::BuyXmr {
             seller: Seller { seller },
             bitcoin,

@@ -94,7 +94,7 @@ macro_rules! tauri_command {
 
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
-    pub context: RwLock<Option<Arc<Context>>>,
+    pub context: RwLock<Option<Arc<RwLock<Context>>>>,
     pub handle: TauriHandle,
 }
 
@@ -109,7 +109,7 @@ impl State {
 
     /// Attempts to retrieve the context
     /// Returns an error if the context is not available
-    fn try_get_context(&self) -> Result<Arc<Context>, String> {
+    fn try_get_context(&self) -> Result<Arc<RwLock<Context>>, String> {
         self.context
             .try_read()
             .map_err(|_| "Context is being modified".to_string())?
@@ -444,7 +444,7 @@ async fn initialize_context(
 
     match context_result {
         Ok(context_instance) => {
-            *context_lock = Some(Arc::new(context_instance));
+            *context_lock = Some(context_instance);
 
             tracing::info!("Context initialized");
 

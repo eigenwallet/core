@@ -281,7 +281,7 @@ impl ContextBuilder {
     }
 
     /// Takes the builder, initializes the context by initializing the wallets and other components and returns the Context.
-    pub async fn build(self) -> Result<Context> {
+    pub async fn build(self) -> Result<Arc<RwLock<Context>>> {
         // This is the data directory for the eigenwallet (wallet files)
         let eigenwallet_data_dir = &eigenwallet_data::new(self.is_testnet)?;
 
@@ -507,7 +507,7 @@ impl ContextBuilder {
                 data_dir: data_dir.clone(),
                 log_dir: log_dir.clone(),
             },
-            swap_lock,  
+            swap_lock,
             tasks,
             tauri_handle: self.tauri_handle,
             tor_client: tor,
@@ -516,7 +516,7 @@ impl ContextBuilder {
 
         tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
 
-        Ok(context)
+        Ok(Arc::new(RwLock::new(context)))
     }
 }
 

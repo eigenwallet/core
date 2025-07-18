@@ -37,6 +37,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
+use tokio::sync::RwLock;
 use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tracing::debug_span;
@@ -53,7 +54,7 @@ use zeroize::Zeroizing;
 #[allow(async_fn_in_trait)]
 pub trait Request {
     type Response: Serialize;
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response>;
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response>;
 }
 
 /// This generates a tracing span which is attached to all logs caused by a swap
@@ -85,7 +86,7 @@ pub struct BuyXmrResponse {
 impl Request for BuyXmrArgs {
     type Response = BuyXmrResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let swap_id = Uuid::new_v4();
         let swap_span = get_swap_tracing_span(swap_id);
 
@@ -110,7 +111,7 @@ pub struct ResumeSwapResponse {
 impl Request for ResumeSwapArgs {
     type Response = ResumeSwapResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let swap_span = get_swap_tracing_span(self.swap_id);
 
         resume_swap(self, ctx).instrument(swap_span).await
@@ -128,7 +129,7 @@ pub struct CancelAndRefundArgs {
 impl Request for CancelAndRefundArgs {
     type Response = serde_json::Value;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let swap_span = get_swap_tracing_span(self.swap_id);
 
         cancel_and_refund(self, ctx).instrument(swap_span).await
@@ -146,7 +147,7 @@ pub struct MoneroRecoveryArgs {
 impl Request for MoneroRecoveryArgs {
     type Response = serde_json::Value;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         monero_recovery(self, ctx).await
     }
 }
@@ -175,7 +176,7 @@ pub struct WithdrawBtcResponse {
 impl Request for WithdrawBtcArgs {
     type Response = WithdrawBtcResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         withdraw_btc(self, ctx).await
     }
 }
@@ -199,7 +200,7 @@ pub struct ListSellersResponse {
 impl Request for ListSellersArgs {
     type Response = ListSellersResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         list_sellers(self, ctx).await
     }
 }
@@ -248,7 +249,7 @@ pub struct GetSwapInfoResponse {
 impl Request for GetSwapInfoArgs {
     type Response = GetSwapInfoResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         get_swap_info(self, ctx).await
     }
 }
@@ -271,7 +272,7 @@ pub struct BalanceResponse {
 impl Request for BalanceArgs {
     type Response = BalanceResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         get_balance(self, ctx).await
     }
 }
@@ -298,7 +299,7 @@ pub struct GetHistoryResponse {
 impl Request for GetHistoryArgs {
     type Response = GetHistoryResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         get_history(ctx).await
     }
 }
@@ -327,7 +328,7 @@ pub struct SuspendCurrentSwapResponse {
 impl Request for SuspendCurrentSwapArgs {
     type Response = SuspendCurrentSwapResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         suspend_current_swap(ctx).await
     }
 }
@@ -346,7 +347,7 @@ pub struct GetCurrentSwapResponse {
 impl Request for GetCurrentSwapArgs {
     type Response = GetCurrentSwapResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         get_current_swap(ctx).await
     }
 }
@@ -356,7 +357,7 @@ pub struct GetConfig;
 impl Request for GetConfig {
     type Response = serde_json::Value;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         get_config(ctx).await
     }
 }
@@ -375,7 +376,7 @@ pub struct ExportBitcoinWalletResponse {
 impl Request for ExportBitcoinWalletArgs {
     type Response = ExportBitcoinWalletResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet_descriptor = export_bitcoin_wallet(ctx).await?;
         Ok(ExportBitcoinWalletResponse { wallet_descriptor })
     }
@@ -386,7 +387,7 @@ pub struct GetConfigArgs;
 impl Request for GetConfigArgs {
     type Response = serde_json::Value;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         get_config(ctx).await
     }
 }
@@ -396,7 +397,7 @@ pub struct GetSwapInfosAllArgs;
 impl Request for GetSwapInfosAllArgs {
     type Response = Vec<GetSwapInfoResponse>;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         get_swap_infos_all(ctx).await
     }
 }
@@ -420,7 +421,7 @@ pub struct GetLogsResponse {
 impl Request for GetLogsArgs {
     type Response = GetLogsResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let dir = self.logs_dir.unwrap_or(ctx.config.log_dir.clone());
         let logs = get_logs(dir, self.swap_id, self.redact).await?;
 
@@ -448,7 +449,7 @@ pub struct RedactResponse {
 impl Request for RedactArgs {
     type Response = RedactResponse;
 
-    async fn request(self, _: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, _: Arc<RwLock<Context>>) -> Result<Self::Response> {
         Ok(RedactResponse {
             text: redact(&self.text),
         })
@@ -469,7 +470,7 @@ pub struct GetRestoreHeightResponse {
 impl Request for GetRestoreHeightArgs {
     type Response = GetRestoreHeightResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet = ctx
             .monero_manager
             .as_ref()
@@ -495,7 +496,7 @@ pub struct GetMoneroAddressesResponse {
 impl Request for GetMoneroAddressesArgs {
     type Response = GetMoneroAddressesResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let addresses = ctx.db.get_monero_addresses().await?;
         Ok(GetMoneroAddressesResponse { addresses })
     }
@@ -514,7 +515,7 @@ pub struct GetMoneroHistoryResponse {
 impl Request for GetMoneroHistoryArgs {
     type Response = GetMoneroHistoryResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet = ctx
             .monero_manager
             .as_ref()
@@ -540,7 +541,7 @@ pub struct GetMoneroMainAddressResponse {
 impl Request for GetMoneroMainAddressArgs {
     type Response = GetMoneroMainAddressResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet = ctx
             .monero_manager
             .as_ref()
@@ -581,7 +582,7 @@ pub struct SetRestoreHeightResponse {
 impl Request for SetRestoreHeightArgs {
     type Response = SetRestoreHeightResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet = ctx
             .monero_manager
             .as_ref()
@@ -662,7 +663,7 @@ pub struct GetMoneroBalanceResponse {
 impl Request for GetMoneroBalanceArgs {
     type Response = GetMoneroBalanceResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet_manager = ctx
             .monero_manager
             .as_ref()
@@ -707,7 +708,7 @@ pub struct SendMoneroResponse {
 impl Request for SendMoneroArgs {
     type Response = SendMoneroResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet_manager = ctx
             .monero_manager
             .as_ref()
@@ -778,7 +779,9 @@ impl Request for SendMoneroArgs {
 }
 
 #[tracing::instrument(fields(method = "suspend_current_swap"), skip(context))]
-pub async fn suspend_current_swap(context: Arc<Context>) -> Result<SuspendCurrentSwapResponse> {
+pub async fn suspend_current_swap(
+    context: Arc<RwLock<Context>>,
+) -> Result<SuspendCurrentSwapResponse> {
     let swap_id = context.swap_lock.get_current_swap_id().await;
 
     if let Some(id_value) = swap_id {
@@ -794,7 +797,7 @@ pub async fn suspend_current_swap(context: Arc<Context>) -> Result<SuspendCurren
 }
 
 #[tracing::instrument(fields(method = "get_swap_infos_all"), skip(context))]
-pub async fn get_swap_infos_all(context: Arc<Context>) -> Result<Vec<GetSwapInfoResponse>> {
+pub async fn get_swap_infos_all(context: Arc<RwLock<Context>>) -> Result<Vec<GetSwapInfoResponse>> {
     let swap_ids = context.db.all().await?;
     let mut swap_infos = Vec::new();
 
@@ -813,7 +816,7 @@ pub async fn get_swap_infos_all(context: Arc<Context>) -> Result<Vec<GetSwapInfo
 #[tracing::instrument(fields(method = "get_swap_info"), skip(context))]
 pub async fn get_swap_info(
     args: GetSwapInfoArgs,
-    context: Arc<Context>,
+    context: Arc<RwLock<Context>>,
 ) -> Result<GetSwapInfoResponse> {
     let bitcoin_wallet = context
         .bitcoin_wallet
@@ -915,7 +918,7 @@ pub async fn get_swap_info(
 pub async fn buy_xmr(
     buy_xmr: BuyXmrArgs,
     swap_id: Uuid,
-    context: Arc<Context>,
+    context: Arc<RwLock<Context>>,
 ) -> Result<BuyXmrResponse, anyhow::Error> {
     let _span = get_swap_tracing_span(swap_id);
 
@@ -1165,7 +1168,7 @@ pub async fn buy_xmr(
 #[tracing::instrument(fields(method = "resume_swap"), skip(context))]
 pub async fn resume_swap(
     resume: ResumeSwapArgs,
-    context: Arc<Context>,
+    context: Arc<RwLock<Context>>,
 ) -> Result<ResumeSwapResponse> {
     let ResumeSwapArgs { swap_id } = resume;
 
@@ -1289,7 +1292,7 @@ pub async fn resume_swap(
 #[tracing::instrument(fields(method = "cancel_and_refund"), skip(context))]
 pub async fn cancel_and_refund(
     cancel_and_refund: CancelAndRefundArgs,
-    context: Arc<Context>,
+    context: Arc<RwLock<Context>>,
 ) -> Result<serde_json::Value> {
     let CancelAndRefundArgs { swap_id } = cancel_and_refund;
     let bitcoin_wallet = context
@@ -1320,7 +1323,7 @@ pub async fn cancel_and_refund(
 }
 
 #[tracing::instrument(fields(method = "get_history"), skip(context))]
-pub async fn get_history(context: Arc<Context>) -> Result<GetHistoryResponse> {
+pub async fn get_history(context: Arc<RwLock<Context>>) -> Result<GetHistoryResponse> {
     let swaps = context.db.all().await?;
     let mut vec: Vec<GetHistoryEntry> = Vec::new();
     for (swap_id, state) in swaps {
@@ -1335,7 +1338,7 @@ pub async fn get_history(context: Arc<Context>) -> Result<GetHistoryResponse> {
 }
 
 #[tracing::instrument(fields(method = "get_config"), skip(context))]
-pub async fn get_config(context: Arc<Context>) -> Result<serde_json::Value> {
+pub async fn get_config(context: Arc<RwLock<Context>>) -> Result<serde_json::Value> {
     let data_dir_display = context.config.data_dir.display();
     tracing::info!(path=%data_dir_display, "Data directory");
     tracing::info!(path=%format!("{}/logs", data_dir_display), "Log files directory");
@@ -1356,7 +1359,7 @@ pub async fn get_config(context: Arc<Context>) -> Result<serde_json::Value> {
 #[tracing::instrument(fields(method = "withdraw_btc"), skip(context))]
 pub async fn withdraw_btc(
     withdraw_btc: WithdrawBtcArgs,
-    context: Arc<Context>,
+    context: Arc<RwLock<Context>>,
 ) -> Result<WithdrawBtcResponse> {
     let WithdrawBtcArgs { address, amount } = withdraw_btc;
     let bitcoin_wallet = context
@@ -1402,7 +1405,10 @@ pub async fn withdraw_btc(
 }
 
 #[tracing::instrument(fields(method = "get_balance"), skip(context))]
-pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<BalanceResponse> {
+pub async fn get_balance(
+    balance: BalanceArgs,
+    context: Arc<RwLock<Context>>,
+) -> Result<BalanceResponse> {
     let BalanceArgs { force_refresh } = balance;
     let bitcoin_wallet = context
         .bitcoin_wallet
@@ -1435,7 +1441,7 @@ pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<
 #[tracing::instrument(fields(method = "list_sellers"), skip(context))]
 pub async fn list_sellers(
     list_sellers: ListSellersArgs,
-    context: Arc<Context>,
+    context: Arc<RwLock<Context>>,
 ) -> Result<ListSellersResponse> {
     let ListSellersArgs { rendezvous_points } = list_sellers;
     let rendezvous_nodes: Vec<_> = rendezvous_points
@@ -1501,7 +1507,7 @@ pub async fn list_sellers(
 }
 
 #[tracing::instrument(fields(method = "export_bitcoin_wallet"), skip(context))]
-pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::Value> {
+pub async fn export_bitcoin_wallet(context: Arc<RwLock<Context>>) -> Result<serde_json::Value> {
     let bitcoin_wallet = context
         .bitcoin_wallet
         .as_ref()
@@ -1517,7 +1523,7 @@ pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::
 #[tracing::instrument(fields(method = "monero_recovery"), skip(context))]
 pub async fn monero_recovery(
     monero_recovery: MoneroRecoveryArgs,
-    context: Arc<Context>,
+    context: Arc<RwLock<Context>>,
 ) -> Result<serde_json::Value> {
     let MoneroRecoveryArgs { swap_id } = monero_recovery;
     let swap_state: BobState = context.db.get_state(swap_id).await?.try_into()?;
@@ -1549,7 +1555,7 @@ pub async fn monero_recovery(
 }
 
 #[tracing::instrument(fields(method = "get_current_swap"), skip(context))]
-pub async fn get_current_swap(context: Arc<Context>) -> Result<GetCurrentSwapResponse> {
+pub async fn get_current_swap(context: Arc<RwLock<Context>>) -> Result<GetCurrentSwapResponse> {
     let swap_id = context.swap_lock.get_current_swap_id().await;
     Ok(GetCurrentSwapResponse { swap_id })
 }
@@ -1979,7 +1985,7 @@ pub struct GetMoneroSyncProgressResponse {
 impl Request for GetMoneroSyncProgressArgs {
     type Response = GetMoneroSyncProgressResponse;
 
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+    async fn request(self, ctx: Arc<RwLock<Context>>) -> Result<Self::Response> {
         let wallet_manager = ctx
             .monero_manager
             .as_ref()
