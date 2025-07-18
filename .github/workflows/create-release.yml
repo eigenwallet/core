@@ -15,7 +15,7 @@ jobs:
 
       - uses: actionhippie/swap-space@v1
         with:
-          size: 15G
+          size: 5G
 
       - name: Extract version from branch name
         id: extract-version

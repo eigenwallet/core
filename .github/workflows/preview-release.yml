@@ -18,7 +18,7 @@ jobs:
 
       - uses: actionhippie/swap-space@v1
         with:
-          size: 15G
+          size: 5G
 
       - name: Delete 'preview' release
         uses: larryjoelane/delete-release-action@v1.0.24

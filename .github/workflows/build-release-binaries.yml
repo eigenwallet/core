@@ -77,7 +77,7 @@ jobs:
       - uses: actionhippie/swap-space@v1
         if: matrix.os == 'ubuntu-latest'
         with:
-          size: 15G
+          size: 5G
 
       - name: Restore Rust/Cargo cache from S3
         uses: whywaita/actions-cache-s3@v2
@@ -226,7 +226,7 @@ jobs:
 
       - uses: actionhippie/swap-space@v1
         with:
-          size: 15G
+          size: 5G
 
       - name: Configure apt for retries
         run: ${{ env.APT_SET_CONF_COMMAND }}
