@@ -275,6 +275,14 @@ namespace Monero
         return std::make_unique<std::string>(tx_info.hash());
     }
 
+    /**
+     * Get the timestamp of a transaction from TransactionInfo.
+     */
+    inline uint64_t transactionInfoTimestamp(const TransactionInfo &tx_info)
+    {
+        return static_cast<uint64_t>(tx_info.timestamp());
+    }
+
     // bridge.h
 #pragma once
 #include <string>

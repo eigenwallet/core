@@ -161,6 +161,8 @@ pub struct TransactionInfo {
     pub confirmations: u64,
     pub tx_hash: String,
     pub direction: TransactionDirection,
+    #[typeshare(serialized_as = "number")]
+    pub timestamp: u64,
 }
 
 #[typeshare]
@@ -2493,11 +2495,17 @@ impl TransactionInfoHandle {
         }
     }
 
+    /// Get the timestamp of the transaction.
+    pub fn timestamp(&self) -> u64 {
+        ffi::transactionInfoTimestamp(self.deref())
+    }
+
     pub fn serialize(&self) -> Option<TransactionInfo> {
         let fee = self.fee();
         let amount = self.amount();
         let confirmations = self.confirmations();
         let tx_hash = self.hash();
+        let timestamp = self.timestamp();
         let direction = self
             .direction()
             .inspect_err(
@@ -2511,6 +2519,7 @@ impl TransactionInfoHandle {
             confirmations,
             tx_hash,
             direction,
+            timestamp,
         })
     }
 }

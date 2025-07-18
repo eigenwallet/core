@@ -336,6 +336,9 @@ pub mod ffi {
         /// Get the hash of the transaction.
         fn transactionInfoHash(tx_info: &TransactionInfo) -> UniquePtr<CxxString>;
 
+        /// Get the timestamp of the transaction.
+        fn transactionInfoTimestamp(tx_info: &TransactionInfo) -> u64;
+
         /// Sign a message with the wallet's private key.
         fn signMessage(
             wallet: Pin<&mut Wallet>,
