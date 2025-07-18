@@ -37,6 +37,9 @@ use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap::{bitcoin, monero};
 use swap_feed;
+use swap_env::config::{
+    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
+};
 use tracing_subscriber::filter::LevelFilter;
 use uuid::Uuid;
 
@@ -105,7 +108,7 @@ pub async fn main() -> Result<()> {
 
     // Initialize tracing
     let format = if json { Format::Json } else { Format::Raw };
-    common::tracing_util::init(LevelFilter::DEBUG, format, config.log_dir, None, trace)
+    common::tracing_util::init(LevelFilter::DEBUG, format, config.data.dir.join("logs"), None, trace)
         .expect("initialize tracing");
     tracing::info!(
         binary = "asb",
