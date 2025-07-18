@@ -74,7 +74,7 @@ impl TauriWalletListener {
     const BALANCE_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const HISTORY_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const SYNC_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
-    const SAVE_UPDATE_THROTTLE: Duration = Duration::from_millis(10 * 1000);
+    const SAVE_UPDATE_THROTTLE: Duration = Duration::from_millis(60 * 1000);
 
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
