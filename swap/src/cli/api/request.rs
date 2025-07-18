@@ -699,6 +699,7 @@ pub enum SendMoneroAmount {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SendMoneroResponse {
     pub tx_hash: String,
+    pub address: String,
     pub amount_sent: crate::monero::Amount,
     pub fee: crate::monero::Amount,
 }
@@ -769,6 +770,7 @@ impl Request for SendMoneroArgs {
 
         Ok(SendMoneroResponse {
             tx_hash: receipt.txid,
+            address: address.to_string(),
             amount_sent: amount_sent.into(),
             fee: fee.into(),
         })

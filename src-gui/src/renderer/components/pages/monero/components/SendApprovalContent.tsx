@@ -5,7 +5,6 @@ import {
   DialogActions,
   Typography,
   Box,
-  Divider,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
@@ -17,12 +16,10 @@ import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
 interface SendApprovalContentProps {
   onClose: () => void;
-  onSuccess: ({ address, amount }: { address: string; amount: number }) => void;
 }
 
 export default function SendApprovalContent({
   onClose,
-  onSuccess,
 }: SendApprovalContentProps) {
   const pendingApprovals = usePendingSendMoneroApproval();
   const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -65,10 +62,6 @@ export default function SendApprovalContent({
   }
 
   const { address, amount, fee } = approval.request.content;
-
-  const handleSuccess = () => {
-    onSuccess({ address, amount });
-  };
 
   return (
     <>
@@ -143,7 +136,6 @@ export default function SendApprovalContent({
         </PromiseInvokeButton>
         <PromiseInvokeButton
           onInvoke={handleApprove}
-          onSuccess={handleSuccess}
           disabled={timeLeft === 0}
           variant="contained"
           color="primary"
