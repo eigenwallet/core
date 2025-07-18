@@ -35,7 +35,7 @@ impl Database {
     }
 
     async fn migrate(&self) -> Result<()> {
-        sqlx::migrate!("./migrations").run(&self.pool).await?;
+        sqlx::migrate!("./migrations").set_ignore_missing(true).run(&self.pool).await?;
         info!("Recent wallets database migration completed");
         Ok(())
     }
