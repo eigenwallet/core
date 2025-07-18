@@ -132,8 +132,6 @@ impl TauriWalletListener {
                         progress_percentage: progress_percentage,
                     };
 
-                    tracing::debug!("sync_progress: {:?}", response);
-
                     tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
                         MoneroWalletUpdate::SyncProgress(response),
                     ));
