@@ -421,7 +421,7 @@ impl Request for GetLogsArgs {
     type Response = GetLogsResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let dir = self.logs_dir.unwrap_or(ctx.config.data_dir.join("logs"));
+        let dir = self.logs_dir.unwrap_or(ctx.config.log_dir.clone());
         let logs = get_logs(dir, self.swap_id, self.redact).await?;
 
         for msg in &logs {

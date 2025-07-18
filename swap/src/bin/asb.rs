@@ -105,8 +105,7 @@ pub async fn main() -> Result<()> {
 
     // Initialize tracing
     let format = if json { Format::Json } else { Format::Raw };
-    let log_dir = config.data.dir.join("logs");
-    common::tracing_util::init(LevelFilter::DEBUG, format, log_dir, None, trace)
+    common::tracing_util::init(LevelFilter::DEBUG, format, config.log_dir, None, trace)
         .expect("initialize tracing");
     tracing::info!(
         binary = "asb",
@@ -326,9 +325,7 @@ pub async fn main() -> Result<()> {
             swap_id,
             redact,
         } => {
-            let dir = logs_dir.unwrap_or(config.data.dir.join("logs"));
-
-            let log_messages = get_logs(dir, swap_id, redact).await?;
+            let log_messages = get_logs(config.log_dir, swap_id, redact).await?;
 
             for msg in log_messages {
                 println!("{msg}");

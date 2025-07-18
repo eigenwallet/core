@@ -40,6 +40,7 @@ pub struct Config {
     seed: Option<Seed>,
     debug: bool,
     json: bool,
+    log_dir: PathBuf,
     data_dir: PathBuf,
     is_testnet: bool,
 }
@@ -285,6 +286,7 @@ impl ContextBuilder {
         let eigenwallet_data_dir = &eigenwallet_data::new(self.is_testnet)?;
 
         let base_data_dir = &data::data_dir_from(self.data, self.is_testnet)?;
+        let log_dir = base_data_dir.join("logs");
         let env_config = env_config_from(self.is_testnet);
 
         // Initialize logging
@@ -299,7 +301,7 @@ impl ContextBuilder {
             let _ = common::tracing_util::init(
                 level_filter,
                 format,
-                base_data_dir.join("logs"),
+                log_dir.clone(),
                 self.tauri_handle.clone(),
                 false,
             );
@@ -503,8 +505,9 @@ impl ContextBuilder {
                 json: self.json,
                 is_testnet: self.is_testnet,
                 data_dir: data_dir.clone(),
+                log_dir: log_dir.clone(),
             },
-            swap_lock,
+            swap_lock,  
             tasks,
             tauri_handle: self.tauri_handle,
             tor_client: tor,
@@ -864,6 +867,7 @@ fn env_config_from(testnet: bool) -> EnvConfig {
 impl Config {
     pub fn for_harness(seed: Seed, env_config: EnvConfig) -> Self {
         let data_dir = data::data_dir_from(None, false).expect("Could not find data directory");
+        let log_dir = data_dir.join("logs"); // not used in production
 
         Self {
             namespace: XmrBtcNamespace::from_is_testnet(false),
@@ -873,6 +877,7 @@ impl Config {
             json: false,
             is_testnet: false,
             data_dir,
+            log_dir,
         }
     }
 }
@@ -914,6 +919,7 @@ pub mod api_test {
             json: bool,
         ) -> Self {
             let data_dir = data::data_dir_from(data_dir, is_testnet).unwrap();
+            let log_dir = data_dir.clone().join("logs");
             let seed = Seed::from_file_or_generate(data_dir.as_path())
                 .await
                 .unwrap();
@@ -927,6 +933,7 @@ pub mod api_test {
                 json,
                 is_testnet,
                 data_dir,
+                log_dir,
             }
         }
     }
