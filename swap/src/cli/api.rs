@@ -6,7 +6,6 @@ use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::init_tor_client;
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
-use crate::monero::Wallets;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;

@@ -4,6 +4,7 @@ import SendApprovalContent from "./components/SendApprovalContent";
 import { useState } from "react";
 import SendSuccessContent from "./components/SendSuccessContent";
 import { usePendingSendMoneroApproval } from "store/hooks";
+import { SendMoneroResponse } from "models/tauriModel";
 
 interface SendTransactionModalProps {
   open: boolean;
@@ -21,17 +22,19 @@ export default function SendTransactionModal({
   const pendingApprovals = usePendingSendMoneroApproval();
   const hasPendingApproval = pendingApprovals.length > 0;
 
-  const [successDetails, setSuccessDetails] = useState<{
-    address: string;
-    amount: number;
-  } | null>(null);
+  const [successResponse, setSuccessResponse] = useState<SendMoneroResponse | null>(null);
 
-  const showSuccess = successDetails !== null;
+  const showSuccess = successResponse !== null;
+
+  const handleClose = () => {
+    onClose();
+    setSuccessResponse(null);
+  };
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       maxWidth="sm"
       fullWidth={!showSuccess}
       PaperProps={{
@@ -39,13 +42,13 @@ export default function SendTransactionModal({
       }}
     >
       {!showSuccess && !hasPendingApproval && (
-        <SendTransactionContent balance={balance} onClose={onClose} />
+        <SendTransactionContent balance={balance} onClose={onClose} onSuccess={setSuccessResponse} />
       )}
       {!showSuccess && hasPendingApproval && (
-        <SendApprovalContent onClose={onClose} onSuccess={setSuccessDetails} />
+        <SendApprovalContent onClose={onClose} />
       )}
       {showSuccess && (
-        <SendSuccessContent onClose={onClose} successDetails={successDetails} />
+        <SendSuccessContent onClose={onClose} successDetails={successResponse} />
       )}
     </Dialog>
   );

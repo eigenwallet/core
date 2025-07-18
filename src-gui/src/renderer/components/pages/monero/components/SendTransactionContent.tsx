@@ -13,16 +13,19 @@ import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressText
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { sendMoneroTransaction } from "renderer/rpc";
 import { useAppSelector } from "store/hooks";
+import { SendMoneroResponse } from "models/tauriModel";
 
 interface SendTransactionContentProps {
   balance: {
     unlocked_balance: string;
   };
   onClose: () => void;
+  onSuccess: (response: SendMoneroResponse) => void;
 }
 
 export default function SendTransactionContent({
   balance,
+  onSuccess,
   onClose,
 }: SendTransactionContentProps) {
   const [sendAddress, setSendAddress] = useState("");
@@ -117,9 +120,10 @@ export default function SendTransactionContent({
     }
   };
 
-  const handleSendSuccess = () => {
+  const handleSendSuccess = (response: SendMoneroResponse) => {
     // Clear form after successful send
     handleClear();
+    onSuccess(response);
   };
 
   const handleClear = () => {

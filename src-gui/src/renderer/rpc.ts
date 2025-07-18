@@ -50,15 +50,12 @@ import {
   approvalRequestsReplaced,
 } from "store/features/rpcSlice";
 import {
-  setRefreshing,
   setMainAddress,
   setBalance,
   setSyncProgress,
   setHistory,
-  setIsLoading,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
-import { Maker } from "models/apiModel";
 import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
 import { MoneroRecoveryResponse } from "models/rpcModel";
 import { ListSellersResponse } from "../models/tauriModel";
@@ -74,7 +71,7 @@ import { discoveredMakersByRendezvous } from "store/features/makersSlice";
 import { CliLog } from "models/cliModel";
 import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 
-/// These are the official donation address for the UnstoppableSwap/core project
+/// These are the official donation address for the eigenwallet/core project
 const DONATION_ADDRESS_MAINNET =
   "49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa";
 const DONATION_ADDRESS_STAGENET =
@@ -512,11 +509,31 @@ export async function initializeMoneroWallet() {
 
 export async function sendMoneroTransaction(
   args: SendMoneroArgs,
-): Promise<void> {
+): Promise<SendMoneroResponse> {
   try {
-    await sendMonero(args);
+    const response = await sendMonero(args);
 
-    // Refresh balance and history after sending
+    // Refresh balance and history after sending - but don't let this block the response
+    Promise.all([
+      getMoneroBalance(),
+      getMoneroHistory(),
+    ]).then(([newBalance, newHistory]) => {
+      store.dispatch(setBalance(newBalance));
+      store.dispatch(setHistory(newHistory));
+    }).catch(refreshErr => {
+      console.error("Failed to refresh wallet data after send:", refreshErr);
+      // Could emit a toast notification here
+    });
+
+    return response;
+  } catch (err) {
+    console.error("Failed to send Monero:", err);
+    throw err; // ✅ Re-throw so caller can handle appropriately
+  }
+}
+
+async function refreshWalletDataAfterTransaction() {
+  try {
     const [newBalance, newHistory] = await Promise.all([
       getMoneroBalance(),
       getMoneroHistory(),
@@ -524,7 +541,8 @@ export async function sendMoneroTransaction(
     store.dispatch(setBalance(newBalance));
     store.dispatch(setHistory(newHistory));
   } catch (err) {
-    console.error("Failed to send Monero:", err);
+    console.error("Failed to refresh wallet data after transaction:", err);
+    // Maybe show a non-blocking notification to user
   }
 }
 
