@@ -554,10 +554,15 @@ impl Context {
     pub fn cleanup(&self) -> Result<()> {
         // TODO: close all monero wallets
         // call store(..) on all wallets
-        // if let Some(monero_manager) = &self.monero_manager {
-        //     let wallet = monero_manager.main_wallet().await;
-        //     wallet.store().await?;
-        // }
+        
+        let monero_manager = self.monero_manager.clone();
+        tokio::spawn(async move {
+            if let Some(monero_manager) = monero_manager {
+                let wallet = monero_manager.main_wallet().await;
+                wallet.store(Some("")).await;
+            }
+        });
+
         Ok(())
     }
 
@@ -796,13 +801,18 @@ async fn request_and_open_monero_wallet(
                     }
 
                     SeedChoice::Legacy => {
-                        request_and_open_monero_wallet_legacy(legacy_data_dir, env_config, daemon).await?
+                        let wallet = request_and_open_monero_wallet_legacy(legacy_data_dir, env_config, daemon).await?;
+                        let seed = Seed::from_file_or_generate(legacy_data_dir)
+                            .await
+                            .context("Failed to extract seed from wallet")?;
+
+                        break (wallet, seed);
                     }
                 };
 
                 // Extract seed from the wallet
                 tracing::info!("Extracting seed from wallet directory: {}", legacy_data_dir.display());
-                let seed = Seed::from_file_or_generate(legacy_data_dir)
+                let seed = Seed::from_monero_wallet(&wallet)
                     .await
                     .context("Failed to extract seed from wallet")?;
 
