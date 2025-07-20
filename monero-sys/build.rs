@@ -162,31 +162,23 @@ fn main() {
         target
     );
 
-    // Building native_ccache currently fails for iOS/iOS-simulator targets 
-    // because the toolchain lacks full std::filesystem support. Since ccache
-    // is an optimization tool that speeds up repeated builds and isn't essential 
-    // for functionality, we can safely disable it for iOS targets using the 
-    // existing GITIAN=1 mechanism.
-    let mut command = std::process::Command::new("make");
-    command
+    let mut cmd = std::process::Command::new("env");
+    if (target.contains("-apple-")) {
+        cmd.arg("-i");
+        let path = std::env::var("PATH").unwrap_or_default();
+        cmd.arg(format!("PATH={}", path));
+    }
+    cmd.arg("make")
         .arg(format!("HOST={}", target))
         .arg("DEBUG=")
         // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
         .current_dir(&contrib_depends_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    
+    let child = cmd.spawn().expect("make command to be executable");
 
-    // Disable native_ccache for iOS targets due to std::filesystem issues
-    if target.contains("apple-ios") {
-        command.env("GITIAN", "1");
-        println!("cargo:warning=Disabling native_ccache for iOS target due to std::filesystem limitations");
-    }
-
-    let child = command
-        .spawn()
-        .expect("make command to be executable");
-
-    let status = execute_child_with_pipe(child).expect("Failed to execute make command");
+    let status = execute_child_with_pipe(child).expect("make command to execute");
 
     if !status.success() {
         eprintln!("make command failed with exit code: {:?}", status.code());
