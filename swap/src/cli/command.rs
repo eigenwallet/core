@@ -97,7 +97,7 @@ where
                 bitcoin_change_address,
                 monero_receive_pool,
             }
-            .request(context.clone())
+            .request(context.read().await.clone())
             .await?;
 
             Ok(context)
@@ -112,7 +112,9 @@ where
                     .await?,
             );
 
-            GetHistoryArgs {}.request(context.clone()).await?;
+            GetHistoryArgs {}
+                .request(context.read().await.clone())
+                .await?;
 
             Ok(context)
         }
@@ -135,7 +137,7 @@ where
                 redact,
                 swap_id,
             }
-            .request(context.clone())
+            .request(context.read().await.clone())
             .await?;
 
             Ok(context)
@@ -150,7 +152,9 @@ where
                     .await?,
             );
 
-            GetConfigArgs {}.request(context.clone()).await?;
+            GetConfigArgs {}
+                .request(context.read().await.clone())
+                .await?;
 
             Ok(context)
         }
@@ -168,7 +172,7 @@ where
             BalanceArgs {
                 force_refresh: true,
             }
-            .request(context.clone())
+            .request(context.read().await.clone())
             .await?;
 
             Ok(context)
@@ -191,7 +195,7 @@ where
             );
 
             WithdrawBtcArgs { amount, address }
-                .request(context.clone())
+                .request(context.read().await.clone())
                 .await?;
 
             Ok(context)
@@ -214,7 +218,9 @@ where
                     .await?,
             );
 
-            ResumeSwapArgs { swap_id }.request(context.clone()).await?;
+            ResumeSwapArgs { swap_id }
+                .request(context.read().await.clone())
+                .await?;
 
             Ok(context)
         }
@@ -233,7 +239,7 @@ where
             );
 
             CancelAndRefundArgs { swap_id }
-                .request(context.clone())
+                .request(context.read().await.clone())
                 .await?;
 
             Ok(context)
@@ -255,7 +261,7 @@ where
             ListSellersArgs {
                 rendezvous_points: vec![rendezvous_point],
             }
-            .request(context.clone())
+            .request(context.read().await.clone())
             .await?;
 
             Ok(context)
@@ -271,7 +277,9 @@ where
                     .await?,
             );
 
-            ExportBitcoinWalletArgs {}.request(context.clone()).await?;
+            ExportBitcoinWalletArgs {}
+                .request(context.read().await.clone())
+                .await?;
 
             Ok(context)
         }
@@ -288,7 +296,7 @@ where
             );
 
             MoneroRecoveryArgs { swap_id }
-                .request(context.clone())
+                .request(context.read().await.clone())
                 .await?;
 
             Ok(context)
@@ -565,7 +573,7 @@ mod tests {
         let (is_testnet, debug, json) = (false, false, false);
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -610,7 +618,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -684,7 +692,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -703,7 +711,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -723,7 +731,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -742,7 +750,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -760,7 +768,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -779,7 +787,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -810,7 +818,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -852,7 +860,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -899,7 +907,7 @@ mod tests {
         };
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -927,7 +935,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -956,7 +964,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -996,7 +1004,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -1025,7 +1033,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -1058,7 +1066,7 @@ mod tests {
         let expected_config = Config::default(is_testnet, None, debug, json);
 
         let actual_config = match args {
-            ParseResult::Context(context, request) => context.config.clone(),
+            ParseResult::Context(context, request) => context.read().await.config.clone(),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -1086,7 +1094,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -1126,7 +1134,7 @@ mod tests {
         let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -1154,7 +1162,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 
@@ -1180,7 +1188,7 @@ mod tests {
         );
 
         let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
+            ParseResult::Context(context, request) => (context.read().await.config.clone(), request),
             _ => panic!("Couldn't parse result"),
         };
 

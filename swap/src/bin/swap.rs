@@ -23,7 +23,7 @@ pub async fn main() -> Result<()> {
 
     match parse_args_and_apply_defaults(env::args_os()).await? {
         ParseResult::Success(context) => {
-            context.tasks.wait_for_tasks().await?;
+            context.read().await.tasks.wait_for_tasks().await?;
         }
         ParseResult::PrintAndExitZero { message } => {
             println!("{}", message);
