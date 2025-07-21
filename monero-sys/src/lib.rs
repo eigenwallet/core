@@ -916,7 +916,6 @@ impl WalletHandle {
         })
         .await
     }
-
 }
 
 impl Wallet {

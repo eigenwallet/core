@@ -1,4 +1,12 @@
-import { Box, Dialog, DialogTitle, Button, DialogContent, Chip, Tooltip } from "@mui/material";
+import {
+  Box,
+  Dialog,
+  DialogTitle,
+  Button,
+  DialogContent,
+  Chip,
+  Tooltip,
+} from "@mui/material";
 import { EuroSymbol as EuroIcon } from "@mui/icons-material";
 import DFXSwissLogo from "assets/dfx-logo.svg";
 import { useState } from "react";
@@ -6,8 +14,21 @@ import { dfxAuthenticate } from "renderer/rpc";
 
 function DFXLogo({ height = 24 }: { height?: number }) {
   return (
-    <Box sx={{ backgroundColor: "white", borderRadius: 1, display: "flex", alignItems: "center", padding: 1, height }}>
-      <img src={DFXSwissLogo} alt="DFX Swiss" style={{ height: "100%", flex: 1 }} />
+    <Box
+      sx={{
+        backgroundColor: "white",
+        borderRadius: 1,
+        display: "flex",
+        alignItems: "center",
+        padding: 1,
+        height,
+      }}
+    >
+      <img
+        src={DFXSwissLogo}
+        alt="DFX Swiss"
+        style={{ height: "100%", flex: 1 }}
+      />
     </Box>
   );
 }
@@ -23,7 +44,7 @@ export default function DfxButton() {
       setDfxUrl(response.kyc_url);
       return response;
     } catch (error) {
-      console.error('DFX authentication failed:', error);
+      console.error("DFX authentication failed:", error);
       // TODO: Show error snackbar if needed
       throw error;
     }
@@ -36,14 +57,14 @@ export default function DfxButton() {
   return (
     <>
       <Tooltip title="Buy Monero with fiat using DFX" enterDelay={500}>
-      <Chip
-        variant="button"
-        icon={<EuroIcon />}
-        label="Buy Monero"
-        clickable
-        onClick={handleOpenDfx}
+        <Chip
+          variant="button"
+          icon={<EuroIcon />}
+          label="Buy Monero"
+          clickable
+          onClick={handleOpenDfx}
         />
-        </Tooltip>
+      </Tooltip>
 
       <Dialog
         open={dfxUrl != null}
