@@ -13,16 +13,19 @@ import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressText
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { sendMoneroTransaction } from "renderer/rpc";
 import { useAppSelector } from "store/hooks";
+import { SendMoneroResponse } from "models/tauriModel";
 
 interface SendTransactionContentProps {
   balance: {
     unlocked_balance: string;
   };
   onClose: () => void;
+  onSuccess: (response: SendMoneroResponse) => void;
 }
 
 export default function SendTransactionContent({
   balance,
+  onSuccess,
   onClose,
 }: SendTransactionContentProps) {
   const [sendAddress, setSendAddress] = useState("");
@@ -58,7 +61,6 @@ export default function SendTransactionContent({
 
   const handleMaxToggled = () => {
     if (isSending) return;
-    
     if (isMaxSelected) {
       // Disable MAX mode - restore previous amount
       setIsMaxSelected(false);
@@ -73,7 +75,6 @@ export default function SendTransactionContent({
 
   const handleAmountChange = (newAmount: string) => {
     if (isSending) return;
-    
     if (newAmount !== "<MAX>") {
       setIsMaxSelected(false);
     }
@@ -107,15 +108,20 @@ export default function SendTransactionContent({
 
       return sendMoneroTransaction({
         address: sendAddress,
-        amount: { type: "Specific", amount: xmrToPiconeros(moneroAmount) },
+        amount: {
+          type: "Specific",
+          // Floor the amount to avoid rounding decimal amounts
+          // The amount is in piconeros, so it NEEDS to be a whole number
+          amount: Math.floor(xmrToPiconeros(moneroAmount)),
+        },
       });
     }
   };
 
-  const handleSendSuccess = () => {
+  const handleSendSuccess = (response: SendMoneroResponse) => {
     // Clear form after successful send
     handleClear();
-    onClose();
+    onSuccess(response);
   };
 
   const handleClear = () => {
@@ -125,7 +131,8 @@ export default function SendTransactionContent({
     setIsMaxSelected(false);
   };
 
-  const isSendDisabled = !enableSend || (!isMaxSelected && (!sendAmount || sendAmount === "<MAX>"));
+  const isSendDisabled =
+    !enableSend || (!isMaxSelected && (!sendAmount || sendAmount === "<MAX>"));
 
   return (
     <>

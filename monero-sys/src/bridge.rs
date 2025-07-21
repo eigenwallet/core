@@ -103,18 +103,6 @@ pub mod ffi {
 
         type WalletListener;
 
-        unsafe fn create_listener(
-            on_spent: usize,
-            on_received: usize,
-            on_unconfirmed_received: usize,
-            on_new_block: usize,
-            on_updated: usize,
-            on_refreshed: usize,
-            on_reorg: usize,
-            on_pool_tx_removed: usize,
-            on_get_password: usize,
-        ) -> *mut WalletListener;
-
         ///virtual Wallet * openWallet(const std::string &path, const std::string &password, NetworkType nettype, uint64_t kdf_rounds = 1, WalletListener * listener = nullptr) = 0;
         unsafe fn openWallet(
             self: Pin<&mut WalletManager>,
@@ -131,6 +119,9 @@ pub mod ffi {
             wallet: *mut Wallet,
             store: bool,
         ) -> Result<bool>;
+
+        /// Store the wallet state.
+        fn store(self: Pin<&mut Wallet>, path: &CxxString) -> Result<bool>;
 
         /// Check whether a wallet exists at the given path.
         fn walletExists(self: Pin<&mut WalletManager>, path: &CxxString) -> Result<bool>;
@@ -344,6 +335,9 @@ pub mod ffi {
 
         /// Get the hash of the transaction.
         fn transactionInfoHash(tx_info: &TransactionInfo) -> UniquePtr<CxxString>;
+
+        /// Get the timestamp of the transaction.
+        fn transactionInfoTimestamp(tx_info: &TransactionInfo) -> u64;
 
         /// Sign a message with the wallet's private key.
         fn signMessage(
@@ -597,17 +591,11 @@ impl WalletEventListener for TraceListener {
         );
     }
 
-    fn on_new_block(&self, height: u64) {
-        tracing::trace!(wallet = self.filename, "New block at height: {}", height);
-    }
+    fn on_new_block(&self, _height: u64) {}
 
-    fn on_updated(&self) {
-        tracing::debug!(wallet = self.filename, "Wallet updated");
-    }
+    fn on_updated(&self) {}
 
-    fn on_refreshed(&self) {
-        tracing::info!(wallet = self.filename, "Wallet refreshed");
-    }
+    fn on_refreshed(&self) {}
 
     fn on_reorg(&self, height: u64, blocks_detached: u64, transfers_detached: usize) {
         tracing::warn!(
@@ -619,13 +607,7 @@ impl WalletEventListener for TraceListener {
         );
     }
 
-    fn on_pool_tx_removed(&self, txid: &str) {
-        tracing::info!(
-            wallet = self.filename,
-            "Transaction removed from pool: {}",
-            txid
-        );
-    }
+    fn on_pool_tx_removed(&self, _txid: &str) {}
 }
 
 /// This is the actual rust function that forwards the c++ log messages to tracing.

@@ -34,7 +34,8 @@ export default function SetRestoreHeightModal({
   const [restoreHeight, setRestoreHeight] = useState<number | "">("");
   const [restoreDate, setRestoreDate] = useState<Dayjs | null>(null);
   const [isPending, setIsPending] = useState(false);
-  const [currentRestoreHeight, setCurrentRestoreHeight] = useState<string>("Loading...");
+  const [currentRestoreHeight, setCurrentRestoreHeight] =
+    useState<string>("Loading...");
 
   const handleRestoreHeight = async () => {
     if (restoreOption === RestoreOption.BlockHeight) {

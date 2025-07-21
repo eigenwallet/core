@@ -81,9 +81,8 @@ pub struct Wallet {
 
 /// A function call to be executed on the wallet and a channel to send the result back.
 struct Call {
-    function: Box<
-        dyn FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> AnyBox + Send,
-    >,
+    function:
+        Box<dyn FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> AnyBox + Send>,
     sender: oneshot::Sender<AnyBox>,
 }
 
@@ -162,6 +161,8 @@ pub struct TransactionInfo {
     pub confirmations: u64,
     pub tx_hash: String,
     pub direction: TransactionDirection,
+    #[typeshare(serialized_as = "number")]
+    pub timestamp: u64,
 }
 
 #[typeshare]
@@ -354,9 +355,7 @@ impl WalletHandle {
     /// Call a function on the wallet with access to pending transactions storage.
     pub async fn call_with_pending_txs<F, R>(&self, function: F) -> R
     where
-        F: FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> R
-            + Send
-            + 'static,
+        F: FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> R + Send + 'static,
         R: Sized + Send + 'static,
     {
         // Create a oneshot channel for the result
@@ -556,6 +555,13 @@ impl WalletHandle {
     /// Stop the background refresh once (doesn't stop background refresh thread).
     pub async fn stop(&self) {
         self.call(move |wallet| wallet.stop()).await
+    }
+
+    /// Store the wallet state.
+    /// If `path` is `None`, the wallet will be stored in the location it was opened from.
+    pub async fn store(&self, path: Option<&str>) {
+        let path = path.unwrap_or("").to_string();
+        self.call(move |wallet| wallet.store(&path)).await;
     }
 
     /// Get the sync progress of the wallet.
@@ -767,30 +773,6 @@ impl WalletHandle {
         Ok(())
     }
 
-    /// Sign a message with the wallet's private key.
-    ///
-    /// # Arguments
-    /// * `message` - The message to sign (arbitrary byte data)
-    /// * `address` - The address to use for signing (uses main address if None)
-    /// * `sign_with_view_key` - Whether to sign with view key instead of spend key (default: false)
-    ///
-    /// # Returns
-    /// A proof type prefix + base58 encoded signature
-    pub async fn sign_message(
-        &self,
-        message: &str,
-        address: Option<&str>,
-        sign_with_view_key: bool,
-    ) -> anyhow::Result<String> {
-        let message = message.to_string();
-        let address = address.map(|s| s.to_string());
-
-        self.call(move |wallet| {
-            wallet.sign_message(&message, address.as_deref(), sign_with_view_key)
-        })
-        .await
-    }
-
     /// Creates pending transaction, gets approval, then publishes or disposes based on approval.
     /// Return `None` if the transaction is not published, `Some(receipt)` if it is published.
     /// If the amount is `None`, the transaction will be a sweep (whole balance)
@@ -845,10 +827,9 @@ impl WalletHandle {
             // Publish the transaction
             let receipt = self
                 .call_with_pending_txs(move |wallet, pending_txs| {
-                    let mut pending_tx =
-                        pending_txs.remove(&uuid).ok_or_else(|| {
-                            anyhow!("Pending transaction not found for UUID: {}", uuid)
-                        })?;
+                    let mut pending_tx = pending_txs.remove(&uuid).ok_or_else(|| {
+                        anyhow!("Pending transaction not found for UUID: {}", uuid)
+                    })?;
 
                     let result = wallet.publish_pending_transaction(&mut pending_tx);
                     wallet.dispose_pending_transaction(pending_tx);
@@ -860,10 +841,9 @@ impl WalletHandle {
         } else {
             // Dispose the pending transaction without publishing
             self.call_with_pending_txs(move |wallet, pending_txs| {
-                let pending_tx =
-                    pending_txs.remove(&uuid).ok_or_else(|| {
-                        anyhow!("Pending transaction not found for UUID: {}", uuid)
-                    })?;
+                let pending_tx = pending_txs
+                    .remove(&uuid)
+                    .ok_or_else(|| anyhow!("Pending transaction not found for UUID: {}", uuid))?;
 
                 wallet.dispose_pending_transaction(pending_tx);
                 Ok::<(), anyhow::Error>(())
@@ -912,6 +892,31 @@ impl WalletHandle {
             .recv()
             .context("Failed to receive password verification result from thread")?
     }
+
+    /// Sign a message with the wallet's private key.
+    ///
+    /// # Arguments
+    /// * `message` - The message to sign (arbitrary byte data)
+    /// * `address` - The address to use for signing (uses main address if None)
+    /// * `sign_with_view_key` - Whether to sign with view key instead of spend key (default: false)
+    ///
+    /// # Returns
+    /// A proof type prefix + base58 encoded signature
+    pub async fn sign_message(
+        &self,
+        message: &str,
+        address: Option<&str>,
+        sign_with_view_key: bool,
+    ) -> anyhow::Result<String> {
+        let message = message.to_string();
+        let address = address.map(|s| s.to_string());
+
+        self.call(move |wallet| {
+            wallet.sign_message(&message, address.as_deref(), sign_with_view_key)
+        })
+        .await
+    }
+
 }
 
 impl Wallet {
@@ -1630,6 +1635,16 @@ impl FfiWallet {
     /// Stop the background refresh once (doesn't stop background refresh thread).
     fn stop(&mut self) {
         self.inner.pinned().stop();
+    }
+
+    /// Store the wallet state.
+    fn store(&mut self, path: &str) {
+        let_cxx_string!(path = path);
+        self.inner
+            .pinned()
+            .store(&path)
+            .context("Failed to store wallet: FFI call failed with exception")
+            .expect("Shouldn't panic");
     }
 
     /// Start the background refresh thread (refreshes every 10 seconds).
@@ -2483,11 +2498,17 @@ impl TransactionInfoHandle {
         }
     }
 
+    /// Get the timestamp of the transaction.
+    pub fn timestamp(&self) -> u64 {
+        ffi::transactionInfoTimestamp(self.deref())
+    }
+
     pub fn serialize(&self) -> Option<TransactionInfo> {
         let fee = self.fee();
         let amount = self.amount();
         let confirmations = self.confirmations();
         let tx_hash = self.hash();
+        let timestamp = self.timestamp();
         let direction = self
             .direction()
             .inspect_err(
@@ -2501,6 +2522,7 @@ impl TransactionInfoHandle {
             confirmations,
             tx_hash,
             direction,
+            timestamp,
         })
     }
 }

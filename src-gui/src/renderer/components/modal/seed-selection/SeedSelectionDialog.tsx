@@ -80,6 +80,15 @@ export default function SeedSelectionDialog() {
     }
   };
 
+  const Legacy = async () => {
+    if (!approval)
+      throw new Error("No approval request found for seed selection");
+
+    await resolveApproval<SeedChoice>(approval.request_id, {
+      type: "Legacy",
+    });
+  };
+
   const accept = async () => {
     if (!approval)
       throw new Error("No approval request found for seed selection");
@@ -351,7 +360,15 @@ export default function SeedSelectionDialog() {
           </Box>
         )}
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ justifyContent: "space-between" }}>
+        <PromiseInvokeButton
+          variant="text"
+          onInvoke={Legacy}
+          requiresContext={false}
+          color="inherit"
+        >
+          No wallet (Legacy)
+        </PromiseInvokeButton>
         <PromiseInvokeButton
           onInvoke={accept}
           variant="contained"

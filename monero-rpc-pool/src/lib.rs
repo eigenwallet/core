@@ -114,7 +114,7 @@ async fn create_app_with_receiver(
         .build()
         .expect("Failed to create HTTP client");
 
-    let app_state = AppState { 
+    let app_state = AppState {
         node_pool,
         http_client,
     };

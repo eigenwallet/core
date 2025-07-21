@@ -1,5 +1,5 @@
 import { Box, Button, Card, Grow, Typography } from "@mui/material";
-import NumberInput from "../../../inputs/NumberInput";
+import NumberInput from "renderer/components/inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useTheme } from "@mui/material/styles";
 import { piconerosToXmr } from "../../../../../utils/conversionUtils";
@@ -60,7 +60,6 @@ export default function SendAmountInput({
 
   const handleMaxAmount = () => {
     if (disabled) return;
-    
     if (onMaxToggled) {
       onMaxToggled();
     } else if (onMaxClicked) {
@@ -178,13 +177,14 @@ export default function SendAmountInput({
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             <SwapVertIcon
               onClick={handleCurrencySwap}
-              sx={{ 
-                cursor: (isMaxSelected || disabled) ? "default" : "pointer",
-                opacity: (isMaxSelected || disabled) ? 0.5 : 1
+              sx={{
+                cursor: isMaxSelected || disabled ? "default" : "pointer",
+                opacity: isMaxSelected || disabled ? 0.5 : 1,
               }}
             />
             <Typography color="text.secondary">
-              {secondaryAmount} {isMaxSelected ? "" : (currency === "XMR" ? fiatCurrency : "XMR")}
+              {secondaryAmount}{" "}
+              {isMaxSelected ? "" : currency === "XMR" ? fiatCurrency : "XMR"}
             </Typography>
           </Box>
         )}
@@ -204,12 +204,16 @@ export default function SendAmountInput({
       >
         <Typography color="text.secondary">Available</Typography>
         <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.5 }}>
-          <Typography color="text.primary"><MoneroAmount amount={piconerosToXmr(parseFloat(balance.unlocked_balance))}/></Typography>
+          <Typography color="text.primary">
+            <MoneroAmount
+              amount={piconerosToXmr(parseFloat(balance.unlocked_balance))}
+            />
+          </Typography>
           <Typography color="text.secondary">XMR</Typography>
         </Box>
-        <Button 
-          variant={isMaxSelected ? "contained" : "secondary"} 
-          size="tiny" 
+        <Button
+          variant={isMaxSelected ? "contained" : "secondary"}
+          size="tiny"
           onClick={handleMaxAmount}
           disabled={disabled}
         >

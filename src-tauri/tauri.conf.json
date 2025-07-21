@@ -1,6 +1,6 @@
 {
-  "productName": "UnstoppableSwap",
-  "version": "2.4.3",
+  "productName": "eigenwallet",
+  "version": "3.0.0-beta",
   "identifier": "net.unstoppableswap.gui",
   "build": {
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "UnstoppableSwap",
+        "title": "eigenwallet",
         "minWidth": 600,
         "minHeight": 400,
         "width": 800,

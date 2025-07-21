@@ -1,4 +1,3 @@
-use swap_fs::ensure_directory_exists;
 use ::bitcoin::bip32::Xpriv as ExtendedPrivKey;
 use anyhow::{Context as AnyContext, Result};
 use bitcoin::hashes::{sha256, Hash, HashEngine};
@@ -13,6 +12,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use swap_fs::ensure_directory_exists;
 use zeroize::Zeroizing;
 
 pub const SEED_LENGTH: usize = 32;

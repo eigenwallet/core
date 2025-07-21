@@ -6,8 +6,6 @@ use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::init_tor_client;
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
-use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
-use swap_fs::system_data_dir;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
@@ -19,6 +17,8 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
+use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
+use swap_fs::system_data_dir;
 use tauri_bindings::{
     MoneroNodeConfig, TauriBackgroundProgress, TauriContextStatusEvent, TauriEmitter, TauriHandle,
 };
@@ -40,6 +40,7 @@ pub struct Config {
     seed: Option<Seed>,
     debug: bool,
     json: bool,
+    log_dir: PathBuf,
     data_dir: PathBuf,
     is_testnet: bool,
 }
@@ -285,6 +286,7 @@ impl ContextBuilder {
         let eigenwallet_data_dir = &eigenwallet_data::new(self.is_testnet)?;
 
         let base_data_dir = &data::data_dir_from(self.data, self.is_testnet)?;
+        let log_dir = base_data_dir.join("logs");
         let env_config = env_config_from(self.is_testnet);
 
         // Initialize logging
@@ -299,7 +301,7 @@ impl ContextBuilder {
             let _ = common::tracing_util::init(
                 level_filter,
                 format,
-                base_data_dir.join("logs"),
+                log_dir.clone(),
                 self.tauri_handle.clone(),
                 false,
             );
@@ -503,6 +505,7 @@ impl ContextBuilder {
                 json: self.json,
                 is_testnet: self.is_testnet,
                 data_dir: data_dir.clone(),
+                log_dir: log_dir.clone(),
             },
             swap_lock,
             tasks,
@@ -551,10 +554,16 @@ impl Context {
     pub fn cleanup(&self) -> Result<()> {
         // TODO: close all monero wallets
         // call store(..) on all wallets
-        // if let Some(monero_manager) = &self.monero_manager {
-        //     let wallet = monero_manager.main_wallet().await;
-        //     wallet.store().await?;
-        // }
+
+        // TODO: This doesn't work because "there is no reactor running, must be called from the context of a Tokio 1.x runtime"
+        // let monero_manager = self.monero_manager.clone();
+        // tokio::spawn(async move {
+        //     if let Some(monero_manager) = monero_manager {
+        //         let wallet = monero_manager.main_wallet().await;
+        //         wallet.store(None).await;
+        //     }
+        // });
+
         Ok(())
     }
 
@@ -604,6 +613,25 @@ async fn init_bitcoin_wallet(
     Ok(wallet)
 }
 
+async fn request_and_open_monero_wallet_legacy(
+    data_dir: &PathBuf,
+    env_config: EnvConfig,
+    daemon: &monero_sys::Daemon,
+) -> Result<monero_sys::WalletHandle, Error> {
+    let wallet_path = data_dir.join("swap-tool-blockchain-monitoring-wallet");
+
+    let wallet = monero::Wallet::open_or_create(
+        wallet_path.display().to_string(),
+        daemon.clone(),
+        env_config.monero_network,
+        true,
+    )
+    .await
+    .context("Failed to create wallet")?;
+
+    Ok(wallet)
+}
+
 /// Opens or creates a Monero wallet after asking the user via the Tauri UI.
 ///
 /// The user can:
@@ -616,7 +644,7 @@ async fn init_bitcoin_wallet(
 async fn request_and_open_monero_wallet(
     tauri_handle: Option<TauriHandle>,
     eigenwallet_data_dir: &PathBuf,
-    non_tauri_data_dir: &PathBuf,
+    legacy_data_dir: &PathBuf,
     env_config: EnvConfig,
     daemon: &monero_sys::Daemon,
     wallet_database: &monero_sys::Database,
@@ -721,7 +749,10 @@ async fn request_and_open_monero_wallet(
                                         .request_password(wallet_path.clone())
                                         .await
                                         .inspect_err(|e| {
-                                            tracing::error!("Failed to get password from user: {}", e);
+                                            tracing::error!(
+                                                "Failed to get password from user: {}",
+                                                e
+                                            );
                                         })
                                         .ok();
 
@@ -769,9 +800,27 @@ async fn request_and_open_monero_wallet(
                         .await
                         .context("Failed to open wallet from provided path")?
                     }
+
+                    SeedChoice::Legacy => {
+                        let wallet = request_and_open_monero_wallet_legacy(
+                            legacy_data_dir,
+                            env_config,
+                            daemon,
+                        )
+                        .await?;
+                        let seed = Seed::from_file_or_generate(legacy_data_dir)
+                            .await
+                            .context("Failed to extract seed from wallet")?;
+
+                        break (wallet, seed);
+                    }
                 };
 
                 // Extract seed from the wallet
+                tracing::info!(
+                    "Extracting seed from wallet directory: {}",
+                    legacy_data_dir.display()
+                );
                 let seed = Seed::from_monero_wallet(&wallet)
                     .await
                     .context("Failed to extract seed from wallet")?;
@@ -783,34 +832,9 @@ async fn request_and_open_monero_wallet(
         // If we don't have a tauri handle, we use the seed.pem file
         // This is used for the CLI to monitor the blockchain
         None => {
-            let wallet_path = non_tauri_data_dir.join("swap-tool-blockchain-monitoring-wallet");
-
-            if wallet_path.exists() {
-                tracing::debug!(
-                    wallet_path = %wallet_path.display(),
-                    "Removing monitoring wallet"
-                );
-                let _ = tokio::fs::remove_file(&wallet_path).await;
-            }
-            let keys_path = wallet_path.with_extension("keys");
-            if keys_path.exists() {
-                tracing::debug!(
-                    keys_path = %keys_path.display(),
-                    "Removing monitoring wallet keys"
-                );
-                let _ = tokio::fs::remove_file(keys_path).await;
-            }
-
-            let wallet = monero::Wallet::open_or_create(
-                wallet_path.display().to_string(),
-                daemon.clone(),
-                env_config.monero_network,
-                true,
-            )
-            .await
-            .context("Failed to create wallet")?;
-
-            let seed = Seed::from_monero_wallet(&wallet)
+            let wallet =
+                request_and_open_monero_wallet_legacy(legacy_data_dir, env_config, daemon).await?;
+            let seed = Seed::from_file_or_generate(legacy_data_dir)
                 .await
                 .context("Failed to extract seed from wallet")?;
 
@@ -861,6 +885,7 @@ fn env_config_from(testnet: bool) -> EnvConfig {
 impl Config {
     pub fn for_harness(seed: Seed, env_config: EnvConfig) -> Self {
         let data_dir = data::data_dir_from(None, false).expect("Could not find data directory");
+        let log_dir = data_dir.join("logs"); // not used in production
 
         Self {
             namespace: XmrBtcNamespace::from_is_testnet(false),
@@ -870,6 +895,7 @@ impl Config {
             json: false,
             is_testnet: false,
             data_dir,
+            log_dir,
         }
     }
 }
@@ -911,6 +937,7 @@ pub mod api_test {
             json: bool,
         ) -> Self {
             let data_dir = data::data_dir_from(data_dir, is_testnet).unwrap();
+            let log_dir = data_dir.clone().join("logs");
             let seed = Seed::from_file_or_generate(data_dir.as_path())
                 .await
                 .unwrap();
@@ -924,6 +951,7 @@ pub mod api_test {
                 json,
                 is_testnet,
                 data_dir,
+                log_dir,
             }
         }
     }

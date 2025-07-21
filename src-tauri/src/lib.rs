@@ -6,7 +6,16 @@ use swap::cli::{
     api::{
         data,
         request::{
-            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs
+            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
+            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
+            CheckSeedResponse, ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs,
+            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
+            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
+            SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            DfxAuthenticateResponse,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -114,14 +123,17 @@ impl State {
 /// Initializes the Tauri state
 /// Sets the window title
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    // Set the window title to include the product name and version
+    // Set the window title to include the window title and version
     let config = app.config();
     let title = format!(
         "{} (v{})",
         config
-            .product_name
-            .as_ref()
-            .expect("Product name to be set"),
+            .app
+            .windows
+            .first()
+            .expect("Window object to be set in config")
+            .title
+            .as_str(),
         config.version.as_ref().expect("Version to be set")
     );
 
@@ -196,10 +208,10 @@ pub fn run() {
             get_monero_sync_progress,
             check_seed,
             get_pending_approvals,
-            dfx_authenticate,
             set_monero_restore_height,
             reject_approval_request,
-            get_restore_height
+            get_restore_height,
+            dfx_authenticate,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -349,9 +361,11 @@ async fn resolve_approval_request(
     args: ResolveApprovalArgs,
     state: tauri::State<'_, State>,
 ) -> Result<(), String> {
-    let request_id = args.request_id.parse()
+    let request_id = args
+        .request_id
+        .parse()
         .map_err(|e| format!("Invalid request ID '{}': {}", args.request_id, e))?;
-    
+
     state
         .handle
         .resolve_approval(request_id, args.accept)
@@ -366,9 +380,11 @@ async fn reject_approval_request(
     args: RejectApprovalArgs,
     state: tauri::State<'_, State>,
 ) -> Result<RejectApprovalResponse, String> {
-    let request_id = args.request_id.parse()
+    let request_id = args
+        .request_id
+        .parse()
         .map_err(|e| format!("Invalid request ID '{}': {}", args.request_id, e))?;
-    
+
     state
         .handle
         .reject_approval(request_id)

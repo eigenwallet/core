@@ -68,14 +68,14 @@ pub fn init(
         "monero_cpp",
     ];
     let OUR_CRATES: Vec<&str> = vec![
-        "swap", 
-        "asb", 
-        "monero_sys", 
+        "swap",
+        "asb",
+        "monero_sys",
         "unstoppableswap-gui-rs",
         "seed",
         "swap_env",
-        "swap_fs", 
-        "swap_serde"
+        "swap_fs",
+        "swap_serde",
     ];
 
     let INFO_LEVEL_CRATES: Vec<&str> = vec!["monero_rpc_pool"];

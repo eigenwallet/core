@@ -103,6 +103,7 @@ pub enum SeedChoice {
     RandomSeed,
     FromSeed { seed: String },
     FromWalletPath { wallet_path: String },
+    Legacy,
 }
 
 #[typeshare]

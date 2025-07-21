@@ -1,7 +1,10 @@
 import { Dialog } from "@mui/material";
-import { usePendingSendMoneroApproval } from "store/hooks";
 import SendTransactionContent from "./components/SendTransactionContent";
 import SendApprovalContent from "./components/SendApprovalContent";
+import { useState } from "react";
+import SendSuccessContent from "./components/SendSuccessContent";
+import { usePendingSendMoneroApproval } from "store/hooks";
+import { SendMoneroResponse } from "models/tauriModel";
 
 interface SendTransactionModalProps {
   open: boolean;
@@ -19,23 +22,41 @@ export default function SendTransactionModal({
   const pendingApprovals = usePendingSendMoneroApproval();
   const hasPendingApproval = pendingApprovals.length > 0;
 
-  // Force dialog to stay open if there's a pending approval
-  const shouldShowDialog = open || hasPendingApproval;
+  const [successResponse, setSuccessResponse] =
+    useState<SendMoneroResponse | null>(null);
+
+  const showSuccess = successResponse !== null;
+
+  const handleClose = () => {
+    onClose();
+    setSuccessResponse(null);
+  };
 
   return (
     <Dialog
-      open={shouldShowDialog}
-      onClose={hasPendingApproval ? undefined : onClose}
+      open={open}
+      onClose={handleClose}
       maxWidth="sm"
-      fullWidth
+      fullWidth={!showSuccess}
       PaperProps={{
         sx: { borderRadius: 2 },
       }}
     >
-      {hasPendingApproval ? (
-        <SendApprovalContent />
-      ) : (
-        <SendTransactionContent balance={balance} onClose={onClose} />
+      {!showSuccess && !hasPendingApproval && (
+        <SendTransactionContent
+          balance={balance}
+          onClose={onClose}
+          onSuccess={setSuccessResponse}
+        />
+      )}
+      {!showSuccess && hasPendingApproval && (
+        <SendApprovalContent onClose={onClose} />
+      )}
+      {showSuccess && (
+        <SendSuccessContent
+          onClose={onClose}
+          successDetails={successResponse}
+        />
       )}
     </Dialog>
   );

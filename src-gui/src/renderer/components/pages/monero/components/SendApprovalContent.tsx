@@ -5,7 +5,6 @@ import {
   DialogActions,
   Typography,
   Box,
-  Divider,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
@@ -15,7 +14,13 @@ import { PiconeroAmount } from "renderer/components/other/Units";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
-export default function SendApprovalContent() {
+interface SendApprovalContentProps {
+  onClose: () => void;
+}
+
+export default function SendApprovalContent({
+  onClose,
+}: SendApprovalContentProps) {
   const pendingApprovals = usePendingSendMoneroApproval();
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
@@ -119,6 +124,7 @@ export default function SendApprovalContent() {
       <DialogActions sx={{ p: 3, gap: 1 }}>
         <PromiseInvokeButton
           onInvoke={handleReject}
+          onSuccess={onClose}
           disabled={timeLeft === 0}
           variant="outlined"
           color="error"
