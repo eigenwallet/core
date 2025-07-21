@@ -1,4 +1,4 @@
-import { Box, Dialog, DialogTitle, Button, DialogContent, Chip } from "@mui/material";
+import { Box, Dialog, DialogTitle, Button, DialogContent, Chip, Tooltip } from "@mui/material";
 import { EuroSymbol as EuroIcon } from "@mui/icons-material";
 import DFXSwissLogo from "assets/dfx-logo.svg";
 import { useState } from "react";
@@ -35,13 +35,15 @@ export default function DfxButton() {
 
   return (
     <>
+      <Tooltip title="Buy Monero with fiat using DFX" enterDelay={500}>
       <Chip
         variant="button"
         icon={<EuroIcon />}
         label="Buy Monero"
         clickable
         onClick={handleOpenDfx}
-      />
+        />
+        </Tooltip>
 
       <Dialog
         open={dfxUrl != null}
