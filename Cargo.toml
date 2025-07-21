@@ -23,6 +23,5 @@ bdk_chain = { git = "https://github.com/Einliterflasche/bdk", branch = "bump/rus
 # Force up to date version of crunchy that fixes linux->windows cross compilation
 crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6ba89ccfc72ccb24cc4a4ac6d9c6272" }
 
-
 [workspace.lints]
 rust.unused_crate_dependencies = "warn"
