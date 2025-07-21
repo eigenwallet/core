@@ -383,6 +383,10 @@ fn main() {
         println!("cargo:rustc-link-lib=static=boost_locale");
         println!("cargo:rustc-link-lib=static=boost_program_options");
         println!("cargo:rustc-link-lib=static=iconv");
+        
+        // Link C++ standard library and GCC runtime statically
+        println!("cargo:rustc-link-arg=-static-libstdc++");
+        println!("cargo:rustc-link-arg=-static-libgcc");
     }
 
     // Link libsodium statically
