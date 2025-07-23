@@ -34,4 +34,4 @@ export const logsSlice = createSlice({
 
 export const { receivedCliLog } = logsSlice.actions;
 
-export default logsSlice.reducer; 
+export default logsSlice.reducer;
