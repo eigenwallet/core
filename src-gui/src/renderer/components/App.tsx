@@ -1,7 +1,6 @@
 import { Box, CssBaseline } from "@mui/material";
 import {
   ThemeProvider,
-  Theme,
   StyledEngineProvider,
 } from "@mui/material/styles";
 import "@tauri-apps/plugin-shell";
@@ -17,6 +16,7 @@ import { useSettings } from "store/hooks";
 import { Theme as ThemeEnum, themes } from "./theme";
 import { useEffect } from "react";
 import { setupBackgroundTasks } from "renderer/background";
+import { useIsMobile } from "../../utils/useIsMobile";
 import "@fontsource/roboto";
 import FeedbackPage from "./pages/feedback/FeedbackPage";
 import IntroductionModal from "./modal/introduction/IntroductionModal";
@@ -67,12 +67,14 @@ export default function App() {
 }
 
 function InnerContent() {
+  const isMobile = useIsMobile();
+  
   return (
     <Box
       sx={{
-        padding: 4,
-        marginLeft: drawerWidth,
-        maxHeight: `100vh`,
+        padding: isMobile ? 2 : 4,
+        marginLeft: isMobile ? 0 : drawerWidth,
+        paddingBottom: isMobile ? 10 : 4, // Account for bottom nav
         flex: 1,
       }}
     >

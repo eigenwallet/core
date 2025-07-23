@@ -22,6 +22,7 @@ import { isTestnet } from "store/config";
 import { open } from "@tauri-apps/plugin-shell";
 import dayjs from "dayjs";
 import { useState } from "react";
+import { useIsMobile } from "utils/useIsMobile";
 
 interface TransactionItemProps {
   transaction: TransactionInfo;
@@ -99,9 +100,16 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
               disableTooltip
             />
           </Typography>
-          <Typography variant="caption" sx={{ gridArea: "2 / 2" }}>
+          <Box sx={{ gridArea: "2 / 2", display: "flex", flexDirection: "row", gap: 1 }}>
+          <Typography variant="caption" >
             <FiatPiconeroAmount amount={transaction.amount} />
           </Typography>
+          {useIsMobile() && (
+            <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              {displayDate}
+            </Typography>
+          )}
+          </Box>
         </Box>
       </Box>
       <Box
@@ -112,13 +120,15 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
           gap: 1,
         }}
       >
+        {!useIsMobile() &&
         <Typography
-          variant="body1"
-          color="text.secondary"
-          sx={{ fontSize: 14 }}
+        variant="body1"
+        color="text.secondary"
+        sx={{ fontSize: 14 }}
         >
           {displayDate}
         </Typography>
+        }
         <ConfirmationsBadge confirmations={transaction.confirmations} />
         <IconButton
           onClick={(event) => {

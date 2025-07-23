@@ -1,4 +1,6 @@
-import { Button, Dialog, DialogActions } from "@mui/material";
+import { Button, DialogActions } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
 import { useState } from "react";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { withdrawBtc } from "renderer/rpc";
@@ -30,7 +32,8 @@ export default function WithdrawDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onCancel} maxWidth="sm" fullWidth>
+    <MobileDialog open={open} onClose={onCancel} maxWidth="sm" fullWidth>
+      <MobileDialogHeader title="Withdraw Bitcoin" onClose={onCancel} />
       <DialogHeader title="Withdraw Bitcoin" />
       <WithdrawDialogContent isPending={pending} withdrawTxId={withdrawTxId}>
         {haveFundsBeenWithdrawn ? (
@@ -66,6 +69,6 @@ export default function WithdrawDialog({
           </PromiseInvokeButton>
         )}
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }
