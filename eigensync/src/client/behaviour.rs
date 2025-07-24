@@ -1,55 +1,35 @@
 //! libp2p networking behaviour for eigensync client
 
 use crate::protocol::{EigensyncRequest, EigensyncResponse};
-use crate::types::{Result, PeerId};
+use anyhow::Result;
 
-/// libp2p behaviour for eigensync client (placeholder)
+/// Client-side libp2p behaviour for sending eigensync requests
 pub struct ClientBehaviour {
-    // TODO: Add actual behaviour components
-    // request_response: RequestResponse<EigensyncCodec>,
-    // identify: Identify,
-    // ping: Ping,
+    // TODO: Add actual libp2p request-response behaviour fields
 }
 
 impl ClientBehaviour {
-    /// Create a new client behaviour
     pub fn new() -> Self {
-        tracing::debug!("Creating client behaviour");
-        
-        // TODO: Initialize behaviour components
-        Self {
-            // request_response: RequestResponse::new(...),
-            // identify: Identify::new(...),
-            // ping: Ping::default(),
-        }
+        Self {}
     }
 
-    /// Send a request to the server
-    pub async fn send_request(
-        &mut self,
-        server_peer_id: PeerId,
-        request: EigensyncRequest,
-    ) -> Result<EigensyncResponse> {
-        tracing::debug!("Sending request to server {}: {:?}", server_peer_id, request);
-        
-        // TODO: Implement request sending
+    pub async fn send_request(&mut self, request: EigensyncRequest) -> Result<EigensyncResponse> {
         match request {
             EigensyncRequest::GetChanges(_params) => {
-                // TODO: Handle GetChanges request
-                todo!("GetChanges request not implemented")
-            },
+                todo!("Implement GetChanges request")
+            }
             EigensyncRequest::SubmitChanges(_params) => {
-                // TODO: Handle SubmitChanges request
-                todo!("SubmitChanges request not implemented")
-            },
+                todo!("Implement SubmitChanges request")
+            }
             EigensyncRequest::Ping(_params) => {
-                // TODO: Handle Ping request
-                todo!("Ping request not implemented")
-            },
+                todo!("Implement Ping request")
+            }
             EigensyncRequest::GetStatus(_params) => {
-                // TODO: Handle GetStatus request
-                todo!("GetStatus request not implemented")
-            },
+                todo!("Implement GetStatus request")
+            }
+            EigensyncRequest::Handshake(_params) => {
+                todo!("Implement Handshake request")
+            }
         }
     }
 }
