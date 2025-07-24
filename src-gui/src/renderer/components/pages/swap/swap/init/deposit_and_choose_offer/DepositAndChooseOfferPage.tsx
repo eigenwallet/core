@@ -7,12 +7,16 @@ import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
 import { useState } from "react";
 import { sortApprovalsAndKnownQuotes } from "utils/sortUtils";
+import { QuoteWithAddress } from "models/tauriModel";
 
 export default function DepositAndChooseOfferPage({
   deposit_address,
   max_giveable,
   known_quotes,
-}: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
+  onSelectOffer,
+}: TauriSwapProgressEventContent<"WaitingForBtcDeposit"> & {
+  onSelectOffer: (requestId: string) => void;
+}) {
   const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
   const [currentPage, setCurrentPage] = useState(1);
   const offersPerPage = 3;
@@ -122,6 +126,7 @@ export default function DepositAndChooseOfferPage({
                       key={startIndex + index}
                       quoteWithAddress={quote}
                       requestId={quote.request_id}
+                      onSelectOffer={onSelectOffer}
                     />
                   );
                 })}

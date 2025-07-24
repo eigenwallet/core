@@ -4,10 +4,17 @@ import { useState } from "react";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { buyXmr } from "renderer/rpc";
 import { useSettings } from "store/hooks";
+import { resolveSelectMakerApproval } from "renderer/rpc";
+import CancelButton from "../CancelButton";
 
-export default function InitPage() {
+export default function AddressInputPage({
+  selectedOfferRequestId,
+  setSelectedOfferRequestId,
+}: {
+  selectedOfferRequestId: string;
+  setSelectedOfferRequestId: (requestId: string | null) => void;
+}) {
   const [redeemAddress, setRedeemAddress] = useState("");
   const [refundAddress, setRefundAddress] = useState("");
   const [useExternalRefundAddress, setUseExternalRefundAddress] =
@@ -22,12 +29,15 @@ export default function InitPage() {
 
   const donationRatio = useSettings((s) => s.donateToDevelopment);
 
-  async function init() {
-    await buyXmr(
+  async function confirmOffer() {
+    await resolveSelectMakerApproval(
+      selectedOfferRequestId,
       useExternalRefundAddress ? refundAddress : null,
       useExternalRedeemAddress ? redeemAddress : null,
       donationRatio,
     );
+
+    setSelectedOfferRequestId(null);
   }
 
   return (
@@ -114,11 +124,12 @@ export default function InitPage() {
           size="large"
           sx={{ marginTop: 1 }}
           endIcon={<PlayArrowIcon />}
-          onInvoke={init}
+          onInvoke={confirmOffer}
           displayErrorSnackbar
         >
-          Continue
+          Confirm
         </PromiseInvokeButton>
+        <CancelButton />
       </Box>
     </>
   );

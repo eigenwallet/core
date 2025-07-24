@@ -1,8 +1,8 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
-    ApprovalRequestType, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
-    TauriSwapProgressEvent, SelectOfferApprovalRequest,
+    ApprovalRequestType, SelectMakerDetails, SelectOfferApprovalRequest, SendMoneroDetails,
+    TauriEmitter, TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
 use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
@@ -958,7 +958,15 @@ pub async fn buy_xmr(
     // because we need to be able to cancel the determine_btc_to_swap(..)
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
-    let (seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee, bitcoin_change_address, monero_receive_pool) = tokio::select! {
+    let (
+        seller_multiaddr,
+        seller_peer_id,
+        quote,
+        tx_lock_amount,
+        tx_lock_fee,
+        bitcoin_change_address,
+        monero_receive_pool,
+    ) = tokio::select! {
         result = determine_btc_to_swap(
             move || {
                 let rendezvous_points = rendezvous_points_clone.clone();
@@ -1639,7 +1647,11 @@ pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS, FQ>(
     sync: FS,
     event_emitter: Option<TauriHandle>,
     swap_id: Uuid,
-    request_approval: impl Fn(QuoteWithAddress) -> Box<dyn Future<Output = Result<Option<SelectOfferApprovalRequest>>> + Send>,
+    request_approval: impl Fn(
+        QuoteWithAddress,
+    ) -> Box<
+        dyn Future<Output = Result<Option<SelectOfferApprovalRequest>>> + Send,
+    >,
 ) -> Result<(
     Multiaddr,
     PeerId,
@@ -1737,28 +1749,26 @@ where
                 let response = pinned_future.await;
 
                 match response {
-                    Ok(Some(response)) => {
-                        Ok::<
-                            Option<(
-                                Multiaddr,
-                                PeerId,
-                                BidQuote,
-                                bitcoin::Amount,
-                                bitcoin::Amount,
-                                Option<bitcoin::Address<NetworkUnchecked>>,
-                                MoneroAddressPool,
-                            )>,
-                            anyhow::Error,
-                        >(Some((
-                            quote.multiaddr.clone(),
-                            quote.peer_id.clone(),
-                            quote.quote.clone(),
-                            tx_lock_amount,
-                            tx_lock_fee,
-                            response.bitcoin_change_address,
-                            response.monero_receive_pool,
-                        )))
-                    }
+                    Ok(Some(response)) => Ok::<
+                        Option<(
+                            Multiaddr,
+                            PeerId,
+                            BidQuote,
+                            bitcoin::Amount,
+                            bitcoin::Amount,
+                            Option<bitcoin::Address<NetworkUnchecked>>,
+                            MoneroAddressPool,
+                        )>,
+                        anyhow::Error,
+                    >(Some((
+                        quote.multiaddr.clone(),
+                        quote.peer_id.clone(),
+                        quote.quote.clone(),
+                        tx_lock_amount,
+                        tx_lock_fee,
+                        response.bitcoin_change_address,
+                        response.monero_receive_pool,
+                    ))),
                     Ok(None) => Ok(None),
                     Err(_) => Ok(None),
                 }
@@ -1806,11 +1816,28 @@ where
         };
 
         // If user accepted an offer, return it to start the swap
-        if let Some((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee, bitcoin_change_address, monero_receive_pool)) = result {
+        if let Some((
+            multiaddr,
+            peer_id,
+            quote,
+            tx_lock_amount,
+            tx_lock_fee,
+            bitcoin_change_address,
+            monero_receive_pool,
+        )) = result
+        {
             quote_fetch_abort_handle.abort();
             wallet_refresh_abort_handle.abort();
 
-            return Ok((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee, bitcoin_change_address, monero_receive_pool));
+            return Ok((
+                multiaddr,
+                peer_id,
+                quote,
+                tx_lock_amount,
+                tx_lock_fee,
+                bitcoin_change_address,
+                monero_receive_pool,
+            ));
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

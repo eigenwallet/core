@@ -22,15 +22,23 @@ import XmrLockedPage from "./in_progress/XmrLockedPage";
 import XmrLockTxInMempoolPage from "./in_progress/XmrLockInMempoolPage";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
-import InitPage from "./init/InitPage";
-import { Box } from "@mui/material";
+import AddressInputPage from "./init/AddressInputPage";
+import { useState } from "react";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
-  if (state === null) {
-    return <InitPage />;
-  }
-
   const type: TauriSwapProgressEventType = state.curr.type;
+  const [selectedOfferRequestId, setSelectedOfferRequestId] = useState<
+    string | null
+  >(null);
+
+  if (selectedOfferRequestId !== null) {
+    return (
+      <AddressInputPage
+        selectedOfferRequestId={selectedOfferRequestId}
+        setSelectedOfferRequestId={setSelectedOfferRequestId}
+      />
+    );
+  }
 
   switch (type) {
     case "RequestingQuote":
@@ -42,7 +50,12 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "WaitingForBtcDeposit":
       // This double check is necessary for the typescript compiler to infer types
       if (state.curr.type === "WaitingForBtcDeposit") {
-        return <DepositAndChooseOfferPage {...state.curr.content} />;
+        return (
+          <DepositAndChooseOfferPage
+            {...state.curr.content}
+            onSelectOffer={setSelectedOfferRequestId}
+          />
+        );
       }
       break;
     case "SwapSetupInflight":

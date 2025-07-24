@@ -79,7 +79,7 @@ where
 
             BuyXmrArgs {
                 rendezvous_points: vec![],
-                sellers: vec![seller]
+                sellers: vec![seller],
             }
             .request(context.clone())
             .await?;
@@ -335,7 +335,6 @@ enum CliCommand {
         //     parse(try_from_str = bitcoin_address::parse)
         // )]
         // bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
-
         #[structopt(flatten)]
         monero: Monero,
 
@@ -344,7 +343,6 @@ enum CliCommand {
         //     parse(try_from_str = swap_serde::monero::address::parse)
         // )]
         // monero_receive_address: monero::Address,
-
         #[structopt(flatten)]
         tor: Tor,
     },
