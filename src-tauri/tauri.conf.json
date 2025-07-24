@@ -40,6 +40,9 @@
     "macOS": {
       "minimumSystemVersion": "11.0"
     },
+    "iOS": {
+      "minimumSystemVersion": "13.0"
+    },
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

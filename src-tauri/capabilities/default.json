@@ -10,7 +10,6 @@
     "shell:allow-open",
     "store:default",
     "process:default",
-    "cli:allow-cli-matches",
     "updater:default",
     "process:allow-restart",
     "opener:default"

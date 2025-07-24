@@ -3,12 +3,13 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		09A627D02012E7819DB4A2A8 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F954AC7BE42CF2E572299349 /* Metal.framework */; };
 		11BEC9791AF96103E67F2765 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BB915D2EC9C9B7F180DA3375 /* WebKit.framework */; };
+		14078F966047EE72D09E5CF3 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = F41C14A4233AC168E2105D22 /* libapp.a */; };
 		2C81BE1380B57E3DE6A694A4 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D3EE4EC9AD601C0F19E5509E /* Security.framework */; };
 		346A2E39246F55B9C1151066 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 5B34251CDBA1018A7A5D131C /* LaunchScreen.storyboard */; };
 		49FD4B43F966894F49443DCE /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 6E09A9645CE4D27BFCB78793 /* assets */; };
@@ -37,6 +38,7 @@
 		BB915D2EC9C9B7F180DA3375 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		D3EE4EC9AD601C0F19E5509E /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		F31D4B930C16DF4D911D7C4E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F41C14A4233AC168E2105D22 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		F577B570410BAF3E9D30131F /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		F954AC7BE42CF2E572299349 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		FA94C5B1F00F625AB1DB1400 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -61,6 +63,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0C1EC57513F4A6BFC3C140FD /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				F41C14A4233AC168E2105D22 /* libapp.a */,
+			);
+			path = debug;
+			sourceTree = "<group>";
+		};
 		27EDF718D060AA95A5B01F4C /* unstoppableswap-gui-rs_iOS */ = {
 			isa = PBXGroup;
 			children = (
@@ -73,6 +83,7 @@
 		406F3CF08CA9B65234C81C55 /* Externals */ = {
 			isa = PBXGroup;
 			children = (
+				459F61AEF34F1491A4DF6D8D /* arm64-sim */,
 			);
 			path = Externals;
 			sourceTree = "<group>";
@@ -83,6 +94,14 @@
 				715F27D94C0BD2845956A2D4 /* unstoppableswap-gui-rs */,
 			);
 			path = Sources;
+			sourceTree = "<group>";
+		};
+		459F61AEF34F1491A4DF6D8D /* arm64-sim */ = {
+			isa = PBXGroup;
+			children = (
+				0C1EC57513F4A6BFC3C140FD /* debug */,
+			);
+			path = "arm64-sim";
 			sourceTree = "<group>";
 		};
 		706CFB8BE715C477A63D0FF1 = {
@@ -150,6 +169,20 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		"TEMP_5E1D5A66-D988-4E4D-8527-24852C486B37" /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = arm64;
+			sourceTree = "<group>";
+		};
+		"TEMP_F613E718-BCCB-41CE-AF90-CEC658139E1F" /* x86_64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = x86_64;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -181,8 +214,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 335C0B81ED4316B516375AD1 /* Build configuration list for PBXProject "unstoppableswap-gui-rs" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -194,7 +225,7 @@
 			);
 			mainGroup = 706CFB8BE715C477A63D0FF1;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 54;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -211,6 +242,7 @@
 				9C79D971C9D3803F5C610567 /* Assets.xcassets in Resources */,
 				346A2E39246F55B9C1151066 /* LaunchScreen.storyboard in Resources */,
 				49FD4B43F966894F49443DCE /* assets in Resources */,
+				14078F966047EE72D09E5CF3 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -336,7 +368,7 @@
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = net.unstoppableswap.gui;
-				PRODUCT_NAME = UnstoppableSwap;
+				PRODUCT_NAME = "UnstoppableSwap";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = "arm64  arm64-sim";
@@ -433,7 +465,7 @@
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = net.unstoppableswap.gui;
-				PRODUCT_NAME = UnstoppableSwap;
+				PRODUCT_NAME = "UnstoppableSwap";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = "arm64  arm64-sim";

@@ -48,6 +48,7 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Fixes ___isPlatformVersionAtLeast being called",
         "patches/0004-fix-___isPlatformVersionAtLeast.patch"
     ),
+
 ];
 
 /// Execute a child process with piped stdout/stderr and display output in real-time
@@ -161,13 +162,27 @@ fn main() {
         target
     );
 
-    let child = std::process::Command::new("make")
+    // Building native_ccache currently fails for iOS/iOS-simulator targets 
+    // because the toolchain lacks full std::filesystem support. Since ccache
+    // is an optimization tool that speeds up repeated builds and isn't essential 
+    // for functionality, we can safely disable it for iOS targets using the 
+    // existing GITIAN=1 mechanism.
+    let mut command = std::process::Command::new("make");
+    command
         .arg(format!("HOST={}", target))
         .arg("DEBUG=")
         // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
         .current_dir(&contrib_depends_dir)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // Disable native_ccache for iOS targets due to std::filesystem issues
+    if target.contains("apple-ios") {
+        command.env("GITIAN", "1");
+        println!("cargo:warning=Disabling native_ccache for iOS target due to std::filesystem limitations");
+    }
+
+    let child = command
         .spawn()
         .expect("make command to be executable");
 
@@ -480,6 +495,7 @@ fn split_patch_by_files(
 
     Ok(file_patches)
 }
+
 
 fn apply_embedded_patches() -> Result<(), Box<dyn std::error::Error>> {
     let monero_dir = Path::new("monero");
