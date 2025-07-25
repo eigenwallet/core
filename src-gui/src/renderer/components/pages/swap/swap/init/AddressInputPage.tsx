@@ -4,17 +4,21 @@ import { useState } from "react";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { useSettings } from "store/hooks";
+import { usePendingSelectMakerApproval, useSettings } from "store/hooks";
 import { resolveSelectMakerApproval } from "renderer/rpc";
-import CancelButton from "../CancelButton";
 
 export default function AddressInputPage({
-  selectedOfferRequestId,
-  setSelectedOfferRequestId,
+  selectedOfferPeerId,
+  setSelectedOfferPeerId,
 }: {
-  selectedOfferRequestId: string;
-  setSelectedOfferRequestId: (requestId: string | null) => void;
+  selectedOfferPeerId: string;
+  setSelectedOfferPeerId: (peerId: string | null) => void;
 }) {
+  const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
+  const selectedOffer = pendingSelectMakerApprovals.find(
+    (a) => a.request.content.maker.peer_id === selectedOfferPeerId,
+  );
+
   const [redeemAddress, setRedeemAddress] = useState("");
   const [refundAddress, setRefundAddress] = useState("");
   const [useExternalRefundAddress, setUseExternalRefundAddress] =
@@ -31,13 +35,13 @@ export default function AddressInputPage({
 
   async function confirmOffer() {
     await resolveSelectMakerApproval(
-      selectedOfferRequestId,
+      selectedOffer.request_id,
       useExternalRefundAddress ? refundAddress : null,
       useExternalRedeemAddress ? redeemAddress : null,
       donationRatio,
     );
 
-    setSelectedOfferRequestId(null);
+    setSelectedOfferPeerId(null);
   }
 
   return (
@@ -129,7 +133,6 @@ export default function AddressInputPage({
         >
           Confirm
         </PromiseInvokeButton>
-        <CancelButton />
       </Box>
     </>
   );

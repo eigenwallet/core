@@ -25,6 +25,10 @@ export default function SwapWidget() {
   const isWaitingForBtcDeposit =
     swap.state?.curr.type === "WaitingForBtcDeposit";
 
+  const isSelectedSwapOffer = useAppSelector(
+    (state) => state.swap.selectedOfferPeerId !== null,
+  );
+
   useEffect(() => {
     if (swap.state === null) {
       buyXmr();
@@ -80,7 +84,7 @@ export default function SwapWidget() {
                     : "space-between",
                 }}
               >
-                {!isWaitingForBtcDeposit && <CancelButton />}
+                {!(isWaitingForBtcDeposit && !isSelectedSwapOffer) && <CancelButton />}
                 <DebugPageSwitchBadge enabled={debug} setEnabled={setDebug} />
               </Box>
             </>

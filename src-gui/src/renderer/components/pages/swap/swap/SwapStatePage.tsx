@@ -1,4 +1,6 @@
 import { SwapState } from "models/storeModel";
+import { useAppDispatch, useAppSelector } from "store/hooks";
+import { setSelectedOfferPeerId } from "store/features/swapSlice";
 import { TauriSwapProgressEventType } from "models/tauriModelExt";
 import CircularProgressWithSubtitle from "./components/CircularProgressWithSubtitle";
 import BitcoinPunishedPage from "./done/BitcoinPunishedPage";
@@ -23,19 +25,17 @@ import XmrLockTxInMempoolPage from "./in_progress/XmrLockInMempoolPage";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
 import AddressInputPage from "./init/AddressInputPage";
-import { useState } from "react";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
   const type: TauriSwapProgressEventType = state.curr.type;
-  const [selectedOfferRequestId, setSelectedOfferRequestId] = useState<
-    string | null
-  >(null);
+  const dispatch = useAppDispatch();
+  const selectedOfferPeerId = useAppSelector(state => state.swap.selectedOfferPeerId);
 
-  if (selectedOfferRequestId !== null) {
+  if (selectedOfferPeerId !== null) {
     return (
       <AddressInputPage
-        selectedOfferRequestId={selectedOfferRequestId}
-        setSelectedOfferRequestId={setSelectedOfferRequestId}
+        selectedOfferPeerId={selectedOfferPeerId}
+        setSelectedOfferPeerId={(peerId) => dispatch(setSelectedOfferPeerId(peerId))}
       />
     );
   }
@@ -53,7 +53,7 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
         return (
           <DepositAndChooseOfferPage
             {...state.curr.content}
-            onSelectOffer={setSelectedOfferRequestId}
+            onSelectOffer={(peerId) => dispatch(setSelectedOfferPeerId(peerId))}
           />
         );
       }

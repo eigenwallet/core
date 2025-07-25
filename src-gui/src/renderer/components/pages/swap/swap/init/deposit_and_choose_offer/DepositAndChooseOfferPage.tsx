@@ -15,7 +15,7 @@ export default function DepositAndChooseOfferPage({
   known_quotes,
   onSelectOffer,
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit"> & {
-  onSelectOffer: (requestId: string) => void;
+  onSelectOffer: (peerId: string) => void;
 }) {
   const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
   const [currentPage, setCurrentPage] = useState(1);

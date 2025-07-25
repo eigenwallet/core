@@ -15,7 +15,7 @@ export default function MakerOfferItem({
 }: {
   requestId?: string;
   quoteWithAddress: QuoteWithAddress;
-  onSelectOffer: (requestId: string) => void;
+  onSelectOffer: (peerId: string) => void;
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
 
@@ -117,7 +117,7 @@ export default function MakerOfferItem({
           <span>
             <Button
               variant="contained"
-              onClick={() => onSelectOffer(requestId)}
+              onClick={() => onSelectOffer(peer_id)}
               disabled={!requestId}
             >
               Select
