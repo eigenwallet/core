@@ -1,6 +1,6 @@
 //! Server database layer for patch storage and peer management
 
-use crate::types::{Result, PeerId, ActorId};
+use crate::types::{Result, PeerId, ActorId, DocumentId};
 use rusqlite::Connection;
 use std::path::Path;
 
@@ -25,10 +25,9 @@ impl ServerDatabase {
         &self,
         peer_id: PeerId,
         actor_id: ActorId,
-        document_id: &str,
-        patch_data: &[u8],
+        changes: Vec<automerge::Change>,
     ) -> Result<u64> {
-        tracing::debug!("Storing patch for peer {} in document {}", peer_id, document_id);
+        tracing::debug!("Storing patch for peer {}", peer_id);
         
         // TODO: Implement patch storage
         Ok(0)
@@ -38,11 +37,10 @@ impl ServerDatabase {
     pub async fn get_patches(
         &self,
         peer_id: PeerId,
-        document_id: &str,
         since_sequence: Option<u64>,
-    ) -> Result<Vec<(u64, Vec<u8>)>> {
-        tracing::debug!("Getting patches for peer {} in document {} since {:?}", 
-                       peer_id, document_id, since_sequence);
+    ) -> Result<Vec<automerge::Change>> {
+        tracing::debug!("Getting patches for peer {} since {:?}", 
+                       peer_id, since_sequence);
         
         // TODO: Implement patch retrieval
         Ok(vec![])

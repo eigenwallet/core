@@ -1,7 +1,8 @@
 //! Client database layer for caching documents and metadata
 
-use crate::types::{Result, ActorId};
+use crate::types::{Result, ActorId, DocumentId};
 use rusqlite::Connection;
+use automerge::AutoCommit;
 use std::path::Path;
 
 /// Client database for caching Automerge documents and metadata
@@ -23,7 +24,7 @@ impl ClientDatabase {
     /// Store an Automerge document
     pub async fn store_document(
         &self,
-        document_id: &str,
+        document_id: &DocumentId,
         document_data: &[u8],
     ) -> Result<()> {
         tracing::debug!("Storing document {}", document_id);
@@ -33,17 +34,17 @@ impl ClientDatabase {
     }
 
     /// Load an Automerge document
-    pub async fn load_document(&self, document_id: &str) -> Result<Option<Vec<u8>>> {
+    pub async fn load_document(&self, document_id: &DocumentId) -> Result<AutoCommit> {
         tracing::debug!("Loading document {}", document_id);
         
         // TODO: Implement document loading
-        Ok(None)
+        Ok(AutoCommit::new())
     }
 
     /// Store document metadata
     pub async fn store_metadata(
         &self,
-        document_id: &str,
+        document_id: &DocumentId,
         last_sync: chrono::DateTime<chrono::Utc>,
         heads: &[automerge::ChangeHash],
     ) -> Result<()> {
@@ -56,7 +57,7 @@ impl ClientDatabase {
     /// Load document metadata
     pub async fn load_metadata(
         &self,
-        document_id: &str,
+        document_id: &DocumentId,
     ) -> Result<Option<(chrono::DateTime<chrono::Utc>, Vec<automerge::ChangeHash>)>> {
         tracing::debug!("Loading metadata for document {}", document_id);
         

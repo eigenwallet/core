@@ -12,7 +12,6 @@ required-features = ["server"]
 default = ["client"]
 server = ["dep:clap", "dep:toml", "dep:tracing-subscriber"]
 client = []
-metrics = ["dep:opentelemetry", "dep:opentelemetry-prometheus", "dep:prometheus"]
 
 [dependencies]
 # Core dependencies
@@ -29,28 +28,20 @@ automerge = "0.5"
 
 # Networking
 libp2p = { workspace = true, features = ["request-response", "tcp", "noise", "yamux", "identify", "ping", "mdns"] }
-futures = { workspace = true }
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
-rusqlite_migration = "1.2"
 
 # Serialization
 serde_cbor = "0.11"
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
-time = { version = "0.3", features = ["serde", "formatting"] }
 
 # Server-only dependencies
 clap = { version = "4.0", features = ["derive"], optional = true }
 toml = { version = "0.8", optional = true }
 tracing-subscriber = { workspace = true, optional = true }
-
-# Metrics (optional)
-opentelemetry = { version = "0.23", optional = true }
-opentelemetry-prometheus = { version = "0.16", optional = true }
-prometheus = { version = "0.13", optional = true }
 
 [dev-dependencies]
 tempfile = "3.0"

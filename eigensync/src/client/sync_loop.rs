@@ -2,7 +2,7 @@
 
 use crate::client::behaviour::ClientBehaviour;
 use crate::client::database::ClientDatabase;
-use crate::types::{Result, PeerId};
+use crate::types::{Result, DocumentId, PeerId};
 use std::time::Duration;
 
 /// Client sync loop for periodic synchronization
@@ -69,7 +69,7 @@ impl ClientSyncLoop {
     }
 
     /// Sync a specific document
-    pub async fn sync_document(&mut self, document_id: &str) -> Result<()> {
+    pub async fn sync_document(&mut self, document_id: &DocumentId) -> Result<()> {
         tracing::debug!("Syncing document {}", document_id);
         
         // TODO: Implement document-specific sync

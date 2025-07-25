@@ -30,6 +30,59 @@ impl std::fmt::Display for ActorId {
     }
 }
 
+/// DocumentId uniquely identifies a document in the system
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DocumentId(pub uuid::Uuid);
+
+impl DocumentId {
+    /// Generate a new random DocumentId
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
+
+    /// Create a DocumentId from a UUID
+    pub fn from_uuid(uuid: uuid::Uuid) -> Self {
+        Self(uuid)
+    }
+
+    /// Get the inner UUID
+    pub fn uuid(&self) -> uuid::Uuid {
+        self.0
+    }
+}
+
+impl Default for DocumentId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<uuid::Uuid> for DocumentId {
+    fn from(uuid: uuid::Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl From<DocumentId> for uuid::Uuid {
+    fn from(document_id: DocumentId) -> Self {
+        document_id.0
+    }
+}
+
+impl std::fmt::Display for DocumentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::str::FromStr for DocumentId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(uuid::Uuid::parse_str(s)?))
+    }
+}
+
 /// Comprehensive error types for eigensync operations
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -39,9 +92,6 @@ pub enum Error {
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
 
-    #[error("Migration error: {0}")]
-    Migration(#[from] rusqlite_migration::Error),
-
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_cbor::Error),
 
@@ -50,6 +100,9 @@ pub enum Error {
 
     #[error("Automerge error: {0}")]
     Automerge(#[from] automerge::AutomergeError),
+
+    #[error("UUID error: {0}")]
+    Uuid(#[from] uuid::Error),
 
     #[error("Network error: {0}")]
     Network(#[from] libp2p::swarm::DialError),
@@ -61,7 +114,7 @@ pub enum Error {
     Authentication { peer_id: PeerId, reason: String },
 
     #[error("Document not found: {document_id}")]
-    DocumentNotFound { document_id: String },
+    DocumentNotFound { document_id: DocumentId },
 
     #[error("Invalid configuration: {message}")]
     InvalidConfig { message: String },
@@ -94,8 +147,8 @@ pub struct PatchInfo {
 /// Current state of a document
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentState {
-    /// Document identifier (typically swap_id)
-    pub document_id: String,
+    /// Document identifier
+    pub document_id: DocumentId,
     /// Current number of patches applied
     pub patch_count: u64,
     /// Total size of all patches in bytes
@@ -127,27 +180,6 @@ impl Default for SnapshotConfig {
     }
 }
 
-/// Metrics for monitoring sync operations
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct SyncMetrics {
-    /// Total number of changes sent
-    pub changes_sent: u64,
-    /// Total number of changes received
-    pub changes_received: u64,
-    /// Total number of bytes sent
-    pub bytes_sent: u64,
-    /// Total number of bytes received
-    pub bytes_received: u64,
-    /// Number of sync operations performed
-    pub sync_operations: u64,
-    /// Number of failed sync operations
-    pub sync_failures: u64,
-    /// Average round-trip time in milliseconds
-    pub avg_rtt_ms: f64,
-    /// Number of conflicts resolved
-    pub conflicts_resolved: u64,
-}
-
 /// State of a peer connection
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PeerState {
@@ -176,8 +208,6 @@ pub struct PeerInfo {
     pub first_seen: chrono::DateTime<chrono::Utc>,
     /// When the peer was last seen
     pub last_seen: chrono::DateTime<chrono::Utc>,
-    /// Sync metrics for this peer
-    pub metrics: SyncMetrics,
 }
 
 /// A batch of changes/patches for efficient transmission
@@ -224,6 +254,15 @@ mod tests {
         let actor_id = ActorId::from(automerge_actor.clone());
         let converted_back: automerge::ActorId = actor_id.into();
         assert_eq!(automerge_actor, converted_back);
+    }
+
+    #[test]
+    fn test_document_id_conversion() {
+        let uuid = uuid::Uuid::new_v4();
+        let document_id = DocumentId::from(uuid.clone());
+        assert_eq!(uuid, document_id.uuid());
+        let parsed_back: uuid::Uuid = document_id.into();
+        assert_eq!(uuid, parsed_back);
     }
 
     #[test]

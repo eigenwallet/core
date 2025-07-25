@@ -1,6 +1,6 @@
 //! libp2p networking behaviour for eigensync client
 
-use crate::protocol::{EigensyncRequest, EigensyncResponse};
+use crate::protocol::{Request, Response};
 use anyhow::Result;
 
 /// Client-side libp2p behaviour for sending eigensync requests
@@ -13,22 +13,13 @@ impl ClientBehaviour {
         Self {}
     }
 
-    pub async fn send_request(&mut self, request: EigensyncRequest) -> Result<EigensyncResponse> {
+    pub async fn send_request(&mut self, request: Request) -> Result<Response> {
         match request {
-            EigensyncRequest::GetChanges(_params) => {
+            Request::GetChanges(_params) => {
                 todo!("Implement GetChanges request")
             }
-            EigensyncRequest::SubmitChanges(_params) => {
+            Request::SubmitChanges(_params) => {
                 todo!("Implement SubmitChanges request")
-            }
-            EigensyncRequest::Ping(_params) => {
-                todo!("Implement Ping request")
-            }
-            EigensyncRequest::GetStatus(_params) => {
-                todo!("Implement GetStatus request")
-            }
-            EigensyncRequest::Handshake(_params) => {
-                todo!("Implement Handshake request")
             }
         }
     }

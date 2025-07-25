@@ -28,20 +28,14 @@ pub mod server;
 #[cfg(feature = "client")]
 pub mod client;
 
-#[cfg(feature = "metrics")]
-pub mod metrics;
-
 // Re-export commonly used types
-pub use types::{Error, Result, ActorId, PeerId, DocumentState, PatchInfo};
+pub use types::{Error, Result, ActorId, DocumentId, PeerId, DocumentState, PatchInfo};
 pub use protocol::{
-    EigensyncMessage, EigensyncRequest, EigensyncResponse, EigensyncPayload, EigensyncCodec,
-    Frame, ErrorCode, AckType, AckMessage,
+    Request, Response, ErrorCode,
     // Request types
-    GetChangesParams, SubmitChangesParams, PingParams, GetStatusParams, HandshakeParams,
+    GetChangesParams, SubmitChangesParams,
     // Response types  
-    GetChangesResult, SubmitChangesResult, PingResult, GetStatusResult, HandshakeResult, ErrorResult,
-    // Protocol constants
-    CURRENT_VERSION,
+    GetChangesResult, SubmitChangesResult, ErrorResult,
 };
 
 #[cfg(feature = "client")]
@@ -49,9 +43,6 @@ pub use client::{Client, ClientConfig};
 
 #[cfg(feature = "server")]
 pub use server::{Server, ServerConfig};
-
-/// Version of the eigensync protocol
-pub const PROTOCOL_VERSION: u32 = protocol::CURRENT_VERSION;
 
 /// Protocol name for libp2p
 pub const PROTOCOL_NAME: &str = "/eigensync/1.0.0";
@@ -73,7 +64,6 @@ mod tests {
 
     #[test]
     fn test_protocol_constants() {
-        assert_eq!(PROTOCOL_VERSION, 1);
         assert_eq!(PROTOCOL_NAME, "/eigensync/1.0.0");
     }
 
@@ -82,10 +72,5 @@ mod tests {
         // Test that re-exported types are accessible
         let _actor_id = ActorId(automerge::ActorId::random());
         let _error_code = ErrorCode::InternalError;
-        let _ack_type = AckType::Received;
-        
-        // Test protocol constants
-        assert_eq!(CURRENT_VERSION, 1);
-        assert_eq!(protocol::CURRENT_VERSION, PROTOCOL_VERSION);
     }
 }
