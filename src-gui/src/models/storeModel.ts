@@ -11,4 +11,5 @@ export interface SwapSlice {
   state: SwapState | null;
   logs: CliLog[];
   spawnType: SwapSpawnType | null;
+  selectedOfferPeerId: string | null;
 }

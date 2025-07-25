@@ -4,10 +4,21 @@ import { useState } from "react";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { buyXmr } from "renderer/rpc";
-import { useSettings } from "store/hooks";
+import { usePendingSelectMakerApproval, useSettings } from "store/hooks";
+import { resolveSelectMakerApproval } from "renderer/rpc";
 
-export default function InitPage() {
+export default function AddressInputPage({
+  selectedOfferPeerId,
+  setSelectedOfferPeerId,
+}: {
+  selectedOfferPeerId: string;
+  setSelectedOfferPeerId: (peerId: string | null) => void;
+}) {
+  const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
+  const selectedOffer = pendingSelectMakerApprovals.find(
+    (a) => a.request.content.maker.peer_id === selectedOfferPeerId,
+  );
+
   const [redeemAddress, setRedeemAddress] = useState("");
   const [refundAddress, setRefundAddress] = useState("");
   const [useExternalRefundAddress, setUseExternalRefundAddress] =
@@ -22,12 +33,15 @@ export default function InitPage() {
 
   const donationRatio = useSettings((s) => s.donateToDevelopment);
 
-  async function init() {
-    await buyXmr(
+  async function confirmOffer() {
+    await resolveSelectMakerApproval(
+      selectedOffer.request_id,
       useExternalRefundAddress ? refundAddress : null,
       useExternalRedeemAddress ? redeemAddress : null,
       donationRatio,
     );
+
+    setSelectedOfferPeerId(null);
   }
 
   return (
@@ -114,10 +128,10 @@ export default function InitPage() {
           size="large"
           sx={{ marginTop: 1 }}
           endIcon={<PlayArrowIcon />}
-          onInvoke={init}
+          onInvoke={confirmOffer}
           displayErrorSnackbar
         >
-          Continue
+          Confirm
         </PromiseInvokeButton>
       </Box>
     </>

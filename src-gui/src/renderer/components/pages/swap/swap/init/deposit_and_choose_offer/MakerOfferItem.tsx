@@ -5,17 +5,17 @@ import {
   MoneroSatsExchangeRate,
   SatsAmount,
 } from "renderer/components/other/Units";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
 
 export default function MakerOfferItem({
   quoteWithAddress,
   requestId,
+  onSelectOffer,
 }: {
   requestId?: string;
   quoteWithAddress: QuoteWithAddress;
+  onSelectOffer: (peerId: string) => void;
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
 
@@ -107,19 +107,23 @@ export default function MakerOfferItem({
         </Box>
       </Box>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        <PromiseInvokeButton
-          variant="contained"
-          onInvoke={() => resolveApproval(requestId, true as unknown as object)}
-          displayErrorSnackbar
-          disabled={!requestId}
-          tooltipTitle={
+        <Tooltip
+          title={
             requestId == null
               ? "You don't have enough Bitcoin to swap with this maker"
-              : null
+              : ""
           }
         >
-          Select
-        </PromiseInvokeButton>
+          <span>
+            <Button
+              variant="contained"
+              onClick={() => onSelectOffer(peer_id)}
+              disabled={!requestId}
+            >
+              Select
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
     </Paper>
   );

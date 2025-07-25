@@ -43,6 +43,7 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
+  SelectOfferApprovalRequest,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -195,11 +196,7 @@ export async function withdrawBtc(address: string): Promise<string> {
   return response.txid;
 }
 
-export async function buyXmr(
-  bitcoin_change_address: string | null,
-  monero_receive_address: string,
-  donation_percentage: DonateToDevelopmentTip,
-) {
+export async function buyXmr() {
   // Get all available makers from the Redux store
   const state = store.getState();
   const allMakers = [
@@ -212,6 +209,18 @@ export async function buyXmr(
     providerToConcatenatedMultiAddr(maker),
   );
 
+  await invoke<BuyXmrArgs, BuyXmrResponse>("buy_xmr", {
+    rendezvous_points: PRESET_RENDEZVOUS_POINTS,
+    sellers,
+  });
+}
+
+export async function resolveSelectMakerApproval(
+  requestId: string,
+  btc_change_address: string,
+  monero_receive_address: string,
+  donation_percentage: DonateToDevelopmentTip,
+) {
   const address_pool: LabeledMoneroAddress[] = [];
   if (donation_percentage !== false) {
     const donation_address = isTestnet()
@@ -238,12 +247,10 @@ export async function buyXmr(
     });
   }
 
-  await invoke<BuyXmrArgs, BuyXmrResponse>("buy_xmr", {
-    rendezvous_points: PRESET_RENDEZVOUS_POINTS,
-    sellers,
+  await resolveApproval(requestId, {
+    bitcoin_change_address: btc_change_address,
     monero_receive_pool: address_pool,
-    bitcoin_change_address,
-  });
+  } as unknown as SelectOfferApprovalRequest);
 }
 
 export async function resumeSwap(swapId: string) {

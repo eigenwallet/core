@@ -1,4 +1,6 @@
 import { SwapState } from "models/storeModel";
+import { useAppDispatch, useAppSelector } from "store/hooks";
+import { setSelectedOfferPeerId } from "store/features/swapSlice";
 import { TauriSwapProgressEventType } from "models/tauriModelExt";
 import CircularProgressWithSubtitle from "./components/CircularProgressWithSubtitle";
 import BitcoinPunishedPage from "./done/BitcoinPunishedPage";
@@ -22,15 +24,21 @@ import XmrLockedPage from "./in_progress/XmrLockedPage";
 import XmrLockTxInMempoolPage from "./in_progress/XmrLockInMempoolPage";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
-import InitPage from "./init/InitPage";
-import { Box } from "@mui/material";
+import AddressInputPage from "./init/AddressInputPage";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
-  if (state === null) {
-    return <InitPage />;
-  }
-
   const type: TauriSwapProgressEventType = state.curr.type;
+  const dispatch = useAppDispatch();
+  const selectedOfferPeerId = useAppSelector(state => state.swap.selectedOfferPeerId);
+
+  if (selectedOfferPeerId !== null) {
+    return (
+      <AddressInputPage
+        selectedOfferPeerId={selectedOfferPeerId}
+        setSelectedOfferPeerId={(peerId) => dispatch(setSelectedOfferPeerId(peerId))}
+      />
+    );
+  }
 
   switch (type) {
     case "RequestingQuote":
@@ -42,7 +50,12 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "WaitingForBtcDeposit":
       // This double check is necessary for the typescript compiler to infer types
       if (state.curr.type === "WaitingForBtcDeposit") {
-        return <DepositAndChooseOfferPage {...state.curr.content} />;
+        return (
+          <DepositAndChooseOfferPage
+            {...state.curr.content}
+            onSelectOffer={(peerId) => dispatch(setSelectedOfferPeerId(peerId))}
+          />
+        );
       }
       break;
     case "SwapSetupInflight":
