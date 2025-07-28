@@ -140,14 +140,30 @@ pub enum ChangeManagement {
     },
 }
 
-/// An e-note belonging to this wallet.
-/// Roughly equivalent to a UTXO.
-pub struct Enote {
-    inner: ffi::EnoteDetailsWrapper,
+/// Snapshot of a UTXO belonging to this wallet.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Utxo {
+    /// ID of transaction creating this UTXO
+    txid: String,
+    /// Block height of confirmation
+    block_height: u64,
+    /// Unique within a transaction
+    internal_index: u64,
+    /// Globally unique
+    global_index: u64,
+    /// Amount of the UTXO
+    amount: monero::Amount,
+    /// Whether the UTXO has been spent
+    is_spent: bool,
+    /// Whether the UTXO has been frozen
+    is_frozen: bool,
 }
 
 /// A wrapper around a pending transaction.
 struct PendingTransaction(*mut ffi::PendingTransaction);
+
+/// Wrapper around pointer to C++ EnoteDetails
+struct Enote(ffi::EnoteDetailsWrapper);
 
 impl WalletHandle {
     /// Open an existing wallet or create a new one, with a random seed.
@@ -498,9 +514,9 @@ impl WalletHandle {
         self.call(move |wallet| wallet.total_balance()).await
     }
 
-    /// Get all enotes of this wallet.
-    pub async fn enotes(&self) -> Vec<Enote> {
-        self.call(move |wallet| wallet.enotes()).await
+    /// Get all UTXOs belonging to this wallet.
+    pub async fn utxos(&self) -> Vec<Utxo> {
+        self.call(move |wallet| wallet.utxos()).await
     }
 
     /// Check if the wallet is synchronized.
@@ -1384,7 +1400,7 @@ impl FfiWallet {
     }
 
     /// Get all enotes of this wallet.
-    fn enotes(&mut self) -> Vec<Enote> {
+    fn utxos(&mut self) -> Vec<Utxo> {
         let Ok(mut pointer) = ffi::walletGetEnoteDetails(&self.inner) else {
             tracing::error!(
                 "Failed to get enotes: FFI call failed with exception, returning empty vector"
@@ -1400,15 +1416,24 @@ impl FfiWallet {
         };
 
         // Copy enotes into a Rust vector
-        let mut enotes = Vec::new();
+        let mut utxos = Vec::new();
         while let Some(enote) = cxx_vector.as_mut().pop() {
-            enotes.push(Enote::new(enote));
+            let enote = Enote::new(enote);
+            utxos.push(Utxo {
+                txid: enote.tx_id(),
+                block_height: enote.blockchain_height(),
+                internal_index: enote.internal_enote_index(),
+                global_index: enote.global_enote_index(),
+                amount: enote.amount(),
+                is_spent: enote.is_spent(),
+                is_frozen: enote.is_frozen(),
+            });
         }
 
         // Sort enotes by blockchain height (ascending)
-        enotes.sort_by_key(Enote::blockchain_height);
+        utxos.sort_by_key(Utxo::block_height);
 
-        enotes
+        utxos
     }
 
     /// Check if the wallet is synced with the daemon.
@@ -2026,15 +2051,57 @@ impl PendingTransaction {
     }
 }
 
+impl Utxo {
+    fn new(enote: &Enote) -> Self {
+        Self {
+            txid: enote.tx_id(),
+            block_height: enote.blockchain_height(),
+            internal_index: enote.internal_enote_index(),
+            global_index: enote.global_enote_index(),
+            amount: enote.amount(),
+            is_spent: enote.is_spent(),
+            is_frozen: enote.is_frozen(),
+        }
+    }
+
+    pub fn tx_id(&self) -> String {
+        self.txid.clone()
+    }
+
+    pub fn block_height(&self) -> u64 {
+        self.block_height
+    }
+
+    pub fn internal_index(&self) -> u64 {
+        self.internal_index
+    }
+
+    pub fn global_index(&self) -> u64 {
+        self.global_index
+    }
+
+    pub fn amount(&self) -> monero::Amount {
+        self.amount
+    }
+
+    pub fn is_spent(&self) -> bool {
+        self.is_spent
+    }
+
+    pub fn is_frozen(&self) -> bool {
+        self.is_frozen
+    }
+}
+
 impl Enote {
     fn new(inner: ffi::EnoteDetailsWrapper) -> Self {
         assert!(!inner.ptr.is_null(), "enote pointer not to be null");
 
-        Self { inner }
+        Self(inner)
     }
 
     fn pinned(&mut self) -> Pin<&mut ffi::EnoteDetailsWrapper> {
-        Pin::new(&mut self.inner)
+        Pin::new(&mut self.0)
     }
 
     /// The amount stored in the enote.
@@ -2044,6 +2111,13 @@ impl Enote {
                 .amount()
                 .expect("FFI call failed with exception"),
         )
+    }
+
+    /// The transaction ID of the enote.
+    pub fn tx_id(&self) -> String {
+        ffi::enoteTxId(self.deref())
+            .expect("FFI call failed with exception")
+            .to_string()
     }
 
     /// The blockchain height when the enote was created.
@@ -2212,7 +2286,7 @@ impl Deref for Enote {
     type Target = ffi::EnoteDetails;
 
     fn deref(&self) -> &ffi::EnoteDetails {
-        &self.inner.ptr
+        &self.0.ptr
     }
 }
 

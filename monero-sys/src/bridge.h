@@ -250,6 +250,12 @@ namespace Monero
         return std::make_unique<std::vector<EnoteDetailsWrapper>>(std::move(result));
     }
 
+    inline std::unique_ptr<std::string> enoteTxId(const EnoteDetails &enote)
+    {
+        auto txid = enote.txId();
+        return std::make_unique<std::string>(txid);
+    }
+
     /**
      * Free the memory allocated for the EnoteDetailsWrapper.
      */

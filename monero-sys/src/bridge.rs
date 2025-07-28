@@ -295,6 +295,9 @@ pub mod ffi {
             tx: *mut PendingTransaction,
         ) -> Result<()>;
 
+        /// The transaction ID of the enote.
+        fn enoteTxId(enote: &EnoteDetails) -> Result<UniquePtr<CxxString>>;
+
         /// The amount of an enote.
         fn amount(self: &EnoteDetails) -> Result<u64>;
 

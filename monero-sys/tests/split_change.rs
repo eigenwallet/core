@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Not};
 
 use monero::Amount;
-use monero_sys::{ChangeManagement, Daemon, Enote, SyncProgress, WalletHandle};
+use monero_sys::{ChangeManagement, Daemon, SyncProgress, Utxo, WalletHandle};
 
 const STAGENET_REMOTE_NODE: &str = "http://node.sethforprivacy.com:38089";
 const STAGENET_WALLET_SEED: &str = "echo ourselves ruined oven masterful wives enough addicted future cottage illness adopt lucky movement tiger taboo imbalance antics iceberg hobby oval aloof tuesday uttered oval";
@@ -56,7 +56,7 @@ async fn main() {
     tracing::info!("Wallet is synchronized!");
 
     tracing::info!("Blockheight: {}", wallet.blockchain_height().await.unwrap());
-    let original_enotes = wallet.enotes().await;
+    let original_enotes = wallet.utxos().await;
     tracing::info!(
         "Original enotes: {:?}",
         &original_enotes[original_enotes.len() - 10..]
@@ -104,7 +104,7 @@ async fn main() {
     let new_unlocked_balance = wallet.unlocked_balance().await;
     tracing::info!("Unlocked balance: {}", new_unlocked_balance);
 
-    let new_enotes = wallet.enotes().await;
+    let new_enotes = wallet.utxos().await;
     tracing::info!("New enotes: {:?}", &new_enotes[new_enotes.len() - 10..]);
 
     let calculated_total_balance = Amount::from_pico(
@@ -140,18 +140,18 @@ async fn main() {
 
 // assumes old is subset of new
 fn find_newly_spent_enotes<'a>(
-    original_enotes: &'a [Enote],
-    new_enotes: &'a [Enote],
-) -> Vec<&'a Enote> {
+    original_enotes: &'a [Utxo],
+    new_enotes: &'a [Utxo],
+) -> Vec<&'a Utxo> {
     let mut old = HashMap::new();
     let mut new = HashMap::new();
 
     for enote in original_enotes {
-        old.insert(enote.global_enote_index(), enote);
+        old.insert(enote.global_index(), enote);
     }
 
     for enote in new_enotes {
-        new.insert(enote.global_enote_index(), enote);
+        new.insert(enote.global_index(), enote);
     }
 
     let mut newly_spent = Vec::new();

@@ -80,5 +80,6 @@
     },
     "rust-analyzer.cargo.extraEnv": {
         "CARGO_TARGET_DIR": "target-check"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }
