@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT wallet_path, last_opened_at, name\n            FROM recent_wallets \n            ORDER BY last_opened_at DESC\n            LIMIT ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "wallet_path",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "last_opened_at",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "c3d93a4b8657ad8638ba1a893b4c2c0026d330d2b48b55bcb8686b248ad1659a"
+}
