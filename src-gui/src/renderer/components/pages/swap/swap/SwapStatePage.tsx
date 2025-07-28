@@ -22,12 +22,19 @@ import XmrLockedPage from "./in_progress/XmrLockedPage";
 import XmrLockTxInMempoolPage from "./in_progress/XmrLockInMempoolPage";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
-import InitPage from "./init/InitPage";
-import { Box } from "@mui/material";
+import { usePendingSpecifyRedeemRefundApproval } from "store/hooks";
+import AddressInputPage from "./init/AddressInputPage";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
+  const pendingSpecifyRedeemRefundApprovals = usePendingSpecifyRedeemRefundApproval();
+  
+  // Check for approval-based flows first (these take precedence over swap state)
+  if (pendingSpecifyRedeemRefundApprovals.length > 0) {
+    return <AddressInputPage />;
+  }
+
   if (state === null) {
-    return <InitPage />;
+    return null;
   }
 
   const type: TauriSwapProgressEventType = state.curr.type;

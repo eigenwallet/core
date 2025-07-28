@@ -69,9 +69,6 @@ pub struct BuyXmrArgs {
     pub rendezvous_points: Vec<Multiaddr>,
     #[typeshare(serialized_as = "Vec<string>")]
     pub sellers: Vec<Multiaddr>,
-    #[typeshare(serialized_as = "Option<string>")]
-    pub bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
-    pub monero_receive_pool: MoneroAddressPool,
 }
 
 #[typeshare]
@@ -920,12 +917,7 @@ pub async fn buy_xmr(
     let BuyXmrArgs {
         rendezvous_points,
         sellers,
-        bitcoin_change_address,
-        monero_receive_pool,
     } = buy_xmr;
-
-    monero_receive_pool.assert_network(context.config.env_config.monero_network)?;
-    monero_receive_pool.assert_sum_to_one()?;
 
     let bitcoin_wallet = Arc::clone(
         context
@@ -933,22 +925,6 @@ pub async fn buy_xmr(
             .as_ref()
             .expect("Could not find Bitcoin wallet"),
     );
-
-    let bitcoin_change_address = match bitcoin_change_address {
-        Some(addr) => addr
-            .require_network(bitcoin_wallet.network())
-            .context("Address is not on the correct network")?,
-        None => {
-            let internal_wallet_address = bitcoin_wallet.new_address().await?;
-
-            tracing::info!(
-                internal_wallet_address=%internal_wallet_address,
-                "No --change-address supplied. Any change will be received to the internal wallet."
-            );
-
-            internal_wallet_address
-        }
-    };
 
     let monero_wallet = Arc::clone(
         context
@@ -1075,11 +1051,6 @@ pub async fn buy_xmr(
 
     swarm.add_peer_address(seller_peer_id, seller_multiaddr.clone());
 
-    context
-        .db
-        .insert_monero_address_pool(swap_id, monero_receive_pool.clone())
-        .await?;
-
     tracing::debug!(peer_id = %swarm.local_peer_id(), "Network layer initialized");
 
     context.tauri_handle.emit_swap_progress_event(
@@ -1119,6 +1090,52 @@ pub async fn buy_xmr(
                 }
             },
             swap_result = async {
+                // Request approval for the refund and receive addresses
+                let details = SelectOfferDetails {
+                    swap_id,
+                    btc_amount_to_swap: quote.max_quantity,
+                    selected_maker: QuoteWithAddress {
+                        multiaddr: seller_multiaddr.clone(),
+                        peer_id: seller_peer_id,
+                        quote: quote.clone(),
+                        version: semver::Version::parse("0.0.0").unwrap(),
+                    },
+                };
+                
+                let approval_request = context
+                    .tauri_handle
+                    .request_specify_redeem_refund(details, 300)
+                    .await?;
+
+                // Handle bitcoin change address - if not provided, create from internal wallet
+                let bitcoin_change_address = match approval_request.bitcoin_change_address {
+                    Some(addr) => addr
+                        .require_network(bitcoin_wallet.network())
+                        .context("Address is not on the correct network")?,
+                    None => {
+                        let internal_wallet_address = bitcoin_wallet.new_address().await?;
+
+                        tracing::info!(
+                            internal_wallet_address=%internal_wallet_address,
+                            "No --change-address supplied. Any change will be received to the internal wallet."
+                        );
+
+                        internal_wallet_address
+                    }
+                };
+
+                let monero_receive_pool = approval_request.monero_receive_pool;
+                
+                // Assert that the sum of the addresses is 1, and network is correct
+                monero_receive_pool.assert_network(context.config.env_config.monero_network)?;
+                monero_receive_pool.assert_sum_to_one()?;
+
+                // Insert the addresses into the database
+                context
+                    .db
+                    .insert_monero_address_pool(swap_id, monero_receive_pool.clone())
+                    .await?;
+                
                 let swap = Swap::new(
                     Arc::clone(&context.db),
                     swap_id,
@@ -1127,7 +1144,7 @@ pub async fn buy_xmr(
                     env_config,
                     event_loop_handle,
                     monero_receive_pool.clone(),
-                    bitcoin_change_address_for_spawn,
+                    bitcoin_change_address,
                     tx_lock_amount,
                     tx_lock_fee
                 ).with_event_emitter(context.tauri_handle.clone());

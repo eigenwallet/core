@@ -196,11 +196,7 @@ export async function withdrawBtc(address: string): Promise<string> {
   return response.txid;
 }
 
-export async function buyXmr(
-  bitcoin_change_address: string | null,
-  monero_receive_address: string,
-  donation_percentage: DonateToDevelopmentTip,
-) {
+export async function buyXmr() {
   // Get all available makers from the Redux store
   const state = store.getState();
   const allMakers = [
@@ -213,39 +209,12 @@ export async function buyXmr(
     providerToConcatenatedMultiAddr(maker),
   );
 
-  const address_pool: LabeledMoneroAddress[] = [];
-  if (donation_percentage !== false) {
-    const donation_address = isTestnet()
-      ? DONATION_ADDRESS_STAGENET
-      : DONATION_ADDRESS_MAINNET;
-
-    address_pool.push(
-      {
-        address: monero_receive_address,
-        percentage: 1 - donation_percentage,
-        label: "Your wallet",
-      },
-      {
-        address: donation_address,
-        percentage: donation_percentage,
-        label: "Tip to the developers",
-      },
-    );
-  } else {
-    address_pool.push({
-      address: monero_receive_address,
-      percentage: 1,
-      label: "Your wallet",
-    });
-  }
-
   await invoke<BuyXmrArgs, BuyXmrResponse>("buy_xmr", {
     rendezvous_points: PRESET_RENDEZVOUS_POINTS,
     sellers,
-    monero_receive_pool: address_pool,
-    bitcoin_change_address,
   });
 }
+
 
 export async function resumeSwap(swapId: string) {
   await invoke<ResumeSwapArgs, ResumeSwapResponse>("resume_swap", {

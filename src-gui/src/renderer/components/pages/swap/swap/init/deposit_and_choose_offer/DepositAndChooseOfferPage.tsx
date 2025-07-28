@@ -1,24 +1,25 @@
 import { Typography, Box, Paper, Divider, Pagination } from "@mui/material";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import MakerOfferItem from "./MakerOfferItem";
-import { usePendingSelectMakerApproval } from "store/hooks";
+import { usePendingSelectOfferApproval } from "store/hooks";
 import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
 import { useState } from "react";
-import { sortApprovalsAndKnownQuotes } from "utils/sortUtils";
+import { sortSelectOfferApprovalsAndKnownQuotes } from "utils/sortUtils";
+import { QuoteWithAddress } from "models/tauriModel";
 
 export default function DepositAndChooseOfferPage({
   deposit_address,
   max_giveable,
   known_quotes,
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
-  const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
+  const pendingSelectOfferApprovals = usePendingSelectOfferApproval();
   const [currentPage, setCurrentPage] = useState(1);
   const offersPerPage = 3;
 
-  const makerOffers = sortApprovalsAndKnownQuotes(
-    pendingSelectMakerApprovals,
+  const makerOffers = sortSelectOfferApprovalsAndKnownQuotes(
+    pendingSelectOfferApprovals,
     known_quotes,
   );
 
