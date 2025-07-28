@@ -34,56 +34,56 @@ pub enum AliceState {
     },
     XmrLockTransactionSent {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         state3: Box<State3>,
     },
     XmrLocked {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         state3: Box<State3>,
     },
     XmrLockTransferProofSent {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         state3: Box<State3>,
     },
     EncSigLearned {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         encrypted_signature: Box<bitcoin::EncryptedSignature>,
         state3: Box<State3>,
     },
     BtcRedeemTransactionPublished {
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         state3: Box<State3>,
     },
     BtcRedeemed,
     BtcCancelled {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         state3: Box<State3>,
     },
     BtcEarlyRefunded(Box<State3>),
     BtcRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
     BtcPunishable {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         state3: Box<State3>,
     },
     XmrRefunded,
     CancelTimelockExpired {
         monero_wallet_restore_blockheight: BlockHeight,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
         state3: Box<State3>,
     },
     BtcPunished {
         state3: Box<State3>,
-        transfer_proofs: Vec<TransferProof>,
+        transfer_proof: Vec<TransferProof>,
     },
     SafelyAborted,
 }
@@ -477,7 +477,7 @@ impl State3 {
 
     pub fn lock_xmr_watch_request(
         &self,
-        transfer_proof: TransferProof,
+        transfer_proof: Vec<TransferProof>,
         conf_target: u64,
     ) -> WatchRequest {
         let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey { scalar: self.s_a });
@@ -488,7 +488,7 @@ impl State3 {
         WatchRequest {
             public_spend_key,
             public_view_key,
-            transfer_proof,
+            transfer_proof: transfer_proof.clone(),
             confirmation_target: conf_target,
             expected_amount: self.xmr.into(),
         }
@@ -574,35 +574,21 @@ impl State3 {
         // on the lock transaction.
         tracing::info!("Waiting for Monero lock transaction to be confirmed");
 
-        // Wait for all lock transactions to be confirmed
-        let lock_futures = transfer_proofs.iter().map(|proof| {
-            let monero_wallet = monero_wallet.clone();
-            let proof = proof.clone();
-
-            Box::pin(async move {
-                monero_wallet
-                    .wait_until_confirmed(
-                        self.lock_xmr_watch_request(proof, 10),
-                        Some(move |(confirmations, target_confirmations)| {
-                            tracing::debug!(
-                                %confirmations,
-                                %target_confirmations,
-                                "Monero lock transaction got a confirmation"
-                            );
-                        }),
-                    )
-                    .await
-                    .context("Failed to wait for Monero lock transaction to be confirmed")
-            })
-        });
-
-        let result: Result<Vec<()>> = futures::future::join_all(lock_futures)
+        if let Err(error) = monero_wallet
+            .wait_until_confirmed(
+                self.lock_xmr_watch_request(transfer_proofs.clone(), 10),
+                Some(move |(confirmations, target_confirmations)| {
+                    tracing::debug!(
+                        %confirmations,
+                        %target_confirmations,
+                        "Monero lock transaction got a confirmation"
+                    );
+                }),
+            )
             .await
-            .into_iter()
-            .collect();
-
-        if let Err(error) = result {
-            tracing::warn!(%error, "Failed to wait for Monero lock transaction(s) to be confirmed, attempting to refund anyway");
+            .context("Failed to wait for Monero lock transaction to be confirmed")
+        {
+            tracing::warn!(%error, "Failed to wait for Monero lock transaction to be confirmed, attempting to refund anyway");
         }
 
         tracing::info!("Refunding Monero");

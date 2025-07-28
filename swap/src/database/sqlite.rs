@@ -425,38 +425,39 @@ impl Database for SqliteDatabase {
         result
     }
 
-    async fn insert_buffered_transfer_proof(
+    async fn insert_buffered_transfer_proofs(
         &self,
         swap_id: Uuid,
         proofs: Vec<TransferProof>,
     ) -> Result<()> {
         let swap_id = swap_id.to_string();
-        let proofs = serde_json::to_string(&proofs)?;
 
-        compile_error!("TODO: add migration");
-        sqlx::query!(
-            r#"
-            INSERT INTO buffered_transfer_proofs (
+        for proof in proofs {
+            let proof = serde_json::to_string(&proof)?;
+
+            sqlx::query!(
+                r#"
+                    INSERT INTO buffered_transfer_proofs (
+                        swap_id,
+                        proof
+                        ) VALUES (?, ?);
+                "#,
                 swap_id,
                 proof
-                ) VALUES (?, ?);
-        "#,
-            swap_id,
-            proofs
-        )
-        .execute(&self.pool)
-        .await?;
-
+            )
+            .execute(&self.pool)
+            .await?;
+        }
         Ok(())
     }
 
-    async fn get_buffered_transfer_proof(
+    async fn get_buffered_transfer_proofs(
         &self,
         swap_id: Uuid,
     ) -> Result<Option<Vec<TransferProof>>> {
         let swap_id = swap_id.to_string();
 
-        let row = sqlx::query!(
+        let rows = sqlx::query!(
             r#"
            SELECT proof
            FROM buffered_transfer_proofs
@@ -467,14 +468,16 @@ impl Database for SqliteDatabase {
         .fetch_all(&self.pool)
         .await?;
 
-        if row.is_empty() {
+        if rows.is_empty() {
             return Ok(None);
         }
 
-        let proof_str = &row[0].proof;
-        let proof = serde_json::from_str(proof_str)?;
-
-        Ok(Some(proof))
+        rows.into_iter()
+            .map(|row| {
+                serde_json::from_str(&row.proof)
+                    .context("Failed to parse transfer proof from string")
+            })
+            .collect()
     }
 }
 

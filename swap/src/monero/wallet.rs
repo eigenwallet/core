@@ -44,7 +44,7 @@ pub struct WatchRequest {
     pub public_view_key: super::PublicViewKey,
     pub public_spend_key: monero::PublicKey,
     /// The proof of the transfer.
-    pub transfer_proof: TransferProof,
+    pub transfer_proof: Vec<TransferProof>,
     /// The expected amount of the transfer.
     pub expected_amount: monero::Amount,
     /// The number of confirmations required for the transfer to be considered confirmed.
@@ -193,7 +193,7 @@ impl Wallets {
     pub async fn wait_until_confirmed(
         &self,
         watch_request: WatchRequest,
-        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
+        listener: Option<impl Fn((u64, u64)) + Clone + Send + 'static>,
     ) -> Result<()> {
         let wallet = self.main_wallet().await;
 
@@ -203,16 +203,44 @@ impl Wallets {
             watch_request.public_view_key.0,
         );
 
-        wallet
-            .wait_until_confirmed(
-                watch_request.transfer_proof.tx_hash.0.clone(),
-                watch_request.transfer_proof.tx_key,
+        tracing::debug!(
+            %address,
+            amount=%watch_request.expected_amount,
+            "Waiting until transaction is confirmed, checking expected amount only after all transactions are confirmed"
+        );
+
+        let futures = watch_request.transfer_proof.iter().map(|proof| {
+            wallet.wait_until_confirmed(
+                proof.tx_hash.0.clone(),
+                proof.tx_key,
                 &address,
                 watch_request.expected_amount,
                 watch_request.confirmation_target,
-                listener,
+                listener.clone(),
             )
-            .await?;
+        });
+
+        let tx_statuses = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .context("Failed to wait for transfers to be confirmed")?;
+
+        // Since the amount may be split over multiple transactions, we check whether the sum of the amounts is correct.
+        let received_amount = monero::Amount::from_pico(
+            tx_statuses
+                .iter()
+                .map(|tx| tx.received.as_pico())
+                .sum::<u64>(),
+        );
+
+        if received_amount != watch_request.expected_amount {
+            return Err(anyhow::anyhow!(
+                "Expected amount `{}` does not match the received amount `{}`",
+                watch_request.expected_amount,
+                received_amount,
+            ));
+        }
 
         Ok(())
     }

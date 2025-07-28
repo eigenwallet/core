@@ -40,16 +40,16 @@ pub async fn refund(
         | AliceState::BtcLocked { .. } => bail!(Error::NoXmrLocked(state)),
 
         // Refund potentially possible (no knowledge of cancel transaction)
-        AliceState::XmrLockTransactionSent { transfer_proofs, state3, .. }
-        | AliceState::XmrLocked { transfer_proofs, state3, .. }
-        | AliceState::XmrLockTransferProofSent { transfer_proofs, state3, .. }
-        | AliceState::EncSigLearned { transfer_proofs, state3, .. }
-        | AliceState::CancelTimelockExpired { transfer_proofs, state3, .. }
+        AliceState::XmrLockTransactionSent { transfer_proof: transfer_proofs, state3, .. }
+        | AliceState::XmrLocked { transfer_proof: transfer_proofs, state3, .. }
+        | AliceState::XmrLockTransferProofSent { transfer_proof: transfer_proofs, state3, .. }
+        | AliceState::EncSigLearned { transfer_proof: transfer_proofs, state3, .. }
+        | AliceState::CancelTimelockExpired { transfer_proof: transfer_proofs, state3, .. }
 
         // Refund possible due to cancel transaction already being published
-        | AliceState::BtcCancelled { transfer_proofs, state3, .. }
-        | AliceState::BtcRefunded { transfer_proofs, state3, .. }
-        | AliceState::BtcPunishable { transfer_proofs, state3, .. } => {
+        | AliceState::BtcCancelled { transfer_proof: transfer_proofs, state3, .. }
+        | AliceState::BtcRefunded { transfer_proof: transfer_proofs, state3, .. }
+        | AliceState::BtcPunishable { transfer_proof: transfer_proofs, state3, .. } => {
             (transfer_proofs, state3)
         }
 

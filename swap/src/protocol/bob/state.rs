@@ -38,7 +38,7 @@ pub enum BobState {
     },
     XmrLockProofReceived {
         state: State3,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: Vec<TransferProof>,
         monero_wallet_restore_blockheight: BlockHeight,
     },
     XmrLocked(State4),
@@ -448,7 +448,7 @@ pub struct State3 {
 impl State3 {
     pub fn lock_xmr_watch_request(
         &self,
-        transfer_proof: TransferProof,
+        transfer_proof: Vec<TransferProof>,
         confirmation_target: u64,
     ) -> WatchRequest {
         let S_b_monero =
@@ -458,7 +458,7 @@ impl State3 {
         WatchRequest {
             public_spend_key: S,
             public_view_key: self.v.public(),
-            transfer_proof,
+            transfer_proof: transfer_proof.clone(),
             confirmation_target,
             expected_amount: self.xmr.into(),
         }
@@ -467,7 +467,7 @@ impl State3 {
     pub fn xmr_locked(
         self,
         monero_wallet_restore_blockheight: BlockHeight,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: Vec<TransferProof>,
     ) -> State4 {
         State4 {
             A: self.A,
@@ -573,7 +573,7 @@ pub struct State4 {
     tx_cancel_sig_a: Signature,
     tx_refund_encsig: bitcoin::EncryptedSignature,
     monero_wallet_restore_blockheight: BlockHeight,
-    lock_transfer_proof: TransferProof,
+    lock_transfer_proof: Vec<TransferProof>,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
@@ -904,7 +904,7 @@ impl State6 {
     pub fn attempt_cooperative_redeem(
         &self,
         s_a: monero::Scalar,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: Vec<TransferProof>,
     ) -> State5 {
         let s_a = monero::PrivateKey::from_scalar(s_a);
 

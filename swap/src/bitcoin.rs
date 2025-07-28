@@ -688,10 +688,10 @@ mod tests {
         let bob_state4 = bob_state3.xmr_locked(
             crate::monero::BlockHeight { height: 0 },
             // We use bogus values here, because they're irrelevant to this test
-            TransferProof::new(
+            vec![TransferProof::new(
                 crate::monero::TxHash("foo".into()),
                 PrivateKey::from_scalar(Scalar::one()),
-            ),
+            )],
         );
         let encrypted_signature = bob_state4.tx_redeem_encsig();
         let bob_state6 = bob_state4.cancel();

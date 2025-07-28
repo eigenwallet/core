@@ -270,11 +270,11 @@ async fn next_state(
 
             // Check if we have already buffered the XMR transfer proof
             if let Some(transfer_proof) = db
-                .get_buffered_transfer_proof(swap_id)
+                .get_buffered_transfer_proofs(swap_id)
                 .await
                 .context("Failed to get buffered transfer proof")?
             {
-                tracing::debug!(txid = %transfer_proof.tx_hash(), "Found buffered transfer proof");
+                tracing::debug!(txids = ?transfer_proof.iter().map(|p| p.tx_hash()).collect::<Vec<_>>(), "Found buffered transfer proof");
 
                 return Ok(BobState::XmrLockProofReceived {
                     state: state3,
@@ -351,12 +351,17 @@ async fn next_state(
             lock_transfer_proof,
             monero_wallet_restore_blockheight,
         } => {
-            tracing::info!(txid = %lock_transfer_proof.tx_hash(), "Alice locked Monero");
+            let tx_hashes = lock_transfer_proof
+                .iter()
+                .map(|p| p.tx_hash())
+                .collect::<Vec<_>>();
+
+            tracing::info!(txids = ?tx_hashes, "Alice locked Monero");
 
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::XmrLockTxInMempool {
-                    xmr_lock_txid: lock_transfer_proof.tx_hash(),
+                    xmr_lock_txids: tx_hashes.clone(),
                     xmr_lock_tx_confirmations: None,
                     xmr_lock_tx_target_confirmations: env_config
                         .monero_double_spend_safe_confirmations,
@@ -397,7 +402,7 @@ async fn next_state(
                     event_emitter.emit_swap_progress_event(
                         swap_id,
                         TauriSwapProgressEvent::XmrLockTxInMempool {
-                            xmr_lock_txid: lock_transfer_proof_clone.tx_hash(),
+                            xmr_lock_txids: tx_hashes.clone(),
                             xmr_lock_tx_confirmations: Some(confirmations),
                             xmr_lock_tx_target_confirmations: target_confirmations,
                         },
@@ -547,7 +552,11 @@ async fn next_state(
 
             // Clone these for the closure
             let event_emitter_clone = event_emitter.clone();
-            let transfer_proof_hash = state.lock_transfer_proof.tx_hash();
+            let transfer_proof_hash = state
+                .lock_transfer_proof
+                .iter()
+                .map(|p| p.tx_hash())
+                .collect::<Vec<_>>();
 
             let watch_future = monero_wallet.wait_until_confirmed(
                 watch_request,
@@ -556,7 +565,7 @@ async fn next_state(
                         event_emitter_clone.emit_swap_progress_event(
                             swap_id,
                             TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
-                                xmr_lock_txid: transfer_proof_hash.clone(),
+                                xmr_lock_txids: transfer_proof_hash.clone(),
                                 xmr_lock_tx_confirmations,
                                 xmr_lock_tx_target_confirmations,
                             },
@@ -768,14 +777,14 @@ async fn next_state(
             match response {
                 Ok(Fullfilled {
                     s_a,
-                    lock_transfer_proof,
+                    lock_transfer_proofs,
                     ..
                 }) => {
                     tracing::info!(
                         "Alice has accepted our request to cooperatively redeem the XMR"
                     );
 
-                    let state5 = state.attempt_cooperative_redeem(s_a, lock_transfer_proof);
+                    let state5 = state.attempt_cooperative_redeem(s_a, lock_transfer_proofs);
 
                     let watch_request = state5.lock_xmr_watch_request_for_sweep();
                     let event_emitter_clone = event_emitter.clone();
@@ -791,12 +800,16 @@ async fn next_state(
                                     xmr_lock_tx_target_confirmations,
                                 )| {
                                     let event_emitter = event_emitter_clone.clone();
-                                    let tx_hash = state5_clone.lock_transfer_proof.tx_hash();
+                                    let tx_hashes = state5_clone
+                                        .lock_transfer_proof
+                                        .iter()
+                                        .map(|p| p.tx_hash())
+                                        .collect::<Vec<_>>();
 
                                     event_emitter.emit_swap_progress_event(
                                 swap_id,
                                 TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
-                                    xmr_lock_txid: tx_hash,
+                                    xmr_lock_txids: tx_hashes,
                                     xmr_lock_tx_confirmations,
                                     xmr_lock_tx_target_confirmations,
                                 },

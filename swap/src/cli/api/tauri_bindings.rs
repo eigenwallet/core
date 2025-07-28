@@ -769,8 +769,8 @@ pub enum TauriSwapProgressEvent {
         btc_lock_confirmations: Option<u64>,
     },
     XmrLockTxInMempool {
-        #[typeshare(serialized_as = "string")]
-        xmr_lock_txid: monero::TxHash,
+        #[typeshare(serialized_as = "Vec<string>")]
+        xmr_lock_txids: Vec<monero::TxHash>,
         #[typeshare(serialized_as = "Option<number>")]
         xmr_lock_tx_confirmations: Option<u64>,
         #[typeshare(serialized_as = "number")]
@@ -780,8 +780,8 @@ pub enum TauriSwapProgressEvent {
     EncryptedSignatureSent,
     RedeemingMonero,
     WaitingForXmrConfirmationsBeforeRedeem {
-        #[typeshare(serialized_as = "string")]
-        xmr_lock_txid: monero::TxHash,
+        #[typeshare(serialized_as = "Vec<string>")]
+        xmr_lock_txids: Vec<monero::TxHash>,
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_confirmations: u64,
         #[typeshare(serialized_as = "number")]

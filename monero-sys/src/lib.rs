@@ -100,6 +100,7 @@ pub struct SyncProgress {
 }
 
 /// The status of a transaction.
+#[derive(Debug, Clone, Copy)]
 pub struct TxStatus {
     /// The amount received in the transaction.
     pub received: monero::Amount,
@@ -672,11 +673,13 @@ impl WalletHandle {
         txid: String,
         tx_key: monero::PrivateKey,
         destination_address: &monero::Address,
-        expected_amount: monero::Amount,
+        expected_amount: impl Into<Option<monero::Amount>>,
         confirmations: u64,
         listener: Option<impl Fn((u64, u64)) + Send + 'static>,
-    ) -> anyhow::Result<()> {
-        tracing::info!(%txid, %destination_address, amount=%expected_amount, %confirmations, "Waiting until transaction is confirmed");
+    ) -> anyhow::Result<TxStatus> {
+        let expected_amount = expected_amount.into();
+
+        tracing::info!(%txid, %destination_address, amount=?expected_amount, %confirmations, "Waiting until transaction is confirmed");
 
         const DEFAULT_CHECK_INTERVAL_SECS: u64 = 15;
 
@@ -702,18 +705,21 @@ impl WalletHandle {
                 }
             };
 
-            // Make sure the amount is correct
-            if tx_status.received != expected_amount {
-                tracing::error!(
-                    "Transaction received amount mismatch: expected {}, got {}",
-                    expected_amount,
-                    tx_status.received
-                );
-                return Err(anyhow::anyhow!(
-                    "Transaction received amount mismatch: expected {}, got {}",
-                    expected_amount,
-                    tx_status.received
-                ));
+            // Only check the amount it is specified
+            if let Some(expected_amount) = expected_amount.into() {
+                // Make sure the amount is correct
+                if tx_status.received != expected_amount {
+                    tracing::error!(
+                        "Transaction received amount mismatch: expected {}, got {}",
+                        expected_amount,
+                        tx_status.received
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Transaction received amount mismatch: expected {}, got {}",
+                        expected_amount,
+                        tx_status.received
+                    ));
+                }
             }
 
             // If the listener exists, notify it of the result
@@ -723,14 +729,11 @@ impl WalletHandle {
 
             // Stop when we have the required number of confirmations
             if tx_status.confirmations >= confirmations {
-                break;
+                return Ok(tx_status);
             }
 
             tracing::trace!("Transaction not confirmed yet, polling again later");
         }
-
-        // Signal success
-        Ok(())
     }
 
     /// Sign a message with the wallet's private key.

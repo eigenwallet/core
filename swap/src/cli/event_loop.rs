@@ -192,7 +192,7 @@ impl EventLoop {
                                     Ok(buffer_swap_alice_peer_id) => {
                                         if buffer_swap_alice_peer_id == self.alice_peer_id {
                                             // Save transfer proof in the database such that we can process it later when we resume the swap
-                                            match self.db.insert_buffered_transfer_proof(swap_id, msg.tx_lock_proofs).await {
+                                            match self.db.insert_buffered_transfer_proofs(swap_id, msg.tx_lock_proofs).await {
                                                 Ok(_) => {
                                                     tracing::info!("Received transfer proof for swap {} while running swap {}. Buffering this transfer proof in the database for later retrieval", swap_id, self.swap_id);
                                                     let _ = self.swarm.behaviour_mut().transfer_proof.send_response(channel, ());

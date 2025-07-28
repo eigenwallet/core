@@ -20,15 +20,15 @@ pub async fn cancel(
         | AliceState::BtcLockTransactionSeen { .. }
         | AliceState::BtcLocked { .. } => bail!("Cannot cancel swap {} because it is in state {} where no XMR was locked.", swap_id, state),
 
-        AliceState::XmrLockTransactionSent { monero_wallet_restore_blockheight, transfer_proofs, state3,  }
-        | AliceState::XmrLocked { monero_wallet_restore_blockheight, transfer_proofs, state3 }
-        | AliceState::XmrLockTransferProofSent { monero_wallet_restore_blockheight, transfer_proofs, state3 }
+        AliceState::XmrLockTransactionSent { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs, state3,  }
+        | AliceState::XmrLocked { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs, state3 }
+        | AliceState::XmrLockTransferProofSent { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs, state3 }
         // in cancel mode we do not care about the fact that we could redeem, but always wait for cancellation (leading either refund or punish)
-        | AliceState::EncSigLearned { monero_wallet_restore_blockheight, transfer_proofs, state3, .. }
-        | AliceState::CancelTimelockExpired { monero_wallet_restore_blockheight, transfer_proofs, state3}
-        | AliceState::BtcCancelled { monero_wallet_restore_blockheight, transfer_proofs, state3 }
-        | AliceState::BtcRefunded { monero_wallet_restore_blockheight, transfer_proofs,  state3 ,.. }
-        | AliceState::BtcPunishable { monero_wallet_restore_blockheight, transfer_proofs, state3 }  => {
+        | AliceState::EncSigLearned { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs, state3, .. }
+        | AliceState::CancelTimelockExpired { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs, state3}
+        | AliceState::BtcCancelled { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs, state3 }
+        | AliceState::BtcRefunded { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs,  state3 ,.. }
+        | AliceState::BtcPunishable { monero_wallet_restore_blockheight, transfer_proof: transfer_proofs, state3 }  => {
             (monero_wallet_restore_blockheight, transfer_proofs, state3)
         }
 
@@ -58,7 +58,7 @@ pub async fn cancel(
 
     let state = AliceState::BtcCancelled {
         monero_wallet_restore_blockheight,
-        transfer_proofs,
+        transfer_proof: transfer_proofs,
         state3,
     };
     db.insert_latest_state(swap_id, state.clone().into())

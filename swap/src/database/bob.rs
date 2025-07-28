@@ -23,7 +23,7 @@ pub enum Bob {
     },
     XmrLockProofReceived {
         state: bob::State3,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: Vec<TransferProof>,
         monero_wallet_restore_blockheight: BlockHeight,
     },
     XmrLocked {

@@ -33,7 +33,7 @@ pub async fn redeem(
         AliceState::EncSigLearned {
             state3,
             encrypted_signature,
-            transfer_proofs,
+            transfer_proof: transfer_proofs,
             ..
         } => {
             tracing::info!(%swap_id, "Trying to redeem swap");
@@ -45,7 +45,7 @@ pub async fn redeem(
 
             let state = AliceState::BtcRedeemTransactionPublished {
                 state3,
-                transfer_proofs,
+                transfer_proof: transfer_proofs,
             };
             db.insert_latest_state(swap_id, state.into()).await?;
 
