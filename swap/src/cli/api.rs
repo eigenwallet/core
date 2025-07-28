@@ -654,12 +654,12 @@ async fn request_and_open_monero_wallet(
     let wallet = match tauri_handle {
         Some(tauri_handle) => {
             // Get recent wallets from database
-            let recent_wallets: Vec<String> = wallet_database
+            let recent_wallets: Vec<(String, Option<String>)> = wallet_database
                 .get_recent_wallets(5)
                 .await
                 .unwrap_or_default()
                 .into_iter()
-                .map(|w| w.wallet_path)
+                .map(|w| (w.wallet_path, w.wallet_name))
                 .collect();
 
             // This loop continually requests the user to select a wallet file

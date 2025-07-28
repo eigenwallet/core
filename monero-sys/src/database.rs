@@ -15,6 +15,7 @@ pub struct Database {
 pub struct RecentWallet {
     pub wallet_path: String,
     pub last_opened_at: DateTime<Utc>,
+    pub wallet_name: Option<String>,
 }
 
 impl Database {
@@ -41,17 +42,26 @@ impl Database {
     }
 
     /// Record that a wallet was accessed
-    pub async fn record_wallet_access(&self, wallet_path: &str) -> Result<()> {
+    pub async fn record_wallet_access(
+        &self,
+        wallet_path: &str,
+        wallet_name: Option<&str>,
+    ) -> Result<()> {
         let now = Utc::now().to_rfc3339();
 
+        // If we already opened the wallet, update the timestamp.
+        // For now: fail if the wallet name is different than stored.
         sqlx::query!(
             r#"
-            INSERT INTO recent_wallets (wallet_path, last_opened_at)
-            VALUES (?, ?)
-            ON CONFLICT(wallet_path) DO UPDATE SET last_opened_at = excluded.last_opened_at
+            INSERT INTO recent_wallets (wallet_path, last_opened_at, wallet_name)
+            VALUES (?, ?, ?)
+            ON CONFLICT(wallet_path) DO UPDATE
+                SET last_opened_at = excluded.last_opened_at
+                WHERE wallet_name IS excluded.wallet_name OR excluded.wallet_name IS NULL
             "#,
             wallet_path,
-            now
+            now,
+            wallet_name
         )
         .execute(&self.pool)
         .await?;
@@ -63,7 +73,7 @@ impl Database {
     pub async fn get_recent_wallets(&self, limit: i64) -> Result<Vec<RecentWallet>> {
         let rows = sqlx::query!(
             r#"
-            SELECT wallet_path, last_opened_at
+            SELECT wallet_path, last_opened_at, wallet_name
             FROM recent_wallets 
             ORDER BY last_opened_at DESC
             LIMIT ?
@@ -78,6 +88,7 @@ impl Database {
             .map(|row| RecentWallet {
                 wallet_path: row.wallet_path,
                 last_opened_at: row.last_opened_at.parse().unwrap_or_else(|_| Utc::now()),
+                wallet_name: row.wallet_name,
             })
             .collect();
 

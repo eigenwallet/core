@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO recent_wallets (wallet_path, last_opened_at, wallet_name)\n            VALUES (?, ?, ?)\n            ON CONFLICT(wallet_path) DO UPDATE\n                SET last_opened_at = excluded.last_opened_at\n                WHERE wallet_name IS excluded.wallet_name OR excluded.wallet_name IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8ebd0873cb6aaaa0cab97742fad51978c706e324dc7c1febba68e178972f5899"
+}
