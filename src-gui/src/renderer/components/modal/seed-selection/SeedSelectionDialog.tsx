@@ -18,6 +18,8 @@ import {
   Divider,
   Card,
   CardContent,
+  Tooltip,
+  IconButton,
 } from "@mui/material";
 import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
@@ -29,6 +31,7 @@ import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import SearchIcon from "@mui/icons-material/Search";
+import { Info, InfoOutline } from "@mui/icons-material";
 
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
@@ -140,6 +143,7 @@ export default function SeedSelectionDialog() {
                 selectedOption === "FromWalletPath"
                   ? "primary.main"
                   : "divider",
+              margin: selectedOption === "FromWalletPath" ? 0 : "1px",
               "&:hover": { borderColor: "primary.main" },
               flex: 1,
             }}
@@ -172,6 +176,7 @@ export default function SeedSelectionDialog() {
               border: selectedOption === "RandomSeed" ? 2 : 1,
               borderColor:
                 selectedOption === "RandomSeed" ? "primary.main" : "divider",
+              margin: selectedOption === "RandomSeed" ? 0 : "1px",
               "&:hover": { borderColor: "primary.main" },
               flex: 1,
             }}
@@ -204,6 +209,7 @@ export default function SeedSelectionDialog() {
               border: selectedOption === "FromSeed" ? 2 : 1,
               borderColor:
                 selectedOption === "FromSeed" ? "primary.main" : "divider",
+              margin: selectedOption === "FromSeed" ? 0 : "1px",
               "&:hover": { borderColor: "primary.main" },
               flex: 1,
             }}
@@ -336,11 +342,12 @@ export default function SeedSelectionDialog() {
                               primary={path.split("/").pop() || path}
                               secondary={path}
                               primaryTypographyProps={{
-                                fontWeight: walletPath === path ? 600 : 400,
+                                fontWeight: walletPath === path ? 1000 : 200,
                                 fontSize: "0.9rem",
                               }}
                               secondaryTypographyProps={{
                                 fontSize: "0.75rem",
+                                fontStyle: "italic",
                                 sx: {
                                   overflow: "hidden",
                                   textOverflow: "ellipsis",
@@ -361,14 +368,18 @@ export default function SeedSelectionDialog() {
         )}
       </DialogContent>
       <DialogActions sx={{ justifyContent: "space-between" }}>
-        <PromiseInvokeButton
-          variant="text"
-          onInvoke={Legacy}
-          requiresContext={false}
-          color="inherit"
+        <Tooltip
+          title="Legacy mode can be used to access your pre-eigenwallet wallet and swaps. Use it to finish any pending swaps and transfer your funds to the new wallet."
         >
-          No wallet (Legacy)
-        </PromiseInvokeButton>
+          <PromiseInvokeButton
+            variant="text"
+            onInvoke={Legacy}
+            requiresContext={false}
+            color="inherit"
+          >
+            Legacy Mode
+          </PromiseInvokeButton>
+        </Tooltip>
         <PromiseInvokeButton
           onInvoke={accept}
           variant="contained"
