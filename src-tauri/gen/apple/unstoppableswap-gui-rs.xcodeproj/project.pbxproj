@@ -343,7 +343,7 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = net.unstoppableswap.gui;
-				PRODUCT_NAME = "UnstoppableSwap";
+				PRODUCT_NAME = "eigenwallet";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
@@ -447,7 +447,7 @@
 					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = net.unstoppableswap.gui;
-				PRODUCT_NAME = "UnstoppableSwap";
+				PRODUCT_NAME = "eigenwallet";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
