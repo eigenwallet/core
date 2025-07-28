@@ -667,7 +667,64 @@ impl WalletHandle {
         self.call(move |wallet| wallet.scan_transaction(txid)).await
     }
 
+    /// Await the confirmation of multiple transactions.
+    /// Can't check the amount it the destination address does not belong to us.
+    pub async fn wait_until_multiple_confirmed(
+        &self,
+        transactions: Vec<(String, monero::PrivateKey)>,
+        mut expected_total_amount: impl Into<Option<monero::Amount>>,
+        destination_address: &monero::Address,
+        confirmations: u64,
+        listener: Option<impl Fn((u64, u64)) + Clone + Send + 'static>,
+    ) -> anyhow::Result<Vec<TxStatus>> {
+        let expected_total_amount = expected_total_amount.into();
+
+        let futures = transactions.iter().map(|(txid, tx_key)| {
+            self.wait_until_confirmed(
+                txid.clone(),
+                tx_key.clone(),
+                &destination_address,
+                None,
+                confirmations,
+                listener.clone(),
+            )
+        });
+
+        let tx_statuses = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .context("Failed to wait for transactions to be confirmed")?;
+
+        // Since the amount may be split over multiple transactions, we check whether the sum of the amounts is correct.
+        let received_amount = monero::Amount::from_pico(
+            tx_statuses
+                .iter()
+                .map(|tx| tx.received.as_pico())
+                .sum::<u64>(),
+        );
+
+        if let Some(expected_total_amount) = expected_total_amount {
+            if destination_address != &self.main_address().await {
+                tracing::warn!(%destination_address, "Watching transfer to address which does not belong to us. We will not be able to check amounts.");
+            } else {
+                if received_amount != expected_total_amount {
+                    bail!(
+                        "Received amount mismatch: expected `{}`, got `{}`",
+                        expected_total_amount,
+                        received_amount
+                    );
+                }
+            }
+        } else {
+            tracing::info!("Expected amount of transaction not specified, not checking");
+        }
+
+        Ok(tx_statuses)
+    }
+
     /// Wait until a transaction is confirmed.
+    /// Can't check the amount it the destination address does not belong to us.
     pub async fn wait_until_confirmed(
         &self,
         txid: String,
@@ -1463,6 +1520,9 @@ impl FfiWallet {
     }
 
     /// Check the status of a transaction.
+    /// The resulting TxStatus only contains the actualy amount received when this wallet is the
+    /// destination address. Otherwise it's zero.
+    /// Todo: make it a Option
     fn check_tx_status(
         &mut self,
         txid: &str,
@@ -1495,8 +1555,12 @@ impl FfiWallet {
             anyhow::bail!("Failed to check tx key");
         }
 
+        let received = monero::Amount::from_pico(received);
+
+        tracing::warn!(%received, %txid, "Checked tx key, it's got this much moneys");
+
         Ok(TxStatus {
-            received: monero::Amount::from_pico(received),
+            received,
             in_pool,
             confirmations,
         })
