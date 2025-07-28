@@ -1,7 +1,7 @@
 use crate::network::swap_setup::{protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse};
 use crate::protocol::bob::{State0, State2};
 use crate::protocol::{Message1, Message3};
-use crate::{bitcoin, cli, env, monero};
+use crate::{bitcoin, cli, monero};
 use anyhow::{Context, Result};
 use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
@@ -16,6 +16,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
+use swap_env::env;
 use uuid::Uuid;
 
 use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};
@@ -210,8 +211,8 @@ impl ConnectionHandler for Handler {
                             &mut rand::thread_rng(),
                             new_swap_request.btc,
                             xmr,
-                            env_config.bitcoin_cancel_timelock,
-                            env_config.bitcoin_punish_timelock,
+                            env_config.bitcoin_cancel_timelock.into(),
+                            env_config.bitcoin_punish_timelock.into(),
                             new_swap_request.bitcoin_refund_address.clone(),
                             env_config.monero_finality_confirmations,
                             new_swap_request.tx_refund_fee,

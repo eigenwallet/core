@@ -1,7 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { ExtendedMakerStatus, MakerStatus } from "models/apiModel";
 import {
-  TauriLogEvent,
   GetSwapInfoResponse,
   TauriContextStatusEvent,
   TauriTimelockChangeEvent,
@@ -12,8 +11,6 @@ import {
 } from "models/tauriModel";
 import { MoneroRecoveryResponse } from "../../models/rpcModel";
 import { GetSwapInfoResponseExt } from "models/tauriModelExt";
-import { parseLogsFromString } from "utils/parseUtils";
-import { CliLog } from "models/cliModel";
 import logger from "utils/logger";
 
 interface State {
@@ -43,7 +40,6 @@ interface State {
 export interface RPCSlice {
   status: TauriContextStatusEvent | null;
   state: State;
-  logs: (CliLog | string)[];
 }
 
 const initialState: RPCSlice = {
@@ -58,21 +54,12 @@ const initialState: RPCSlice = {
     backgroundRefund: null,
     approvalRequests: {},
   },
-  logs: [],
 };
 
 export const rpcSlice = createSlice({
   name: "rpc",
   initialState,
   reducers: {
-    receivedCliLog(slice, action: PayloadAction<TauriLogEvent>) {
-      const buffer = action.payload.buffer;
-      const logs = parseLogsFromString(buffer);
-      const logsWithoutExisting = logs.filter(
-        (log) => !slice.logs.includes(log),
-      );
-      slice.logs = slice.logs.concat(logsWithoutExisting);
-    },
     contextStatusEventReceived(
       slice,
       action: PayloadAction<TauriContextStatusEvent>,
@@ -156,12 +143,23 @@ export const rpcSlice = createSlice({
     backgroundProgressEventRemoved(slice, action: PayloadAction<string>) {
       delete slice.state.background[action.payload];
     },
+    rpcSetBackgroundItems(
+      slice,
+      action: PayloadAction<{ [key: string]: TauriBackgroundProgress }>,
+    ) {
+      slice.state.background = action.payload;
+    },
+    rpcSetApprovalItems(
+      slice,
+      action: PayloadAction<{ [requestId: string]: ApprovalRequest }>,
+    ) {
+      slice.state.approvalRequests = action.payload;
+    },
   },
 });
 
 export const {
   contextStatusEventReceived,
-  receivedCliLog,
   rpcSetBalance,
   rpcSetWithdrawTxId,
   rpcResetWithdrawTxId,
@@ -175,6 +173,8 @@ export const {
   approvalRequestsReplaced,
   backgroundProgressEventReceived,
   backgroundProgressEventRemoved,
+  rpcSetBackgroundItems,
+  rpcSetApprovalItems,
 } = rpcSlice.actions;
 
 export default rpcSlice.reducer;

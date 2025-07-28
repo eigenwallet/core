@@ -1,12 +1,11 @@
-use crate::bitcoin::address_serde;
 use crate::bitcoin::wallet::{EstimateFeeRate, Subscription};
 use crate::bitcoin::{
     self, current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
     TxLock, Txid, Wallet,
 };
 use crate::monero::wallet::WatchRequest;
+use crate::monero::TransferProof;
 use crate::monero::{self, MoneroAddressPool, TxHash};
-use crate::monero::{monero_private_key, TransferProof};
 use crate::monero_ext::ScalarExt;
 use crate::protocol::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
 use anyhow::{anyhow, bail, Context, Result};
@@ -20,6 +19,7 @@ use sha2::Sha256;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
+use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -685,7 +685,7 @@ impl State4 {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct State5 {
-    #[serde(with = "monero_private_key")]
+    #[serde(with = "swap_serde::monero::private_key")]
     s_a: monero::PrivateKey,
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,

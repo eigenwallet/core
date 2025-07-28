@@ -12,6 +12,10 @@ import {
   isPendingSelectMakerApprovalEvent,
   haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
+  PendingSendMoneroApprovalRequest,
+  isPendingSendMoneroApprovalEvent,
+  PendingPasswordApprovalRequest,
+  isPendingPasswordApprovalEvent,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -133,7 +137,7 @@ export function useActiveSwapInfo(): GetSwapInfoResponseExt | null {
 
 export function useActiveSwapLogs() {
   const swapId = useActiveSwapId();
-  const logs = useAppSelector((s) => s.rpc.logs);
+  const logs = useAppSelector((s) => s.logs.state.logs);
 
   return useMemo(
     () => logs.filter((log) => isCliLogRelatedToSwap(log, swapId)),
@@ -207,6 +211,11 @@ export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalReque
   return approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c));
 }
 
+export function usePendingSendMoneroApproval(): PendingSendMoneroApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSendMoneroApprovalEvent(c));
+}
+
 export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSelectMakerApprovalEvent(c));
@@ -215,6 +224,11 @@ export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalReque
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
+}
+
+export function usePendingPasswordApproval(): PendingPasswordApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingPasswordApprovalEvent(c));
 }
 
 /// Returns all the pending background processes

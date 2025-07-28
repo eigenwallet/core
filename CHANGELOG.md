@@ -7,24 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- ASB: Lowered the Monero lock retry timeout to 10minutes. Aftet that timeout we will start an early refund.
+## [3.0.0-beta.2] - 2025-07-27
 
-## [2.3.1] - 2025-06-25
+- GUI: Fix issue where the Monero wallet cache would be corrupted when the wallet was stored while it was refreshing.
+
+## [3.0.0-beta] - 2025-07-18
+
+- GUI: The GUI can now be used as a Monero wallet. You can open existing Monero wallet files that were created with `monero-wallet-cli` / `monero-wallet-rpc` / `monero-wallet-gui` / Feather Wallet. You can also generate new wallets or recover existing ones from a seed phrase. To change the restore height of a wallet, go to the "Wallet" tab and click on the "..." -> "Restore height" button. You can view your previous transactions, sync your wallet with the Blockchain and send Monero.
+- GUI: The internal Bitcoin wallet and the p2p identitiy is now tied directly to the Monero wallet. The Bitcoin wallet and p2p identity is derived from the entropy of the Monero seed. The `seed.pem` file has no purpose for the GUI anymore and is only used for the CLI / ASB or when using the legacy mode of the GUI.
+- GUI: The data directory has been split into multiple subdirectories. Each Monero wallet has its own data directory in `identities/<wallet-primary-address>`. That directory is used to store the swap history, the wallet cache for the Bitcoin wallet and the Tor client cache. When opening the GUI you can either select a Monero wallet to open or you can click the "No Wallet (Legacy)" button to view swaps that were started with older versions of the GUI or to get access to the Bitcoin wallet that was used in previous versions of the GUI.
+
+## [2.5.6] - 2025-07-18
+
+- ASB: Docker image has moved to <https://github.com/eigenwallet/core/pkgs/container/asb>
+- ASB + GUI + CLI: We have renamed from _UnstoppableSwap_ to _eigenwallet_ ([why?](https://eigenwallet.org/rename.html)). We will slowly migrate the entire infrastructure to the new name.
+
+## [2.4.5] - 2025-07-17
+
+_Some of these CHANGELOG entires have beeb merged from 2.0.3 - 2.4.3 into this release because those releases were missing Github releases._
+
+- ASB: Lowered the Monero lock retry timeout to 10minutes. Aftet that timeout we will start an early refund.
 
 - GUI: Users can donate a small percentage of their swap to the projects donation address. Donations will be used to fund development. This is completely optional and **disabled** by default. Monero is used exclusively for donations, ensuring full anonymity for users. Donations are only ever send for successful swaps (not refunded ones). We clearly and transparently state where how much Monero is going before the user approves a swap.
 
-## [2.3.0-beta.2] - 2025-06-24
-
 - ASB + GUI + CLI: We now cache fee estimates for the Bitcoin wallet for up to 2 minutes. This improves the speed of fee estimation and reduces the number of requests to the Electrum servers.
 
-## [2.3.0-beta.1] - 2025-06-19
-
 - ASB + CLI + GUI: Introduce a load-balancing proxy for Monero RPC nodes that automatically discovers healthy nodes and routes requests to improve connection reliability.
+
 - ASB: Added `monero_node_pool` boolean option to ASB config. When enabled, the ASB uses the internal Monero RPC pool instead of connecting directly to a single daemon URL, providing improved reliability and automatic failover across multiple Monero nodes.
 
-## [2.2.0-beta.2] - 2025-06-17
-
 - We now call Monero function directly (via FFI bindings) instead of using `monero-wallet-rpc`.
+
 - ASB: Since we don't communicate with `monero-wallet-rpc` anymore, the Monero wallet's will no longer be accessible by connecting to it. If you are using the asb-docker-compose setup, run this command to migrate the wallet files from the volume of the monero-wallet-rpc container to the volume of the asb container:
   ```bash
   # On testnet
@@ -32,7 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   # On mainnet
   cp /var/lib/docker/volumes/mainnet_mainnet_monero-wallet-rpc-data/_data/* /var/lib/docker/volumes/mainnet_mainnet_asb-data/_data/monero/wallets
   ```
+
 - ASB: The `wallet_url` option has been removed and replaced with the optional `daemon_url`, that specifies which Monero node the asb will connect to. If not specified, the asb will connect to a known public Monero node at random.
+
 - ASB: Add a `export-monero-wallet` command which gives the Monero wallet's seed and restore height. Export this seed into a wallet software of your own choosing to manage your Monero funds.
   The seed is a 25 word mnemonic. Example:
   ```bash
@@ -49,7 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | -------------------------- | -------------------------------- |
   | `asb logs \| my-script.sh` | `asb logs  2>&1 \| my-script.sh` |
   | `asb logs > output.txt`    | `asb logs > output.txt 2>&1`     |
+
 - GUI: Improved peer discovery: We can now connect to multiple rendezvous points at once. We also cache peers we have previously connected to locally and will attempt to connect to them again in the future, even if they aren't registered with a rendezvous point anymore.
+
 - ASB: We now retry for 6 hours to broadcast the early refund transaction. After that, we give up and Bob will have to wait for the timelock to expire then refund himself. If we detect that Bob has cancelled the swap, we will abort the swap on our side and let Bob refund himself.
 
 ## [2.0.3] - 2025-06-12
@@ -571,7 +588,12 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/UnstoppableSwap/core/compare/2.0.3...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.2...HEAD
+[3.0.0-beta.2]: https://github.com/eigenwallet/core/compare/3.0.0-beta...3.0.0-beta.2
+[3.0.0-beta]: https://github.com/eigenwallet/core/compare/2.5.6...3.0.0-beta
+[2.5.6]: https://github.com/eigenwallet/core/compare/2.4.5...2.5.6
+[2.4.5]: https://github.com/eigenwallet/core/compare/2.4.3...2.4.5
+[2.4.3]: https://github.com/eigenwallet/core/compare/2.0.3...2.4.3
 [2.0.3]: https://github.com/UnstoppableSwap/core/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/UnstoppableSwap/core/compare/2.0.0...2.0.2
 [2.0.0]: https://github.com/UnstoppableSwap/core/compare/2.0.0-beta.2...2.0.0

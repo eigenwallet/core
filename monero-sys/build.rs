@@ -48,7 +48,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Fixes ___isPlatformVersionAtLeast being called",
         "patches/0004-fix-___isPlatformVersionAtLeast.patch"
     ),
-
+    embedded_patch!(
+        "0002-store-crash-fix",
+        "Fixes corrupted wallet cache when storing while refreshing",
+        "patches/0002-store-crash-fix.patch"
+    ),
 ];
 
 /// Execute a child process with piped stdout/stderr and display output in real-time
@@ -346,10 +350,39 @@ fn main() {
 
     // Add search paths for clang runtime libraries on macOS (not iOS)
     if target.contains("apple-darwin") {
-        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/15.0.0/lib/darwin");
-        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/16.0.0/lib/darwin");
-        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/17.0.0/lib/darwin");
-        println!("cargo:rustc-link-search=native=/Library/Developer/CommandLineTools/usr/lib/clang/18.0.0/lib/darwin");
+        // Dynamically detect Homebrew installation prefix (works on both Apple Silicon and Intel Macs)
+        let brew_prefix = std::process::Command::new("brew")
+            .arg("--prefix")
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "/opt/homebrew".into());
+
+        // add homebrew search paths using dynamic prefix
+        println!("cargo:rustc-link-search=native={}/lib", brew_prefix);
+        println!(
+            "cargo:rustc-link-search=native={}/opt/unbound/lib",
+            brew_prefix
+        );
+        println!(
+            "cargo:rustc-link-search=native={}/opt/expat/lib",
+            brew_prefix
+        );
+        println!(
+            "cargo:rustc-link-search=native={}/Cellar/protobuf@21/21.12_1/lib/",
+            brew_prefix
+        );
+
+        // Add search paths for clang runtime libraries
+        let resource_dir = std::process::Command::new("clang")
+            .arg("-print-resource-dir")
+            .output()
+            .expect("clang")
+            .stdout;
+        let resource_dir = String::from_utf8_lossy(&resource_dir).trim().to_owned();
+        println!("cargo:rustc-link-search=native={resource_dir}/lib/darwin");
+        println!("cargo:rustc-link-lib=static=clang_rt.osx");
     }
 
     // Link libwallet and libwallet_api statically
@@ -410,7 +443,10 @@ fn main() {
                                                    // println!("cargo:rustc-link-lib=static=event");
 
     // Link protobuf statically
-    // println!("cargo:rustc-link-lib=static=protobuf");
+    println!("cargo:rustc-link-lib=static=protobuf");
+
+    #[cfg(target_os = "macos")]
+    println!("cargo:rustc-link-arg=-mmacosx-version-min=11.0");
 
     // Build the CXX bridge
     let mut build = cxx_build::bridge("src/bridge.rs");
