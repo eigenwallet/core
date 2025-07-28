@@ -385,10 +385,10 @@ fn main() {
     println!("cargo:rustc-link-lib=static=boost_filesystem");
     println!("cargo:rustc-link-lib=static=boost_thread");
     println!("cargo:rustc-link-lib=static=boost_chrono");
+    println!("cargo:rustc-link-lib=static=boost_program_options");
 
     if target.contains("w64-mingw32") {
         println!("cargo:rustc-link-lib=static=boost_locale");
-        println!("cargo:rustc-link-lib=static=boost_program_options");
         println!("cargo:rustc-link-lib=static=iconv");
         
         // Link C++ standard library and GCC runtime statically
@@ -419,6 +419,7 @@ fn main() {
         // required for ___chkstk_darwin to be available
         build.flag_if_supported("-mios-version-min=13.0");
         println!("cargo:rustc-link-arg=-mios-version-min=13.0");
+        println!("cargo:rustc-link-lib=framework=SystemConfiguration");
         println!("cargo:rustc-env=IPHONEOS_DEPLOYMENT_TARGET=13.0");
     }
 

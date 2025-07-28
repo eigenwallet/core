@@ -1,9 +1,16 @@
 import { ExtendedMakerStatus } from "models/apiModel";
 import { splitPeerIdFromMultiAddress } from "utils/parseUtils";
-import { getMatches } from "@tauri-apps/plugin-cli";
+import { CliMatches, getMatches } from "@tauri-apps/plugin-cli";
 import { Network } from "./features/settingsSlice";
 
-const matches = await getMatches();
+let matches: CliMatches;
+try {
+  matches = await getMatches();
+} catch {
+  matches = {
+    args: {},
+  };
+}
 
 export function getNetwork(): Network {
   if (isTestnet()) {
