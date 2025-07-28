@@ -14,7 +14,7 @@ runs:
         echo "DEPS_TAURI_LINUX=libwebkit2gtk-4.1-dev curl wget file libxdo-dev libayatana-appindicator3-dev librsvg2-dev" >> $GITHUB_ENV
         
         # Linux dependencies
-        echo "DEPS_MONERO_LINUX=libabsl-dev libnghttp2-dev libevent-dev libexpat1-dev build-essential cmake libboost-all-dev miniupnpc libunbound-dev graphviz doxygen libunwind8-dev pkg-config libssl-dev libzmq3-dev libsodium-dev libusb-1.0-0-dev libprotobuf-dev protobuf-compiler git" >> $GITHUB_ENV
+        echo "DEPS_MONERO_LINUX=libabsl-dev libnghttp2-dev libevent-dev libexpat1-dev build-essential cmake libboost-all-dev miniupnpc libunbound-dev graphviz doxygen libunwind8-dev pkg-config libssl-dev libzmq3-dev libsodium-dev libusb-1.0-0-dev libprotobuf-dev protobuf-compiler git gperf" >> $GITHUB_ENV
         
         # macOS dependencies
         echo "DEPS_MONERO_MACOS=cmake boost openssl zmq libpgm miniupnpc expat libunwind-headers protobuf" >> $GITHUB_ENV

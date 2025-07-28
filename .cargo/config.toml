@@ -2,7 +2,28 @@
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"
 
-# Windows defaults to smaller stack sizes which isn't enough due to
-# our ginormous call stacks
-[target.'cfg(windows)']
-rustflags = ["-C", "link-args=/STACK:8388608"]
+# Windows defaults to smaller stack sizes which isn't enough
+# For the MSVC tool-chain
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "link-arg=/STACK:8388608"]
+
+# For the GNU/MinGW tool-chain
+[target.'cfg(all(windows, target_env = "gnu"))']
+rustflags = [
+  "-C",
+  "link-arg=-Wl,--stack,8388608",
+  "-C",
+  "link-arg=-ladvapi32",
+  "-C",
+  "link-arg=-lrpcrt4",
+  "-C",
+  "link-arg=-lole32",
+  "-C",
+  "link-arg=-lwinhttp",
+  "-C",
+  "link-arg=-lcrypt32",
+  "-C",
+  "link-arg=-static-libstdc++",
+  "-C",
+  "link-arg=-static-libgcc",
+]
