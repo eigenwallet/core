@@ -43,6 +43,7 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
+  SelectOfferApprovalRequest,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -213,7 +214,6 @@ export async function buyXmr() {
     sellers,
   });
 }
-
 
 export async function resumeSwap(swapId: string) {
   await invoke<ResumeSwapArgs, ResumeSwapResponse>("resume_swap", {
@@ -589,4 +589,49 @@ export async function saveFilesInDialog(files: Record<string, string>) {
   await invokeUnsafe<void>("save_txt_files", {
     files,
   });
+}
+
+export async function confirmOfferWithAddresses(
+  specifyRedeemRefundApproval: any,
+  donationRatio: number | false,
+  useExternalRedeemAddress: boolean,
+  redeemAddress: string,
+  useExternalRefundAddress: boolean,
+  refundAddress: string,
+) {
+  if (!specifyRedeemRefundApproval) return;
+
+  const address_pool: LabeledMoneroAddress[] = [];
+  if (donationRatio !== false) {
+    const donation_address = isTestnet()
+      ? DONATION_ADDRESS_STAGENET
+      : DONATION_ADDRESS_MAINNET;
+
+    address_pool.push(
+      {
+        address: useExternalRedeemAddress ? redeemAddress : null,
+        percentage: 1 - donationRatio,
+        label: "Your wallet",
+      },
+      {
+        address: donation_address,
+        percentage: donationRatio,
+        label: "Tip to the developers",
+      },
+    );
+  } else {
+    address_pool.push({
+      address: useExternalRedeemAddress ? redeemAddress : null,
+      percentage: 1,
+      label: "Your wallet",
+    });
+  }
+
+  await resolveApproval<SelectOfferApprovalRequest>(
+    specifyRedeemRefundApproval.request_id,
+    {
+      bitcoin_change_address: useExternalRefundAddress ? refundAddress : null,
+      monero_receive_pool: address_pool,
+    },
+  );
 }

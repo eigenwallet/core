@@ -4,17 +4,15 @@ import { useState } from "react";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { usePendingSpecifyRedeemRefundApproval, useSettings } from "store/hooks";
-import { resolveApproval } from "renderer/rpc";
-import { LabeledMoneroAddress } from "models/tauriModel";
-import { isTestnet } from "store/config";
-
-// Donation addresses
-const DONATION_ADDRESS_MAINNET = "49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa";
-const DONATION_ADDRESS_STAGENET = "56E274CJxTyVuuFG651dLURKyneoJ5LsSA5jMq4By9z9GBNYQKG8y5ejTYkcvZxarZW6if14ve8xXav2byK4aRnvNdKyVxp";
+import {
+  usePendingSpecifyRedeemRefundApproval,
+  useSettings,
+} from "store/hooks";
+import { confirmOfferWithAddresses } from "renderer/rpc";
 
 export default function AddressInputPage() {
-  const pendingSpecifyRedeemRefundApprovals = usePendingSpecifyRedeemRefundApproval();
+  const pendingSpecifyRedeemRefundApprovals =
+    usePendingSpecifyRedeemRefundApproval();
   const specifyRedeemRefundApproval = pendingSpecifyRedeemRefundApprovals[0]; // Assuming there's only one at a time
 
   const [redeemAddress, setRedeemAddress] = useState("");
@@ -32,38 +30,14 @@ export default function AddressInputPage() {
   const donationRatio = useSettings((s) => s.donateToDevelopment);
 
   async function confirmOffer() {
-    if (!specifyRedeemRefundApproval) return;
-
-    const address_pool: LabeledMoneroAddress[] = [];
-    if (donationRatio !== false) {
-      const donation_address = isTestnet()
-        ? DONATION_ADDRESS_STAGENET
-        : DONATION_ADDRESS_MAINNET;
-
-      address_pool.push(
-        {
-          address: useExternalRedeemAddress ? redeemAddress : "internal",
-          percentage: 1 - donationRatio,
-          label: "Your wallet",
-        },
-        {
-          address: donation_address,
-          percentage: donationRatio,
-          label: "Tip to the developers",
-        },
-      );
-    } else {
-      address_pool.push({
-        address: useExternalRedeemAddress ? redeemAddress : "internal",
-        percentage: 1,
-        label: "Your wallet",
-      });
-    }
-
-    await resolveApproval(specifyRedeemRefundApproval.request_id, {
-      bitcoin_change_address: useExternalRefundAddress ? refundAddress : null,
-      monero_receive_pool: address_pool,
-    });
+    await confirmOfferWithAddresses(
+      specifyRedeemRefundApproval,
+      donationRatio,
+      useExternalRedeemAddress,
+      redeemAddress,
+      useExternalRefundAddress,
+      refundAddress,
+    );
   }
 
   return (

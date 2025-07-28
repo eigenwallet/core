@@ -1,7 +1,7 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
-    ApprovalRequestType, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
+    ApprovalRequestType, SelectMakerDetails, SelectOfferDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
@@ -951,8 +951,6 @@ pub async fn buy_xmr(
 
     let bitcoin_wallet_for_closures = Arc::clone(&bitcoin_wallet);
 
-    // Clone bitcoin_change_address before moving it in the emit call
-    let bitcoin_change_address_for_spawn = bitcoin_change_address.clone();
     let rendezvous_points_clone = rendezvous_points.clone();
     let sellers_clone = sellers.clone();
 

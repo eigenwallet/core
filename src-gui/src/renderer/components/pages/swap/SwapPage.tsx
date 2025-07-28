@@ -25,12 +25,14 @@ export default function SwapPage() {
     if (!isOnSwapPage && swap.state?.curr) {
       // Only start timer if funds haven't been locked yet
       const fundsLocked = haveFundsBeenLocked(swap.state.curr);
-      
+
       if (!fundsLocked) {
         suspensionTimerRef.current = setTimeout(async () => {
           try {
             await suspendCurrentSwap();
-            console.log("Swap suspended due to inactivity (left swap page for 10+ seconds)");
+            console.log(
+              "Swap suspended due to inactivity (left swap page for 10+ seconds)",
+            );
           } catch (error) {
             console.error("Failed to suspend swap:", error);
           }
@@ -51,16 +53,18 @@ export default function SwapPage() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       const isOnSwapPage = location.pathname === "/swap";
-      
+
       if (document.hidden && isOnSwapPage && swap.state?.curr) {
         // Page became hidden while on swap page
         const fundsLocked = haveFundsBeenLocked(swap.state.curr);
-        
+
         if (!fundsLocked) {
           suspensionTimerRef.current = setTimeout(async () => {
             try {
               await suspendCurrentSwap();
-              console.log("Swap suspended due to inactivity (page hidden for 10+ seconds)");
+              console.log(
+                "Swap suspended due to inactivity (page hidden for 10+ seconds)",
+              );
             } catch (error) {
               console.error("Failed to suspend swap:", error);
             }

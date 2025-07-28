@@ -459,7 +459,7 @@ pub trait TauriEmitter {
         &self,
         details: SelectMakerDetails,
         timeout_secs: u64,
-    ) -> Result<Option<SelectOfferApprovalRequest>>;
+    ) -> Result<bool>;
 
     async fn request_offer_selection(
         &self,
@@ -566,14 +566,14 @@ impl TauriEmitter for TauriHandle {
         &self,
         details: SelectMakerDetails,
         timeout_secs: u64,
-    ) -> Result<Option<SelectOfferApprovalRequest>> {
+    ) -> Result<bool> {
         Ok(self
             .request_approval(
                 ApprovalRequestType::SelectMaker(details),
                 Some(timeout_secs),
             )
             .await
-            .unwrap_or(None))
+            .unwrap_or(false))
     }
 
     async fn request_offer_selection(
@@ -581,11 +581,8 @@ impl TauriEmitter for TauriHandle {
         quote: QuoteWithAddress,
         timeout_secs: u64,
     ) -> Result<String> {
-        self.request_approval(
-            ApprovalRequestType::SelectOffer(quote),
-            Some(timeout_secs),
-        )
-        .await
+        self.request_approval(ApprovalRequestType::SelectOffer(quote), Some(timeout_secs))
+            .await
     }
 
     async fn request_specify_redeem_refund(
@@ -675,7 +672,7 @@ impl TauriEmitter for Option<TauriHandle> {
         &self,
         details: SelectMakerDetails,
         timeout_secs: u64,
-    ) -> Result<Option<SelectOfferApprovalRequest>> {
+    ) -> Result<bool> {
         match self {
             Some(tauri) => tauri.request_maker_selection(details, timeout_secs).await,
             None => bail!("No Tauri handle available"),
@@ -699,7 +696,11 @@ impl TauriEmitter for Option<TauriHandle> {
         timeout_secs: u64,
     ) -> Result<SelectOfferApprovalRequest> {
         match self {
-            Some(tauri) => tauri.request_specify_redeem_refund(details, timeout_secs).await,
+            Some(tauri) => {
+                tauri
+                    .request_specify_redeem_refund(details, timeout_secs)
+                    .await
+            }
             None => bail!("No Tauri handle available"),
         }
     }

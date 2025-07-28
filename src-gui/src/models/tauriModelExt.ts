@@ -316,9 +316,10 @@ export type PendingSelectOfferApprovalRequest = PendingApprovalRequest & {
   request: { type: "SelectOffer"; content: QuoteWithAddress };
 };
 
-export type PendingSpecifyRedeemRefundApprovalRequest = PendingApprovalRequest & {
-  request: { type: "SpecifyRedeemRefund"; content: SelectOfferDetails };
-};
+export type PendingSpecifyRedeemRefundApprovalRequest =
+  PendingApprovalRequest & {
+    request: { type: "SpecifyRedeemRefund"; content: SelectOfferDetails };
+  };
 
 export type PendingSendMoneroApprovalRequest = PendingApprovalRequest & {
   request: { type: "SendMonero"; content: SendMoneroDetails };
