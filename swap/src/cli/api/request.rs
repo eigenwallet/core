@@ -1,8 +1,8 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
-    ApprovalRequestType, SelectMakerDetails, SelectOfferApprovalRequest, SendMoneroDetails,
-    TauriEmitter, TauriSwapProgressEvent,
+    ApprovalRequestType, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
+    TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
 use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
@@ -951,6 +951,8 @@ pub async fn buy_xmr(
 
     let bitcoin_wallet_for_closures = Arc::clone(&bitcoin_wallet);
 
+    // Clone bitcoin_change_address before moving it in the emit call
+    let bitcoin_change_address_for_spawn = bitcoin_change_address.clone();
     let rendezvous_points_clone = rendezvous_points.clone();
     let sellers_clone = sellers.clone();
 
@@ -958,15 +960,7 @@ pub async fn buy_xmr(
     // because we need to be able to cancel the determine_btc_to_swap(..)
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
-    let (
-        seller_multiaddr,
-        seller_peer_id,
-        quote,
-        tx_lock_amount,
-        tx_lock_fee,
-        bitcoin_change_address,
-        monero_receive_pool,
-    ) = tokio::select! {
+    let (seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee) = tokio::select! {
         result = determine_btc_to_swap(
             move || {
                 let rendezvous_points = rendezvous_points_clone.clone();
@@ -1023,7 +1017,7 @@ pub async fn buy_xmr(
                     };
 
                     tauri_handle.request_maker_selection(details, 300).await
-                }) as Box<dyn Future<Output = Result<Option<SelectOfferApprovalRequest>>> + Send>
+                }) as Box<dyn Future<Output = Result<bool>> + Send>
             },
         ) => {
             result?
@@ -1034,28 +1028,6 @@ pub async fn buy_xmr(
             bail!("Shutdown signal received");
         },
     };
-
-    monero_receive_pool.assert_network(context.config.env_config.monero_network)?;
-    monero_receive_pool.assert_sum_to_one()?;
-
-    let bitcoin_change_address = match bitcoin_change_address {
-        Some(addr) => addr
-            .require_network(bitcoin_wallet.network())
-            .context("Address is not on the correct network")?,
-        None => {
-            let internal_wallet_address = bitcoin_wallet.new_address().await?;
-
-            tracing::info!(
-                internal_wallet_address=%internal_wallet_address,
-                "No --change-address supplied. Any change will be received to the internal wallet."
-            );
-
-            internal_wallet_address
-        }
-    };
-
-    // Clone bitcoin_change_address before moving it in the emit call
-    let bitcoin_change_address_for_spawn = bitcoin_change_address.clone();
 
     // Insert the peer_id into the database
     context.db.insert_peer_id(swap_id, seller_peer_id).await?;
@@ -1080,11 +1052,6 @@ pub async fn buy_xmr(
     .await?;
 
     swarm.add_peer_address(seller_peer_id, seller_multiaddr.clone());
-
-    context
-        .db
-        .insert_monero_address_pool(swap_id, monero_receive_pool.clone())
-        .await?;
 
     tracing::debug!(peer_id = %swarm.local_peer_id(), "Network layer initialized");
 
@@ -1125,6 +1092,52 @@ pub async fn buy_xmr(
                 }
             },
             swap_result = async {
+                // Request approval for the refund and receive addresses
+                let details = SelectOfferDetails {
+                    swap_id,
+                    btc_amount_to_swap: quote.max_quantity,
+                    selected_maker: QuoteWithAddress {
+                        multiaddr: seller_multiaddr.clone(),
+                        peer_id: seller_peer_id,
+                        quote: quote.clone(),
+                        version: semver::Version::parse("0.0.0").unwrap(),
+                    },
+                };
+                
+                let approval_request = context
+                    .tauri_handle
+                    .request_specify_redeem_refund(details, 300)
+                    .await?;
+
+                // Handle bitcoin change address - if not provided, create from internal wallet
+                let bitcoin_change_address = match approval_request.bitcoin_change_address {
+                    Some(addr) => addr
+                        .require_network(bitcoin_wallet.network())
+                        .context("Address is not on the correct network")?,
+                    None => {
+                        let internal_wallet_address = bitcoin_wallet.new_address().await?;
+
+                        tracing::info!(
+                            internal_wallet_address=%internal_wallet_address,
+                            "No --change-address supplied. Any change will be received to the internal wallet."
+                        );
+
+                        internal_wallet_address
+                    }
+                };
+
+                let monero_receive_pool = approval_request.monero_receive_pool;
+                
+                // Assert that the sum of the addresses is 1, and network is correct
+                monero_receive_pool.assert_network(context.config.env_config.monero_network)?;
+                monero_receive_pool.assert_sum_to_one()?;
+
+                // Insert the addresses into the database
+                context
+                    .db
+                    .insert_monero_address_pool(swap_id, monero_receive_pool.clone())
+                    .await?;
+                
                 let swap = Swap::new(
                     Arc::clone(&context.db),
                     swap_id,
@@ -1133,7 +1146,7 @@ pub async fn buy_xmr(
                     env_config,
                     event_loop_handle,
                     monero_receive_pool.clone(),
-                    bitcoin_change_address_for_spawn,
+                    bitcoin_change_address,
                     tx_lock_amount,
                     tx_lock_fee
                 ).with_event_emitter(context.tauri_handle.clone());
@@ -1647,19 +1660,13 @@ pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS, FQ>(
     sync: FS,
     event_emitter: Option<TauriHandle>,
     swap_id: Uuid,
-    request_approval: impl Fn(
-        QuoteWithAddress,
-    ) -> Box<
-        dyn Future<Output = Result<Option<SelectOfferApprovalRequest>>> + Send,
-    >,
+    request_approval: impl Fn(QuoteWithAddress) -> Box<dyn Future<Output = Result<bool>> + Send>,
 ) -> Result<(
     Multiaddr,
     PeerId,
     BidQuote,
     bitcoin::Amount,
     bitcoin::Amount,
-    Option<bitcoin::Address<NetworkUnchecked>>,
-    MoneroAddressPool,
 )>
 where
     TB: Future<Output = Result<bitcoin::Amount>> + Send + 'static,
@@ -1746,18 +1753,16 @@ where
             pending_approvals.push(async move {
                 use std::pin::Pin;
                 let pinned_future = Pin::from(future);
-                let response = pinned_future.await;
+                let approved = pinned_future.await?;
 
-                match response {
-                    Ok(Some(response)) => Ok::<
+                if approved {
+                    Ok::<
                         Option<(
                             Multiaddr,
                             PeerId,
                             BidQuote,
                             bitcoin::Amount,
                             bitcoin::Amount,
-                            Option<bitcoin::Address<NetworkUnchecked>>,
-                            MoneroAddressPool,
                         )>,
                         anyhow::Error,
                     >(Some((
@@ -1766,11 +1771,18 @@ where
                         quote.quote.clone(),
                         tx_lock_amount,
                         tx_lock_fee,
-                        response.bitcoin_change_address,
-                        response.monero_receive_pool,
-                    ))),
-                    Ok(None) => Ok(None),
-                    Err(_) => Ok(None),
+                    )))
+                } else {
+                    Ok::<
+                        Option<(
+                            Multiaddr,
+                            PeerId,
+                            BidQuote,
+                            bitcoin::Amount,
+                            bitcoin::Amount,
+                        )>,
+                        anyhow::Error,
+                    >(None)
                 }
             });
         }
@@ -1791,8 +1803,6 @@ where
             BidQuote,
             bitcoin::Amount,
             bitcoin::Amount,
-            Option<bitcoin::Address<NetworkUnchecked>>,
-            MoneroAddressPool,
         )> = tokio::select! {
             // Any approval request completes
             approval_result = pending_approvals.next(), if !pending_approvals.is_empty() => {
@@ -1816,28 +1826,11 @@ where
         };
 
         // If user accepted an offer, return it to start the swap
-        if let Some((
-            multiaddr,
-            peer_id,
-            quote,
-            tx_lock_amount,
-            tx_lock_fee,
-            bitcoin_change_address,
-            monero_receive_pool,
-        )) = result
-        {
+        if let Some((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee)) = result {
             quote_fetch_abort_handle.abort();
             wallet_refresh_abort_handle.abort();
 
-            return Ok((
-                multiaddr,
-                peer_id,
-                quote,
-                tx_lock_amount,
-                tx_lock_fee,
-                bitcoin_change_address,
-                monero_receive_pool,
-            ));
+            return Ok((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee));
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

@@ -43,7 +43,6 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
-  SelectOfferApprovalRequest,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -215,43 +214,6 @@ export async function buyXmr() {
   });
 }
 
-export async function resolveSelectMakerApproval(
-  requestId: string,
-  btc_change_address: string,
-  monero_receive_address: string,
-  donation_percentage: DonateToDevelopmentTip,
-) {
-  const address_pool: LabeledMoneroAddress[] = [];
-  if (donation_percentage !== false) {
-    const donation_address = isTestnet()
-      ? DONATION_ADDRESS_STAGENET
-      : DONATION_ADDRESS_MAINNET;
-
-    address_pool.push(
-      {
-        address: monero_receive_address,
-        percentage: 1 - donation_percentage,
-        label: "Your wallet",
-      },
-      {
-        address: donation_address,
-        percentage: donation_percentage,
-        label: "Tip to the developers",
-      },
-    );
-  } else {
-    address_pool.push({
-      address: monero_receive_address,
-      percentage: 1,
-      label: "Your wallet",
-    });
-  }
-
-  await resolveApproval(requestId, {
-    bitcoin_change_address: btc_change_address,
-    monero_receive_pool: address_pool,
-  } as unknown as SelectOfferApprovalRequest);
-}
 
 export async function resumeSwap(swapId: string) {
   await invoke<ResumeSwapArgs, ResumeSwapResponse>("resume_swap", {
