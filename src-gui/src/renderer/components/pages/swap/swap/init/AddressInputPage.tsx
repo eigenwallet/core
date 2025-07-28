@@ -19,10 +19,8 @@ export default function AddressInputPage() {
   const [refundAddress, setRefundAddress] = useState("");
   const [useExternalRefundAddress, setUseExternalRefundAddress] =
     useState(false);
-
-  // We force this to true for now because the internal wallet is not really accessible from the GUI yet
   const [useExternalRedeemAddress, setUseExternalRedeemAddress] =
-    useState(true);
+    useState(false);
 
   const [redeemAddressValid, setRedeemAddressValid] = useState(false);
   const [refundAddressValid, setRefundAddressValid] = useState(false);
