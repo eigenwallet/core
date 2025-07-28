@@ -25,7 +25,11 @@ import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/
 import { usePendingSpecifyRedeemRefundApproval } from "store/hooks";
 import AddressInputPage from "./init/AddressInputPage";
 
-export default function SwapStatePage({ state }: { state: SwapState | null }) {
+export default function SwapStatePage({
+  state,
+}: {
+  state: SwapState | null;
+}) {
   const pendingSpecifyRedeemRefundApprovals =
     usePendingSpecifyRedeemRefundApproval();
 

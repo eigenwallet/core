@@ -17,7 +17,6 @@ use crate::network::swarm;
 use crate::protocol::bob::{BobState, Swap};
 use crate::protocol::{bob, Database, State};
 use crate::{bitcoin, cli, monero};
-use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
 use ::monero::Network;
 use anyhow::{bail, Context as AnyContext, Result};
@@ -958,7 +957,7 @@ pub async fn buy_xmr(
     // because we need to be able to cancel the determine_btc_to_swap(..)
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
-    let (seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee) = tokio::select! {
+    let (quote_with_address, tx_lock_amount, tx_lock_fee) = tokio::select! {
         result = determine_btc_to_swap(
             move || {
                 let rendezvous_points = rendezvous_points_clone.clone();
@@ -1027,6 +1026,10 @@ pub async fn buy_xmr(
         },
     };
 
+    let seller_peer_id = quote_with_address.peer_id;
+    let seller_multiaddr = quote_with_address.multiaddr.clone();
+    let quote = quote_with_address.quote;
+
     // Insert the peer_id into the database
     context.db.insert_peer_id(swap_id, seller_peer_id).await?;
 
@@ -1078,7 +1081,6 @@ pub async fn buy_xmr(
 
                 bail!("Shutdown signal received");
             },
-
             event_loop_result = event_loop => {
                 match event_loop_result {
                     Ok(_) => {
@@ -1093,15 +1095,9 @@ pub async fn buy_xmr(
                 // Request approval for the refund and receive addresses
                 let details = SelectOfferDetails {
                     swap_id,
-                    btc_amount_to_swap: quote.max_quantity,
-                    selected_maker: QuoteWithAddress {
-                        multiaddr: seller_multiaddr.clone(),
-                        peer_id: seller_peer_id,
-                        quote: quote.clone(),
-                        version: semver::Version::parse("0.0.0").unwrap(),
-                    },
+                    maker: quote_with_address.clone(),
                 };
-                
+
                 let approval_request = context
                     .tauri_handle
                     .request_specify_redeem_refund(details, 300)
@@ -1125,7 +1121,7 @@ pub async fn buy_xmr(
                 };
 
                 let monero_receive_pool = approval_request.monero_receive_pool;
-                
+
                 // Assert that the sum of the addresses is 1, and network is correct
                 monero_receive_pool.assert_network(context.config.env_config.monero_network)?;
                 monero_receive_pool.assert_sum_to_one()?;
@@ -1135,7 +1131,7 @@ pub async fn buy_xmr(
                     .db
                     .insert_monero_address_pool(swap_id, monero_receive_pool.clone())
                     .await?;
-                
+
                 let swap = Swap::new(
                     Arc::clone(&context.db),
                     swap_id,
@@ -1659,13 +1655,7 @@ pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS, FQ>(
     event_emitter: Option<TauriHandle>,
     swap_id: Uuid,
     request_approval: impl Fn(QuoteWithAddress) -> Box<dyn Future<Output = Result<bool>> + Send>,
-) -> Result<(
-    Multiaddr,
-    PeerId,
-    BidQuote,
-    bitcoin::Amount,
-    bitcoin::Amount,
-)>
+) -> Result<(QuoteWithAddress, bitcoin::Amount, bitcoin::Amount)>
 where
     TB: Future<Output = Result<bitcoin::Amount>> + Send + 'static,
     FB: Fn() -> TB + Send + 'static,
@@ -1756,26 +1746,20 @@ where
                 if approved {
                     Ok::<
                         Option<(
-                            Multiaddr,
-                            PeerId,
-                            BidQuote,
+                            QuoteWithAddress,
                             bitcoin::Amount,
                             bitcoin::Amount,
                         )>,
                         anyhow::Error,
                     >(Some((
-                        quote.multiaddr.clone(),
-                        quote.peer_id.clone(),
-                        quote.quote.clone(),
+                        quote.clone(),
                         tx_lock_amount,
                         tx_lock_fee,
                     )))
                 } else {
                     Ok::<
                         Option<(
-                            Multiaddr,
-                            PeerId,
-                            BidQuote,
+                            QuoteWithAddress,
                             bitcoin::Amount,
                             bitcoin::Amount,
                         )>,
@@ -1795,13 +1779,7 @@ where
         );
 
         // Listen for approvals, balance changes, or quote changes
-        let result: Option<(
-            Multiaddr,
-            PeerId,
-            BidQuote,
-            bitcoin::Amount,
-            bitcoin::Amount,
-        )> = tokio::select! {
+        let result: Option<(QuoteWithAddress, bitcoin::Amount, bitcoin::Amount)> = tokio::select! {
             // Any approval request completes
             approval_result = pending_approvals.next(), if !pending_approvals.is_empty() => {
                 match approval_result {
@@ -1824,11 +1802,11 @@ where
         };
 
         // If user accepted an offer, return it to start the swap
-        if let Some((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee)) = result {
+        if let Some((quote_with_address, tx_lock_amount, tx_lock_fee)) = result {
             quote_fetch_abort_handle.abort();
             wallet_refresh_abort_handle.abort();
 
-            return Ok((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee));
+            return Ok((quote_with_address, tx_lock_amount, tx_lock_fee));
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

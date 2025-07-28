@@ -6,7 +6,11 @@ import {
   Paper,
   Skeleton,
 } from "@mui/material";
-import { useActiveSwapInfo, useAppSelector } from "store/hooks";
+import {
+  useActiveSwapInfo,
+  useAppSelector,
+  usePendingSpecifyRedeemRefundApproval,
+} from "store/hooks";
 import SwapStatePage from "renderer/components/pages/swap/swap/SwapStatePage";
 import CancelButton from "./CancelButton";
 import SwapStateStepper from "renderer/components/modal/swap/SwapStateStepper";
@@ -19,11 +23,14 @@ import { buyXmr } from "renderer/rpc";
 export default function SwapWidget() {
   const swap = useAppSelector((state) => state.swap);
   const swapInfo = useActiveSwapInfo();
+  const pendingSpecifyRedeemRefundApprovals =
+    usePendingSpecifyRedeemRefundApproval();
 
   const [debug, setDebug] = useState(false);
 
   const isWaitingForBtcDeposit =
     swap.state?.curr.type === "WaitingForBtcDeposit";
+  const isShowingAddressInput = pendingSpecifyRedeemRefundApprovals.length > 0;
 
   useEffect(() => {
     if (swap.state === null) {
@@ -75,13 +82,24 @@ export default function SwapWidget() {
                 sx={{
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: isWaitingForBtcDeposit
-                    ? "flex-end"
-                    : "space-between",
+                  justifyContent: "space-between",
+                  gap: 2,
                 }}
               >
-                {!isWaitingForBtcDeposit && <CancelButton />}
-                <DebugPageSwitchBadge enabled={debug} setEnabled={setDebug} />
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  {!isWaitingForBtcDeposit && !isShowingAddressInput && <CancelButton />}
+                  <Box
+                    sx={{
+                      opacity: 0.6,
+                      "&:hover": { opacity: 1 },
+                    }}
+                  >
+                    <DebugPageSwitchBadge
+                      enabled={debug}
+                      setEnabled={setDebug}
+                    />
+                  </Box>
+                </Box>
               </Box>
             </>
           )}

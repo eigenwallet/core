@@ -81,10 +81,7 @@ pub struct SelectMakerDetails {
 pub struct SelectOfferDetails {
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
-    #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
-    pub btc_amount_to_swap: bitcoin::Amount,
-    pub selected_maker: QuoteWithAddress,
+    pub maker: QuoteWithAddress,
 }
 
 #[typeshare]

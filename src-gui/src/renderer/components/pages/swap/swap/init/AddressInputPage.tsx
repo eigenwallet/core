@@ -1,45 +1,103 @@
-import { Box, Paper, Tab, Tabs, Typography } from "@mui/material";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import {
+  Box,
+  Paper,
+  Typography,
+  IconButton,
+  InputAdornment,
+  Switch,
+  FormControlLabel,
+} from "@mui/material";
+import ClearIcon from "@mui/icons-material/Clear";
 import { useState } from "react";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import {
-  usePendingSpecifyRedeemRefundApproval,
-  useSettings,
-} from "store/hooks";
-import { confirmOfferWithAddresses } from "renderer/rpc";
+import MakerOfferItem from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/MakerOfferItem";
+import { usePendingSpecifyRedeemRefundApproval } from "store/hooks";
 
-export default function AddressInputPage() {
-  const pendingSpecifyRedeemRefundApprovals =
-    usePendingSpecifyRedeemRefundApproval();
-  const specifyRedeemRefundApproval = pendingSpecifyRedeemRefundApprovals[0]; // Assuming there's only one at a time
-
+// Custom hook to manage address input state and validation
+export function useAddressInputState() {
   const [redeemAddress, setRedeemAddress] = useState("");
   const [refundAddress, setRefundAddress] = useState("");
-  const [useExternalRefundAddress, setUseExternalRefundAddress] =
-    useState(false);
-  const [useExternalRedeemAddress, setUseExternalRedeemAddress] =
-    useState(false);
+  const [redeemAddressValid, setRedeemAddressValid] = useState(true);
+  const [refundAddressValid, setRefundAddressValid] = useState(true);
 
-  const [redeemAddressValid, setRedeemAddressValid] = useState(false);
-  const [refundAddressValid, setRefundAddressValid] = useState(false);
+  const isValid = 
+    (redeemAddress.trim() === "" || redeemAddressValid) &&
+    (refundAddress.trim() === "" || refundAddressValid);
 
-  const donationRatio = useSettings((s) => s.donateToDevelopment);
+  return {
+    redeemAddress,
+    setRedeemAddress,
+    refundAddress, 
+    setRefundAddress,
+    redeemAddressValid,
+    setRedeemAddressValid,
+    refundAddressValid,
+    setRefundAddressValid,
+    isValid,
+  };
+}
 
-  async function confirmOffer() {
-    await confirmOfferWithAddresses(
-      specifyRedeemRefundApproval,
-      donationRatio,
-      useExternalRedeemAddress,
-      redeemAddress,
-      useExternalRefundAddress,
-      refundAddress,
-    );
-  }
+interface AddressInputPageProps {
+  redeemAddress: string;
+  setRedeemAddress: (value: string) => void;
+  refundAddress: string;
+  setRefundAddress: (value: string) => void;
+  redeemAddressValid: boolean;
+  setRedeemAddressValid: (value: boolean) => void;
+  refundAddressValid: boolean;
+  setRefundAddressValid: (value: boolean) => void;
+}
+
+export default function AddressInputPage({
+  redeemAddress,
+  setRedeemAddress,
+  refundAddress,
+  setRefundAddress,
+  redeemAddressValid,
+  setRedeemAddressValid,
+  refundAddressValid,
+  setRefundAddressValid,
+}: AddressInputPageProps) {
+  const pendingSpecifyRedeemRefundApprovals =
+    usePendingSpecifyRedeemRefundApproval();
+  const specifyRedeemRefundApproval = pendingSpecifyRedeemRefundApprovals[0];
+
+  // Independent switch states
+  const [useInternalRedeemWallet, setUseInternalRedeemWallet] = useState(true);
+  const [useInternalRefundWallet, setUseInternalRefundWallet] = useState(true);
+
+  const handleRedeemSwitchChange = (useInternal: boolean) => {
+    setUseInternalRedeemWallet(useInternal);
+    if (useInternal) {
+      setRedeemAddress("");
+      setRedeemAddressValid(true);
+    } else {
+      setRedeemAddressValid(false);
+    }
+  };
+
+  const handleRefundSwitchChange = (useInternal: boolean) => {
+    setUseInternalRefundWallet(useInternal);
+    if (useInternal) {
+      setRefundAddress("");
+      setRefundAddressValid(true);
+    } else {
+      setRefundAddressValid(false);
+    }
+  };
 
   return (
     <>
+      {specifyRedeemRefundApproval && (
+        <Box>
+          <MakerOfferItem
+            quoteWithAddress={specifyRedeemRefundApproval.request.content.maker}
+            requestId={undefined}
+            noButton={true}
+          />
+        </Box>
+      )}
       <Box
         sx={{
           display: "flex",
@@ -47,86 +105,85 @@ export default function AddressInputPage() {
           gap: 1.5,
         }}
       >
-        <Paper variant="outlined" style={{}}>
-          <Tabs
-            value={useExternalRedeemAddress ? 1 : 0}
-            indicatorColor="primary"
-            variant="fullWidth"
-            onChange={(_, newValue) =>
-              setUseExternalRedeemAddress(newValue === 1)
-            }
-          >
-            <Tab label="Redeem to internal Monero wallet" value={0} />
-            <Tab label="Redeem to external Monero address" value={1} />
-          </Tabs>
-          <Box style={{ padding: "16px" }}>
-            {useExternalRedeemAddress ? (
-              <MoneroAddressTextField
-                label="External Monero redeem address"
-                address={redeemAddress}
-                onAddressChange={setRedeemAddress}
-                onAddressValidityChange={setRedeemAddressValid}
-                helperText="The monero will be sent to this address if the swap is successful."
-                fullWidth
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Monero Redeem Address
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={useInternalRedeemWallet}
+                onChange={(e) => handleRedeemSwitchChange(e.target.checked)}
               />
-            ) : (
-              <Typography variant="caption">
-                The Monero will be sent to the internal Monero wallet of the
-                GUI. You can then withdraw them from there or use them for
-                another swap directly.
-              </Typography>
-            )}
-          </Box>
+            }
+            label="Send Monero into your eigenwallet"
+            sx={{ mb: useInternalRedeemWallet ? 0 : 2 }}
+          />
+          {!useInternalRedeemWallet && (
+            <MoneroAddressTextField
+              label="Custom redeem address"
+              placeholder="Enter Monero address"
+              address={redeemAddress}
+              onAddressChange={setRedeemAddress}
+              onAddressValidityChange={setRedeemAddressValid}
+              helperText="Monero will be sent to this external address if the swap is successful"
+              fullWidth
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleRedeemSwitchChange(true)}
+                      title="Use internal wallet instead"
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          )}
         </Paper>
 
-        <Paper variant="outlined" style={{}}>
-          <Tabs
-            value={useExternalRefundAddress ? 1 : 0}
-            indicatorColor="primary"
-            variant="fullWidth"
-            onChange={(_, newValue) =>
-              setUseExternalRefundAddress(newValue === 1)
-            }
-          >
-            <Tab label="Refund to internal Bitcoin wallet" value={0} />
-            <Tab label="Refund to external Bitcoin address" value={1} />
-          </Tabs>
-          <Box style={{ padding: "16px" }}>
-            {useExternalRefundAddress ? (
-              <BitcoinAddressTextField
-                label="External Bitcoin refund address"
-                address={refundAddress}
-                onAddressChange={setRefundAddress}
-                onAddressValidityChange={setRefundAddressValid}
-                helperText="In case something goes wrong, the Bitcoin will be refunded to this address."
-                fullWidth
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Bitcoin Refund Address
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={useInternalRefundWallet}
+                onChange={(e) => handleRefundSwitchChange(e.target.checked)}
               />
-            ) : (
-              <Typography variant="caption">
-                In case something goes wrong, the Bitcoin will be refunded to
-                the internal Bitcoin wallet of the GUI. You can then withdraw
-                them from there or use them for another swap directly.
-              </Typography>
-            )}
-          </Box>
+            }
+            label="Send Bitcoin refunds into your eigenwallet"
+            sx={{ mb: useInternalRefundWallet ? 0 : 2 }}
+          />
+          {!useInternalRefundWallet && (
+            <BitcoinAddressTextField
+              label="Custom refund address"
+              placeholder="Enter Bitcoin address"
+              address={refundAddress}
+              onAddressChange={setRefundAddress}
+              onAddressValidityChange={setRefundAddressValid}
+              helperText="In case something goes wrong, Bitcoin will be refunded to this external address"
+              fullWidth
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleRefundSwitchChange(true)}
+                      title="Use internal wallet instead"
+                    >
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          )}
         </Paper>
-      </Box>
-      <Box style={{ display: "flex", justifyContent: "center" }}>
-        <PromiseInvokeButton
-          disabled={
-            (!refundAddressValid && useExternalRefundAddress) ||
-            (!redeemAddressValid && useExternalRedeemAddress)
-          }
-          variant="contained"
-          color="primary"
-          size="large"
-          sx={{ marginTop: 1 }}
-          endIcon={<PlayArrowIcon />}
-          onInvoke={confirmOffer}
-          displayErrorSnackbar
-        >
-          Confirm
-        </PromiseInvokeButton>
       </Box>
     </>
   );

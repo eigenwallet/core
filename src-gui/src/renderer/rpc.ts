@@ -591,16 +591,19 @@ export async function saveFilesInDialog(files: Record<string, string>) {
   });
 }
 
+/**
+ * Confirms an offer with specified redeem and refund addresses.
+ * @param request_id - The approval request ID to resolve
+ * @param donationRatio - Ratio to donate to developers (false for no donation)
+ * @param redeemAddress - Monero address to receive funds (null means address is auto picked with internal address)
+ * @param refundAddress - Bitcoin address for refunds (null means address is auto picked with internal address)
+ */
 export async function confirmOfferWithAddresses(
-  specifyRedeemRefundApproval: any,
+  request_id: string,
   donationRatio: number | false,
-  useExternalRedeemAddress: boolean,
-  redeemAddress: string,
-  useExternalRefundAddress: boolean,
-  refundAddress: string,
+  redeemAddress: string | null,
+  refundAddress: string | null,
 ) {
-  if (!specifyRedeemRefundApproval) return;
-
   const address_pool: LabeledMoneroAddress[] = [];
   if (donationRatio !== false) {
     const donation_address = isTestnet()
@@ -609,7 +612,7 @@ export async function confirmOfferWithAddresses(
 
     address_pool.push(
       {
-        address: useExternalRedeemAddress ? redeemAddress : null,
+        address: redeemAddress,
         percentage: 1 - donationRatio,
         label: "Your wallet",
       },
@@ -621,17 +624,14 @@ export async function confirmOfferWithAddresses(
     );
   } else {
     address_pool.push({
-      address: useExternalRedeemAddress ? redeemAddress : null,
+      address: redeemAddress,
       percentage: 1,
       label: "Your wallet",
     });
   }
 
-  await resolveApproval<SelectOfferApprovalRequest>(
-    specifyRedeemRefundApproval.request_id,
-    {
-      bitcoin_change_address: useExternalRefundAddress ? refundAddress : null,
-      monero_receive_pool: address_pool,
-    },
-  );
+  await resolveApproval<SelectOfferApprovalRequest>(request_id, {
+    bitcoin_change_address: refundAddress,
+    monero_receive_pool: address_pool,
+  });
 }
