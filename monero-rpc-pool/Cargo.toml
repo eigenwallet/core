@@ -18,7 +18,6 @@ monero = { workspace = true }
 monero-rpc = { path = "../monero-rpc" }
 rand = { workspace = true }
 regex = "1.0"
-reqwest = { workspace = true, features = ["rustls-tls"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "migrate"] }
@@ -28,6 +27,7 @@ tower-http = { version = "0.5", features = ["cors"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 typeshare = { workspace = true }
+ureq = { version = "2.10", default-features = false, features = ["tls"] }
 url = "2.0"
 uuid = { workspace = true }
 
