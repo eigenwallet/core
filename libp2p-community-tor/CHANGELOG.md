@@ -28,12 +28,11 @@ Thanks! :rocket:
 [PR 18]: https://github.com/umgefahren/libp2p-tor/pull/18
 [PR 20]: https://github.com/umgefahren/libp2p-tor/pull/20
 
-
 # 0.3.0-alpha
 
 - Updated dependencies: See [PR 6].
   - [`arti-client` to `v0.8`
-  
+
 - Updated dependencies: See [PR 8].
   - `libp2p-core` to `v0.39`
   - `libp2p` to `0.51`
