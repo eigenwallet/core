@@ -77,14 +77,15 @@ async fn raw_http_request(
     let (scheme, host, port) = &node_url;
     let url = format!("{}://{}:{}{}", scheme, host, port, path);
 
-    // Clone the agent (it's cheap, just an Arc internally)
+    // Clone the agent and convert borrowed data to owned for 'static lifetime
     let client = client.clone();
+    let method = method.to_string();
+    let body = body.map(|b| b.to_vec());
 
-    tokio::task::spawn_blocking(move || {
-        let mut request = client.request(method, &url);
-
-        // Forward essential headers
-        for (name, value) in headers.iter() {
+    // Clone headers we need (convert to owned data)
+    let headers_to_forward: Vec<(String, String)> = headers
+        .iter()
+        .filter_map(|(name, value)| {
             let header_name = name.as_str();
             let header_name_lc = header_name.to_ascii_lowercase();
 
@@ -104,19 +105,29 @@ async fn raw_http_request(
             // If we are not forwarding a body (e.g. GET request) then forwarding `content-length` or
             // `content-type` with an absent body makes many Monero nodes hang waiting for bytes and
             // eventually close the connection.  This manifests as the time-outs we have observed.
-            let is_body_header_without_body =
-                body.is_none() && matches!(header_name_lc.as_str(), "content-length" | "content-type");
+            let is_body_header_without_body = body.is_none()
+                && matches!(header_name_lc.as_str(), "content-length" | "content-type");
 
             if !is_hop_by_hop && !is_body_header_without_body {
                 if let Ok(header_value) = std::str::from_utf8(value.as_bytes()) {
-                    request = request.set(header_name, header_value);
+                    return Some((header_name.to_string(), header_value.to_string()));
                 }
             }
+            None
+        })
+        .collect();
+
+    tokio::task::spawn_blocking(move || {
+        let mut request = client.request(&method, &url);
+
+        // Forward essential headers (already filtered and converted to owned data)
+        for (header_name, header_value) in headers_to_forward {
+            request = request.set(&header_name, &header_value);
         }
 
         // Execute the request with optional body
         let response = if let Some(body_bytes) = body {
-            request.send_bytes(body_bytes)
+            request.send_bytes(&body_bytes)
         } else {
             request.call()
         };
@@ -129,14 +140,19 @@ async fn raw_http_request(
         let headers: Vec<(String, String)> = header_names
             .iter()
             .filter_map(|name| {
-                response.header(name).map(|value| (name.clone(), value.to_string()))
+                response
+                    .header(name)
+                    .map(|value| (name.clone(), value.to_string()))
             })
             .collect();
 
         let mut body_bytes = Vec::new();
-        response.into_reader().read_to_end(&mut body_bytes).map_err(|e| {
-            HandlerError::RequestError(format!("Failed to read response body: {:#?}", e))
-        })?;
+        response
+            .into_reader()
+            .read_to_end(&mut body_bytes)
+            .map_err(|e| {
+                HandlerError::RequestError(format!("Failed to read response body: {:#?}", e))
+            })?;
 
         let mut axum_response = Response::new(Body::from(body_bytes));
         *axum_response.status_mut() =
