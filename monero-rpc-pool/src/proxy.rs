@@ -77,80 +77,87 @@ async fn raw_http_request(
     let (scheme, host, port) = &node_url;
     let url = format!("{}://{}:{}{}", scheme, host, port, path);
 
-    let mut request = client.request(method, &url);
+    // Clone the agent (it's cheap, just an Arc internally)
+    let client = client.clone();
 
-    // Forward essential headers
-    for (name, value) in headers.iter() {
-        let header_name = name.as_str();
-        let header_name_lc = header_name.to_ascii_lowercase();
+    tokio::task::spawn_blocking(move || {
+        let mut request = client.request(method, &url);
 
-        // Skip hop-by-hop headers and any body-related headers when we are **not** forwarding a body.
-        let is_hop_by_hop = matches!(
-            header_name_lc.as_str(),
-            "host"
-                | "connection"
-                | "transfer-encoding"
-                | "upgrade"
-                | "proxy-authenticate"
-                | "proxy-authorization"
-                | "te"
-                | "trailers"
-        );
+        // Forward essential headers
+        for (name, value) in headers.iter() {
+            let header_name = name.as_str();
+            let header_name_lc = header_name.to_ascii_lowercase();
 
-        // If we are not forwarding a body (e.g. GET request) then forwarding `content-length` or
-        // `content-type` with an absent body makes many Monero nodes hang waiting for bytes and
-        // eventually close the connection.  This manifests as the time-outs we have observed.
-        let is_body_header_without_body =
-            body.is_none() && matches!(header_name_lc.as_str(), "content-length" | "content-type");
+            // Skip hop-by-hop headers and any body-related headers when we are **not** forwarding a body.
+            let is_hop_by_hop = matches!(
+                header_name_lc.as_str(),
+                "host"
+                    | "connection"
+                    | "transfer-encoding"
+                    | "upgrade"
+                    | "proxy-authenticate"
+                    | "proxy-authorization"
+                    | "te"
+                    | "trailers"
+            );
 
-        if !is_hop_by_hop && !is_body_header_without_body {
-            if let Ok(header_value) = std::str::from_utf8(value.as_bytes()) {
-                request = request.set(header_name, header_value);
+            // If we are not forwarding a body (e.g. GET request) then forwarding `content-length` or
+            // `content-type` with an absent body makes many Monero nodes hang waiting for bytes and
+            // eventually close the connection.  This manifests as the time-outs we have observed.
+            let is_body_header_without_body =
+                body.is_none() && matches!(header_name_lc.as_str(), "content-length" | "content-type");
+
+            if !is_hop_by_hop && !is_body_header_without_body {
+                if let Ok(header_value) = std::str::from_utf8(value.as_bytes()) {
+                    request = request.set(header_name, header_value);
+                }
             }
         }
-    }
 
-    // Execute the request with optional body
-    let response = if let Some(body_bytes) = body {
-        request.send_bytes(body_bytes)
-    } else {
-        request.call()
-    };
+        // Execute the request with optional body
+        let response = if let Some(body_bytes) = body {
+            request.send_bytes(body_bytes)
+        } else {
+            request.call()
+        };
 
-    let response = response.map_err(|e| HandlerError::RequestError(format!("{:#?}", e)))?;
+        let response = response.map_err(|e| HandlerError::RequestError(format!("{:#?}", e)))?;
 
-    // Extract status and headers before consuming the response
-    let status = response.status();
-    let header_names: Vec<String> = response.headers_names();
-    let headers: Vec<(String, String)> = header_names
-        .iter()
-        .filter_map(|name| {
-            response.header(name).map(|value| (name.clone(), value.to_string()))
-        })
-        .collect();
+        // Extract status and headers before consuming the response
+        let status = response.status();
+        let header_names: Vec<String> = response.headers_names();
+        let headers: Vec<(String, String)> = header_names
+            .iter()
+            .filter_map(|name| {
+                response.header(name).map(|value| (name.clone(), value.to_string()))
+            })
+            .collect();
 
-    let mut body_bytes = Vec::new();
-    response.into_reader().read_to_end(&mut body_bytes).map_err(|e| {
-        HandlerError::RequestError(format!("Failed to read response body: {:#?}", e))
-    })?;
+        let mut body_bytes = Vec::new();
+        response.into_reader().read_to_end(&mut body_bytes).map_err(|e| {
+            HandlerError::RequestError(format!("Failed to read response body: {:#?}", e))
+        })?;
 
-    let mut axum_response = Response::new(Body::from(body_bytes));
-    *axum_response.status_mut() =
-        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let mut axum_response = Response::new(Body::from(body_bytes));
+        *axum_response.status_mut() =
+            StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
-    // Copy response headers exactly
-    for (name, value) in headers {
-        if let (Ok(header_name), Ok(header_value)) = (
-            axum::http::HeaderName::try_from(name.as_str()),
-            axum::http::HeaderValue::try_from(value.as_bytes()),
-        ) {
-            axum_response
-                .headers_mut()
-                .insert(header_name, header_value);
+        // Copy response headers exactly
+        for (name, value) in headers {
+            if let (Ok(header_name), Ok(header_value)) = (
+                axum::http::HeaderName::try_from(name.as_str()),
+                axum::http::HeaderValue::try_from(value.as_bytes()),
+            ) {
+                axum_response
+                    .headers_mut()
+                    .insert(header_name, header_value);
+            }
         }
-    }
 
-    Ok(axum_response)
+        Ok(axum_response)
+    })
+    .await
+    .map_err(|e| HandlerError::RequestError(format!("Task join error: {}", e)))?
 }
 
 async fn record_success(state: &AppState, scheme: &str, host: &str, port: i64, latency_ms: f64) {
