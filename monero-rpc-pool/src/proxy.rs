@@ -5,6 +5,7 @@ use axum::{
     response::Response,
 };
 use serde_json::json;
+use std::io::Read;
 use std::time::Instant;
 use tracing::{debug, error, info_span, Instrument};
 use uuid::Uuid;
@@ -66,7 +67,7 @@ fn extract_jsonrpc_method(body: &[u8]) -> Option<String> {
 }
 
 async fn raw_http_request(
-    client: &reqwest::Client,
+    client: &ureq::Agent,
     node_url: (String, String, i64),
     path: &str,
     method: &str,
@@ -76,17 +77,7 @@ async fn raw_http_request(
     let (scheme, host, port) = &node_url;
     let url = format!("{}://{}:{}{}", scheme, host, port, path);
 
-    // Use generic request method to support any HTTP verb
-    let http_method = method
-        .parse::<reqwest::Method>()
-        .map_err(|e| HandlerError::RequestError(format!("Invalid method '{}': {}", method, e)))?;
-
-    let mut request_builder = client.request(http_method, &url);
-
-    // Forward body if present
-    if let Some(body_bytes) = body {
-        request_builder = request_builder.body(body_bytes.to_vec());
-    }
+    let mut request = client.request(method, &url);
 
     // Forward essential headers
     for (name, value) in headers.iter() {
@@ -114,30 +105,41 @@ async fn raw_http_request(
 
         if !is_hop_by_hop && !is_body_header_without_body {
             if let Ok(header_value) = std::str::from_utf8(value.as_bytes()) {
-                request_builder = request_builder.header(header_name, header_value);
+                request = request.set(header_name, header_value);
             }
         }
     }
 
-    let response = request_builder
-        .send()
-        .await
-        .map_err(|e| HandlerError::RequestError(format!("{:#?}", e)))?;
+    // Execute the request with optional body
+    let response = if let Some(body_bytes) = body {
+        request.send_bytes(body_bytes)
+    } else {
+        request.call()
+    };
 
-    // Convert to axum Response preserving everything
+    let response = response.map_err(|e| HandlerError::RequestError(format!("{:#?}", e)))?;
+
+    // Extract status and headers before consuming the response
     let status = response.status();
-    let response_headers = response.headers().clone();
+    let header_names: Vec<String> = response.headers_names();
+    let headers: Vec<(String, String)> = header_names
+        .iter()
+        .filter_map(|name| {
+            response.header(name).map(|value| (name.clone(), value.to_string()))
+        })
+        .collect();
 
-    let body_bytes = response.bytes().await.map_err(|e| {
+    let mut body_bytes = Vec::new();
+    response.into_reader().read_to_end(&mut body_bytes).map_err(|e| {
         HandlerError::RequestError(format!("Failed to read response body: {:#?}", e))
     })?;
 
     let mut axum_response = Response::new(Body::from(body_bytes));
     *axum_response.status_mut() =
-        StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
     // Copy response headers exactly
-    for (name, value) in response_headers.iter() {
+    for (name, value) in headers {
         if let (Ok(header_name), Ok(header_value)) = (
             axum::http::HeaderName::try_from(name.as_str()),
             axum::http::HeaderValue::try_from(value.as_bytes()),
@@ -174,7 +176,7 @@ async fn record_failure(state: &AppState, scheme: &str, host: &str, port: i64) {
 }
 
 async fn single_raw_request(
-    client: &reqwest::Client,
+    client: &ureq::Agent,
     node_url: (String, String, i64),
     path: &str,
     method: &str,
@@ -228,7 +230,7 @@ async fn sequential_requests(
     body: Option<&[u8]>,
 ) -> Result<Response, HandlerError> {
     const POOL_SIZE: usize = 20;
-    const MAX_JSONRPC_ERRORS: usize = 3;
+    const MAX_JSONRPC_ERRORS: usize = 2;
 
     // Extract JSON-RPC method for better logging
     let jsonrpc_method = if path == "/json_rpc" {

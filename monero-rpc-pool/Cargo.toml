@@ -18,7 +18,7 @@ monero = { workspace = true }
 monero-rpc = { path = "../monero-rpc" }
 rand = { workspace = true }
 regex = "1.0"
-reqwest = { workspace = true, features = ["rustls-tls"] }
+ureq = { version = "2.10", default-features = false, features = ["tls"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "migrate"] }

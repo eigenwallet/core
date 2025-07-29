@@ -5314,26 +5314,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libp2p-tor"
-version = "0.5.0"
-dependencies = [
- "anyhow",
- "arti-client",
- "data-encoding",
- "futures",
- "libp2p",
- "thiserror 1.0.69",
- "tokio",
- "tokio-test",
- "tor-cell",
- "tor-hsservice",
- "tor-proto",
- "tor-rtcompat",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "libp2p-connection-limits"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5738,6 +5718,26 @@ dependencies = [
  "thiserror 1.0.69",
  "x509-parser 0.16.0",
  "yasna",
+]
+
+[[package]]
+name = "libp2p-tor"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "arti-client",
+ "data-encoding",
+ "futures",
+ "libp2p",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-test",
+ "tor-cell",
+ "tor-hsservice",
+ "tor-proto",
+ "tor-rtcompat",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -6227,7 +6227,6 @@ dependencies = [
  "monero-rpc",
  "rand 0.8.5",
  "regex",
- "reqwest 0.12.22",
  "serde",
  "serde_json",
  "sqlx",
@@ -6238,6 +6237,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "typeshare",
+ "ureq",
  "url",
  "uuid",
 ]
@@ -12871,6 +12871,21 @@ name = "unty"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
+
+[[package]]
+name = "ureq"
+version = "2.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d"
+dependencies = [
+ "base64 0.22.1",
+ "log",
+ "once_cell",
+ "rustls 0.23.29",
+ "rustls-pki-types",
+ "url",
+ "webpki-roots 0.26.11",
+]
 
 [[package]]
 name = "url"
