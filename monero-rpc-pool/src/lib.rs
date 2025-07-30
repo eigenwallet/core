@@ -39,7 +39,6 @@ use proxy::{proxy_handler, stats_handler};
 #[derive(Clone)]
 pub struct AppState {
     pub node_pool: Arc<NodePool>,
-    pub http_client: ureq::Agent,
 }
 
 /// Manages background tasks for the RPC pool
@@ -104,17 +103,8 @@ async fn create_app_with_receiver(
         status_update_handle,
     };
 
-    // Create shared HTTP client with connection pooling and keep-alive
-    // TODO: Add dangerous certificate acceptance equivalent to reqwest's danger_accept_invalid_certs(true)
-    let http_client = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(30))
-        .max_idle_connections(100)
-        .max_idle_connections_per_host(10)
-        .build();
-
     let app_state = AppState {
         node_pool,
-        http_client,
     };
 
     // Build the app

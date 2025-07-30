@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::new("trace"))
+        .with_env_filter(EnvFilter::new("info"))
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
