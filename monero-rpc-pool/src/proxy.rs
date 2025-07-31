@@ -1,175 +1,15 @@
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::StatusCode,
+    http::{request::Parts, response, StatusCode},
     response::Response,
 };
 use http_body_util::BodyExt;
+use hyper_util::rt::TokioIo;
+use tokio::net::TcpStream;
 use tracing::{error, info_span, Instrument};
 
 use crate::AppState;
-
-/// Proxies a singular axum::Request to a single node.
-/// Errors if we get a physical connection error
-/// Does NO error if the response is a HTTP error or a JSON-RPC error
-/// The caller is responsible for checking the response status and body for errors
-async fn proxy_to_single_node(
-    request: Request,
-    node: &(String, String, i64),
-) -> Result<Response, SingleRequestError> {
-    use hyper_util::rt::TokioIo;
-    use tokio::net::TcpStream;
-
-    // Open a TCP connection to a random node in the pool
-    let stream = TcpStream::connect(format!("{}:{}", node.1, node.2))
-        .await
-        .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-    let io = TokioIo::new(stream);
-
-    // Create the Hyper client for that node
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
-        .await
-        // TODO: When exactly does this error?
-        .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-
-    // Spawn a task to poll the connection, driving the HTTP state
-    // TODO: Put this into a connection pool
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            println!("Connection failed: {:?}", err);
-        }
-    });
-
-    // Forward the request to the node
-    // No need to rewrite the URI because the request.uri() is relative
-    let response = sender
-        .send_request(request)
-        .await
-        .map_err(|e| SingleRequestError::SendRequestError(e.to_string()))?;
-
-    // Convert hyper Response<Incoming> to axum Response<Body>
-    let (parts, body) = response.into_parts();
-    let body_bytes = body
-        .collect()
-        .await
-        .map_err(|e| SingleRequestError::CollectResponseError(e.to_string()))?
-        .to_bytes();
-    let axum_body = Body::from(body_bytes);
-
-    let response = Response::from_parts(parts, axum_body);
-
-    Ok(response)
-}
-
-fn get_jsonrpc_error(body: &[u8]) -> Option<String> {
-    // Try to parse as JSON
-    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) {
-        // Check if there's an "error" field
-        return json.get("error").and_then(|e| e.as_str().map(|s| s.to_string()));
-    }
-
-    // If we can't parse JSON, treat it as an error
-    None
-}   
-
-/// axum::Request is not cloneable by itself
-async fn clone_request(resp: Request<Body>) -> Result<(Request<Body>, Request<Body>), axum::Error> {
-    let (parts, body) = resp.into_parts();
-    
-    let body_bytes_source = body.collect().await?.to_bytes();
-
-    let body_parts = Body::from(body_bytes_source.clone());
-    let body_parts_clone = Body::from(body_bytes_source.clone());
-
-    let resp1 = Request::from_parts(parts.clone(), body_parts);
-    let resp2 = Request::from_parts(parts.clone(), body_parts_clone);
-
-    Ok((resp1, resp2))
-}
-
-/// Given a Vec of nodes, proxy the given request to multiple nodes until we get a successful response
-async fn proxy_to_multiple_nodes(
-    state: &AppState,
-    mut request: Request,
-    nodes: Vec<(String, String, i64)>,
-) -> Result<Response, HandlerError> {
-    if nodes.is_empty() {
-        return Err(HandlerError::NoNodes);
-    }
-
-    let mut collected_errors: Vec<((String, String, i64), HandlerError)> = Vec::new();
-
-    fn push_error(errors: &mut Vec<((String, String, i64), HandlerError)>, node: (String, String, i64), error: HandlerError) {
-        errors.push((node, error));
-    }
-
-    // Go through the nodes one by one, and proxy the request to each node
-    // until we get a successful response or we run out of nodes
-    // Success is defined as either:
-    // - a raw HTTP response with a 200 response code
-    // - a JSON-RPC response with status code 200 and no error field
-    for node in nodes {
-        // Node attempt logging without creating spans to reduce overhead
-        let node_uri = display_node(&node);
-
-        let (original_request, cloned_request) = clone_request(request).await.map_err(|e| HandlerError::CloneRequestError(e.to_string()))?;
-        request = original_request;
-        
-        let response = match proxy_to_single_node(cloned_request, &node).await {
-            Ok(response) => response,
-            Err(e) => {
-                push_error(&mut collected_errors, node, HandlerError::PhyiscalError(e));
-                continue;
-            }
-        };
-
-        let response_status = response.status();
-        let (response_parts, response_body) = response.into_parts();
-        let response_body = response_body.collect().await.expect("response body should be collectable").to_bytes();
-
-        let response_clone = Response::from_parts(response_parts.clone(), Body::from(response_body.clone()));
-
-        let error = match get_jsonrpc_error(&response_body) {
-            Some(error) => {
-                // Check if we have already got two previous JSON-RPC errors
-                // If we did, we assume there is a reason for it
-                // We return the response as is.
-                if collected_errors.iter().filter(|(_, error)| matches!(error, HandlerError::JsonRpcError(_))).count() >= 2 {
-                    return Ok(response_clone);
-                }
-
-                Some(HandlerError::JsonRpcError(error))
-            },
-            None if response_status.is_client_error() || response_status.is_server_error() => {                
-                Some(HandlerError::HttpError(response_status))
-            }
-            _ => None
-        };
-
-        match error {
-            Some(error) => {
-                tracing::info!("Proxy request to {} failed: {}", node_uri, error);
-                push_error(&mut collected_errors, node, error);
-            }
-            None => {
-                tracing::info!("Proxy request to {} succeeded with size {}kb", node_uri, response_body.len() / 1024);
-                // Only record errors if we have gotten a successful response
-                // This helps prevent logging errors if its our likely our fault (no internet)
-                for (node, _) in collected_errors.iter() {
-                    record_failure(&state, &node.0, &node.1, node.2).await;
-                }
-
-                // Record the success
-                record_success(&state, &node.0, &node.1, node.2, 0.0).await;
-                
-                // Finally return the successful response
-                return Ok(response_clone);
-            }
-        }
-    }
-
-    Err(HandlerError::AllRequestsFailed(collected_errors))
-}
 
 #[axum::debug_handler]
 pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> Response {
@@ -192,13 +32,321 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
         pool
     };
 
+    let request = CloneableRequest::from_request(request).await.unwrap();
+
     let uri = request.uri().to_string();
+    let method = request.jsonrpc_method();
     match proxy_to_multiple_nodes(&state, request, available_pool)
-        .instrument(info_span!("request", uri = uri))
+        .instrument(info_span!("request", uri = uri, method = method.as_deref()))
         .await
     {
         Ok(response) => response,
         Err(error) => error.to_response(),
+    }
+}
+
+/// Given a Vec of nodes, proxy the given request to multiple nodes until we get a successful response
+async fn proxy_to_multiple_nodes(
+    state: &AppState,
+    request: CloneableRequest,
+    nodes: Vec<(String, String, i64)>,
+) -> Result<Response, HandlerError> {
+    if nodes.is_empty() {
+        return Err(HandlerError::NoNodes);
+    }
+
+    let mut collected_errors: Vec<((String, String, i64), HandlerError)> = Vec::new();
+
+    fn push_error(
+        errors: &mut Vec<((String, String, i64), HandlerError)>,
+        node: (String, String, i64),
+        error: HandlerError,
+    ) {
+        errors.push((node, error));
+    }
+
+    // Go through the nodes one by one, and proxy the request to each node
+    // until we get a successful response or we run out of nodes
+    // Success is defined as either:
+    // - a raw HTTP response with a 200 response code
+    // - a JSON-RPC response with status code 200 and no error field
+    for node in nodes {
+        // Node attempt logging without creating spans to reduce overhead
+        let node_uri = display_node(&node);
+
+        let response = match proxy_to_single_node(request.clone(), &node, state.tor_client.clone())
+            .instrument(info_span!(
+                "connection",
+                node = node_uri,
+                tor = state.tor_client.is_some(),
+            ))
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                push_error(&mut collected_errors, node, HandlerError::PhyiscalError(e));
+                continue;
+            }
+        };
+
+        // Convert response to cloneable to avoid consumption issues
+        let cloneable_response = CloneableResponse::from_response(response)
+            .await
+            .map_err(|e| {
+                HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
+            })?;
+
+        let error = match cloneable_response.get_jsonrpc_error() {
+            Some(error) => {
+                // Check if we have already got two previous JSON-RPC errors
+                // If we did, we assume there is a reason for it
+                // We return the response as is.
+                if collected_errors
+                    .iter()
+                    .filter(|(_, error)| matches!(error, HandlerError::JsonRpcError(_)))
+                    .count()
+                    >= 2
+                {
+                    return Ok(cloneable_response.into_response());
+                }
+
+                Some(HandlerError::JsonRpcError(error))
+            }
+            None if cloneable_response.status().is_client_error()
+                || cloneable_response.status().is_server_error() =>
+            {
+                Some(HandlerError::HttpError(cloneable_response.status()))
+            }
+            _ => None,
+        };
+
+        match error {
+            Some(error) => {
+                tracing::info!("Proxy request to {} failed: {}", node_uri, error);
+                push_error(&mut collected_errors, node, error);
+            }
+            None => {
+                tracing::info!(
+                    "Proxy request to {} succeeded with size {}kb",
+                    node_uri,
+                    (cloneable_response.body.len() as f64 / 1024.0)
+                );
+                // Only record errors if we have gotten a successful response
+                // This helps prevent logging errors if its our likely our fault (no internet)
+                for (node, _) in collected_errors.iter() {
+                    record_failure(&state, &node.0, &node.1, node.2).await;
+                }
+
+                // Record the success
+                record_success(&state, &node.0, &node.1, node.2, 0.0).await;
+
+                // Finally return the successful response
+                return Ok(cloneable_response.into_response());
+            }
+        }
+    }
+
+    Err(HandlerError::AllRequestsFailed(collected_errors))
+}
+
+/// Proxies a singular axum::Request to a single node.
+/// Errors if we get a physical connection error
+///
+/// Important: Does NOT error if the response is a HTTP error or a JSON-RPC error
+/// The caller is responsible for checking the response status and body for errors
+async fn proxy_to_single_node(
+    request: CloneableRequest,
+    node: &(String, String, i64),
+    tor_client: Option<crate::TorClientArc>,
+) -> Result<Response, SingleRequestError> {
+    if request.clearnet_whitelisted() {
+        tracing::info!("Request is whitelisted, sending over clearnet");
+    }
+
+    let response = match tor_client {
+        // If Tor client is ready for traffic, use it
+        Some(tor_client)
+            if tor_client.bootstrap_status().ready_for_traffic()
+                // If the request is whitelisted, we don't want to use Tor
+                && !request.clearnet_whitelisted() =>
+        {
+            let stream = tor_client
+                .connect(format!("{}:{}", node.1, node.2))
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+            tracing::info!("Connected to node via Tor");
+
+            tokio::task::spawn(async move {
+                if let Err(err) = conn.await {
+                    println!("Connection failed: {:?}", err);
+                }
+            });
+
+            // Forward the request to the node
+            // No need to rewrite the URI because the request.uri() is relative
+            sender
+                .send_request(request.to_request())
+                .await
+                .map_err(|e| SingleRequestError::SendRequestError(e.to_string()))?
+        }
+        // Otherwise send over clearnet
+        _ => {
+            let stream = TcpStream::connect(format!("{}:{}", node.1, node.2))
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+            let stream = TokioIo::new(stream);
+
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(stream)
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+            tokio::task::spawn(async move {
+                if let Err(err) = conn.await {
+                    println!("Connection failed: {:?}", err);
+                }
+            });
+
+            sender
+                .send_request(request.to_request())
+                .await
+                .map_err(|e| SingleRequestError::SendRequestError(e.to_string()))?
+        }
+    };
+
+    // Convert hyper Response<Incoming> to axum Response<Body>
+    let (parts, body) = response.into_parts();
+    let body_bytes = body
+        .collect()
+        .await
+        .map_err(|e| SingleRequestError::CollectResponseError(e.to_string()))?
+        .to_bytes();
+    let axum_body = Body::from(body_bytes);
+
+    let response = Response::from_parts(parts, axum_body);
+
+    Ok(response)
+}
+
+fn get_jsonrpc_error(body: &[u8]) -> Option<String> {
+    // Try to parse as JSON
+    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) {
+        // Check if there's an "error" field
+        return json
+            .get("error")
+            .and_then(|e| e.as_str().map(|s| s.to_string()));
+    }
+
+    // If we can't parse JSON, treat it as an error
+    None
+}
+
+trait RequestDifferentiator {
+    /// Can this be request be proxied over clearnet?
+    fn clearnet_whitelisted(&self) -> bool;
+}
+
+impl RequestDifferentiator for CloneableRequest {
+    fn clearnet_whitelisted(&self) -> bool {
+        match self.uri().to_string().as_str() {
+            // Downloading blocks does not reveal any metadata other
+            // than perhaps how far the wallet is behind or the restore
+            // height.
+            "/getblocks.bin" => true,
+            _ => false,
+        }
+    }
+}
+
+/// A cloneable request that buffers the body in memory
+#[derive(Clone)]
+pub struct CloneableRequest {
+    parts: Parts,
+    body: Vec<u8>,
+}
+
+/// A cloneable response that buffers the body in memory
+#[derive(Clone)]
+pub struct CloneableResponse {
+    parts: response::Parts,
+    body: Vec<u8>,
+}
+
+impl CloneableRequest {
+    /// Convert a streaming request into a cloneable one by buffering the body
+    pub async fn from_request(request: Request<Body>) -> Result<Self, axum::Error> {
+        let (parts, body) = request.into_parts();
+        let body_bytes = body.collect().await?.to_bytes().to_vec();
+
+        Ok(CloneableRequest {
+            parts,
+            body: body_bytes,
+        })
+    }
+
+    /// Convert back to a regular Request
+    pub fn into_request(self) -> Request<Body> {
+        Request::from_parts(self.parts, Body::from(self.body))
+    }
+
+    /// Get a new Request without consuming self
+    pub fn to_request(&self) -> Request<Body> {
+        Request::from_parts(self.parts.clone(), Body::from(self.body.clone()))
+    }
+
+    /// Get the URI from the request
+    pub fn uri(&self) -> &axum::http::Uri {
+        &self.parts.uri
+    }
+
+    /// Get the JSON-RPC method from the request body
+    pub fn jsonrpc_method(&self) -> Option<String> {
+        static JSON_RPC_METHOD_KEY: &str = "method";
+
+        match serde_json::from_slice::<serde_json::Value>(&self.body) {
+            Ok(json) => json
+                .get(JSON_RPC_METHOD_KEY)
+                .and_then(|m| m.as_str().map(|s| s.to_string())),
+            Err(_) => None,
+        }
+    }
+}
+
+impl CloneableResponse {
+    /// Convert a streaming response into a cloneable one by buffering the body
+    pub async fn from_response(response: Response<Body>) -> Result<Self, axum::Error> {
+        let (parts, body) = response.into_parts();
+        let body_bytes = body.collect().await?.to_bytes().to_vec();
+
+        Ok(CloneableResponse {
+            parts,
+            body: body_bytes,
+        })
+    }
+
+    /// Convert back to a regular Response
+    pub fn into_response(self) -> Response<Body> {
+        Response::from_parts(self.parts, Body::from(self.body))
+    }
+
+    /// Get a new Response without consuming self
+    pub fn to_response(&self) -> Response<Body> {
+        Response::from_parts(self.parts.clone(), Body::from(self.body.clone()))
+    }
+
+    /// Get the status code
+    pub fn status(&self) -> StatusCode {
+        self.parts.status
+    }
+
+    /// Check for JSON-RPC errors without consuming the response
+    pub fn get_jsonrpc_error(&self) -> Option<String> {
+        get_jsonrpc_error(&self.body)
     }
 }
 
@@ -212,7 +360,10 @@ impl HandlerError {
             HandlerError::HttpError(status) => (*status, "HTTP error"),
             HandlerError::JsonRpcError(_) => (StatusCode::BAD_GATEWAY, "JSON-RPC error"),
             HandlerError::AllRequestsFailed(_) => (StatusCode::BAD_GATEWAY, "All requests failed"),
-            HandlerError::CloneRequestError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Request processing error"),
+            HandlerError::CloneRequestError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Request processing error",
+            ),
         };
 
         let error_json = serde_json::json!({
@@ -278,7 +429,9 @@ impl std::fmt::Display for SingleRequestError {
         match self {
             SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {}", msg),
-            SingleRequestError::CollectResponseError(msg) => write!(f, "Collect response error: {}", msg),
+            SingleRequestError::CollectResponseError(msg) => {
+                write!(f, "Collect response error: {}", msg)
+            }
         }
     }
 }
@@ -308,7 +461,6 @@ async fn record_failure(state: &AppState, scheme: &str, host: &str, port: i64) {
         );
     }
 }
-
 
 #[axum::debug_handler]
 pub async fn stats_handler(State(state): State<AppState>) -> Response {

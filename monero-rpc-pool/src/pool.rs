@@ -107,7 +107,8 @@ impl NodePool {
 
         tracing::debug!(
             "Getting top reliable nodes for network {} (target: {})",
-            self.network, limit
+            self.network,
+            limit
         );
 
         let available_nodes = self

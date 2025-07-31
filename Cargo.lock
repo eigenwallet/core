@@ -6221,6 +6221,7 @@ name = "monero-rpc-pool"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arti-client",
  "axum",
  "chrono",
  "clap 4.5.41",
@@ -6237,6 +6238,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tokio-test",
+ "tor-rtcompat",
  "tower 0.4.13",
  "tower-http 0.5.2",
  "tracing",

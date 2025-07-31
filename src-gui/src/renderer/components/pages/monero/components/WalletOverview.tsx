@@ -9,9 +9,44 @@ import {
   CardHeader,
   LinearProgress,
 } from "@mui/material";
+import { useEffect, useState } from "react";
+import { useAppSelector } from "store/hooks";
 import { PiconeroAmount } from "../../../other/Units";
 import { FiatPiconeroAmount } from "../../../other/Units";
 import StateIndicator from "./StateIndicator";
+
+interface LinearProgressWithBufferProps {
+  value: number;
+  bufferMin?: number;
+  bufferMax?: number;
+  sx?: any;
+}
+
+function LinearProgressWithBuffer({
+  value,
+  bufferMin = 2,
+  bufferMax = 5,
+  sx,
+}: LinearProgressWithBufferProps) {
+  const [bufferProgressAddition, setBufferProgressAddition] = useState(
+    Math.random() * (bufferMax - bufferMin) + bufferMin,
+  );
+
+  useEffect(() => {
+    setBufferProgressAddition(
+      Math.random() * (bufferMax - bufferMin) + bufferMin,
+    );
+  }, [value, bufferMin, bufferMax]);
+
+  return (
+    <LinearProgress
+      value={value}
+      valueBuffer={Math.min(value + bufferProgressAddition, 100)}
+      variant="buffer"
+      sx={sx}
+    />
+  );
+}
 
 interface WalletOverviewProps {
   balance?: {
@@ -30,18 +65,44 @@ export default function WalletOverview({
   balance,
   syncProgress,
 }: WalletOverviewProps) {
+  const lowestCurrentBlock = useAppSelector(
+    (state) => state.wallet.state.lowestCurrentBlock,
+  );
+
   const pendingBalance =
     parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance);
 
   const isSyncing = syncProgress && syncProgress.progress_percentage < 100;
   const blocksLeft = syncProgress?.target_block - syncProgress?.current_block;
 
+  // syncProgress.progress_percentage is not good to display
+  // assuming we have an old wallet, eventually we will always only use the last few cm of the progress bar
+  //
+  // We calculate our own progress percentage
+  // lowestCurrentBlock is the lowest block we have seen
+  // currentBlock is the current block we are on (how war we've synced)
+  // targetBlock is the target block we are syncing to
+  //
+  // The progressPercentage below is the progress on that path
+  // If the lowestCurrentBlock is null, we fallback to the syncProgress.progress_percentage
+  const progressPercentage =
+    lowestCurrentBlock === null || !syncProgress
+      ? syncProgress?.progress_percentage || 0
+      : Math.max(
+          0,
+          Math.min(
+            100,
+            ((syncProgress.current_block - lowestCurrentBlock) /
+              (syncProgress.target_block - lowestCurrentBlock)) *
+              100,
+          ),
+        );
+
   return (
     <Card sx={{ p: 2, position: "relative", borderRadius: 2 }} elevation={4}>
       {syncProgress && syncProgress.progress_percentage < 100 && (
-        <LinearProgress
-          value={syncProgress.progress_percentage}
-          variant="determinate"
+        <LinearProgressWithBuffer
+          value={progressPercentage}
           sx={{
             width: "100%",
             position: "absolute",
@@ -126,22 +187,20 @@ export default function WalletOverview({
               display: "flex",
               flexDirection: "row",
               alignItems: "center",
+              justifyContent: "center",
               gap: 1,
             }}
           >
-            <Typography variant="body2">
-              {isSyncing ? "syncing" : "synced"}
+            <Typography variant="body2" color="text.secondary">
+              {isSyncing
+                ? `${(syncProgress.target_block - syncProgress.current_block).toLocaleString()} blocks left`
+                : "synced"}
             </Typography>
             <StateIndicator
               color={isSyncing ? "primary" : "success"}
               pulsating={isSyncing}
             />
           </Box>
-          {isSyncing && (
-            <Typography variant="body2" color="text.secondary">
-              {blocksLeft.toLocaleString()} blocks left
-            </Typography>
-          )}
         </Box>
       </Box>
     </Card>
