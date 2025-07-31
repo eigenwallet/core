@@ -117,65 +117,69 @@ export default function WalletOverview({
       {/* Balance */}
       <Box
         sx={{
-          display: "grid",
-          gridTemplateColumns: "1.5fr 1fr max-content",
-          rowGap: 0.5,
-          columnGap: 2,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
           mb: 1,
         }}
       >
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ mb: 1, gridColumn: "1", gridRow: "1" }}
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "row",
+            gap: 4,
+          }}
         >
-          Available Funds
-        </Typography>
-        <Typography variant="h4" sx={{ gridColumn: "1", gridRow: "2" }}>
-          <PiconeroAmount
-            amount={parseFloat(balance.unlocked_balance)}
-            fixedPrecision={4}
-            disableTooltip
-          />
-        </Typography>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ gridColumn: "1", gridRow: "3" }}
-        >
-          <FiatPiconeroAmount amount={parseFloat(balance.unlocked_balance)} />
-        </Typography>
-        {pendingBalance > 0 && (
-          <>
-            <Typography
-              variant="body2"
-              color="warning"
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 0.5,
+            }}
+          >
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Available Funds
+            </Typography>
+            <Typography variant="h4">
+              <PiconeroAmount
+                amount={parseFloat(balance.unlocked_balance)}
+                fixedPrecision={4}
+                disableTooltip
+              />
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              <FiatPiconeroAmount
+                amount={parseFloat(balance.unlocked_balance)}
+              />
+            </Typography>
+          </Box>
+          {pendingBalance > 0 && (
+            <Box
               sx={{
-                mb: 1,
-                animation: "pulse 2s infinite",
-                gridColumn: "2",
-                gridRow: "1",
-                alignSelf: "end",
+                display: "flex",
+                flexDirection: "column",
+                gap: 0.5,
               }}
             >
-              Pending
-            </Typography>
-
-            <Typography
-              variant="h5"
-              sx={{ gridColumn: "2", gridRow: "2", alignSelf: "center" }}
-            >
-              <PiconeroAmount amount={pendingBalance} fixedPrecision={4} />
-            </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ gridColumn: "2", gridRow: "3" }}
-            >
-              <FiatPiconeroAmount amount={pendingBalance} />
-            </Typography>
-          </>
-        )}
+              <Typography
+                variant="body2"
+                color="warning"
+                sx={{
+                  mb: 1,
+                  animation: "pulse 2s infinite",
+                }}
+              >
+                Pending
+              </Typography>
+              <Typography variant="h5">
+                <PiconeroAmount amount={pendingBalance} fixedPrecision={4} />
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <FiatPiconeroAmount amount={pendingBalance} />
+              </Typography>
+            </Box>
+          )}
+        </Box>
 
         <Box
           sx={{
