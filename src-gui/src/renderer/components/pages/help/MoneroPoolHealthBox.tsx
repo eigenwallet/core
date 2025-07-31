@@ -75,6 +75,12 @@ export default function MoneroPoolHealthBox() {
           variant="outlined"
           size="small"
         />
+        <Chip
+          label={`${poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s Bandwidth`}
+          color={poolStatus.bandwidth_kb_per_sec > 10 ? "info" : "default"}
+          variant="outlined"
+          size="small"
+        />
       </Box>
     );
   };

@@ -34,6 +34,9 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
 
     let request = CloneableRequest::from_request(request).await.unwrap();
 
+    // Record request bandwidth (upload)
+    state.node_pool.record_bandwidth(request.body.len() as u64);
+
     let uri = request.uri().to_string();
     let method = request.jsonrpc_method();
     match proxy_to_multiple_nodes(&state, request, available_pool)
@@ -126,11 +129,16 @@ async fn proxy_to_multiple_nodes(
                 push_error(&mut collected_errors, node, error);
             }
             None => {
+                let response_size_bytes = cloneable_response.body.len() as u64;
                 tracing::info!(
                     "Proxy request to {} succeeded with size {}kb",
                     node_uri,
-                    (cloneable_response.body.len() as f64 / 1024.0)
+                    (response_size_bytes as f64 / 1024.0)
                 );
+
+                // Record bandwidth usage
+                state.node_pool.record_bandwidth(response_size_bytes);
+
                 // Only record errors if we have gotten a successful response
                 // This helps prevent logging errors if its our likely our fault (no internet)
                 for (node, _) in collected_errors.iter() {
@@ -267,7 +275,7 @@ impl RequestDifferentiator for CloneableRequest {
 #[derive(Clone)]
 pub struct CloneableRequest {
     parts: Parts,
-    body: Vec<u8>,
+    pub body: Vec<u8>,
 }
 
 /// A cloneable response that buffers the body in memory
@@ -473,7 +481,8 @@ pub async fn stats_handler(State(state): State<AppState>) -> Response {
                     "healthy_node_count": status.healthy_node_count,
                     "successful_health_checks": status.successful_health_checks,
                     "unsuccessful_health_checks": status.unsuccessful_health_checks,
-                    "top_reliable_nodes": status.top_reliable_nodes
+                    "top_reliable_nodes": status.top_reliable_nodes,
+                    "bandwidth_kb_per_sec": status.bandwidth_kb_per_sec
                 });
 
                 Response::builder()

@@ -1,4 +1,7 @@
 use anyhow::{Context, Result};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing::warn;
 use typeshare::typeshare;
@@ -16,6 +19,7 @@ pub struct PoolStatus {
     #[typeshare(serialized_as = "number")]
     pub unsuccessful_health_checks: u64,
     pub top_reliable_nodes: Vec<ReliableNodeInfo>,
+    pub bandwidth_kb_per_sec: f64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -26,10 +30,67 @@ pub struct ReliableNodeInfo {
     pub avg_latency_ms: Option<f64>,
 }
 
+#[derive(Debug)]
+struct BandwidthEntry {
+    timestamp: Instant,
+    bytes: u64,
+}
+
+#[derive(Debug)]
+struct BandwidthTracker {
+    entries: VecDeque<BandwidthEntry>,
+    window_duration: Duration,
+}
+
+impl BandwidthTracker {
+    fn new() -> Self {
+        Self {
+            entries: VecDeque::new(),
+            window_duration: Duration::from_secs(60), // 60 second window
+        }
+    }
+
+    fn record_bytes(&mut self, bytes: u64) {
+        let now = Instant::now();
+        self.entries.push_back(BandwidthEntry {
+            timestamp: now,
+            bytes,
+        });
+
+        // Clean up old entries
+        let cutoff = now - self.window_duration;
+        while let Some(front) = self.entries.front() {
+            if front.timestamp < cutoff {
+                self.entries.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn get_kb_per_sec(&self) -> f64 {
+        if self.entries.len() < 2 {
+            return 0.0;
+        }
+
+        let total_bytes: u64 = self.entries.iter().map(|e| e.bytes).sum();
+        let now = Instant::now();
+        let oldest_time = self.entries.front().unwrap().timestamp;
+        let duration_secs = (now - oldest_time).as_secs_f64();
+
+        if duration_secs > 0.0 {
+            (total_bytes as f64 / 1024.0) / duration_secs
+        } else {
+            0.0
+        }
+    }
+}
+
 pub struct NodePool {
     db: Database,
     network: String,
     status_sender: broadcast::Sender<PoolStatus>,
+    bandwidth_tracker: Arc<Mutex<BandwidthTracker>>,
 }
 
 impl NodePool {
@@ -39,6 +100,7 @@ impl NodePool {
             db,
             network,
             status_sender,
+            bandwidth_tracker: Arc::new(Mutex::new(BandwidthTracker::new())),
         };
         (pool, status_receiver)
     }
@@ -63,6 +125,12 @@ impl NodePool {
         Ok(())
     }
 
+    pub fn record_bandwidth(&self, bytes: u64) {
+        if let Ok(mut tracker) = self.bandwidth_tracker.lock() {
+            tracker.record_bytes(bytes);
+        }
+    }
+
     pub async fn publish_status_update(&self) -> Result<()> {
         let status = self.get_current_status().await?;
 
@@ -81,6 +149,12 @@ impl NodePool {
         let (successful_checks, unsuccessful_checks) =
             self.db.get_health_check_stats(&self.network).await?;
 
+        let bandwidth_kb_per_sec = if let Ok(tracker) = self.bandwidth_tracker.lock() {
+            tracker.get_kb_per_sec()
+        } else {
+            0.0
+        };
+
         let top_reliable_nodes = reliable_nodes
             .into_iter()
             .take(5)
@@ -97,6 +171,7 @@ impl NodePool {
             successful_health_checks: successful_checks,
             unsuccessful_health_checks: unsuccessful_checks,
             top_reliable_nodes,
+            bandwidth_kb_per_sec,
         })
     }
 

@@ -69,6 +69,8 @@ export default function WalletOverview({
     (state) => state.wallet.state.lowestCurrentBlock,
   );
 
+  const poolStatus = useAppSelector((state) => state.pool.status);
+
   const pendingBalance =
     parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance);
 
@@ -201,6 +203,15 @@ export default function WalletOverview({
               pulsating={isSyncing}
             />
           </Box>
+          {poolStatus && isSyncing && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ mt: 0.5, fontSize: "0.7rem" }}
+            >
+              {poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s
+            </Typography>
+          )}
         </Box>
       </Box>
     </Card>
