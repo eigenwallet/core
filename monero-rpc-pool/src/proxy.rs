@@ -6,6 +6,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
+use std::time::Instant;
 use tokio::net::TcpStream;
 use tracing::{error, info_span, Instrument};
 
@@ -77,6 +78,9 @@ async fn proxy_to_multiple_nodes(
         // Node attempt logging without creating spans to reduce overhead
         let node_uri = display_node(&node);
 
+        // Start timing the request
+        let latency = std::time::Instant::now();
+
         let response = match proxy_to_single_node(request.clone(), &node, state.tor_client.clone())
             .instrument(info_span!(
                 "connection",
@@ -91,6 +95,9 @@ async fn proxy_to_multiple_nodes(
                 continue;
             }
         };
+
+        // Calculate the latency
+        let latency = latency.elapsed().as_millis() as f64;
 
         // Convert response to cloneable to avoid consumption issues
         let cloneable_response = CloneableResponse::from_response(response)
@@ -145,8 +152,8 @@ async fn proxy_to_multiple_nodes(
                     record_failure(&state, &node.0, &node.1, node.2).await;
                 }
 
-                // Record the success
-                record_success(&state, &node.0, &node.1, node.2, 0.0).await;
+                // Record the success with actual latency
+                record_success(&state, &node.0, &node.1, node.2, latency).await;
 
                 // Finally return the successful response
                 return Ok(cloneable_response.into_response());
