@@ -80,7 +80,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let client_clone = client.clone();
         tokio::spawn(async move {
-            client_clone.bootstrap().await.unwrap();
+            match client_clone.bootstrap().await {
+                Ok(()) => {
+                    info!("Tor client successfully bootstrapped");
+                }
+                Err(e) => {
+                    tracing::error!("Failed to bootstrap Tor client: {}. Tor functionality will be unavailable.", e);
+                }
+            }
         });
 
         Some(client)
