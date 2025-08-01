@@ -22,30 +22,44 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
     static POOL_SIZE: usize = 10;
 
     // Get the pool of nodes
-    let available_pool = {
-        let nodes = state
-            .node_pool
-            .get_top_reliable_nodes(POOL_SIZE)
-            .await
-            .map_err(|e| HandlerError::PoolError(e.to_string()))
-            .unwrap();
+    let available_pool =  state
+        .node_pool
+        .get_top_reliable_nodes(POOL_SIZE)
+        .await
+        .map_err(|e| HandlerError::PoolError(e.to_string()))
+        .map(|nodes| {
+            let pool: Vec<(String, String, i64)> = nodes
+                .into_iter()
+                .map(|node| (node.scheme, node.host, node.port as i64))
+                .collect();
 
-        let pool: Vec<(String, String, i64)> = nodes
-            .into_iter()
-            .map(|node| (node.scheme, node.host, node.port as i64))
-            .collect();
+            pool
+        });
 
-        pool
+    let (request, pool) = match available_pool {
+        Ok(pool) => {
+            match CloneableRequest::from_request(request).await {
+                Ok(cloneable_request) => (cloneable_request, pool),
+                Err(e) => {
+                    return Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from(e.to_string()))
+                        .unwrap_or_else(|_| Response::new(Body::empty()));
+                }
+            }
+        }
+        Err(e) => {
+            // If we can't get a pool, return an error immediately
+            return Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Body::from(e.to_string()))
+                .unwrap_or_else(|_| Response::new(Body::empty()));
+        }
     };
-
-    let request = CloneableRequest::from_request(request).await.unwrap();
-
-    // Record request bandwidth (upload)
-    state.node_pool.record_bandwidth(request.body.len() as u64);
 
     let uri = request.uri().to_string();
     let method = request.jsonrpc_method();
-    match proxy_to_multiple_nodes(&state, request, available_pool)
+    match proxy_to_multiple_nodes(&state, request, pool)
         .instrument(info_span!("request", uri = uri, method = method.as_deref()))
         .await
     {
