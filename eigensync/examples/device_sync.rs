@@ -3,17 +3,16 @@
 //! This example shows two peers (hub and device) synchronizing Automerge documents
 //! over libp2p using the simplified eigensync protocol.
 
-use eigensync::{hub, device, DocSync, Request, Response, SyncEvent};
-use libp2p::{
-    futures::StreamExt,
-    identity, noise, tcp, yamux,
-    swarm::{NetworkBehaviour, SwarmEvent},
-    Transport, SwarmBuilder,
-    Swarm, request_response,
-};
-use std::time::Duration;
 use automerge::transaction::Transactable;
 use automerge::ReadDoc;
+use eigensync::{client, server, DocSync, Request, Response, SyncEvent};
+use libp2p::{
+    futures::StreamExt,
+    identity, noise, request_response,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    tcp, yamux, Swarm, SwarmBuilder, Transport,
+};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(NetworkBehaviour)]
@@ -21,7 +20,7 @@ struct HubBehaviour {
     sync: eigensync::Behaviour,
 }
 
-#[derive(NetworkBehaviour)] 
+#[derive(NetworkBehaviour)]
 struct DeviceBehaviour {
     sync: eigensync::Behaviour,
 }
@@ -43,20 +42,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Device peer ID: {}", device_peer_id);
 
     // Create behaviors
-    let hub_behaviour = HubBehaviour { sync: hub() };
-    let device_behaviour = DeviceBehaviour { sync: device() };
+    let hub_behaviour = HubBehaviour { sync: server() };
+    let device_behaviour = DeviceBehaviour { sync: client() };
 
     // Create document sync instances
     let mut hub_doc_sync = DocSync::new();
     let mut device_doc_sync = DocSync::new();
 
     // Add some initial data to hub document
-    hub_doc_sync.doc_mut().put(automerge::ROOT, "status", "hub_initialized")?;
-    hub_doc_sync.doc_mut().put(automerge::ROOT, "timestamp", chrono::Utc::now().timestamp())?;
-    
+    hub_doc_sync
+        .doc_mut()
+        .put(automerge::ROOT, "status", "hub_initialized")?;
+    hub_doc_sync
+        .doc_mut()
+        .put(automerge::ROOT, "timestamp", chrono::Utc::now().timestamp())?;
+
     // Add different data to device document
-    device_doc_sync.doc_mut().put(automerge::ROOT, "device_id", "device_001")?;
-    device_doc_sync.doc_mut().put(automerge::ROOT, "version", "1.0.0")?;
+    device_doc_sync
+        .doc_mut()
+        .put(automerge::ROOT, "device_id", "device_001")?;
+    device_doc_sync
+        .doc_mut()
+        .put(automerge::ROOT, "version", "1.0.0")?;
 
     // Create swarms using SwarmBuilder
     let mut hub_swarm = SwarmBuilder::with_existing_identity(hub_key.clone())
@@ -98,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Connect device to hub
     device_swarm.dial(hub_addr.clone())?;
     println!("Device dialing hub at: {}", hub_addr);
-    
+
     // Add the hub's address to the device's swarm so it knows where to send requests
     device_swarm.add_peer_address(hub_peer_id, hub_addr.clone());
 
@@ -122,14 +129,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match sync_event {
                             SyncEvent::IncomingSync { peer, doc_id, sync_msg, channel } => {
                                 println!("Hub received sync request from {}", peer);
-                                
+
                                 // Apply the sync message
                                 let peer_str = peer.to_string();
                                 match hub_doc_sync.receive_sync_message(&peer_str, &sync_msg) {
                                     Ok(response_msg) => {
-                                        let response = Response::SyncMsg { 
-                                            doc_id, 
-                                            msg: response_msg 
+                                        let response = Response::SyncMsg {
+                                            doc_id,
+                                            msg: response_msg
                                         };
                                         let result = hub_swarm.behaviour_mut().sync.send_response(channel, response);
                                         match result {
@@ -138,9 +145,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     }
                                     Err(e) => {
-                                        let response = Response::Error { 
-                                            doc_id, 
-                                            reason: e.to_string() 
+                                        let response = Response::Error {
+                                            doc_id,
+                                            reason: e.to_string()
                                         };
                                         let result = hub_swarm.behaviour_mut().sync.send_response(channel, response);
                                         match result {
@@ -165,7 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     _ => {}
                 }
             }
-            
+
             event = device_swarm.select_next_some() => {
                 match event {
                     SwarmEvent::Behaviour(DeviceBehaviourEvent::Sync(event)) => {
@@ -173,7 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match sync_event {
                             SyncEvent::SyncResponse { doc_id, msg } => {
                                 println!("Device received sync response for {}", doc_id);
-                                
+
                                 if let Some(response_msg) = msg {
                                     let peer_str = hub_peer_id.to_string();
                                     if let Err(e) = device_doc_sync.receive_sync_message(&peer_str, &response_msg) {
@@ -195,7 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         actual_hub_peer_id = Some(peer_id);
                         connected = true;
                         connection_attempts = 0; // Reset attempts on successful connection
-                        
+
                         // Wait a bit before sending the request to ensure connection is stable
                         println!("Device connection established, waiting before sending request...");
                     }
@@ -218,7 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let peer_str = actual_hub_id.to_string();
                         if let Some(sync_msg) = device_doc_sync.generate_sync_message(&peer_str) {
                             let request = Request { doc_id, sync_msg };
-                            
+
                             println!("Device sending sync request to {}", actual_hub_id);
                             device_swarm.behaviour_mut().sync.send_request(&actual_hub_id, request);
                         } else {
@@ -238,7 +245,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
                 }
-                
+
                 if synced {
                     break;
                 }
@@ -248,19 +255,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Print final state
     println!("\nSync completed! Final document states:");
-    
+
     println!("\nHub document:");
     print_document_contents(hub_doc_sync.doc());
-    
+
     println!("\nDevice document:");
     print_document_contents(device_doc_sync.doc());
 
     // Verify sync worked
     let hub_keys: Vec<_> = hub_doc_sync.doc().keys(automerge::ROOT).collect();
     let device_keys: Vec<_> = device_doc_sync.doc().keys(automerge::ROOT).collect();
-    
-    println!("\nHub has {} keys, Device has {} keys", hub_keys.len(), device_keys.len());
-    
+
+    println!(
+        "\nHub has {} keys, Device has {} keys",
+        hub_keys.len(),
+        device_keys.len()
+    );
+
     if hub_keys.len() == device_keys.len() && hub_keys.len() == 4 {
         println!("Sync verification successful!");
     } else {
@@ -276,4 +287,4 @@ fn print_document_contents(doc: &automerge::AutoCommit) {
             println!("  {}: {}", key, value);
         }
     }
-} 
+}

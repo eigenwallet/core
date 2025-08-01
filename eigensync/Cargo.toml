@@ -20,11 +20,26 @@ chrono = { version = "0.4", features = ["serde"] }
 automerge = "0.6"
 
 # Networking with libp2p
-libp2p = { workspace = true, features = ["request-response", "tcp", "noise", "yamux", "macros", "cbor", "tokio"] }
+libp2p = { workspace = true, features = [
+    "request-response",
+    "tcp",
+    "noise",
+    "yamux",
+    "macros",
+    "cbor",
+    "tokio",
+    "ping",
+] }
+anyhow.workspace = true
 
-[dev-dependencies]
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
 env_logger = "0.11"
+autosurgeon = "0.8.7"
 
 [lints]
 workspace = true
