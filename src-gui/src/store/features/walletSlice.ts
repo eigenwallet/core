@@ -11,6 +11,7 @@ interface WalletState {
   balance: GetMoneroBalanceResponse | null;
   syncProgress: GetMoneroSyncProgressResponse | null;
   history: GetMoneroHistoryResponse | null;
+  lowestCurrentBlock: number | null;
 }
 
 export interface WalletSlice {
@@ -24,6 +25,7 @@ const initialState: WalletSlice = {
     balance: null,
     syncProgress: null,
     history: null,
+    lowestCurrentBlock: null,
   },
 };
 
@@ -42,6 +44,16 @@ export const walletSlice = createSlice({
       slice,
       action: PayloadAction<GetMoneroSyncProgressResponse>,
     ) {
+      slice.state.lowestCurrentBlock = Math.min(
+        // We ignore anything below 10 blocks as this may be something like wallet2
+        // sending a wrong value when it hasn't initialized yet
+        slice.state.lowestCurrentBlock < 10 ||
+          slice.state.lowestCurrentBlock === null
+          ? Infinity
+          : slice.state.lowestCurrentBlock,
+        action.payload.current_block,
+      );
+
       slice.state.syncProgress = action.payload;
     },
     setHistory(slice, action: PayloadAction<GetMoneroHistoryResponse>) {

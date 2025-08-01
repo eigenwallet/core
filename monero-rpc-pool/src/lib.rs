@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use arti_client::TorClient;
 use axum::{
     routing::{any, get},
     Router,
@@ -8,8 +9,12 @@ use axum::{
 use monero::Network;
 
 use tokio::task::JoinHandle;
+use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
+
+/// Type alias for the Tor client used throughout the crate
+pub type TorClientArc = Arc<TorClient<TokioRustlsRuntime>>;
 
 pub trait ToNetworkString {
     fn to_network_string(&self) -> String;
@@ -39,7 +44,7 @@ use proxy::{proxy_handler, stats_handler};
 #[derive(Clone)]
 pub struct AppState {
     pub node_pool: Arc<NodePool>,
-    pub http_client: ureq::Agent,
+    pub tor_client: Option<TorClientArc>,
 }
 
 /// Manages background tasks for the RPC pool
@@ -104,17 +109,9 @@ async fn create_app_with_receiver(
         status_update_handle,
     };
 
-    // Create shared HTTP client with connection pooling and keep-alive
-    // TODO: Add dangerous certificate acceptance equivalent to reqwest's danger_accept_invalid_certs(true)
-    let http_client = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(30))
-        .max_idle_connections(100)
-        .max_idle_connections_per_host(10)
-        .build();
-
     let app_state = AppState {
         node_pool,
-        http_client,
+        tor_client: config.tor_client,
     };
 
     // Build the app
@@ -177,14 +174,8 @@ pub async fn start_server_with_random_port(
     tokio::sync::broadcast::Receiver<PoolStatus>,
     PoolHandle,
 )> {
-    // Clone the host before moving config
     let host = config.host.clone();
-
-    // If port is 0, the system will assign a random available port
-    let config_with_random_port = Config::new_random_port(config.host, config.data_dir);
-
-    let (app, status_receiver, pool_handle) =
-        create_app_with_receiver(config_with_random_port, network).await?;
+    let (app, status_receiver, pool_handle) = create_app_with_receiver(config, network).await?;
 
     // Bind to port 0 to get a random available port
     let listener = tokio::net::TcpListener::bind(format!("{}:0", host)).await?;
@@ -208,19 +199,4 @@ pub async fn start_server_with_random_port(
     });
 
     Ok((server_info, status_receiver, pool_handle))
-}
-
-/// Start a server with a random port and custom data directory for library usage
-/// Returns the server info with the actual port used, a receiver for pool status updates, and pool handle
-pub async fn start_server_with_random_port_and_data_dir(
-    config: Config,
-    network: Network,
-    data_dir: std::path::PathBuf,
-) -> Result<(
-    ServerInfo,
-    tokio::sync::broadcast::Receiver<PoolStatus>,
-    PoolHandle,
-)> {
-    let config_with_data_dir = Config::new_random_port(config.host, data_dir);
-    start_server_with_random_port(config_with_data_dir, network).await
 }

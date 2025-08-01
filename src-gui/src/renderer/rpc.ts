@@ -319,6 +319,8 @@ export async function initializeContext() {
   // For Monero nodes, determine whether to use pool or custom node
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
 
+  const useMoneroTor = store.getState().settings.enableMoneroTor;
+
   const moneroNodeUrl =
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
 
@@ -341,6 +343,7 @@ export async function initializeContext() {
     electrum_rpc_urls: bitcoinNodes,
     monero_node_config: moneroNodeConfig,
     use_tor: useTor,
+    enable_monero_tor: useMoneroTor,
   };
 
   logger.info("Initializing context with settings", tauriSettings);

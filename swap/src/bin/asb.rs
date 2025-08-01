@@ -25,7 +25,7 @@ use structopt::clap;
 use structopt::clap::ErrorKind;
 use swap::asb::command::{parse_args, Arguments, Command};
 use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, Finality, KrakenRate};
-use swap::common::tor::init_tor_client;
+use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{open_db, AccessMode};
@@ -201,8 +201,10 @@ pub async fn main() -> Result<()> {
             let kraken_rate = KrakenRate::new(config.maker.ask_spread, kraken_price_updates);
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
-            // Initialize Tor client
-            let tor_client = init_tor_client(&config.data.dir, None).await?.into();
+            // Initialize and bootstrap Tor client
+            let tor_client = create_tor_client(&config.data.dir).await?;
+            bootstrap_tor_client(tor_client.clone(), None).await?;
+            let tor_client = tor_client.into();
 
             let (mut swarm, onion_addresses) = swarm::asb(
                 &seed,
@@ -495,10 +497,7 @@ async fn init_monero_wallet(
 
         let (server_info, _status_receiver, _pool_handle) =
             monero_rpc_pool::start_server_with_random_port(
-                monero_rpc_pool::config::Config::new_random_port(
-                    "127.0.0.1".to_string(),
-                    config.data.dir.join("monero-rpc-pool"),
-                ),
+                monero_rpc_pool::config::Config::new_random_port(config.data.dir.join("monero-rpc-pool")),
                 env_config.monero_network,
             )
             .await

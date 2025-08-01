@@ -8,9 +8,9 @@ use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error
 use futures::StreamExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-pub async fn init_tor_client(
+/// Creates an unbootstrapped Tor client
+pub async fn create_tor_client(
     data_dir: &Path,
-    tauri_handle: Option<TauriHandle>,
 ) -> Result<Arc<TorClient<TokioRustlsRuntime>>, Error> {
     // We store the Tor state in the data directory
     let data_dir = data_dir.join("tor");
@@ -23,19 +23,27 @@ pub async fn init_tor_client(
         .build()
         .expect("We initialized the Tor client all required attributes");
 
-    // Start the Arti client, and let it bootstrap a connection to the Tor network.
-    // (This takes a while to gather the necessary directory information.
-    // It uses cached information when possible.)
+    // Create the Arti client without bootstrapping
     let runtime = TokioRustlsRuntime::current().expect("We are always running with tokio");
 
-    tracing::debug!("Bootstrapping Tor client");
+    tracing::debug!("Creating unbootstrapped Tor client");
 
     let tor_client = TorClient::with_runtime(runtime)
         .config(config)
         .create_unbootstrapped_async()
         .await?;
 
+    Ok(Arc::new(tor_client))
+}
+
+/// Bootstraps an existing Tor client
+pub async fn bootstrap_tor_client(
+    tor_client: Arc<TorClient<TokioRustlsRuntime>>,
+    tauri_handle: Option<TauriHandle>,
+) -> Result<(), Error> {
     let mut bootstrap_events = tor_client.bootstrap_events();
+
+    tracing::debug!("Bootstrapping Tor client");
 
     // Create a background progress handle for the Tor bootstrap process
     // The handle manages the TauriHandle internally, so we don't need to worry about it anymore
@@ -67,7 +75,7 @@ pub async fn init_tor_client(
         },
     }?;
 
-    Ok(Arc::new(tor_client))
+    Ok(())
 }
 
 // A trait to convert the Tor bootstrap event into a TauriBootstrapStatus

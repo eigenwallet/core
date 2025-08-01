@@ -1008,6 +1008,8 @@ pub struct TauriSettings {
     pub electrum_rpc_urls: Vec<String>,
     /// Whether to initialize and use a tor client.
     pub use_tor: bool,
+    /// Whether to route Monero wallet traffic through Tor
+    pub enable_monero_tor: bool,
 }
 
 #[typeshare]

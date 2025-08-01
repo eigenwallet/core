@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use tracing::{debug, warn};
+use tracing::warn;
 use typeshare::typeshare;
 
 use crate::database::Database;
@@ -16,6 +19,7 @@ pub struct PoolStatus {
     #[typeshare(serialized_as = "number")]
     pub unsuccessful_health_checks: u64,
     pub top_reliable_nodes: Vec<ReliableNodeInfo>,
+    pub bandwidth_kb_per_sec: f64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -26,10 +30,69 @@ pub struct ReliableNodeInfo {
     pub avg_latency_ms: Option<f64>,
 }
 
+#[derive(Debug)]
+struct BandwidthEntry {
+    timestamp: Instant,
+    bytes: u64,
+}
+
+#[derive(Debug)]
+struct BandwidthTracker {
+    entries: VecDeque<BandwidthEntry>,
+    window_duration: Duration,
+}
+
+impl BandwidthTracker {
+    const WINDOW_DURATION: Duration = Duration::from_secs(60 * 3);
+
+    fn new() -> Self {
+        Self {
+            entries: VecDeque::new(),
+            window_duration: Self::WINDOW_DURATION,
+        }
+    }
+
+    fn record_bytes(&mut self, bytes: u64) {
+        let now = Instant::now();
+        self.entries.push_back(BandwidthEntry {
+            timestamp: now,
+            bytes,
+        });
+
+        // Clean up old entries
+        let cutoff = now - self.window_duration;
+        while let Some(front) = self.entries.front() {
+            if front.timestamp < cutoff {
+                self.entries.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn get_kb_per_sec(&self) -> f64 {
+        if self.entries.len() < 5 {
+            return 0.0;
+        }
+
+        let total_bytes: u64 = self.entries.iter().map(|e| e.bytes).sum();
+        let now = Instant::now();
+        let oldest_time = self.entries.front().unwrap().timestamp;
+        let duration_secs = (now - oldest_time).as_secs_f64();
+
+        if duration_secs > 0.0 {
+            (total_bytes as f64 / 1024.0) / duration_secs
+        } else {
+            0.0
+        }
+    }
+}
+
 pub struct NodePool {
     db: Database,
     network: String,
     status_sender: broadcast::Sender<PoolStatus>,
+    bandwidth_tracker: Arc<Mutex<BandwidthTracker>>,
 }
 
 impl NodePool {
@@ -39,6 +102,7 @@ impl NodePool {
             db,
             network,
             status_sender,
+            bandwidth_tracker: Arc::new(Mutex::new(BandwidthTracker::new())),
         };
         (pool, status_receiver)
     }
@@ -63,13 +127,19 @@ impl NodePool {
         Ok(())
     }
 
+    pub fn record_bandwidth(&self, bytes: u64) {
+        if let Ok(mut tracker) = self.bandwidth_tracker.lock() {
+            tracker.record_bytes(bytes);
+        }
+    }
+
     pub async fn publish_status_update(&self) -> Result<()> {
         let status = self.get_current_status().await?;
 
         if let Err(e) = self.status_sender.send(status.clone()) {
             warn!("Failed to send status update: {}", e);
         } else {
-            debug!(?status, "Sent status update");
+            tracing::debug!(?status, "Sent status update");
         }
 
         Ok(())
@@ -80,6 +150,12 @@ impl NodePool {
         let reliable_nodes = self.db.get_reliable_nodes(&self.network).await?;
         let (successful_checks, unsuccessful_checks) =
             self.db.get_health_check_stats(&self.network).await?;
+
+        let bandwidth_kb_per_sec = if let Ok(tracker) = self.bandwidth_tracker.lock() {
+            tracker.get_kb_per_sec()
+        } else {
+            0.0
+        };
 
         let top_reliable_nodes = reliable_nodes
             .into_iter()
@@ -97,6 +173,7 @@ impl NodePool {
             successful_health_checks: successful_checks,
             unsuccessful_health_checks: unsuccessful_checks,
             top_reliable_nodes,
+            bandwidth_kb_per_sec,
         })
     }
 
@@ -105,9 +182,10 @@ impl NodePool {
     pub async fn get_top_reliable_nodes(&self, limit: usize) -> Result<Vec<NodeAddress>> {
         use rand::seq::SliceRandom;
 
-        debug!(
+        tracing::debug!(
             "Getting top reliable nodes for network {} (target: {})",
-            self.network, limit
+            self.network,
+            limit
         );
 
         let available_nodes = self
@@ -149,7 +227,7 @@ impl NodePool {
             selected_nodes.push(node);
         }
 
-        debug!(
+        tracing::debug!(
             "Pool size: {} nodes for network {} (target: {})",
             selected_nodes.len(),
             self.network,
@@ -157,54 +235,5 @@ impl NodePool {
         );
 
         Ok(selected_nodes)
-    }
-
-    pub async fn get_pool_stats(&self) -> Result<PoolStats> {
-        let (total, reachable, reliable) = self.db.get_node_stats(&self.network).await?;
-        let reliable_nodes = self.db.get_reliable_nodes(&self.network).await?;
-
-        let avg_reliable_latency = if reliable_nodes.is_empty() {
-            None
-        } else {
-            let total_latency: f64 = reliable_nodes
-                .iter()
-                .filter_map(|node| node.health.avg_latency_ms)
-                .sum();
-            let count = reliable_nodes
-                .iter()
-                .filter(|node| node.health.avg_latency_ms.is_some())
-                .count();
-
-            if count > 0 {
-                Some(total_latency / count as f64)
-            } else {
-                None
-            }
-        };
-
-        Ok(PoolStats {
-            total_nodes: total,
-            reachable_nodes: reachable,
-            reliable_nodes: reliable,
-            avg_reliable_latency_ms: avg_reliable_latency,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct PoolStats {
-    pub total_nodes: i64,
-    pub reachable_nodes: i64,
-    pub reliable_nodes: i64,
-    pub avg_reliable_latency_ms: Option<f64>, // TOOD: Why is this an Option, we hate Options
-}
-
-impl PoolStats {
-    pub fn health_percentage(&self) -> f64 {
-        if self.total_nodes == 0 {
-            0.0
-        } else {
-            (self.reachable_nodes as f64 / self.total_nodes as f64) * 100.0
-        }
     }
 }

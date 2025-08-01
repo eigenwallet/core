@@ -27,9 +27,17 @@ tower-http = { version = "0.5", features = ["cors"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 typeshare = { workspace = true }
-ureq = { version = "2.10", default-features = false, features = ["tls"] }
 url = "2.0"
 uuid = { workspace = true }
+
+arti-client = { workspace = true, features = ["tokio"] }
+tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
+
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+native-tls = "0.2"
+tokio-native-tls = "0.3"
 
 [dev-dependencies]
 tokio-test = "0.4"

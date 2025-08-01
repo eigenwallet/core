@@ -1,3 +1,4 @@
+use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
 use monero_rpc_pool::{config::Config, run_server};
 use tracing::info;
@@ -47,6 +48,11 @@ struct Args {
     #[arg(short, long)]
     #[arg(help = "Enable verbose logging")]
     verbose: bool,
+
+    #[arg(short, long)]
+    #[arg(help = "Enable Tor routing")]
+    #[arg(default_value = "true")]
+    tor: bool,
 }
 
 #[tokio::main]
@@ -54,16 +60,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::new("trace"))
+        .with_env_filter(EnvFilter::new("info"))
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
         .init();
 
-    let config = Config::new_with_port(
+    let tor_client = if args.tor {
+        let config = TorClientConfig::default();
+        let runtime = tor_rtcompat::tokio::TokioRustlsRuntime::current()
+            .expect("We are always running with tokio");
+
+        let client = TorClient::with_runtime(runtime)
+            .config(config)
+            .create_unbootstrapped_async()
+            .await?;
+
+        let client = std::sync::Arc::new(client);
+
+        let client_clone = client.clone();
+        tokio::spawn(async move {
+            match client_clone.bootstrap().await {
+                Ok(()) => {
+                    info!("Tor client successfully bootstrapped");
+                }
+                Err(e) => {
+                    tracing::error!("Failed to bootstrap Tor client: {}. Tor functionality will be unavailable.", e);
+                }
+            }
+        });
+
+        Some(client)
+    } else {
+        None
+    };
+
+    let config = Config::new_with_port_and_tor_client(
         args.host,
         args.port,
         std::env::temp_dir().join("monero-rpc-pool"),
+        tor_client,
     );
 
     info!(
