@@ -1,113 +1,119 @@
-//! Protocol definitions for eigensync communication
-
-use crate::types::{ActorId, DocumentId};
+use libp2p::request_response::ProtocolSupport;
+use libp2p::{request_response, PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", content = "params")]
-pub enum Request {
-    /// Get changes from server since a given point
-    GetChanges(GetChangesParams),
-    /// Submit new changes to server
-    SubmitChanges(SubmitChangesParams),
+const PROTOCOL: &str = "/eigensync/1.0.0";
+type OutEvent = request_response::Event<Request, Response>;
+type Message = request_response::Message<Request, Response>;
+
+pub type Behaviour = request_response::cbor::Behaviour<Request, Response>;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EigensyncProtocol;
+
+impl AsRef<str> for EigensyncProtocol {
+    fn as_ref(&self) -> &str {
+        PROTOCOL
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", content = "result")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Request {
+    pub doc_id: Uuid,
+    pub sync_msg: Vec<u8>, // Automerge sync message
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
-    /// Response to GetChanges request
-    GetChanges(GetChangesResult),
-    /// Response to SubmitChanges request
-    SubmitChanges(SubmitChangesResult),
-    /// Error response for any request
-    Error(ErrorResult),
+    SyncMsg { 
+        doc_id: Uuid, 
+        msg: Option<Vec<u8>> 
+    },
+    Error { 
+        doc_id: Uuid, 
+        reason: String 
+    },
 }
 
-// Request parameters
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct GetChangesParams {
-    /// Document to get changes for
-    pub document_id: DocumentId,
-    /// Only return changes after this sequence number
-    pub since_sequence: Option<u64>,
-    /// Maximum number of changes to return (for pagination)
-    pub limit: Option<u32>,
-    /// Automerge heads we already have (to optimize sync)
-    pub have_heads: Vec<Vec<u8>>, // Serialized ChangeHash
+pub fn hub() -> Behaviour {
+    Behaviour::new(
+        vec![(
+            StreamProtocol::new(EigensyncProtocol.as_ref()),
+            ProtocolSupport::Inbound,
+        )],
+        request_response::Config::default().with_request_timeout(Duration::from_secs(30)),
+    )
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SubmitChangesParams {
-    /// Document these changes apply to
-    pub document_id: DocumentId,
-    /// Serialized Automerge changes
-    pub changes: Vec<Vec<u8>>,
-    /// Actor ID that created these changes
-    pub actor_id: ActorId,
-    /// Expected sequence number for optimistic concurrency control
-    pub expected_sequence: Option<u64>,
+pub fn device() -> Behaviour {
+    Behaviour::new(
+        vec![(
+            StreamProtocol::new(EigensyncProtocol.as_ref()),
+            ProtocolSupport::Outbound,
+        )],
+        request_response::Config::default().with_request_timeout(Duration::from_secs(30)),
+    )
 }
 
-// Response results
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct GetChangesResult {
-    /// Document ID these changes apply to
-    pub document_id: DocumentId,
-    /// Serialized Automerge changes
-    pub changes: Vec<Vec<u8>>,
-    /// Sequence numbers for each change
-    pub sequences: Vec<u64>,
-    /// Whether there are more changes available
-    pub has_more: bool,
-    /// Current document heads after applying these changes
-    pub new_heads: Vec<Vec<u8>>, // Serialized ChangeHash
+/// Events that can be emitted by the sync protocol
+#[derive(Debug)]
+pub enum SyncEvent {
+    IncomingSync {
+        peer: PeerId,
+        doc_id: Uuid,
+        sync_msg: Vec<u8>,
+        channel: request_response::ResponseChannel<Response>,
+    },
+    SyncResponse {
+        doc_id: Uuid,
+        msg: Option<Vec<u8>>,
+    },
+    SyncError {
+        doc_id: Uuid,
+        reason: String,
+    },
+    OutboundFailure {
+        peer: PeerId,
+        error: request_response::OutboundFailure,
+    },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SubmitChangesResult {
-    /// Document ID changes were applied to
-    pub document_id: DocumentId,
-    /// Sequence numbers assigned to the submitted changes
-    pub assigned_sequences: Vec<u64>,
-    /// Number of changes that were actually new (not duplicates)
-    pub new_changes_count: u32,
-    /// Current document heads after applying changes
-    pub new_heads: Vec<Vec<u8>>, // Serialized ChangeHash
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ErrorResult {
-    /// Error code for programmatic handling
-    pub code: ErrorCode,
-    /// Human-readable error message
-    pub message: String,
-    /// Whether the error is retryable
-    pub retryable: bool,
-}
-
-/// Error codes for programmatic error handling
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(u32)]
-pub enum ErrorCode {
-    /// Unknown or internal server error
-    InternalError = 1000,
-    /// Invalid request format or parameters
-    InvalidRequest = 1001,
-    /// Requested resource not found
-    NotFound = 1003,
-    /// Conflict in optimistic concurrency control
-    Conflict = 1008,
-    /// Document not found
-    DocumentNotFound = 1010,
-    /// Invalid sequence number
-    InvalidSequence = 1011,
-}
-
-impl ErrorCode {
-    /// Whether this error is retryable
-    pub fn is_retryable(&self) -> bool {
-        matches!(self, ErrorCode::InternalError)
+impl From<request_response::Event<Request, Response>> for SyncEvent {
+    fn from(event: request_response::Event<Request, Response>) -> Self {
+        match event {
+            request_response::Event::Message { peer, message } => match message {
+                request_response::Message::Request {
+                    request, channel, ..
+                } => Self::IncomingSync {
+                    peer,
+                    doc_id: request.doc_id,
+                    sync_msg: request.sync_msg,
+                    channel,
+                },
+                request_response::Message::Response { response, .. } => match response {
+                    Response::SyncMsg { doc_id, msg } => Self::SyncResponse { doc_id, msg },
+                    Response::Error { doc_id, reason } => Self::SyncError { doc_id, reason },
+                },
+            },
+            request_response::Event::OutboundFailure { peer, error, .. } => {
+                Self::OutboundFailure { peer, error }
+            }
+            request_response::Event::InboundFailure { .. } => {
+                // Convert inbound failures to generic sync errors
+                Self::SyncError {
+                    doc_id: Uuid::nil(), // Placeholder since we don't have doc_id
+                    reason: "Inbound connection failure".to_string(),
+                }
+            }
+            request_response::Event::ResponseSent { .. } => {
+                // Not particularly interesting for the application layer
+                Self::SyncError {
+                    doc_id: Uuid::nil(),
+                    reason: "Response sent successfully".to_string(),
+                }
+            }
+        }
     }
 } 

@@ -2,49 +2,29 @@
 name = "eigensync"
 version = "0.1.0"
 edition = "2021"
+description = "Simple distributed document synchronization using Automerge CRDTs and libp2p"
+license = "MIT"
+repository = "https://github.com/UnstoppableSwap/unstoppableswap-gui"
 
-[[bin]]
-name = "eigensync-server"
-path = "src/bin/server.rs"
-required-features = ["server"]
-
-[features]
-default = ["client"]
-server = ["dep:clap", "dep:toml", "dep:tracing-subscriber"]
-client = []
+[[example]]
+name = "device_sync"
+path = "examples/device_sync.rs"
 
 [dependencies]
 # Core dependencies
-anyhow = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "fs", "signal"] }
-tracing = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
 uuid = { workspace = true }
-
-# Automerge
-automerge = "0.5"
-
-# Networking
-libp2p = { workspace = true, features = ["request-response", "tcp", "noise", "yamux", "identify", "ping", "mdns"] }
-
-# Database
-rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
-
-# Serialization
-serde_cbor = "0.11"
-
-# Time handling
 chrono = { version = "0.4", features = ["serde"] }
 
-# Server-only dependencies
-clap = { version = "4.0", features = ["derive"], optional = true }
-toml = { version = "0.8", optional = true }
-tracing-subscriber = { workspace = true, optional = true }
+# Automerge for CRDT functionality
+automerge = "0.6"
+
+# Networking with libp2p
+libp2p = { workspace = true, features = ["request-response", "tcp", "noise", "yamux", "macros", "cbor", "tokio"] }
 
 [dev-dependencies]
-tempfile = "3.0"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+env_logger = "0.11"
 
 [lints]
 workspace = true

@@ -1,76 +1,86 @@
-//! Eigensync: Distributed State Synchronization using Automerge CRDTs
+//! Eigensync: Simple Distributed Document Synchronization
 //!
-//! This crate provides a distributed state synchronization system built on top of
-//! Automerge CRDTs and libp2p networking. It enables synchronizing append-only state
-//! machines across multiple devices.
+//! A minimal distributed document synchronization system built on Automerge CRDTs 
+//! and libp2p networking. Designed for simplicity and clarity.
 //!
-//! # Features
+//! # Quick Start
 //!
-//! - **Append-only state synchronization**: Designed for state machines that only add states
-//! - **Conflict-free replication**: Uses Automerge CRDTs to handle concurrent updates
-//! - **Peer-to-peer networking**: Built on libp2p for reliable P2P communication
-//! - **Persistent storage**: SQLite-based persistence for both server and client
-//! - **Authentication**: PeerId-based authentication with ActorId mapping
+//! ```rust,no_run
+//! use eigensync::{hub, device, DocSync};
+//! use libp2p::{identity, Swarm};
+//! use uuid::Uuid;
 //!
-//! # Architecture
-//!
-//! The system consists of:
-//! - **Server**: Stores and distributes patches per PeerId
-//! - **Client**: Maintains local Automerge document and syncs with server
-//! - **Protocol**: Request/response protocol for patch exchange
+//! #[tokio::main] 
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Create behaviors
+//!     let hub_behaviour = hub();
+//!     let device_behaviour = device();
+//!     
+//!     // Create document sync instances
+//!     let mut hub_doc = DocSync::new();
+//!     let mut device_doc = DocSync::new();
+//!     
+//!     // Add data and sync...
+//!     hub_doc.doc_mut().put(automerge::ROOT, "key", "value")?;
+//!     
+//!     Ok(())
+//! }
+//! ```
 
-pub mod types;
 pub mod protocol;
+pub mod sync;
 
-#[cfg(feature = "server")]
-pub mod server;
+// Re-export the core API
+pub use protocol::{hub, device, Behaviour, Request, Response, SyncEvent};
+pub use sync::DocSync;
 
-#[cfg(feature = "client")]
-pub mod client;
+// Re-export common libp2p types for convenience
+pub use libp2p::PeerId;
+pub use uuid::Uuid;
 
-// Re-export commonly used types
-pub use types::{Error, Result, ActorId, DocumentId, PeerId, DocumentState, PatchInfo};
-pub use protocol::{
-    Request, Response, ErrorCode,
-    // Request types
-    GetChangesParams, SubmitChangesParams,
-    // Response types  
-    GetChangesResult, SubmitChangesResult, ErrorResult,
-};
+/// Example showing basic document synchronization setup
+/// 
+/// This demonstrates creating the minimal components needed for sync.
+/// See examples/device_sync.rs for a complete working example.
+pub fn example_setup() -> Result<(), Box<dyn std::error::Error>> {
+    use automerge::transaction::Transactable;
 
-#[cfg(feature = "client")]
-pub use client::{Client, ClientConfig};
+    // Create document sync instances
+    let mut hub_doc_sync = DocSync::new();
+    let mut device_doc_sync = DocSync::new();
 
-#[cfg(feature = "server")]
-pub use server::{Server, ServerConfig};
+    // Add some initial data
+    hub_doc_sync.doc_mut().put(automerge::ROOT, "greeting", "Hello from hub!")?;
+    device_doc_sync.doc_mut().put(automerge::ROOT, "status", "ready")?;
 
-/// Protocol name for libp2p
-pub const PROTOCOL_NAME: &str = "/eigensync/1.0.0";
+    println!("Created documents with initial data");
+    println!("Hub has {} heads", hub_doc_sync.get_heads().len());
+    println!("Device has {} heads", device_doc_sync.get_heads().len());
 
-/// Main entry point for integrating eigensync with swap state machine
-#[cfg(feature = "client")]
-pub async fn append_state(
-    client: &mut Client,
-    swap_id: uuid::Uuid,
-    state_json: serde_json::Value,
-    timestamp: chrono::DateTime<chrono::Utc>,
-) -> Result<()> {
-    client.append_swap_state(swap_id, state_json, timestamp).await
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use automerge::ReadDoc;
 
     #[test]
-    fn test_protocol_constants() {
-        assert_eq!(PROTOCOL_NAME, "/eigensync/1.0.0");
+    fn test_api_surface() {
+        // Test that we can create the basic components
+        let _hub_behaviour = hub();
+        let _device_behaviour = device();
+        let _doc_sync = DocSync::new();
     }
-
+    
     #[test]
-    fn test_re_exports() {
-        // Test that re-exported types are accessible
-        let _actor_id = ActorId(automerge::ActorId::random());
-        let _error_code = ErrorCode::InternalError;
+    fn test_doc_sync_basic_usage() {
+        use automerge::transaction::Transactable;
+        
+        let mut doc_sync = DocSync::new();
+        doc_sync.doc_mut().put(automerge::ROOT, "test", "value").unwrap();
+        
+        let value = doc_sync.doc().get(automerge::ROOT, "test").unwrap().unwrap();
+        assert_eq!(value.0.to_string(), "\"value\"");
     }
 }
