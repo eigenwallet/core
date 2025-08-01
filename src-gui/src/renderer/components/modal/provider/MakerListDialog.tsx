@@ -1,7 +1,6 @@
 import {
   Avatar,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
@@ -9,6 +8,8 @@ import {
   ListItemAvatar,
   ListItemText,
 } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 import { ExtendedMakerStatus } from "models/apiModel";
@@ -62,7 +63,8 @@ export default function MakerListDialog({
   }
 
   return (
-    <Dialog onClose={onClose} open={open}>
+    <MobileDialog onClose={onClose} open={open}>
+      <MobileDialogHeader title="Select a maker" onClose={onClose} />
       <DialogTitle>Select a maker</DialogTitle>
       <DialogContent sx={{ padding: 0 }} dividers>
         <List>
@@ -80,6 +82,6 @@ export default function MakerListDialog({
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }
