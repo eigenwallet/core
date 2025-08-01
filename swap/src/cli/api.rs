@@ -204,6 +204,7 @@ pub struct ContextBuilder {
     debug: bool,
     json: bool,
     tor: bool,
+    enable_monero_tor: bool,
     tauri_handle: Option<TauriHandle>,
 }
 
@@ -227,6 +228,7 @@ impl ContextBuilder {
             debug: false,
             json: false,
             tor: false,
+            enable_monero_tor: false,
             tauri_handle: None,
         }
     }
@@ -280,6 +282,12 @@ impl ContextBuilder {
         self
     }
 
+    /// Whether to route Monero wallet traffic through Tor (default false)
+    pub fn with_enable_monero_tor(mut self, enable_monero_tor: bool) -> Self {
+        self.enable_monero_tor = enable_monero_tor;
+        self
+    }
+
     /// Takes the builder, initializes the context by initializing the wallets and other components and returns the Context.
     pub async fn build(self) -> Result<Context> {
         // This is the data directory for the eigenwallet (wallet files)
@@ -327,12 +335,16 @@ impl ContextBuilder {
             None
         };
 
-        // Start the rpc pool for the monero wallet with unbootstrapped Tor client
+        // Start the rpc pool for the monero wallet with optional Tor client based on enable_monero_tor setting
         let (server_info, mut status_receiver, pool_handle) =
             monero_rpc_pool::start_server_with_random_port(
                 monero_rpc_pool::config::Config::new_random_port_with_tor_client(
                     base_data_dir.join("monero-rpc-pool"),
-                    unbootstrapped_tor_client.clone(),
+                    if self.enable_monero_tor {
+                        unbootstrapped_tor_client.clone()
+                    } else {
+                        None
+                    },
                 ),
                 match self.is_testnet {
                     true => crate::monero::Network::Stagenet,

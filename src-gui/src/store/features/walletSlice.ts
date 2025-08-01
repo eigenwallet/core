@@ -45,7 +45,12 @@ export const walletSlice = createSlice({
       action: PayloadAction<GetMoneroSyncProgressResponse>,
     ) {
       slice.state.lowestCurrentBlock = Math.min(
-        slice.state.lowestCurrentBlock ?? Infinity,
+        // We ignore anything below 10 blocks as this may be something like wallet2
+        // sending a wrong value when it hasn't initialized yet
+        slice.state.lowestCurrentBlock < 10 ||
+          slice.state.lowestCurrentBlock === null
+          ? Infinity
+          : slice.state.lowestCurrentBlock,
         action.payload.current_block,
       );
 

@@ -6,11 +6,16 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
-use std::time::Instant;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
+use tokio_native_tls::native_tls::TlsConnector;
 use tracing::{error, info_span, Instrument};
 
 use crate::AppState;
+
+/// Trait alias for a stream that can be used with hyper
+trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
 
 #[axum::debug_handler]
 pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> Response {
@@ -164,6 +169,28 @@ async fn proxy_to_multiple_nodes(
     Err(HandlerError::AllRequestsFailed(collected_errors))
 }
 
+/// Wraps a stream with TLS if HTTPS is being used
+async fn maybe_wrap_with_tls(
+    stream: impl AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    scheme: &str,
+    host: &str,
+) -> Result<Box<dyn HyperStream>, SingleRequestError> {
+    if scheme == "https" {
+        let tls_connector = TlsConnector::builder().build().map_err(|e| {
+            SingleRequestError::ConnectionError(format!("TLS connector error: {}", e))
+        })?;
+        let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
+
+        let tls_stream = tls_connector.connect(host, stream).await.map_err(|e| {
+            SingleRequestError::ConnectionError(format!("TLS connection error: {}", e))
+        })?;
+
+        Ok(Box::new(tls_stream))
+    } else {
+        Ok(Box::new(stream))
+    }
+}
+
 /// Proxies a singular axum::Request to a single node.
 /// Errors if we get a physical connection error
 ///
@@ -190,11 +217,17 @@ async fn proxy_to_single_node(
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
+            // Wrap with TLS if using HTTPS
+            let stream = maybe_wrap_with_tls(stream, &node.0, &node.1).await?;
+
             let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
-            tracing::info!("Connected to node via Tor");
+            tracing::info!(
+                "Connected to node via Tor{}",
+                if node.0 == "https" { " with TLS" } else { "" }
+            );
 
             tokio::task::spawn(async move {
                 if let Err(err) = conn.await {
@@ -215,11 +248,17 @@ async fn proxy_to_single_node(
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
-            let stream = TokioIo::new(stream);
+            // Wrap with TLS if using HTTPS
+            let stream = maybe_wrap_with_tls(stream, &node.0, &node.1).await?;
 
-            let (mut sender, conn) = hyper::client::conn::http1::handshake(stream)
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+            tracing::info!(
+                "Connected to node via clearnet{}",
+                if node.0 == "https" { " with TLS" } else { "" }
+            );
 
             tokio::task::spawn(async move {
                 if let Err(err) = conn.await {

@@ -43,10 +43,12 @@ struct BandwidthTracker {
 }
 
 impl BandwidthTracker {
+    const WINDOW_DURATION: Duration = Duration::from_secs(60 * 3);
+
     fn new() -> Self {
         Self {
             entries: VecDeque::new(),
-            window_duration: Duration::from_secs(60), // 60 second window
+            window_duration: Self::WINDOW_DURATION,
         }
     }
 
@@ -69,7 +71,7 @@ impl BandwidthTracker {
     }
 
     fn get_kb_per_sec(&self) -> f64 {
-        if self.entries.len() < 2 {
+        if self.entries.len() < 5 {
             return 0.0;
         }
 
@@ -233,54 +235,5 @@ impl NodePool {
         );
 
         Ok(selected_nodes)
-    }
-
-    pub async fn get_pool_stats(&self) -> Result<PoolStats> {
-        let (total, reachable, reliable) = self.db.get_node_stats(&self.network).await?;
-        let reliable_nodes = self.db.get_reliable_nodes(&self.network).await?;
-
-        let avg_reliable_latency = if reliable_nodes.is_empty() {
-            None
-        } else {
-            let total_latency: f64 = reliable_nodes
-                .iter()
-                .filter_map(|node| node.health.avg_latency_ms)
-                .sum();
-            let count = reliable_nodes
-                .iter()
-                .filter(|node| node.health.avg_latency_ms.is_some())
-                .count();
-
-            if count > 0 {
-                Some(total_latency / count as f64)
-            } else {
-                None
-            }
-        };
-
-        Ok(PoolStats {
-            total_nodes: total,
-            reachable_nodes: reachable,
-            reliable_nodes: reliable,
-            avg_reliable_latency_ms: avg_reliable_latency,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct PoolStats {
-    pub total_nodes: i64,
-    pub reachable_nodes: i64,
-    pub reliable_nodes: i64,
-    pub avg_reliable_latency_ms: Option<f64>, // TOOD: Why is this an Option, we hate Options
-}
-
-impl PoolStats {
-    pub fn health_percentage(&self) -> f64 {
-        if self.total_nodes == 0 {
-            0.0
-        } else {
-            (self.reachable_nodes as f64 / self.total_nodes as f64) * 100.0
-        }
     }
 }

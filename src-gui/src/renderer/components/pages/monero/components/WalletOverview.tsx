@@ -1,52 +1,8 @@
-import {
-  Box,
-  Typography,
-  CircularProgress,
-  Button,
-  Card,
-  CardContent,
-  Divider,
-  CardHeader,
-  LinearProgress,
-} from "@mui/material";
-import { useEffect, useState } from "react";
+import { Box, Typography, Card, LinearProgress } from "@mui/material";
 import { useAppSelector } from "store/hooks";
 import { PiconeroAmount } from "../../../other/Units";
 import { FiatPiconeroAmount } from "../../../other/Units";
 import StateIndicator from "./StateIndicator";
-
-interface LinearProgressWithBufferProps {
-  value: number;
-  bufferMin?: number;
-  bufferMax?: number;
-  sx?: any;
-}
-
-function LinearProgressWithBuffer({
-  value,
-  bufferMin = 2,
-  bufferMax = 5,
-  sx,
-}: LinearProgressWithBufferProps) {
-  const [bufferProgressAddition, setBufferProgressAddition] = useState(
-    Math.random() * (bufferMax - bufferMin) + bufferMin,
-  );
-
-  useEffect(() => {
-    setBufferProgressAddition(
-      Math.random() * (bufferMax - bufferMin) + bufferMin,
-    );
-  }, [value, bufferMin, bufferMax]);
-
-  return (
-    <LinearProgress
-      value={value}
-      valueBuffer={Math.min(value + bufferProgressAddition, 100)}
-      variant="buffer"
-      sx={sx}
-    />
-  );
-}
 
 interface WalletOverviewProps {
   balance?: {
@@ -100,16 +56,37 @@ export default function WalletOverview({
           ),
         );
 
+  const isStuck = poolStatus.bandwidth_kb_per_sec < 0.01;
+
+  // Calculate estimated time remaining for sync
+  const formatTimeRemaining = (seconds: number): string => {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+    return `${Math.round(seconds / 86400)}d`;
+  };
+
+  const estimatedTimeRemaining =
+    blocksLeft && poolStatus?.bandwidth_kb_per_sec > 0
+      ? (blocksLeft * 130) / poolStatus.bandwidth_kb_per_sec // blocks * 130kb / kb_per_sec = seconds
+      : null;
+
   return (
     <Card sx={{ p: 2, position: "relative", borderRadius: 2 }} elevation={4}>
       {syncProgress && syncProgress.progress_percentage < 100 && (
-        <LinearProgressWithBuffer
+        <LinearProgress
           value={progressPercentage}
+          valueBuffer={
+            // If the bandwidth is low, we may not be making progress
+            // We don't show the buffer in this case
+            isStuck ? undefined : progressPercentage
+          }
+          variant="buffer"
           sx={{
-            width: "100%",
             position: "absolute",
             top: 0,
             left: 0,
+            width: "100%",
           }}
         />
       )}
@@ -123,6 +100,7 @@ export default function WalletOverview({
           mb: 1,
         }}
       >
+        {/* Left side content */}
         <Box
           sx={{
             display: "flex",
@@ -181,41 +159,42 @@ export default function WalletOverview({
           )}
         </Box>
 
+        {/* Right side - simple approach */}
         <Box
           sx={{
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",
+            gap: 2,
           }}
         >
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 1,
-            }}
-          >
-            <Typography variant="body2" color="text.secondary">
-              {isSyncing
-                ? `${(syncProgress.target_block - syncProgress.current_block).toLocaleString()} blocks left`
-                : "synced"}
-            </Typography>
-            <StateIndicator
-              color={isSyncing ? "primary" : "success"}
-              pulsating={isSyncing}
-            />
+          <StateIndicator
+            color={isSyncing ? "primary" : "success"}
+            pulsating={isSyncing}
+          />
+          <Box sx={{ textAlign: "right" }}>
+            {isSyncing && (
+              <Typography variant="body2" color="text.secondary">
+                {blocksLeft?.toLocaleString()} blocks left
+              </Typography>
+            )}
+            {poolStatus && isSyncing && !isStuck && (
+              <>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 0.5, fontSize: "0.7rem", display: "block" }}
+                >
+                  {poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {estimatedTimeRemaining && !isStuck && (
+                    <>~{formatTimeRemaining(estimatedTimeRemaining)} left</>
+                  )}
+                </Typography>
+              </>
+            )}
           </Box>
-          {poolStatus && isSyncing && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ mt: 0.5, fontSize: "0.7rem" }}
-            >
-              {poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s
-            </Typography>
-          )}
         </Box>
       </Box>
     </Card>

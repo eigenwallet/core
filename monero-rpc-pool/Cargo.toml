@@ -36,6 +36,8 @@ tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
+native-tls = "0.2"
+tokio-native-tls = "0.3"
 
 [dev-dependencies]
 tokio-test = "0.4"
