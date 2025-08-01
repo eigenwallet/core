@@ -2,7 +2,6 @@ import {
   Box,
   Button,
   Checkbox,
-  Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
@@ -13,6 +12,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
 import { ErrorOutline, Visibility } from "@mui/icons-material";
 import ExternalLink from "renderer/components/other/ExternalLink";
 import SwapSelectDropDown from "./SwapSelectDropDown";
@@ -42,7 +43,8 @@ export default function FeedbackDialog({
   const bodyTooLong = input.bodyText.length > MAX_FEEDBACK_LENGTH;
 
   return (
-    <Dialog open={open} onClose={handleClose}>
+    <MobileDialog open={open} onClose={handleClose}>
+      <MobileDialogHeader title="Submit Feedback" onClose={handleClose} />
       <DialogTitle style={{ paddingBottom: "0.5rem" }}>
         Submit Feedback
       </DialogTitle>
@@ -236,6 +238,6 @@ export default function FeedbackDialog({
           Submit
         </PromiseInvokeButton>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }

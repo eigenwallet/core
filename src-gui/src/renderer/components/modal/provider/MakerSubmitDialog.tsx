@@ -1,12 +1,13 @@
 import {
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
   TextField,
 } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
 import { Multiaddr } from "multiaddr";
 import { ChangeEvent, useState } from "react";
 
@@ -64,7 +65,8 @@ export default function MakerSubmitDialog({
   }
 
   return (
-    <Dialog onClose={onClose} open={open}>
+    <MobileDialog onClose={onClose} open={open}>
+      <MobileDialogHeader title="Submit a maker to the public registry" onClose={onClose} />
       <DialogTitle>Submit a maker to the public registry</DialogTitle>
       <DialogContent dividers>
         <DialogContentText>
@@ -106,6 +108,6 @@ export default function MakerSubmitDialog({
           Submit
         </Button>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }

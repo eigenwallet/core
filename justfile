@@ -7,9 +7,10 @@ help:
 #	just update_submodules
 #	cd monero-sys/monero && make -j8 release
 
-# Clean the Monero C++ Codebase
-clean_monero_cpp:
-	rm -rf monero-sys/monero/
+# Clean the Monero C++ Codebase and build cache
+clean:
+	cargo clean
+	cd monero-sys && rm -rf monero monero_c
 	just update_submodules
 
 # Builds the Rust bindings for Monero
@@ -31,6 +32,13 @@ tauri:
 tauri-mainnet:
 	cd src-tauri && cargo tauri dev --no-watch
 
+# Start the Tauri app with mobile layout
+tauri-mobile:
+	cd src-tauri && cargo tauri ios dev --no-watch --verbose --config tauri.mobile.conf.json -- -- --testnet
+
+tauri-mobile-mainnet:
+	cd src-tauri && cargo tauri ios dev --no-watch --config tauri.mobile.conf.json
+
 # Install the GUI dependencies
 gui_install:
 	cd src-gui && yarn install
@@ -44,6 +52,13 @@ gui:
 
 gui-mainnet:
 	just web & just tauri-mainnet
+
+# Start the GUI with mobile layout
+gui-mobile:
+	just web & just tauri-mobile
+
+gui-mobile-mainnet:
+	just web & just tauri-mobile-mainnet
 
 # Build the GUI
 gui_build:

@@ -1,6 +1,6 @@
 {
   "productName": "eigenwallet",
-  "version": "3.0.0-beta.2",
+  "version": "3.0.0-beta",
   "identifier": "net.unstoppableswap.gui",
   "build": {
     "devUrl": "http://localhost:1420",
@@ -13,13 +13,14 @@
   "app": {
     "windows": [
       {
-        "title": "eigenwallet",
-        "minWidth": 600,
-        "minHeight": 400,
-        "width": 800,
-        "height": 700,
-        "maxHeight": 900,
-        "maxWidth": 1200
+        "title": "eigenwallet (Mobile)",
+        "minWidth": 360,
+        "minHeight": 640,
+        "width": 390,
+        "height": 844,
+        "maxHeight": 950,
+        "maxWidth": 430,
+        "resizable": false
       }
     ],
     "security": {
@@ -29,31 +30,14 @@
   "bundle": {
     "createUpdaterArtifacts": true,
     "active": true,
-    "targets": [
-      "appimage",
-      "dmg",
-      "nsis",
-      "app",
-      "deb"
-    ],
+    "targets": ["appimage", "dmg", "nsis", "app", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "macOS": {
-      "minimumSystemVersion": "11.0"
-    },
-    "iOS": {
-      "minimumSystemVersion": "13.0"
-    },
-    "windows": {
-      "webviewInstallMode": {
-        "type": "embedBootstrapper"
-      }
-    }
+    ]
   },
   "plugins": {
     "updater": {

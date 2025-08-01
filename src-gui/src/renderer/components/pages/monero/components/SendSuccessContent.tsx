@@ -10,6 +10,7 @@ import { SendMoneroResponse } from "models/tauriModel";
 import { getMoneroTxExplorerUrl } from "../../../../../utils/conversionUtils";
 import { isTestnet } from "store/config";
 import { open } from "@tauri-apps/plugin-shell";
+import { useIsMobile } from "../../../../../utils/useIsMobile";
 
 export default function SendSuccessContent({
   onClose,
@@ -18,6 +19,7 @@ export default function SendSuccessContent({
   onClose: () => void;
   successDetails: SendMoneroResponse | null;
 }) {
+  const isMobile = useIsMobile();
   const address = successDetails?.address;
   const amount = successDetails?.amount_sent;
   const explorerUrl = getMoneroTxExplorerUrl(
@@ -33,7 +35,7 @@ export default function SendSuccessContent({
         justifyContent: "center",
         alignItems: "center",
         minHeight: "400px",
-        minWidth: "500px",
+        minWidth: isMobile ? "100%" : "500px",
         gap: 7,
         p: 4,
       }}
@@ -44,10 +46,11 @@ export default function SendSuccessContent({
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
+          justifyContent: "center",
           gap: 1,
         }}
       >
-        <Typography variant="h4">Transaction Published</Typography>
+        <Typography variant="h4" sx={{ textAlign: "center" }}>Transaction Published</Typography>
         <Box
           sx={{
             display: "flex",

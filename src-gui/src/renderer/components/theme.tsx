@@ -45,9 +45,9 @@ const baseTheme: ThemeOptions = {
     values: {
       xs: 0,
       sm: 600,
-      md: 900,
-      lg: 1000,
-      xl: 1536,
+      md: 768,  // Mobile/tablet breakpoint
+      lg: 1024,
+      xl: 1200,
     },
   },
   components: {
@@ -152,6 +152,21 @@ const baseTheme: ThemeOptions = {
           "& legend": {
             transition: "unset",
           },
+        },
+      },
+    },
+    MuiBottomNavigation: {
+      styleOverrides: {
+        root: {
+          height: 64, // Standard mobile bottom nav height
+        },
+      },
+    },
+    MuiBottomNavigationAction: {
+      styleOverrides: {
+        root: {
+          minWidth: 'auto',
+          padding: '6px 12px',
         },
       },
     },

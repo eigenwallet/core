@@ -1,33 +1,11 @@
-import { Box, Drawer } from "@mui/material";
-import NavigationFooter from "./NavigationFooter";
-import NavigationHeader from "./NavigationHeader";
+import { useIsMobile } from "../../../utils/useIsMobile";
+import MobileBottomNavigation from "./BottomNavigation";
+import DesktopNavigation from "./DesktopNavigation";
 
 export const drawerWidth = "240px";
 
 export default function Navigation() {
-  return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width: drawerWidth,
-        flexShrink: 0,
-        "& .MuiDrawer-paper": {
-          width: drawerWidth,
-        },
-      }}
-    >
-      <Box
-        sx={{
-          overflow: "auto",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          height: "100%",
-        }}
-      >
-        <NavigationHeader />
-        <NavigationFooter />
-      </Box>
-    </Drawer>
-  );
+  const isMobile = useIsMobile();
+  
+  return isMobile ? <MobileBottomNavigation /> : <DesktopNavigation />;
 }
