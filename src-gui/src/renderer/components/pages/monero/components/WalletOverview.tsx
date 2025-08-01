@@ -185,12 +185,9 @@ export default function WalletOverview({
                   color="text.secondary"
                   sx={{ mt: 0.5, fontSize: "0.7rem", display: "block" }}
                 >
-                  {poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
                   {estimatedTimeRemaining && !isStuck && (
-                    <>~{formatTimeRemaining(estimatedTimeRemaining)} left</>
-                  )}
+                    <>{formatTimeRemaining(estimatedTimeRemaining)} left</>
+                  )} / {poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s
                 </Typography>
               </>
             )}
