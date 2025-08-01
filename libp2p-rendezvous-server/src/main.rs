@@ -32,7 +32,7 @@ struct Cli {
     /// Port used for listening on TCP (default)
     #[structopt(long, default_value = "8888")]
     listen_tcp: u16,
-    
+
     /// Format logs as JSON
     #[structopt(long)]
     json: bool,
@@ -131,7 +131,7 @@ fn init_tracing(level: LevelFilter, json_format: bool, no_timestamp: bool) {
 
 async fn load_secret_key_from_file(path: impl AsRef<Path>) -> Result<ed25519::SecretKey> {
     let path = path.as_ref();
-    
+
     match fs::read(path).await {
         Ok(bytes) => {
             // File exists, try to load the secret key
@@ -140,13 +140,16 @@ async fn load_secret_key_from_file(path: impl AsRef<Path>) -> Result<ed25519::Se
         }
         Err(_) => {
             // File doesn't exist, generate a new secret key
-            tracing::info!("Secret file not found at {}, generating new key", path.display());
+            tracing::info!(
+                "Secret file not found at {}, generating new key",
+                path.display()
+            );
             let secret_key = ed25519::SecretKey::generate();
-            
+
             // Save the new key to file
             write_secret_key_to_file(&secret_key, path.to_path_buf()).await?;
             tracing::info!("New secret key saved to {}", path.display());
-            
+
             Ok(secret_key)
         }
     }

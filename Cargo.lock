@@ -5610,20 +5610,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libp2p-rendezvous-server"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "atty",
- "futures",
- "libp2p",
- "structopt",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "libp2p-request-response"
 version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8356,6 +8342,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71fe3824f5629716b1589be05dacd749f6aa084c87e00e016714a8cdfccc997c"
 dependencies = [
  "bytecheck",
+]
+
+[[package]]
+name = "rendezvous-server"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "atty",
+ "futures",
+ "libp2p",
+ "structopt",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

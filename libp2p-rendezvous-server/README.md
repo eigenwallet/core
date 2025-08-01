@@ -17,6 +17,7 @@ cargo run --release
 ```
 
 The server will use default values:
+
 - Secret file: `rendezvous-server-secret.key` (created automatically if it doesn't exist)
 - Listen port: `8888`
 
