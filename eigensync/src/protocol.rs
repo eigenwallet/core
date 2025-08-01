@@ -41,9 +41,11 @@ pub fn hub() -> Behaviour {
     Behaviour::new(
         vec![(
             StreamProtocol::new(EigensyncProtocol.as_ref()),
-            ProtocolSupport::Inbound,
+            ProtocolSupport::Full,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(30)),
+        request_response::Config::default()
+            .with_request_timeout(Duration::from_secs(30))
+            .with_max_concurrent_streams(10),
     )
 }
 
@@ -51,9 +53,11 @@ pub fn device() -> Behaviour {
     Behaviour::new(
         vec![(
             StreamProtocol::new(EigensyncProtocol.as_ref()),
-            ProtocolSupport::Outbound,
+            ProtocolSupport::Full,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(30)),
+        request_response::Config::default()
+            .with_request_timeout(Duration::from_secs(30))
+            .with_max_concurrent_streams(10),
     )
 }
 
