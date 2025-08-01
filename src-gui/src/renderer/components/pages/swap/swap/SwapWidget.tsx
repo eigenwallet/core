@@ -27,7 +27,10 @@ export default function SwapWidget() {
         open={debug}
         onClose={() => setDebug(false)}
       >
-        <MobileDialogHeader title="Debug Information" onClose={() => setDebug(false)} />
+        <MobileDialogHeader
+          title="Debug Information"
+          onClose={() => setDebug(false)}
+        />
         <DebugPage />
         <DialogActions>
           <Button variant="outlined" onClick={() => setDebug(false)}>

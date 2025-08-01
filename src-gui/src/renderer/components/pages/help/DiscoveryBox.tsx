@@ -2,7 +2,7 @@ import { Box, Typography, styled } from "@mui/material";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import { useSettings } from "store/hooks";
 import { Search } from "@mui/icons-material";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { listSellersAtRendezvousPoint } from "renderer/rpc";
 import { useAppDispatch } from "store/hooks";
 import { discoveredMakersByRendezvous } from "store/features/makersSlice";

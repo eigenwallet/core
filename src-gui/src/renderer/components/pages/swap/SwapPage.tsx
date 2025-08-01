@@ -5,7 +5,7 @@ import { useIsMobile } from "../../../../utils/useIsMobile";
 
 export default function SwapPage() {
   const isMobile = useIsMobile();
-  
+
   return (
     <Box
       sx={{

@@ -1,4 +1,10 @@
-import { Dialog, DialogProps, Slide, useMediaQuery, useTheme } from "@mui/material";
+import {
+  Dialog,
+  DialogProps,
+  Slide,
+  useMediaQuery,
+  useTheme,
+} from "@mui/material";
 import { TransitionProps } from "@mui/material/transitions";
 import { forwardRef, ReactElement, Ref } from "react";
 
@@ -15,9 +21,12 @@ interface MobileDialogProps extends DialogProps {
   children: React.ReactNode;
 }
 
-export default function MobileDialog({ children, ...props }: MobileDialogProps) {
+export default function MobileDialog({
+  children,
+  ...props
+}: MobileDialogProps) {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   return (
     <Dialog
@@ -28,16 +37,16 @@ export default function MobileDialog({ children, ...props }: MobileDialogProps) 
       }}
       sx={{
         ...(isMobile && {
-          '& .MuiDialog-paper': {
+          "& .MuiDialog-paper": {
             margin: 0,
-            width: '100%',
-            height: '100%',
-            maxHeight: '100%',
-            maxWidth: '100%',
+            width: "100%",
+            height: "100%",
+            maxHeight: "100%",
+            maxWidth: "100%",
             borderRadius: 0,
-          }
+          },
         }),
-        ...props.sx
+        ...props.sx,
       }}
     >
       {children}

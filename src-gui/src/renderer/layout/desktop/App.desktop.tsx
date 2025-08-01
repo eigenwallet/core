@@ -15,7 +15,7 @@ import WalletPage from "renderer/components/pages/wallet/WalletPage";
 import UpdaterDialog from "renderer/components/modal/updater/UpdaterDialog";
 import { Box } from "@mui/material";
 
-export default function DesktopApp() {
+export default function App() {
   return (
     <GlobalSnackbarProvider>
       <IntroductionModal />

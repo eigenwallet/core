@@ -5,7 +5,7 @@ import { useIsMobile } from "../../../../utils/useIsMobile";
 
 export default function HistoryPage() {
   const isMobile = useIsMobile();
-  
+
   return (
     <Box
       sx={{

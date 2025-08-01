@@ -13,7 +13,7 @@ import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useState } from "react";
 import { usePendingPasswordApproval } from "store/hooks";
 import { rejectApproval, resolveApproval } from "renderer/rpc";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 
 export default function PasswordEntryDialog() {
   const pendingApprovals = usePendingPasswordApproval();

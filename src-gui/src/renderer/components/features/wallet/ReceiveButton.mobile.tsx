@@ -1,0 +1,46 @@
+import { Box, Drawer, Typography } from "@mui/material";
+import QRCode from "react-qr-code";
+import TextIconButton from "renderer/components/buttons/TextIconButton";
+import { useState } from "react";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import MonospaceTextBox from "renderer/components/other/MonospaceTextBox";
+
+export default function ReceiveButton({ address }: { address: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <TextIconButton label="Receive" onClick={() => setOpen(true)}>
+        <ArrowDownwardIcon />
+      </TextIconButton>
+      <Drawer open={open} onClose={() => setOpen(false)} anchor="bottom">
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+            p: 2,
+            pb: 8,
+          }}
+        >
+          <Typography variant="h6">Receive Monero</Typography>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 2,
+              p: 2,
+              borderRadius: 2,
+              backgroundColor: "#fff",
+            }}
+          >
+            <QRCode value={address} size={200} />
+          </Box>
+          <MonospaceTextBox>{address}</MonospaceTextBox>
+        </Box>
+      </Drawer>
+    </>
+  );
+}

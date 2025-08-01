@@ -9,8 +9,8 @@ import { useIsMobile } from "../../utils/useIsMobile";
 import "@fontsource/roboto";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import DesktopApp from "renderer/layout/desktop/DesktopApp";
-import MobileApp from "renderer/layout/mobile/MobileApp";
+import DesktopApp from "renderer/layout/desktop/App.desktop";
+import MobileApp from "renderer/layout/mobile/App.mobile";
 
 declare module "@mui/material/styles" {
   interface Theme {

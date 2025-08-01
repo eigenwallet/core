@@ -12,7 +12,7 @@ import { resolveApproval } from "renderer/rpc";
 import { usePendingSendMoneroApproval } from "store/hooks";
 import { PiconeroAmount } from "renderer/components/other/Units";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 
 interface SendApprovalContentProps {
   onClose: () => void;

@@ -2,7 +2,7 @@ import { Button, DialogActions } from "@mui/material";
 import MobileDialog from "../MobileDialog";
 import MobileDialogHeader from "../MobileDialogHeader";
 import { useState } from "react";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { withdrawBtc } from "renderer/rpc";
 import DialogHeader from "../DialogHeader";
 import AddressInputPage from "./pages/AddressInputPage";

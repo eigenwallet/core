@@ -9,9 +9,9 @@ import {
   CardHeader,
   LinearProgress,
 } from "@mui/material";
-import { PiconeroAmount } from "../../../other/Units";
-import { FiatPiconeroAmount } from "../../../other/Units";
-import StateIndicator from "./StateIndicator";
+import { PiconeroAmount } from "renderer/components/other/Units";
+import { FiatPiconeroAmount } from "renderer/components/other/Units";
+import StateIndicator from "renderer/components/pages/monero/components/StateIndicator";
 
 interface WalletOverviewProps {
   balance?: {

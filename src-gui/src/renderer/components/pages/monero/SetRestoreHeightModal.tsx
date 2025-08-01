@@ -15,7 +15,7 @@ import { useState, useEffect } from "react";
 import { getRestoreHeight, setMoneroRestoreHeight } from "renderer/rpc";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { Dayjs } from "dayjs";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import MobileDialog from "renderer/components/modal/MobileDialog";
 
 enum RestoreOption {

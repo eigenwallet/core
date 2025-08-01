@@ -66,7 +66,10 @@ export default function MakerSubmitDialog({
 
   return (
     <MobileDialog onClose={onClose} open={open}>
-      <MobileDialogHeader title="Submit a maker to the public registry" onClose={onClose} />
+      <MobileDialogHeader
+        title="Submit a maker to the public registry"
+        onClose={onClose}
+      />
       <DialogTitle>Submit a maker to the public registry</DialogTitle>
       <DialogContent dividers>
         <DialogContentText>

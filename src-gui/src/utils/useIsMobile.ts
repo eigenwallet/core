@@ -1,7 +1,7 @@
-import { useTheme, useMediaQuery } from '@mui/material';
+import { useTheme, useMediaQuery } from "@mui/material";
 
 export const useIsMobile = () => {
   return true;
   const theme = useTheme();
-  return useMediaQuery(theme.breakpoints.down('md'));
+  return useMediaQuery(theme.breakpoints.down("md"));
 };

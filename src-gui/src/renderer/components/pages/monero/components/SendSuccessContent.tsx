@@ -50,7 +50,9 @@ export default function SendSuccessContent({
           gap: 1,
         }}
       >
-        <Typography variant="h4" sx={{ textAlign: "center" }}>Transaction Published</Typography>
+        <Typography variant="h4" sx={{ textAlign: "center" }}>
+          Transaction Published
+        </Typography>
         <Box
           sx={{
             display: "flex",

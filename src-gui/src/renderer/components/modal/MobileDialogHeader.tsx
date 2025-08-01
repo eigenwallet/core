@@ -7,7 +7,10 @@ interface MobileDialogHeaderProps {
   onClose: () => void;
 }
 
-export default function MobileDialogHeader({ title, onClose }: MobileDialogHeaderProps) {
+export default function MobileDialogHeader({
+  title,
+  onClose,
+}: MobileDialogHeaderProps) {
   const isMobile = useIsMobile();
 
   if (!isMobile) {
@@ -15,7 +18,7 @@ export default function MobileDialogHeader({ title, onClose }: MobileDialogHeade
   }
 
   return (
-    <AppBar sx={{ position: 'relative' }}>
+    <AppBar sx={{ position: "relative" }}>
       <Toolbar>
         <Typography sx={{ ml: 2, flex: 1 }} variant="h6" component="div">
           {title}

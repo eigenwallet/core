@@ -7,7 +7,7 @@ import {
 import { SatsAmount, PiconeroAmount } from "renderer/components/other/Units";
 import { Box, Typography, Divider, Theme } from "@mui/material";
 import { useActiveSwapId, usePendingLockBitcoinApproval } from "store/hooks";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
 import CheckIcon from "@mui/icons-material/Check";
 import ArrowRightAltIcon from "@mui/icons-material/ArrowRightAlt";

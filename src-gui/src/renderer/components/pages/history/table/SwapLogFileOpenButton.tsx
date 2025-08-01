@@ -9,7 +9,7 @@ import { ButtonProps } from "@mui/material/Button";
 import { CliLog, parseCliLogString } from "models/cliModel";
 import { GetLogsResponse } from "models/tauriModel";
 import { useState } from "react";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { getLogsOfSwap } from "renderer/rpc";
 import CliLogsBox from "../../../other/RenderedCliLog";
 

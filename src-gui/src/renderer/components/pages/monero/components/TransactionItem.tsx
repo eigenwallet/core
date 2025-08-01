@@ -100,15 +100,22 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
               disableTooltip
             />
           </Typography>
-          <Box sx={{ gridArea: "2 / 2", display: "flex", flexDirection: "row", gap: 1 }}>
-          <Typography variant="caption" >
-            <FiatPiconeroAmount amount={transaction.amount} />
-          </Typography>
-          {useIsMobile() && (
-            <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              {displayDate}
+          <Box
+            sx={{
+              gridArea: "2 / 2",
+              display: "flex",
+              flexDirection: "row",
+              gap: 1,
+            }}
+          >
+            <Typography variant="caption">
+              <FiatPiconeroAmount amount={transaction.amount} />
             </Typography>
-          )}
+            {useIsMobile() && (
+              <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                {displayDate}
+              </Typography>
+            )}
           </Box>
         </Box>
       </Box>
@@ -120,15 +127,15 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
           gap: 1,
         }}
       >
-        {!useIsMobile() &&
-        <Typography
-        variant="body1"
-        color="text.secondary"
-        sx={{ fontSize: 14 }}
-        >
-          {displayDate}
-        </Typography>
-        }
+        {!useIsMobile() && (
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{ fontSize: 14 }}
+          >
+            {displayDate}
+          </Typography>
+        )}
         <ConfirmationsBadge confirmations={transaction.confirmations} />
         <IconButton
           onClick={(event) => {

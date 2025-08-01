@@ -20,7 +20,7 @@ import SwapSelectDropDown from "./SwapSelectDropDown";
 import LogViewer from "./LogViewer";
 import { useFeedback, MAX_FEEDBACK_LENGTH } from "./useFeedback";
 import { useState } from "react";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 
 export default function FeedbackDialog({
   open,

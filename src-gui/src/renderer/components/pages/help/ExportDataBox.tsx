@@ -13,7 +13,7 @@ import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import { useState } from "react";
 import { getWalletDescriptor } from "renderer/rpc";
 import { ExportBitcoinWalletResponse } from "models/tauriModel";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 
 export default function ExportDataBox() {

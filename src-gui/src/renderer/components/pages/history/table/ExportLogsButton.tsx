@@ -1,5 +1,5 @@
 import { getLogsOfSwap, saveLogFiles } from "renderer/rpc";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { store } from "renderer/store/storeRenderer";
 import { ButtonProps } from "@mui/material";
 import { logsToRawString } from "utils/parseUtils";

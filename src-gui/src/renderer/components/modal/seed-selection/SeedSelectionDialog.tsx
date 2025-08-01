@@ -24,7 +24,7 @@ import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { open } from "@tauri-apps/plugin-dialog";
 import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
