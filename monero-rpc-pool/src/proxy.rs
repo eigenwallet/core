@@ -326,6 +326,7 @@ impl RequestDifferentiator for CloneableRequest {
             // than perhaps how far the wallet is behind or the restore
             // height.
             "/getblocks.bin" => true,
+            "/gethashes.bin" => true,
             _ => false,
         }
     }
