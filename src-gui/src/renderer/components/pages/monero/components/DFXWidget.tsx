@@ -90,9 +90,15 @@ export default function DfxButton() {
   );
 
   if (useIsMobile()) {
-    return <DFXWidgetMobile open={dfxUrl != null} onOpen={handleOpenDfx} onClose={handleCloseModal}>
-      {content}
-    </DFXWidgetMobile>;
+    return (
+      <DFXWidgetMobile
+        open={dfxUrl != null}
+        onOpen={handleOpenDfx}
+        onClose={handleCloseModal}
+      >
+        {content}
+      </DFXWidgetMobile>
+    );
   } else {
     return (
       <DFXWidgetDesktop
@@ -152,12 +158,7 @@ function DFXWidgetDesktop({
         />
       </Tooltip>
 
-      <Dialog
-        open={open}
-        onClose={handleCloseModal}
-        maxWidth="lg"
-        fullWidth
-      >
+      <Dialog open={open} onClose={handleCloseModal} maxWidth="lg" fullWidth>
         {children}
       </Dialog>
     </>

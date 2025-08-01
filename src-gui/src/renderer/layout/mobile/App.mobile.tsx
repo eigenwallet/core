@@ -8,6 +8,7 @@ import UpdaterDialog from "renderer/components/modal/updater/UpdaterDialog";
 import HomePage from "./pages/HomePage";
 
 import GlobalSnackbarProvider from "renderer/components/snackbar/GlobalSnackbarProvider";
+import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
   return (
@@ -32,9 +33,9 @@ function InnerContent() {
     >
       <Routes>
         <Route path="/" element={<HomePage />} />
-        {/* <Route path="/history" element={<HistoryPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/feedback" element={<FeedbackPage />} /> */}
+        <Route path="/settings" element={<SettingsPage />} />
+        {/* <Route path="/history" element={<HistoryPage />} /> */}
+        {/* <Route path="/feedback" element={<FeedbackPage />} /> */}
       </Routes>
     </Box>
   );

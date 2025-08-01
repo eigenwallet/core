@@ -38,11 +38,13 @@ import BitcoinWalletOverview from "renderer/components/features/wallet/BitcoinWa
 import ReceiveButton from "renderer/components/features/wallet/ReceiveButton.mobile";
 import SendButton from "renderer/components/features/wallet/SendButton.mobile";
 import DFXButton from "renderer/components/pages/monero/components/DFXWidget";
+import { useNavigate } from "react-router-dom";
 
 /**
  * Mobile HomePage - displays wallet overview with real balance and transaction data
  */
 export default function HomePage() {
+  const navigate = useNavigate();
   const theme = useTheme();
   const { balance, history, mainAddress, syncProgress } = useAppSelector(
     (state) => state.wallet.state,
@@ -86,7 +88,11 @@ export default function HomePage() {
             sx={{ ml: 0.5, verticalAlign: "middle" }}
           />
         </Typography>
-        <IconButton size="small" color="inherit">
+        <IconButton
+          size="small"
+          color="inherit"
+          onClick={() => navigate("/settings", { viewTransition: true })}
+        >
           <SettingsIcon />
         </IconButton>
       </Stack>
@@ -168,33 +174,6 @@ export default function HomePage() {
         <HelpOutlineIcon />
       </IconButton>
     </Box>
-  );
-}
-
-// Reusable action button component
-function ActionButton({
-  icon,
-  label,
-}: {
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <Button
-      variant="text"
-      sx={{
-        minWidth: 64,
-        flexDirection: "column",
-        color: "inherit",
-        textTransform: "none",
-        p: 0,
-      }}
-    >
-      {icon}
-      <Typography variant="caption" mt={0.5}>
-        {label}
-      </Typography>
-    </Button>
   );
 }
 
