@@ -32,6 +32,9 @@ export default function WalletOverview({
 
   const isSyncing = syncProgress && syncProgress.progress_percentage < 100;
   const blocksLeft = syncProgress?.target_block - syncProgress?.current_block;
+  
+  // Treat blocksLeft = 1 as if we have no direct knowledge
+  const hasDirectKnowledge = blocksLeft != null && blocksLeft > 1;
 
   // syncProgress.progress_percentage is not good to display
   // assuming we have an old wallet, eventually we will always only use the last few cm of the progress bar
@@ -46,6 +49,8 @@ export default function WalletOverview({
   const progressPercentage =
     lowestCurrentBlock === null || !syncProgress
       ? syncProgress?.progress_percentage || 0
+      : syncProgress.target_block === lowestCurrentBlock
+      ? 100 // Fully synced when target equals lowest current block
       : Math.max(
           0,
           Math.min(
@@ -56,7 +61,7 @@ export default function WalletOverview({
           ),
         );
 
-  const isStuck = poolStatus.bandwidth_kb_per_sec < 0.01;
+  const isStuck = poolStatus?.bandwidth_kb_per_sec != null && poolStatus.bandwidth_kb_per_sec < 0.01;
 
   // Calculate estimated time remaining for sync
   const formatTimeRemaining = (seconds: number): string => {
@@ -67,7 +72,7 @@ export default function WalletOverview({
   };
 
   const estimatedTimeRemaining =
-    blocksLeft && poolStatus?.bandwidth_kb_per_sec > 0
+    hasDirectKnowledge && poolStatus?.bandwidth_kb_per_sec != null && poolStatus.bandwidth_kb_per_sec > 0
       ? (blocksLeft * 130) / poolStatus.bandwidth_kb_per_sec // blocks * 130kb / kb_per_sec = seconds
       : null;
 
@@ -75,13 +80,13 @@ export default function WalletOverview({
     <Card sx={{ p: 2, position: "relative", borderRadius: 2 }} elevation={4}>
       {syncProgress && syncProgress.progress_percentage < 100 && (
         <LinearProgress
-          value={progressPercentage}
+          value={hasDirectKnowledge ? progressPercentage : undefined}
           valueBuffer={
             // If the bandwidth is low, we may not be making progress
             // We don't show the buffer in this case
-            isStuck ? undefined : progressPercentage
+            hasDirectKnowledge && !isStuck ? progressPercentage : undefined
           }
-          variant="buffer"
+          variant={hasDirectKnowledge ? "buffer" : "indeterminate"}
           sx={{
             position: "absolute",
             top: 0,
@@ -173,7 +178,7 @@ export default function WalletOverview({
             pulsating={isSyncing}
           />
           <Box sx={{ textAlign: "right" }}>
-            {isSyncing && (
+            {isSyncing && hasDirectKnowledge && (
               <Typography variant="body2" color="text.secondary">
                 {blocksLeft?.toLocaleString()} blocks left
               </Typography>
@@ -187,7 +192,7 @@ export default function WalletOverview({
                 >
                   {estimatedTimeRemaining && !isStuck && (
                     <>{formatTimeRemaining(estimatedTimeRemaining)} left</>
-                  )} / {poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s
+                  )} / {poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? '0.0'} KB/s
                 </Typography>
               </>
             )}

@@ -76,8 +76,8 @@ export default function MoneroPoolHealthBox() {
           size="small"
         />
         <Chip
-          label={`${poolStatus.bandwidth_kb_per_sec.toFixed(1)} KB/s Bandwidth`}
-          color={poolStatus.bandwidth_kb_per_sec > 10 ? "info" : "default"}
+          label={`${poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? '0.0'} KB/s Bandwidth`}
+          color={poolStatus.bandwidth_kb_per_sec != null && poolStatus.bandwidth_kb_per_sec > 10 ? "info" : "default"}
           variant="outlined"
           size="small"
         />
