@@ -65,8 +65,7 @@ where
         spawn_blocking(move || balancer.get_or_init_client_sync(idx))
             .await
             .map_err(|e| {
-                Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Error::IOError(std::io::Error::other(
                     e.to_string(),
                 ))
             })?
@@ -97,8 +96,7 @@ where
         }
 
         // Return error if no client could be initialized
-        Err(Error::IOError(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        Err(Error::IOError(std::io::Error::other(
             "No client could be initialized",
         )))
     }
@@ -156,8 +154,7 @@ where
 
         match spawn_blocking(move || balancer.call_sync(&kind, f)).await {
             Ok(result) => result.map_err(|multi_error| multi_error.into()),
-            Err(e) => Err(Error::IOError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(e) => Err(Error::IOError(std::io::Error::other(
                 e.to_string(),
             ))),
         }
@@ -179,8 +176,7 @@ where
 
         match spawn_blocking(move || balancer.call_sync(&kind, f)).await {
             Ok(result) => result.map_err(|multi_error| multi_error.into()),
-            Err(e) => Err(Error::IOError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(e) => Err(Error::IOError(std::io::Error::other(
                 e.to_string(),
             ))),
         }
@@ -209,8 +205,7 @@ where
                     "Failed to spawn blocking task for operation '{}'",
                     kind_for_error
                 );
-                let error = Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                let error = Error::IOError(std::io::Error::other(
                     e.to_string(),
                 ));
                 Err(MultiError::new(vec![error], context))
@@ -372,8 +367,7 @@ where
                             Ok(client) => tokio::task::spawn_blocking(move || f(&client))
                                 .await
                                 .map_err(|e| {
-                                    Error::IOError(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
+                                    Error::IOError(std::io::Error::other(
                                         e.to_string(),
                                     ))
                                 })?,
@@ -394,8 +388,7 @@ where
                 Err(err) if err.is_cancelled() => {
                     // We one task is cancelled, we do not continue
                     // Most likely our function got cancelled
-                    return Err(Error::IOError(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    return Err(Error::IOError(std::io::Error::other(
                         "Task cancelled",
                     )));
                 }
@@ -664,8 +657,7 @@ impl Clone for MultiError {
             .errors
             .iter()
             .map(|e| {
-                Error::IOError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Error::IOError(std::io::Error::other(
                     e.to_string(),
                 ))
             })
@@ -719,9 +711,8 @@ impl MultiError {
 
     /// Convert to a single Error (uses the last error, or creates a generic one)
     pub fn into_single_error(self) -> Error {
-        self.errors.into_iter().last().unwrap_or_else(|| {
-            Error::IOError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+        self.errors.into_iter().next_back().unwrap_or_else(|| {
+            Error::IOError(std::io::Error::other(
                 format!("All operations failed: {}", self.context),
             ))
         })
