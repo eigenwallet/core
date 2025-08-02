@@ -11,7 +11,7 @@ use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{dns, SwarmBuilder};
 use libp2p::{identity, rendezvous, Multiaddr, PeerId, Swarm, Transport};
-use libp2p_tor::{TorTransport, AddressConversion};
+use libp2p_tor::{AddressConversion, TorTransport};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -19,9 +19,9 @@ use structopt::StructOpt;
 use tokio::fs;
 use tokio::fs::{DirBuilder, OpenOptions};
 use tokio::io::AsyncWriteExt;
+use tor_hsservice::config::OnionServiceConfigBuilder;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
-use tor_hsservice::config::OnionServiceConfigBuilder;
 
 #[derive(Debug, StructOpt)]
 struct Cli {
@@ -207,8 +207,13 @@ fn create_swarm(identity: identity::Keypair) -> Result<Swarm<Behaviour>> {
     Ok(swarm)
 }
 
-async fn create_swarm_with_onion(identity: identity::Keypair, onion_port: u16) -> Result<Swarm<Behaviour>> {
-    let (transport, onion_address) = create_transport_with_onion(&identity, onion_port).await.context("Failed to create transport with onion")?;
+async fn create_swarm_with_onion(
+    identity: identity::Keypair,
+    onion_port: u16,
+) -> Result<Swarm<Behaviour>> {
+    let (transport, onion_address) = create_transport_with_onion(&identity, onion_port)
+        .await
+        .context("Failed to create transport with onion")?;
     let rendezvous = rendezvous::server::Behaviour::new(rendezvous::server::Config::default());
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
@@ -236,13 +241,17 @@ fn create_transport(identity: &identity::Keypair) -> Result<Boxed<(PeerId, Strea
     Ok(transport)
 }
 
-async fn create_transport_with_onion(identity: &identity::Keypair, onion_port: u16) -> Result<(Boxed<(PeerId, StreamMuxerBox)>, Multiaddr)> {
+async fn create_transport_with_onion(
+    identity: &identity::Keypair,
+    onion_port: u16,
+) -> Result<(Boxed<(PeerId, StreamMuxerBox)>, Multiaddr)> {
     // Create TCP transport
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
     // Create Tor transport
-    let mut tor_transport = TorTransport::unbootstrapped().await?
+    let mut tor_transport = TorTransport::unbootstrapped()
+        .await?
         .with_address_conversion(AddressConversion::IpAndDns);
 
     // Create onion service configuration
@@ -264,7 +273,10 @@ async fn create_transport_with_onion(identity: &identity::Keypair, onion_port: u
     let onion_address = tor_transport.add_onion_service(onion_service_config, onion_port)?;
 
     // Combine transports
-    let combined_transport = tcp_with_dns.boxed().or_transport(tor_transport.boxed()).boxed();
+    let combined_transport = tcp_with_dns
+        .boxed()
+        .or_transport(tor_transport.boxed())
+        .boxed();
 
     let transport = authenticate_and_multiplex(combined_transport, &identity).unwrap();
 

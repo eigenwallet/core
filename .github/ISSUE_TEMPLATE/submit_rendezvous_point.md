@@ -7,9 +7,10 @@ assignees: ""
 ---
 
 **Rendezvous Server Address**
+
 ```
 /dns4/your.domain/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnAb4dsj3
 ```
 
-**Who is running the server?*
+*_Who is running the server?_
 Username? How is this individual known within the community?

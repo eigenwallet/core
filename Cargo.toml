@@ -18,12 +18,21 @@ members = [
 ]
 
 [workspace.dependencies]
-anyhow = "1"
+# Bitcoin Dev Kit
+bdk = "0.28"
+bdk_chain = "0.23.0"
+bdk_core = "0.6.0"
+bdk_electrum = { version = "0.23.0", default-features = false }
+bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
+
+anyhow = "1"
+backoff = { version = "0.4", features = ["futures", "tokio"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 libp2p = { version = "0.53.2" }
 monero = { version = "0.12", features = ["serde_support"] }
+once_cell = "1.19"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
@@ -39,21 +48,16 @@ url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 
 # Tor/Arti crates
-arti-client = { git = "https://github.com/eigenwallet/arti", rev = "5db9ecbd2872d76243dd62be887efd67e4609c87", default-features = false }
-tor-cell = { git = "https://github.com/eigenwallet/arti", rev = "5db9ecbd2872d76243dd62be887efd67e4609c87" }
-tor-hsservice = { git = "https://github.com/eigenwallet/arti", rev = "5db9ecbd2872d76243dd62be887efd67e4609c87" }
-tor-proto = { git = "https://github.com/eigenwallet/arti", rev = "5db9ecbd2872d76243dd62be887efd67e4609c87" }
-tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "5db9ecbd2872d76243dd62be887efd67e4609c87" }
+arti-client = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841", default-features = false }
+tor-cell = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841" }
+tor-hsservice = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841" }
+tor-proto = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841" }
+tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841" }
 
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51
 jsonrpc_client = { git = "https://github.com/delta1/rust-jsonrpc-client.git", rev = "3b6081697cd616c952acb9c2f02d546357d35506" }
 monero = { git = "https://github.com/comit-network/monero-rs", rev = "818f38b" }
-
-# patch until new release https://github.com/bitcoindevkit/bdk/pull/1766
-bdk_wallet = { git = "https://github.com/Einliterflasche/bdk", branch = "bump/rusqlite-0.32", package = "bdk_wallet" }
-bdk_electrum = { git = "https://github.com/Einliterflasche/bdk", branch = "bump/rusqlite-0.32", package = "bdk_electrum" }
-bdk_chain = { git = "https://github.com/Einliterflasche/bdk", branch = "bump/rusqlite-0.32", package = "bdk_chain" }
 
 [workspace.lints]
 rust.unused_crate_dependencies = "warn"

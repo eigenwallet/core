@@ -36,6 +36,7 @@ cargo run --release -- --onion
 ```
 
 This will:
+
 - Bootstrap a connection to the Tor network
 - Create a new onion service
 - Listen on both TCP (port 8888) and the onion address

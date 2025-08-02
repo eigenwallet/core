@@ -9,8 +9,8 @@ anyhow = "1"
 futures = { workspace = true }
 libp2p = { workspace = true, default-features = false, features = ["rendezvous", "tcp", "yamux", "dns", "noise", "ping", "websocket", "tokio", "macros"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
-tor-hsservice = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net", "io-util"] }
+tor-hsservice = { workspace = true }
 tracing = { workspace = true, features = ["attributes"] }
 tracing-subscriber = { workspace = true, default-features = false, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log", "json"] }
 

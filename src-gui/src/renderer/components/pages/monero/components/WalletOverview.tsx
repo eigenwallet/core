@@ -32,7 +32,7 @@ export default function WalletOverview({
 
   const isSyncing = syncProgress && syncProgress.progress_percentage < 100;
   const blocksLeft = syncProgress?.target_block - syncProgress?.current_block;
-  
+
   // Treat blocksLeft = 1 as if we have no direct knowledge
   const hasDirectKnowledge = blocksLeft != null && blocksLeft > 1;
 
@@ -50,18 +50,20 @@ export default function WalletOverview({
     lowestCurrentBlock === null || !syncProgress
       ? syncProgress?.progress_percentage || 0
       : syncProgress.target_block === lowestCurrentBlock
-      ? 100 // Fully synced when target equals lowest current block
-      : Math.max(
-          0,
-          Math.min(
-            100,
-            ((syncProgress.current_block - lowestCurrentBlock) /
-              (syncProgress.target_block - lowestCurrentBlock)) *
+        ? 100 // Fully synced when target equals lowest current block
+        : Math.max(
+            0,
+            Math.min(
               100,
-          ),
-        );
+              ((syncProgress.current_block - lowestCurrentBlock) /
+                (syncProgress.target_block - lowestCurrentBlock)) *
+                100,
+            ),
+          );
 
-  const isStuck = poolStatus?.bandwidth_kb_per_sec != null && poolStatus.bandwidth_kb_per_sec < 0.01;
+  const isStuck =
+    poolStatus?.bandwidth_kb_per_sec != null &&
+    poolStatus.bandwidth_kb_per_sec < 0.01;
 
   // Calculate estimated time remaining for sync
   const formatTimeRemaining = (seconds: number): string => {
@@ -72,7 +74,9 @@ export default function WalletOverview({
   };
 
   const estimatedTimeRemaining =
-    hasDirectKnowledge && poolStatus?.bandwidth_kb_per_sec != null && poolStatus.bandwidth_kb_per_sec > 0
+    hasDirectKnowledge &&
+    poolStatus?.bandwidth_kb_per_sec != null &&
+    poolStatus.bandwidth_kb_per_sec > 0
       ? (blocksLeft * 130) / poolStatus.bandwidth_kb_per_sec // blocks * 130kb / kb_per_sec = seconds
       : null;
 
@@ -192,7 +196,8 @@ export default function WalletOverview({
                 >
                   {estimatedTimeRemaining && !isStuck && (
                     <>{formatTimeRemaining(estimatedTimeRemaining)} left</>
-                  )} / {poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? '0.0'} KB/s
+                  )}{" "}
+                  / {poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? "0.0"} KB/s
                 </Typography>
               </>
             )}
