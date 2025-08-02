@@ -8352,8 +8352,10 @@ dependencies = [
  "atty",
  "futures",
  "libp2p",
+ "libp2p-tor",
  "structopt",
  "tokio",
+ "tor-hsservice",
  "tracing",
  "tracing-subscriber",
 ]

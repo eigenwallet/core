@@ -22,7 +22,7 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
     static POOL_SIZE: usize = 10;
 
     // Get the pool of nodes
-    let available_pool =  state
+    let available_pool = state
         .node_pool
         .get_top_reliable_nodes(POOL_SIZE)
         .await
@@ -37,17 +37,15 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
         });
 
     let (request, pool) = match available_pool {
-        Ok(pool) => {
-            match CloneableRequest::from_request(request).await {
-                Ok(cloneable_request) => (cloneable_request, pool),
-                Err(e) => {
-                    return Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::from(e.to_string()))
-                        .unwrap_or_else(|_| Response::new(Body::empty()));
-                }
+        Ok(pool) => match CloneableRequest::from_request(request).await {
+            Ok(cloneable_request) => (cloneable_request, pool),
+            Err(e) => {
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from(e.to_string()))
+                    .unwrap_or_else(|_| Response::new(Body::empty()));
             }
-        }
+        },
         Err(e) => {
             // If we can't get a pool, return an error immediately
             return Response::builder()
