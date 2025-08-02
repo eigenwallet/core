@@ -11,6 +11,7 @@ use libp2p::tcp;
 use libp2p::yamux;
 use libp2p::{dns, SwarmBuilder};
 use libp2p::{identity, rendezvous, Multiaddr, PeerId, Swarm, Transport};
+use libp2p_tor::{TorTransport, AddressConversion};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -20,6 +21,7 @@ use tokio::fs::{DirBuilder, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
+use tor_hsservice::config::OnionServiceConfigBuilder;
 
 #[derive(Debug, StructOpt)]
 struct Cli {
@@ -32,6 +34,14 @@ struct Cli {
     /// Port used for listening on TCP (default)
     #[structopt(long, default_value = "8888")]
     listen_tcp: u16,
+
+    /// Enable listening on Tor onion service
+    #[structopt(long)]
+    onion: bool,
+
+    /// Port for the onion service (only used if --onion is enabled)
+    #[structopt(long, default_value = "8888")]
+    onion_port: u16,
 
     /// Format logs as JSON
     #[structopt(long)]
@@ -53,7 +63,11 @@ async fn main() -> Result<()> {
 
     let identity = identity::Keypair::from(ed25519::Keypair::from(secret_key));
 
-    let mut swarm = create_swarm(identity)?;
+    let mut swarm = if cli.onion {
+        create_swarm_with_onion(identity, cli.onion_port).await?
+    } else {
+        create_swarm(identity)?
+    };
 
     tracing::info!(peer_id=%swarm.local_peer_id(), "Rendezvous server peer id");
 
@@ -193,6 +207,26 @@ fn create_swarm(identity: identity::Keypair) -> Result<Swarm<Behaviour>> {
     Ok(swarm)
 }
 
+async fn create_swarm_with_onion(identity: identity::Keypair, onion_port: u16) -> Result<Swarm<Behaviour>> {
+    let (transport, onion_address) = create_transport_with_onion(&identity, onion_port).await.context("Failed to create transport with onion")?;
+    let rendezvous = rendezvous::server::Behaviour::new(rendezvous::server::Config::default());
+
+    let mut swarm = SwarmBuilder::with_existing_identity(identity)
+        .with_tokio()
+        .with_other_transport(|_| transport)?
+        .with_behaviour(|_| rendezvous)?
+        .build();
+
+    // Listen on the onion address
+    swarm
+        .listen_on(onion_address.clone())
+        .context("Failed to listen on onion address")?;
+
+    tracing::info!(%onion_address, "Onion service configured");
+
+    Ok(swarm)
+}
+
 fn create_transport(identity: &identity::Keypair) -> Result<Boxed<(PeerId, StreamMuxerBox)>> {
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
@@ -200,6 +234,41 @@ fn create_transport(identity: &identity::Keypair) -> Result<Boxed<(PeerId, Strea
     let transport = authenticate_and_multiplex(tcp_with_dns.boxed(), &identity).unwrap();
 
     Ok(transport)
+}
+
+async fn create_transport_with_onion(identity: &identity::Keypair, onion_port: u16) -> Result<(Boxed<(PeerId, StreamMuxerBox)>, Multiaddr)> {
+    // Create TCP transport
+    let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
+    let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
+
+    // Create Tor transport
+    let mut tor_transport = TorTransport::unbootstrapped().await?
+        .with_address_conversion(AddressConversion::IpAndDns);
+
+    // Create onion service configuration
+    let onion_service_config = OnionServiceConfigBuilder::default()
+        .nickname(
+            identity
+                .public()
+                .to_peer_id()
+                .to_base58()
+                .to_ascii_lowercase()
+                .parse()
+                .unwrap(),
+        )
+        .num_intro_points(3)
+        .build()
+        .unwrap();
+
+    // Add onion service and get the address
+    let onion_address = tor_transport.add_onion_service(onion_service_config, onion_port)?;
+
+    // Combine transports
+    let combined_transport = tcp_with_dns.boxed().or_transport(tor_transport.boxed()).boxed();
+
+    let transport = authenticate_and_multiplex(combined_transport, &identity).unwrap();
+
+    Ok((transport, onion_address))
 }
 
 fn authenticate_and_multiplex<T>(
