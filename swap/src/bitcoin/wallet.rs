@@ -2770,8 +2770,6 @@ pub mod pre_1_0_0_bdk {
             let wallet_dir = data_dir.join(WALLET);
             let database = bdk::sled::open(wallet_dir)?.open_tree(SLED_TREE_NAME)?;
 
-            // Network is already the correct type
-
             let wallet = bdk::Wallet::new(
                 bdk::template::Bip84(xprivkey, KeychainKind::External),
                 Some(bdk::template::Bip84(xprivkey, KeychainKind::Internal)),
