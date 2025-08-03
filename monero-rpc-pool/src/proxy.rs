@@ -154,7 +154,7 @@ async fn proxy_to_multiple_nodes(
             }
             None => {
                 let response_size_bytes = cloneable_response.body.len() as u64;
-                tracing::debug!(
+                tracing::trace!(
                     "Proxy request to {} succeeded with size {}kb",
                     node_uri,
                     (response_size_bytes as f64 / 1024.0)
@@ -218,7 +218,7 @@ async fn proxy_to_single_node(
     tor_client: Option<crate::TorClientArc>,
 ) -> Result<Response, SingleRequestError> {
     if request.clearnet_whitelisted() {
-        tracing::debug!("Request is whitelisted, sending over clearnet");
+        tracing::trace!("Request is whitelisted, sending over clearnet");
     }
 
     let response = match tor_client {
@@ -240,7 +240,7 @@ async fn proxy_to_single_node(
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
-            tracing::debug!(
+            tracing::trace!(
                 "Connected to node via Tor{}",
                 if node.0 == "https" { " with TLS" } else { "" }
             );
@@ -271,7 +271,7 @@ async fn proxy_to_single_node(
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
-            tracing::debug!(
+            tracing::trace!(
                 "Connected to node via clearnet{}",
                 if node.0 == "https" { " with TLS" } else { "" }
             );
