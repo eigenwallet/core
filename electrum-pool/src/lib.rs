@@ -64,11 +64,7 @@ where
         let balancer = self.clone();
         spawn_blocking(move || balancer.get_or_init_client_sync(idx))
             .await
-            .map_err(|e| {
-                Error::IOError(std::io::Error::other(
-                    e.to_string(),
-                ))
-            })?
+            .map_err(|e| Error::IOError(std::io::Error::other(e.to_string())))?
     }
 
     /// Create a new balancer from a list of Electrum URLs with default configuration.
@@ -154,9 +150,7 @@ where
 
         match spawn_blocking(move || balancer.call_sync(&kind, f)).await {
             Ok(result) => result.map_err(|multi_error| multi_error.into()),
-            Err(e) => Err(Error::IOError(std::io::Error::other(
-                e.to_string(),
-            ))),
+            Err(e) => Err(Error::IOError(std::io::Error::other(e.to_string()))),
         }
     }
 
@@ -176,9 +170,7 @@ where
 
         match spawn_blocking(move || balancer.call_sync(&kind, f)).await {
             Ok(result) => result.map_err(|multi_error| multi_error.into()),
-            Err(e) => Err(Error::IOError(std::io::Error::other(
-                e.to_string(),
-            ))),
+            Err(e) => Err(Error::IOError(std::io::Error::other(e.to_string()))),
         }
     }
 
@@ -205,9 +197,7 @@ where
                     "Failed to spawn blocking task for operation '{}'",
                     kind_for_error
                 );
-                let error = Error::IOError(std::io::Error::other(
-                    e.to_string(),
-                ));
+                let error = Error::IOError(std::io::Error::other(e.to_string()));
                 Err(MultiError::new(vec![error], context))
             }
         }
@@ -367,9 +357,7 @@ where
                             Ok(client) => tokio::task::spawn_blocking(move || f(&client))
                                 .await
                                 .map_err(|e| {
-                                    Error::IOError(std::io::Error::other(
-                                        e.to_string(),
-                                    ))
+                                    Error::IOError(std::io::Error::other(e.to_string()))
                                 })?,
                             Err(e) => Err(e),
                         }
@@ -388,9 +376,7 @@ where
                 Err(err) if err.is_cancelled() => {
                     // We one task is cancelled, we do not continue
                     // Most likely our function got cancelled
-                    return Err(Error::IOError(std::io::Error::other(
-                        "Task cancelled",
-                    )));
+                    return Err(Error::IOError(std::io::Error::other("Task cancelled")));
                 }
                 Err(e) => {
                     trace!(task_index = task_idx, error = ?e, "Failed to spawn thread for parallel request");
@@ -656,11 +642,7 @@ impl Clone for MultiError {
         let cloned_errors = self
             .errors
             .iter()
-            .map(|e| {
-                Error::IOError(std::io::Error::other(
-                    e.to_string(),
-                ))
-            })
+            .map(|e| Error::IOError(std::io::Error::other(e.to_string())))
             .collect();
 
         Self {
@@ -712,9 +694,10 @@ impl MultiError {
     /// Convert to a single Error (uses the last error, or creates a generic one)
     pub fn into_single_error(self) -> Error {
         self.errors.into_iter().next_back().unwrap_or_else(|| {
-            Error::IOError(std::io::Error::other(
-                format!("All operations failed: {}", self.context),
-            ))
+            Error::IOError(std::io::Error::other(format!(
+                "All operations failed: {}",
+                self.context
+            )))
         })
     }
 }

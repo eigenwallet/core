@@ -83,6 +83,7 @@ async fn proxy_to_multiple_nodes(
         node: (String, String, i64),
         error: HandlerError,
     ) {
+        tracing::debug!("Proxy request to {} failed: {}", display_node(&node), error);
         errors.push((node, error));
     }
 
@@ -149,12 +150,11 @@ async fn proxy_to_multiple_nodes(
 
         match error {
             Some(error) => {
-                tracing::info!("Proxy request to {} failed: {}", node_uri, error);
                 push_error(&mut collected_errors, node, error);
             }
             None => {
                 let response_size_bytes = cloneable_response.body.len() as u64;
-                tracing::info!(
+                tracing::debug!(
                     "Proxy request to {} succeeded with size {}kb",
                     node_uri,
                     (response_size_bytes as f64 / 1024.0)
@@ -188,9 +188,13 @@ async fn maybe_wrap_with_tls(
     host: &str,
 ) -> Result<Box<dyn HyperStream>, SingleRequestError> {
     if scheme == "https" {
-        let tls_connector = TlsConnector::builder().build().map_err(|e| {
-            SingleRequestError::ConnectionError(format!("TLS connector error: {}", e))
-        })?;
+        let tls_connector = TlsConnector::builder()
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+            .build()
+            .map_err(|e| {
+                SingleRequestError::ConnectionError(format!("TLS connector error: {}", e))
+            })?;
         let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
 
         let tls_stream = tls_connector.connect(host, stream).await.map_err(|e| {
@@ -214,7 +218,7 @@ async fn proxy_to_single_node(
     tor_client: Option<crate::TorClientArc>,
 ) -> Result<Response, SingleRequestError> {
     if request.clearnet_whitelisted() {
-        tracing::info!("Request is whitelisted, sending over clearnet");
+        tracing::debug!("Request is whitelisted, sending over clearnet");
     }
 
     let response = match tor_client {
@@ -236,7 +240,7 @@ async fn proxy_to_single_node(
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
-            tracing::info!(
+            tracing::debug!(
                 "Connected to node via Tor{}",
                 if node.0 == "https" { " with TLS" } else { "" }
             );
@@ -267,7 +271,7 @@ async fn proxy_to_single_node(
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
-            tracing::info!(
+            tracing::debug!(
                 "Connected to node via clearnet{}",
                 if node.0 == "https" { " with TLS" } else { "" }
             );
