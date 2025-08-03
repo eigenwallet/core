@@ -4,15 +4,15 @@ use axum::{
     http::{request::Parts, response, StatusCode},
     response::Response,
 };
+use futures::{stream::Stream, StreamExt};
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
+use std::pin::Pin;
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_native_tls::native_tls::TlsConnector;
 use tracing::{error, info_span, Instrument};
-use futures::{stream::Stream, StreamExt};
-use std::pin::Pin;
-use std::sync::Arc;
 
 use crate::AppState;
 
@@ -121,11 +121,14 @@ async fn proxy_to_multiple_nodes(
         let latency = latency.elapsed().as_millis() as f64;
 
         // Convert response to streamable to check first 1KB for errors
-        let streamable_response = StreamableResponse::from_response_with_tracking(response, Some(state.node_pool.clone()))
-            .await
-            .map_err(|e| {
-                HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
-            })?;
+        let streamable_response = StreamableResponse::from_response_with_tracking(
+            response,
+            Some(state.node_pool.clone()),
+        )
+        .await
+        .map_err(|e| {
+            HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
+        })?;
 
         let error = match streamable_response.get_jsonrpc_error() {
             Some(error) => {
@@ -222,7 +225,11 @@ async fn proxy_to_single_node(
     }
 
     let use_tor = match &state.tor_client {
-        Some(tc) if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() => true,
+        Some(tc)
+            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
+        {
+            true
+        }
         _ => false,
     };
 
@@ -233,7 +240,7 @@ async fn proxy_to_single_node(
 
     if guarded_sender.is_none() {
         // Need to build a new TCP/Tor stream.
-                let boxed_stream = if use_tor {
+        let boxed_stream = if use_tor {
             let tor_client = state.tor_client.as_ref().ok_or_else(|| {
                 SingleRequestError::ConnectionError("Tor requested but client missing".into())
             })?;
@@ -260,7 +267,12 @@ async fn proxy_to_single_node(
         });
 
         // Insert into pool and obtain exclusive access for this request.
-        guarded_sender = Some(state.connection_pool.insert_and_lock(key.clone(), sender).await);
+        guarded_sender = Some(
+            state
+                .connection_pool
+                .insert_and_lock(key.clone(), sender)
+                .await,
+        );
 
         tracing::trace!(
             "Established new connection via {}{}",
@@ -360,15 +372,18 @@ where
 {
     type Item = Result<Vec<u8>, axum::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         let result = Pin::new(&mut self.inner).poll_next(cx);
-        
+
         if let std::task::Poll::Ready(Some(Ok(ref chunk))) = result {
             let chunk_size = chunk.len() as u64;
             self.bytes_transferred += chunk_size;
             self.node_pool.record_bandwidth(chunk_size);
         }
-        
+
         result
     }
 }
@@ -438,12 +453,12 @@ impl StreamableResponse {
 
     /// Convert a streaming response with bandwidth tracking
     pub async fn from_response_with_tracking(
-        response: Response<Body>, 
-        node_pool: Option<Arc<crate::pool::NodePool>>
+        response: Response<Body>,
+        node_pool: Option<Arc<crate::pool::NodePool>>,
     ) -> Result<Self, axum::Error> {
         let (parts, body) = response.into_parts();
         let mut body_stream = body.into_data_stream();
-        
+
         let mut first_chunk = Vec::new();
         let mut remaining_chunks = Vec::new();
         let mut total_read = 0;
@@ -454,7 +469,7 @@ impl StreamableResponse {
                 Some(Ok(chunk)) => {
                     let chunk_bytes = chunk.to_vec();
                     let needed = Self::ERROR_CHECK_SIZE - total_read;
-                    
+
                     if chunk_bytes.len() <= needed {
                         // Entire chunk goes to first_chunk
                         first_chunk.extend_from_slice(&chunk_bytes);
@@ -478,22 +493,28 @@ impl StreamableResponse {
         }
 
         // Create stream for remaining data
-        let remaining_stream = if !remaining_chunks.is_empty() || total_read >= Self::ERROR_CHECK_SIZE {
-            let initial_chunks = remaining_chunks.into_iter().map(Ok);
-            let rest_stream = body_stream.map(|result| result.map(|chunk| chunk.to_vec()).map_err(|e| axum::Error::new(e)));
-            let combined_stream = futures::stream::iter(initial_chunks).chain(rest_stream);
-            
-            // Wrap with bandwidth tracking if we have a node pool
-            let final_stream: Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>> = if let Some(node_pool) = node_pool.clone() {
-                Box::pin(BandwidthTrackingStream::new(combined_stream, node_pool))
+        let remaining_stream =
+            if !remaining_chunks.is_empty() || total_read >= Self::ERROR_CHECK_SIZE {
+                let initial_chunks = remaining_chunks.into_iter().map(Ok);
+                let rest_stream = body_stream.map(|result| {
+                    result
+                        .map(|chunk| chunk.to_vec())
+                        .map_err(|e| axum::Error::new(e))
+                });
+                let combined_stream = futures::stream::iter(initial_chunks).chain(rest_stream);
+
+                // Wrap with bandwidth tracking if we have a node pool
+                let final_stream: Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>> =
+                    if let Some(node_pool) = node_pool.clone() {
+                        Box::pin(BandwidthTrackingStream::new(combined_stream, node_pool))
+                    } else {
+                        Box::pin(combined_stream)
+                    };
+
+                Some(final_stream)
             } else {
-                Box::pin(combined_stream)
+                None
             };
-            
-            Some(final_stream)
-        } else {
-            None
-        };
 
         Ok(StreamableResponse {
             parts,
@@ -517,7 +538,8 @@ impl StreamableResponse {
     pub fn into_response(self) -> Response<Body> {
         let body = if let Some(remaining_stream) = self.remaining_stream {
             // Create a stream that starts with the first chunk, then continues with the rest
-            let first_chunk_stream = futures::stream::once(futures::future::ready(Ok(self.first_chunk)));
+            let first_chunk_stream =
+                futures::stream::once(futures::future::ready(Ok(self.first_chunk)));
             let combined_stream = first_chunk_stream.chain(remaining_stream);
             Body::from_stream(combined_stream)
         } else {

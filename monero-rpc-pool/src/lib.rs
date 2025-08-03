@@ -31,11 +31,11 @@ impl ToNetworkString for Network {
 }
 
 pub mod config;
+pub mod connection_pool;
 pub mod database;
 pub mod pool;
 pub mod proxy;
 pub mod types;
-pub mod connection_pool;
 
 use config::Config;
 use database::Database;

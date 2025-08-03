@@ -440,7 +440,8 @@ export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> 
 }
 
 export async function getRestoreHeight(): Promise<GetRestoreHeightResponse> {
-  const restoreHeight = await invokeNoArgs<GetRestoreHeightResponse>("get_restore_height");
+  const restoreHeight =
+    await invokeNoArgs<GetRestoreHeightResponse>("get_restore_height");
   store.dispatch(setRestoreHeight(restoreHeight));
   return restoreHeight;
 }
@@ -502,7 +503,7 @@ export async function initializeMoneroWallet() {
   try {
     await Promise.all([
       getMoneroMainAddress().then((response) => {
-        store.dispatch(setMainAddress(response.address))
+        store.dispatch(setMainAddress(response.address));
       }),
       getMoneroBalance().then((response) => {
         store.dispatch(setBalance(response));

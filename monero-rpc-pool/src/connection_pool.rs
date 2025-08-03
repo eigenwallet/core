@@ -60,10 +60,14 @@ pub struct GuardedSender {
 
 impl std::ops::Deref for GuardedSender {
     type Target = HttpSender;
-    fn deref(&self) -> &Self::Target { &self.guard }
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
 }
 impl std::ops::DerefMut for GuardedSender {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.guard }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
 }
 
 impl GuardedSender {
@@ -77,7 +81,9 @@ impl GuardedSender {
 
 impl ConnectionPool {
     pub fn new() -> Self {
-        Self { inner: Arc::new(RwLock::new(HashMap::new())) }
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Try to fetch an idle connection.  Returns `None` if all are busy or the
@@ -90,7 +96,7 @@ impl ConnectionPool {
         let vec = vec_lock.write().await;
         let total_connections = vec.len();
         let mut busy_connections = 0;
-        
+
         for sender_mutex in vec.iter() {
             if let Ok(guard) = sender_mutex.clone().try_lock_owned() {
                 tracing::debug!(
@@ -107,7 +113,7 @@ impl ConnectionPool {
                 busy_connections += 1;
             }
         }
-        
+
         tracing::debug!(
             "No idle connections for {}://{}:{} (via_tor={}). Pool stats: 0/{} connections available",
             key.0, key.1, key.2, key.3, total_connections
@@ -117,11 +123,7 @@ impl ConnectionPool {
 
     /// Insert `sender` into the pool and return an *exclusive* handle ready to
     /// send the first request.
-    pub async fn insert_and_lock(
-        &self,
-        key: StreamKey,
-        sender: HttpSender,
-    ) -> GuardedSender {
+    pub async fn insert_and_lock(&self, key: StreamKey, sender: HttpSender) -> GuardedSender {
         let sender_mutex = Arc::new(Mutex::new(sender));
         let key_clone = key.clone();
         let sender_mutex_clone = sender_mutex.clone();
@@ -137,7 +139,7 @@ impl ConnectionPool {
         }
 
         let guard = sender_mutex.lock_owned().await;
-        
+
         // Log the new connection count after insertion
         let map_read = self.inner.read().await;
         if let Some(vec_lock) = map_read.get(&key_clone) {
@@ -148,7 +150,7 @@ impl ConnectionPool {
             );
         }
         drop(map_read);
-        
+
         GuardedSender {
             guard,
             pool: self.clone(),
@@ -164,7 +166,7 @@ impl ConnectionPool {
             let old_count = vec.len();
             vec.retain(|arc_mutex| !Arc::ptr_eq(arc_mutex, sender_arc));
             let new_count = vec.len();
-            
+
             if old_count != new_count {
                 tracing::debug!(
                     "Removed failed connection for {}://{}:{} (via_tor={}). Pool stats: {}/{} connections remaining",
