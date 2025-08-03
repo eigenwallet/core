@@ -51,7 +51,7 @@ struct Args {
 
     #[arg(short, long)]
     #[arg(help = "Enable Tor routing")]
-    #[arg(default_value = "true")]
+    #[arg(default_value = "false")]
     tor: bool,
 }
 
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::new("info"))
+        .with_env_filter(EnvFilter::new("debug"))
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
