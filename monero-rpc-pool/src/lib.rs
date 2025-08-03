@@ -35,6 +35,7 @@ pub mod database;
 pub mod pool;
 pub mod proxy;
 pub mod types;
+pub mod connection_pool;
 
 use config::Config;
 use database::Database;
@@ -45,6 +46,7 @@ use proxy::{proxy_handler, stats_handler};
 pub struct AppState {
     pub node_pool: Arc<NodePool>,
     pub tor_client: Option<TorClientArc>,
+    pub connection_pool: crate::connection_pool::ConnectionPool,
 }
 
 /// Manages background tasks for the RPC pool
@@ -93,7 +95,7 @@ async fn create_app_with_receiver(
     }
 
     // Send status updates every 10 seconds
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
     let node_pool_for_health_check = node_pool.clone();
     let status_update_handle = tokio::spawn(async move {
         loop {
@@ -112,6 +114,7 @@ async fn create_app_with_receiver(
     let app_state = AppState {
         node_pool,
         tor_client: config.tor_client,
+        connection_pool: crate::connection_pool::ConnectionPool::new(),
     };
 
     // Build the app
