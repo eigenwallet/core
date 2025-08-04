@@ -26,9 +26,10 @@ impl fmt::Display for NodeAddress {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeMetadata {
     pub id: i64,
+    #[serde(with = "swap_serde::monero::network")]
     pub network: Network,
     pub first_seen_at: DateTime<Utc>,
 }
@@ -87,10 +88,13 @@ impl NodeHealthStats {
 }
 
 /// A complete node record combining address, metadata, and health stats
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeRecord {
+    #[serde(flatten)]
     pub address: NodeAddress,
+    #[serde(flatten)]
     pub metadata: NodeMetadata,
+    #[serde(flatten)]
     pub health: NodeHealthStats,
 }
 

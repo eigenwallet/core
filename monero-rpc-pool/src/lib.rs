@@ -7,7 +7,6 @@ use axum::{
     Router,
 };
 
-
 use tokio::task::JoinHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tower_http::cors::CorsLayer;
@@ -15,8 +14,6 @@ use tracing::{error, info};
 
 /// Type alias for the Tor client used throughout the crate
 pub type TorClientArc = Arc<TorClient<TokioRustlsRuntime>>;
-
-
 
 pub mod config;
 pub mod connection_pool;

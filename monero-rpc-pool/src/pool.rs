@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 use tracing::warn;
 use typeshare::typeshare;
 
-use crate::database::{Database, network_to_string};
+use crate::database::{network_to_string, Database};
 use crate::types::NodeAddress;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -192,7 +192,7 @@ impl NodePool {
 
         tracing::debug!(
             "Getting top reliable nodes for network {} (target: {})",
-                            network_to_string(&self.network),
+            network_to_string(&self.network),
             limit
         );
 
@@ -238,7 +238,7 @@ impl NodePool {
         tracing::debug!(
             "Pool size: {} nodes for network {} (target: {})",
             selected_nodes.len(),
-                            network_to_string(&self.network),
+            network_to_string(&self.network),
             limit
         );
 
