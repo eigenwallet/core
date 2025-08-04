@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + CLI: Fixed a potential race condition where if the user closed the app while the Bitcoin was in the process of being published, manual recovery would be required to get to a recoverable state.
+- GUI + CLI + ASB: Fixed an issue where the Monero block height could not be fetched due to a bug in the Monero codebase
 
 ## [3.0.0-beta.4] - 2025-08-03
 
