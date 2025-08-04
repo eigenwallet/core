@@ -3,17 +3,88 @@ import { useAppSelector } from "store/hooks";
 import { PiconeroAmount } from "../../../other/Units";
 import { FiatPiconeroAmount } from "../../../other/Units";
 import StateIndicator from "./StateIndicator";
+import humanizeDuration from "humanize-duration";
+import { GetMoneroSyncProgressResponse } from "models/tauriModel";
+
+interface TimeEstimationResult {
+  blocksLeft: number;
+  hasDirectKnowledge: boolean;
+  isStuck: boolean;
+  formattedTimeRemaining: string | null;
+}
+
+const AVG_MONERO_BLOCK_SIZE_KB = 130;
+
+function useSyncTimeEstimation(
+  syncProgress: GetMoneroSyncProgressResponse | undefined,
+): TimeEstimationResult | null {
+  const poolStatus = useAppSelector((state) => state.pool.status);
+  const restoreHeight = useAppSelector(
+    (state) => state.wallet.state.restoreHeight,
+  );
+
+  if (restoreHeight == null || poolStatus == null) {
+    return null;
+  }
+
+  const currentBlock = syncProgress?.current_block ?? 0;
+  const targetBlock = syncProgress?.target_block ?? 0;
+  const restoreBlock = restoreHeight.height;
+
+  // For blocks before the restore height we only need to download the header
+  const fastBlocksLeft =
+    currentBlock < restoreBlock
+      ? Math.max(0, Math.min(restoreBlock, targetBlock) - currentBlock)
+      : 0;
+
+  // For blocks after (or equal to) the restore height we need the full block data
+  const fullBlocksLeft = Math.max(
+    0,
+    targetBlock - Math.max(currentBlock, restoreBlock),
+  );
+
+  const blocksLeft = fastBlocksLeft + fullBlocksLeft;
+
+  // Treat blocksLeft = 1 as if we have no direct knowledge
+  const hasDirectKnowledge = blocksLeft != null && blocksLeft > 1;
+
+  const isStuck =
+    poolStatus?.bandwidth_kb_per_sec != null &&
+    poolStatus.bandwidth_kb_per_sec < 1;
+
+  // A full blocks is 130kb, we assume a header is 2% of that
+  const estimatedDownloadLeftSize =
+    fullBlocksLeft * AVG_MONERO_BLOCK_SIZE_KB +
+    (fastBlocksLeft * AVG_MONERO_BLOCK_SIZE_KB) / 50;
+
+  const estimatedTimeRemaining =
+    hasDirectKnowledge &&
+    poolStatus?.bandwidth_kb_per_sec != null &&
+    poolStatus.bandwidth_kb_per_sec > 0
+      ? estimatedDownloadLeftSize / poolStatus.bandwidth_kb_per_sec
+      : null;
+
+  const formattedTimeRemaining = estimatedTimeRemaining
+    ? humanizeDuration(estimatedTimeRemaining * 1000, {
+        round: true,
+        largest: 1,
+      })
+    : null;
+
+  return {
+    blocksLeft,
+    hasDirectKnowledge,
+    isStuck,
+    formattedTimeRemaining,
+  };
+}
 
 interface WalletOverviewProps {
   balance?: {
     unlocked_balance: string;
     total_balance: string;
   };
-  syncProgress?: {
-    current_block: number;
-    target_block: number;
-    progress_percentage: number;
-  };
+  syncProgress?: GetMoneroSyncProgressResponse;
 }
 
 // Component for displaying wallet address and balance
@@ -26,15 +97,12 @@ export default function WalletOverview({
   );
 
   const poolStatus = useAppSelector((state) => state.pool.status);
+  const timeEstimation = useSyncTimeEstimation(syncProgress);
 
   const pendingBalance =
     parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance);
 
   const isSyncing = syncProgress && syncProgress.progress_percentage < 100;
-  const blocksLeft = syncProgress?.target_block - syncProgress?.current_block;
-
-  // Treat blocksLeft = 1 as if we have no direct knowledge
-  const hasDirectKnowledge = blocksLeft != null && blocksLeft > 1;
 
   // syncProgress.progress_percentage is not good to display
   // assuming we have an old wallet, eventually we will always only use the last few cm of the progress bar
@@ -61,36 +129,23 @@ export default function WalletOverview({
             ),
           );
 
-  const isStuck =
-    poolStatus?.bandwidth_kb_per_sec != null &&
-    poolStatus.bandwidth_kb_per_sec < 0.01;
-
-  // Calculate estimated time remaining for sync
-  const formatTimeRemaining = (seconds: number): string => {
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
-    return `${Math.round(seconds / 86400)}d`;
-  };
-
-  const estimatedTimeRemaining =
-    hasDirectKnowledge &&
-    poolStatus?.bandwidth_kb_per_sec != null &&
-    poolStatus.bandwidth_kb_per_sec > 0
-      ? (blocksLeft * 130) / poolStatus.bandwidth_kb_per_sec // blocks * 130kb / kb_per_sec = seconds
-      : null;
-
   return (
     <Card sx={{ p: 2, position: "relative", borderRadius: 2 }} elevation={4}>
       {syncProgress && syncProgress.progress_percentage < 100 && (
         <LinearProgress
-          value={hasDirectKnowledge ? progressPercentage : undefined}
+          value={
+            timeEstimation?.hasDirectKnowledge ? progressPercentage : undefined
+          }
           valueBuffer={
             // If the bandwidth is low, we may not be making progress
             // We don't show the buffer in this case
-            hasDirectKnowledge && !isStuck ? progressPercentage : undefined
+            timeEstimation?.hasDirectKnowledge && !timeEstimation?.isStuck
+              ? progressPercentage
+              : undefined
           }
-          variant={hasDirectKnowledge ? "buffer" : "indeterminate"}
+          variant={
+            timeEstimation?.hasDirectKnowledge ? "buffer" : "indeterminate"
+          }
           sx={{
             position: "absolute",
             top: 0,
@@ -105,7 +160,7 @@ export default function WalletOverview({
         sx={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
+          alignItems: "stretch",
           mb: 1,
         }}
       >
@@ -174,7 +229,8 @@ export default function WalletOverview({
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",
-            gap: 2,
+            justifyContent: "space-between",
+            minHeight: "100%",
           }}
         >
           <StateIndicator
@@ -182,22 +238,26 @@ export default function WalletOverview({
             pulsating={isSyncing}
           />
           <Box sx={{ textAlign: "right" }}>
-            {isSyncing && hasDirectKnowledge && (
+            {isSyncing && timeEstimation?.hasDirectKnowledge && (
               <Typography variant="body2" color="text.secondary">
-                {blocksLeft?.toLocaleString()} blocks left
+                {timeEstimation.blocksLeft?.toLocaleString()} blocks left
               </Typography>
             )}
-            {poolStatus && isSyncing && !isStuck && (
+            {poolStatus && isSyncing && !timeEstimation?.isStuck && (
               <>
                 <Typography
                   variant="caption"
                   color="text.secondary"
                   sx={{ mt: 0.5, fontSize: "0.7rem", display: "block" }}
                 >
-                  {estimatedTimeRemaining && !isStuck && (
-                    <>{formatTimeRemaining(estimatedTimeRemaining)} left</>
-                  )}{" "}
-                  / {poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? "0.0"} KB/s
+                  {timeEstimation?.formattedTimeRemaining &&
+                    !timeEstimation?.isStuck && (
+                      <>
+                        {timeEstimation.formattedTimeRemaining} left /{" "}
+                        {poolStatus.bandwidth_kb_per_sec?.toFixed(1) ?? "0.0"}{" "}
+                        KB/s
+                      </>
+                    )}
                 </Typography>
               </>
             )}

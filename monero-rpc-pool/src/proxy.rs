@@ -4,8 +4,11 @@ use axum::{
     http::{request::Parts, response, StatusCode},
     response::Response,
 };
+use futures::{stream::Stream, StreamExt};
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
+use std::pin::Pin;
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_native_tls::native_tls::TlsConnector;
@@ -99,7 +102,7 @@ async fn proxy_to_multiple_nodes(
         // Start timing the request
         let latency = std::time::Instant::now();
 
-        let response = match proxy_to_single_node(request.clone(), &node, state.tor_client.clone())
+        let response = match proxy_to_single_node(state, request.clone(), &node)
             .instrument(info_span!(
                 "connection",
                 node = node_uri,
@@ -117,33 +120,36 @@ async fn proxy_to_multiple_nodes(
         // Calculate the latency
         let latency = latency.elapsed().as_millis() as f64;
 
-        // Convert response to cloneable to avoid consumption issues
-        let cloneable_response = CloneableResponse::from_response(response)
-            .await
-            .map_err(|e| {
-                HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
-            })?;
+        // Convert response to streamable to check first 1KB for errors
+        let streamable_response = StreamableResponse::from_response_with_tracking(
+            response,
+            Some(state.node_pool.clone()),
+        )
+        .await
+        .map_err(|e| {
+            HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
+        })?;
 
-        let error = match cloneable_response.get_jsonrpc_error() {
+        let error = match streamable_response.get_jsonrpc_error() {
             Some(error) => {
                 // Check if we have already got two previous JSON-RPC errors
                 // If we did, we assume there is a reason for it
-                // We return the response as is.
+                // We return the response as is (streaming).
                 if collected_errors
                     .iter()
                     .filter(|(_, error)| matches!(error, HandlerError::JsonRpcError(_)))
                     .count()
                     >= 2
                 {
-                    return Ok(cloneable_response.into_response());
+                    return Ok(streamable_response.into_response());
                 }
 
                 Some(HandlerError::JsonRpcError(error))
             }
-            None if cloneable_response.status().is_client_error()
-                || cloneable_response.status().is_server_error() =>
+            None if streamable_response.status().is_client_error()
+                || streamable_response.status().is_server_error() =>
             {
-                Some(HandlerError::HttpError(cloneable_response.status()))
+                Some(HandlerError::HttpError(streamable_response.status()))
             }
             _ => None,
         };
@@ -153,15 +159,10 @@ async fn proxy_to_multiple_nodes(
                 push_error(&mut collected_errors, node, error);
             }
             None => {
-                let response_size_bytes = cloneable_response.body.len() as u64;
-                tracing::debug!(
-                    "Proxy request to {} succeeded with size {}kb",
-                    node_uri,
-                    (response_size_bytes as f64 / 1024.0)
+                tracing::trace!(
+                    "Proxy request to {} succeeded, streaming response",
+                    node_uri
                 );
-
-                // Record bandwidth usage
-                state.node_pool.record_bandwidth(response_size_bytes);
 
                 // Only record errors if we have gotten a successful response
                 // This helps prevent logging errors if its our likely our fault (no internet)
@@ -172,8 +173,8 @@ async fn proxy_to_multiple_nodes(
                 // Record the success with actual latency
                 record_success(&state, &node.0, &node.1, node.2, latency).await;
 
-                // Finally return the successful response
-                return Ok(cloneable_response.into_response());
+                // Finally return the successful streaming response
+                return Ok(streamable_response.into_response());
             }
         }
     }
@@ -213,94 +214,93 @@ async fn maybe_wrap_with_tls(
 /// Important: Does NOT error if the response is a HTTP error or a JSON-RPC error
 /// The caller is responsible for checking the response status and body for errors
 async fn proxy_to_single_node(
+    state: &crate::AppState,
     request: CloneableRequest,
     node: &(String, String, i64),
-    tor_client: Option<crate::TorClientArc>,
 ) -> Result<Response, SingleRequestError> {
+    use crate::connection_pool::GuardedSender;
+
     if request.clearnet_whitelisted() {
-        tracing::debug!("Request is whitelisted, sending over clearnet");
+        tracing::trace!("Request is whitelisted, sending over clearnet");
     }
 
-    let response = match tor_client {
-        // If Tor client is ready for traffic, use it
-        Some(tor_client)
-            if tor_client.bootstrap_status().ready_for_traffic()
-                // If the request is whitelisted, we don't want to use Tor
-                && !request.clearnet_whitelisted() =>
+    let use_tor = match &state.tor_client {
+        Some(tc)
+            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
         {
+            true
+        }
+        _ => false,
+    };
+
+    let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
+
+    // Try to reuse an idle HTTP connection first.
+    let mut guarded_sender: Option<GuardedSender> = state.connection_pool.try_get(&key).await;
+
+    if guarded_sender.is_none() {
+        // Need to build a new TCP/Tor stream.
+        let boxed_stream = if use_tor {
+            let tor_client = state.tor_client.as_ref().ok_or_else(|| {
+                SingleRequestError::ConnectionError("Tor requested but client missing".into())
+            })?;
             let stream = tor_client
                 .connect(format!("{}:{}", node.1, node.2))
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-
-            // Wrap with TLS if using HTTPS
-            let stream = maybe_wrap_with_tls(stream, &node.0, &node.1).await?;
-
-            let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
-                .await
-                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-
-            tracing::debug!(
-                "Connected to node via Tor{}",
-                if node.0 == "https" { " with TLS" } else { "" }
-            );
-
-            tokio::task::spawn(async move {
-                if let Err(err) = conn.await {
-                    println!("Connection failed: {:?}", err);
-                }
-            });
-
-            // Forward the request to the node
-            // No need to rewrite the URI because the request.uri() is relative
-            sender
-                .send_request(request.to_request())
-                .await
-                .map_err(|e| SingleRequestError::SendRequestError(e.to_string()))?
-        }
-        // Otherwise send over clearnet
-        _ => {
+            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
+        } else {
             let stream = TcpStream::connect(format!("{}:{}", node.1, node.2))
                 .await
                 .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
+        };
 
-            // Wrap with TLS if using HTTPS
-            let stream = maybe_wrap_with_tls(stream, &node.0, &node.1).await?;
+        // Build an HTTP/1 connection over the stream.
+        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(boxed_stream))
+            .await
+            .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
-            let (mut sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
-                .await
-                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+        // Drive the connection in the background.
+        tokio::spawn(async move {
+            let _ = conn.await; // Just drive the connection, errors handled per-request
+        });
 
-            tracing::debug!(
-                "Connected to node via clearnet{}",
-                if node.0 == "https" { " with TLS" } else { "" }
-            );
+        // Insert into pool and obtain exclusive access for this request.
+        guarded_sender = Some(
+            state
+                .connection_pool
+                .insert_and_lock(key.clone(), sender)
+                .await,
+        );
 
-            tokio::task::spawn(async move {
-                if let Err(err) = conn.await {
-                    println!("Connection failed: {:?}", err);
-                }
-            });
+        tracing::trace!(
+            "Established new connection via {}{}",
+            if use_tor { "Tor" } else { "clearnet" },
+            if node.0 == "https" { " with TLS" } else { "" }
+        );
+    }
 
-            sender
-                .send_request(request.to_request())
-                .await
-                .map_err(|e| SingleRequestError::SendRequestError(e.to_string()))?
+    let mut guarded_sender = guarded_sender.expect("sender must be set");
+
+    // Forward the request to the node.  URI stays relative, so no rewrite.
+    let response = match guarded_sender.send_request(request.to_request()).await {
+        Ok(response) => response,
+        Err(e) => {
+            // Connection failed, remove it from the pool
+            guarded_sender.mark_failed().await;
+            return Err(SingleRequestError::SendRequestError(e.to_string()));
         }
     };
 
     // Convert hyper Response<Incoming> to axum Response<Body>
     let (parts, body) = response.into_parts();
-    let body_bytes = body
-        .collect()
-        .await
-        .map_err(|e| SingleRequestError::CollectResponseError(e.to_string()))?
-        .to_bytes();
-    let axum_body = Body::from(body_bytes);
+    let stream = body
+        .into_data_stream()
+        .map(|result| result.map_err(|e| axum::Error::new(e)));
+    let axum_body = Body::from_stream(stream);
 
-    let response = Response::from_parts(parts, axum_body);
-
-    Ok(response)
+    Ok(Response::from_parts(parts, axum_body))
 }
 
 fn get_jsonrpc_error(body: &[u8]) -> Option<String> {
@@ -339,6 +339,49 @@ impl RequestDifferentiator for CloneableRequest {
 pub struct CloneableRequest {
     parts: Parts,
     pub body: Vec<u8>,
+}
+
+/// A response that buffers the first 1KB for error checking and keeps the rest as a stream
+pub struct StreamableResponse {
+    parts: response::Parts,
+    first_chunk: Vec<u8>,
+    remaining_stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>>>,
+}
+
+/// A wrapper stream that tracks bandwidth usage
+struct BandwidthTrackingStream<S> {
+    inner: S,
+    bandwidth_tracker: Arc<crate::pool::BandwidthTracker>,
+}
+
+impl<S> BandwidthTrackingStream<S> {
+    fn new(inner: S, bandwidth_tracker: Arc<crate::pool::BandwidthTracker>) -> Self {
+        Self {
+            inner,
+            bandwidth_tracker,
+        }
+    }
+}
+
+impl<S> Stream for BandwidthTrackingStream<S>
+where
+    S: Stream<Item = Result<Vec<u8>, axum::Error>> + Unpin,
+{
+    type Item = Result<Vec<u8>, axum::Error>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let result = Pin::new(&mut self.inner).poll_next(cx);
+
+        if let std::task::Poll::Ready(Some(Ok(ref chunk))) = result {
+            let chunk_size = chunk.len() as u64;
+            self.bandwidth_tracker.record_bytes(chunk_size);
+        }
+
+        result
+    }
 }
 
 /// A cloneable response that buffers the body in memory
@@ -385,6 +428,117 @@ impl CloneableRequest {
                 .and_then(|m| m.as_str().map(|s| s.to_string())),
             Err(_) => None,
         }
+    }
+}
+
+impl StreamableResponse {
+    const ERROR_CHECK_SIZE: usize = 1024; // 1KB
+
+    /// Convert a streaming response with bandwidth tracking
+    pub async fn from_response_with_tracking(
+        response: Response<Body>,
+        node_pool: Option<Arc<crate::pool::NodePool>>,
+    ) -> Result<Self, axum::Error> {
+        let (parts, body) = response.into_parts();
+        let mut body_stream = body.into_data_stream();
+
+        let mut first_chunk = Vec::new();
+        let mut remaining_chunks = Vec::new();
+        let mut total_read = 0;
+
+        // Collect chunks until we have at least 1KB for error checking
+        while total_read < Self::ERROR_CHECK_SIZE {
+            match body_stream.next().await {
+                Some(Ok(chunk)) => {
+                    let chunk_bytes = chunk.to_vec();
+                    let needed = Self::ERROR_CHECK_SIZE - total_read;
+
+                    if chunk_bytes.len() <= needed {
+                        // Entire chunk goes to first_chunk
+                        first_chunk.extend_from_slice(&chunk_bytes);
+                        total_read += chunk_bytes.len();
+                    } else {
+                        // Split the chunk
+                        first_chunk.extend_from_slice(&chunk_bytes[..needed]);
+                        remaining_chunks.push(chunk_bytes[needed..].to_vec());
+                        total_read += needed;
+                        break;
+                    }
+                }
+                Some(Err(e)) => return Err(e),
+                None => break, // End of stream
+            }
+        }
+
+        // Track bandwidth for the first chunk if we have a node pool
+        if let Some(ref node_pool) = node_pool {
+            node_pool.record_bandwidth(first_chunk.len() as u64);
+        }
+
+        // Create stream for remaining data
+        let remaining_stream =
+            if !remaining_chunks.is_empty() || total_read >= Self::ERROR_CHECK_SIZE {
+                let initial_chunks = remaining_chunks.into_iter().map(Ok);
+                let rest_stream = body_stream.map(|result| {
+                    result
+                        .map(|chunk| chunk.to_vec())
+                        .map_err(|e| axum::Error::new(e))
+                });
+                let combined_stream = futures::stream::iter(initial_chunks).chain(rest_stream);
+
+                // Wrap with bandwidth tracking if we have a node pool
+                let final_stream: Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>> =
+                    if let Some(node_pool) = node_pool.clone() {
+                        let bandwidth_tracker = node_pool.get_bandwidth_tracker();
+                        Box::pin(BandwidthTrackingStream::new(
+                            combined_stream,
+                            bandwidth_tracker,
+                        ))
+                    } else {
+                        Box::pin(combined_stream)
+                    };
+
+                Some(final_stream)
+            } else {
+                None
+            };
+
+        Ok(StreamableResponse {
+            parts,
+            first_chunk,
+            remaining_stream,
+        })
+    }
+
+    /// Get the status code
+    pub fn status(&self) -> StatusCode {
+        self.parts.status
+    }
+
+    /// Check for JSON-RPC errors in the first chunk
+    pub fn get_jsonrpc_error(&self) -> Option<String> {
+        get_jsonrpc_error(&self.first_chunk)
+    }
+
+    /// Convert to a streaming response
+    pub fn into_response(self) -> Response<Body> {
+        let body = if let Some(remaining_stream) = self.remaining_stream {
+            // Create a stream that starts with the first chunk, then continues with the rest
+            let first_chunk_stream =
+                futures::stream::once(futures::future::ready(Ok(self.first_chunk)));
+            let combined_stream = first_chunk_stream.chain(remaining_stream);
+            Body::from_stream(combined_stream)
+        } else {
+            // Only the first chunk exists
+            Body::from(self.first_chunk)
+        };
+
+        Response::from_parts(self.parts, body)
+    }
+
+    /// Get the size of the response (first chunk only, for bandwidth tracking)
+    pub fn first_chunk_size(&self) -> usize {
+        self.first_chunk.len()
     }
 }
 
@@ -468,7 +622,6 @@ enum HandlerError {
 enum SingleRequestError {
     ConnectionError(String),
     SendRequestError(String),
-    CollectResponseError(String),
 }
 
 impl std::fmt::Display for HandlerError {
@@ -500,9 +653,6 @@ impl std::fmt::Display for SingleRequestError {
         match self {
             SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {}", msg),
-            SingleRequestError::CollectResponseError(msg) => {
-                write!(f, "Collect response error: {}", msg)
-            }
         }
     }
 }

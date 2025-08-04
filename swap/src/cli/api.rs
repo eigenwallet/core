@@ -345,11 +345,11 @@ impl ContextBuilder {
                     } else {
                         None
                     },
+                    match self.is_testnet {
+                        true => monero::Network::Stagenet,
+                        false => monero::Network::Mainnet,
+                    },
                 ),
-                match self.is_testnet {
-                    true => crate::monero::Network::Stagenet,
-                    false => crate::monero::Network::Mainnet,
-                },
             )
             .await?;
 

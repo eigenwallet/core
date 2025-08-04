@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + CLI + ASB: The Monero RPC pool now caches TCP and Tor streams
+
 ## [3.0.0-beta.5] - 2025-08-04
 
 - GUI + CLI: Fixed a potential race condition where if the user closed the app while the Bitcoin was in the process of being published, manual recovery would be required to get to a recoverable state.

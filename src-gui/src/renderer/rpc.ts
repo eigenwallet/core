@@ -55,6 +55,7 @@ import {
   setBalance,
   setSyncProgress,
   setHistory,
+  setRestoreHeight,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
 import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
@@ -439,7 +440,10 @@ export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> 
 }
 
 export async function getRestoreHeight(): Promise<GetRestoreHeightResponse> {
-  return await invokeNoArgs<GetRestoreHeightResponse>("get_restore_height");
+  const restoreHeight =
+    await invokeNoArgs<GetRestoreHeightResponse>("get_restore_height");
+  store.dispatch(setRestoreHeight(restoreHeight));
+  return restoreHeight;
 }
 
 export async function setMoneroRestoreHeight(
@@ -489,25 +493,31 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
   );
 }
 
+export async function getMoneroSeed(): Promise<string> {
+  // Returns the wallet's seed phrase as a single string. Backend must expose the `get_monero_seed` command.
+  return await invokeNoArgs<string>("get_monero_seed");
+}
+
 // Wallet management functions that handle Redux dispatching
 export async function initializeMoneroWallet() {
   try {
-    const [
-      addressResponse,
-      balanceResponse,
-      syncProgressResponse,
-      historyResponse,
-    ] = await Promise.all([
-      getMoneroMainAddress(),
-      getMoneroBalance(),
-      getMoneroSyncProgress(),
-      getMoneroHistory(),
+    await Promise.all([
+      getMoneroMainAddress().then((response) => {
+        store.dispatch(setMainAddress(response.address));
+      }),
+      getMoneroBalance().then((response) => {
+        store.dispatch(setBalance(response));
+      }),
+      getMoneroSyncProgress().then((response) => {
+        store.dispatch(setSyncProgress(response));
+      }),
+      getMoneroHistory().then((response) => {
+        store.dispatch(setHistory(response));
+      }),
+      getRestoreHeight().then((response) => {
+        store.dispatch(setRestoreHeight(response));
+      }),
     ]);
-
-    store.dispatch(setMainAddress(addressResponse.address));
-    store.dispatch(setBalance(balanceResponse));
-    store.dispatch(setSyncProgress(syncProgressResponse));
-    store.dispatch(setHistory(historyResponse));
   } catch (err) {
     console.error("Failed to fetch Monero wallet data:", err);
   }
@@ -527,13 +537,12 @@ export async function sendMoneroTransaction(
       })
       .catch((refreshErr) => {
         console.error("Failed to refresh wallet data after send:", refreshErr);
-        // Could emit a toast notification here
       });
 
     return response;
   } catch (err) {
     console.error("Failed to send Monero:", err);
-    throw err; // ✅ Re-throw so caller can handle appropriately
+    throw err;
   }
 }
 

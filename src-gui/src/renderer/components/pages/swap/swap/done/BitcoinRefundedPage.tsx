@@ -69,8 +69,9 @@ function MultiBitcoinRefundedPage({
     <>
       <DialogContentText>
         Unfortunately, the swap was not successful. However, rest assured that
-        all your Bitcoin has been refunded to the specified address. The swap
-        process is now complete, and you are free to exit the application.
+        all your Bitcoin has been refunded to the specified address.{" "}
+        {btc_refund_finalized &&
+          "The swap process is now complete, and you are free to exit the application."}
       </DialogContentText>
       <Box
         style={{

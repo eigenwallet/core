@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use crossbeam::deque::{Injector, Steal};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing::warn;
 use typeshare::typeshare;
 
-use crate::database::Database;
+use crate::database::{network_to_string, Database};
 use crate::types::NodeAddress;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -30,16 +30,15 @@ pub struct ReliableNodeInfo {
     pub avg_latency_ms: Option<f64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct BandwidthEntry {
     timestamp: Instant,
     bytes: u64,
 }
 
 #[derive(Debug)]
-struct BandwidthTracker {
-    entries: VecDeque<BandwidthEntry>,
-    window_duration: Duration,
+pub struct BandwidthTracker {
+    entries: Injector<BandwidthEntry>,
 }
 
 impl BandwidthTracker {
@@ -47,38 +46,50 @@ impl BandwidthTracker {
 
     fn new() -> Self {
         Self {
-            entries: VecDeque::new(),
-            window_duration: Self::WINDOW_DURATION,
+            entries: Injector::new(),
         }
     }
 
-    fn record_bytes(&mut self, bytes: u64) {
+    pub fn record_bytes(&self, bytes: u64) {
         let now = Instant::now();
-        self.entries.push_back(BandwidthEntry {
+        self.entries.push(BandwidthEntry {
             timestamp: now,
             bytes,
         });
-
-        // Clean up old entries
-        let cutoff = now - self.window_duration;
-        while let Some(front) = self.entries.front() {
-            if front.timestamp < cutoff {
-                self.entries.pop_front();
-            } else {
-                break;
-            }
-        }
     }
 
     fn get_kb_per_sec(&self) -> f64 {
-        if self.entries.len() < 5 {
+        let now = Instant::now();
+        let cutoff = now - Self::WINDOW_DURATION;
+
+        // Collect valid entries from the injector
+        let mut valid_entries = Vec::new();
+        let mut total_bytes = 0u64;
+
+        // Drain all entries, keeping only recent ones
+        loop {
+            match self.entries.steal() {
+                Steal::Success(entry) => {
+                    if entry.timestamp >= cutoff {
+                        total_bytes += entry.bytes;
+                        valid_entries.push(entry);
+                    }
+                }
+                Steal::Empty | Steal::Retry => break,
+            }
+        }
+
+        // Put back the valid entries
+        for entry in valid_entries.iter() {
+            self.entries.push(entry.clone());
+        }
+
+        if valid_entries.len() < 5 {
             return 0.0;
         }
 
-        let total_bytes: u64 = self.entries.iter().map(|e| e.bytes).sum();
-        let now = Instant::now();
-        let oldest_time = self.entries.front().unwrap().timestamp;
-        let duration_secs = (now - oldest_time).as_secs_f64();
+        let oldest_time = valid_entries.iter().map(|e| e.timestamp).min().unwrap();
+        let duration_secs = now.duration_since(oldest_time).as_secs_f64();
 
         if duration_secs > 0.0 {
             (total_bytes as f64 / 1024.0) / duration_secs
@@ -90,19 +101,19 @@ impl BandwidthTracker {
 
 pub struct NodePool {
     db: Database,
-    network: String,
+    network: monero::Network,
     status_sender: broadcast::Sender<PoolStatus>,
-    bandwidth_tracker: Arc<Mutex<BandwidthTracker>>,
+    bandwidth_tracker: Arc<BandwidthTracker>,
 }
 
 impl NodePool {
-    pub fn new(db: Database, network: String) -> (Self, broadcast::Receiver<PoolStatus>) {
+    pub fn new(db: Database, network: monero::Network) -> (Self, broadcast::Receiver<PoolStatus>) {
         let (status_sender, status_receiver) = broadcast::channel(100);
         let pool = Self {
             db,
             network,
             status_sender,
-            bandwidth_tracker: Arc::new(Mutex::new(BandwidthTracker::new())),
+            bandwidth_tracker: Arc::new(BandwidthTracker::new()),
         };
         (pool, status_receiver)
     }
@@ -128,9 +139,11 @@ impl NodePool {
     }
 
     pub fn record_bandwidth(&self, bytes: u64) {
-        if let Ok(mut tracker) = self.bandwidth_tracker.lock() {
-            tracker.record_bytes(bytes);
-        }
+        self.bandwidth_tracker.record_bytes(bytes);
+    }
+
+    pub fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker> {
+        self.bandwidth_tracker.clone()
     }
 
     pub async fn publish_status_update(&self) -> Result<()> {
@@ -138,24 +151,19 @@ impl NodePool {
 
         if let Err(e) = self.status_sender.send(status.clone()) {
             warn!("Failed to send status update: {}", e);
-        } else {
-            tracing::debug!(?status, "Sent status update");
         }
 
         Ok(())
     }
 
     pub async fn get_current_status(&self) -> Result<PoolStatus> {
-        let (total, reachable, _reliable) = self.db.get_node_stats(&self.network).await?;
-        let reliable_nodes = self.db.get_reliable_nodes(&self.network).await?;
+        let network_str = network_to_string(&self.network);
+        let (total, reachable, _reliable) = self.db.get_node_stats(network_str).await?;
+        let reliable_nodes = self.db.get_reliable_nodes(network_str).await?;
         let (successful_checks, unsuccessful_checks) =
-            self.db.get_health_check_stats(&self.network).await?;
+            self.db.get_health_check_stats(network_str).await?;
 
-        let bandwidth_kb_per_sec = if let Ok(tracker) = self.bandwidth_tracker.lock() {
-            tracker.get_kb_per_sec()
-        } else {
-            0.0
-        };
+        let bandwidth_kb_per_sec = self.bandwidth_tracker.get_kb_per_sec();
 
         let top_reliable_nodes = reliable_nodes
             .into_iter()
@@ -184,13 +192,13 @@ impl NodePool {
 
         tracing::debug!(
             "Getting top reliable nodes for network {} (target: {})",
-            self.network,
+            network_to_string(&self.network),
             limit
         );
 
         let available_nodes = self
             .db
-            .get_top_nodes_by_recent_success(&self.network, limit as i64)
+            .get_top_nodes_by_recent_success(network_to_string(&self.network), limit as i64)
             .await
             .context("Failed to get top nodes by recent success")?;
 
@@ -230,7 +238,7 @@ impl NodePool {
         tracing::debug!(
             "Pool size: {} nodes for network {} (target: {})",
             selected_nodes.len(),
-            self.network,
+            network_to_string(&self.network),
             limit
         );
 
