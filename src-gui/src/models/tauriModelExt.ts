@@ -25,6 +25,7 @@ export type TauriSwapProgressEventExt<T extends TauriSwapProgressEventType> =
 export enum BobStateName {
   Started = "quote has been requested",
   SwapSetupCompleted = "execution setup done",
+  BtcLockReadyToPublish = "btc lock ready to publish",
   BtcLocked = "btc is locked",
   XmrLockProofReceived = "XMR lock transaction transfer proof received",
   XmrLocked = "xmr is locked",
@@ -47,6 +48,8 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Started";
     case BobStateName.SwapSetupCompleted:
       return "Setup completed";
+    case BobStateName.BtcLockReadyToPublish:
+      return "Bitcoin lock ready to publish";
     case BobStateName.BtcLocked:
       return "Bitcoin locked";
     case BobStateName.XmrLockProofReceived:
