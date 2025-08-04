@@ -6,7 +6,7 @@ use axum::{
     routing::{any, get},
     Router,
 };
-use monero::Network;
+
 
 use tokio::task::JoinHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -16,19 +16,7 @@ use tracing::{error, info};
 /// Type alias for the Tor client used throughout the crate
 pub type TorClientArc = Arc<TorClient<TokioRustlsRuntime>>;
 
-pub trait ToNetworkString {
-    fn to_network_string(&self) -> String;
-}
 
-impl ToNetworkString for Network {
-    fn to_network_string(&self) -> String {
-        match self {
-            Network::Mainnet => "mainnet".to_string(),
-            Network::Stagenet => "stagenet".to_string(),
-            Network::Testnet => "testnet".to_string(),
-        }
-    }
-}
 
 pub mod config;
 pub mod connection_pool;

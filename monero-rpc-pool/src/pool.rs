@@ -6,9 +6,8 @@ use tokio::sync::broadcast;
 use tracing::warn;
 use typeshare::typeshare;
 
-use crate::database::Database;
+use crate::database::{Database, network_to_string};
 use crate::types::NodeAddress;
-use crate::ToNetworkString;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[typeshare]
@@ -158,7 +157,7 @@ impl NodePool {
     }
 
     pub async fn get_current_status(&self) -> Result<PoolStatus> {
-        let network_str = &self.network.to_network_string();
+        let network_str = network_to_string(&self.network);
         let (total, reachable, _reliable) = self.db.get_node_stats(network_str).await?;
         let reliable_nodes = self.db.get_reliable_nodes(network_str).await?;
         let (successful_checks, unsuccessful_checks) =
@@ -193,13 +192,13 @@ impl NodePool {
 
         tracing::debug!(
             "Getting top reliable nodes for network {} (target: {})",
-            self.network.to_network_string(),
+                            network_to_string(&self.network),
             limit
         );
 
         let available_nodes = self
             .db
-            .get_top_nodes_by_recent_success(&self.network.to_network_string(), limit as i64)
+            .get_top_nodes_by_recent_success(network_to_string(&self.network), limit as i64)
             .await
             .context("Failed to get top nodes by recent success")?;
 
@@ -239,7 +238,7 @@ impl NodePool {
         tracing::debug!(
             "Pool size: {} nodes for network {} (target: {})",
             selected_nodes.len(),
-            self.network.to_network_string(),
+                            network_to_string(&self.network),
             limit
         );
 
