@@ -127,8 +127,6 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::SwapSetupInflight {
                     btc_lock_amount: btc_amount,
-                    // TODO: Replace this with the actual fee
-                    btc_tx_lock_fee: bitcoin::Amount::ZERO,
                 },
             );
 
@@ -195,6 +193,11 @@ async fn next_state(
                     // If the Monero transaction gets confirmed before Bob comes online again then
                     // Bob would record a wallet-height that is past the lock transaction height,
                     // which can lead to the wallet not detect the transaction.
+                    event_emitter.emit_swap_progress_event(
+                        swap_id,
+                        TauriSwapProgressEvent::RetrievingMoneroBlockheight,
+                    );
+
                     let monero_wallet_restore_blockheight = monero_wallet
                         .blockchain_height()
                         .await
@@ -232,6 +235,9 @@ async fn next_state(
             monero_wallet_restore_blockheight,
         } => {
             // TODO: Check if the transaction has already been broadcasted
+
+            event_emitter
+                .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcLockPublishInflight);
 
             // Publish the signed Bitcoin lock transaction
             let (..) = bitcoin_wallet.broadcast(btc_lock_tx_signed, "lock").await?;

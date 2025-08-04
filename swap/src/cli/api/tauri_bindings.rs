@@ -887,10 +887,9 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_lock_amount: bitcoin::Amount,
-        #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
-        btc_tx_lock_fee: bitcoin::Amount,
     },
+    RetrievingMoneroBlockheight,
+    BtcLockPublishInflight,
     BtcLockTxInMempool {
         #[typeshare(serialized_as = "string")]
         btc_lock_txid: bitcoin::Txid,
