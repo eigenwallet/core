@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + CLI + ASB: The Monero RPC pool now caches TCP and Tor streams
+
 ## [3.0.0-beta.4] - 2025-08-03
 
 - GUI: The following rendezvous points have been added to the default list of rendezvous points. If you're running a maker, please add them to your config file (under `network.rendezvous_point`). They are operated by members of the community that have shown to be reliable. These rendezvous points act as bootstrapping nodes for peer discovery: `/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT`, `/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp`, `/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU`
