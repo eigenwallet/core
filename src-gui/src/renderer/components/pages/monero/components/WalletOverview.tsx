@@ -52,10 +52,10 @@ function useSyncTimeEstimation(
     poolStatus?.bandwidth_kb_per_sec != null &&
     poolStatus.bandwidth_kb_per_sec < 1;
 
-  // A full blocks is 130kb, we assume a header is 10% of that
+  // A full blocks is 130kb, we assume a header is 2% of that
   const estimatedDownloadLeftSize =
     fullBlocksLeft * AVG_MONERO_BLOCK_SIZE_KB +
-    (fastBlocksLeft * AVG_MONERO_BLOCK_SIZE_KB) / 10;
+    (fastBlocksLeft * AVG_MONERO_BLOCK_SIZE_KB) / 50;
 
   const estimatedTimeRemaining =
     hasDirectKnowledge &&
