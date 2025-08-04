@@ -202,8 +202,11 @@ pub mod ffi {
         /// Set a listener to the wallet.
         unsafe fn setListener(self: Pin<&mut Wallet>, listener: *mut WalletListener) -> Result<()>;
 
-        /// Get the daemon's blockchain height.
+        /// Get the daemon's blockchain target height.
         fn daemonBlockChainTargetHeight(self: &Wallet) -> Result<u64>;
+
+        /// Get the daemon's blockchain height.
+        fn daemonBlockChainHeight(self: &Wallet) -> Result<u64>;
 
         /// Check if wallet was ever synchronized.
         fn synchronized(self: &Wallet) -> Result<bool>;

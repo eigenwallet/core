@@ -1,27 +1,627 @@
 use axum::{
     body::Body,
-    extract::State,
-    http::{HeaderMap, Method, StatusCode},
+    extract::{Request, State},
+    http::{request::Parts, response, StatusCode},
     response::Response,
 };
-use serde_json::json;
-use std::time::Instant;
-use tracing::{debug, error, info_span, Instrument};
-use uuid::Uuid;
+use futures::{stream::Stream, StreamExt};
+use http_body_util::BodyExt;
+use hyper_util::rt::TokioIo;
+use std::pin::Pin;
+use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::TcpStream;
+use tokio_native_tls::native_tls::TlsConnector;
+use tracing::{error, info_span, Instrument};
 
 use crate::AppState;
 
-fn display_node(node: &(String, String, i64)) -> String {
-    format!("{}://{}:{}", node.0, node.1, node.2)
+/// Trait alias for a stream that can be used with hyper
+trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
+
+#[axum::debug_handler]
+pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> Response {
+    static POOL_SIZE: usize = 10;
+
+    // Get the pool of nodes
+    let available_pool = state
+        .node_pool
+        .get_top_reliable_nodes(POOL_SIZE)
+        .await
+        .map_err(|e| HandlerError::PoolError(e.to_string()))
+        .map(|nodes| {
+            let pool: Vec<(String, String, i64)> = nodes
+                .into_iter()
+                .map(|node| (node.scheme, node.host, node.port as i64))
+                .collect();
+
+            pool
+        });
+
+    let (request, pool) = match available_pool {
+        Ok(pool) => match CloneableRequest::from_request(request).await {
+            Ok(cloneable_request) => (cloneable_request, pool),
+            Err(e) => {
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from(e.to_string()))
+                    .unwrap_or_else(|_| Response::new(Body::empty()));
+            }
+        },
+        Err(e) => {
+            // If we can't get a pool, return an error immediately
+            return Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(Body::from(e.to_string()))
+                .unwrap_or_else(|_| Response::new(Body::empty()));
+        }
+    };
+
+    let uri = request.uri().to_string();
+    let method = request.jsonrpc_method();
+    match proxy_to_multiple_nodes(&state, request, pool)
+        .instrument(info_span!("request", uri = uri, method = method.as_deref()))
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => error.to_response(),
+    }
+}
+
+/// Given a Vec of nodes, proxy the given request to multiple nodes until we get a successful response
+async fn proxy_to_multiple_nodes(
+    state: &AppState,
+    request: CloneableRequest,
+    nodes: Vec<(String, String, i64)>,
+) -> Result<Response, HandlerError> {
+    if nodes.is_empty() {
+        return Err(HandlerError::NoNodes);
+    }
+
+    let mut collected_errors: Vec<((String, String, i64), HandlerError)> = Vec::new();
+
+    fn push_error(
+        errors: &mut Vec<((String, String, i64), HandlerError)>,
+        node: (String, String, i64),
+        error: HandlerError,
+    ) {
+        tracing::debug!("Proxy request to {} failed: {}", display_node(&node), error);
+        errors.push((node, error));
+    }
+
+    // Go through the nodes one by one, and proxy the request to each node
+    // until we get a successful response or we run out of nodes
+    // Success is defined as either:
+    // - a raw HTTP response with a 200 response code
+    // - a JSON-RPC response with status code 200 and no error field
+    for node in nodes {
+        // Node attempt logging without creating spans to reduce overhead
+        let node_uri = display_node(&node);
+
+        // Start timing the request
+        let latency = std::time::Instant::now();
+
+        let response = match proxy_to_single_node(state, request.clone(), &node)
+            .instrument(info_span!(
+                "connection",
+                node = node_uri,
+                tor = state.tor_client.is_some(),
+            ))
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                push_error(&mut collected_errors, node, HandlerError::PhyiscalError(e));
+                continue;
+            }
+        };
+
+        // Calculate the latency
+        let latency = latency.elapsed().as_millis() as f64;
+
+        // Convert response to streamable to check first 1KB for errors
+        let streamable_response = StreamableResponse::from_response_with_tracking(
+            response,
+            Some(state.node_pool.clone()),
+        )
+        .await
+        .map_err(|e| {
+            HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
+        })?;
+
+        let error = match streamable_response.get_jsonrpc_error() {
+            Some(error) => {
+                // Check if we have already got two previous JSON-RPC errors
+                // If we did, we assume there is a reason for it
+                // We return the response as is (streaming).
+                if collected_errors
+                    .iter()
+                    .filter(|(_, error)| matches!(error, HandlerError::JsonRpcError(_)))
+                    .count()
+                    >= 2
+                {
+                    return Ok(streamable_response.into_response());
+                }
+
+                Some(HandlerError::JsonRpcError(error))
+            }
+            None if streamable_response.status().is_client_error()
+                || streamable_response.status().is_server_error() =>
+            {
+                Some(HandlerError::HttpError(streamable_response.status()))
+            }
+            _ => None,
+        };
+
+        match error {
+            Some(error) => {
+                push_error(&mut collected_errors, node, error);
+            }
+            None => {
+                tracing::trace!(
+                    "Proxy request to {} succeeded, streaming response",
+                    node_uri
+                );
+
+                // Only record errors if we have gotten a successful response
+                // This helps prevent logging errors if its our likely our fault (no internet)
+                for (node, _) in collected_errors.iter() {
+                    record_failure(&state, &node.0, &node.1, node.2).await;
+                }
+
+                // Record the success with actual latency
+                record_success(&state, &node.0, &node.1, node.2, latency).await;
+
+                // Finally return the successful streaming response
+                return Ok(streamable_response.into_response());
+            }
+        }
+    }
+
+    Err(HandlerError::AllRequestsFailed(collected_errors))
+}
+
+/// Wraps a stream with TLS if HTTPS is being used
+async fn maybe_wrap_with_tls(
+    stream: impl AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    scheme: &str,
+    host: &str,
+) -> Result<Box<dyn HyperStream>, SingleRequestError> {
+    if scheme == "https" {
+        let tls_connector = TlsConnector::builder()
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+            .build()
+            .map_err(|e| {
+                SingleRequestError::ConnectionError(format!("TLS connector error: {}", e))
+            })?;
+        let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
+
+        let tls_stream = tls_connector.connect(host, stream).await.map_err(|e| {
+            SingleRequestError::ConnectionError(format!("TLS connection error: {}", e))
+        })?;
+
+        Ok(Box::new(tls_stream))
+    } else {
+        Ok(Box::new(stream))
+    }
+}
+
+/// Proxies a singular axum::Request to a single node.
+/// Errors if we get a physical connection error
+///
+/// Important: Does NOT error if the response is a HTTP error or a JSON-RPC error
+/// The caller is responsible for checking the response status and body for errors
+async fn proxy_to_single_node(
+    state: &crate::AppState,
+    request: CloneableRequest,
+    node: &(String, String, i64),
+) -> Result<Response, SingleRequestError> {
+    use crate::connection_pool::GuardedSender;
+
+    if request.clearnet_whitelisted() {
+        tracing::trace!("Request is whitelisted, sending over clearnet");
+    }
+
+    let use_tor = match &state.tor_client {
+        Some(tc)
+            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
+        {
+            true
+        }
+        _ => false,
+    };
+
+    let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
+
+    // Try to reuse an idle HTTP connection first.
+    let mut guarded_sender: Option<GuardedSender> = state.connection_pool.try_get(&key).await;
+
+    if guarded_sender.is_none() {
+        // Need to build a new TCP/Tor stream.
+        let boxed_stream = if use_tor {
+            let tor_client = state.tor_client.as_ref().ok_or_else(|| {
+                SingleRequestError::ConnectionError("Tor requested but client missing".into())
+            })?;
+            let stream = tor_client
+                .connect(format!("{}:{}", node.1, node.2))
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
+        } else {
+            let stream = TcpStream::connect(format!("{}:{}", node.1, node.2))
+                .await
+                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
+        };
+
+        // Build an HTTP/1 connection over the stream.
+        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(boxed_stream))
+            .await
+            .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+        // Drive the connection in the background.
+        tokio::spawn(async move {
+            let _ = conn.await; // Just drive the connection, errors handled per-request
+        });
+
+        // Insert into pool and obtain exclusive access for this request.
+        guarded_sender = Some(
+            state
+                .connection_pool
+                .insert_and_lock(key.clone(), sender)
+                .await,
+        );
+
+        tracing::trace!(
+            "Established new connection via {}{}",
+            if use_tor { "Tor" } else { "clearnet" },
+            if node.0 == "https" { " with TLS" } else { "" }
+        );
+    }
+
+    let mut guarded_sender = guarded_sender.expect("sender must be set");
+
+    // Forward the request to the node.  URI stays relative, so no rewrite.
+    let response = match guarded_sender.send_request(request.to_request()).await {
+        Ok(response) => response,
+        Err(e) => {
+            // Connection failed, remove it from the pool
+            guarded_sender.mark_failed().await;
+            return Err(SingleRequestError::SendRequestError(e.to_string()));
+        }
+    };
+
+    // Convert hyper Response<Incoming> to axum Response<Body>
+    let (parts, body) = response.into_parts();
+    let stream = body
+        .into_data_stream()
+        .map(|result| result.map_err(|e| axum::Error::new(e)));
+    let axum_body = Body::from_stream(stream);
+
+    Ok(Response::from_parts(parts, axum_body))
+}
+
+fn get_jsonrpc_error(body: &[u8]) -> Option<String> {
+    // Try to parse as JSON
+    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) {
+        // Check if there's an "error" field
+        return json
+            .get("error")
+            .and_then(|e| e.as_str().map(|s| s.to_string()));
+    }
+
+    // If we can't parse JSON, treat it as an error
+    None
+}
+
+trait RequestDifferentiator {
+    /// Can this be request be proxied over clearnet?
+    fn clearnet_whitelisted(&self) -> bool;
+}
+
+impl RequestDifferentiator for CloneableRequest {
+    fn clearnet_whitelisted(&self) -> bool {
+        match self.uri().to_string().as_str() {
+            // Downloading blocks does not reveal any metadata other
+            // than perhaps how far the wallet is behind or the restore
+            // height.
+            "/getblocks.bin" => true,
+            "/gethashes.bin" => true,
+            _ => false,
+        }
+    }
+}
+
+/// A cloneable request that buffers the body in memory
+#[derive(Clone)]
+pub struct CloneableRequest {
+    parts: Parts,
+    pub body: Vec<u8>,
+}
+
+/// A response that buffers the first 1KB for error checking and keeps the rest as a stream
+pub struct StreamableResponse {
+    parts: response::Parts,
+    first_chunk: Vec<u8>,
+    remaining_stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>>>,
+}
+
+/// A wrapper stream that tracks bandwidth usage
+struct BandwidthTrackingStream<S> {
+    inner: S,
+    bandwidth_tracker: Arc<crate::pool::BandwidthTracker>,
+}
+
+impl<S> BandwidthTrackingStream<S> {
+    fn new(inner: S, bandwidth_tracker: Arc<crate::pool::BandwidthTracker>) -> Self {
+        Self {
+            inner,
+            bandwidth_tracker,
+        }
+    }
+}
+
+impl<S> Stream for BandwidthTrackingStream<S>
+where
+    S: Stream<Item = Result<Vec<u8>, axum::Error>> + Unpin,
+{
+    type Item = Result<Vec<u8>, axum::Error>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let result = Pin::new(&mut self.inner).poll_next(cx);
+
+        if let std::task::Poll::Ready(Some(Ok(ref chunk))) = result {
+            let chunk_size = chunk.len() as u64;
+            self.bandwidth_tracker.record_bytes(chunk_size);
+        }
+
+        result
+    }
+}
+
+/// A cloneable response that buffers the body in memory
+#[derive(Clone)]
+pub struct CloneableResponse {
+    parts: response::Parts,
+    body: Vec<u8>,
+}
+
+impl CloneableRequest {
+    /// Convert a streaming request into a cloneable one by buffering the body
+    pub async fn from_request(request: Request<Body>) -> Result<Self, axum::Error> {
+        let (parts, body) = request.into_parts();
+        let body_bytes = body.collect().await?.to_bytes().to_vec();
+
+        Ok(CloneableRequest {
+            parts,
+            body: body_bytes,
+        })
+    }
+
+    /// Convert back to a regular Request
+    pub fn into_request(self) -> Request<Body> {
+        Request::from_parts(self.parts, Body::from(self.body))
+    }
+
+    /// Get a new Request without consuming self
+    pub fn to_request(&self) -> Request<Body> {
+        Request::from_parts(self.parts.clone(), Body::from(self.body.clone()))
+    }
+
+    /// Get the URI from the request
+    pub fn uri(&self) -> &axum::http::Uri {
+        &self.parts.uri
+    }
+
+    /// Get the JSON-RPC method from the request body
+    pub fn jsonrpc_method(&self) -> Option<String> {
+        static JSON_RPC_METHOD_KEY: &str = "method";
+
+        match serde_json::from_slice::<serde_json::Value>(&self.body) {
+            Ok(json) => json
+                .get(JSON_RPC_METHOD_KEY)
+                .and_then(|m| m.as_str().map(|s| s.to_string())),
+            Err(_) => None,
+        }
+    }
+}
+
+impl StreamableResponse {
+    const ERROR_CHECK_SIZE: usize = 1024; // 1KB
+
+    /// Convert a streaming response with bandwidth tracking
+    pub async fn from_response_with_tracking(
+        response: Response<Body>,
+        node_pool: Option<Arc<crate::pool::NodePool>>,
+    ) -> Result<Self, axum::Error> {
+        let (parts, body) = response.into_parts();
+        let mut body_stream = body.into_data_stream();
+
+        let mut first_chunk = Vec::new();
+        let mut remaining_chunks = Vec::new();
+        let mut total_read = 0;
+
+        // Collect chunks until we have at least 1KB for error checking
+        while total_read < Self::ERROR_CHECK_SIZE {
+            match body_stream.next().await {
+                Some(Ok(chunk)) => {
+                    let chunk_bytes = chunk.to_vec();
+                    let needed = Self::ERROR_CHECK_SIZE - total_read;
+
+                    if chunk_bytes.len() <= needed {
+                        // Entire chunk goes to first_chunk
+                        first_chunk.extend_from_slice(&chunk_bytes);
+                        total_read += chunk_bytes.len();
+                    } else {
+                        // Split the chunk
+                        first_chunk.extend_from_slice(&chunk_bytes[..needed]);
+                        remaining_chunks.push(chunk_bytes[needed..].to_vec());
+                        total_read += needed;
+                        break;
+                    }
+                }
+                Some(Err(e)) => return Err(e),
+                None => break, // End of stream
+            }
+        }
+
+        // Track bandwidth for the first chunk if we have a node pool
+        if let Some(ref node_pool) = node_pool {
+            node_pool.record_bandwidth(first_chunk.len() as u64);
+        }
+
+        // Create stream for remaining data
+        let remaining_stream =
+            if !remaining_chunks.is_empty() || total_read >= Self::ERROR_CHECK_SIZE {
+                let initial_chunks = remaining_chunks.into_iter().map(Ok);
+                let rest_stream = body_stream.map(|result| {
+                    result
+                        .map(|chunk| chunk.to_vec())
+                        .map_err(|e| axum::Error::new(e))
+                });
+                let combined_stream = futures::stream::iter(initial_chunks).chain(rest_stream);
+
+                // Wrap with bandwidth tracking if we have a node pool
+                let final_stream: Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>> =
+                    if let Some(node_pool) = node_pool.clone() {
+                        let bandwidth_tracker = node_pool.get_bandwidth_tracker();
+                        Box::pin(BandwidthTrackingStream::new(
+                            combined_stream,
+                            bandwidth_tracker,
+                        ))
+                    } else {
+                        Box::pin(combined_stream)
+                    };
+
+                Some(final_stream)
+            } else {
+                None
+            };
+
+        Ok(StreamableResponse {
+            parts,
+            first_chunk,
+            remaining_stream,
+        })
+    }
+
+    /// Get the status code
+    pub fn status(&self) -> StatusCode {
+        self.parts.status
+    }
+
+    /// Check for JSON-RPC errors in the first chunk
+    pub fn get_jsonrpc_error(&self) -> Option<String> {
+        get_jsonrpc_error(&self.first_chunk)
+    }
+
+    /// Convert to a streaming response
+    pub fn into_response(self) -> Response<Body> {
+        let body = if let Some(remaining_stream) = self.remaining_stream {
+            // Create a stream that starts with the first chunk, then continues with the rest
+            let first_chunk_stream =
+                futures::stream::once(futures::future::ready(Ok(self.first_chunk)));
+            let combined_stream = first_chunk_stream.chain(remaining_stream);
+            Body::from_stream(combined_stream)
+        } else {
+            // Only the first chunk exists
+            Body::from(self.first_chunk)
+        };
+
+        Response::from_parts(self.parts, body)
+    }
+
+    /// Get the size of the response (first chunk only, for bandwidth tracking)
+    pub fn first_chunk_size(&self) -> usize {
+        self.first_chunk.len()
+    }
+}
+
+impl CloneableResponse {
+    /// Convert a streaming response into a cloneable one by buffering the body
+    pub async fn from_response(response: Response<Body>) -> Result<Self, axum::Error> {
+        let (parts, body) = response.into_parts();
+        let body_bytes = body.collect().await?.to_bytes().to_vec();
+
+        Ok(CloneableResponse {
+            parts,
+            body: body_bytes,
+        })
+    }
+
+    /// Convert back to a regular Response
+    pub fn into_response(self) -> Response<Body> {
+        Response::from_parts(self.parts, Body::from(self.body))
+    }
+
+    /// Get a new Response without consuming self
+    pub fn to_response(&self) -> Response<Body> {
+        Response::from_parts(self.parts.clone(), Body::from(self.body.clone()))
+    }
+
+    /// Get the status code
+    pub fn status(&self) -> StatusCode {
+        self.parts.status
+    }
+
+    /// Check for JSON-RPC errors without consuming the response
+    pub fn get_jsonrpc_error(&self) -> Option<String> {
+        get_jsonrpc_error(&self.body)
+    }
+}
+
+impl HandlerError {
+    /// Convert HandlerError to an HTTP response
+    fn to_response(&self) -> Response {
+        let (status_code, error_message) = match self {
+            HandlerError::NoNodes => (StatusCode::SERVICE_UNAVAILABLE, "No nodes available"),
+            HandlerError::PoolError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Pool error"),
+            HandlerError::PhyiscalError(_) => (StatusCode::BAD_GATEWAY, "Connection error"),
+            HandlerError::HttpError(status) => (*status, "HTTP error"),
+            HandlerError::JsonRpcError(_) => (StatusCode::BAD_GATEWAY, "JSON-RPC error"),
+            HandlerError::AllRequestsFailed(_) => (StatusCode::BAD_GATEWAY, "All requests failed"),
+            HandlerError::CloneRequestError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Request processing error",
+            ),
+        };
+
+        let error_json = serde_json::json!({
+            "error": {
+                "code": status_code.as_u16(),
+                "message": error_message,
+                "details": self.to_string()
+            }
+        });
+
+        Response::builder()
+            .status(status_code)
+            .header("content-type", "application/json")
+            .body(Body::from(error_json.to_string()))
+            .unwrap_or_else(|_| Response::new(Body::empty()))
+    }
 }
 
 #[derive(Debug, Clone)]
 enum HandlerError {
     NoNodes,
     PoolError(String),
-    RequestError(String),
+    PhyiscalError(SingleRequestError),
+    HttpError(axum::http::StatusCode),
     JsonRpcError(String),
-    AllRequestsFailed(Vec<(String, String)>),
+    AllRequestsFailed(Vec<((String, String, i64), HandlerError)>),
+    CloneRequestError(String),
+}
+
+#[derive(Debug, Clone)]
+enum SingleRequestError {
+    ConnectionError(String),
+    SendRequestError(String),
 }
 
 impl std::fmt::Display for HandlerError {
@@ -29,7 +629,7 @@ impl std::fmt::Display for HandlerError {
         match self {
             HandlerError::NoNodes => write!(f, "No nodes available"),
             HandlerError::PoolError(msg) => write!(f, "Pool error: {}", msg),
-            HandlerError::RequestError(msg) => write!(f, "Request error: {}", msg),
+            HandlerError::PhyiscalError(msg) => write!(f, "Request error: {}", msg),
             HandlerError::JsonRpcError(msg) => write!(f, "JSON-RPC error: {}", msg),
             HandlerError::AllRequestsFailed(errors) => {
                 write!(f, "All requests failed: [")?;
@@ -37,118 +637,28 @@ impl std::fmt::Display for HandlerError {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}: {}", node, error)?;
+                    let node_str = display_node(node);
+                    write!(f, "{}: {}", node_str, error)?;
                 }
                 write!(f, "]")
             }
+            HandlerError::CloneRequestError(msg) => write!(f, "Clone request error: {}", msg),
+            HandlerError::HttpError(msg) => write!(f, "HTTP error: {}", msg),
         }
     }
 }
 
-fn is_jsonrpc_error(body: &[u8]) -> bool {
-    // Try to parse as JSON
-    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) {
-        // Check if there's an "error" field
-        return json.get("error").is_some();
+impl std::fmt::Display for SingleRequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
+            SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {}", msg),
+        }
     }
-
-    // If we can't parse JSON, treat it as an error
-    true
 }
 
-fn extract_jsonrpc_method(body: &[u8]) -> Option<String> {
-    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(body) {
-        if let Some(method) = json.get("method").and_then(|m| m.as_str()) {
-            return Some(method.to_string());
-        }
-    }
-    None
-}
-
-async fn raw_http_request(
-    client: &reqwest::Client,
-    node_url: (String, String, i64),
-    path: &str,
-    method: &str,
-    headers: &HeaderMap,
-    body: Option<&[u8]>,
-) -> Result<Response, HandlerError> {
-    let (scheme, host, port) = &node_url;
-    let url = format!("{}://{}:{}{}", scheme, host, port, path);
-
-    // Use generic request method to support any HTTP verb
-    let http_method = method
-        .parse::<reqwest::Method>()
-        .map_err(|e| HandlerError::RequestError(format!("Invalid method '{}': {}", method, e)))?;
-
-    let mut request_builder = client.request(http_method, &url);
-
-    // Forward body if present
-    if let Some(body_bytes) = body {
-        request_builder = request_builder.body(body_bytes.to_vec());
-    }
-
-    // Forward essential headers
-    for (name, value) in headers.iter() {
-        let header_name = name.as_str();
-        let header_name_lc = header_name.to_ascii_lowercase();
-
-        // Skip hop-by-hop headers and any body-related headers when we are **not** forwarding a body.
-        let is_hop_by_hop = matches!(
-            header_name_lc.as_str(),
-            "host"
-                | "connection"
-                | "transfer-encoding"
-                | "upgrade"
-                | "proxy-authenticate"
-                | "proxy-authorization"
-                | "te"
-                | "trailers"
-        );
-
-        // If we are not forwarding a body (e.g. GET request) then forwarding `content-length` or
-        // `content-type` with an absent body makes many Monero nodes hang waiting for bytes and
-        // eventually close the connection.  This manifests as the time-outs we have observed.
-        let is_body_header_without_body =
-            body.is_none() && matches!(header_name_lc.as_str(), "content-length" | "content-type");
-
-        if !is_hop_by_hop && !is_body_header_without_body {
-            if let Ok(header_value) = std::str::from_utf8(value.as_bytes()) {
-                request_builder = request_builder.header(header_name, header_value);
-            }
-        }
-    }
-
-    let response = request_builder
-        .send()
-        .await
-        .map_err(|e| HandlerError::RequestError(format!("{:#?}", e)))?;
-
-    // Convert to axum Response preserving everything
-    let status = response.status();
-    let response_headers = response.headers().clone();
-
-    let body_bytes = response.bytes().await.map_err(|e| {
-        HandlerError::RequestError(format!("Failed to read response body: {:#?}", e))
-    })?;
-
-    let mut axum_response = Response::new(Body::from(body_bytes));
-    *axum_response.status_mut() =
-        StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-
-    // Copy response headers exactly
-    for (name, value) in response_headers.iter() {
-        if let (Ok(header_name), Ok(header_value)) = (
-            axum::http::HeaderName::try_from(name.as_str()),
-            axum::http::HeaderValue::try_from(value.as_bytes()),
-        ) {
-            axum_response
-                .headers_mut()
-                .insert(header_name, header_value);
-        }
-    }
-
-    Ok(axum_response)
+fn display_node(node: &(String, String, i64)) -> String {
+    format!("{}://{}:{}", node.0, node.1, node.2)
 }
 
 async fn record_success(state: &AppState, scheme: &str, host: &str, port: i64, latency_ms: f64) {
@@ -173,356 +683,6 @@ async fn record_failure(state: &AppState, scheme: &str, host: &str, port: i64) {
     }
 }
 
-async fn single_raw_request(
-    client: &reqwest::Client,
-    node_url: (String, String, i64),
-    path: &str,
-    method: &str,
-    headers: &HeaderMap,
-    body: Option<&[u8]>,
-) -> Result<(Response, (String, String, i64), f64), HandlerError> {
-    let start_time = Instant::now();
-
-    match raw_http_request(client, node_url.clone(), path, method, headers, body).await {
-        Ok(response) => {
-            let elapsed = start_time.elapsed();
-            let latency_ms = elapsed.as_millis() as f64;
-
-            // Check HTTP status code - only 200 is success!
-            if response.status().is_success() {
-                // For JSON-RPC endpoints, also check for JSON-RPC errors
-                if path == "/json_rpc" {
-                    let (parts, body_stream) = response.into_parts();
-                    let body_bytes = axum::body::to_bytes(body_stream, usize::MAX)
-                        .await
-                        .map_err(|e| HandlerError::RequestError(format!("{:#?}", e)))?;
-
-                    if is_jsonrpc_error(&body_bytes) {
-                        return Err(HandlerError::JsonRpcError("JSON-RPC error".to_string()));
-                    }
-
-                    // Reconstruct response with the body we consumed
-                    let response = Response::from_parts(parts, Body::from(body_bytes));
-                    Ok((response, node_url, latency_ms))
-                } else {
-                    // For non-JSON-RPC endpoints, HTTP success is enough
-                    Ok((response, node_url, latency_ms))
-                }
-            } else {
-                // Non-200 status codes are failures
-                Err(HandlerError::RequestError(format!(
-                    "HTTP {}",
-                    response.status()
-                )))
-            }
-        }
-        Err(e) => Err(e),
-    }
-}
-
-async fn sequential_requests(
-    state: &AppState,
-    path: &str,
-    method: &str,
-    headers: &HeaderMap,
-    body: Option<&[u8]>,
-) -> Result<Response, HandlerError> {
-    const POOL_SIZE: usize = 20;
-    const MAX_JSONRPC_ERRORS: usize = 3;
-
-    // Extract JSON-RPC method for better logging
-    let jsonrpc_method = if path == "/json_rpc" {
-        if let Some(body_data) = body {
-            extract_jsonrpc_method(body_data)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let mut tried_nodes = 0;
-    let mut collected_errors: Vec<((String, String, i64), HandlerError)> = Vec::new();
-
-    // Get the pool of nodes
-    let available_pool = {
-        let nodes = state
-            .node_pool
-            .get_top_reliable_nodes(POOL_SIZE)
-            .await
-            .map_err(|e| HandlerError::PoolError(e.to_string()))?;
-
-        let pool: Vec<(String, String, i64)> = nodes
-            .into_iter()
-            .map(|node| (node.scheme, node.host, node.port as i64))
-            .collect();
-
-        pool
-    };
-
-    if available_pool.is_empty() {
-        return Err(HandlerError::NoNodes);
-    }
-
-    // Try nodes one by one sequentially
-    for node in available_pool.iter().take(POOL_SIZE) {
-        tried_nodes += 1;
-        let node_display = format!("{}://{}:{}", node.0, node.1, node.2);
-
-        match &jsonrpc_method {
-            Some(rpc_method) => debug!(
-                "Trying {} request to {} (JSON-RPC: {}) - attempt {} of {}",
-                method,
-                node_display,
-                rpc_method,
-                tried_nodes,
-                available_pool.len().min(POOL_SIZE)
-            ),
-            None => debug!(
-                "Trying {} request to {} - attempt {} of {}",
-                method,
-                node_display,
-                tried_nodes,
-                available_pool.len().min(POOL_SIZE)
-            ),
-        }
-
-        match single_raw_request(
-            &state.http_client,
-            node.clone(),
-            path,
-            method,
-            headers,
-            body,
-        )
-        .await
-        {
-            Ok((response, winning_node, latency_ms)) => {
-                let (scheme, host, port) = &winning_node;
-                let winning_node_display = format!("{}://{}:{}", scheme, host, port);
-
-                match &jsonrpc_method {
-                    Some(rpc_method) => debug!(
-                        "{} response from {} ({}ms) - SUCCESS after trying {} nodes! JSON-RPC: {}",
-                        method, winning_node_display, latency_ms, tried_nodes, rpc_method
-                    ),
-                    None => debug!(
-                        "{} response from {} ({}ms) - SUCCESS after trying {} nodes!",
-                        method, winning_node_display, latency_ms, tried_nodes
-                    ),
-                }
-
-                record_success(state, &node.0, &node.1, node.2, latency_ms).await;
-
-                return Ok(response);
-            }
-            Err(e) => {
-                collected_errors.push((node.clone(), e.clone()));
-
-                debug!(
-                    "Request failed with node {}: {} - checking if we should fail fast...",
-                    node_display, e
-                );
-
-                // Count JSON-RPC errors by checking through all collected errors (type-safe)
-                let jsonrpc_error_count = collected_errors
-                    .iter()
-                    .filter(|(_, error)| matches!(error, HandlerError::JsonRpcError(_)))
-                    .count();
-
-                // Fail fast after MAX_JSONRPC_ERRORS JSON-RPC errors
-                if jsonrpc_error_count >= MAX_JSONRPC_ERRORS {
-                    match &jsonrpc_method {
-                        Some(rpc_method) => error!(
-                            "Failing fast after {} JSON-RPC errors for {} request (JSON-RPC: {}). These are likely request-specific issues that won't resolve on other servers.",
-                            jsonrpc_error_count, method, rpc_method
-                        ),
-                        None => error!(
-                            "Failing fast after {} JSON-RPC errors for {} request. These are likely request-specific issues that won't resolve on other servers.",
-                            jsonrpc_error_count, method
-                        ),
-                    }
-
-                    // Record all non-JSON-RPC errors as failures
-                    for (node, error) in collected_errors.iter() {
-                        if !matches!(error, HandlerError::JsonRpcError(_)) {
-                            record_failure(state, &node.0, &node.1, node.2).await;
-                        }
-                    }
-
-                    return Err(HandlerError::AllRequestsFailed(
-                        collected_errors
-                            .into_iter()
-                            .map(|(node, error)| (display_node(&node), error.to_string()))
-                            .collect(),
-                    ));
-                }
-
-                continue;
-            }
-        }
-    }
-
-    // Record failures for all nodes that were tried
-    for (node, _) in collected_errors.iter() {
-        record_failure(state, &node.0, &node.1, node.2).await;
-    }
-
-    // Log detailed error information
-    let detailed_errors: Vec<String> = collected_errors
-        .iter()
-        .map(|(node, error)| format!("{}: {}", display_node(node), error))
-        .collect();
-
-    match &jsonrpc_method {
-        Some(rpc_method) => error!(
-            "All {} requests failed after trying {} nodes (JSON-RPC: {}). Detailed errors:\n{}",
-            method,
-            tried_nodes,
-            rpc_method,
-            detailed_errors.join("\n")
-        ),
-        None => error!(
-            "All {} requests failed after trying {} nodes. Detailed errors:\n{}",
-            method,
-            tried_nodes,
-            detailed_errors.join("\n")
-        ),
-    }
-
-    Err(HandlerError::AllRequestsFailed(
-        collected_errors
-            .into_iter()
-            .map(|(node, error)| (display_node(&node), error.to_string()))
-            .collect(),
-    ))
-}
-
-/// Forward a request to the node pool, returning either a successful response or a simple
-/// `500` with text "All nodes failed".  Keeps the error handling logic in one place so the
-/// public handlers stay readable.
-async fn proxy_request(
-    state: &AppState,
-    path: &str,
-    method: &str,
-    headers: &HeaderMap,
-    body: Option<&[u8]>,
-) -> Response {
-    match sequential_requests(state, path, method, headers, body).await {
-        Ok(res) => res,
-        Err(handler_error) => {
-            let error_response = match &handler_error {
-                HandlerError::AllRequestsFailed(node_errors) => {
-                    json!({
-                        "error": "All nodes failed",
-                        "details": {
-                            "type": "AllRequestsFailed",
-                            "message": "All proxy requests to available nodes failed",
-                            "node_errors": node_errors.iter().map(|(node, error)| {
-                                json!({
-                                    "node": node,
-                                    "error": error
-                                })
-                            }).collect::<Vec<_>>(),
-                            "total_nodes_tried": node_errors.len()
-                        }
-                    })
-                }
-                HandlerError::NoNodes => {
-                    json!({
-                        "error": "No nodes available",
-                        "details": {
-                            "type": "NoNodes",
-                            "message": "No healthy nodes available in the pool"
-                        }
-                    })
-                }
-                HandlerError::PoolError(msg) => {
-                    json!({
-                        "error": "Pool error",
-                        "details": {
-                            "type": "PoolError",
-                            "message": msg
-                        }
-                    })
-                }
-                HandlerError::RequestError(msg) => {
-                    json!({
-                        "error": "Request error",
-                        "details": {
-                            "type": "RequestError",
-                            "message": msg
-                        }
-                    })
-                }
-                HandlerError::JsonRpcError(msg) => {
-                    json!({
-                        "error": "JSON-RPC error",
-                        "details": {
-                            "type": "JsonRpcError",
-                            "message": msg
-                        }
-                    })
-                }
-            };
-
-            Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .header("content-type", "application/json")
-                .body(Body::from(error_response.to_string()))
-                .unwrap_or_else(|_| Response::new(Body::empty()))
-        }
-    }
-}
-
-#[axum::debug_handler]
-pub async fn proxy_handler(
-    State(state): State<AppState>,
-    method: Method,
-    uri: axum::http::Uri,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> Response {
-    let body_size = body.len();
-    let request_id = Uuid::new_v4();
-    let path = uri.path().to_string();
-    let method_str = method.to_string();
-    let path_clone = path.clone();
-
-    // Extract JSON-RPC method for tracing span
-    let body_option = (!body.is_empty()).then_some(&body[..]);
-    let jsonrpc_method = if path == "/json_rpc" {
-        if let Some(body_data) = body_option {
-            extract_jsonrpc_method(body_data)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let jsonrpc_method_for_span = jsonrpc_method.as_deref().unwrap_or("N/A").to_string();
-
-    async move {
-        match &jsonrpc_method {
-            Some(rpc_method) => debug!(
-                "Proxying {} {} ({} bytes) - JSON-RPC method: {}",
-                method, path, body_size, rpc_method
-            ),
-            None => debug!("Proxying {} {} ({} bytes)", method, path, body_size),
-        }
-
-        proxy_request(&state, &path, method.as_str(), &headers, body_option).await
-    }
-    .instrument(info_span!("proxy_request",
-        request_id = %request_id,
-        method = %method_str,
-        path = %path_clone,
-        body_size = body_size,
-        jsonrpc_method = %jsonrpc_method_for_span
-    ))
-    .await
-}
-
 #[axum::debug_handler]
 pub async fn stats_handler(State(state): State<AppState>) -> Response {
     async move {
@@ -534,7 +694,8 @@ pub async fn stats_handler(State(state): State<AppState>) -> Response {
                     "healthy_node_count": status.healthy_node_count,
                     "successful_health_checks": status.successful_health_checks,
                     "unsuccessful_health_checks": status.unsuccessful_health_checks,
-                    "top_reliable_nodes": status.top_reliable_nodes
+                    "top_reliable_nodes": status.top_reliable_nodes,
+                    "bandwidth_kb_per_sec": status.bandwidth_kb_per_sec
                 });
 
                 Response::builder()

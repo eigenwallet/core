@@ -55,6 +55,7 @@ import {
   setBalance,
   setSyncProgress,
   setHistory,
+  setRestoreHeight,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
 import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
@@ -102,6 +103,8 @@ export const PRESET_RENDEZVOUS_POINTS = [
   "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
   "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
+  "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
+  "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
 ];
 
 export async function fetchSellersAtPresetRendezvousPoints() {
@@ -319,6 +322,8 @@ export async function initializeContext() {
   // For Monero nodes, determine whether to use pool or custom node
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
 
+  const useMoneroTor = store.getState().settings.enableMoneroTor;
+
   const moneroNodeUrl =
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
 
@@ -341,6 +346,7 @@ export async function initializeContext() {
     electrum_rpc_urls: bitcoinNodes,
     monero_node_config: moneroNodeConfig,
     use_tor: useTor,
+    enable_monero_tor: useMoneroTor,
   };
 
   logger.info("Initializing context with settings", tauriSettings);
@@ -434,7 +440,10 @@ export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> 
 }
 
 export async function getRestoreHeight(): Promise<GetRestoreHeightResponse> {
-  return await invokeNoArgs<GetRestoreHeightResponse>("get_restore_height");
+  const restoreHeight =
+    await invokeNoArgs<GetRestoreHeightResponse>("get_restore_height");
+  store.dispatch(setRestoreHeight(restoreHeight));
+  return restoreHeight;
 }
 
 export async function setMoneroRestoreHeight(
@@ -484,25 +493,31 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
   );
 }
 
+export async function getMoneroSeed(): Promise<string> {
+  // Returns the wallet's seed phrase as a single string. Backend must expose the `get_monero_seed` command.
+  return await invokeNoArgs<string>("get_monero_seed");
+}
+
 // Wallet management functions that handle Redux dispatching
 export async function initializeMoneroWallet() {
   try {
-    const [
-      addressResponse,
-      balanceResponse,
-      syncProgressResponse,
-      historyResponse,
-    ] = await Promise.all([
-      getMoneroMainAddress(),
-      getMoneroBalance(),
-      getMoneroSyncProgress(),
-      getMoneroHistory(),
+    await Promise.all([
+      getMoneroMainAddress().then((response) => {
+        store.dispatch(setMainAddress(response.address));
+      }),
+      getMoneroBalance().then((response) => {
+        store.dispatch(setBalance(response));
+      }),
+      getMoneroSyncProgress().then((response) => {
+        store.dispatch(setSyncProgress(response));
+      }),
+      getMoneroHistory().then((response) => {
+        store.dispatch(setHistory(response));
+      }),
+      getRestoreHeight().then((response) => {
+        store.dispatch(setRestoreHeight(response));
+      }),
     ]);
-
-    store.dispatch(setMainAddress(addressResponse.address));
-    store.dispatch(setBalance(balanceResponse));
-    store.dispatch(setSyncProgress(syncProgressResponse));
-    store.dispatch(setHistory(historyResponse));
   } catch (err) {
     console.error("Failed to fetch Monero wallet data:", err);
   }
@@ -522,13 +537,12 @@ export async function sendMoneroTransaction(
       })
       .catch((refreshErr) => {
         console.error("Failed to refresh wallet data after send:", refreshErr);
-        // Could emit a toast notification here
       });
 
     return response;
   } catch (err) {
     console.error("Failed to send Monero:", err);
-    throw err; // ✅ Re-throw so caller can handle appropriately
+    throw err;
   }
 }
 

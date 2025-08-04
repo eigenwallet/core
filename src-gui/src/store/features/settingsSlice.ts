@@ -19,6 +19,8 @@ export interface SettingsState {
   fiatCurrency: FiatCurrency;
   /// Whether to enable Tor for p2p connections
   enableTor: boolean;
+  /// Whether to route Monero wallet traffic through Tor
+  enableMoneroTor: boolean;
   /// Whether to use the Monero RPC pool for load balancing (true) or custom nodes (false)
   useMoneroRpcPool: boolean;
   userHasSeenIntroduction: boolean;
@@ -126,6 +128,7 @@ const initialState: SettingsState = {
   fetchFiatPrices: false,
   fiatCurrency: FiatCurrency.Usd,
   enableTor: true,
+  enableMoneroTor: false, // Default to not routing Monero traffic through Tor
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
@@ -215,6 +218,9 @@ const alertsSlice = createSlice({
     setTorEnabled(slice, action: PayloadAction<boolean>) {
       slice.enableTor = action.payload;
     },
+    setEnableMoneroTor(slice, action: PayloadAction<boolean>) {
+      slice.enableMoneroTor = action.payload;
+    },
     setUseMoneroRpcPool(slice, action: PayloadAction<boolean>) {
       slice.useMoneroRpcPool = action.payload;
     },
@@ -236,6 +242,7 @@ export const {
   setFetchFiatPrices,
   setFiatCurrency,
   setTorEnabled,
+  setEnableMoneroTor,
   setUseMoneroRpcPool,
   setUserHasSeenIntroduction,
   addRendezvousPoint,

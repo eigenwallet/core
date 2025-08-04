@@ -3,14 +3,16 @@ import {
   GetMoneroBalanceResponse,
   GetMoneroHistoryResponse,
   GetMoneroSyncProgressResponse,
+  GetRestoreHeightResponse,
 } from "models/tauriModel";
 
 interface WalletState {
-  // Wallet data
   mainAddress: string | null;
   balance: GetMoneroBalanceResponse | null;
   syncProgress: GetMoneroSyncProgressResponse | null;
   history: GetMoneroHistoryResponse | null;
+  lowestCurrentBlock: number | null;
+  restoreHeight: GetRestoreHeightResponse | null;
 }
 
 export interface WalletSlice {
@@ -19,11 +21,12 @@ export interface WalletSlice {
 
 const initialState: WalletSlice = {
   state: {
-    // Wallet data
     mainAddress: null,
     balance: null,
     syncProgress: null,
     history: null,
+    lowestCurrentBlock: null,
+    restoreHeight: null,
   },
 };
 
@@ -42,10 +45,23 @@ export const walletSlice = createSlice({
       slice,
       action: PayloadAction<GetMoneroSyncProgressResponse>,
     ) {
+      slice.state.lowestCurrentBlock = Math.min(
+        // We ignore anything below 10 blocks as this may be something like wallet2
+        // sending a wrong value when it hasn't initialized yet
+        slice.state.lowestCurrentBlock < 10 ||
+          slice.state.lowestCurrentBlock === null
+          ? Infinity
+          : slice.state.lowestCurrentBlock,
+        action.payload.current_block,
+      );
+
       slice.state.syncProgress = action.payload;
     },
     setHistory(slice, action: PayloadAction<GetMoneroHistoryResponse>) {
       slice.state.history = action.payload;
+    },
+    setRestoreHeight(slice, action: PayloadAction<GetRestoreHeightResponse>) {
+      slice.state.restoreHeight = action.payload;
     },
     // Reset actions
     resetWalletState(slice) {
@@ -60,6 +76,7 @@ export const {
   setSyncProgress,
   setHistory,
   resetWalletState,
+  setRestoreHeight,
 } = walletSlice.actions;
 
 export default walletSlice.reducer;

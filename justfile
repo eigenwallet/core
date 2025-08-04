@@ -54,6 +54,12 @@ gui_build:
 tests:
         cargo nextest run
 
+docker_test_happy_path:
+	cargo test --package swap --test happy_path -- --nocapture
+
+docker_test_all:
+	cargo test --package swap --test all -- --nocapture
+
 # Tests the Rust bindings for Monero
 test_monero_sys:
         cd monero-sys && cargo nextest run

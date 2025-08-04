@@ -3,7 +3,7 @@ pub mod tauri_bindings;
 
 use crate::cli::api::tauri_bindings::SeedChoice;
 use crate::cli::command::{Bitcoin, Monero};
-use crate::common::tor::init_tor_client;
+use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
@@ -204,6 +204,7 @@ pub struct ContextBuilder {
     debug: bool,
     json: bool,
     tor: bool,
+    enable_monero_tor: bool,
     tauri_handle: Option<TauriHandle>,
 }
 
@@ -227,6 +228,7 @@ impl ContextBuilder {
             debug: false,
             json: false,
             tor: false,
+            enable_monero_tor: false,
             tauri_handle: None,
         }
     }
@@ -280,6 +282,12 @@ impl ContextBuilder {
         self
     }
 
+    /// Whether to route Monero wallet traffic through Tor (default false)
+    pub fn with_enable_monero_tor(mut self, enable_monero_tor: bool) -> Self {
+        self.enable_monero_tor = enable_monero_tor;
+        self
+    }
+
     /// Takes the builder, initializes the context by initializing the wallets and other components and returns the Context.
     pub async fn build(self) -> Result<Context> {
         // This is the data directory for the eigenwallet (wallet files)
@@ -314,17 +322,34 @@ impl ContextBuilder {
             );
         });
 
-        // Start the rpc pool for the monero wallet
+        // Create unbootstrapped Tor client early if enabled
+        let unbootstrapped_tor_client = if self.tor {
+            match create_tor_client(&base_data_dir).await.inspect_err(|err| {
+                tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
+            }) {
+                Ok(client) => Some(client),
+                Err(_) => None,
+            }
+        } else {
+            tracing::warn!("Internal Tor client not enabled, skipping initialization");
+            None
+        };
+
+        // Start the rpc pool for the monero wallet with optional Tor client based on enable_monero_tor setting
         let (server_info, mut status_receiver, pool_handle) =
             monero_rpc_pool::start_server_with_random_port(
-                monero_rpc_pool::config::Config::new_random_port(
-                    "127.0.0.1".to_string(),
+                monero_rpc_pool::config::Config::new_random_port_with_tor_client(
                     base_data_dir.join("monero-rpc-pool"),
+                    if self.enable_monero_tor {
+                        unbootstrapped_tor_client.clone()
+                    } else {
+                        None
+                    },
+                    match self.is_testnet {
+                        true => monero::Network::Stagenet,
+                        false => monero::Network::Mainnet,
+                    },
                 ),
-                match self.is_testnet {
-                    true => crate::monero::Network::Stagenet,
-                    false => crate::monero::Network::Mainnet,
-                },
             )
             .await?;
 
@@ -460,25 +485,25 @@ impl ContextBuilder {
             }
         };
 
-        let initialize_tor_client = async {
-            // Don't init a tor client unless we should use it.
-            if !self.tor {
-                tracing::warn!("Internal Tor client not enabled, skipping initialization");
-                return Ok(None);
+        let bootstrap_tor_client_task = async {
+            // Bootstrap the Tor client if we have one
+            match unbootstrapped_tor_client.clone() {
+                Some(tor_client) => {
+                    bootstrap_tor_client(tor_client.clone(), tauri_handle.clone())
+                        .await
+                        .inspect_err(|err| {
+                            tracing::warn!(%err, "Failed to bootstrap Tor client. It will remain unbootstrapped");
+                        })
+                        .ok();
+
+                    Ok(Some(tor_client))
+                }
+                None => Ok(None),
             }
-
-            let maybe_tor_client = init_tor_client(&data_dir, tauri_handle.clone())
-                .await
-                .inspect_err(|err| {
-                    tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
-                })
-                .ok();
-
-            Ok(maybe_tor_client)
         };
 
         let (bitcoin_wallet, tor) =
-            tokio::try_join!(initialize_bitcoin_wallet, initialize_tor_client,)?;
+            tokio::try_join!(initialize_bitcoin_wallet, bootstrap_tor_client_task,)?;
 
         // If we have a bitcoin wallet and a tauri handle, we start a background task
         if let Some(wallet) = bitcoin_wallet.clone() {

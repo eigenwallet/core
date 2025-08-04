@@ -24,9 +24,9 @@ macro_rules! embedded_patch {
 /// Embedded patches applied at compile time
 const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
     embedded_patch!(
-        "wallet2_api_allow_subtract_from_fee",
+        "eigenwallet_0001_wallet2_api_allow_subtract_from_fee",
         "Adds subtract_fee_from_outputs parameter to wallet2_api transaction creation methods",
-        "patches/wallet2_api_allow_subtract_from_fee.patch"
+        "patches/eigenwallet_0001_wallet2_api_allow_subtract_from_fee.patch"
     ),
     embedded_patch!(
         "0001-fix-dummy-translation-generator.patch",
@@ -52,6 +52,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "0002-store-crash-fix",
         "Fixes corrupted wallet cache when storing while refreshing",
         "patches/0002-store-crash-fix.patch"
+    ),
+    embedded_patch!(
+        "eigenwallet_0002_wallet2_increase_rpc_retries",
+        "Increases the number of RPC retries for wallet2::refresh from 3 to 10",
+        "patches/eigenwallet_0002_wallet2_increase_rpc_retries.patch"
     ),
 ];
 
