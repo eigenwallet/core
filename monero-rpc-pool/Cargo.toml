@@ -11,6 +11,10 @@ path = "src/main.rs"
 [[bin]]
 name = "stress-test"
 path = "src/bin/stress_test.rs"
+required-features = ["stress-test"]
+
+[features]
+stress-test = ["reqwest"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -44,7 +48,7 @@ hyper-util = { version = "0.1", features = ["full"] }
 native-tls = "0.2"
 tokio-native-tls = "0.3"
 
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json"], optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

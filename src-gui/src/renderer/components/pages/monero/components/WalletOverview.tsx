@@ -67,7 +67,7 @@ function useSyncTimeEstimation(
   const formattedTimeRemaining = estimatedTimeRemaining
     ? humanizeDuration(estimatedTimeRemaining * 1000, {
         round: true,
-        largest: 2,
+        largest: 1,
       })
     : null;
 

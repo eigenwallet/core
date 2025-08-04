@@ -622,7 +622,6 @@ enum HandlerError {
 enum SingleRequestError {
     ConnectionError(String),
     SendRequestError(String),
-    CollectResponseError(String),
 }
 
 impl std::fmt::Display for HandlerError {
@@ -654,9 +653,6 @@ impl std::fmt::Display for SingleRequestError {
         match self {
             SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {}", msg),
-            SingleRequestError::CollectResponseError(msg) => {
-                write!(f, "Collect response error: {}", msg)
-            }
         }
     }
 }
