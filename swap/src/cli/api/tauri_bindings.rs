@@ -603,7 +603,8 @@ impl TauriEmitter for Option<TauriHandle> {
     ) -> Result<bool> {
         match self {
             Some(tauri) => tauri.request_bitcoin_approval(details, timeout_secs).await,
-            None => bail!("No Tauri handle available"),
+            // If no TauriHandle is available, we just approve the request
+            None => Ok(true),
         }
     }
 
@@ -886,10 +887,9 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_lock_amount: bitcoin::Amount,
-        #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
-        btc_tx_lock_fee: bitcoin::Amount,
     },
+    RetrievingMoneroBlockheight,
+    BtcLockPublishInflight,
     BtcLockTxInMempool {
         #[typeshare(serialized_as = "string")]
         btc_lock_txid: bitcoin::Txid,

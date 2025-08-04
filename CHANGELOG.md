@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - GUI + CLI + ASB: The Monero RPC pool now caches TCP and Tor streams
 
+## [3.0.0-beta.5] - 2025-08-04
+
+- GUI + CLI: Fixed a potential race condition where if the user closed the app while the Bitcoin was in the process of being published, manual recovery would be required to get to a recoverable state.
+- GUI + CLI + ASB: Fixed an issue where the Monero block height could not be fetched due to a bug in the Monero codebase
+
 ## [3.0.0-beta.4] - 2025-08-03
 
 - GUI: The following rendezvous points have been added to the default list of rendezvous points. If you're running a maker, please add them to your config file (under `network.rendezvous_point`). They are operated by members of the community that have shown to be reliable. These rendezvous points act as bootstrapping nodes for peer discovery: `/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT`, `/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp`, `/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU`
@@ -597,7 +602,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.5...HEAD
+[3.0.0-beta.5]: https://github.com/eigenwallet/core/compare/3.0.0-beta.4...3.0.0-beta.5
 [3.0.0-beta.4]: https://github.com/eigenwallet/core/compare/3.0.0-beta.3...3.0.0-beta.4
 [3.0.0-beta.3]: https://github.com/eigenwallet/core/compare/3.0.0-beta.2...3.0.0-beta.3
 [3.0.0-beta.2]: https://github.com/eigenwallet/core/compare/3.0.0-beta...3.0.0-beta.2
