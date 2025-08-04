@@ -398,16 +398,20 @@ impl WalletHandle {
     /// Retries at most 5 times with a 500ms delay between attempts.
     pub async fn blockchain_height(&self) -> anyhow::Result<u64> {
         const MAX_RETRIES: u64 = 5;
+        const RETRY_DELAY: u64 = 500;
 
         for _ in 0..MAX_RETRIES {
-            if let Some(height) = self
+            match self
                 .call(move |wallet| wallet.daemon_blockchain_height())
                 .await
             {
-                return Ok(height);
+                Ok(height) => return Ok(height),
+                Err(e) => {
+                    tracing::warn!(error=%e, "Failed to get blockchain height, retrying in {}ms", RETRY_DELAY);
+                }
             }
 
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY)).await;
         }
 
         self.check_wallet().await?;
@@ -1705,20 +1709,23 @@ impl FfiWallet {
     ///
     /// Returns the height of the blockchain, if connected.
     /// Returns None if not connected.
-    fn daemon_blockchain_height(&self) -> Option<u64> {
+    fn daemon_blockchain_height(&self) -> anyhow::Result<u64> {
         // Here we actually use the _target_ height -- incase the remote node is
         // currently catching up we want to work with the height it ends up at.
-        match self
+        let target_height = self.inner.daemonBlockChainTargetHeight().context(
+            "Failed to get daemon blockchain target height: FFI call failed with exception",
+        )?;
+
+        let height = self
             .inner
-            .daemonBlockChainTargetHeight()
-            .context(
-                "Failed to get daemon blockchain target height: FFI call failed with exception",
-            )
-            .expect("Shouldn't panic")
-        {
-            0 => None,
-            height => Some(height),
-        }
+            .daemonBlockChainHeight()
+            .context("Failed to get daemon blockchain height: FFI call failed with exception")?;
+
+        // wallet2 is such a crazy construction that sometimes the target_height is less than the current height
+        // we therefore take the max of the two
+        let max_height = std::cmp::max(height, target_height);
+
+        Ok(max_height)
     }
 
     /// Get the total balance across all accounts.
