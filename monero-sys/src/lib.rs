@@ -400,23 +400,26 @@ impl WalletHandle {
         const MAX_RETRIES: u64 = 5;
         const RETRY_DELAY: u64 = 500;
 
+        let mut last_error = None;
+
         for _ in 0..MAX_RETRIES {
             match self
                 .call(move |wallet| wallet.daemon_blockchain_height())
                 .await
             {
+                Ok(0) => last_error = Some(anyhow!("Daemon blockchain height is 0")),
+                Err(e) => last_error = Some(e),
                 Ok(height) => return Ok(height),
-                Err(e) => {
-                    tracing::warn!(error=%e, "Failed to get blockchain height, retrying in {}ms", RETRY_DELAY);
-                }
             }
+
+            tracing::warn!(error=%last_error.unwrap_or(anyhow!("Unknown error")), "Failed to get blockchain height, retrying in {}ms", RETRY_DELAY);
 
             tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY)).await;
         }
 
         self.check_wallet().await?;
 
-        bail!("Failed to get blockchain height after 5 attempts");
+        bail!("Failed to get blockchain height after 5 attempts: {last_error:?}");
     }
 
     /// Transfer funds to an address without approval.
