@@ -200,10 +200,14 @@ fn main() {
         .to_string();
     config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
     println!("cargo:warning=Using toolchain file: {}", toolchain_file);
+
+    let depends_lib_dir = 
+        contrib_depends_dir
+            .join(format!("{}/lib", target));
+
     println!(
         "cargo:rustc-link-search=native={}",
-        contrib_depends_dir
-            .join(format!("{}/lib", target))
+        depends_lib_dir
             .display()
     );
 
@@ -441,9 +445,15 @@ fn main() {
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
                                                    // println!("cargo:rustc-link-lib=static=nghttp2");
                                                    // println!("cargo:rustc-link-lib=static=event");
+    // Android
+    #[cfg(target_os = "android")] {
+        println!("cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/");
+        println!("cargo:rustc-link-lib=static=c++_static");
+    }
+
 
     // Link protobuf statically
-    println!("cargo:rustc-link-lib=static=protobuf");
+    // println!("cargo:rustc-link-lib=static=protobuf");
 
     #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-arg=-mmacosx-version-min=11.0");
