@@ -499,6 +499,7 @@ async fn init_monero_wallet(
             monero_rpc_pool::start_server_with_random_port(
                 monero_rpc_pool::config::Config::new_random_port(
                     config.data.dir.join("monero-rpc-pool"),
+                    env_config.monero_network,
                 ),
             )
             .await

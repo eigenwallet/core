@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use monero::Network;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -28,12 +29,12 @@ impl fmt::Display for NodeAddress {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeMetadata {
     pub id: i64,
-    pub network: String, // "mainnet", "stagenet", or "testnet"
+    pub network: Network,
     pub first_seen_at: DateTime<Utc>,
 }
 
 impl NodeMetadata {
-    pub fn new(id: i64, network: String, first_seen_at: DateTime<Utc>) -> Self {
+    pub fn new(id: i64, network: Network, first_seen_at: DateTime<Utc>) -> Self {
         Self {
             id,
             network,

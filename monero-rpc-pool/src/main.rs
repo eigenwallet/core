@@ -100,13 +100,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.port,
         std::env::temp_dir().join("monero-rpc-pool"),
         tor_client,
-        network_to_string(&args.network),
+        args.network,
     );
 
     info!(
         host = config.host,
         port = config.port,
-        network = network_to_string(&args.network),
+        network = ?args.network,
         "Starting Monero RPC Pool"
     );
 
