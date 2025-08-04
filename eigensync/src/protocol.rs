@@ -44,12 +44,8 @@ impl From<SerializedChange> for Change {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
-    GetChanges {
-        current_changes: Vec<SerializedChange>,
-    },
-    AddChanges {
-        changes: Vec<SerializedChange>,
-    },
+    GetChanges { changes: Vec<SerializedChange> },
+    AddChanges { changes: Vec<SerializedChange> },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

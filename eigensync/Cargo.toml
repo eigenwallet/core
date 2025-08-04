@@ -39,7 +39,8 @@ tokio = { workspace = true, features = [
     "time",
 ] }
 env_logger = "0.11"
-autosurgeon = "0.8.7"
+autosurgeon = { version = "0.8.7", features = ["uuid"] }
+hex.workspace = true
 
 [lints]
 workspace = true
