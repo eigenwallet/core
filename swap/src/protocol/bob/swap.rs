@@ -234,13 +234,18 @@ async fn next_state(
             state3,
             monero_wallet_restore_blockheight,
         } => {
-            // TODO: Check if the transaction has already been broadcasted
-
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcLockPublishInflight);
 
-            // Publish the signed Bitcoin lock transaction
-            let (..) = bitcoin_wallet.broadcast(btc_lock_tx_signed, "lock").await?;
+            // Check if the transaction has already been broadcasted
+            // It could be that the operation was aborted after the transaction reached the Electrum server
+            // but before we transitioned to the BtcLocked state
+            if let Ok(Some(_)) = bitcoin_wallet.get_raw_transaction(state3.tx_lock_id()).await {
+                tracing::info!(txid = %state3.tx_lock_id(), "Bitcoin lock transaction already published, skipping publish");
+            }else {
+                 // Publish the signed Bitcoin lock transaction
+                let (..) = bitcoin_wallet.broadcast(btc_lock_tx_signed, "lock").await?;
+            }
 
             BobState::BtcLocked {
                 state3,

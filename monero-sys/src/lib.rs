@@ -412,7 +412,7 @@ impl WalletHandle {
                 Ok(height) => return Ok(height),
             }
 
-            tracing::warn!(error=%last_error.unwrap_or(anyhow!("Unknown error")), "Failed to get blockchain height, retrying in {}ms", RETRY_DELAY);
+            tracing::warn!(error=%last_error.as_ref().unwrap_or(&anyhow!("Unknown error")), "Failed to get blockchain height, retrying in {}ms", RETRY_DELAY);
 
             tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY)).await;
         }
