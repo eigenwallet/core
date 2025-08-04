@@ -603,7 +603,8 @@ impl TauriEmitter for Option<TauriHandle> {
     ) -> Result<bool> {
         match self {
             Some(tauri) => tauri.request_bitcoin_approval(details, timeout_secs).await,
-            None => bail!("No Tauri handle available"),
+            // If no TauriHandle is available, we just approve the request
+            None => Ok(true),
         }
     }
 

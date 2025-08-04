@@ -182,7 +182,9 @@ async fn next_state(
 
             match approval_result {
                 Ok(true) => {
-                    tracing::debug!("User approved swap offer");
+                    tracing::debug!(
+                        "User approved swap offer, fetching current Monero blockheight"
+                    );
 
                     // Record the current monero wallet block height so we don't have to scan from
                     // block 0 once we create the redeem wallet.
@@ -198,10 +200,13 @@ async fn next_state(
                         .await
                         .context("Failed to fetch current Monero blockheight")?;
 
-                    // Publish the signed Bitcoin lock transaction
-                    let (..) = bitcoin_wallet.broadcast(signed_tx, "lock").await?;
+                    tracing::debug!(
+                        %monero_wallet_restore_blockheight,
+                        "User approved swap offer, recording monero wallet restore blockheight",
+                    );
 
-                    BobState::BtcLocked {
+                    BobState::BtcLockReadyToPublish {
+                        btc_lock_tx_signed: signed_tx,
                         state3,
                         monero_wallet_restore_blockheight,
                     }
@@ -218,8 +223,24 @@ async fn next_state(
                 }
             }
         }
-        // Bob has locked Bitcoin
-        // Watch for Alice to lock Monero or for cancel timelock to elapse
+        // User has approved the swap
+        // Bitcoin lock transaction has been signed
+        // Monero restore height has been recorded
+        BobState::BtcLockReadyToPublish {
+            btc_lock_tx_signed,
+            state3,
+            monero_wallet_restore_blockheight,
+        } => {
+            // TODO: Check if the transaction has already been broadcasted
+
+            // Publish the signed Bitcoin lock transaction
+            let (..) = bitcoin_wallet.broadcast(btc_lock_tx_signed, "lock").await?;
+
+            BobState::BtcLocked {
+                state3,
+                monero_wallet_restore_blockheight,
+            }
+        }
         BobState::BtcLocked {
             state3,
             monero_wallet_restore_blockheight,

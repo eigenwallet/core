@@ -42,6 +42,14 @@ pub async fn cancel(
             // We do not know the block height, so we set it to 0
             state3.cancel(BlockHeight { height: 0 })
         }
+        // Refunding in this state is not possible but we still allow it
+        // because this function is only used for recovery purposes.
+        // We can try to do a refund here so we do.
+        BobState::BtcLockReadyToPublish {
+            state3,
+            monero_wallet_restore_blockheight,
+            ..
+        } => state3.cancel(monero_wallet_restore_blockheight),
         BobState::BtcLocked {
             state3,
             monero_wallet_restore_blockheight,
@@ -143,6 +151,11 @@ pub async fn refund(
         BobState::BtcLocked {
             state3,
             monero_wallet_restore_blockheight,
+        } => state3.cancel(monero_wallet_restore_blockheight),
+        BobState::BtcLockReadyToPublish {
+            state3,
+            monero_wallet_restore_blockheight,
+            ..
         } => state3.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLockProofReceived {
             state,
