@@ -1,7 +1,7 @@
 use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
 use monero::Network;
-use monero_rpc_pool::{config::Config, create_app_with_receiver, database::parse_network};
+use monero_rpc_pool::{config::Config, create_app_with_receiver, database::{parse_network, network_to_string}};
 use reqwest;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Stress Testing Monero RPC Pool");
     println!("   Duration: {}s", args.duration);
     println!("   Concurrency: {}", args.concurrency);
-    println!("   Network: {}", args.network);
+    println!("   Network: {}", network_to_string(&args.network));
     println!("   Tor: {}", args.tor);
     println!();
 
