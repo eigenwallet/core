@@ -346,22 +346,19 @@ pub struct StreamableResponse {
     parts: response::Parts,
     first_chunk: Vec<u8>,
     remaining_stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>>>,
-    bandwidth_tracker: Option<Arc<crate::pool::NodePool>>,
 }
 
 /// A wrapper stream that tracks bandwidth usage
 struct BandwidthTrackingStream<S> {
     inner: S,
-    node_pool: Arc<crate::pool::NodePool>,
-    bytes_transferred: u64,
+    bandwidth_tracker: Arc<crate::pool::BandwidthTracker>,
 }
 
 impl<S> BandwidthTrackingStream<S> {
-    fn new(inner: S, node_pool: Arc<crate::pool::NodePool>) -> Self {
+    fn new(inner: S, bandwidth_tracker: Arc<crate::pool::BandwidthTracker>) -> Self {
         Self {
             inner,
-            node_pool,
-            bytes_transferred: 0,
+            bandwidth_tracker,
         }
     }
 }
@@ -380,19 +377,10 @@ where
 
         if let std::task::Poll::Ready(Some(Ok(ref chunk))) = result {
             let chunk_size = chunk.len() as u64;
-            self.bytes_transferred += chunk_size;
-            self.node_pool.record_bandwidth(chunk_size);
+            self.bandwidth_tracker.record_bytes(chunk_size);
         }
 
         result
-    }
-}
-
-impl<S> Drop for BandwidthTrackingStream<S> {
-    fn drop(&mut self) {
-        if self.bytes_transferred > 0 {
-            tracing::trace!("Total bandwidth tracked: {} bytes", self.bytes_transferred);
-        }
     }
 }
 
@@ -445,11 +433,6 @@ impl CloneableRequest {
 
 impl StreamableResponse {
     const ERROR_CHECK_SIZE: usize = 1024; // 1KB
-
-    /// Convert a streaming response into a streamable one by buffering the first 1KB
-    pub async fn from_response(response: Response<Body>) -> Result<Self, axum::Error> {
-        Self::from_response_with_tracking(response, None).await
-    }
 
     /// Convert a streaming response with bandwidth tracking
     pub async fn from_response_with_tracking(
@@ -506,7 +489,11 @@ impl StreamableResponse {
                 // Wrap with bandwidth tracking if we have a node pool
                 let final_stream: Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>> =
                     if let Some(node_pool) = node_pool.clone() {
-                        Box::pin(BandwidthTrackingStream::new(combined_stream, node_pool))
+                        let bandwidth_tracker = node_pool.get_bandwidth_tracker();
+                        Box::pin(BandwidthTrackingStream::new(
+                            combined_stream,
+                            bandwidth_tracker,
+                        ))
                     } else {
                         Box::pin(combined_stream)
                     };
@@ -520,7 +507,6 @@ impl StreamableResponse {
             parts,
             first_chunk,
             remaining_stream,
-            bandwidth_tracker: node_pool,
         })
     }
 

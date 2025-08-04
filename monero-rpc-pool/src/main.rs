@@ -100,6 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.port,
         std::env::temp_dir().join("monero-rpc-pool"),
         tor_client,
+        network_to_string(&args.network),
     );
 
     info!(
@@ -109,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Starting Monero RPC Pool"
     );
 
-    if let Err(e) = run_server(config, args.network).await {
+    if let Err(e) = run_server(config).await {
         eprintln!("Server error: {}", e);
         std::process::exit(1);
     }

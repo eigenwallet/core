@@ -500,7 +500,6 @@ async fn init_monero_wallet(
                 monero_rpc_pool::config::Config::new_random_port(
                     config.data.dir.join("monero-rpc-pool"),
                 ),
-                env_config.monero_network,
             )
             .await
             .context("Failed to start Monero RPC Pool for ASB")?;
