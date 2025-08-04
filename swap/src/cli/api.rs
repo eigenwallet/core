@@ -346,8 +346,8 @@ impl ContextBuilder {
                         None
                     },
                     match self.is_testnet {
-                        true => "stagenet".to_string(),
-                        false => "mainnet".to_string(),
+                        true => monero::Network::Stagenet,
+                        false => monero::Network::Mainnet,
                     },
                 ),
             )

@@ -1,6 +1,7 @@
 use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
-use monero_rpc_pool::{config::Config, create_app_with_receiver};
+use monero::Network;
+use monero_rpc_pool::{config::Config, create_app_with_receiver, database::parse_network};
 use reqwest;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -23,7 +24,8 @@ struct Args {
 
     #[arg(short, long, default_value = "mainnet")]
     #[arg(help = "Network to use (mainnet, stagenet, testnet)")]
-    network: String,
+    #[arg(value_parser = parse_network)]
+    network: Network,
 
     #[arg(long)]
     #[arg(help = "Enable Tor routing")]
@@ -78,11 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start the pool server
     println!("Starting RPC pool server...");
-    let config = Config::new_random_port_with_tor_client(
-        std::env::temp_dir(),
-        tor_client,
-        args.network.clone(),
-    );
+    let config =
+        Config::new_random_port_with_tor_client(std::env::temp_dir(), tor_client, args.network);
     let (app, _status_receiver, _background_handle) = create_app_with_receiver(config).await?;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

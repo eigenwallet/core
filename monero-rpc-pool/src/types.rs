@@ -26,7 +26,7 @@ impl fmt::Display for NodeAddress {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NodeMetadata {
     pub id: i64,
     pub network: Network,
@@ -87,13 +87,10 @@ impl NodeHealthStats {
 }
 
 /// A complete node record combining address, metadata, and health stats
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NodeRecord {
-    #[serde(flatten)]
     pub address: NodeAddress,
-    #[serde(flatten)]
     pub metadata: NodeMetadata,
-    #[serde(flatten)]
     pub health: NodeHealthStats,
 }
 
