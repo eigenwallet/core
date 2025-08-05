@@ -9,7 +9,7 @@ description = "GUI for XMR<>BTC Atomic Swaps written in Rust"
 
 [lib]
 name = "unstoppableswap_gui_rs_lib"
-crate-type = [ "staticlib" , "cdylib", "rlib"]
+crate-type = ["rlib", "staticlib" , "cdylib"]
 
 [build-dependencies]
 tauri-build = { version = "2.*", features = [ "config-json5" ] }
@@ -43,9 +43,8 @@ openssl = { version = "0.10", features = [
      "vendored",
 ] } # force use of vendored openssl for android
 
-[target.aarch64-linux-android.profile.release]
+[profile.release]
 opt-level = 1
-
 codegen-units = 1
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]

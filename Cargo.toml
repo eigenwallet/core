@@ -69,3 +69,7 @@ crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6b
 
 [workspace.lints]
 rust.unused_crate_dependencies = "warn"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
