@@ -21,4 +21,6 @@ pub enum Cmd {
     BitcoinBalance,
     /// Get Monero balance
     MoneroBalance,
+    /// Get Monero wallet address
+    MoneroAddress,
 }

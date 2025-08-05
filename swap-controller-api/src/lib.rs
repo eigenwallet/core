@@ -13,6 +13,11 @@ pub struct MoneroBalanceResponse {
     pub balance: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MoneroAddressResponse {
+    pub address: String,
+}
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -21,4 +26,6 @@ pub trait AsbApi {
     async fn bitcoin_balance(&self) -> Result<BitcoinBalanceResponse, ErrorObjectOwned>;
     #[method(name = "monero_balance")]
     async fn monero_balance(&self) -> Result<MoneroBalanceResponse, ErrorObjectOwned>;
+    #[method(name = "monero_address")]
+    async fn monero_address(&self) -> Result<MoneroAddressResponse, ErrorObjectOwned>;
 }

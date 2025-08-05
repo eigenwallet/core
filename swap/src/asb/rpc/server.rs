@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
-use swap_controller_api::{AsbApiServer, BitcoinBalanceResponse, MoneroBalanceResponse};
+use swap_controller_api::{AsbApiServer, BitcoinBalanceResponse, MoneroBalanceResponse, MoneroAddressResponse};
 
 /// RPC implementation
 pub struct RpcImpl {
@@ -36,6 +36,14 @@ impl AsbApiServer for RpcImpl {
         let balance = wallet.total_balance().await;
         Ok(MoneroBalanceResponse {
             balance: balance.as_pico(),
+        })
+    }
+
+    async fn monero_address(&self) -> Result<MoneroAddressResponse, ErrorObjectOwned> {
+        let wallet = self.monero_wallet.main_wallet().await;
+        let address = wallet.main_address().await;
+        Ok(MoneroAddressResponse {
+            address: address.to_string(),
         })
     }
 }

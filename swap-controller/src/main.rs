@@ -39,6 +39,10 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
 
             println!("Current Monero balance is {:.12} XMR", amount.as_xmr());
         }
+        Cmd::MoneroAddress => {
+            let response = client.monero_address().await?;
+            println!("The primary Monero address is {}", response.address);
+        }
     }
     Ok(())
 }
