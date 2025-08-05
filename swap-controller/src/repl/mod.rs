@@ -2,11 +2,11 @@ mod parse;
 
 use crate::cli::Cmd;
 use clap::{CommandFactory, Parser};
-use rustyline::{error::ReadlineError, Editor};
 use rustyline::completion::{Completer, Pair};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
+use rustyline::{error::ReadlineError, Editor};
 use rustyline::{Context, Helper};
 use std::future::Future;
 use swap_controller_api::AsbApiClient;
@@ -18,7 +18,7 @@ struct CommandCompleter {
 impl CommandCompleter {
     fn new() -> Self {
         let mut commands = Vec::new();
-        
+
         // Extract command names from the Cmd enum using clap
         #[derive(Parser)]
         #[command(name = "")]
@@ -28,7 +28,7 @@ impl CommandCompleter {
             #[command(subcommand)]
             cmd: Cmd,
         }
-        
+
         let app = TempReplCommand::command();
         for subcmd in app.get_subcommands() {
             commands.push(subcmd.get_name().to_string());
@@ -37,7 +37,7 @@ impl CommandCompleter {
                 commands.push(alias.to_string());
             }
         }
-        
+
         // Add shell-specific commands
         commands.extend_from_slice(&[
             "help".to_string(),
@@ -45,9 +45,9 @@ impl CommandCompleter {
             "exit".to_string(),
             ":q".to_string(),
         ]);
-        
+
         commands.sort();
-        
+
         Self { commands }
     }
 }
@@ -65,13 +65,14 @@ impl Completer for CommandCompleter {
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         let line = &line[..pos];
         let words: Vec<&str> = line.split_whitespace().collect();
-        
+
         if words.is_empty() || (words.len() == 1 && !line.ends_with(' ')) {
             // Complete command names
             let start_pos = line.rfind(' ').map(|i| i + 1).unwrap_or(0);
             let prefix = &line[start_pos..];
-            
-            let matches: Vec<Pair> = self.commands
+
+            let matches: Vec<Pair> = self
+                .commands
                 .iter()
                 .filter(|cmd| cmd.starts_with(prefix))
                 .map(|cmd| Pair {
@@ -79,7 +80,7 @@ impl Completer for CommandCompleter {
                     replacement: cmd.clone(),
                 })
                 .collect();
-            
+
             Ok((start_pos, matches))
         } else {
             // No completion for command arguments yet

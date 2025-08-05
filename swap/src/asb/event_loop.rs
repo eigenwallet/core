@@ -948,7 +948,7 @@ mod tests {
     };
 
     use super::*;
-    
+
     use crate::monero::Amount;
 
     #[tokio::test]
