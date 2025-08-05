@@ -2966,7 +2966,7 @@ impl TestWalletBuilder {
 
         // Fund the wallet with fake utxos
         for _ in 0..self.num_utxos {
-            receive_output_in_latest_block(&mut locked_wallet, self.utxo_amount);
+            receive_output_in_latest_block(&mut locked_wallet, Amount::from_sat(self.utxo_amount));
         }
 
         // Create another block to confirm the utxos

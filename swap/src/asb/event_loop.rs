@@ -948,10 +948,12 @@ mod tests {
     };
 
     use super::*;
+    
+    use crate::monero::Amount;
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_with_no_reserved_amounts() {
-        let balance = monero::monero::Amount::from_monero(10.0).unwrap();
+        let balance = Amount::from_monero(10.0).unwrap();
         let reserved_amounts = vec![];
 
         let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
@@ -1013,7 +1015,7 @@ mod tests {
     #[tokio::test]
     async fn test_unreserved_monero_balance_empty_reserved_amounts() {
         let balance = monero::Amount::from_monero(5.0).unwrap();
-        let reserved_amounts: Vec<Amount> = vec![];
+        let reserved_amounts: Vec<MockReservedItem> = vec![];
 
         let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
 
@@ -1033,8 +1035,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_make_quote_successful_within_limits() {
-        let min_buy = bitcoin::monero::Amount::from_sat(100_000);
-        let max_buy = bitcoin::monero::Amount::from_sat(500_000);
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
         let balance = monero::Amount::from_monero(1.0).unwrap();
         let reserved_items: Vec<MockReservedItem> = vec![];
@@ -1056,8 +1058,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_make_quote_with_reserved_amounts() {
-        let min_buy = bitcoin::monero::Amount::from_sat(50_000);
-        let max_buy = bitcoin::monero::Amount::from_sat(300_000);
+        let min_buy = bitcoin::Amount::from_sat(50_000);
+        let max_buy = bitcoin::Amount::from_sat(300_000);
         let rate = FixedRate::default();
         let balance = monero::Amount::from_monero(1.0).unwrap();
         let reserved_items = vec![
@@ -1081,15 +1083,15 @@ mod tests {
 
         // With 1.0 XMR balance and 0.5 XMR reserved, we have 0.5 XMR available
         // At rate 0.01, that's 0.005 BTC = 500,000 sats maximum
-        let expected_max = bitcoin::monero::Amount::from_sat(300_000); // Limited by max_buy
+        let expected_max = bitcoin::Amount::from_sat(300_000); // Limited by max_buy
         assert_eq!(result.min_quantity, min_buy);
         assert_eq!(result.max_quantity, expected_max);
     }
 
     #[tokio::test]
     async fn test_make_quote_insufficient_balance_for_min() {
-        let min_buy = bitcoin::monero::Amount::from_sat(600_000); // More than available
-        let max_buy = bitcoin::monero::Amount::from_sat(800_000);
+        let min_buy = bitcoin::Amount::from_sat(600_000); // More than available
+        let max_buy = bitcoin::Amount::from_sat(800_000);
         let rate = FixedRate::default();
         let balance = monero::Amount::from_monero(0.5).unwrap(); // Only 0.005 BTC worth at rate 0.01
         let reserved_items: Vec<MockReservedItem> = vec![];
@@ -1105,14 +1107,14 @@ mod tests {
         .unwrap();
 
         // Should return zero quantities when min_buy exceeds available balance
-        assert_eq!(result.min_quantity, bitcoin::monero::Amount::ZERO);
-        assert_eq!(result.max_quantity, bitcoin::monero::Amount::ZERO);
+        assert_eq!(result.min_quantity, bitcoin::Amount::ZERO);
+        assert_eq!(result.max_quantity, bitcoin::Amount::ZERO);
     }
 
     #[tokio::test]
     async fn test_make_quote_limited_by_balance() {
-        let min_buy = bitcoin::monero::Amount::from_sat(100_000);
-        let max_buy = bitcoin::monero::Amount::from_sat(800_000); // More than available
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(800_000); // More than available
         let rate = FixedRate::default();
         let balance = monero::Amount::from_monero(0.6).unwrap(); // 0.006 BTC worth at rate 0.01
         let reserved_items: Vec<MockReservedItem> = vec![];
@@ -1137,8 +1139,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_make_quote_all_balance_reserved() {
-        let min_buy = bitcoin::monero::Amount::from_sat(100_000);
-        let max_buy = bitcoin::monero::Amount::from_sat(500_000);
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
         let balance = monero::Amount::from_monero(1.0).unwrap();
         let reserved_items = vec![MockReservedItem {
@@ -1156,14 +1158,14 @@ mod tests {
         .unwrap();
 
         // Should return zero quantities when all balance is reserved
-        assert_eq!(result.min_quantity, bitcoin::monero::Amount::ZERO);
-        assert_eq!(result.max_quantity, bitcoin::monero::Amount::ZERO);
+        assert_eq!(result.min_quantity, bitcoin::Amount::ZERO);
+        assert_eq!(result.max_quantity, bitcoin::Amount::ZERO);
     }
 
     #[tokio::test]
     async fn test_make_quote_error_getting_balance() {
-        let min_buy = bitcoin::monero::Amount::from_sat(100_000);
-        let max_buy = bitcoin::monero::Amount::from_sat(500_000);
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
         let reserved_items: Vec<MockReservedItem> = vec![];
 
@@ -1185,8 +1187,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_make_quote_empty_reserved_items() {
-        let min_buy = bitcoin::monero::Amount::from_sat(100_000);
-        let max_buy = bitcoin::monero::Amount::from_sat(500_000);
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
         let balance = monero::Amount::from_monero(1.0).unwrap();
         let reserved_items: Vec<MockReservedItem> = vec![];
