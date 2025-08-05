@@ -23,7 +23,9 @@ use std::env;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
-use swap::asb::command::{parse_args, Arguments, Command};
+mod command;
+use command::{parse_args, Arguments, Command};
+use swap::asb::rpc::{ConfigManager, RpcServer};
 use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, Finality, KrakenRate};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
@@ -45,6 +47,25 @@ use uuid::Uuid;
 
 const DEFAULT_WALLET_NAME: &str = "asb-wallet";
 
+/// Initialize tracing with the specified configuration
+fn initialize_tracing(json: bool, config: &Config, trace: bool) -> Result<()> {
+    let format = if json { Format::Json } else { Format::Raw };
+    let log_dir = config.data.dir.join("logs");
+
+    common::tracing_util::init(LevelFilter::DEBUG, format, log_dir, None, trace)
+        .expect("initialize tracing");
+
+    tracing::info!(
+        binary = "asb",
+        version = env!("VERGEN_GIT_DESCRIBE"),
+        os = std::env::consts::OS,
+        arch = std::env::consts::ARCH,
+        "Setting up context"
+    );
+
+    Ok(())
+}
+
 trait IntoDaemon {
     fn into_daemon(self) -> Result<Daemon>;
 }
@@ -61,9 +82,11 @@ impl IntoDaemon for url::Url {
 impl IntoDaemon for monero_rpc_pool::ServerInfo {
     fn into_daemon(self) -> Result<Daemon> {
         let address = format!("http://{}:{}", self.host, self.port);
-        let ssl = false; // Pool server always uses HTTP locally
 
-        Ok(Daemon { address, ssl })
+        Ok(Daemon {
+            address,
+            ssl: false,
+        })
     }
 }
 
@@ -83,7 +106,6 @@ pub async fn main() -> Result<()> {
     } = match parse_args(env::args_os()) {
         Ok(args) => args,
         Err(e) => {
-            // make sure to display the clap error message it exists
             if let Some(clap_err) = e.downcast_ref::<clap::Error>() {
                 if let ErrorKind::HelpDisplayed | ErrorKind::VersionDisplayed = clap_err.kind {
                     println!("{}", clap_err.message);
@@ -97,7 +119,7 @@ pub async fn main() -> Result<()> {
     // Check in the background if there's a new version available
     tokio::spawn(async move { warn_if_outdated(env!("CARGO_PKG_VERSION")).await });
 
-    // Read config from the specified path
+    // Read our config
     let config = match read_config(config_path.clone())? {
         Ok(config) => config,
         Err(ConfigNotInitialized {}) => {
@@ -107,17 +129,7 @@ pub async fn main() -> Result<()> {
     };
 
     // Initialize tracing
-    let format = if json { Format::Json } else { Format::Raw };
-    let log_dir = config.data.dir.join("logs");
-    common::tracing_util::init(LevelFilter::DEBUG, format, log_dir, None, trace)
-        .expect("initialize tracing");
-    tracing::info!(
-        binary = "asb",
-        version = env!("VERGEN_GIT_DESCRIBE"),
-        os = std::env::consts::OS,
-        arch = std::env::consts::ARCH,
-        "Setting up context"
-    );
+    initialize_tracing(json, &config, trace)?;
 
     // Check for conflicting env / config values
     if config.monero.network != env_config.monero_network {
@@ -139,8 +151,14 @@ pub async fn main() -> Result<()> {
 
     let db_file = config.data.dir.join("sqlite");
 
+    // Create config manager early for sharing between components
+    let config_manager = ConfigManager::new(config.clone(), config_path.clone());
+
     match cmd {
-        Command::Start { resume_only } => {
+        Command::Start {
+            resume_only,
+            rpc_port,
+        } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
             // check and warn for duplicate rendezvous points
@@ -243,8 +261,8 @@ pub async fn main() -> Result<()> {
 
             tracing::info!(peer_id = %swarm.local_peer_id(), "Network layer initialized");
 
-            for external_address in config.network.external_addresses {
-                swarm.add_external_address(external_address);
+            for external_address in &config.network.external_addresses {
+                swarm.add_external_address(external_address.clone());
             }
 
             let (event_loop, mut swap_receiver) = EventLoop::new(
@@ -259,6 +277,10 @@ pub async fn main() -> Result<()> {
                 config.maker.external_bitcoin_redeem_address,
             )
             .unwrap();
+
+            // Start RPC server with config manager
+            let rpc_server = RpcServer::start(rpc_port, config_manager.clone()).await?;
+            rpc_server.spawn();
 
             tokio::spawn(async move {
                 while let Some(swap) = swap_receiver.recv().await {
@@ -452,6 +474,7 @@ async fn init_bitcoin_wallet(
     sync: bool,
 ) -> Result<bitcoin::Wallet> {
     tracing::debug!("Opening Bitcoin wallet");
+
     let wallet = bitcoin::wallet::WalletBuilder::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)

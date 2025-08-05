@@ -1,4 +1,3 @@
-pub mod command;
 mod event_loop;
 mod network;
 mod recovery;

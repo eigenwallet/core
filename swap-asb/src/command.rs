@@ -1,4 +1,3 @@
-use crate::bitcoin::{bitcoin_address, Amount};
 use anyhow::Result;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
@@ -6,7 +5,8 @@ use serde::Serialize;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use structopt::StructOpt;
-use swap_env::config::GetDefaults;
+use swap::bitcoin::{bitcoin_address, Amount};
+use swap_env::defaults::GetDefaults;
 use swap_env::env;
 use swap_env::env::GetConfig;
 use uuid::Uuid;
@@ -26,13 +26,19 @@ where
     let command: RawCommand = args.cmd;
 
     let arguments = match command {
-        RawCommand::Start { resume_only } => Arguments {
+        RawCommand::Start {
+            resume_only,
+            rpc_port,
+        } => Arguments {
             testnet,
             json,
             trace,
             config_path: config_path(config, testnet)?,
             env_config: env_config(testnet),
-            cmd: Command::Start { resume_only },
+            cmd: Command::Start {
+                resume_only,
+                rpc_port,
+            },
         },
         RawCommand::History { only_unfinished } => Arguments {
             testnet,
@@ -202,6 +208,7 @@ pub struct Arguments {
 pub enum Command {
     Start {
         resume_only: bool,
+        rpc_port: u16,
     },
     History {
         only_unfinished: bool,
@@ -286,6 +293,12 @@ pub enum RawCommand {
             help = "For maintenance only. When set, no new swap requests will be accepted, but existing unfinished swaps will be resumed."
         )]
         resume_only: bool,
+        #[structopt(
+            long = "rpc-port",
+            help = "Port for the JSON-RPC server",
+            default_value = "9944"
+        )]
+        rpc_port: u16,
     },
     #[structopt(about = "Prints all logging messages issued in the past.")]
     Logs {
@@ -414,7 +427,10 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
-            cmd: Command::Start { resume_only: false },
+            cmd: Command::Start {
+                resume_only: false,
+                rpc_port: 9944,
+            },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
@@ -456,6 +472,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Balance,
         };
         let args = parse_args(raw_ars).unwrap();
@@ -480,6 +497,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::WithdrawBtc {
                 amount: None,
                 address: bitcoin_address::parse_and_validate(BITCOIN_MAINNET_ADDRESS, false)
@@ -510,6 +528,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Cancel {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -538,6 +557,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Refund {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -566,6 +586,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Punish {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -594,6 +615,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::SafelyAbort {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -616,7 +638,11 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
-            cmd: Command::Start { resume_only: false },
+
+            cmd: Command::Start {
+                resume_only: false,
+                rpc_port: 9944,
+            },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
@@ -636,6 +662,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::History {
                 only_unfinished: false,
             },
@@ -658,6 +685,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Balance,
         };
         let args = parse_args(raw_ars).unwrap();
@@ -678,6 +706,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::ExportMoneroWallet,
         };
         let args = parse_args(raw_ars).unwrap();
@@ -705,6 +734,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::WithdrawBtc {
                 amount: None,
                 address: bitcoin_address::parse_and_validate(BITCOIN_TESTNET_ADDRESS, true)
@@ -735,6 +765,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Cancel {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -764,6 +795,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Refund {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -793,6 +825,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Punish {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -822,6 +855,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::SafelyAbort {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -844,7 +878,11 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
-            cmd: Command::Start { resume_only: false },
+
+            cmd: Command::Start {
+                resume_only: false,
+                rpc_port: 9944,
+            },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
@@ -864,7 +902,11 @@ mod tests {
             trace: true,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
-            cmd: Command::Start { resume_only: false },
+
+            cmd: Command::Start {
+                resume_only: false,
+                rpc_port: 9944,
+            },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
