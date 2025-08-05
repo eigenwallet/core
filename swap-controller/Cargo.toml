@@ -1,0 +1,21 @@
+[package]
+name = "swap-controller"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "asb-controller"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+jsonrpsee = { workspace = true, features = ["client-core", "http-client"] }
+rustyline = "13"
+serde_json = { workspace = true }
+shell-words = "1.1"
+swap-controller-api = { path = "../swap-controller-api" }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

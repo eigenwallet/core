@@ -25,7 +25,7 @@ use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
 use command::{parse_args, Arguments, Command};
-use swap::asb::rpc::{ConfigManager, RpcServer};
+use swap::asb::rpc::RpcServer;
 use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, Finality, KrakenRate};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
@@ -151,8 +151,6 @@ pub async fn main() -> Result<()> {
 
     let db_file = config.data.dir.join("sqlite");
 
-    // Create config manager early for sharing between components
-    let config_manager = ConfigManager::new(config.clone(), config_path.clone());
 
     match cmd {
         Command::Start {
@@ -278,8 +276,8 @@ pub async fn main() -> Result<()> {
             )
             .unwrap();
 
-            // Start RPC server with config manager
-            let rpc_server = RpcServer::start(rpc_port, config_manager.clone()).await?;
+            // Start RPC server
+            let rpc_server = RpcServer::start(rpc_port).await?;
             rpc_server.spawn();
 
             tokio::spawn(async move {
