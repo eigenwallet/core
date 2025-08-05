@@ -47,12 +47,12 @@ pub struct RpcServer {
 
 impl RpcServer {
     pub async fn start(
-        rpc_port: u16,
+        rpc_bind: &str,
         bitcoin_wallet: Arc<bitcoin::Wallet>,
         monero_wallet: Arc<monero::Wallets>,
     ) -> Result<Self> {
         let server = ServerBuilder::default()
-            .build(format!("127.0.0.1:{}", rpc_port))
+            .build(rpc_bind)
             .await
             .context("Failed to build RPC server")?;
 

@@ -154,7 +154,8 @@ pub async fn main() -> Result<()> {
     match cmd {
         Command::Start {
             resume_only,
-            rpc_port,
+            rpc_bind_host,
+            rpc_bind_port,
         } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
@@ -276,10 +277,12 @@ pub async fn main() -> Result<()> {
             )
             .unwrap();
 
-            // Start RPC server
-            let rpc_server =
-                RpcServer::start(rpc_port, bitcoin_wallet.clone(), monero_wallet.clone()).await?;
-            rpc_server.spawn();
+            // Start RPC server conditionally
+            if let (Some(host), Some(port)) = (rpc_bind_host, rpc_bind_port) {
+                let bind_addr = format!("{}:{}", host, port);
+                let rpc_server = RpcServer::start(&bind_addr, bitcoin_wallet.clone(), monero_wallet.clone()).await?;
+                rpc_server.spawn();
+            }
 
             tokio::spawn(async move {
                 while let Some(swap) = swap_receiver.recv().await {

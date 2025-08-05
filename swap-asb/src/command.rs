@@ -1,9 +1,11 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
 use serde::Serialize;
 use std::ffi::OsString;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::str::FromStr;
 use structopt::StructOpt;
 use swap::bitcoin::{bitcoin_address, Amount};
 use swap_env::defaults::GetDefaults;
@@ -28,17 +30,24 @@ where
     let arguments = match command {
         RawCommand::Start {
             resume_only,
-            rpc_port,
-        } => Arguments {
-            testnet,
-            json,
-            trace,
-            config_path: config_path(config, testnet)?,
-            env_config: env_config(testnet),
-            cmd: Command::Start {
-                resume_only,
-                rpc_port,
-            },
+            rpc_bind_host,
+            rpc_bind_port,
+        } => {
+            // Validate RPC bind arguments early
+            validate_rpc_bind_args(&rpc_bind_host, &rpc_bind_port)?;
+            
+            Arguments {
+                testnet,
+                json,
+                trace,
+                config_path: config_path(config, testnet)?,
+                env_config: env_config(testnet),
+                cmd: Command::Start {
+                    resume_only,
+                    rpc_bind_host,
+                    rpc_bind_port,
+                },
+            }
         },
         RawCommand::History { only_unfinished } => Arguments {
             testnet,
@@ -208,7 +217,8 @@ pub struct Arguments {
 pub enum Command {
     Start {
         resume_only: bool,
-        rpc_port: u16,
+        rpc_bind_host: Option<String>,
+        rpc_bind_port: Option<u16>,
     },
     History {
         only_unfinished: bool,
@@ -287,11 +297,15 @@ pub enum RawCommand {
         )]
         resume_only: bool,
         #[structopt(
-            long = "rpc-port",
-            help = "Port for the JSON-RPC server",
-            default_value = "9944"
+            long = "rpc-bind-host",
+            help = "Host address to bind the JSON-RPC server to (e.g., 127.0.0.1). Must be used together with --rpc-bind-port."
         )]
-        rpc_port: u16,
+        rpc_bind_host: Option<String>,
+        #[structopt(
+            long = "rpc-bind-port",
+            help = "Port to bind the JSON-RPC server to (e.g., 9944). Must be used together with --rpc-bind-host."
+        )]
+        rpc_bind_port: Option<u16>,
     },
     #[structopt(about = "Prints all logging messages issued in the past.")]
     Logs {
@@ -396,6 +410,43 @@ pub struct RecoverCommandParams {
     pub swap_id: Uuid,
 }
 
+fn validate_rpc_bind_args(host: &Option<String>, port: &Option<u16>) -> Result<()> {
+    match (host, port) {
+        (Some(host_str), Some(port_val)) => {
+            // Both provided - validate host is a valid IP address or hostname
+            if let Err(_) = IpAddr::from_str(host_str) {
+                // If not a valid IP, it could be a hostname - basic validation
+                if host_str.is_empty() || host_str.chars().any(|c| !c.is_alphanumeric() && c != '.' && c != '-') {
+                    bail!("Invalid host address: '{}'. Must be a valid IP address or hostname.", host_str);
+                }
+            }
+            
+            // Validate port is reasonable
+            if *port_val == 0 {
+                bail!("Invalid port: {}. Port must be between 1 and 65535.", port_val);
+            }
+            
+            // Test that we can create a socket address
+            let socket_addr = format!("{}:{}", host_str, port_val);
+            SocketAddr::from_str(&socket_addr).map_err(|_| {
+                anyhow::anyhow!("Invalid socket address: '{}'. Cannot bind to this address.", socket_addr)
+            })?;
+            
+            Ok(())
+        }
+        (None, None) => {
+            // Neither provided - RPC server will not be started
+            Ok(())
+        }
+        (Some(_), None) => {
+            bail!("--rpc-bind-host was provided but --rpc-bind-port was not. Both must be provided together or neither.");
+        }
+        (None, Some(_)) => {
+            bail!("--rpc-bind-port was provided but --rpc-bind-host was not. Both must be provided together or neither.");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -422,7 +473,8 @@ mod tests {
             env_config: mainnet_env_config,
             cmd: Command::Start {
                 resume_only: false,
-                rpc_port: 9944,
+                rpc_bind_host: None,
+                rpc_bind_port: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();
@@ -634,7 +686,8 @@ mod tests {
 
             cmd: Command::Start {
                 resume_only: false,
-                rpc_port: 9944,
+                rpc_bind_host: None,
+                rpc_bind_port: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();
@@ -874,7 +927,8 @@ mod tests {
 
             cmd: Command::Start {
                 resume_only: false,
-                rpc_port: 9944,
+                rpc_bind_host: None,
+                rpc_bind_port: None,
             },
         };
         let args = parse_args(raw_ars).unwrap();
@@ -910,5 +964,27 @@ mod tests {
             error_message,
             "Bitcoin address network mismatch, expected `Testnet`"
         );
+    }
+
+    #[test]
+    fn test_rpc_bind_validation() {
+        // Both None should be valid
+        assert!(validate_rpc_bind_args(&None, &None).is_ok());
+        
+        // Both Some should be valid with valid values
+        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(9944)).is_ok());
+        assert!(validate_rpc_bind_args(&Some("0.0.0.0".to_string()), &Some(8080)).is_ok());
+        assert!(validate_rpc_bind_args(&Some("localhost".to_string()), &Some(3000)).is_ok());
+        
+        // One Some, one None should be invalid
+        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &None).is_err());
+        assert!(validate_rpc_bind_args(&None, &Some(9944)).is_err());
+        
+        // Invalid host should be invalid
+        assert!(validate_rpc_bind_args(&Some("invalid@host".to_string()), &Some(9944)).is_err());
+        assert!(validate_rpc_bind_args(&Some("".to_string()), &Some(9944)).is_err());
+        
+        // Port 0 should be invalid
+        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(0)).is_err());
     }
 }
