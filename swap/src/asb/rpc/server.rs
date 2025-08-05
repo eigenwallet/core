@@ -1,9 +1,9 @@
+use crate::{bitcoin, monero};
 use anyhow::{Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
 use swap_controller_api::{AsbApiServer, BitcoinBalanceResponse, MoneroBalanceResponse};
-use crate::{bitcoin, monero};
 
 /// RPC implementation
 pub struct RpcImpl {
@@ -46,7 +46,11 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    pub async fn start(rpc_port: u16, bitcoin_wallet: Arc<bitcoin::Wallet>, monero_wallet: Arc<monero::Wallets>) -> Result<Self> {
+    pub async fn start(
+        rpc_port: u16,
+        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        monero_wallet: Arc<monero::Wallets>,
+    ) -> Result<Self> {
         let server = ServerBuilder::default()
             .build(format!("127.0.0.1:{}", rpc_port))
             .await
@@ -54,7 +58,10 @@ impl RpcServer {
 
         let addr = server.local_addr()?;
 
-        let rpc_impl = RpcImpl { bitcoin_wallet, monero_wallet };
+        let rpc_impl = RpcImpl {
+            bitcoin_wallet,
+            monero_wallet,
+        };
         let handle = server.start(rpc_impl.into_rpc());
 
         tracing::info!("JSON-RPC server listening on {}", addr);

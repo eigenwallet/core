@@ -277,7 +277,8 @@ pub async fn main() -> Result<()> {
             .unwrap();
 
             // Start RPC server
-            let rpc_server = RpcServer::start(rpc_port, bitcoin_wallet.clone(), monero_wallet.clone()).await?;
+            let rpc_server =
+                RpcServer::start(rpc_port, bitcoin_wallet.clone(), monero_wallet.clone()).await?;
             rpc_server.spawn();
 
             tokio::spawn(async move {
