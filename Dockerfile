@@ -1,11 +1,11 @@
 # This Dockerfile builds the asb binary
-
+# See rust-toolchain.toml for the Rust version
 FROM ubuntu:24.04 AS builder
 
 WORKDIR /build
 
 # Install dependencies
-# See .github/workflows/action.yml as well
+# See .github/workflows/action.yml
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -37,7 +37,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Rust 1.85
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.85.0
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.87.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 COPY . .
@@ -53,12 +53,14 @@ WORKDIR /build/swap
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
 
-RUN cargo build -vv --bin=asb
+RUN cargo build -vv -p swap-asb --bin=asb
+RUN cargo build -vv -p swap-controller --bin=asb-controller
 
 FROM ubuntu:24.04
 
 WORKDIR /data
 
 COPY --from=builder /build/target/debug/asb /bin/asb
+COPY --from=builder /build/target/debug/asb-controller /bin/asb-controller
 
 ENTRYPOINT ["asb"]
