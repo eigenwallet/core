@@ -40,4 +40,4 @@ structopt = "0.3"
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
+vergen = { workspace = true }

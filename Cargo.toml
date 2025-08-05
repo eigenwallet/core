@@ -63,6 +63,9 @@ tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "18111286b58
 # Terminal Utilities
 dialoguer = "0.11"
 
+# Build dependencies
+vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
+
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51
 jsonrpc_client = { git = "https://github.com/delta1/rust-jsonrpc-client.git", rev = "3b6081697cd616c952acb9c2f02d546357d35506" }
