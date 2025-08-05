@@ -280,7 +280,7 @@ pub async fn main() -> Result<()> {
             // Start RPC server conditionally
             if let (Some(host), Some(port)) = (rpc_bind_host, rpc_bind_port) {
                 let rpc_server =
-                    RpcServer::start(&host, port, bitcoin_wallet.clone(), monero_wallet.clone())
+                    RpcServer::start(host, port, bitcoin_wallet.clone(), monero_wallet.clone())
                         .await?;
                 rpc_server.spawn();
             }
@@ -517,38 +517,33 @@ async fn init_monero_wallet(
 ) -> Result<Arc<monero::Wallets>> {
     tracing::debug!("Initializing Monero wallets");
 
-    let daemon = if config.monero.monero_node_pool {
-        // Start the monero-rpc-pool and use it
-        tracing::info!("Starting Monero RPC Pool for ASB");
+    let daemon = match &config.monero.daemon_url {
+        // If a daemon URL is provided, use it
+        Some(url) => {
+            tracing::info!("Using direct Monero daemon connection: {url}");
 
-        let (server_info, _status_receiver, _pool_handle) =
-            monero_rpc_pool::start_server_with_random_port(
-                monero_rpc_pool::config::Config::new_random_port(
-                    config.data.dir.join("monero-rpc-pool"),
-                    env_config.monero_network,
-                ),
-            )
-            .await
-            .context("Failed to start Monero RPC Pool for ASB")?;
+            url.clone().into_daemon()
+                .context("Failed to convert daemon URL to Daemon")?
+        }
+        // If no daemon URL is provided, start the monero-rpc-pool and use it
+        None => {
+            let (server_info, _status_receiver, _pool_handle) =
+                monero_rpc_pool::start_server_with_random_port(
+                    monero_rpc_pool::config::Config::new_random_port(
+                        config.data.dir.join("monero-rpc-pool"),
+                        env_config.monero_network,
+                    ),
+                )
+                .await
+                .context("Failed to start Monero RPC Pool for ASB")?;
 
-        let pool_url = format!("http://{}:{}", server_info.host, server_info.port);
-        tracing::info!("Monero RPC Pool started for ASB on {}", pool_url);
+            let pool_url = format!("http://{}:{}", server_info.host, server_info.port);
+            tracing::info!("Monero RPC Pool started for ASB on {}", pool_url);
 
-        server_info
-            .into_daemon()
-            .context("Failed to convert ServerInfo to Daemon")?
-    } else {
-        tracing::info!(
-            "Using direct Monero daemon connection: {}",
-            config.monero.daemon_url
-        );
-
-        config
-            .monero
-            .daemon_url
-            .clone()
-            .into_daemon()
-            .context("Failed to convert daemon URL to Daemon")?
+            server_info
+                .into_daemon()
+                .context("Failed to convert ServerInfo to Daemon")?
+        }
     };
 
     let manager = monero::Wallets::new(

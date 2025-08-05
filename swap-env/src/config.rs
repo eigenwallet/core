@@ -66,16 +66,12 @@ fn default_use_mempool_space_fee_estimation() -> bool {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Monero {
-    pub daemon_url: Url,
+    /// If None, we will use the Monero Remote Node Pool with built in defaults
+    #[serde(default)]
+    pub daemon_url: Option<Url>,
     pub finality_confirmations: Option<u64>,
     #[serde(with = "swap_serde::monero::network")]
     pub network: monero::Network,
-    #[serde(default = "default_monero_node_pool")]
-    pub monero_node_pool: bool,
-}
-
-fn default_monero_node_pool() -> bool {
-    false
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -181,7 +177,7 @@ pub fn query_user_for_initial_config_with_network(
     let data_dir = prompt::data_directory(&defaults.data_dir)?;
     let target_block = prompt::bitcoin_confirmation_target(defaults.bitcoin_confirmation_target)?;
     let listen_addresses = prompt::listen_addresses(&defaults.listen_address_tcp)?;
-    let electrum_rpc_urls = prompt::electrum_rpc_urls(&defaults.electrum_rpc_url)?;
+    let electrum_rpc_urls = prompt::electrum_rpc_urls(&defaults.electrum_rpc_urls)?;
     let monero_daemon_url = prompt::monero_daemon_url(&defaults.monero_daemon_address)?;
     let register_hidden_service = prompt::tor_hidden_service()?;
     let min_buy = prompt::min_buy_amount()?;
@@ -206,10 +202,9 @@ pub fn query_user_for_initial_config_with_network(
             use_mempool_space_fee_estimation: true,
         },
         monero: Monero {
-            daemon_url: monero_daemon_url,
+            daemon_url: Some(monero_daemon_url),
             finality_confirmations: None,
             network: monero_network,
-            monero_node_pool: false,
         },
         tor: TorConf {
             register_hidden_service,
@@ -259,7 +254,7 @@ mod tests {
                 dir: Default::default(),
             },
             bitcoin: Bitcoin {
-                electrum_rpc_urls: vec![defaults.electrum_rpc_url],
+                electrum_rpc_urls: defaults.electrum_rpc_urls,
                 target_block: defaults.bitcoin_confirmation_target,
                 finality_confirmations: None,
                 network: bitcoin::Network::Testnet,
@@ -271,10 +266,9 @@ mod tests {
                 external_addresses: vec![],
             },
             monero: Monero {
-                daemon_url: defaults.monero_daemon_address,
+                daemon_url: Some(defaults.monero_daemon_address),
                 finality_confirmations: None,
                 network: monero::Network::Stagenet,
-                monero_node_pool: false,
             },
             tor: Default::default(),
             maker: Maker {
@@ -305,7 +299,7 @@ mod tests {
                 dir: Default::default(),
             },
             bitcoin: Bitcoin {
-                electrum_rpc_urls: vec![defaults.electrum_rpc_url],
+                electrum_rpc_urls: defaults.electrum_rpc_urls,
                 target_block: defaults.bitcoin_confirmation_target,
                 finality_confirmations: None,
                 network: bitcoin::Network::Bitcoin,
@@ -317,10 +311,9 @@ mod tests {
                 external_addresses: vec![],
             },
             monero: Monero {
-                daemon_url: defaults.monero_daemon_address,
+                daemon_url: Some(defaults.monero_daemon_address),
                 finality_confirmations: None,
                 network: monero::Network::Mainnet,
-                monero_node_pool: false,
             },
             tor: Default::default(),
             maker: Maker {
@@ -361,7 +354,7 @@ mod tests {
         let expected = Config {
             data: Data { dir },
             bitcoin: Bitcoin {
-                electrum_rpc_urls: vec![defaults.electrum_rpc_url],
+                electrum_rpc_urls: defaults.electrum_rpc_urls,
                 target_block: defaults.bitcoin_confirmation_target,
                 finality_confirmations: None,
                 network: bitcoin::Network::Bitcoin,
@@ -373,10 +366,9 @@ mod tests {
                 external_addresses,
             },
             monero: Monero {
-                daemon_url: defaults.monero_daemon_address,
+                daemon_url: Some(defaults.monero_daemon_address),
                 finality_confirmations: None,
                 network: monero::Network::Mainnet,
-                monero_node_pool: false,
             },
             tor: Default::default(),
             maker: Maker {

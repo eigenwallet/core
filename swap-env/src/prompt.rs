@@ -4,6 +4,7 @@ use crate::defaults::{
     default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
 };
 use anyhow::{bail, Context, Result};
+use dialoguer::Confirm;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use libp2p::Multiaddr;
 use rust_decimal::prelude::FromPrimitive;
@@ -48,22 +49,26 @@ pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multia
 }
 
 /// Prompt user for electrum RPC URLs
-pub fn electrum_rpc_urls(default_electrum_url: &Url) -> Result<Vec<Url>> {
-    let mut electrum_rpc_urls = Vec::new();
-    let mut electrum_number = 1;
-    let mut electrum_done = false;
-
+pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
     println!(
         "You can configure multiple Electrum servers for redundancy. At least one is required."
     );
+    println!("The following default Electrum RPC URLs are available. We recommend using them.");
+    for (i, url) in default_electrum_urls.iter().enumerate() {
+        println!("{}: {}", i + 1, url);
+    }
 
-    // Ask for the first electrum URL with a default
-    let electrum_rpc_url = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter first Electrum RPC URL or hit return to use default")
-        .default(default_electrum_url.clone())
-        .interact_text()?;
-    electrum_rpc_urls.push(electrum_rpc_url);
-    electrum_number += 1;
+    // Ask if the user wants to use the default Electrum RPC URLs
+    let mut electrum_rpc_urls = match Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Do you want to use the default Electrum RPC URLs?")
+        .default(true)
+        .interact()? {
+            true => default_electrum_urls.clone(),
+            false => Vec::new(),
+        };
+
+    let mut electrum_number = 1 + electrum_rpc_urls.len();
+    let mut electrum_done = false;
 
     // Ask for additional electrum URLs
     while !electrum_done {

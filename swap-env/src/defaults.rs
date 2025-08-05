@@ -22,6 +22,36 @@ pub fn default_rendezvous_points() -> Vec<Multiaddr> {
     ]
 }
 
+pub fn default_electrum_servers_mainnet() -> Vec<Url> {
+    vec![
+        Url::parse("ssl://electrum.blockstream.info:50002").expect("default electrum server url to be valid"),
+        Url::parse("tcp://electrum.blockstream.info:50001").expect("default electrum server url to be valid"),
+        Url::parse("ssl://bitcoin.stackwallet.com:50002").expect("default electrum server url to be valid"),
+        Url::parse("ssl://b.1209k.com:50002").expect("default electrum server url to be valid"),
+        Url::parse("tcp://electrum.coinucopia.io:50001").expect("default electrum server url to be valid"),
+    ]
+}
+
+pub fn default_electrum_servers_testnet() -> Vec<Url> {
+    vec![
+        Url::parse("ssl://ax101.blockeng.ch:60002").expect("default electrum server url to be valid"),
+        Url::parse("ssl://blackie.c3-soft.com:57006").expect("default electrum server url to be valid"),
+        Url::parse("ssl://v22019051929289916.bestsrv.de:50002").expect("default electrum server url to be valid"),
+        Url::parse("tcp://v22019051929289916.bestsrv.de:50001").expect("default electrum server url to be valid"),
+        Url::parse("tcp://electrum.blockstream.info:60001").expect("default electrum server url to be valid"),
+        Url::parse("ssl://electrum.blockstream.info:60002").expect("default electrum server url to be valid"),
+        Url::parse("ssl://blockstream.info:993").expect("default electrum server url to be valid"),
+        Url::parse("tcp://blockstream.info:143").expect("default electrum server url to be valid"),
+        Url::parse("ssl://testnet.qtornado.com:51002").expect("default electrum server url to be valid"),
+        Url::parse("tcp://testnet.qtornado.com:51001").expect("default electrum server url to be valid"),
+        Url::parse("tcp://testnet.aranguren.org:51001").expect("default electrum server url to be valid"),
+        Url::parse("ssl://testnet.aranguren.org:51002").expect("default electrum server url to be valid"),
+        Url::parse("ssl://testnet.qtornado.com:50002").expect("default electrum server url to be valid"),
+        Url::parse("ssl://bitcoin.devmole.eu:5010").expect("default electrum server url to be valid"),
+        Url::parse("tcp://bitcoin.devmole.eu:5000").expect("default electrum server url to be valid"),
+    ]
+}
+
 pub trait GetDefaults {
     fn get_config_file_defaults() -> Result<Defaults>;
 }
@@ -30,7 +60,7 @@ pub struct Defaults {
     pub config_path: PathBuf,
     pub data_dir: PathBuf,
     pub listen_address_tcp: Multiaddr,
-    pub electrum_rpc_url: Url,
+    pub electrum_rpc_urls: Vec<Url>,
     pub monero_daemon_address: Url,
     pub price_ticker_ws_url: Url,
     pub bitcoin_confirmation_target: u16,
@@ -45,7 +75,7 @@ impl GetDefaults for Mainnet {
                 .join("config.toml"),
             data_dir: default_asb_data_dir()?.join("mainnet"),
             listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
-            electrum_rpc_url: Url::parse("ssl://blockstream.info:700")?,
+            electrum_rpc_urls: default_electrum_servers_mainnet(),
             monero_daemon_address: Url::parse("http://nthpyro.dev:18089")?,
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
@@ -64,7 +94,7 @@ impl GetDefaults for Testnet {
                 .join("config.toml"),
             data_dir: default_asb_data_dir()?.join("testnet"),
             listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
-            electrum_rpc_url: Url::parse("ssl://electrum.blockstream.info:60002")?,
+            electrum_rpc_urls: default_electrum_servers_testnet(),
             monero_daemon_address: Url::parse("http://node.sethforprivacy.com:38089")?,
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,

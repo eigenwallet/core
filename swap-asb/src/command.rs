@@ -3,7 +3,7 @@ use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
 use serde::Serialize;
 use std::ffi::OsString;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use structopt::StructOpt;
@@ -413,24 +413,12 @@ pub struct RecoverCommandParams {
 fn validate_rpc_bind_args(host: &Option<String>, port: &Option<u16>) -> Result<()> {
     match (host, port) {
         (Some(host_str), Some(port_val)) => {
-            // Validate port is reasonable
-            if *port_val == 0 {
-                bail!(
-                    "Invalid port: {}. Port must be between 1 and 65535.",
-                    port_val
-                );
-            }
-
-            // Validate that we can create a socket address (validates both host and port)
             let socket_addr = format!("{}:{}", host_str, port_val);
             SocketAddr::from_str(&socket_addr).context("Invalid socket address")?;
 
             Ok(())
         }
-        (None, None) => {
-            // Neither provided - RPC server will not be started
-            Ok(())
-        }
+        (None, None) => Ok(()),
         (Some(_), None) => {
             bail!("--rpc-bind-host was provided but --rpc-bind-port was not. Both must be provided together or neither.");
         }
