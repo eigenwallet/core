@@ -266,13 +266,6 @@ pub struct RawArguments {
     pub trace: bool,
 
     #[structopt(
-        short,
-        long = "disable-timestamp",
-        help = "Disable timestamping of log messages"
-    )]
-    pub disable_timestamp: bool,
-
-    #[structopt(
         long = "config",
         help = "Provide a custom path to the configuration file. The configuration file must be a toml file.",
         parse(from_os_str)
@@ -858,30 +851,6 @@ mod tests {
 
             cmd: Command::SafelyAbort {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
-            },
-        };
-        let args = parse_args(raw_ars).unwrap();
-        assert_eq!(expected_args, args);
-    }
-
-    #[test]
-    fn ensure_disable_timestamp_mapping() {
-        let default_mainnet_conf_path = env::Mainnet::get_config_file_defaults()
-            .unwrap()
-            .config_path;
-        let mainnet_env_config = env::Mainnet::get_config();
-
-        let raw_ars = vec![BINARY_NAME, "--disable-timestamp", "start"];
-        let expected_args = Arguments {
-            testnet: false,
-            json: false,
-            trace: false,
-            config_path: default_mainnet_conf_path,
-            env_config: mainnet_env_config,
-
-            cmd: Command::Start {
-                resume_only: false,
-                rpc_port: 9944,
             },
         };
         let args = parse_args(raw_ars).unwrap();
