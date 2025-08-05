@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + CLI + ASB: The Monero RPC pool now caches TCP and Tor streams
+- ASB: The default configuration has been adjusted to accept Bitcoin transactions as finalized after one block (one confirmation). Bitcoin double spends are essentially impossible for practical purposes. If one is swapping extremely large amounts, they can consider dialing `bitcoin.finality_confirmations` to `2` or `3`. This will however force the swap to take much longer to complete, and also increase the risk of a refund being made.
 
 ## [3.0.0-beta.5] - 2025-08-04
 
