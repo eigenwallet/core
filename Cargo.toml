@@ -16,6 +16,7 @@ members = [
   "swap-env",
   "swap-feed",
   "swap-fs",
+  "swap-orchestrator",
   "swap-serde",
   "throttle",
 ]
@@ -58,6 +59,9 @@ tor-cell = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cd
 tor-hsservice = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841" }
 tor-proto = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841" }
 tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841" }
+
+# Terminal Utilities
+dialoguer = "0.11"
 
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51
