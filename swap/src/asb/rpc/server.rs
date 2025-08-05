@@ -3,9 +3,10 @@ use anyhow::{Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
-use swap_controller_api::{AsbApiServer, BitcoinBalanceResponse, MoneroBalanceResponse, MoneroAddressResponse};
+use swap_controller_api::{
+    AsbApiServer, BitcoinBalanceResponse, MoneroAddressResponse, MoneroBalanceResponse,
+};
 
-/// RPC implementation
 pub struct RpcImpl {
     bitcoin_wallet: Arc<bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
@@ -48,19 +49,19 @@ impl AsbApiServer for RpcImpl {
     }
 }
 
-/// RPC Server wrapper
 pub struct RpcServer {
     handle: ServerHandle,
 }
 
 impl RpcServer {
     pub async fn start(
-        rpc_bind: &str,
+        host: String,
+        port: u16,
         bitcoin_wallet: Arc<bitcoin::Wallet>,
         monero_wallet: Arc<monero::Wallets>,
     ) -> Result<Self> {
         let server = ServerBuilder::default()
-            .build(rpc_bind)
+            .build((host, port))
             .await
             .context("Failed to build RPC server")?;
 

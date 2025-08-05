@@ -279,8 +279,9 @@ pub async fn main() -> Result<()> {
 
             // Start RPC server conditionally
             if let (Some(host), Some(port)) = (rpc_bind_host, rpc_bind_port) {
-                let bind_addr = format!("{}:{}", host, port);
-                let rpc_server = RpcServer::start(&bind_addr, bitcoin_wallet.clone(), monero_wallet.clone()).await?;
+                let rpc_server =
+                    RpcServer::start(&host, port, bitcoin_wallet.clone(), monero_wallet.clone())
+                        .await?;
                 rpc_server.spawn();
             }
 

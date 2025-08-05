@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
 use serde::Serialize;
@@ -35,7 +35,7 @@ where
         } => {
             // Validate RPC bind arguments early
             validate_rpc_bind_args(&rpc_bind_host, &rpc_bind_port)?;
-            
+
             Arguments {
                 testnet,
                 json,
@@ -48,7 +48,7 @@ where
                     rpc_bind_port,
                 },
             }
-        },
+        }
         RawCommand::History { only_unfinished } => Arguments {
             testnet,
             json,
@@ -413,25 +413,18 @@ pub struct RecoverCommandParams {
 fn validate_rpc_bind_args(host: &Option<String>, port: &Option<u16>) -> Result<()> {
     match (host, port) {
         (Some(host_str), Some(port_val)) => {
-            // Both provided - validate host is a valid IP address or hostname
-            if let Err(_) = IpAddr::from_str(host_str) {
-                // If not a valid IP, it could be a hostname - basic validation
-                if host_str.is_empty() || host_str.chars().any(|c| !c.is_alphanumeric() && c != '.' && c != '-') {
-                    bail!("Invalid host address: '{}'. Must be a valid IP address or hostname.", host_str);
-                }
-            }
-            
             // Validate port is reasonable
             if *port_val == 0 {
-                bail!("Invalid port: {}. Port must be between 1 and 65535.", port_val);
+                bail!(
+                    "Invalid port: {}. Port must be between 1 and 65535.",
+                    port_val
+                );
             }
-            
-            // Test that we can create a socket address
+
+            // Validate that we can create a socket address (validates both host and port)
             let socket_addr = format!("{}:{}", host_str, port_val);
-            SocketAddr::from_str(&socket_addr).map_err(|_| {
-                anyhow::anyhow!("Invalid socket address: '{}'. Cannot bind to this address.", socket_addr)
-            })?;
-            
+            SocketAddr::from_str(&socket_addr).context("Invalid socket address")?;
+
             Ok(())
         }
         (None, None) => {
@@ -970,20 +963,20 @@ mod tests {
     fn test_rpc_bind_validation() {
         // Both None should be valid
         assert!(validate_rpc_bind_args(&None, &None).is_ok());
-        
+
         // Both Some should be valid with valid values
         assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(9944)).is_ok());
         assert!(validate_rpc_bind_args(&Some("0.0.0.0".to_string()), &Some(8080)).is_ok());
         assert!(validate_rpc_bind_args(&Some("localhost".to_string()), &Some(3000)).is_ok());
-        
+
         // One Some, one None should be invalid
         assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &None).is_err());
         assert!(validate_rpc_bind_args(&None, &Some(9944)).is_err());
-        
+
         // Invalid host should be invalid
         assert!(validate_rpc_bind_args(&Some("invalid@host".to_string()), &Some(9944)).is_err());
         assert!(validate_rpc_bind_args(&Some("".to_string()), &Some(9944)).is_err());
-        
+
         // Port 0 should be invalid
         assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(0)).is_err());
     }
