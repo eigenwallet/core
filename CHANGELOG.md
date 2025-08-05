@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Get the primary address of th Monero wallet
   - Get the balance of the Monero wallet
   - Get the balance of the Bitcoin wallet
-- ORCHESTRATOR: A new experiemental `swap-orchestrator` binary is now shipped.
-  - The `swap-orchestrator` is a lightweight tool to generate a production grade environement for running ASBs.
+- ORCHESTRATOR: A new experiemental `orchestrator` binary is now shipped.
+  - The `orchestrator` is a lightweight tool to generate a production grade environement for running ASBs.
   - It guides the user through a wizard and generates a custom [Docker compose](https://docs.docker.com/compose/) file which specifies a secure Docker environment for running ASBs.
   - This will continue to evolve over time, and we will document this thoroughly once it is more stable.
 
