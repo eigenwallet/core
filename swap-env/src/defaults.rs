@@ -34,6 +34,7 @@ pub struct Defaults {
     pub monero_daemon_address: Url,
     pub price_ticker_ws_url: Url,
     pub bitcoin_confirmation_target: u16,
+    pub use_mempool_space_fee_estimation: bool,
 }
 
 impl GetDefaults for Mainnet {
@@ -47,7 +48,8 @@ impl GetDefaults for Mainnet {
             electrum_rpc_url: Url::parse("ssl://blockstream.info:700")?,
             monero_daemon_address: Url::parse("http://nthpyro.dev:18089")?,
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
-            bitcoin_confirmation_target: 3,
+            bitcoin_confirmation_target: 1,
+            use_mempool_space_fee_estimation: true,
         };
 
         Ok(defaults)
@@ -66,6 +68,7 @@ impl GetDefaults for Testnet {
             monero_daemon_address: Url::parse("http://node.sethforprivacy.com:38089")?,
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
+            use_mempool_space_fee_estimation: true,
         };
 
         Ok(defaults)
