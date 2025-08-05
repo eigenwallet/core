@@ -57,8 +57,8 @@ WORKDIR /build/swap
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
 
-RUN cargo build -vv -p swap-asb --bin=asb
-RUN cargo build -vv -p swap-controller --bin=asb-controller
+RUN cargo build --locked -vv -p swap-asb --bin=asb
+RUN cargo build --locked -vv -p swap-controller --bin=asb-controller
 
 # Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS runner
