@@ -37,7 +37,7 @@ where
                     _ => {
                         if let Some(cmd) = parse::parse_line(line) {
                             if let Err(e) = dispatch(cmd, client.clone()).await {
-                                eprintln!("Command failed: {}", e);
+                                eprintln!("Command failed with error: {e:?}");
                             }
                         } else {
                             eprintln!(

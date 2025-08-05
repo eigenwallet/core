@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bitcoin = { workspace = true }
 jsonrpsee = { workspace = true, features = ["macros", "server", "client-core", "http-client"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

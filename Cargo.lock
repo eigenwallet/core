@@ -10618,6 +10618,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.42",
  "jsonrpsee",
+ "monero",
  "rustyline",
  "serde_json",
  "shell-words",
@@ -10629,6 +10630,7 @@ dependencies = [
 name = "swap-controller-api"
 version = "0.1.0"
 dependencies = [
+ "bitcoin 0.32.6",
  "jsonrpsee",
  "serde",
  "serde_json",

@@ -8,54 +8,6 @@ use swap_env::prompt as config_prompt;
 
 use crate::compose::ASB_DATA_DIR;
 
-#[derive(Debug)]
-enum BuildType {
-    Source,
-    Prebuilt,
-}
-
-mod prompt {
-    use dialoguer::{theme::ColorfulTheme, Select};
-
-    use crate::BuildType;
-
-    pub fn network() -> (bitcoin::Network, monero::Network) {
-        let network = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Which network do you want to run on?")
-            .items(&[
-                "Mainnet Bitcoin & Mainnet Monero",
-                "Testnet Bitcoin & Stagenet Monero",
-            ])
-            .default(0)
-            .interact()
-            .expect("Failed to select network");
-
-        match network {
-            0 => (bitcoin::Network::Bitcoin, monero::Network::Mainnet),
-            1 => (bitcoin::Network::Testnet, monero::Network::Stagenet),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn build_type() -> BuildType {
-        let build_type = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("How do you want to build the Docker image for the ASB?")
-            .items(&[
-                "Build Docker image from source (can take >1h)",
-                "Prebuild Docker image (pinned to a specific commit with SHA256 hash)",
-            ])
-            .default(0)
-            .interact()
-            .expect("Failed to select build type");
-
-        match build_type {
-            0 => BuildType::Source,
-            1 => BuildType::Prebuilt,
-            _ => unreachable!(),
-        }
-    }
-}
-
 fn main() {
     let (bitcoin_network, monero_network) = prompt::network();
 
@@ -63,12 +15,12 @@ fn main() {
 
     let defaults = match (bitcoin_network, monero_network) {
         (bitcoin::Network::Bitcoin, monero::Network::Mainnet) => {
-            Mainnet::get_config_file_defaults().expect("Failed to get defaults")
+            Mainnet::get_config_file_defaults().expect("defaults to be available")
         }
         (bitcoin::Network::Testnet, monero::Network::Stagenet) => {
-            Testnet::get_config_file_defaults().expect("Failed to get defaults")
+            Testnet::get_config_file_defaults().expect("defaults to be available")
         }
-        _ => panic!("Unsupported bitcoin or monero network"),
+        _ => panic!("Unsupported Bitcoin / Monero network combination"),
     };
 
     let build_type = prompt::build_type();
@@ -108,16 +60,21 @@ fn main() {
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
             asb: match build_type {
                 BuildType::Source => {
-                    OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.to_string())
+                    OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.clone())
                 }
                 BuildType::Prebuilt => OrchestratorImage::Registry(images::ASB_IMAGE.to_string()),
+            },
+            asb_controller: match build_type {
+                BuildType::Source => {
+                    OrchestratorImage::Build(images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone())
+                }
+                BuildType::Prebuilt => panic!("Prebuilt ASB controller image is not supported"),
             },
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
         },
     };
-
 
     let electrs_url = Url::parse(&format!("electrs:{}", recipe.ports.electrs))
         .expect("electrs url to be convertible to a valid url");
@@ -175,4 +132,52 @@ fn main() {
 
     println!();
     println!("Run `docker compose up -d` to start the services.");
+}
+
+#[derive(Debug)]
+enum BuildType {
+    Source,
+    Prebuilt,
+}
+
+mod prompt {
+    use dialoguer::{theme::ColorfulTheme, Select};
+
+    use crate::BuildType;
+
+    pub fn network() -> (bitcoin::Network, monero::Network) {
+        let network = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Which network do you want to run on?")
+            .items(&[
+                "Mainnet Bitcoin & Mainnet Monero",
+                "Testnet Bitcoin & Stagenet Monero",
+            ])
+            .default(0)
+            .interact()
+            .expect("Failed to select network");
+
+        match network {
+            0 => (bitcoin::Network::Bitcoin, monero::Network::Mainnet),
+            1 => (bitcoin::Network::Testnet, monero::Network::Stagenet),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn build_type() -> BuildType {
+        let build_type = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("How do you want to build the Docker image for the ASB?")
+            .items(&[
+                "Build Docker image from source (can take >1h)",
+                "Prebuild Docker image (pinned to a specific commit with SHA256 hash)",
+            ])
+            .default(0)
+            .interact()
+            .expect("Failed to select build type");
+
+        match build_type {
+            0 => BuildType::Source,
+            1 => BuildType::Prebuilt,
+            _ => unreachable!(),
+        }
+    }
 }

@@ -6,6 +6,7 @@ target-check/
 .DS_Store
 
 build/
+
 monero-rpc-pool/temp_db.sqlite
 monero-rpc-pool/temp.db
 

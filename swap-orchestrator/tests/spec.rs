@@ -26,6 +26,7 @@ fn test_orchestrator_spec_generation() {
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
             asb: OrchestratorImage::Build(images::ASB_IMAGE.to_string()),
+            asb_controller: OrchestratorImage::Build(images::ASB_CONTROLLER_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),

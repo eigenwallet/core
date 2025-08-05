@@ -31,6 +31,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub electrs: T,
     pub bitcoind: T,
     pub asb: T,
+    pub asb_controller: T,
 }
 
 pub struct OrchestratorPorts {
@@ -54,11 +55,20 @@ impl Into<electrs::Network> for OrchestratorNetworks<monero::Network, bitcoin::N
     }
 }
 
+/// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
+#[derive(Debug, Clone)]
+pub struct DockerBuildInput {
+    // Usually this is the root of the Cargo workspace
+    pub context: &'static str,
+    // Usually this is the path to the Dockerfile
+    pub dockerfile: &'static str,
+}
+
 /// Specified a docker image to use
 /// The image can either be pulled from a registry or built from source
 pub enum OrchestratorImage {
     Registry(String),
-    Build(String),
+    Build(DockerBuildInput),
 }
 
 #[macro_export]
@@ -199,7 +209,7 @@ services:
     command: {command_asb}
   asb-controller:
     container_name: asb-controller
-    {image_asb}
+    {image_asb_controller}
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -222,6 +232,7 @@ volumes:
         image_electrs = input.images.electrs.to_image_attribute(),
         image_bitcoind = input.images.bitcoind.to_image_attribute(),
         image_asb = input.images.asb.to_image_attribute(),
+        image_asb_controller = input.images.asb_controller.to_image_attribute(),
         asb_data_dir = input.directories.asb_data_dir.display(),
     );
 
@@ -339,7 +350,10 @@ impl IntoImageAttribute for OrchestratorImage {
     fn to_image_attribute(self) -> String {
         match self {
             OrchestratorImage::Registry(image) => format!("image: {}", image),
-            OrchestratorImage::Build(url) => format!("build: {}", url),
+            OrchestratorImage::Build(input) => format!(
+                r#"build: {{ context: "{}", dockerfile: "{}" }}"#,
+                input.context, input.dockerfile
+            ),
         }
     }
 }

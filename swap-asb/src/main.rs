@@ -262,10 +262,11 @@ pub async fn main() -> Result<()> {
                 swarm.add_external_address(external_address.clone());
             }
 
+            let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver) = EventLoop::new(
                 swarm,
                 env_config,
-                Arc::new(bitcoin_wallet),
+                bitcoin_wallet.clone(),
                 monero_wallet.clone(),
                 db,
                 kraken_rate.clone(),
@@ -276,7 +277,7 @@ pub async fn main() -> Result<()> {
             .unwrap();
 
             // Start RPC server
-            let rpc_server = RpcServer::start(rpc_port).await?;
+            let rpc_server = RpcServer::start(rpc_port, bitcoin_wallet.clone(), monero_wallet.clone()).await?;
             rpc_server.spawn();
 
             tokio::spawn(async move {

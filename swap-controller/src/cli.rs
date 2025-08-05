@@ -17,4 +17,8 @@ pub struct Cli {
 pub enum Cmd {
     /// Check connection to ASB server
     CheckConnection,
+    /// Get Bitcoin balance
+    BitcoinBalance,
+    /// Get Monero balance
+    MoneroBalance,
 }
