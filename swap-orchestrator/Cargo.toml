@@ -18,5 +18,9 @@ swap-env = { path = "../swap-env" }
 toml = { workspace = true }
 url = { workspace = true }
 
+[build-dependencies]
+anyhow = { workspace = true }
+vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
+
 [lints]
 workspace = true

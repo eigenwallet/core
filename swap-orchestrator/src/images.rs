@@ -1,5 +1,10 @@
 use crate::compose::DockerBuildInput;
 
+/// At compile time, we determine the git repository and commit hash
+/// This is then burned into the binary as a static string
+/// If the Git hash doesn't match, Docker will fail to build the image
+static GIT_REPOSITORY: &str = concat!("https://github.com/eigenwallet/core.git#", env!("VERGEN_GIT_SHA"));
+
 /// All of these images are pinned to a specific commit
 /// This ensures that the images cannot be altered by the registry
 
@@ -20,16 +25,17 @@ pub static ASB_IMAGE: &str = "ghcr.io/eigenwallet/asb@sha256:ad0daf2ee68d05f6cb0
 /// eigenwallet asb v3.0.0-beta.5 (https://github.com/eigenwallet/core/commit/886dbcbef2dda534d1a0763750f1e6c5e1f57564)
 // pub static ASB_IMAGE_FROM_SOURCE: &str = "https://github.com/eigenwallet/core.git#886dbcbef2dda534d1a0763750f1e6c5e1f57564";
 // TODO: Do not use local path, use a remote git repo here (see above)
+// TODO: Pin to the current git commit hash (determined at compile time)
 pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace
-    context: "../",
+    context: GIT_REPOSITORY,
     // The Dockerfile of the asb is in the root of the Cargo workspace
     dockerfile: "./Dockerfile",
 };
 
 pub static ASB_CONTROLLER_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace
-    context: "../",
+    context: GIT_REPOSITORY,
     // The Dockerfile of the asb-controller is in the swap-controller directory
     dockerfile: "./swap-controller/Dockerfile",
 };

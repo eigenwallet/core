@@ -10689,6 +10689,7 @@ dependencies = [
  "swap-env",
  "toml 0.9.5",
  "url",
+ "vergen",
 ]
 
 [[package]]
