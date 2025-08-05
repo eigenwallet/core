@@ -4,13 +4,14 @@ use std::{
     path::PathBuf,
 };
 
-use crate::electrs;
+use crate::{asb, electrs};
 
 pub static ASB_DATA_DIR: &str = "/asb-data";
+pub static ASB_CONFIG_FILE: &str = "config.toml";
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
-    pub networks: OrchestratorNetworks<monero::Network, bitcoin::Network, electrs::Network>,
+    pub networks: OrchestratorNetworks<monero::Network, bitcoin::Network>,
     pub images: OrchestratorImages<OrchestratorImage>,
     pub directories: OrchestratorDirectories,
 }
@@ -19,10 +20,10 @@ pub struct OrchestratorDirectories {
     pub asb_data_dir: PathBuf,
 }
 
-pub struct OrchestratorNetworks<MN: IntoFlag, BN: IntoFlag, EN: IntoFlag> {
+#[derive(Clone)]
+pub struct OrchestratorNetworks<MN: IntoFlag + Clone, BN: IntoFlag + Clone> {
     pub monero: MN,
     pub bitcoin: BN,
-    pub electrs: EN,
 }
 
 pub struct OrchestratorImages<T: IntoImageAttribute> {
@@ -39,6 +40,18 @@ pub struct OrchestratorPorts {
     pub electrs: u16,
     pub asb_libp2p: u16,
     pub asb_rpc_port: u16,
+}
+
+impl Into<asb::Network> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
+    fn into(self) -> asb::Network {
+        asb::Network::new(self.monero, self.bitcoin)
+    }
+}
+
+impl Into<electrs::Network> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
+    fn into(self) -> electrs::Network {
+        electrs::Network::new(self.bitcoin)
+    }
 }
 
 /// Specified a docker image to use
@@ -74,6 +87,17 @@ fn build(input: OrchestratorInput) -> String {
         input.networks.bitcoin.to_display()
     );
 
+    let asb_config_path = PathBuf::from(ASB_DATA_DIR).join(ASB_CONFIG_FILE);
+    let asb_network: asb::Network = input.networks.clone().into();
+
+    let command_asb = command![
+        "asb",
+        asb_network.to_flag(),
+        flag!("--config={}", asb_config_path.display()),
+        flag!("start"),
+        flag!("--rpc-port={}", input.ports.asb_rpc_port),
+    ];
+
     let command_monerod = command![
         "monerod",
         input.networks.monero.to_flag(),
@@ -101,23 +125,17 @@ fn build(input: OrchestratorInput) -> String {
         flag!("-txindex=1"),
     ];
 
+    let electrs_network: electrs::Network = input.networks.clone().into();
+
     let command_electrs = command![
         "electrs",
-        input.networks.electrs.to_flag(),
+        electrs_network.to_flag(),
         flag!("--daemon-dir=/bitcoind-data/"),
         flag!("--db-dir=/electrs-data/db"),
         flag!("--daemon-rpc-addr=bitcoind:{}", input.ports.bitcoind_rpc),
         flag!("--daemon-p2p-addr=bitcoind:{}", input.ports.bitcoind_p2p),
         flag!("--electrum-rpc-addr=0.0.0.0:{}", input.ports.electrs),
         flag!("--log-filters=INFO"),
-    ];
-
-    let command_asb = command![
-        "asb",
-        flag!("--testnet"),
-        flag!("--config=/asb-data/config_testnet.toml"),
-        flag!("start"),
-        flag!("--rpc-port={}", input.ports.asb_rpc_port),
     ];
 
     let command_asb_controller = command![
@@ -173,7 +191,7 @@ services:
     depends_on:
       - electrs
     volumes:
-      - './config_testnet.toml:/asb-data/config_testnet.toml'
+      - './config.toml:/asb-data/config.toml'
       - 'asb-data:{asb_data_dir}'
     ports:
       - '0.0.0.0:{asb_port}:{asb_port}'
@@ -182,6 +200,8 @@ services:
   asb-controller:
     container_name: asb-controller
     {image_asb}
+    stdin_open: true
+    tty: true
     restart: unless-stopped
     depends_on:
       - asb

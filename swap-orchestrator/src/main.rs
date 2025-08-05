@@ -1,3 +1,4 @@
+mod asb;
 mod compose;
 mod electrs;
 mod images;
@@ -71,8 +72,8 @@ fn main() {
     };
 
     let build_type = prompt::build_type();
-    let min_buy = config_prompt::min_buy_amount().expect("Failed to prompt for min buy amount");
-    let max_buy = config_prompt::max_buy_amount().expect("Failed to prompt for max buy amount");
+    let min_buy_btc = config_prompt::min_buy_amount().expect("Failed to prompt for min buy amount");
+    let max_buy_btc = config_prompt::max_buy_amount().expect("Failed to prompt for max buy amount");
     let ask_spread = config_prompt::ask_spread().expect("Failed to prompt for ask spread");
     let rendezvous_points =
         config_prompt::rendezvous_points().expect("Failed to prompt for rendezvous points");
@@ -86,7 +87,6 @@ fn main() {
         OrchestratorInput, OrchestratorNetworks, OrchestratorPorts,
     };
     use swap_env::config::{Bitcoin, Config, Data, Maker, Monero, Network, TorConf};
-    use swap_env::defaults::KRAKEN_PRICE_TICKER_WS_URL;
     use url::Url;
 
     let recipe = OrchestratorInput {
@@ -99,9 +99,8 @@ fn main() {
             asb_rpc_port: 9944,
         },
         networks: OrchestratorNetworks {
-            monero: monero::Network::Stagenet,
-            bitcoin: bitcoin::Network::Testnet,
-            electrs: electrs::Network::Testnet,
+            monero: monero_network,
+            bitcoin: bitcoin_network,
         },
         images: OrchestratorImages {
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),
@@ -119,6 +118,13 @@ fn main() {
         },
     };
 
+
+    let electrs_url = Url::parse(&format!("electrs:{}", recipe.ports.electrs))
+        .expect("electrs url to be convertible to a valid url");
+
+    let monerod_daemon_url = Url::parse(&format!("http://monerod:{}", recipe.ports.monerod_rpc))
+        .expect("monerod daemon url to be convertible to a valid url");
+
     let config = Config {
         data: Data {
             dir: recipe.directories.asb_data_dir.clone(),
@@ -129,28 +135,30 @@ fn main() {
             external_addresses: vec![],
         },
         bitcoin: Bitcoin {
-            electrum_rpc_urls: vec![format!("electrs:{}", recipe.ports.electrs).parse().unwrap()],
-            target_block: 1,
-            finality_confirmations: None,
+            electrum_rpc_urls: vec![electrs_url],
             network: bitcoin_network,
-            use_mempool_space_fee_estimation: true,
+            target_block: defaults.bitcoin_confirmation_target,
+            use_mempool_space_fee_estimation: defaults.use_mempool_space_fee_estimation,
+            // This means that we will use the default set in swap-env/src/env.rs
+            finality_confirmations: None,
         },
         monero: Monero {
-            daemon_url: Url::parse(&format!("http://monerod:{}", recipe.ports.monerod_rpc))
-                .unwrap(),
-            finality_confirmations: None,
+            daemon_url: monerod_daemon_url,
             network: monero_network,
+            // We disable the monero node pool because we are using a self-hosted node
             monero_node_pool: false,
+            // This means that we will use the default set in swap-env/src/env.rs
+            finality_confirmations: None,
         },
         tor: TorConf {
             register_hidden_service: tor_hidden_service,
             ..Default::default()
         },
         maker: Maker {
-            min_buy_btc: min_buy,
-            max_buy_btc: max_buy,
+            min_buy_btc,
+            max_buy_btc,
             ask_spread,
-            price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL).unwrap(),
+            price_ticker_ws_url: defaults.price_ticker_ws_url,
             external_bitcoin_redeem_address: None,
         },
     };

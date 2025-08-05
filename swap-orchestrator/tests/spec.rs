@@ -2,7 +2,7 @@ use swap_orchestrator::compose::{
     IntoSpec, OrchestratorImage, OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
     OrchestratorPorts,
 };
-use swap_orchestrator::{electrs, images};
+use swap_orchestrator::{asb, electrs, images};
 
 #[test]
 fn test_orchestrator_spec_generation() {
@@ -19,6 +19,7 @@ fn test_orchestrator_spec_generation() {
             monero: monero::Network::Stagenet,
             bitcoin: bitcoin::Network::Testnet,
             electrs: electrs::Network::Testnet,
+            asb: asb::Network::Testnet,
         },
         images: OrchestratorImages {
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),

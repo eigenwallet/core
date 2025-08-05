@@ -5,12 +5,13 @@ use crate::{
 
 /// Wrapper around a Bitcoin network for Electrs
 /// Electrs needs a different network flag than bitcoind
+#[derive(Clone)]
 pub struct Network(bitcoin::Network);
 
-#[allow(non_upper_case_globals)]
 impl Network {
-    pub const Mainnet: Self = Self(bitcoin::Network::Bitcoin);
-    pub const Testnet: Self = Self(bitcoin::Network::Testnet);
+    pub fn new(bitcoin: bitcoin::Network) -> Self {
+        Self(bitcoin)
+    }
 }
 
 impl IntoFlag for Network {
