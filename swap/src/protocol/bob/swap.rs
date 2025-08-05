@@ -240,10 +240,13 @@ async fn next_state(
             // Check if the transaction has already been broadcasted
             // It could be that the operation was aborted after the transaction reached the Electrum server
             // but before we transitioned to the BtcLocked state
-            if let Ok(Some(_)) = bitcoin_wallet.get_raw_transaction(state3.tx_lock_id()).await {
+            if let Ok(Some(_)) = bitcoin_wallet
+                .get_raw_transaction(state3.tx_lock_id())
+                .await
+            {
                 tracing::info!(txid = %state3.tx_lock_id(), "Bitcoin lock transaction already published, skipping publish");
-            }else {
-                 // Publish the signed Bitcoin lock transaction
+            } else {
+                // Publish the signed Bitcoin lock transaction
                 let (..) = bitcoin_wallet.broadcast(btc_lock_tx_signed, "lock").await?;
             }
 
