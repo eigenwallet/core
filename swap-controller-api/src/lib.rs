@@ -18,6 +18,16 @@ pub struct MoneroAddressResponse {
     pub address: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MultiaddressesResponse {
+    pub multiaddresses: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ActiveConnectionsResponse {
+    pub connections: usize,
+}
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -28,4 +38,8 @@ pub trait AsbApi {
     async fn monero_balance(&self) -> Result<MoneroBalanceResponse, ErrorObjectOwned>;
     #[method(name = "monero_address")]
     async fn monero_address(&self) -> Result<MoneroAddressResponse, ErrorObjectOwned>;
+    #[method(name = "multiaddresses")]
+    async fn multiaddresses(&self) -> Result<MultiaddressesResponse, ErrorObjectOwned>;
+    #[method(name = "active_connections")]
+    async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
 }

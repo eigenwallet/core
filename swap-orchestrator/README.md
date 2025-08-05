@@ -1,12 +1,16 @@
-# Orchestration
+# Orchestrator
 
-This tool helps you setup a secure, reliable and production environment for running an ASB.
+The `orchestrator` tool helps you setup a secure, reliable and production environment for running an ASB.
 
 The `orchestrator` guides you through a series of prompts to generate a customized [Docker](https://docs.docker.com/) environment using [Docker Compose](https://docs.docker.com/compose/).
 
 ## Getting started
 
 To generate the `config.toml` and `docker-compose.yml` files, run:
+
+```bash
+./orchestrator
+```
 
 ```bash
 cargo run --bin orchestrator

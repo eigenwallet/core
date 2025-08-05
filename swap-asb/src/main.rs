@@ -264,7 +264,7 @@ pub async fn main() -> Result<()> {
             }
 
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
-            let (event_loop, mut swap_receiver) = EventLoop::new(
+            let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
                 swarm,
                 env_config,
                 bitcoin_wallet.clone(),
@@ -279,9 +279,14 @@ pub async fn main() -> Result<()> {
 
             // Start RPC server conditionally
             if let (Some(host), Some(port)) = (rpc_bind_host, rpc_bind_port) {
-                let rpc_server =
-                    RpcServer::start(host, port, bitcoin_wallet.clone(), monero_wallet.clone())
-                        .await?;
+                let rpc_server = RpcServer::start(
+                    host,
+                    port,
+                    bitcoin_wallet.clone(),
+                    monero_wallet.clone(),
+                    event_loop_service,
+                )
+                .await?;
                 rpc_server.spawn();
             }
 

@@ -31,6 +31,55 @@ use uuid::Uuid;
 /// The time-to-live for quotes in the cache
 const QUOTE_CACHE_TTL: Duration = Duration::from_secs(120);
 
+mod service {
+    use super::*;
+
+    /// Request types for the EventLoop service with typed responders
+    #[derive(Debug)]
+    pub enum EventLoopRequest {
+        GetMultiaddresses {
+            respond_to: oneshot::Sender<(PeerId, Vec<libp2p::Multiaddr>)>,
+        },
+        GetActiveConnections {
+            respond_to: oneshot::Sender<usize>,
+        },
+    }
+
+    /// Tower service for communicating with the EventLoop
+    #[derive(Debug, Clone)]
+    pub struct EventLoopService {
+        sender: mpsc::UnboundedSender<EventLoopRequest>,
+    }
+
+    impl EventLoopService {
+        pub fn new(sender: mpsc::UnboundedSender<EventLoopRequest>) -> Self {
+            Self { sender }
+        }
+
+        /// Get multiaddresses and peer ID from the event loop
+        pub async fn get_multiaddresses(&self) -> anyhow::Result<(PeerId, Vec<libp2p::Multiaddr>)> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetMultiaddresses { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the number of active connections from the event loop
+        pub async fn get_active_connections(&self) -> anyhow::Result<usize> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetActiveConnections { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+    }
+}
+
+pub use service::{EventLoopRequest, EventLoopService};
+
 /// The key for the quote cache
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct QuoteCacheKey {
@@ -98,6 +147,9 @@ where
         oneshot::Sender<Result<(), OutboundFailure>>,
     )>,
 
+    /// Channel for service requests
+    service_requests: mpsc::UnboundedReceiver<EventLoopRequest>,
+
     /// Temporarily stores transfer proof requests for peers that are currently disconnected.
     ///
     /// When a transfer proof cannot be sent because there's no connection to the peer:
@@ -139,10 +191,11 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
-    ) -> Result<(Self, mpsc::Receiver<Swap>)> {
+    ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
             tokio::sync::mpsc::unbounded_channel();
+        let (service_sender, service_requests) = mpsc::unbounded_channel();
 
         let quote_cache = Cache::builder().time_to_live(QUOTE_CACHE_TTL).build();
 
@@ -162,14 +215,22 @@ where
             inflight_encrypted_signatures: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
+            service_requests,
             buffered_transfer_proofs: Default::default(),
             inflight_transfer_proofs: Default::default(),
         };
-        Ok((event_loop, swap_channel.receiver))
+
+        let service = EventLoopService::new(service_sender);
+
+        Ok((event_loop, swap_channel.receiver, service))
     }
 
     pub fn peer_id(&self) -> PeerId {
         *Swarm::local_peer_id(&self.swarm)
+    }
+
+    pub fn external_addresses(&self) -> Vec<libp2p::Multiaddr> {
+        self.swarm.external_addresses().cloned().collect()
     }
 
     pub async fn run(mut self) {
@@ -488,6 +549,19 @@ where
                 },
                 Some(response_channel) = self.inflight_encrypted_signatures.next() => {
                     let _ = self.swarm.behaviour_mut().encrypted_signature.send_response(response_channel, ());
+                },
+                Some(request) = self.service_requests.recv() => {
+                    match request {
+                        EventLoopRequest::GetMultiaddresses { respond_to } => {
+                            let peer_id = *self.swarm.local_peer_id();
+                            let addresses = self.swarm.external_addresses().cloned().collect();
+                            let _ = respond_to.send((peer_id, addresses));
+                        }
+                        EventLoopRequest::GetActiveConnections { respond_to } => {
+                            let count = self.swarm.connected_peers().count();
+                            let _ = respond_to.send(count);
+                        }
+                    }
                 }
             }
         }
@@ -855,6 +929,8 @@ impl<T> Default for MpscChannels<T> {
 
 #[cfg(test)]
 mod tests {
+    use swap_feed::FixedRate;
+
     use super::*;
 
     #[tokio::test]

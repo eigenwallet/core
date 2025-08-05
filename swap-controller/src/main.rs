@@ -43,6 +43,20 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             let response = client.monero_address().await?;
             println!("The primary Monero address is {}", response.address);
         }
+        Cmd::Multiaddresses => {
+            let response = client.multiaddresses().await?;
+            if response.multiaddresses.is_empty() {
+                println!("No external multiaddresses configured");
+            } else {
+                for addr in response.multiaddresses {
+                    println!("{}", addr);
+                }
+            }
+        }
+        Cmd::ActiveConnections => {
+            let response = client.active_connections().await?;
+            println!("Connected to {} peers", response.connections);
+        }
     }
     Ok(())
 }
