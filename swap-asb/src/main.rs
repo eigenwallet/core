@@ -151,7 +151,6 @@ pub async fn main() -> Result<()> {
 
     let db_file = config.data.dir.join("sqlite");
 
-
     match cmd {
         Command::Start {
             resume_only,
