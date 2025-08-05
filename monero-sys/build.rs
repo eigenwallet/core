@@ -1,5 +1,6 @@
 use cmake::Config;
 use std::fs;
+use std::io::Write as _;
 use std::path::Path;
 
 /// Represents a patch to be applied to the Monero codebase
@@ -28,6 +29,26 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "patches/eigenwallet_0001_wallet2_api_allow_subtract_from_fee.patch"
     ),
     embedded_patch!(
+        "0001-fix-dummy-translation-generator.patch",
+        "Creates dummy translation generator",
+        "patches/0001-fix-dummy-translation-generator.patch"
+    ),
+    embedded_patch!(
+        "0002-fix-iOS-depends-build.patch",
+        "Fixes iOS depends build",
+        "patches/0002-fix-iOS-depends-build.patch"
+    ),
+    embedded_patch!(
+        "0003-include-locale-only-when-targeting-WIN32.patch",
+        "Includes locale only when targeting WIN32 to fix cross-platform build issues",
+        "patches/0003-include-locale-only-when-targeting-WIN32.patch"
+    ),
+    embedded_patch!(
+        "0004-fix-___isPlatformVersionAtLeast.patch",
+        "Fixes ___isPlatformVersionAtLeast being called",
+        "patches/0004-fix-___isPlatformVersionAtLeast.patch"
+    ),
+    embedded_patch!(
         "0002-store-crash-fix",
         "Fixes corrupted wallet cache when storing while refreshing",
         "patches/0002-store-crash-fix.patch"
@@ -38,6 +59,45 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "patches/eigenwallet_0002_wallet2_increase_rpc_retries.patch"
     ),
 ];
+
+/// Execute a child process with piped stdout/stderr and display output in real-time
+fn execute_child_with_pipe(
+    mut child: std::process::Child,
+) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+    use std::io::{BufRead, BufReader};
+    use std::thread;
+
+    let stdout = child.stdout.take().expect("Failed to get stdout");
+    let stderr = child.stderr.take().expect("Failed to get stderr");
+
+    // Spawn threads to handle stdout and stderr
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("cargo:debug=[make stdout] {}", line);
+            }
+        }
+    });
+
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("cargo:debug=[make stderr] {}", line);
+            }
+        }
+    });
+
+    // Wait for the process to complete
+    let status = child.wait()?;
+
+    // Wait for output threads to complete
+    stdout_handle.join().unwrap();
+    stderr_handle.join().unwrap();
+
+    Ok(status)
+}
 
 fn main() {
     let is_github_actions: bool = std::env::var("GITHUB_ACTIONS").is_ok();
@@ -56,8 +116,105 @@ fn main() {
     // Apply embedded patches before building
     apply_embedded_patches().expect("Failed to apply embedded patches");
 
+    // flush std::out
+    std::io::stdout().flush().unwrap();
+    std::io::stderr().flush().unwrap();
+
+    let contrib_depends_dir = std::env::current_dir()
+        .expect("current directory to be accessible")
+        .join("monero_c/contrib/depends");
+
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
+    let out_dir = Path::new(&out_dir);
+    let out_dir_depends = out_dir.join("depends");
+
+    if fs::exists(&out_dir_depends).unwrap_or(false) {
+        println!("cargo:debug=Detected depends directory in OUT_DIR, skipping copying");
+    } else {
+        // Copy the whole contrib/depends directory recursively to the out_dir/depends directory
+        fs_extra::copy_items(
+            &[&contrib_depends_dir],
+            &out_dir_depends,
+            &fs_extra::dir::CopyOptions::new().copy_inside(true),
+        )
+        .expect("Failed to copy contrib/depends to target dir");
+    }
+
+    let contrib_depends_dir = out_dir_depends;
+
+    let mut target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
+    target = match target.as_str() {
+        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu".to_string(),
+        "armv7-linux-androideabi" => "armv7a-linux-androideabi".to_string(),
+        "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32".to_string(),
+        "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
+        _ => target,
+    };
+    println!("cargo:warning=Building for target: {}", target);
+
+    match target.as_str() {
+        "x86_64-apple-darwin"
+        | "aarch64-apple-darwin"
+        | "aarch64-apple-ios"
+        | "aarch64-apple-iossimulator"
+        | "x86_64-unknown-linux-gnu"
+        | "aarch64-linux-gnu"
+        | "aarch64-linux-android"
+        | "x86_64-linux-android"
+        | "armv7a-linux-androideabi"
+        | "x86_64-w64-mingw32" => {}
+        _ => panic!("target unsupported: {}", target),
+    }
+
+    println!(
+        "cargo:warning=Running make HOST={} in contrib/depends",
+        target
+    );
+
+    let mut cmd = std::process::Command::new("env");
+    if (target.contains("-apple-")) {
+        cmd.arg("-i");
+        let path = std::env::var("PATH").unwrap_or_default();
+        cmd.arg(format!("PATH={}", path));
+    }
+    cmd.arg("make")
+        .arg(format!("HOST={}", target))
+        .arg("DEBUG=")
+        // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
+        .current_dir(&contrib_depends_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    
+    let child = cmd.spawn().expect("make command to be executable");
+
+    let status = execute_child_with_pipe(child).expect("make command to execute");
+
+    if !status.success() {
+        eprintln!("make command failed with exit code: {:?}", status.code());
+        panic!("make command failed");
+    }
+
+    println!("cargo:warning=make command completed successfully");
+
     // Build with the monero library all dependencies required
     let mut config = Config::new("monero");
+
+    let toolchain_file = contrib_depends_dir
+        .join(format!("{}/share/toolchain.cmake", target))
+        .display()
+        .to_string();
+    config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
+    println!("cargo:warning=Using toolchain file: {}", toolchain_file);
+
+    let depends_lib_dir = 
+        contrib_depends_dir
+            .join(format!("{}/lib", target));
+
+    println!(
+        "cargo:rustc-link-search=native={}",
+        depends_lib_dir
+            .display()
+    );
 
     let output_directory = config
         .build_target("wallet_api")
@@ -68,10 +225,6 @@ fn main() {
         .define("STATIC", "ON")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("BUILD_TESTS", "OFF")
-        .define("Boost_USE_STATIC_LIBS", "ON")
-        .define("Boost_USE_STATIC_RUNTIME", "ON")
-        //// Disable support for ALL hardware wallets
-        // Disable Trezor support completely
         .define("USE_DEVICE_TREZOR", "OFF")
         .define("USE_DEVICE_TREZOR_MANDATORY", "OFF")
         .define("USE_DEVICE_TREZOR_PROTOBUF_TEST", "OFF")
@@ -85,14 +238,24 @@ fn main() {
         .define("USE_DEVICE_LEDGER", "OFF")
         .define("CMAKE_DISABLE_FIND_PACKAGE_HIDAPI", "ON")
         .define("GTEST_HAS_ABSL", "OFF")
+        .define("SODIUM_LIBRARY", "libsodium.a")
         // Use lightweight crypto library
         .define("MONERO_WALLET_CRYPTO_LIBRARY", "cn")
+        .define("CMAKE_CROSSCOMPILING", "OFF")
+        .define(
+            "SODIUM_INCLUDE_PATH",
+            contrib_depends_dir
+                .join(format!("{}/include", target))
+                .display()
+                .to_string(),
+        ) // This is needed for libsodium.a to be found on mingw-w64
         .build_arg("-Wno-dev") // Disable warnings we can't fix anyway
         .build_arg(match (is_github_actions, is_docker_build) {
             (true, _) => "-j1",
             (_, true) => "-j1",
             (_, _) => "-j4",
         })
+        .build_arg(format!("-I."))
         .build();
 
     let monero_build_dir = output_directory.join("build");
@@ -127,7 +290,10 @@ fn main() {
         "cargo:rustc-link-search=native={}",
         monero_build_dir.join("external/randomx").display()
     );
-    println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
+
+    if target.contains("linux") && target.contains("x86_64") {
+        println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
+    }
 
     println!(
         "cargo:rustc-link-search=native={}",
@@ -191,8 +357,8 @@ fn main() {
         monero_build_dir.join("src/rpc").display()
     );
 
-    #[cfg(target_os = "macos")]
-    {
+    // Add search paths for clang runtime libraries on macOS (not iOS)
+    if target.contains("apple-darwin") {
         // Dynamically detect Homebrew installation prefix (works on both Apple Silicon and Intel Macs)
         let brew_prefix = std::process::Command::new("brew")
             .arg("--prefix")
@@ -225,58 +391,76 @@ fn main() {
             .stdout;
         let resource_dir = String::from_utf8_lossy(&resource_dir).trim().to_owned();
         println!("cargo:rustc-link-search=native={resource_dir}/lib/darwin");
-        println!("cargo:rustc-link-lib=static=clang_rt.osx");
+        println!("cargo:rustc-link-lib=static:-bundle=clang_rt.osx");
     }
 
     // Link libwallet and libwallet_api statically
-    println!("cargo:rustc-link-lib=static=wallet");
-    println!("cargo:rustc-link-lib=static=wallet_api");
+    println!("cargo:rustc-link-lib=static:-bundle=wallet");
+    println!("cargo:rustc-link-lib=static:-bundle=wallet_api");
 
     // Link targets of monero codebase statically
-    println!("cargo:rustc-link-lib=static=epee");
-    println!("cargo:rustc-link-lib=static=easylogging");
-    println!("cargo:rustc-link-lib=static=lmdb");
-    println!("cargo:rustc-link-lib=static=randomx");
-    println!("cargo:rustc-link-lib=static=cncrypto");
-    println!("cargo:rustc-link-lib=static=net");
-    println!("cargo:rustc-link-lib=static=ringct");
-    println!("cargo:rustc-link-lib=static=ringct_basic");
-    println!("cargo:rustc-link-lib=static=checkpoints");
-    println!("cargo:rustc-link-lib=static=multisig");
-    println!("cargo:rustc-link-lib=static=version");
-    println!("cargo:rustc-link-lib=static=cryptonote_basic");
-    println!("cargo:rustc-link-lib=static=cryptonote_format_utils_basic");
-    println!("cargo:rustc-link-lib=static=common");
-    println!("cargo:rustc-link-lib=static=cryptonote_core");
-    println!("cargo:rustc-link-lib=static=hardforks");
-    println!("cargo:rustc-link-lib=static=blockchain_db");
-    println!("cargo:rustc-link-lib=static=device");
+    println!("cargo:rustc-link-lib=static:-bundle=epee");
+    println!("cargo:rustc-link-lib=static:-bundle=easylogging");
+    println!("cargo:rustc-link-lib=static:-bundle=lmdb");
+    println!("cargo:rustc-link-lib=static:-bundle=randomx");
+    println!("cargo:rustc-link-lib=static:-bundle=cncrypto");
+    println!("cargo:rustc-link-lib=static:-bundle=net");
+    println!("cargo:rustc-link-lib=static:-bundle=ringct");
+    println!("cargo:rustc-link-lib=static:-bundle=ringct_basic");
+    println!("cargo:rustc-link-lib=static:-bundle=checkpoints");
+    println!("cargo:rustc-link-lib=static:-bundle=multisig");
+    println!("cargo:rustc-link-lib=static:-bundle=version");
+    println!("cargo:rustc-link-lib=static:-bundle=cryptonote_basic");
+    println!("cargo:rustc-link-lib=static:-bundle=cryptonote_format_utils_basic");
+    println!("cargo:rustc-link-lib=static:-bundle=common");
+    println!("cargo:rustc-link-lib=static:-bundle=cryptonote_core");
+    println!("cargo:rustc-link-lib=static:-bundle=hardforks");
+    println!("cargo:rustc-link-lib=static:-bundle=blockchain_db");
+    println!("cargo:rustc-link-lib=static:-bundle=device");
     // Link device_trezor (stub version when USE_DEVICE_TREZOR=OFF)
-    println!("cargo:rustc-link-lib=static=device_trezor");
-    println!("cargo:rustc-link-lib=static=mnemonics");
-    println!("cargo:rustc-link-lib=static=rpc_base");
+    println!("cargo:rustc-link-lib=static:-bundle=device_trezor");
+    println!("cargo:rustc-link-lib=static:-bundle=mnemonics");
+    println!("cargo:rustc-link-lib=static:-bundle=rpc_base");
 
     // Static linking for boost
-    println!("cargo:rustc-link-lib=static=boost_serialization");
-    println!("cargo:rustc-link-lib=static=boost_filesystem");
-    println!("cargo:rustc-link-lib=static=boost_thread");
-    println!("cargo:rustc-link-lib=static=boost_chrono");
+    println!("cargo:rustc-link-lib=static:-bundle=boost_serialization");
+    println!("cargo:rustc-link-lib=static:-bundle=boost_filesystem");
+    println!("cargo:rustc-link-lib=static:-bundle=boost_thread");
+    println!("cargo:rustc-link-lib=static:-bundle=boost_chrono");
+    println!("cargo:rustc-link-lib=static:-bundle=boost_program_options");
+
+    if target.contains("w64-mingw32") {
+        println!("cargo:rustc-link-lib=static:-bundle=boost_locale");
+        println!("cargo:rustc-link-lib=static:-bundle=iconv");
+        
+        // Link C++ standard library and GCC runtime statically
+        println!("cargo:rustc-link-arg=-static-libstdc++");
+        println!("cargo:rustc-link-arg=-static-libgcc");
+    }
 
     // Link libsodium statically
-    println!("cargo:rustc-link-lib=static=sodium");
+    println!("cargo:rustc-link-lib=static:-bundle=sodium");
 
-    // Link OpenSSL statically
-    println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
-    println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
+    // Link OpenSSL statically (on android we use openssl-sys's vendored version instead)
+    #[cfg(not(target_os = "android"))] { 
+        println!("cargo:rustc-link-lib=static:-bundle=ssl"); // This is OpenSSL (libsll)
+        println!("cargo:rustc-link-lib=static:-bundle=crypto"); // This is OpenSSLs crypto library (libcrypto)
+    }
 
     // Link unbound statically
-    println!("cargo:rustc-link-lib=static=unbound");
-    println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
-    println!("cargo:rustc-link-lib=static=nghttp2");
-    println!("cargo:rustc-link-lib=static=event");
+    println!("cargo:rustc-link-lib=static:-bundle=unbound");
+    println!("cargo:rustc-link-lib=static:-bundle=expat"); // Expat is required by unbound
+                                                   // println!("cargo:rustc-link-lib=static:-bundle=nghttp2");
+                                                   // println!("cargo:rustc-link-lib=static:-bundle=event");
+    // Android
+    #[cfg(target_os = "android")] {
+        println!("cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/");
+        // println!("cargo:rustc-link-lib=static:-bundle=c++_static");
+    }
+
 
     // Link protobuf statically
-    println!("cargo:rustc-link-lib=static=protobuf");
+    // println!("cargo:rustc-link-lib=static:-bundle=protobuf");
 
     #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-arg=-mmacosx-version-min=11.0");
@@ -284,9 +468,12 @@ fn main() {
     // Build the CXX bridge
     let mut build = cxx_build::bridge("src/bridge.rs");
 
-    #[cfg(target_os = "macos")]
-    {
-        build.flag_if_supported("-mmacosx-version-min=11.0");
+    if target.contains("apple-ios") {
+        // required for ___chkstk_darwin to be available
+        build.flag_if_supported("-mios-version-min=13.0");
+        println!("cargo:rustc-link-arg=-mios-version-min=13.0");
+        println!("cargo:rustc-link-lib=framework=SystemConfiguration");
+        println!("cargo:rustc-env=IPHONEOS_DEPLOYMENT_TARGET=13.0");
     }
 
     build
@@ -295,22 +482,14 @@ fn main() {
         .include("monero/src") // Includes the monero headers
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
-        .include("/opt/homebrew/include") // Homebrew include path for Boost
+        .include(
+            contrib_depends_dir
+                .join(format!("{}/include", target))
+                .display()
+                .to_string(),
+        )
+        .include(output_directory)
         .flag("-fPIC"); // Position independent code
-
-    #[cfg(target_os = "macos")]
-    {
-        // Use the same dynamic brew prefix for include paths
-        let brew_prefix = std::process::Command::new("brew")
-            .arg("--prefix")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "/opt/homebrew".into());
-
-        build.include(format!("{}/include", brew_prefix)); // Homebrew include path for Boost
-    }
 
     build.compile("monero-sys");
 }
@@ -363,6 +542,7 @@ fn split_patch_by_files(
     Ok(file_patches)
 }
 
+
 fn apply_embedded_patches() -> Result<(), Box<dyn std::error::Error>> {
     let monero_dir = Path::new("monero");
 
@@ -407,25 +587,17 @@ fn apply_embedded_patches() -> Result<(), Box<dyn std::error::Error>> {
             let current = fs::read_to_string(&target_path)
                 .map_err(|e| format!("Failed to read {}: {}", file_path, e))?;
 
-            let patched = match diffy::apply(&current, &patch) {
-                Ok(p) => p,
-                Err(_) => {
-                    // Try reversing the patch – if that succeeds the file already contains the changes
-                    if diffy::apply(&current, &patch.reverse()).is_ok() {
-                        println!(
-                            "cargo:warning=Patch for {} already applied – skipping",
-                            file_path
-                        );
-                        continue;
-                    } else {
-                        return Err(format!(
-                            "Failed to apply patch to {}: hunk mismatch (not already applied)",
-                            file_path
-                        )
-                        .into());
-                    }
-                }
-            };
+            // Check if patch is already applied by trying to reverse it
+            if diffy::apply(&current, &patch.reverse()).is_ok() {
+                println!(
+                    "cargo:warning=Patch for {} already applied – skipping",
+                    file_path
+                );
+                continue;
+            }
+
+            let patched = diffy::apply(&current, &patch)
+                .map_err(|e| format!("Failed to apply patch to {}: {}", file_path, e))?;
 
             fs::write(&target_path, patched)
                 .map_err(|e| format!("Failed to write {}: {}", file_path, e))?;

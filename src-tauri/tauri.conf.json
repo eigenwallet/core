@@ -29,13 +29,34 @@
   "bundle": {
     "createUpdaterArtifacts": true,
     "active": true,
-    "targets": ["appimage", "dmg", "nsis", "app", "deb"],
+    "targets": [
+      "appimage",
+      "dmg",
+      "nsis",
+      "app",
+      "deb"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "iOS": {
+      "minimumSystemVersion": "13.0"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    },
+    "resources": [
+      "libstdc++-6.dll",
+      "libgcc_s_seh-1.dll"
     ]
   },
   "plugins": {
