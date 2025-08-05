@@ -62,10 +62,11 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
     let mut electrum_rpc_urls = match Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt("Do you want to use the default Electrum RPC URLs?")
         .default(true)
-        .interact()? {
-            true => default_electrum_urls.clone(),
-            false => Vec::new(),
-        };
+        .interact()?
+    {
+        true => default_electrum_urls.clone(),
+        false => Vec::new(),
+    };
 
     let mut electrum_number = 1 + electrum_rpc_urls.len();
     let mut electrum_done = false;

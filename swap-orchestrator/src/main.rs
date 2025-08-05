@@ -165,7 +165,7 @@ enum MoneroNodeType {
 }
 
 enum ElectrumServerType {
-    Included, // Run a Bitcoin node and Electrum server
+    Included,         // Run a Bitcoin node and Electrum server
     Remote(Vec<Url>), // Use a specific remote Electrum server
 }
 
@@ -260,7 +260,10 @@ mod prompt {
     pub fn electrum_server_type(default_electrum_urls: &Vec<Url>) -> ElectrumServerType {
         let electrum_server_type = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("How do you want to connect to the Bitcoin network?")
-            .items(&["Run a full Bitcoin node & Electrum server", "List of remote Electrum servers"])
+            .items(&[
+                "Run a full Bitcoin node & Electrum server",
+                "List of remote Electrum servers",
+            ])
             .default(0)
             .interact()
             .expect("Failed to select electrum server type");
@@ -274,7 +277,7 @@ mod prompt {
                     .expect("Failed to prompt for electrum servers");
 
                 ElectrumServerType::Remote(electrum_servers)
-            },
+            }
             _ => unreachable!(),
         }
     }

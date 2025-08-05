@@ -105,7 +105,8 @@ fn build(input: OrchestratorInput) -> String {
         asb_network.to_flag(),
         flag!("--config={}", asb_config_path.display()),
         flag!("start"),
-        flag!("--rpc-port={}", input.ports.asb_rpc_port),
+        flag!("--rpc-bind-port={}", input.ports.asb_rpc_port),
+        flag!("--rpc-bind-host=0.0.0.0"),
     ];
 
     let command_monerod = command![

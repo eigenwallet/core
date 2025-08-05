@@ -522,7 +522,8 @@ async fn init_monero_wallet(
         Some(url) => {
             tracing::info!("Using direct Monero daemon connection: {url}");
 
-            url.clone().into_daemon()
+            url.clone()
+                .into_daemon()
                 .context("Failed to convert daemon URL to Daemon")?
         }
         // If no daemon URL is provided, start the monero-rpc-pool and use it
