@@ -1,7 +1,11 @@
 use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
 use monero::Network;
-use monero_rpc_pool::{config::Config, create_app_with_receiver, database::{parse_network, network_to_string}};
+use monero_rpc_pool::{
+    config::Config,
+    create_app_with_receiver,
+    database::{network_to_string, parse_network},
+};
 use reqwest;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
