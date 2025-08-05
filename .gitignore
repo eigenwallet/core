@@ -1,10 +1,18 @@
 target/
+target-check/
+
 .vscode
 .claude/settings.local.json
 .DS_Store
+
 build/
-release-build.sh
-cn_macos
-target-check
 monero-rpc-pool/temp_db.sqlite
 monero-rpc-pool/temp.db
+
+# auto-generated files by swap-orchestrator
+swap-orchestrator/docker-compose.yml
+swap-orchestrator/config.toml
+
+# release build generator scripts
+release-build.sh
+cn_macos
