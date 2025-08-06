@@ -46,29 +46,29 @@ jobs:
           #   os: windows-latest
           #   archive_ext: zip
           - bin: asb
-            crate: swap
+            crate: swap-asb
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive_ext: tar
           # Temporarily disabled armv7 Linux builds
           # - bin: asb
-          #   crate: swap
+          #   crate: swap-asb
           #   target: armv7-unknown-linux-gnueabihf
           #   os: ubuntu-latest
           #   archive_ext: tar
           - bin: asb
-            crate: swap
+            crate: swap-asb
             target: x86_64-apple-darwin
             os: macos-13
             archive_ext: tar
           - bin: asb
-            crate: swap
+            crate: swap-asb
             target: aarch64-apple-darwin
             os: macos-latest
             archive_ext: tar
           # Temporarily disabled Windows builds
           # - bin: asb
-          #   crate: swap
+          #   crate: swap-asb
           #   target: x86_64-pc-windows-msvc
           #   os: windows-latest
           #   archive_ext: zip
@@ -339,7 +339,7 @@ jobs:
           tags: ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
         if: steps.docker_tags.outputs.preview == 'true'
 
-      - name: Build and push Docker image (asb)
+      - name: Build and push Docker image (asb-controller)
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -350,7 +350,7 @@ jobs:
             ${{ env.DOCKER_IMAGE_NAME }}:latest
         if: steps.docker_tags.outputs.preview == 'false'
 
-      - name: Build and push Docker image without latest tag (preview release) (asb)
+      - name: Build and push Docker image without latest tag (preview release) (asb-controller)
         uses: docker/build-push-action@v4
         with:
           context: .
