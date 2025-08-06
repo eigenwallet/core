@@ -8,7 +8,7 @@ The `orchestrator` guides you through a series of prompts to generate a customiz
 
 Ensure you have [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on your machine.
 
-1. To generate the `config.toml` and `docker-compose.yml` files, run:
+To generate the `config.toml` and `docker-compose.yml` files, run:
 
 ```bash
 ./orchestrator
