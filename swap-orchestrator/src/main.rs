@@ -100,15 +100,7 @@ fn main() {
             daemon_url: match monero_node_type.clone() {
                 MoneroNodeType::Included => Some(monerod_daemon_url),
                 MoneroNodeType::Pool => None,
-                MoneroNodeType::Remote((ssl, host, port)) => Some(
-                    Url::parse(&format!(
-                        "{}://{}:{}",
-                        if ssl { "https" } else { "http" },
-                        host,
-                        port
-                    ))
-                    .expect("monerod daemon url to be convertible to a valid url"),
-                ),
+                MoneroNodeType::Remote(url) => Some(url),
             },
             network: monero_network,
             // This means that we will use the default set in swap-env/src/env.rs
@@ -150,9 +142,9 @@ enum BuildType {
 
 #[derive(Clone)]
 enum MoneroNodeType {
-    Included,                    // Run a Monero node
-    Pool,                        // Use the Monero Remote Node Pool with built in defaults
-    Remote((bool, String, u16)), // Use a specific remote Monero node (ssl, host, port)
+    Included,    // Run a Monero node
+    Pool,        // Use the Monero Remote Node Pool with built in defaults
+    Remote(Url), // Use a specific remote Monero node
 }
 
 enum ElectrumServerType {
@@ -162,7 +154,7 @@ enum ElectrumServerType {
 
 mod prompt {
     use dialoguer::{theme::ColorfulTheme, Input, Select};
-    use swap_env::prompt;
+    use swap_env::prompt as config_prompt;
     use url::Url;
 
     use crate::{BuildType, ElectrumServerType, MoneroNodeType};
@@ -185,6 +177,7 @@ mod prompt {
         }
     }
 
+    #[allow(dead_code)] // will be used in the future
     pub fn build_type() -> BuildType {
         let build_type = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("How do you want to build the Docker image for the ASB?")
@@ -204,45 +197,27 @@ mod prompt {
     }
 
     pub fn monero_node_type() -> MoneroNodeType {
-        let monero_node_type = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("How do you want to run the Monero node?")
+        let node_choice = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(
+                "Do you want to include a Monero node or use an existing node/remote node?",
+            )
             .items(&[
-                "Run a full Monero node",
-                "Use the Monero Remote Node Pool",
-                "Use a specific remote Monero node",
+                "Include a full Monero node",
+                "Use an existing node or remote node",
             ])
             .default(0)
             .interact()
-            .expect("Failed to select monero node type");
+            .expect("Failed to select node choice");
 
-        match monero_node_type {
+        match node_choice {
             0 => MoneroNodeType::Included,
-            1 => MoneroNodeType::Pool,
-            2 => {
-                println!("Okay, let's use a remote Monero node!");
-
-                let ssl = Select::with_theme(&ColorfulTheme::default())
-                    .with_prompt("Which protocol does the remote node use?")
-                    .items(&["HTTP", "HTTPS"])
-                    .default(0)
-                    .interact()
-                    .expect("Failed to select protocol");
-
-                let port: u16 = Input::with_theme(&ColorfulTheme::default())
-                    .with_prompt("What port does the node listen on?")
-                    .default(18081.to_string())
-                    .interact()
-                    .expect("Failed to select port")
-                    .parse()
-                    .expect("Failed to parse port");
-
-                let host = Input::with_theme(&ColorfulTheme::default())
-                    .with_prompt("What host does the node listen on? This is the domain or IP address of the remote node.")
-                    .default("localhost".to_string())
-                    .interact_text()
-                    .expect("Failed to select host");
-
-                MoneroNodeType::Remote((ssl == 1, host, port))
+            1 => {
+                match config_prompt::monero_daemon_url()
+                    .expect("Failed to prompt for Monero daemon URL")
+                {
+                    Some(url) => MoneroNodeType::Remote(url),
+                    None => MoneroNodeType::Pool,
+                }
             }
             _ => unreachable!(),
         }
@@ -264,7 +239,7 @@ mod prompt {
             1 => {
                 println!("Okay, let's use remote Electrum servers!");
 
-                let electrum_servers = prompt::electrum_rpc_urls(default_electrum_urls)
+                let electrum_servers = config_prompt::electrum_rpc_urls(default_electrum_urls)
                     .expect("Failed to prompt for electrum servers");
 
                 ElectrumServerType::Remote(electrum_servers)

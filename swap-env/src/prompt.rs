@@ -101,15 +101,22 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
 /// Prompt user for Monero daemon URL
 /// If the user hits enter, we will use the Monero RPC pool (None)
 pub fn monero_daemon_url() -> Result<Option<Url>> {
-    let input: Result<String, _> = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter Monero daemon url or hit enter to use the Monero RPC pool")
-        .allow_empty(true)
-        .interact_text();
+    let type_choice = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Do you want to use the Monero RPC pool or a remote node?")
+        .items(&["Use the Monero RPC pool", "Use a remote node"])
+        .default(0)
+        .interact()?;
 
-    match input {
-        Ok(s) if s.trim().is_empty() => Ok(None),
-        Ok(s) => Url::parse(&s).map_err(Into::into).map(Some),
-        Err(e) => Err(e.into()),
+    match type_choice {
+        0 => Ok(None),
+        1 => {
+            let input = Input::<String>::with_theme(&ColorfulTheme::default())
+                .with_prompt("Enter Monero daemon URL")
+                .interact_text()?;
+
+            Ok(Some(Url::parse(&input)?))
+        }
+        _ => unreachable!(),
     }
 }
 
