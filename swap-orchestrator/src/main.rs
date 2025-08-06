@@ -28,7 +28,9 @@ fn main() {
         _ => panic!("Unsupported Bitcoin / Monero network combination"),
     };
 
-    let build_type = prompt::build_type();
+    // TOOD: Allow pre-built images here
+    //let build_type = prompt::build_type();
+
     let min_buy_btc = config_prompt::min_buy_amount().expect("Failed to prompt for min buy amount");
     let max_buy_btc = config_prompt::max_buy_amount().expect("Failed to prompt for max buy amount");
     let ask_spread = config_prompt::ask_spread().expect("Failed to prompt for ask spread");
@@ -55,18 +57,12 @@ fn main() {
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
-            asb: match build_type {
-                BuildType::Source => {
-                    OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.clone())
-                }
-                BuildType::Prebuilt => OrchestratorImage::Registry(images::ASB_IMAGE.to_string()),
-            },
-            asb_controller: match build_type {
-                BuildType::Source => {
-                    OrchestratorImage::Build(images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone())
-                }
-                BuildType::Prebuilt => panic!("Prebuilt ASB controller image is not supported"),
-            },
+            // TODO: Allow pre-built images here
+            asb: OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.clone()),
+            // TODO: Allow pre-built images here
+            asb_controller: OrchestratorImage::Build(
+                images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
