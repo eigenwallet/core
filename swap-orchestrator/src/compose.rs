@@ -7,6 +7,7 @@ use std::{
 
 pub const ASB_DATA_DIR: &str = "/asb-data";
 pub const ASB_CONFIG_FILE: &str = "config.toml";
+pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,

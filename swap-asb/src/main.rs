@@ -278,7 +278,7 @@ pub async fn main() -> Result<()> {
             .unwrap();
 
             // Start RPC server conditionally
-            if let (Some(host), Some(port)) = (rpc_bind_host, rpc_bind_port) {
+            let _rpc_server = if let (Some(host), Some(port)) = (rpc_bind_host, rpc_bind_port) {
                 let rpc_server = RpcServer::start(
                     host,
                     port,
@@ -287,8 +287,11 @@ pub async fn main() -> Result<()> {
                     event_loop_service,
                 )
                 .await?;
-                rpc_server.spawn();
-            }
+
+                Some(rpc_server.spawn())
+            } else {
+                None
+            };
 
             tokio::spawn(async move {
                 while let Some(swap) = swap_receiver.recv().await {

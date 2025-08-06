@@ -5,7 +5,7 @@ mod images;
 
 use crate::compose::{
     IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks,
+    OrchestratorNetworks, DOCKER_COMPOSE_FILE,
 };
 use std::path::PathBuf;
 use swap_env::config::{Bitcoin, Config, Data, Maker, Monero, Network, TorConf};
@@ -131,12 +131,13 @@ fn main() {
         },
     };
 
-    // Write the compose to ./docker-compose.yml
-    // Write the config to ./config.toml
+    // Write the compose to ./docker-compose.yml and the config to ./config.toml
+    let asb_config_path = recipe.directories.asb_config_path_on_host();
     let compose = recipe.to_spec();
-    std::fs::write("./docker-compose.yml", compose).expect("Failed to write docker-compose.yml");
+
+    std::fs::write(DOCKER_COMPOSE_FILE, compose).expect("Failed to write docker-compose.yml");
     std::fs::write(
-        "./config.toml",
+        asb_config_path,
         toml::to_string(&config).expect("Failed to write config.toml"),
     )
     .expect("Failed to write config.toml");
