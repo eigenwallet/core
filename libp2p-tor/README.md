@@ -43,6 +43,13 @@ let mut transport = libp2p_tor::TorTransport::bootstrapped().await?;
 // we have achieved tor connection
 let _conn = transport.dial(address)?.await?;
 ```
+```rust
+let address = "/dns/www.torproject.org/tcp/1000".parse()?;
+let mut provider = libp2p_tor_interface::tor_interface::/* whichever one you want */;
+let mut transport = libp2p_tor_interface::TorInterfaceTransport::from_provider(Default::default(), Arc::new(Mutex::new(provider)), None);
+// we have achieved tor connection
+let _conn = transport.dial(address)?.await?;
+```
 
 ### About
 
