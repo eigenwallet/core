@@ -1,15 +1,11 @@
 use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    ops::Deref,
-    str::FromStr,
-    time::Duration,
+    collections::{HashMap, HashSet}, hash::Hash, marker::PhantomData, ops::Deref, str::FromStr, sync::{Arc, Mutex, OnceLock}, time::Duration
 };
 
 use anyhow::{Context, Result};
 use automerge::{ActorId, AutoCommit, Change};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
-use eigensync::protocol::{client, Behaviour, BehaviourEvent, Request, Response, SerializedChange};
+use eigensync::{protocol::{client, Behaviour, BehaviourEvent, Request, Response, SerializedChange}, Eigensync, ServerDatabase};
 use libp2p::{
     futures::StreamExt,
     identity, noise, request_response,
@@ -18,21 +14,12 @@ use libp2p::{
 };
 use uuid::Uuid;
 
-pub struct Database {
-    document: AutoCommit,
-    state: State,
-}
-
-struct ServerDatabase {
-    pub changes: Vec<Change>,
-}
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq)]
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
 pub struct State {
     swaps: HashMap<String, SwapState>,
 }
 
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Hash, Eq)]
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Hash, Eq, Default)]
 pub struct SwapState {
     #[key]
     pub state_id: Uuid,
@@ -41,183 +28,66 @@ pub struct SwapState {
     pub amount: u64,
 }
 
+fn add_swap(state: &mut State, swap: SwapState) {
+    state.swaps.insert(swap.state_id.to_string(), swap);
+}
+
+fn get_state(document: &AutoCommit) -> State {
+    let state: State = hydrate(document).unwrap();
+
+    state
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut alice = Database::new();
+    let server = Arc::new(Mutex::new(ServerDatabase::new()));
+    let mut alice: Eigensync<State> = Eigensync::new(Arc::clone(&server));
+    let mut bob: Eigensync<State> = Eigensync::new(Arc::clone(&server));
 
-    println!("1 alice changes: {}", alice.get_changes().len());
+    let mut alice_state = get_state(&alice.document);
 
-    alice
-        .add_swap(SwapState {
-            state_id: Uuid::new_v4(),
-            swap_id: 0,
-            state: 0,
-            amount: 300,
-        })
-        .unwrap();
+    add_swap(&mut alice_state, SwapState {
+        state_id: Uuid::new_v4(),
+        swap_id: 0,
+        state: 0,
+        amount: 300,
+    });
 
-    println!("2 alice changes: {}", alice.get_changes().len());
-
-    alice
-        .add_swap(SwapState {
-            state_id: Uuid::new_v4(),
-            swap_id: 0,
-            state: 1,
-            amount: 300,
-        })
-        .unwrap();
-
-    println!("3 alice changes: {}", alice.get_changes().len());
-
-    let mut server = ServerDatabase::new();
-
-    server.add_changes(alice.get_changes()).unwrap();
-
-    println!("server changes: {}", server.changes.len());
-
-    let mut bob = Database::new();
-
-    bob.add_changes(server.changes.clone()).unwrap();
-
-    println!("adding swap to bob");
-
-    assert_eq!(alice.state, bob.state, "bob got alice swaps");
-
-    println!("Client 2 state: {:?}", bob.state);
-
-    bob.add_swap(SwapState {
+    add_swap(&mut alice_state, SwapState {
         state_id: Uuid::new_v4(),
         swap_id: 1,
         state: 0,
         amount: 200,
-    })
-    .unwrap();
+    });
 
-    server.add_changes(bob.get_changes()).unwrap();
+    alice.save_updates_local(&alice_state).unwrap();
+    alice.sync_with_server().unwrap();
+    
+    let mut bob_state = get_state(&bob.document);
+    
+    bob.update_state(&mut bob_state).unwrap();
+    
+    assert_eq!(alice_state, bob_state, "bob got alice swaps");
 
-    println!("server changes: {}", server.changes.len());
+    add_swap(&mut bob_state.clone(), SwapState {
+        state_id: Uuid::new_v4(),
+        swap_id: 1,
+        state: 1,
+        amount: 200,
+    });
 
-    let alice_changes = alice.get_changes();
+    bob.save_updates_local(&bob_state).unwrap();
 
-    alice
-        .add_changes(server.get_changes(alice_changes).clone())
-        .unwrap();
+    bob.sync_with_server().unwrap();
 
-    println!("alice changes: {}", alice.get_changes().len());
+    alice.sync_with_server().unwrap();
+
+    alice.update_state(&mut alice_state).unwrap();
 
     assert_eq!(
-        alice.state, bob.state,
-        "Alice and Bob should have the same state"
+        alice_state, bob_state,
+        "Alice and Bob should have the same state {:?}", bob_state
     );
 
     Ok(())
-}
-
-impl Database {
-    fn new() -> Self {
-        let mut document = AutoCommit::new().with_actor(ActorId::random());
-
-        let state = State {
-            swaps: HashMap::new(),
-        };
-
-        reconcile(&mut document, &state)
-            .context("Failed to reconcile")
-            .unwrap();
-
-        Self { document, state }
-    }
-
-    fn get_changes(&mut self) -> Vec<Change> {
-        self.document
-            .get_changes(&[])
-            .iter()
-            .map(|c| (*c).clone())
-            .collect()
-    }
-
-    fn add_changes(&mut self, changes: Vec<Change>) -> anyhow::Result<()> {
-        eprintln!("Number of changes to add: {}", changes.len());
-
-        println!(
-            "server doc changes before fork: {}",
-            self.document.get_changes(&[]).len()
-        );
-
-        let mut server_doc = self.document.fork();
-
-        println!(
-            "server doc changes before apply: {}",
-            server_doc.get_changes(&[]).len()
-        );
-
-        server_doc
-            .apply_changes(changes)
-            .context("Failed to apply changes")?;
-
-        println!("server doc changes: {}", server_doc.get_changes(&[]).len());
-
-        // Make sure server state is valid
-        let _: State = hydrate(&server_doc).context("Couldn't hydrate doc into state")?;
-
-        println!(
-            "server doc changes after hydrate: {}",
-            server_doc.get_changes(&[]).len()
-        );
-
-        self.document
-            .merge(&mut server_doc)
-            .context("Failed to merge")?;
-
-        println!(
-            "server doc changes after merge: {}",
-            self.document.get_changes(&[]).len()
-        );
-
-        self.state = hydrate(&self.document).context("Couldn't hydrate doc into state")?;
-
-        println!("state after add swap: {:?}", self.state);
-
-        Ok(())
-    }
-
-    fn add_swap(&mut self, swap: SwapState) -> anyhow::Result<()> {
-        self.state.swaps.insert(swap.state_id.to_string(), swap);
-
-        reconcile(&mut self.document, self.state.clone()).context("Failed to reconcile")?;
-
-        Ok(())
-    }
-}
-
-impl ServerDatabase {
-    fn new() -> Self {
-        Self { changes: vec![] }
-    }
-
-    fn add_changes(&mut self, changes: Vec<Change>) -> anyhow::Result<()> {
-        let mut new_changes = vec![];
-
-        for change in changes {
-            if !self.changes.contains(&change) {
-                new_changes.push(change);
-            }
-        }
-
-        self.changes.extend_from_slice(&new_changes);
-
-        Ok(())
-    }
-
-    fn get_changes(&mut self, changes: Vec<Change>) -> Vec<Change> {
-        let mut new_changes = vec![];
-
-        for change in changes {
-            if !self.changes.contains(&change) {
-                new_changes.push(change);
-            }
-        }
-
-        new_changes
-    }
 }

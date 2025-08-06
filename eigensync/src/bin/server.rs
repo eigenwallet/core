@@ -1,20 +1,22 @@
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{collections::HashMap, marker::PhantomData, str::FromStr, sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result};
-use automerge::Change;
-use eigensync::protocol::{server, BehaviourEvent, Request, Response, SerializedChange};
+use automerge::{ActorId, AutoCommit, Change, ScalarValue};
+use eigensync::{protocol::{server, BehaviourEvent, Request, Response, SerializedChange}, Eigensync, ServerDatabase};
 use libp2p::{
     futures::StreamExt, identity, noise, request_response, swarm::SwarmEvent, tcp, yamux,
     Multiaddr, PeerId, SwarmBuilder,
 };
+use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 
-struct Database {
-    pub changes: HashMap<PeerId, Vec<Change>>,
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
+struct Foo {
+    bar: u64,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut db = Database::new();
+    let mut db: Eigensync<Foo> = Eigensync::new();
 
     // for constant peer id
     let keypair = identity::Keypair::ed25519_from_bytes(
@@ -57,16 +59,18 @@ async fn main() -> anyhow::Result<()> {
                                 match request {
                                     Request::GetChanges { changes } => {
                                         eprintln!("Received GetChanges request");
-                                        let changes = db.get_changes(peer, changes);
+                                        let changes = db.get_changes();
                                         eprintln!("Got {} new changes for client", changes.len());
-                                        swarm.behaviour_mut().send_response(channel, Response::NewChanges { changes }).expect("Failed to send response");
-                                        eprintln!("DB size: {:?}", db.changes[&peer].len());
+                                        let serialized_changes: Vec<SerializedChange> = changes.clone().into_iter().map(|c| c.into()).collect();
+                                        swarm.behaviour_mut().send_response(channel, Response::NewChanges { changes: serialized_changes }).expect("Failed to send response");
+                                        eprintln!("DB size: {:?}", changes.len());
                                     }
                                     Request::AddChanges { changes } => {
                                         eprintln!("Received AddChanges request");
-                                        db.add_changes(peer, changes.into_iter().map(|c| c.into()).collect());
+                                        let changes: Vec<Change> = changes.into_iter().map(|c| c.into()).collect();
+                                        //db.add_changes(changes).expect("Failed to add changes");
                                         swarm.behaviour_mut().send_response(channel, Response::ChangesAdded).expect("Failed to send response");
-                                        eprintln!("DB size: {:?}", db.changes[&peer].len());
+                                        eprintln!("Changes added successfully");
                                     }
                                 }
                             }
@@ -77,53 +81,5 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-    }
-}
-
-impl Database {
-    fn new() -> Self {
-        Self {
-            changes: HashMap::new(),
-        }
-    }
-
-    fn get_changes(
-        &self,
-        peer_id: PeerId,
-        current_changes: Vec<SerializedChange>,
-    ) -> Vec<SerializedChange> {
-        let Some(stored_changes) = self.changes.get(&peer_id) else {
-            eprintln!("No changes stored for client");
-            return vec![];
-        };
-
-        stored_changes
-            .clone()
-            .into_iter()
-            .filter_map(|change| {
-                let serialized = change.into();
-
-                if current_changes.contains(&serialized) {
-                    eprintln!(
-                        "Skipping change because client already has it: {:?}",
-                        serialized
-                    );
-                    None
-                } else {
-                    eprintln!("Adding change to client");
-                    Some(serialized)
-                }
-            })
-            .collect()
-    }
-
-    fn add_changes(&mut self, peer_id: PeerId, changes: Vec<Change>) {
-        if !self.changes.contains_key(&peer_id) {
-            eprintln!("No changes stored for client, creating new entry");
-            self.changes.insert(peer_id, vec![]);
-        }
-
-        eprintln!("Adding {} changes to client", changes.len());
-        self.changes.get_mut(&peer_id).unwrap().extend(changes);
     }
 }

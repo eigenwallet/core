@@ -774,6 +774,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "autosurgeon"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb09e782087199bfbea2848b7dc808a93eaaf9a185d2706a6efabc7e606fcb04"
+dependencies = [
+ "automerge",
+ "autosurgeon-derive",
+ "similar",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "autosurgeon-derive"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbf16fd191f2b254f0cc64783196f818ebe02c9c918deee82fe96fad07a72aa6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "axum"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2925,9 +2950,12 @@ dependencies = [
 name = "eigensync"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "automerge",
+ "autosurgeon",
  "chrono",
  "env_logger 0.11.8",
+ "hex",
  "libp2p",
  "serde",
  "tokio",
@@ -9291,6 +9319,10 @@ name = "similar"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
+dependencies = [
+ "bstr",
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "siphasher"
