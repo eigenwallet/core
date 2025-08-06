@@ -33,6 +33,13 @@ pub fn default_electrum_servers_mainnet() -> Vec<Url> {
         Url::parse("ssl://b.1209k.com:50002").expect("default electrum server url to be valid"),
         Url::parse("tcp://electrum.coinucopia.io:50001")
             .expect("default electrum server url to be valid"),
+        Url::parse("ssl://mainnet.foundationdevices.com:50002")
+            .expect("default electrum server url to be valid"),
+        Url::parse("tcp://bitcoin.lu.ke:50001").expect("default electrum server url to be valid"),
+        Url::parse("tcp://se-mma-crypto-payments-001.mullvad.net:50001")
+            .expect("default electrum server url to be valid"),
+        Url::parse("ssl://electrum.coinfinity.co:50002")
+            .expect("default electrum server url to be valid"),
     ]
 }
 
@@ -93,7 +100,7 @@ impl GetDefaults for Mainnet {
             data_dir: default_asb_data_dir()?.join("mainnet"),
             listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
             electrum_rpc_urls: default_electrum_servers_mainnet(),
-            monero_daemon_address: Url::parse("http://nthpyro.dev:18089")?,
+            monero_daemon_address: Url::parse("http://127.0.0.1:18089")?,
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
@@ -112,7 +119,7 @@ impl GetDefaults for Testnet {
             data_dir: default_asb_data_dir()?.join("testnet"),
             listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
             electrum_rpc_urls: default_electrum_servers_testnet(),
-            monero_daemon_address: Url::parse("http://node.sethforprivacy.com:38089")?,
+            monero_daemon_address: Url::parse("http://127.0.0.1:18089")?,
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
