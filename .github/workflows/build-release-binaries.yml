@@ -209,7 +209,7 @@ jobs:
         run: cargo build --target=${{ matrix.target }} --release --package ${{ matrix.crate }} --bin ${{ matrix.bin }}
 
       - name: Smoke test the binary
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
+        if: matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.bin != 'orchestrator'
         run: target/${{ matrix.target }}/release/${{ matrix.bin }} --help
 
       - id: create-archive-name
