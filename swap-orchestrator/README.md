@@ -16,10 +16,48 @@ To generate the `config.toml` and `docker-compose.yml` files, run:
 cargo run --bin orchestrator
 ```
 
-To start the environment, run:
+To start the environment, run a command [such as](https://docs.docker.com/reference/cli/docker/compose/up/):
 
 ```bash
 docker compose up -d
+```
+
+To view logs, run commands [such as](https://docs.docker.com/reference/cli/docker/compose/logs/):
+```bash
+docker compose logs -f --tail 100
+docker compose logs -f --tail 100 asb
+docker compose logs -f --tail 100 bitcoind
+```
+
+Once the `asb` is running properly you can get a shell
+```bash
+$ docker compose attach asb-controller
+
+ASB Control Shell - Type 'help' for commands, 'quit' to exit
+
+asb> help
+Available commands:
+
+Usage: <COMMAND>
+
+Commands:
+  check-connection    Check connection to ASB server
+  bitcoin-balance     Get Bitcoin balance
+  monero-balance      Get Monero balance
+  monero-address      Get Monero wallet address
+  multiaddresses      Get external multiaddresses
+  active-connections  Get active connection count
+  get-swaps           Get list of swaps
+  help                Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+
+
+Additional shell commands:
+  help                 Show this help message
+  quit, exit, :q       Exit the shell
+asb> 
 ```
 
 ## Architecture
