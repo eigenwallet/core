@@ -103,7 +103,7 @@ pub async fn create_app_with_receiver(
     // Build the app
     let app = Router::new()
         .route("/stats", get(stats_handler))
-        .route("/*path", any(proxy_handler))
+        .route("/{*path}", any(proxy_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 

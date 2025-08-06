@@ -1,11 +1,14 @@
 # This Dockerfile builds the asb binary
-
-FROM ubuntu:24.04 AS builder
+# We need to build on Ubuntu because the monero-sys crate requires a bunch of system dependencies
+# We will try to use a smaller image here at some point
+#
+# Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
+FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS builder
 
 WORKDIR /build
 
 # Install dependencies
-# See .github/workflows/action.yml as well
+# See .github/workflows/action.yml
 RUN apt-get update && \
     apt-get install -y \
         git \
@@ -36,8 +39,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Rust 1.85
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.85.0
+# Install Rust 1.87.0
+# See ./rust-toolchain.toml for the Rust version
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.87.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 COPY . .
@@ -53,12 +57,15 @@ WORKDIR /build/swap
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
 
-RUN cargo build -vv --bin=asb
+RUN cargo build --locked -vv -p swap-asb --bin=asb
+RUN cargo build --locked -vv -p swap-controller --bin=asb-controller
 
-FROM ubuntu:24.04
+# Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
+FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS runner
 
 WORKDIR /data
 
 COPY --from=builder /build/target/debug/asb /bin/asb
+COPY --from=builder /build/target/debug/asb-controller /bin/asb-controller
 
 ENTRYPOINT ["asb"]

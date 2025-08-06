@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + CLI + ASB: The Monero RPC pool now caches TCP and Tor streams
+- ASB: The default configuration has been adjusted to accept Bitcoin transactions as finalized after one block (one confirmation). Bitcoin double spends are essentially impossible for practical purposes. If one is swapping extremely large amounts, they can consider dialing `bitcoin.finality_confirmations` to `2` or `3`. This will however force the swap to take much longer to complete, and also increase the risk of a refund being made.
+- ASB: The `monero.monero_node_pool` flag has been removed from the config. If you want to use the Monero Node Pool, you can now do so simply by omitting `monero.daemon_url` from the config.
+- ASB: The `asb` now exposes a JSON-RPC endpoint at which it can receive commands. The `asb-controller` binary implements the client side of the JSON-RPC protocol. The JSON-RPC protocol is currently entirely read-only. This means it cannot be used to withdraw funds or change configurations. The JSON-RPC endpoint is disabled by default. It can be enabled by passing the `--rpc-bind-port 127.0.0.1:9944` and `--rpc-bind-host 127.0.0.1` flags to the `asb` binary.
+- CONTROLLER: A new experimental `asb-controller` binary is now shipped. It is a CLI and REPL tool to interact with an ASB over JSON-RPC. It still has limited functionality, but will be extended in the future. Currently, it can be used to:
+  - Get the primary address of th Monero wallet
+  - Get the balance of the Monero wallet
+  - Get the balance of the Bitcoin wallet
+  - Get the list of external multiaddresses that the ASB is listening on
+  - Query the currently active peer-to-peer connections
+  - Get a basic list of swaps from the database
+- ORCHESTRATOR: A new experiemental `orchestrator` binary is now shipped.
+  - The `orchestrator` is a lightweight tool to generate a production grade environement for running ASBs.
+  - It guides the user through a wizard and generates a custom [Docker compose](https://docs.docker.com/compose/) file which specifies a secure Docker environment for running ASBs.
+  - This will continue to evolve over time, and we will document this thoroughly once it is more stable.
 
 ## [3.0.0-beta.5] - 2025-08-04
 

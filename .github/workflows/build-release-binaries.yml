@@ -19,46 +19,110 @@ jobs:
       matrix:
         include:
           - bin: swap
+            crate: swap
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive_ext: tar
           # Temporarily disabled armv7 Linux builds
           # - bin: swap
+          #   crate: swap
           #   target: armv7-unknown-linux-gnueabihf
           #   os: ubuntu-latest
           #   archive_ext: tar
           - bin: swap
+            crate: swap
             target: x86_64-apple-darwin
             os: macos-13
             archive_ext: tar
           - bin: swap
+            crate: swap
             target: aarch64-apple-darwin
             os: macos-latest
             archive_ext: tar
           # Temporarily disabled Windows builds
           # - bin: swap
+          #   crate: swap
           #   target: x86_64-pc-windows-msvc
           #   os: windows-latest
           #   archive_ext: zip
           - bin: asb
+            crate: swap
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive_ext: tar
           # Temporarily disabled armv7 Linux builds
           # - bin: asb
+          #   crate: swap
           #   target: armv7-unknown-linux-gnueabihf
           #   os: ubuntu-latest
           #   archive_ext: tar
           - bin: asb
+            crate: swap
             target: x86_64-apple-darwin
             os: macos-13
             archive_ext: tar
           - bin: asb
+            crate: swap
             target: aarch64-apple-darwin
             os: macos-latest
             archive_ext: tar
           # Temporarily disabled Windows builds
           # - bin: asb
+          #   crate: swap
+          #   target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          #   archive_ext: zip
+          - bin: asb-controller
+            crate: swap-controller
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_ext: tar
+          # Temporarily disabled armv7 Linux builds
+          # - bin: asb-controller
+          #   crate: swap-controller
+          #   target: armv7-unknown-linux-gnueabihf
+          #   os: ubuntu-latest
+          #   archive_ext: tar
+          - bin: asb-controller
+            crate: swap-controller
+            target: x86_64-apple-darwin
+            os: macos-13
+            archive_ext: tar
+          - bin: asb-controller
+            crate: swap-controller
+            target: aarch64-apple-darwin
+            os: macos-latest
+            archive_ext: tar
+          # Temporarily disabled Windows builds
+          # - bin: asb-controller
+          #   crate: swap-controller
+          #   target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          #   archive_ext: zip
+          - bin: orchestrator
+            crate: swap-orchestrator
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_ext: tar
+          # Temporarily disabled armv7 Linux builds
+          # - bin: orchestrator
+          #   crate: swap-orchestrator
+          #   target: armv7-unknown-linux-gnueabihf
+          #   os: ubuntu-latest
+          #   archive_ext: tar
+          - bin: orchestrator
+            crate: swap-orchestrator
+            target: x86_64-apple-darwin
+            os: macos-13
+            archive_ext: tar
+          - bin: orchestrator
+            crate: swap-orchestrator
+            target: aarch64-apple-darwin
+            os: macos-latest
+            archive_ext: tar
+          # Temporarily disabled Windows builds
+          # - bin: orchestrator
+          #   crate: swap-orchestrator
           #   target: x86_64-pc-windows-msvc
           #   os: windows-latest
           #   archive_ext: zip
@@ -138,11 +202,11 @@ jobs:
           curl -L "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz" | tar xzv
           sudo mv cross /usr/bin
           sudo mv cross-util /usr/bin
-          cross build --target=${{ matrix.target }} --release --package swap --bin ${{ matrix.bin }}
+          cross build --target=${{ matrix.target }} --release --package ${{ matrix.crate }} --bin ${{ matrix.bin }}
 
       - name: Build ${{ matrix.target }} ${{ matrix.bin }} release binary
         if: matrix.target != 'armv7-unknown-linux-gnueabihf'
-        run: cargo build --target=${{ matrix.target }} --release --package swap --bin ${{ matrix.bin }}
+        run: cargo build --target=${{ matrix.target }} --release --package ${{ matrix.crate }} --bin ${{ matrix.bin }}
 
       - name: Smoke test the binary
         if: matrix.target != 'armv7-unknown-linux-gnueabihf'
@@ -255,22 +319,42 @@ jobs:
             echo "preview=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (asb)
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./Dockerfile
+          file: ./swap-asb/Dockerfile
           push: true
           tags: |
             ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
             ${{ env.DOCKER_IMAGE_NAME }}:latest
         if: steps.docker_tags.outputs.preview == 'false'
 
-      - name: Build and push Docker image without latest tag (preview release)
+      - name: Build and push Docker image without latest tag (preview release) (asb)
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./Dockerfile
+          file: ./swap-asb/Dockerfile
+          push: true
+          tags: ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
+        if: steps.docker_tags.outputs.preview == 'true'
+
+      - name: Build and push Docker image (asb)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./swap-controller/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
+            ${{ env.DOCKER_IMAGE_NAME }}:latest
+        if: steps.docker_tags.outputs.preview == 'false'
+
+      - name: Build and push Docker image without latest tag (preview release) (asb)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./swap-controller/Dockerfile
           push: true
           tags: ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
         if: steps.docker_tags.outputs.preview == 'true'
