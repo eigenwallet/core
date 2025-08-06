@@ -25,6 +25,7 @@ docker compose up -d
 ```
 
 To view logs, run commands [such as](https://docs.docker.com/reference/cli/docker/compose/logs/):
+
 ```bash
 docker compose logs -f --tail 100
 docker compose logs -f --tail 100 asb
@@ -32,6 +33,7 @@ docker compose logs -f --tail 100 bitcoind
 ```
 
 Once the `asb` is running properly you can get a shell
+
 ```bash
 $ docker compose attach asb-controller
 
@@ -59,7 +61,7 @@ Options:
 Additional shell commands:
   help                 Show this help message
   quit, exit, :q       Exit the shell
-asb> 
+asb>
 ```
 
 ## Architecture

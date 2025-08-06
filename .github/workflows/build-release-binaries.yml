@@ -1,4 +1,4 @@
-name: "Build swap and asb release binaries"
+name: "Build swap, asb, asb-controller, and orchestrator release binaries"
 
 on:
   release:
