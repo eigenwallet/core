@@ -4,6 +4,8 @@ The `orchestrator` tool helps you setup a secure, reliable and production enviro
 
 The `orchestrator` guides you through a series of prompts to generate a customized [Docker](https://docs.docker.com/) environment using [Docker Compose](https://docs.docker.com/compose/).
 
+[![demo](https://github.com/user-attachments/assets/21d82a48-8f2e-41dc-9020-9439a98bd543)](https://asciinema.org/a/tKE8IPyP5dI9KjmPGhBcBPtWg)
+
 ## Getting started
 
 Ensure you have [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on your machine.
