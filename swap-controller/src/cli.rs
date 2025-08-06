@@ -27,4 +27,6 @@ pub enum Cmd {
     Multiaddresses,
     /// Get active connection count
     ActiveConnections,
+    /// Get list of swaps
+    GetSwaps,
 }

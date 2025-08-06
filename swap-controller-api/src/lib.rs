@@ -28,6 +28,12 @@ pub struct ActiveConnectionsResponse {
     pub connections: usize,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Swap {
+    pub id: String,
+    pub state: String,
+}
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -42,4 +48,6 @@ pub trait AsbApi {
     async fn multiaddresses(&self) -> Result<MultiaddressesResponse, ErrorObjectOwned>;
     #[method(name = "active_connections")]
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
+    #[method(name = "get_swaps")]
+    async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
 }

@@ -269,7 +269,7 @@ pub async fn main() -> Result<()> {
                 env_config,
                 bitcoin_wallet.clone(),
                 monero_wallet.clone(),
-                db,
+                db.clone(),
                 kraken_rate.clone(),
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
@@ -285,6 +285,7 @@ pub async fn main() -> Result<()> {
                     bitcoin_wallet.clone(),
                     monero_wallet.clone(),
                     event_loop_service,
+                    db,
                 )
                 .await?;
 

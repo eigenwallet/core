@@ -1,15 +1,16 @@
 use crate::asb::event_loop::EventLoopService;
+use crate::protocol::Database;
 use crate::{bitcoin, monero};
 use anyhow::{Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
-use tokio_util::task::AbortOnDropHandle;
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, MoneroAddressResponse,
-    MoneroBalanceResponse, MultiaddressesResponse,
+    MoneroBalanceResponse, MultiaddressesResponse, Swap,
 };
+use tokio_util::task::AbortOnDropHandle;
 
 pub struct RpcServer {
     handle: ServerHandle,
@@ -22,6 +23,7 @@ impl RpcServer {
         bitcoin_wallet: Arc<bitcoin::Wallet>,
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
+        db: Arc<dyn Database + Send + Sync>,
     ) -> Result<Self> {
         let server = ServerBuilder::default()
             .build((host, port))
@@ -34,6 +36,7 @@ impl RpcServer {
             bitcoin_wallet,
             monero_wallet,
             event_loop_service,
+            db,
         };
         let handle = server.start(rpc_impl.into_rpc());
 
@@ -54,6 +57,7 @@ pub struct RpcImpl {
     bitcoin_wallet: Arc<bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     event_loop_service: EventLoopService,
+    db: Arc<dyn Database + Send + Sync>,
 }
 
 #[async_trait::async_trait]
@@ -107,6 +111,27 @@ impl AsbApiServer for RpcImpl {
             .into_json_rpc_result()?;
 
         Ok(ActiveConnectionsResponse { connections })
+    }
+
+    async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned> {
+        let swaps = self.db.all().await.into_json_rpc_result()?;
+
+        let swaps = swaps
+            .into_iter()
+            .map(|(swap_id, state)| {
+                let state_str = match state {
+                    crate::protocol::State::Alice(state) => format!("{state}"),
+                    crate::protocol::State::Bob(state) => format!("{state}"),
+                };
+
+                Swap {
+                    id: swap_id.to_string(),
+                    state: state_str,
+                }
+            })
+            .collect();
+
+        Ok(swaps)
     }
 }
 

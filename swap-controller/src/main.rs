@@ -57,6 +57,16 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             let response = client.active_connections().await?;
             println!("Connected to {} peers", response.connections);
         }
+        Cmd::GetSwaps => {
+            let swaps = client.get_swaps().await?;
+            if swaps.is_empty() {
+                println!("No swaps found");
+            } else {
+                for swap in swaps {
+                    println!("{}: {}", swap.id, swap.state);
+                }
+            }
+        }
     }
     Ok(())
 }
