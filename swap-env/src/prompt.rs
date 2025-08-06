@@ -99,12 +99,18 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
 }
 
 /// Prompt user for Monero daemon URL
-pub fn monero_daemon_url(default_monero_url: &Url) -> Result<Url> {
-    Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter Monero daemon url or hit enter to use default")
-        .default(default_monero_url.clone())
-        .interact_text()
-        .map_err(Into::into)
+/// If the user hits enter, we will use the Monero RPC pool (None)
+pub fn monero_daemon_url() -> Result<Option<Url>> {
+    let input: Result<String, _> = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Enter Monero daemon url or hit enter to use the Monero RPC pool")
+        .allow_empty(true)
+        .interact_text();
+
+    match input {
+        Ok(s) if s.trim().is_empty() => Ok(None),
+        Ok(s) => Url::parse(&s).map_err(Into::into).map(Some),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Prompt user for Tor hidden service registration

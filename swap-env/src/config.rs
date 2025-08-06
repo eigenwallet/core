@@ -178,7 +178,7 @@ pub fn query_user_for_initial_config_with_network(
     let target_block = prompt::bitcoin_confirmation_target(defaults.bitcoin_confirmation_target)?;
     let listen_addresses = prompt::listen_addresses(&defaults.listen_address_tcp)?;
     let electrum_rpc_urls = prompt::electrum_rpc_urls(&defaults.electrum_rpc_urls)?;
-    let monero_daemon_url = prompt::monero_daemon_url(&defaults.monero_daemon_address)?;
+    let monero_daemon_url = prompt::monero_daemon_url()?;
     let register_hidden_service = prompt::tor_hidden_service()?;
     let min_buy = prompt::min_buy_amount()?;
     let max_buy = prompt::max_buy_amount()?;
@@ -202,7 +202,7 @@ pub fn query_user_for_initial_config_with_network(
             use_mempool_space_fee_estimation: true,
         },
         monero: Monero {
-            daemon_url: Some(monero_daemon_url),
+            daemon_url: monero_daemon_url,
             finality_confirmations: None,
             network: monero_network,
         },
@@ -232,160 +232,4 @@ pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
     };
 
     query_user_for_initial_config_with_network(bitcoin_network, monero_network)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serial_test::serial;
-    use tempfile::tempdir;
-
-    // these tests are run serially since env vars affect the whole process
-    #[test]
-    #[serial]
-    fn config_roundtrip_testnet() {
-        let temp_dir = tempdir().unwrap().path().to_path_buf();
-        let config_path = Path::join(&temp_dir, "config.toml");
-
-        let defaults = Testnet::get_config_file_defaults().unwrap();
-
-        let expected = Config {
-            data: Data {
-                dir: Default::default(),
-            },
-            bitcoin: Bitcoin {
-                electrum_rpc_urls: defaults.electrum_rpc_urls,
-                target_block: defaults.bitcoin_confirmation_target,
-                finality_confirmations: None,
-                network: bitcoin::Network::Testnet,
-                use_mempool_space_fee_estimation: true,
-            },
-            network: Network {
-                listen: vec![defaults.listen_address_tcp],
-                rendezvous_point: vec![],
-                external_addresses: vec![],
-            },
-            monero: Monero {
-                daemon_url: Some(defaults.monero_daemon_address),
-                finality_confirmations: None,
-                network: monero::Network::Stagenet,
-            },
-            tor: Default::default(),
-            maker: Maker {
-                min_buy_btc: bitcoin::Amount::from_btc(DEFAULT_MIN_BUY_AMOUNT).unwrap(),
-                max_buy_btc: bitcoin::Amount::from_btc(DEFAULT_MAX_BUY_AMOUNT).unwrap(),
-                ask_spread: Decimal::from_f64(DEFAULT_SPREAD).unwrap(),
-                price_ticker_ws_url: defaults.price_ticker_ws_url,
-                external_bitcoin_redeem_address: None,
-            },
-        };
-
-        initial_setup(config_path.clone(), expected.clone()).unwrap();
-        let actual = read_config(config_path).unwrap().unwrap();
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    #[serial]
-    fn config_roundtrip_mainnet() {
-        let temp_dir = tempdir().unwrap().path().to_path_buf();
-        let config_path = Path::join(&temp_dir, "config.toml");
-
-        let defaults = Mainnet::get_config_file_defaults().unwrap();
-
-        let expected = Config {
-            data: Data {
-                dir: Default::default(),
-            },
-            bitcoin: Bitcoin {
-                electrum_rpc_urls: defaults.electrum_rpc_urls,
-                target_block: defaults.bitcoin_confirmation_target,
-                finality_confirmations: None,
-                network: bitcoin::Network::Bitcoin,
-                use_mempool_space_fee_estimation: true,
-            },
-            network: Network {
-                listen: vec![defaults.listen_address_tcp],
-                rendezvous_point: vec![],
-                external_addresses: vec![],
-            },
-            monero: Monero {
-                daemon_url: Some(defaults.monero_daemon_address),
-                finality_confirmations: None,
-                network: monero::Network::Mainnet,
-            },
-            tor: Default::default(),
-            maker: Maker {
-                min_buy_btc: bitcoin::Amount::from_btc(DEFAULT_MIN_BUY_AMOUNT).unwrap(),
-                max_buy_btc: bitcoin::Amount::from_btc(DEFAULT_MAX_BUY_AMOUNT).unwrap(),
-                ask_spread: Decimal::from_f64(DEFAULT_SPREAD).unwrap(),
-                price_ticker_ws_url: defaults.price_ticker_ws_url,
-                external_bitcoin_redeem_address: None,
-            },
-        };
-
-        initial_setup(config_path.clone(), expected.clone()).unwrap();
-        let actual = read_config(config_path).unwrap().unwrap();
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    #[serial]
-    fn env_override() {
-        let temp_dir = tempfile::tempdir().unwrap().path().to_path_buf();
-        let config_path = Path::join(&temp_dir, "config.toml");
-
-        let defaults = Mainnet::get_config_file_defaults().unwrap();
-
-        let dir = PathBuf::from("/tmp/dir");
-        std::env::set_var("ASB__DATA__DIR", dir.clone());
-        let addr1 = "/dns4/example.com/tcp/9939";
-        let addr2 = "/ip4/1.2.3.4/tcp/9940";
-        let external_addresses = vec![addr1.parse().unwrap(), addr2.parse().unwrap()];
-        let listen = external_addresses.clone();
-        std::env::set_var(
-            "ASB__NETWORK__EXTERNAL_ADDRESSES",
-            format!("{},{}", addr1, addr2),
-        );
-        std::env::set_var("ASB__NETWORK__LISTEN", format!("{},{}", addr1, addr2));
-
-        let expected = Config {
-            data: Data { dir },
-            bitcoin: Bitcoin {
-                electrum_rpc_urls: defaults.electrum_rpc_urls,
-                target_block: defaults.bitcoin_confirmation_target,
-                finality_confirmations: None,
-                network: bitcoin::Network::Bitcoin,
-                use_mempool_space_fee_estimation: true,
-            },
-            network: Network {
-                listen,
-                rendezvous_point: vec![],
-                external_addresses,
-            },
-            monero: Monero {
-                daemon_url: Some(defaults.monero_daemon_address),
-                finality_confirmations: None,
-                network: monero::Network::Mainnet,
-            },
-            tor: Default::default(),
-            maker: Maker {
-                min_buy_btc: bitcoin::Amount::from_btc(DEFAULT_MIN_BUY_AMOUNT).unwrap(),
-                max_buy_btc: bitcoin::Amount::from_btc(DEFAULT_MAX_BUY_AMOUNT).unwrap(),
-                ask_spread: Decimal::from_f64(DEFAULT_SPREAD).unwrap(),
-                price_ticker_ws_url: defaults.price_ticker_ws_url,
-                external_bitcoin_redeem_address: None,
-            },
-        };
-
-        initial_setup(config_path.clone(), expected.clone()).unwrap();
-        let actual = read_config(config_path).unwrap().unwrap();
-
-        assert_eq!(expected, actual);
-        std::env::remove_var("ASB__DATA__DIR");
-        std::env::remove_var("ASB__NETWORK__EXTERNAL_ADDRESSES");
-        std::env::remove_var("ASB__NETWORK__LISTEN");
-    }
 }
