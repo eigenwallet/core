@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Get the primary address of th Monero wallet
   - Get the balance of the Monero wallet
   - Get the balance of the Bitcoin wallet
+  - Get the list of external multiaddresses that the ASB is listening on
+  - Query the currently active peer-to-peer connections
+  - Get a basic list of swaps from the database
 - ORCHESTRATOR: A new experiemental `orchestrator` binary is now shipped.
   - The `orchestrator` is a lightweight tool to generate a production grade environement for running ASBs.
   - It guides the user through a wizard and generates a custom [Docker compose](https://docs.docker.com/compose/) file which specifies a secure Docker environment for running ASBs.
