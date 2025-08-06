@@ -33,13 +33,13 @@ pub static ASB_IMAGE: &str = "ghcr.io/eigenwallet/asb@sha256:ad0daf2ee68d05f6cb0
 pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace
     context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb is in the root of the Cargo workspace
-    dockerfile: "./Dockerfile",
+    // The Dockerfile of the asb is in the swap-asb crate
+    dockerfile: "./swap-asb/Dockerfile",
 };
 
 pub static ASB_CONTROLLER_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace
     context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb-controller is in the swap-controller directory
+    // The Dockerfile of the asb-controller is in the swap-controller crate
     dockerfile: "./swap-controller/Dockerfile",
 };
