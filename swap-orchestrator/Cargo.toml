@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
+chrono = "0.4.41"
 compose_spec = "0.3.0"
 dialoguer = { workspace = true }
 monero = { workspace = true }

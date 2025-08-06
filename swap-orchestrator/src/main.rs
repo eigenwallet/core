@@ -3,16 +3,20 @@ mod compose;
 mod electrs;
 mod images;
 
+use crate::compose::{
+    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
+    OrchestratorNetworks,
+};
 use std::path::PathBuf;
+use swap_env::config::{Bitcoin, Config, Data, Maker, Monero, Network, TorConf};
 use swap_env::prompt as config_prompt;
+use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
 use url::Url;
 
 use crate::compose::ASB_DATA_DIR;
 
 fn main() {
     let (bitcoin_network, monero_network) = prompt::network();
-
-    use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
 
     let defaults = match (bitcoin_network, monero_network) {
         (bitcoin::Network::Bitcoin, monero::Network::Mainnet) => {
@@ -37,22 +41,12 @@ fn main() {
     let monero_node_type = prompt::monero_node_type();
     let electrum_server_type = prompt::electrum_server_type(&defaults.electrum_rpc_urls);
 
-    use crate::compose::{
-        IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
-        OrchestratorInput, OrchestratorNetworks, OrchestratorPorts,
-    };
-    use swap_env::config::{Bitcoin, Config, Data, Maker, Monero, Network, TorConf};
-    use url::Url;
-
     let recipe = OrchestratorInput {
-        ports: OrchestratorPorts {
-            monerod_rpc: 38081,
-            bitcoind_rpc: 18332,
-            bitcoind_p2p: 18333,
-            electrs: 60001,
-            asb_libp2p: 9839,
-            asb_rpc_port: 9944,
-        },
+        ports: OrchestratorNetworks {
+            monero: monero_network,
+            bitcoin: bitcoin_network,
+        }
+        .into(),
         networks: OrchestratorNetworks {
             monero: monero_network,
             bitcoin: bitcoin_network,
