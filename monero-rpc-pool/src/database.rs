@@ -66,7 +66,7 @@ impl Database {
         &self,
         scheme: &str,
         host: &str,
-        port: i64,
+        port: u16,
         was_successful: bool,
         latency_ms: Option<f64>,
     ) -> Result<()> {

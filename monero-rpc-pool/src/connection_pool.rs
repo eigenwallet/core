@@ -38,7 +38,7 @@ use axum::body::Body;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 /// Key for the map – `(scheme, host, port, via_tor)`.
-pub type StreamKey = (String, String, i64, bool);
+pub type StreamKey = (String, String, u16, bool);
 
 /// Alias for hyper's HTTP/1 sender.
 pub type HttpSender = hyper::client::conn::http1::SendRequest<Body>;
