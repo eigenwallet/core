@@ -7,6 +7,8 @@ import {
   fetchSellersAtPresetRendezvousPoints,
   getSwapInfo,
   initializeMoneroWallet,
+  changeMoneroNode,
+  getCurrentMoneroNodeConfig,
 } from "renderer/rpc";
 import logger from "utils/logger";
 import { contextStatusEventReceived } from "store/features/rpcSlice";
@@ -14,6 +16,9 @@ import {
   addNode,
   setFetchFiatPrices,
   setFiatCurrency,
+  setUseMoneroRpcPool,
+  Blockchain,
+  Network,
 } from "store/features/settingsSlice";
 import { fetchFeedbackMessagesViaHttp, updateRates } from "renderer/api";
 import { store } from "renderer/store/storeRenderer";
@@ -22,7 +27,8 @@ import {
   addFeedbackId,
   setConversation,
 } from "store/features/conversationsSlice";
-import { TauriContextStatusEvent } from "models/tauriModel";
+import { TauriContextStatusEvent, MoneroNodeConfig } from "models/tauriModel";
+import { getNetwork } from "store/config";
 
 // Create a Map to store throttled functions per swap_id
 const throttledGetSwapInfoFunctions = new Map<
@@ -125,6 +131,25 @@ export function createMainListeners() {
     actionCreator: addNode,
     effect: async (_) => {
       await updateAllNodeStatuses();
+    },
+  });
+
+  // Listener for Monero node configuration changes
+  listener.startListening({
+    actionCreator: setUseMoneroRpcPool,
+    effect: async (action) => {
+      const usePool = action.payload;
+      logger.info(
+        `Monero node setting changed to: ${usePool ? "Pool" : "Single Node"}`,
+      );
+
+      try {
+        const nodeConfig = await getCurrentMoneroNodeConfig();
+        await changeMoneroNode(nodeConfig);
+        logger.info("Successfully changed Monero node configuration");
+      } catch (error) {
+        logger.error("Failed to change Monero node configuration:", error);
+      }
     },
   });
 

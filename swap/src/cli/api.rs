@@ -599,6 +599,65 @@ impl Context {
     pub fn tauri_handle(&self) -> Option<TauriHandle> {
         self.tauri_handle.clone()
     }
+
+    /// Change the Monero node configuration for all wallets
+    pub async fn change_monero_node(&self, node_config: MoneroNodeConfig) -> Result<()> {
+        let monero_manager = self
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
+
+        // Determine the daemon configuration based on the node config
+        let daemon = match node_config {
+            MoneroNodeConfig::Pool => {
+                // Use the pool handle to get server info
+                let pool_handle = self
+                    .monero_rpc_pool_handle
+                    .as_ref()
+                    .context("Pool handle not available")?;
+
+                let server_info = pool_handle.server_info();
+                let pool_url: String = server_info.clone().into();
+                tracing::info!("Switching to Monero RPC pool: {}", pool_url);
+
+                monero_sys::Daemon {
+                    address: pool_url,
+                    ssl: false,
+                }
+            }
+            MoneroNodeConfig::SingleNode { url } => {
+                tracing::info!("Switching to single Monero node: {}", url);
+
+                // Parse the URL to determine SSL and address
+                let (address, ssl) = if url.starts_with("https://") {
+                    (
+                        url.strip_prefix("https://").unwrap_or(&url).to_string(),
+                        true,
+                    )
+                } else if url.starts_with("http://") {
+                    (
+                        url.strip_prefix("http://").unwrap_or(&url).to_string(),
+                        false,
+                    )
+                } else {
+                    // Default to HTTP if no protocol specified
+                    (url, false)
+                };
+
+                monero_sys::Daemon { address, ssl }
+            }
+        };
+
+        // Update the wallet manager's daemon configuration
+        monero_manager
+            .change_monero_node(daemon)
+            .await
+            .context("Failed to change Monero node in wallet manager")?;
+
+        tracing::info!("Successfully changed Monero node configuration");
+
+        Ok(())
+    }
 }
 
 impl fmt::Debug for Context {

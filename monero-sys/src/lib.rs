@@ -1394,7 +1394,7 @@ impl FfiWallet {
         .map_err(|e| anyhow!("Failed to initialize wallet: {e}"))?;
         tracing::debug!("Initialized wallet, setting daemon address");
 
-        wallet.set_daemon_address(&daemon.address)?;
+        wallet.set_daemon(&daemon)?;
 
         if background_sync {
             tracing::debug!("Background sync enabled, starting refresh thread");
@@ -1438,13 +1438,16 @@ impl FfiWallet {
         monero::Address::from_str(&address.to_string()).expect("wallet's own address to be valid")
     }
 
-    pub fn set_daemon_address(&mut self, address: &str) -> anyhow::Result<()> {
-        tracing::debug!(%address, "Setting daemon address");
+    pub fn set_daemon(&mut self, daemon: &Daemon) -> anyhow::Result<()> {
+        let ssl = daemon.ssl;
+        let address = daemon.address.clone();
+
+        tracing::debug!(%address, %ssl, "Setting daemon address");
 
         let_cxx_string!(address = address);
         let raw_wallet = &mut self.inner;
 
-        let success = ffi::setWalletDaemon(raw_wallet.pinned(), &address)
+        let success = ffi::setWalletDaemon(raw_wallet.pinned(), &address, ssl)
             .context("Failed to set daemon address: FFI call failed with exception")?;
 
         if !success {

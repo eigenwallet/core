@@ -191,7 +191,11 @@ pub mod ffi {
         fn refreshAsync(self: Pin<&mut Wallet>) -> Result<()>;
 
         /// Set the daemon address.
-        fn setWalletDaemon(wallet: Pin<&mut Wallet>, daemon_address: &CxxString) -> Result<bool>;
+        fn setWalletDaemon(
+            wallet: Pin<&mut Wallet>,
+            daemon_address: &CxxString,
+            try_ssl: bool,
+        ) -> Result<bool>;
 
         /// Set whether the daemon is trusted.
         fn setTrustedDaemon(self: Pin<&mut Wallet>, trusted: bool) -> Result<()>;

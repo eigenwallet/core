@@ -1,7 +1,7 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
-    ApprovalRequestType, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
+    ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
@@ -2005,4 +2005,42 @@ pub struct GetPendingApprovalsResponse {
 pub struct DfxAuthenticateResponse {
     pub access_token: String,
     pub kyc_url: String,
+}
+
+// ChangeMoneroNode
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChangeMoneroNodeArgs {
+    pub node_config: MoneroNodeConfig,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChangeMoneroNodeResponse {
+    pub success: bool,
+}
+
+impl Request for ChangeMoneroNodeArgs {
+    type Response = ChangeMoneroNodeResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        change_monero_node(self, ctx).await
+    }
+}
+
+#[tracing::instrument(fields(method = "change_monero_node"), skip(context))]
+pub async fn change_monero_node(
+    args: ChangeMoneroNodeArgs,
+    context: Arc<Context>,
+) -> Result<ChangeMoneroNodeResponse> {
+    tracing::info!("Changing Monero node configuration");
+
+    context
+        .change_monero_node(args.node_config)
+        .await
+        .context("Failed to change Monero node")?;
+
+    tracing::info!("Successfully changed Monero node configuration");
+
+    Ok(ChangeMoneroNodeResponse { success: true })
 }
