@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.6] - 2025-08-07
+
 - GUI + CLI + ASB: The Monero RPC pool now caches TCP and Tor streams
 - ASB: The default configuration has been adjusted to accept Bitcoin transactions as finalized after one block (one confirmation). Bitcoin double spends are essentially impossible for practical purposes. If one is swapping extremely large amounts, they can consider dialing `bitcoin.finality_confirmations` to `2` or `3`. This will however force the swap to take much longer to complete, and also increase the risk of a refund being made.
 - ASB: The `monero.monero_node_pool` flag has been removed from the config. If you want to use the Monero Node Pool, you can now do so simply by omitting `monero.daemon_url` from the config.
@@ -617,7 +619,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.5...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.6...HEAD
+[3.0.0-beta.6]: https://github.com/eigenwallet/core/compare/3.0.0-beta.5...3.0.0-beta.6
 [3.0.0-beta.5]: https://github.com/eigenwallet/core/compare/3.0.0-beta.4...3.0.0-beta.5
 [3.0.0-beta.4]: https://github.com/eigenwallet/core/compare/3.0.0-beta.3...3.0.0-beta.4
 [3.0.0-beta.3]: https://github.com/eigenwallet/core/compare/3.0.0-beta.2...3.0.0-beta.3
