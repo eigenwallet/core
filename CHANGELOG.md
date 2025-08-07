@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The `orchestrator` is a lightweight tool to generate a production grade environement for running ASBs.
   - It guides the user through a wizard and generates a custom [Docker compose](https://docs.docker.com/compose/) file which specifies a secure Docker environment for running ASBs.
   - This will continue to evolve over time, and we will document this thoroughly once it is more stable.
+- CLI + ASB + GUI: Fixed an issue where the Monero RPC pool would not handle timeouts correctly.
 
 ## [3.0.0-beta.5] - 2025-08-04
 
