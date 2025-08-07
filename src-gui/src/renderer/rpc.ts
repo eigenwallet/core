@@ -75,7 +75,7 @@ import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 
 /// These are the official donation address for the eigenwallet/core project
 const DONATION_ADDRESS_MAINNET =
-  "49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa";
+  "8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq";
 const DONATION_ADDRESS_STAGENET =
   "56E274CJxTyVuuFG651dLURKyneoJ5LsSA5jMq4By9z9GBNYQKG8y5ejTYkcvZxarZW6if14ve8xXav2byK4aRnvNdKyVxp";
 
@@ -89,13 +89,13 @@ const DONATION_ADDRESS_MAINNET_SIG = `
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA512
 
-56E274CJxTyVuuFG651dLURKyneoJ5LsSA5jMq4By9z9GBNYQKG8y5ejTYkcvZxarZW6if14ve8xXav2byK4aRnvNdKyVxp is our donation address (signed by binarybaron)
+8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq is our donation address (signed by binarybaron)
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaFvzWQAKCRCZt10+FHai
-bvC6APoCzCto6RsNYwUr7j1ou3xeVNiwMkUQbE0erKt70pT+tQD/fAvPxHtPyb56
-XGFQ0pxL1PKzMd9npBGmGJhC4aTljQ4=
-=OUK4
+iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWUAAKCRCZt10+FHai
+bsC/AQCkisePNGhApMnwJiOoF79AoSoQVmF98GIKxvLm8SHFvQEA68gb3n/Klt/v
+lYP1r+qmB2kRe52F62orp40CV2jSnAM=
+=gzXB
 -----END PGP SIGNATURE-----
 `;
 
