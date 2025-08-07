@@ -6,11 +6,11 @@ use swap::cli::{
     api::{
         data,
         request::{
-            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
-            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
-            CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs,
-            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
+            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
+            CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
+            CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse,
+            ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs,
+            GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse,
             GetRestoreHeightArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
             MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
@@ -212,6 +212,7 @@ pub fn run() {
             reject_approval_request,
             get_restore_height,
             dfx_authenticate,
+            change_monero_node,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -253,6 +254,7 @@ tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
 tauri_command!(redact, RedactArgs);
 tauri_command!(send_monero, SendMoneroArgs);
+tauri_command!(change_monero_node, ChangeMoneroNodeArgs);
 
 // These commands require no arguments
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
