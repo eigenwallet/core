@@ -9,12 +9,21 @@ use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
+use std::time::Duration;
 use tokio::net::TcpStream;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    time::timeout,
+};
 use tokio_native_tls::native_tls::TlsConnector;
 use tracing::{error, info_span, Instrument};
 
 use crate::AppState;
+
+/// wallet2.h has a default timeout of 3 minutes + 30 seconds.
+/// We assume this is a reasonable timeout. We use half of that to allow us do a single retry.
+/// https://github.com/SNeedlewoods/seraphis_wallet/blob/5f714f147fd29228698070e6bd80e41ce2f86fb0/src/wallet/wallet2.h#L238
+static TIMEOUT: Duration = Duration::from_secs(3 * 60 + 30).checked_div(2).unwrap();
 
 /// Trait alias for a stream that can be used with hyper
 trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -240,30 +249,46 @@ async fn proxy_to_single_node(
 
     if guarded_sender.is_none() {
         // Need to build a new TCP/Tor stream.
-        let boxed_stream = if use_tor {
+        let no_tls_stream: Box<dyn HyperStream> = if use_tor {
             let tor_client = state.tor_client.as_ref().ok_or_else(|| {
                 SingleRequestError::ConnectionError("Tor requested but client missing".into())
             })?;
-            let stream = tor_client
-                .connect(format!("{}:{}", node.1, node.2))
-                .await
-                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
+            let stream = timeout(
+                TIMEOUT,
+                tor_client.connect(format!("{}:{}", node.1, node.2)),
+            )
+            .await
+            .map_err(|e| SingleRequestError::Timeout(e.to_string()))?
+            .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+            Box::new(stream)
         } else {
-            let stream = TcpStream::connect(format!("{}:{}", node.1, node.2))
-                .await
-                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
+            let stream = timeout(
+                TIMEOUT,
+                TcpStream::connect(format!("{}:{}", node.1, node.2)),
+            )
+            .await
+            .map_err(|_| SingleRequestError::Timeout("TCP connection timed out".to_string()))?
+            .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+
+            Box::new(stream)
         };
 
+        let maybe_tls_stream = timeout(
+            TIMEOUT,
+            maybe_wrap_with_tls(no_tls_stream, &node.0, &node.1),
+        )
+        .await
+        .map_err(|_| SingleRequestError::Timeout("TLS handshake timed out".to_string()))??;
+
         // Build an HTTP/1 connection over the stream.
-        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(boxed_stream))
+        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(maybe_tls_stream))
             .await
             .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
         // Drive the connection in the background.
         tokio::spawn(async move {
-            let _ = conn.await; // Just drive the connection, errors handled per-request
+            let _ = conn.await;
         });
 
         // Insert into pool and obtain exclusive access for this request.
@@ -283,7 +308,7 @@ async fn proxy_to_single_node(
 
     let mut guarded_sender = guarded_sender.expect("sender must be set");
 
-    // Forward the request to the node.  URI stays relative, so no rewrite.
+    // Forward the request to the node. URI stays relative, so no rewrite.
     let response = match guarded_sender.send_request(request.to_request()).await {
         Ok(response) => response,
         Err(e) => {
@@ -622,6 +647,7 @@ enum HandlerError {
 enum SingleRequestError {
     ConnectionError(String),
     SendRequestError(String),
+    Timeout(String),
 }
 
 impl std::fmt::Display for HandlerError {
@@ -653,6 +679,7 @@ impl std::fmt::Display for SingleRequestError {
         match self {
             SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {}", msg),
+            SingleRequestError::Timeout(msg) => write!(f, "Timeout: {}", msg),
         }
     }
 }

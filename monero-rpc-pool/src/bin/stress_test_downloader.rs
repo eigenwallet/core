@@ -1,5 +1,5 @@
-use clap::Parser;
 use arti_client::{TorClient, TorClientConfig};
+use clap::Parser;
 use cuprate_epee_encoding::{epee_object, from_bytes, to_bytes};
 use futures::stream::{self, StreamExt};
 use monero::Network;
@@ -10,8 +10,8 @@ use monero_rpc_pool::{
 };
 use reqwest;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 #[derive(Parser)]
@@ -126,7 +126,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start the pool server
     println!("Starting RPC pool server...");
-    let config = Config::new_random_port_with_tor_client(std::env::temp_dir(), tor_client, args.network);
+    let config =
+        Config::new_random_port_with_tor_client(std::env::temp_dir(), tor_client, args.network);
     let (app, _status_receiver, _background_handle) = create_app_with_receiver(config).await?;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
@@ -144,12 +145,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(3 * 60 + 30)) // used in wallet2
             .build()
-            .expect("Failed to build reqwest client")
+            .expect("Failed to build reqwest client"),
     );
     let bin_rpc_url = format!("{}/get_blocks_by_height.bin", pool_url);
 
-    println!("Downloading blocks 0-{} using binary format...", args.max_height);
-    
+    println!(
+        "Downloading blocks 0-{} using binary format...",
+        args.max_height
+    );
+
     // Create all batch ranges
     let batch_ranges: Vec<(u64, u64)> = (0..=args.max_height)
         .step_by(args.batch_size as usize)
@@ -206,17 +210,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 let batch_blocks = parsed_response.blocks.len();
                                                 let batch_bytes: usize = parsed_response.blocks.iter().map(|b| b.block.len()).sum();
                                                 let batch_txs: usize = parsed_response.blocks.iter().map(|b| b.txs.len()).sum();
-                                                
+
                                                 success_count.fetch_add(1, Ordering::Relaxed);
                                                 total_bytes.fetch_add(batch_bytes as u64, Ordering::Relaxed);
-                                                
+
                                                 let elapsed = start_time.elapsed();
                                                 let total_bytes_so_far = total_bytes.load(Ordering::Relaxed);
                                                 let throughput_mbps = if elapsed.as_secs() > 0 {
                                                     (total_bytes_so_far as f64 / (1024.0 * 1024.0)) / elapsed.as_secs_f64()
                                                 } else { 0.0 };
-                                                
-                                                println!("Batch {}-{}: {} blocks, {} bytes, {} txs | Total: {:.2} MB/s", 
+
+                                                println!("Batch {}-{}: {} blocks, {} bytes, {} txs | Total: {:.2} MB/s",
                                                     batch_start, batch_end, batch_blocks, batch_bytes, batch_txs, throughput_mbps);
                                             } else {
                                                 println!("Batch {}-{}: RPC Error: {}", batch_start, batch_end, parsed_response.status);
@@ -261,17 +265,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Successful batches: {}", final_success_count);
     println!("Failed batches: {}", final_error_count);
     println!("Total batches: {}", final_success_count + final_error_count);
-    println!("Total bytes downloaded: {} ({:.2} MB)", final_total_bytes, final_total_bytes as f64 / (1024.0 * 1024.0));
+    println!(
+        "Total bytes downloaded: {} ({:.2} MB)",
+        final_total_bytes,
+        final_total_bytes as f64 / (1024.0 * 1024.0)
+    );
     println!("Total time: {:.2}s", total_elapsed.as_secs_f64());
-    
+
     let success_rate = if final_success_count + final_error_count > 0 {
         (final_success_count as f64 / (final_success_count + final_error_count) as f64) * 100.0
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     println!("Success rate: {:.2}%", success_rate);
-    
+
     let avg_throughput = if total_elapsed.as_secs() > 0 {
         (final_total_bytes as f64 / (1024.0 * 1024.0)) / total_elapsed.as_secs_f64()
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     println!("Average throughput: {:.2} MB/s", avg_throughput);
 
     Ok(())
