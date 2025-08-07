@@ -1,10 +1,6 @@
 # Orchestrator
 
-The `orchestrator` tool helps you setup a secure, reliable and production environment for running an ASB.
-
-The `orchestrator` guides you through a series of prompts to generate a customized [Docker](https://docs.docker.com/) environment using [Docker Compose](https://docs.docker.com/compose/).
-
-[![demo](https://github.com/user-attachments/assets/21d82a48-8f2e-41dc-9020-9439a98bd543)](https://asciinema.org/a/tKE8IPyP5dI9KjmPGhBcBPtWg)
+The `orchestrator` tool helps you setup a secure, reliable and production environment for running an ASB. It guides you through a series of prompts to generate a customized [Docker](https://docs.docker.com/) environment using [Docker Compose](https://docs.docker.com/compose/).
 
 ## Getting started
 
@@ -76,6 +72,8 @@ The `orchestrator` generates a `docker-compose.yml` file that includes the follo
 - `electrs`: Electrum server.
 - `monerod`: Monero node.
 
+<img width="1364" height="709" alt="image" src="https://github.com/user-attachments/assets/cdc47e64-7ffb-4da9-811a-d020b1b20bd2" />
+
 ## Why Docker?
 
 Your ASB will potentially be managing fairly large amounts of funds. This means you have to keep it secure and running reliably. Docker handles some of this for you.
@@ -86,3 +84,7 @@ Most importantly Docker provides:
 - **Network Isolation**: Docker only exposes the peer-to-peer port of your ASB to the outside world. Bitcoin, Monero and Electrum containers are only allowed outbound connections. The RPC control port of your ASB is only accessible within Docker inside of an internal network, accessible only to the `asb-controller` container.
 - **Reproducibility**: A virtual environment is created for each container. This means that quirks on your system (e.g outdated `glibc`) will not become an issue.
 - **Building from source**: Building from source is as simple as passing a flag to Docker. You do not have to install any dependencies on your system.
+
+## Demo
+
+[![demo](https://github.com/user-attachments/assets/21d82a48-8f2e-41dc-9020-9439a98bd543)](https://asciinema.org/a/tKE8IPyP5dI9KjmPGhBcBPtWg)
