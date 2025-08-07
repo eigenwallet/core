@@ -2259,6 +2259,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "cuprate-epee-encoding"
+version = "0.5.0"
+source = "git+https://github.com/Cuprate/cuprate.git#9c2c942d2fcf26ed8916dc3f9be6db43d8d2ae78"
+dependencies = [
+ "bytes",
+ "cuprate-fixed-bytes",
+ "cuprate-hex",
+ "paste",
+ "ref-cast",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "cuprate-fixed-bytes"
+version = "0.1.0"
+source = "git+https://github.com/Cuprate/cuprate.git#9c2c942d2fcf26ed8916dc3f9be6db43d8d2ae78"
+dependencies = [
+ "bytes",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "cuprate-hex"
+version = "0.0.0"
+source = "git+https://github.com/Cuprate/cuprate.git#9c2c942d2fcf26ed8916dc3f9be6db43d8d2ae78"
+dependencies = [
+ "hex",
+ "serde",
+]
+
+[[package]]
 name = "curve25519-dalek"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4301,6 +4332,9 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "hex-conservative"
@@ -6419,6 +6453,7 @@ dependencies = [
  "chrono",
  "clap 4.5.42",
  "crossbeam",
+ "cuprate-epee-encoding",
  "futures",
  "http-body-util",
  "hyper 1.6.0",
