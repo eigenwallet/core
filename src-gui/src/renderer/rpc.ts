@@ -44,6 +44,8 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
+  GetLogWindowArgs,
+  GetLogWindowResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -289,6 +291,19 @@ export async function getLogsOfSwap(
     swap_id: swapId,
     redact,
   });
+}
+
+export async function getLogWindow(
+  start_index: number,
+  end_index: number,
+): Promise<GetLogWindowResponse> {
+  return (await invokeUnsafe("get_log_window", {
+    args: { start_index, end_index } as GetLogWindowArgs,
+  })) as GetLogWindowResponse;
+}
+
+export async function putLogsIntoClipboard(): Promise<void> {
+  await invokeUnsafe<void>("put_logs_into_clipboard");
 }
 
 /// Call the rust backend to redact logs.

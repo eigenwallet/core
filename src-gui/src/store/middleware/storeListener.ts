@@ -19,6 +19,15 @@ import { fetchFeedbackMessagesViaHttp, updateRates } from "renderer/api";
 import { store } from "renderer/store/storeRenderer";
 import { swapProgressEventReceived } from "store/features/swapSlice";
 import {
+  receivedCliLogIndex,
+  logsWindowMerged,
+  logFetchStarted,
+  logFetchFinished,
+  requestLogsWindow,
+} from "store/features/logsSlice";
+import { getLogWindow } from "renderer/rpc";
+import { parseLogsFromString } from "utils/parseUtils";
+import {
   addFeedbackId,
   setConversation,
 } from "store/features/conversationsSlice";
@@ -54,6 +63,37 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
 export function createMainListeners() {
   const listener = createListenerMiddleware();
 
+  // Throttled logs window fetch (max once every 5s)
+  const throttledFetchLogsWindow = throttle(
+    async () => {
+      const state = store.getState();
+      const baseIndex = state.logs.state.baseIndex;
+      const endIndex = state.logs.state.endIndex;
+      if (baseIndex == null || endIndex == null) return;
+
+      const windowSize = 1000;
+      const startIndex = Math.max(endIndex - windowSize, baseIndex);
+
+      store.dispatch(logFetchStarted([startIndex, endIndex]));
+      try {
+        const res = await getLogWindow(startIndex, endIndex);
+        const parsed = parseLogsFromString(res.lines.join("\n"));
+        const paired: [
+          number,
+          ReturnType<typeof parseLogsFromString>[number],
+        ][] = parsed.map((log, i) => [startIndex + i, log]);
+        // Merge new window into existing without duplicates
+        store.dispatch(logsWindowMerged(paired));
+      } catch (e) {
+        logger.error(e, "Failed to fetch logs window");
+      } finally {
+        store.dispatch(logFetchFinished([startIndex, endIndex]));
+      }
+    },
+    5000,
+    { leading: true, trailing: true },
+  );
+
   // Listener for when the Context becomes available
   // When the context becomes available, we check the bitcoin balance, fetch all swap infos and connect to the rendezvous point
   listener.startListening({
@@ -72,6 +112,49 @@ export function createMainListeners() {
           fetchSellersAtPresetRendezvousPoints(),
           initializeMoneroWallet(),
         ]);
+      }
+    },
+  });
+
+  // When we receive a new logs index, fetch the latest window (throttled)
+  listener.startListening({
+    actionCreator: receivedCliLogIndex,
+    effect: async () => {
+      throttledFetchLogsWindow();
+    },
+  });
+
+  // Handle explicit request to fetch a window (e.g., from onReachTop)
+  listener.startListening({
+    actionCreator: requestLogsWindow,
+    effect: async (action) => {
+      const { start, end } = action.payload;
+      // Skip if already fetched
+      const indicesPresent = new Set(
+        store.getState().logs.state.logs.map(([i]) => i),
+      );
+      let need = false;
+      for (let i = start; i < end; i++) {
+        if (!indicesPresent.has(i)) {
+          need = true;
+          break;
+        }
+      }
+      if (!need) return;
+
+      store.dispatch(logFetchStarted([start, end]));
+      try {
+        const res = await getLogWindow(start, end);
+        const parsed = parseLogsFromString(res.lines.join("\n"));
+        const paired: [
+          number,
+          ReturnType<typeof parseLogsFromString>[number],
+        ][] = parsed.map((log, i) => [start + i, log]);
+        store.dispatch(logsWindowMerged(paired));
+      } catch (e) {
+        logger.error(e, "Failed to fetch requested logs window");
+      } finally {
+        store.dispatch(logFetchFinished([start, end]));
       }
     },
   });

@@ -432,6 +432,42 @@ impl Request for GetLogsArgs {
     }
 }
 
+// -----------------------------
+// In-memory log window fetching
+// -----------------------------
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetLogWindowArgs {
+    #[typeshare(serialized_as = "number")]
+    pub start_index: u64,
+    #[typeshare(serialized_as = "number")]
+    pub end_index: u64,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GetLogWindowResponse {
+    #[typeshare(serialized_as = "number")]
+    pub base_index: u64,
+    #[typeshare(serialized_as = "number")]
+    pub end_index: u64,
+    pub lines: Vec<String>,
+}
+
+impl Request for GetLogWindowArgs {
+    type Response = GetLogWindowResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        // We do not require Context to be initialized for reading the buffer,
+        // but we need a TauriHandle to access the buffer stored in State
+        let handle = ctx
+            .tauri_handle()
+            .ok_or_else(|| anyhow::anyhow!("Tauri handle not available"))?;
+
+        Ok(handle.get_log_window(self.start_index, self.end_index))
+    }
+}
+
 /// Best effort redaction of logs, e.g. wallet addresses, swap-ids
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]

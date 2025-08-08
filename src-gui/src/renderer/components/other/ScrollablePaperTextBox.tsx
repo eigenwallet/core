@@ -3,6 +3,7 @@ import FileCopyOutlinedIcon from "@mui/icons-material/FileCopyOutlined";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import { ReactNode, useEffect, useRef } from "react";
+import { putLogsIntoClipboard } from "renderer/rpc";
 import { VList, VListHandle } from "virtua";
 import { ExpandableSearchBox } from "./ExpandableSearchBox";
 
@@ -17,6 +18,9 @@ export default function ScrollablePaperTextBox({
   topRightButton = null,
   minHeight = MIN_HEIGHT,
   autoScroll = false,
+  onReachTop,
+  onReachBottom,
+  topAdornment,
 }: {
   rows: ReactNode[];
   title: string;
@@ -26,11 +30,20 @@ export default function ScrollablePaperTextBox({
   minHeight?: string;
   topRightButton?: ReactNode | null;
   autoScroll?: boolean;
+  onReachTop?: () => void;
+  onReachBottom?: () => void;
+  topAdornment?: ReactNode;
 }) {
   const virtuaEl = useRef<VListHandle | null>(null);
 
-  function onCopy() {
-    navigator.clipboard.writeText(copyValue);
+  async function onCopy() {
+    // For generic text boxes, fall back to copying provided value.
+    // For log views, parent can pass an empty copyValue to force using backend buffer.
+    if (copyValue && copyValue.length > 0) {
+      await navigator.clipboard.writeText(copyValue);
+    } else {
+      await putLogsIntoClipboard();
+    }
   }
 
   function scrollToBottom() {
@@ -80,7 +93,20 @@ export default function ScrollablePaperTextBox({
           flexDirection: "column",
           gap: "0.5rem",
         }}
+        onScroll={(e) => {
+          const target = e.currentTarget;
+          if (target.scrollTop <= 0) {
+            onReachTop?.();
+          }
+          const threshold = 4; // px tolerance
+          const distanceToBottom =
+            target.scrollHeight - target.scrollTop - target.clientHeight;
+          if (distanceToBottom <= threshold) {
+            onReachBottom?.();
+          }
+        }}
       >
+        {topAdornment}
         <VList ref={virtuaEl} style={{ height: "100vh", width: "100%" }}>
           {rows}
         </VList>

@@ -289,10 +289,11 @@ impl std::io::Write for TauriWriter {
         let utf8_string = String::from_utf8(owned_buf)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
 
-        // Then send to tauri
-        self.tauri_handle.emit_cli_log_event(TauriLogEvent {
-            buffer: utf8_string,
-        });
+        // Then send to tauri: append into in-memory buffer and emit index update
+        #[cfg(feature = "tauri")]
+        if let Some(handle) = &self.tauri_handle {
+            handle.append_cli_log_and_emit_index(utf8_string);
+        }
 
         Ok(buf.len())
     }
