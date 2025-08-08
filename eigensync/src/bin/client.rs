@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
         });
 
         Ok(())
-    }).unwrap();
+    }).await.unwrap();
 
     for _ in 0..10 {
         eigensync.modify(|state| {
@@ -73,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
             });
     
             Ok(())
-        }).unwrap();
+        }).await.unwrap();
         let _ = eigensync.save_and_sync().await.inspect_err(|e| eprintln!("Error: {:?}", e));
         tokio::time::sleep(Duration::from_millis(200)).await;
     };

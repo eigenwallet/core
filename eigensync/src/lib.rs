@@ -196,10 +196,12 @@ impl<T: Reconcile + Hydrate + Default> EigensyncHandle<T> {
             .collect()
     }
 
-    pub fn modify(&mut self, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
+    pub async fn modify(&mut self, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
         let mut state = hydrate(&self.document).unwrap();
         f(&mut state)?;
         self.save_updates_local(&state)?;
+
+        let _ = self.save_and_sync().await.unwrap();
 
         println!("FIRST MODIFY WAS SUCCESSFULLY CALLED");
 
