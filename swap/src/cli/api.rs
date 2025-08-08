@@ -13,7 +13,6 @@ use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
 use futures::future::try_join_all;
-use monero_sys::RecentWallet;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -455,6 +454,7 @@ impl ContextBuilder {
             env_config,
             &daemon,
             seed_choice,
+            &wallet_database,
         )
         .await?;
 
@@ -733,11 +733,12 @@ async fn open_monero_wallet(
     env_config: EnvConfig,
     daemon: &monero_sys::Daemon,
     seed_choice: Option<SeedChoice>,
+    database: &monero_sys::Database,
 ) -> Result<(monero_sys::WalletHandle, Seed), Error> {
     let eigenwallet_wallets_dir = eigenwallet_data_dir.join("wallets");
 
     let wallet = match seed_choice {
-        Some(seed_choice) => {
+        Some(mut seed_choice) => {
             // This loop continually requests the user to select a wallet file
             // It then requests the user to provide a password.
             // It repeats until the user provides a valid password or rejects the password request
@@ -859,6 +860,7 @@ async fn open_monero_wallet(
                             // None means the user rejected the password request
                             // We prompt him to select a wallet again
                             None => {
+                                seed_choice = request_seed_choice(tauri_handle.clone().unwrap(), database).await?;
                                 continue;
                             }
                         };
