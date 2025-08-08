@@ -414,7 +414,8 @@ impl Wallet {
 
             let xprivkey = seed.derive_extended_private_key_legacy(legacy_network)?;
             let old_wallet =
-                pre_1_0_0_bdk::OldWallet::new(&pre_bdk_1_0_wallet_dir, xprivkey, network).await?;
+                pre_1_0_0_bdk::OldWallet::new(&pre_bdk_1_0_wallet_dir, xprivkey, legacy_network)
+                    .await?;
 
             let export = old_wallet.export("old-wallet").await?;
 
@@ -2728,8 +2729,9 @@ pub mod pre_1_0_0_bdk {
     use std::path::Path;
     use std::sync::Arc;
 
-    use anyhow::{anyhow, bail, Result};
-    use bdk::bitcoin::{util::bip32::ExtendedPrivKey, Network};
+    use anyhow::{anyhow, Result};
+    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
+    use bdk::bitcoin::Network;
     use bdk::sled::Tree;
     use bdk::KeychainKind;
     use tokio::sync::Mutex as TokioMutex;
@@ -2762,20 +2764,11 @@ pub mod pre_1_0_0_bdk {
         pub async fn new(
             data_dir: impl AsRef<Path>,
             xprivkey: ExtendedPrivKey,
-            network: bitcoin::Network,
+            network: Network,
         ) -> Result<Self> {
             let data_dir = data_dir.as_ref();
             let wallet_dir = data_dir.join(WALLET);
             let database = bdk::sled::open(wallet_dir)?.open_tree(SLED_TREE_NAME)?;
-
-            // Convert bitcoin network to the bdk network type...
-            let network = match network {
-                bitcoin::Network::Bitcoin => bdk::bitcoin::Network::Bitcoin,
-                bitcoin::Network::Testnet => bdk::bitcoin::Network::Testnet,
-                bitcoin::Network::Regtest => bdk::bitcoin::Network::Regtest,
-                bitcoin::Network::Signet => bdk::bitcoin::Network::Signet,
-                _ => bail!("Unsupported network"),
-            };
 
             let wallet = bdk::Wallet::new(
                 bdk::template::Bip84(xprivkey, KeychainKind::External),
@@ -2973,7 +2966,7 @@ impl TestWalletBuilder {
 
         // Fund the wallet with fake utxos
         for _ in 0..self.num_utxos {
-            receive_output_in_latest_block(&mut locked_wallet, self.utxo_amount);
+            receive_output_in_latest_block(&mut locked_wallet, Amount::from_sat(self.utxo_amount));
         }
 
         // Create another block to confirm the utxos

@@ -8,28 +8,70 @@ edition = "2021"
 name = "monero-rpc-pool"
 path = "src/main.rs"
 
+[[bin]]
+name = "stress-test"
+path = "src/bin/stress_test.rs"
+required-features = ["stress-test"]
+
+[[bin]]
+name = "stress-test-downloader"
+path = "src/bin/stress_test_downloader.rs"
+required-features = ["stress-test"]
+
+[features]
+stress-test = ["reqwest", "cuprate-epee-encoding"]
+
 [dependencies]
+# Core utilities
 anyhow = { workspace = true }
-axum = { version = "0.7", features = ["macros"] }
-chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "4.0", features = ["derive"] }
 futures = { workspace = true }
-monero = { workspace = true }
-monero-rpc = { path = "../monero-rpc" }
 rand = { workspace = true }
 regex = "1.0"
-reqwest = { workspace = true, features = ["rustls-tls"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "migrate"] }
-tokio = { workspace = true, features = ["full"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors"] }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-typeshare = { workspace = true }
 url = "2.0"
 uuid = { workspace = true }
+
+# CLI and logging
+clap = { version = "4.0", features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Async runtime
+crossbeam = "0.8.4"
+tokio = { workspace = true, features = ["full"] }
+
+# Serialization
+chrono = { version = "0.4", features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+typeshare = { workspace = true }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "migrate"] }
+
+# Web framework and HTTP
+axum = { version = "0.8.4", features = ["macros"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["cors"] }
+
+# TLS/Security
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+
+# Tor networking
+arti-client = { workspace = true, features = ["tokio"] }
+tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
+
+# Monero/Project specific
+monero = { workspace = true }
+monero-rpc = { path = "../monero-rpc" }
+swap-serde = { path = "../swap-serde" }
+
+# Optional dependencies (for features)
+cuprate-epee-encoding = { git = "https://github.com/Cuprate/cuprate.git", optional = true }
+reqwest = { version = "0.11", features = ["json"], optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

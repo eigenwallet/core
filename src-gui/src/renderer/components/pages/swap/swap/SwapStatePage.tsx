@@ -50,6 +50,14 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
         return <SwapSetupInflightPage {...state.curr.content} />;
       }
       break;
+    case "RetrievingMoneroBlockheight":
+      return (
+        <CircularProgressWithSubtitle description="Retrieving Monero blockheight..." />
+      );
+    case "BtcLockPublishInflight":
+      return (
+        <CircularProgressWithSubtitle description="Publishing Bitcoin lock transaction..." />
+      );
     case "BtcLockTxInMempool":
       if (state.curr.type === "BtcLockTxInMempool") {
         return <BitcoinLockTxInMempoolPage {...state.curr.content} />;

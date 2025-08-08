@@ -38,6 +38,10 @@ function QRCodeModal({ open, onClose, content }: ModalProps) {
           style={{
             maxWidth: "90%",
             maxHeight: "90%",
+            backgroundColor: "white",
+            borderRadius: 2,
+            padding: "1rem",
+            border: "1rem solid #e0e0e0",
           }}
           viewBox="0 0 500 500"
         />

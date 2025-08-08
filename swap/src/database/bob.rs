@@ -17,6 +17,11 @@ pub enum Bob {
     ExecutionSetupDone {
         state2: bob::State2,
     },
+    BtcLockReadyToPublish {
+        btc_lock_tx_signed: bitcoin::Transaction,
+        state3: bob::State3,
+        monero_wallet_restore_blockheight: BlockHeight,
+    },
     BtcLocked {
         state3: bob::State3,
         monero_wallet_restore_blockheight: BlockHeight,
@@ -65,6 +70,15 @@ impl From<BobState> for Bob {
                 tx_lock_fee,
             },
             BobState::SwapSetupCompleted(state2) => Bob::ExecutionSetupDone { state2 },
+            BobState::BtcLockReadyToPublish {
+                btc_lock_tx_signed,
+                state3,
+                monero_wallet_restore_blockheight,
+            } => Bob::BtcLockReadyToPublish {
+                btc_lock_tx_signed,
+                state3,
+                monero_wallet_restore_blockheight,
+            },
             BobState::BtcLocked {
                 state3,
                 monero_wallet_restore_blockheight,
@@ -114,6 +128,15 @@ impl From<Bob> for BobState {
                 tx_lock_fee,
             },
             Bob::ExecutionSetupDone { state2 } => BobState::SwapSetupCompleted(state2),
+            Bob::BtcLockReadyToPublish {
+                btc_lock_tx_signed,
+                state3,
+                monero_wallet_restore_blockheight,
+            } => BobState::BtcLockReadyToPublish {
+                btc_lock_tx_signed,
+                state3,
+                monero_wallet_restore_blockheight,
+            },
             Bob::BtcLocked {
                 state3,
                 monero_wallet_restore_blockheight,
@@ -153,6 +176,7 @@ impl fmt::Display for Bob {
         match self {
             Bob::Started { .. } => write!(f, "Started"),
             Bob::ExecutionSetupDone { .. } => f.write_str("Execution setup done"),
+            Bob::BtcLockReadyToPublish { .. } => f.write_str("Bitcoin lock ready to publish"),
             Bob::BtcLocked { .. } => f.write_str("Bitcoin locked"),
             Bob::XmrLockProofReceived { .. } => {
                 f.write_str("XMR lock transaction transfer proof received")

@@ -1,6 +1,6 @@
 [package]
 name = "unstoppableswap-gui-rs"
-version = "3.0.0-beta"
+version = "3.0.0-beta.6"
 authors = [ "binarybaron", "einliterflasche", "unstoppableswap" ]
 edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -29,9 +29,12 @@ tauri-plugin-process = "^2.0.0"
 tauri-plugin-shell = "^2.0.0"
 tauri-plugin-store = "^2.0.0"
 tauri-plugin-updater = "^2.0.0"
+tokio = { workspace = true, features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = { workspace = true }
 uuid = { workspace = true }
 zip = "4.0.0"
+dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs", subdir = "dfx-swiss-sdk" }
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-cli = "^2.0.0"

@@ -21,30 +21,29 @@ export default function WalletPageLoadingState() {
         {/* Balance */}
         <Box
           sx={{
-            display: "grid",
-            gridTemplateColumns: "1.5fr 1fr max-content",
-            rowGap: 0.5,
-            columnGap: 2,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
             mb: 1,
           }}
         >
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 1, gridColumn: "1", gridRow: "1" }}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 0.5,
+            }}
           >
-            Available Funds
-          </Typography>
-          <Typography variant="h4" sx={{ gridColumn: "1", gridRow: "2" }}>
-            <Skeleton variant="text" width="80%" />
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ gridColumn: "1", gridRow: "3" }}
-          >
-            <Skeleton variant="text" width="40%" />
-          </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Available Funds
+            </Typography>
+            <Typography variant="h4">
+              <Skeleton variant="text" width="80%" />
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              <Skeleton variant="text" width="40%" />
+            </Typography>
+          </Box>
 
           <Box
             sx={{
@@ -61,7 +60,6 @@ export default function WalletPageLoadingState() {
                 gap: 1,
               }}
             >
-              <Typography variant="body2">loading</Typography>
               <StateIndicator color="primary" pulsating={true} />
             </Box>
           </Box>

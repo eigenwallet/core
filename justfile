@@ -53,17 +53,23 @@ gui_build:
 tests:
         cargo nextest run
 
+docker_test_happy_path:
+	cargo test --package swap --test happy_path -- --nocapture
+
+docker_test_all:
+	cargo test --package swap --test all -- --nocapture
+
 # Tests the Rust bindings for Monero
 test_monero_sys:
         cd monero-sys && cargo nextest run
 
 # Builds the ASB and Swap binaries
 swap:
-	cd swap && cargo build --bin asb --bin=swap
+	cargo build -p swap-asb --bin asb && cd swap && cargo build --bin=swap
 
 # Run the asb on testnet
 asb-testnet:
-	cd swap && cargo run --bin asb -- --trace --testnet start
+	cargo run -p swap-asb --bin asb -- --trace --testnet start
 
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:

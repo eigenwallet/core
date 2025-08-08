@@ -2,8 +2,31 @@ use std::path::PathBuf;
 
 use crate::types::{NodeAddress, NodeHealthStats, NodeMetadata, NodeRecord};
 use anyhow::Result;
+use monero::Network;
 use sqlx::SqlitePool;
 use tracing::{info, warn};
+
+/// Convert a string to a Network enum
+pub fn parse_network(s: &str) -> Result<Network, anyhow::Error> {
+    match s.to_lowercase().as_str() {
+        "mainnet" => Ok(Network::Mainnet),
+        "stagenet" => Ok(Network::Stagenet),
+        "testnet" => Ok(Network::Testnet),
+        _ => anyhow::bail!(
+            "Invalid network: {}. Must be mainnet, stagenet, or testnet",
+            s
+        ),
+    }
+}
+
+/// Convert a Network enum to a string for database storage
+pub fn network_to_string(network: &Network) -> &'static str {
+    match network {
+        Network::Mainnet => "mainnet",
+        Network::Stagenet => "stagenet",
+        Network::Testnet => "testnet",
+    }
+}
 
 #[derive(Clone)]
 pub struct Database {
@@ -43,7 +66,7 @@ impl Database {
         &self,
         scheme: &str,
         host: &str,
-        port: i64,
+        port: u16,
         was_successful: bool,
         latency_ms: Option<f64>,
     ) -> Result<()> {
@@ -134,7 +157,8 @@ impl Database {
                     .parse()
                     .unwrap_or_else(|_| chrono::Utc::now());
 
-                let metadata = NodeMetadata::new(row.id, row.network, first_seen_at);
+                let network = parse_network(&row.network).unwrap_or(Network::Mainnet);
+                let metadata = NodeMetadata::new(row.id, network, first_seen_at);
                 let health = NodeHealthStats {
                     success_count: row.success_count,
                     failure_count: row.failure_count,
