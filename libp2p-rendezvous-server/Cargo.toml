@@ -8,7 +8,7 @@ edition = "2018"
 anyhow = "1"
 futures = { workspace = true }
 libp2p = { workspace = true, default-features = false, features = ["rendezvous", "tcp", "yamux", "dns", "noise", "ping", "websocket", "tokio", "macros"] }
-libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
+libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service", "legacy-tor-provider"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net", "io-util"] }
 tor-hsservice = { workspace = true }
 tracing = { workspace = true, features = ["attributes"] }

@@ -9,6 +9,7 @@ use libp2p::swarm::NetworkBehaviour;
 use libp2p::SwarmBuilder;
 use libp2p::{identity, Multiaddr, Swarm};
 use std::fmt::Debug;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
@@ -25,6 +26,7 @@ pub fn asb<LR>(
     namespace: XmrBtcNamespace,
     rendezvous_addrs: &[Multiaddr],
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    config_data_dir: &Path,
     register_hidden_service: bool,
     num_intro_points: u8,
 ) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
@@ -57,6 +59,7 @@ where
     let (transport, onion_addresses) = asb::transport::new(
         &identity,
         maybe_tor_client,
+        config_data_dir,
         register_hidden_service,
         num_intro_points,
     )?;

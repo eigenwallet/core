@@ -15,6 +15,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 
 arti-client = { workspace = true, features = ["tokio", "rustls", "onion-service-client", "static-sqlite"] }
+# tor-interface = { git = "https://github.com/nabijaczleweli/gosling", rev = "32988e5770c12f1b48b865c158509473123eae90", optional = true }
+tor-interface = { path = "../tor-interface", optional = true }
 libp2p = { workspace = true, features = ["tokio", "tcp", "tls"] }
 
 data-encoding = { version = "2.6.0" }
@@ -37,10 +39,17 @@ listen-onion-service = [
   "dep:tor-cell",
   "dep:tor-proto",
 ]
+arti-client-tor-provider = ["tor-interface", "tor-interface/arti-client-tor-provider"]
+legacy-tor-provider      = ["tor-interface", "tor-interface/legacy-tor-provider"]
+mock-tor-provider        = ["tor-interface", "tor-interface/mock-tor-provider"]
 
 [[example]]
 name = "ping-onion"
 required-features = ["listen-onion-service"]
+
+[[example]]
+name = "ping-onion-tor-interface"
+required-features = ["tor-interface"]
 
 [package.metadata.docs.rs]
 all-features = true

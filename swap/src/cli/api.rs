@@ -17,7 +17,7 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
-use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
+use swap_env::env::{may_init_tor, Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
 use tauri_bindings::{
     MoneroNodeConfig, TauriBackgroundProgress, TauriContextStatusEvent, TauriEmitter, TauriHandle,
@@ -486,6 +486,11 @@ impl ContextBuilder {
         };
 
         let bootstrap_tor_client_task = async {
+            // Don't init a tor client unless we should use it.
+            if !may_init_tor() {
+                return Ok(None);
+            }
+
             // Bootstrap the Tor client if we have one
             match unbootstrapped_tor_client.clone() {
                 Some(tor_client) => {
