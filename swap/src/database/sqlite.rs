@@ -7,21 +7,33 @@ use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use autosurgeon::{Hydrate, Reconcile};
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
+use tokio::sync::RwLock;
+use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use eigensync::EigensyncHandle;
+
 use super::AccessMode;
+
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
+pub struct EigensyncDocument {
+    states: HashMap<String, String>
+}
 
 pub struct SqliteDatabase {
     pool: Pool<Sqlite>,
     tauri_handle: Option<TauriHandle>,
+    eigensync_handle: Option<Arc<RwLock<EigensyncHandle<EigensyncDocument>>>>,
 }
 
 impl SqliteDatabase {
@@ -40,6 +52,7 @@ impl SqliteDatabase {
         let mut sqlite = Self {
             pool,
             tauri_handle: None,
+            eigensync_handle: None,
         };
 
         if !read_only {
@@ -51,6 +64,11 @@ impl SqliteDatabase {
 
     pub fn with_tauri_handle(mut self, tauri_handle: impl Into<Option<TauriHandle>>) -> Self {
         self.tauri_handle = tauri_handle.into();
+        self
+    }
+
+    pub fn with_eigensync_handle(mut self, eigensync_handle: impl Into<Option<Arc<RwLock<EigensyncHandle<EigensyncDocument>>>>>) -> Self {
+        self.eigensync_handle = eigensync_handle.into();
         self
     }
 
@@ -302,6 +320,13 @@ impl Database for SqliteDatabase {
         let swap = serde_json::to_string(&Swap::from(state))?;
         let entered_at = entered_at.to_string();
         let swap_id_str = swap_id.to_string();
+
+        if let Some(eigensync_handle) = &self.eigensync_handle {
+            eigensync_handle.write().await.modify(|document| {
+                document.states.insert(swap_id_str.clone(), swap.clone());
+                Ok(())
+            })?;
+        }
 
         sqlx::query!(
             r#"

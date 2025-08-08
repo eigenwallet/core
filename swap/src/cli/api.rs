@@ -12,10 +12,13 @@ use crate::seed::Seed;
 use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
+use eigensync::EigensyncHandle;
 use futures::future::try_join_all;
+use libp2p::{Multiaddr, PeerId};
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
@@ -443,10 +446,16 @@ impl ContextBuilder {
                 (),
             );
 
+        let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333").context("")?;
+        let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
+
+        let eigensync_handle = Arc::new(RwLock::new(EigensyncHandle::new(multiaddr, server_peer_id).unwrap()));
+
         let db = open_db(
             data_dir.join("sqlite"),
             AccessMode::ReadWrite,
             self.tauri_handle.clone(),
+            eigensync_handle,
         )
         .await?;
 
@@ -565,7 +574,7 @@ impl Context {
             bitcoin_wallet: Some(bob_bitcoin_wallet),
             monero_manager: Some(bob_monero_wallet),
             config,
-            db: open_db(db_path, AccessMode::ReadWrite, None)
+            db: open_db(db_path, AccessMode::ReadWrite, None, None)
                 .await
                 .expect("Could not open sqlite database"),
             swap_lock: SwapLock::new().into(),

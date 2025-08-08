@@ -1,8 +1,11 @@
 pub use alice::Alice;
 pub use bob::Bob;
+use eigensync::EigensyncHandle;
 pub use sqlite::SqliteDatabase;
+use tokio::sync::RwLock;
 
 use crate::cli::api::tauri_bindings::TauriHandle;
+use crate::database::sqlite::EigensyncDocument;
 use crate::protocol::{Database, State};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -94,13 +97,15 @@ pub async fn open_db(
     sqlite_path: impl AsRef<Path>,
     access_mode: AccessMode,
     tauri_handle: impl Into<Option<TauriHandle>>,
+    eigensync_handle: impl Into<Option<Arc<RwLock<EigensyncHandle<EigensyncDocument>>>>>,
 ) -> Result<Arc<dyn Database + Send + Sync>> {
     if sqlite_path.as_ref().exists() {
         tracing::debug!("Using existing sqlite database.");
 
         let sqlite = SqliteDatabase::open(sqlite_path, access_mode)
             .await?
-            .with_tauri_handle(tauri_handle.into());
+            .with_tauri_handle(tauri_handle.into())
+            .with_eigensync_handle(eigensync_handle.into());
 
         Ok(Arc::new(sqlite))
     } else {
@@ -110,7 +115,8 @@ pub async fn open_db(
         tokio::fs::File::create(&sqlite_path).await?;
         let sqlite = SqliteDatabase::open(sqlite_path, access_mode)
             .await?
-            .with_tauri_handle(tauri_handle.into());
+            .with_tauri_handle(tauri_handle.into())
+            .with_eigensync_handle(eigensync_handle.into());
 
         Ok(Arc::new(sqlite))
     }
