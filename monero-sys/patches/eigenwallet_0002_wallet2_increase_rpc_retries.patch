@@ -1,0 +1,25 @@
+diff --git a/src/wallet/wallet2.cpp b/src/wallet/wallet2.cpp
+index d3e15a634..6edeebf35 100644
+--- a/src/wallet/wallet2.cpp
++++ b/src/wallet/wallet2.cpp
+@@ -4229,7 +4229,7 @@ void wallet2::refresh(bool trusted_daemon, uint64_t start_height, uint64_t & blo
+     {
+       blocks_fetched += added_blocks;
+       THROW_WALLET_EXCEPTION_IF(!waiter.wait(), error::wallet_internal_error, "Exception in thread pool");
+-      if(try_count < 3)
++      if(try_count < max_refresh_retries)
+       {
+         LOG_PRINT_L1("Another try pull_blocks (try_count=" << try_count << ")...");
+         first = true;
+diff --git a/src/wallet/wallet2.h b/src/wallet/wallet2.h
+index d3a799a48..12e67abee 100644
+--- a/src/wallet/wallet2.h
++++ b/src/wallet/wallet2.h
+@@ -236,6 +236,7 @@ private:
+     friend class wallet_device_callback;
+   public:
+     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
++    static constexpr size_t max_refresh_retries = 10;
+ 
+     enum RefreshType {
+       RefreshFull,

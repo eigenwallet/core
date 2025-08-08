@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
+use crossbeam::deque::{Injector, Steal};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use tracing::{debug, warn};
+use tracing::warn;
 use typeshare::typeshare;
 
-use crate::database::Database;
+use crate::database::{network_to_string, Database};
 use crate::types::NodeAddress;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -16,6 +19,7 @@ pub struct PoolStatus {
     #[typeshare(serialized_as = "number")]
     pub unsuccessful_health_checks: u64,
     pub top_reliable_nodes: Vec<ReliableNodeInfo>,
+    pub bandwidth_kb_per_sec: f64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -26,19 +30,90 @@ pub struct ReliableNodeInfo {
     pub avg_latency_ms: Option<f64>,
 }
 
+#[derive(Debug, Clone)]
+struct BandwidthEntry {
+    timestamp: Instant,
+    bytes: u64,
+}
+
+#[derive(Debug)]
+pub struct BandwidthTracker {
+    entries: Injector<BandwidthEntry>,
+}
+
+impl BandwidthTracker {
+    const WINDOW_DURATION: Duration = Duration::from_secs(60 * 3);
+
+    fn new() -> Self {
+        Self {
+            entries: Injector::new(),
+        }
+    }
+
+    pub fn record_bytes(&self, bytes: u64) {
+        let now = Instant::now();
+        self.entries.push(BandwidthEntry {
+            timestamp: now,
+            bytes,
+        });
+    }
+
+    fn get_kb_per_sec(&self) -> f64 {
+        let now = Instant::now();
+        let cutoff = now - Self::WINDOW_DURATION;
+
+        // Collect valid entries from the injector
+        let mut valid_entries = Vec::new();
+        let mut total_bytes = 0u64;
+
+        // Drain all entries, keeping only recent ones
+        loop {
+            match self.entries.steal() {
+                Steal::Success(entry) => {
+                    if entry.timestamp >= cutoff {
+                        total_bytes += entry.bytes;
+                        valid_entries.push(entry);
+                    }
+                }
+                Steal::Empty | Steal::Retry => break,
+            }
+        }
+
+        // Put back the valid entries
+        for entry in valid_entries.iter() {
+            self.entries.push(entry.clone());
+        }
+
+        if valid_entries.len() < 5 {
+            return 0.0;
+        }
+
+        let oldest_time = valid_entries.iter().map(|e| e.timestamp).min().unwrap();
+        let duration_secs = now.duration_since(oldest_time).as_secs_f64();
+
+        if duration_secs > 0.0 {
+            (total_bytes as f64 / 1024.0) / duration_secs
+        } else {
+            0.0
+        }
+    }
+}
+
 pub struct NodePool {
     db: Database,
-    network: String,
+    network: monero::Network,
     status_sender: broadcast::Sender<PoolStatus>,
+    bandwidth_tracker: Arc<BandwidthTracker>,
 }
 
 impl NodePool {
-    pub fn new(db: Database, network: String) -> (Self, broadcast::Receiver<PoolStatus>) {
+    pub fn new(db: Database, network: monero::Network) -> (Self, broadcast::Receiver<PoolStatus>) {
         let (status_sender, status_receiver) = broadcast::channel(100);
         let pool = Self {
             db,
             network,
             status_sender,
+            bandwidth_tracker: Arc::new(BandwidthTracker::new()),
         };
         (pool, status_receiver)
     }
@@ -47,7 +122,7 @@ impl NodePool {
         &self,
         scheme: &str,
         host: &str,
-        port: i64,
+        port: u16,
         latency_ms: f64,
     ) -> Result<()> {
         self.db
@@ -56,11 +131,19 @@ impl NodePool {
         Ok(())
     }
 
-    pub async fn record_failure(&self, scheme: &str, host: &str, port: i64) -> Result<()> {
+    pub async fn record_failure(&self, scheme: &str, host: &str, port: u16) -> Result<()> {
         self.db
             .record_health_check(scheme, host, port, false, None)
             .await?;
         Ok(())
+    }
+
+    pub fn record_bandwidth(&self, bytes: u64) {
+        self.bandwidth_tracker.record_bytes(bytes);
+    }
+
+    pub fn get_bandwidth_tracker(&self) -> Arc<BandwidthTracker> {
+        self.bandwidth_tracker.clone()
     }
 
     pub async fn publish_status_update(&self) -> Result<()> {
@@ -68,18 +151,19 @@ impl NodePool {
 
         if let Err(e) = self.status_sender.send(status.clone()) {
             warn!("Failed to send status update: {}", e);
-        } else {
-            debug!(?status, "Sent status update");
         }
 
         Ok(())
     }
 
     pub async fn get_current_status(&self) -> Result<PoolStatus> {
-        let (total, reachable, _reliable) = self.db.get_node_stats(&self.network).await?;
-        let reliable_nodes = self.db.get_reliable_nodes(&self.network).await?;
+        let network_str = network_to_string(&self.network);
+        let (total, reachable, _reliable) = self.db.get_node_stats(network_str).await?;
+        let reliable_nodes = self.db.get_reliable_nodes(network_str).await?;
         let (successful_checks, unsuccessful_checks) =
-            self.db.get_health_check_stats(&self.network).await?;
+            self.db.get_health_check_stats(network_str).await?;
+
+        let bandwidth_kb_per_sec = self.bandwidth_tracker.get_kb_per_sec();
 
         let top_reliable_nodes = reliable_nodes
             .into_iter()
@@ -97,6 +181,7 @@ impl NodePool {
             successful_health_checks: successful_checks,
             unsuccessful_health_checks: unsuccessful_checks,
             top_reliable_nodes,
+            bandwidth_kb_per_sec,
         })
     }
 
@@ -105,14 +190,15 @@ impl NodePool {
     pub async fn get_top_reliable_nodes(&self, limit: usize) -> Result<Vec<NodeAddress>> {
         use rand::seq::SliceRandom;
 
-        debug!(
+        tracing::debug!(
             "Getting top reliable nodes for network {} (target: {})",
-            self.network, limit
+            network_to_string(&self.network),
+            limit
         );
 
         let available_nodes = self
             .db
-            .get_top_nodes_by_recent_success(&self.network, limit as i64)
+            .get_top_nodes_by_recent_success(network_to_string(&self.network), limit as i64)
             .await
             .context("Failed to get top nodes by recent success")?;
 
@@ -149,62 +235,13 @@ impl NodePool {
             selected_nodes.push(node);
         }
 
-        debug!(
+        tracing::debug!(
             "Pool size: {} nodes for network {} (target: {})",
             selected_nodes.len(),
-            self.network,
+            network_to_string(&self.network),
             limit
         );
 
         Ok(selected_nodes)
-    }
-
-    pub async fn get_pool_stats(&self) -> Result<PoolStats> {
-        let (total, reachable, reliable) = self.db.get_node_stats(&self.network).await?;
-        let reliable_nodes = self.db.get_reliable_nodes(&self.network).await?;
-
-        let avg_reliable_latency = if reliable_nodes.is_empty() {
-            None
-        } else {
-            let total_latency: f64 = reliable_nodes
-                .iter()
-                .filter_map(|node| node.health.avg_latency_ms)
-                .sum();
-            let count = reliable_nodes
-                .iter()
-                .filter(|node| node.health.avg_latency_ms.is_some())
-                .count();
-
-            if count > 0 {
-                Some(total_latency / count as f64)
-            } else {
-                None
-            }
-        };
-
-        Ok(PoolStats {
-            total_nodes: total,
-            reachable_nodes: reachable,
-            reliable_nodes: reliable,
-            avg_reliable_latency_ms: avg_reliable_latency,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct PoolStats {
-    pub total_nodes: i64,
-    pub reachable_nodes: i64,
-    pub reliable_nodes: i64,
-    pub avg_reliable_latency_ms: Option<f64>, // TOOD: Why is this an Option, we hate Options
-}
-
-impl PoolStats {
-    pub fn health_percentage(&self) -> f64 {
-        if self.total_nodes == 0 {
-            0.0
-        } else {
-            (self.reachable_nodes as f64 / self.total_nodes as f64) * 100.0
-        }
     }
 }
