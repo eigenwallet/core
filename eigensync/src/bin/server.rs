@@ -2,10 +2,9 @@ use std::{collections::HashMap, marker::PhantomData, str::FromStr, sync::OnceLoc
 
 use anyhow::{Context, Result};
 use automerge::{ActorId, AutoCommit, Change, ScalarValue};
-use eigensync::{protocol::{server, BehaviourEvent, Request, Response, SerializedChange}, Eigensync, ServerDatabase};
+use eigensync::protocol::{server, Behaviour, BehaviourEvent, Request, Response, SerializedChange};
 use libp2p::{
-    futures::StreamExt, identity, noise, request_response, swarm::SwarmEvent, tcp, yamux,
-    Multiaddr, PeerId, SwarmBuilder,
+    futures::StreamExt, identity, noise, request_response::{self, ResponseChannel}, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
 };
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 
@@ -16,7 +15,7 @@ struct Foo {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut db: Eigensync<Foo> = Eigensync::new();
+    let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333")?;
 
     // for constant peer id
     let keypair = identity::Keypair::ed25519_from_bytes(
@@ -37,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::MAX))
         .build();
 
-    swarm.listen_on(Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333")?)?;
+    swarm.listen_on(multiaddr)?;
 
     println!(
         "Listening on /ip4/127.0.0.1/tcp/3333/p2p/{}",
@@ -46,40 +45,36 @@ async fn main() -> anyhow::Result<()> {
 
     loop {
         tokio::select! {
-            event = swarm.select_next_some() => {
-                match event {
-                    SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::Message {
-                        peer,
-                        message,
-                    })) => {
-                        match message {
-                            request_response::Message::Request { request, channel, .. } => {
-                                eprintln!("Received request from client {:?}", peer);
+            event = swarm.select_next_some() => handle_event(&mut swarm, event).await
+        }
+    }
+}
 
-                                match request {
-                                    Request::GetChanges { changes } => {
-                                        eprintln!("Received GetChanges request");
-                                        let changes = db.get_changes();
-                                        eprintln!("Got {} new changes for client", changes.len());
-                                        let serialized_changes: Vec<SerializedChange> = changes.clone().into_iter().map(|c| c.into()).collect();
-                                        swarm.behaviour_mut().send_response(channel, Response::NewChanges { changes: serialized_changes }).expect("Failed to send response");
-                                        eprintln!("DB size: {:?}", changes.len());
-                                    }
-                                    Request::AddChanges { changes } => {
-                                        eprintln!("Received AddChanges request");
-                                        let changes: Vec<Change> = changes.into_iter().map(|c| c.into()).collect();
-                                        //db.add_changes(changes).expect("Failed to add changes");
-                                        swarm.behaviour_mut().send_response(channel, Response::ChangesAdded).expect("Failed to send response");
-                                        eprintln!("Changes added successfully");
-                                    }
-                                }
-                            }
-                            request_response::Message::Response { request_id, .. } => eprintln!("Received response for request of id {:?}", request_id),
+async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>) {
+    match event {
+        SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::Message {
+            peer,
+            message,
+        })) => {
+            match message {
+                request_response::Message::Request { request, channel, .. } => {
+                    eprintln!("Received request from client {:?}", peer);
+
+                    match request {
+                        Request::UploadChangesToServer { changes } => {
+                            swarm.behaviour_mut().send_response(channel, Response::Error { reason: "Not implemented".to_string() }).unwrap();
                         }
                     }
-                    other => eprintln!("Received event: {:?}", other),
                 }
+                request_response::Message::Response { request_id, .. } => eprintln!("Received response for request of id {:?}", request_id),
             }
         }
+        SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+            eprintln!("Connection established with peer: {:?}", peer_id);
+        }
+        SwarmEvent::ConnectionClosed { peer_id, .. } => {
+            eprintln!("Connection closed with peer: {:?}", peer_id);
+        }
+        other => eprintln!("Received event: {:?}", other),
     }
 }
