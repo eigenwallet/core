@@ -1,14 +1,15 @@
 use automerge::Change;
-use libp2p::request_response::ProtocolSupport;
+use libp2p::request_response::{ProtocolSupport};
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{ping, request_response, StreamProtocol};
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
+use tokio::sync::oneshot;
 
 const PROTOCOL: &str = "/eigensync/1.0.0";
-type OutEvent = request_response::Event<Request, Response>;
-type Message = request_response::Message<Request, Response>;
+type OutEvent = request_response::Event<ServerRequest, Response>;
+type Message = request_response::Message<ServerRequest, Response>;
 
 #[derive(NetworkBehaviour)]
 pub struct Behaviour {
@@ -16,7 +17,7 @@ pub struct Behaviour {
     sync: SyncBehaviour,
 }
 
-pub type SyncBehaviour = request_response::cbor::Behaviour<Request, Response>;
+pub type SyncBehaviour = request_response::cbor::Behaviour<ServerRequest, Response>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EigensyncProtocol;
@@ -42,16 +43,21 @@ impl From<SerializedChange> for Change {
     }
 }
 
+#[derive(Debug)]
+pub struct ChannelRequest {
+    pub changes: Vec<SerializedChange>,
+    pub response_channel: oneshot::Sender<Result<Vec<SerializedChange>, String>>
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Request {
+pub enum ServerRequest {
     UploadChangesToServer {
-        changes: Vec<u8>
+        changes: Vec<SerializedChange>
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
-    ChangesAdded,
     /// When the server has changes the device hasn't yet
     NewChanges {
         changes: Vec<SerializedChange>,

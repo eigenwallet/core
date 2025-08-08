@@ -1,8 +1,7 @@
-use std::{collections::HashMap, marker::PhantomData, str::FromStr, sync::OnceLock, time::Duration};
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
-use anyhow::{Context, Result};
-use automerge::{ActorId, AutoCommit, Change, ScalarValue};
-use eigensync::protocol::{server, Behaviour, BehaviourEvent, Request, Response, SerializedChange};
+use anyhow::{Context};
+use eigensync::protocol::{server, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange, ServerRequest};
 use libp2p::{
     futures::StreamExt, identity, noise, request_response::{self, ResponseChannel}, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
 };
@@ -43,14 +42,18 @@ async fn main() -> anyhow::Result<()> {
         swarm.local_peer_id()
     );
 
+    let mut global_changes: HashMap<PeerId, Vec<SerializedChange>> = HashMap::new();
+
+
     loop {
         tokio::select! {
-            event = swarm.select_next_some() => handle_event(&mut swarm, event).await
+            event = swarm.select_next_some() => handle_event(&mut swarm, event, &mut global_changes).await?
         }
     }
 }
 
-async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>) {
+async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>, global_changes: &mut HashMap<PeerId, Vec<SerializedChange>>) -> anyhow::Result<()> {
+
     match event {
         SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::Message {
             peer,
@@ -61,8 +64,16 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
                     eprintln!("Received request from client {:?}", peer);
 
                     match request {
-                        Request::UploadChangesToServer { changes } => {
-                            swarm.behaviour_mut().send_response(channel, Response::Error { reason: "Not implemented".to_string() }).unwrap();
+                        ServerRequest::UploadChangesToServer { changes } => {
+                            let peer_changes = global_changes.entry(peer).or_insert(Vec::new());
+
+                            // extend but dont duplicate changes
+                            let new_changes: Vec<_> = changes.into_iter().filter(|c| !peer_changes.contains(c)).collect();
+                            peer_changes.extend(new_changes);
+                            
+                            // TODO: only send changes that the client doesn't have yet
+                            let response = Response::NewChanges { changes: peer_changes.clone() };
+                            swarm.behaviour_mut().send_response(channel, response).unwrap();
                         }
                     }
                 }
@@ -76,5 +87,6 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
             eprintln!("Connection closed with peer: {:?}", peer_id);
         }
         other => eprintln!("Received event: {:?}", other),
-    }
+    };
+    Ok(())
 }

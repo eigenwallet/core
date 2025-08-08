@@ -5,7 +5,7 @@ use std::{
 use anyhow::{Context, Result};
 use automerge::{ActorId, AutoCommit, Change};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
-use eigensync::{protocol::{client, Behaviour, BehaviourEvent, Request, Response, SerializedChange}, Eigensync, ServerDatabase};
+use eigensync::{protocol::{client, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange}, EigensyncHandle, ServerDatabase};
 use libp2p::{
     futures::StreamExt,
     identity, noise, request_response,
@@ -41,8 +41,8 @@ fn get_state(document: &AutoCommit) -> State {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let server = Arc::new(Mutex::new(ServerDatabase::new()));
-    let mut alice: Eigensync<State> = Eigensync::new(Arc::clone(&server));
-    let mut bob: Eigensync<State> = Eigensync::new(Arc::clone(&server));
+    let mut alice: EigensyncHandle<State> = EigensyncHandle::new(Arc::clone(&server));
+    let mut bob: EigensyncHandle<State> = EigensyncHandle::new(Arc::clone(&server));
 
     let mut alice_state = get_state(&alice.document);
 

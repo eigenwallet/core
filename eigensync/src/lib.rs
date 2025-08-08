@@ -1,21 +1,20 @@
-use std::{marker::PhantomData, sync::OnceLock, time::Duration};
+use std::{collections::HashMap, marker::PhantomData, sync::OnceLock, time::Duration};
 pub mod protocol;
 
 use anyhow::Context;
 //pub mod protocol;
 use libp2p::{
     futures::StreamExt, 
-    identity, noise, request_response, 
-    swarm::{NetworkBehaviour, SwarmEvent}, 
+    identity, noise, request_response::{self, OutboundRequestId}, 
+    swarm::SwarmEvent, 
     tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
 };
-use serde::{Deserialize, Serialize};
-use tokio::{sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}, task};
+use tokio::{sync::{mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}, oneshot}, task};
 //use crate::protocol::Request;
 use automerge::{ActorId, AutoCommit, Change};
-use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
+use autosurgeon::{reconcile, Hydrate, Reconcile};
 
-use crate::protocol::{client, Behaviour, BehaviourEvent, Request, Response};
+use crate::protocol::{client, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange, ServerRequest};
 
 pub static INIT_AUTOMERGE: OnceLock<AutoCommit> = OnceLock::new();
 
@@ -29,53 +28,38 @@ fn get_init_autocommit() -> AutoCommit {
         .clone()
 }
 
-// #[derive(Clone, Debug, Serialize, Deserialize)]
-// pub enum Request {
-//     UploadChangesToServer {
-//         changes: Vec<u8>
-//     }
-// }
 
-// #[derive(Clone, Debug, Serialize, Deserialize)]
-// enum Response {
-//     GetChangesFromServer
-// }
-
-// #[derive(NetworkBehaviour)]
-// pub struct Behaviour {
-//     sync: SyncBehaviour,
-// }
-
-
-pub type SyncBehaviour = request_response::cbor::Behaviour<Request, Response>;
+pub type SyncBehaviour = request_response::cbor::Behaviour<ServerRequest, Response>;
 
 pub struct SyncLoop {
-    receiver: UnboundedReceiver<Request>,
+    receiver: UnboundedReceiver<ChannelRequest>,
+    response_map: HashMap<OutboundRequestId, oneshot::Sender<Result<Vec<SerializedChange>, String>>>,
     swarm: Swarm<Behaviour>
 }
 
 impl SyncLoop {
-    pub async fn new(receiver: UnboundedReceiver<Request>, swarm: Swarm<Behaviour>) -> Self {
+    pub async fn new(receiver: UnboundedReceiver<ChannelRequest>, swarm: Swarm<Behaviour>) -> Self {
         
-        Self { receiver, swarm}
+        Self { receiver, response_map: HashMap::new(), swarm}
     }
     
-    pub fn sync_with_server(&mut self, request: Request) {
-        match &request {
-            Request::UploadChangesToServer { changes: _changes } => {
+    pub fn sync_with_server(&mut self, request: ChannelRequest) {
+        let server_request = ServerRequest::UploadChangesToServer { changes: request.changes };
+        match &server_request {
+            ServerRequest::UploadChangesToServer { changes: _changes } => {
                 let server = self.swarm.connected_peers().next().copied();
                 if let Some(server) = server {
-                    self.swarm.behaviour_mut().send_request(&server, request);
+                    let request_id = self.swarm.behaviour_mut().send_request(&server, server_request);
+                    self.response_map.insert(request_id, request.response_channel);
                 }
             },
         }
-        
     }
     
     pub async fn run(&mut self, server_id: PeerId) -> anyhow::Result<()> {
         loop {
             tokio::select! {
-                event = self.swarm.select_next_some() => handle_event(event, server_id, &mut self.swarm).await?,
+                event = self.swarm.select_next_some() => handle_event(event, server_id, &mut self.swarm, &mut self.response_map).await?,
                 request_from_handle = self.receiver.recv() => {
                     if let Some(request) = request_from_handle {
                         self.sync_with_server(request);
@@ -83,12 +67,6 @@ impl SyncLoop {
                 }
             }
         }
-        
-        // loop {
-        //     if self.receiver.recv().await {
-        //         // ..
-        //     }
-        // }
     }
 }
 
@@ -96,6 +74,7 @@ pub async fn handle_event(
     event: SwarmEvent<BehaviourEvent>,
     server_id: PeerId,
     swarm: &mut Swarm<Behaviour>,
+    response_map: &mut HashMap<OutboundRequestId, oneshot::Sender<Result<Vec<SerializedChange>, String>>>,
 ) -> anyhow::Result<()> {
     Ok(match event {
         SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::Message {
@@ -106,14 +85,27 @@ pub async fn handle_event(
                 request_id,
                 response,
             } => match response {
-                Response::ChangesAdded => {
-                    println!("Got changes from server");
-                },
                 Response::NewChanges { changes } => {
-                    println!("Got new changes")
+                    let sender = match response_map.remove(&request_id) {
+                        Some(sender) => sender,
+                        None => {
+                            println!("No sender for request id {:?}", request_id);
+                            return Ok(());
+                        }
+                    };
+
+                    let _ = sender.send(Ok(changes));
                 },
                 Response::Error { reason } => {
-                    println!("Error")
+                    let sender = match response_map.remove(&request_id) {
+                        Some(sender) => sender,
+                        None => {
+                            println!("No sender for request id {:?}", request_id);
+                            return Ok(());
+                        }
+                    };
+
+                    let _ = sender.send(Err(reason.clone()));
                 },
             },
             request_response::Message::Request {
@@ -125,15 +117,19 @@ pub async fn handle_event(
             }
         },
         SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::OutboundFailure {
+            peer,
+            request_id,
             error,
-            ..
         })) => {
-            eprintln!("Outbound failure: {:?}", error);
+            let sender = match response_map.remove(&request_id) {
+                Some(sender) => sender,
+                None => {
+                    println!("No sender for request id {:?}", request_id);
+                    return Ok(());
+                }
+            };
 
-            // tokio::time::sleep(Duration::from_secs(1)).await;
-            // swarm
-            //     .dial(Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333")?)
-            //     .context("Failed to dial")?;
+            let _ = sender.send(Err(error.to_string()));
         }
         SwarmEvent::ConnectionEstablished { peer_id: _peer_id, .. } => {
             eprintln!("Connected to peer, sending request");
@@ -148,13 +144,13 @@ pub async fn handle_event(
     })
 }
 
-pub struct Eigensync<T: Reconcile + Hydrate> {
+pub struct EigensyncHandle<T: Reconcile + Hydrate> {
     pub document: AutoCommit,
-    sender: UnboundedSender<Request>,
+    sender: UnboundedSender<ChannelRequest>,
     _marker: PhantomData<T>,
 }
 
-impl<T: Reconcile + Hydrate> Eigensync<T> {
+impl<T: Reconcile + Hydrate> EigensyncHandle<T> {
     pub fn new(server_addr: Multiaddr, server_id: PeerId) -> anyhow::Result<Self> {
         let keypair = identity::Keypair::ed25519_from_bytes(
             hex::decode("f77cb5d03f443675b431454acd7d45f6f032ab4d71b7ff672e662cc3e765e705").unwrap(),
@@ -198,12 +194,38 @@ impl<T: Reconcile + Hydrate> Eigensync<T> {
             .collect()
     }
 
-    pub fn send_update(&mut self, changes: Vec<Change>) {
-        let serialized_changes: Vec<u8> = changes.into_iter().flat_map(|mut c| c.bytes().to_vec()).collect();
-        self.sender.send(Request::UploadChangesToServer { changes: serialized_changes }).unwrap();
+    pub fn modify(&mut self, state: &mut T, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
+        f(state)?;
+        self.save_updates_local(state)?;
+        Ok(())
     }
 
-    pub async fn save_and_sync(&mut self, value: &T) -> anyhow::Result<()> {
+    pub async fn send_update(&mut self, changes: Vec<Change>) -> anyhow::Result<()> {
+        let (sender, receiver) = oneshot::channel();
+
+        let changes: Vec<SerializedChange> = changes.into_iter().map(SerializedChange::from).collect();
+        self.sender
+            .send(ChannelRequest { changes, response_channel: sender })
+            .context("Failed to send changes to server")?;
+        
+        let new_changes_serialized = receiver.await?.map_err(|e| anyhow::anyhow!(e))?;
+        let new_changes: Vec<Change> = new_changes_serialized.into_iter().map(Change::from).collect();
+
+        println!("Applying changes {:?}", new_changes.len());
+
+        self.document.apply_changes(new_changes).context("Failed to apply changes")?;
+
+        Ok(())
+    }
+
+    pub fn save_updates_local(&mut self, state: &T) -> anyhow::Result<()> {
+        reconcile(&mut self.document, state)
+            .context("Failed to reconcile")?;
+        
+        Ok(())
+    }
+
+    pub async fn save_and_sync(&mut self) -> anyhow::Result<()> {
         let new_changes = self.get_changes();
 
         let mut new_doc = self.document.fork();
@@ -216,7 +238,7 @@ impl<T: Reconcile + Hydrate> Eigensync<T> {
             .merge(&mut new_doc)
             .context("Failed to merge")?;
 
-        self.send_update(new_changes);
+        self.send_update(new_changes).await?;
 
         Ok(())
     }
