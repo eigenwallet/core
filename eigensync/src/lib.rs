@@ -12,7 +12,7 @@ use libp2p::{
 use tokio::{sync::{mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}, oneshot}, task};
 //use crate::protocol::Request;
 use automerge::{ActorId, AutoCommit, Change};
-use autosurgeon::{reconcile, Hydrate, Reconcile};
+use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 
 use crate::protocol::{client, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange, ServerRequest};
 
@@ -144,13 +144,13 @@ pub async fn handle_event(
     })
 }
 
-pub struct EigensyncHandle<T: Reconcile + Hydrate> {
+pub struct EigensyncHandle<T: Reconcile + Hydrate + Default> {
     pub document: AutoCommit,
     sender: UnboundedSender<ChannelRequest>,
     _marker: PhantomData<T>,
 }
 
-impl<T: Reconcile + Hydrate> EigensyncHandle<T> {
+impl<T: Reconcile + Hydrate + Default> EigensyncHandle<T> {
     pub fn new(server_addr: Multiaddr, server_id: PeerId) -> anyhow::Result<Self> {
         let keypair = identity::Keypair::ed25519_from_bytes(
             hex::decode("f77cb5d03f443675b431454acd7d45f6f032ab4d71b7ff672e662cc3e765e705").unwrap(),
@@ -181,7 +181,9 @@ impl<T: Reconcile + Hydrate> EigensyncHandle<T> {
             SyncLoop::new(receiver, swarm).await.run(server_id).await.unwrap();
         });
 
-        let document = get_init_autocommit();
+        let mut document = AutoCommit::new().with_actor(ActorId::random());
+        let state = T::default();
+        reconcile(&mut document, &state).unwrap();
 
         Ok(Self { document, _marker: PhantomData , sender})
     }
@@ -194,9 +196,13 @@ impl<T: Reconcile + Hydrate> EigensyncHandle<T> {
             .collect()
     }
 
-    pub fn modify(&mut self, state: &mut T, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
-        f(state)?;
-        self.save_updates_local(state)?;
+    pub fn modify(&mut self, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
+        let mut state = hydrate(&self.document).unwrap();
+        f(&mut state)?;
+        self.save_updates_local(&state)?;
+
+        println!("FIRST MODIFY WAS SUCCESSFULLY CALLED");
+
         Ok(())
     }
 

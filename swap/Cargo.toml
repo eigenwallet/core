@@ -78,6 +78,7 @@ swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-fs = { path = "../swap-fs" }
 swap-serde = { path = "../swap-serde" }
+eigensync = { path = "../eigensync" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
 thiserror = { workspace = true }
 throttle = { path = "../throttle" }
@@ -97,6 +98,8 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = "1.8.1"
+autosurgeon = "0.8.7"
+automerge = "0.6.1"
 
 [target.'cfg(not(windows))'.dependencies]
 tokio-tar = "0.3"

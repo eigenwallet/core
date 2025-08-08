@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
         amount: 200,
     });
 
-    alice.save_updates_local(&alice_state).unwrap();
+    
     alice.sync_with_server().unwrap();
     
     let mut bob_state = get_state(&bob.document);

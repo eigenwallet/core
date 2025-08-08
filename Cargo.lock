@@ -5151,6 +5151,15 @@ dependencies = [
 
 [[package]]
 name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -10699,6 +10708,8 @@ dependencies = [
  "async-trait",
  "asynchronous-codec 0.7.0",
  "atty",
+ "automerge",
+ "autosurgeon",
  "backoff",
  "base64 0.22.1",
  "bdk",
@@ -10720,6 +10731,7 @@ dependencies = [
  "dialoguer",
  "ecdsa_fun",
  "ed25519-dalek 1.0.1",
+ "eigensync",
  "electrum-pool",
  "fns",
  "futures",

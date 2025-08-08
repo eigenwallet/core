@@ -52,9 +52,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut eigensync = EigensyncHandle::<State>::new(multiaddr, server_peer_id).unwrap();
 
-    let mut state = get_state(&eigensync.document);
-
-    eigensync.modify(&mut state, |state| {
+    eigensync.modify(|state| {
         add_swap(state, SwapState {
             state_id: Uuid::new_v4(),
             swap_id: 1,
@@ -66,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
     }).unwrap();
 
     for _ in 0..10 {
-        eigensync.modify(&mut state, |state| {
+        eigensync.modify(|state| {
             add_swap(state, SwapState {
                 state_id: Uuid::new_v4(),
                 swap_id: 1,
