@@ -59,11 +59,6 @@ tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "18111286b58
 jsonrpc_client = { git = "https://github.com/delta1/rust-jsonrpc-client.git", rev = "3b6081697cd616c952acb9c2f02d546357d35506" }
 monero = { git = "https://github.com/comit-network/monero-rs", rev = "818f38b" }
 
-# patch until new release https://github.com/bitcoindevkit/bdk/pull/1766
-bdk_wallet = { git = "https://github.com/Einliterflasche/bdk", branch = "bump/rusqlite-0.32", package = "bdk_wallet" }
-bdk_electrum = { git = "https://github.com/Einliterflasche/bdk", branch = "bump/rusqlite-0.32", package = "bdk_electrum" }
-bdk_chain = { git = "https://github.com/Einliterflasche/bdk", branch = "bump/rusqlite-0.32", package = "bdk_chain" }
-
 # Force up to date version of crunchy that fixes linux->windows cross compilation
 crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6ba89ccfc72ccb24cc4a4ac6d9c6272" }
 

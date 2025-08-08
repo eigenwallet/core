@@ -60,50 +60,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
     ),
 ];
 
-/// Execute a child process with piped stdout/stderr and display output in real-time
-fn execute_child_with_pipe(
-    mut child: std::process::Child,
-) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
-    use std::io::{BufRead, BufReader};
-    use std::thread;
-
-    let stdout = child.stdout.take().expect("Failed to get stdout");
-    let stderr = child.stderr.take().expect("Failed to get stderr");
-
-    // Spawn threads to handle stdout and stderr
-    let stdout_handle = thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("cargo:debug=[make stdout] {}", line);
-            }
-        }
-    });
-
-    let stderr_handle = thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("cargo:debug=[make stderr] {}", line);
-            }
-        }
-    });
-
-    // Wait for the process to complete
-    let status = child.wait()?;
-
-    // Wait for output threads to complete
-    stdout_handle.join().unwrap();
-    stderr_handle.join().unwrap();
-
-    Ok(status)
-}
-
 fn main() {
     let is_github_actions: bool = std::env::var("GITHUB_ACTIONS").is_ok();
     let is_docker_build: bool = std::env::var("DOCKER_BUILD").is_ok();
 
-    // Eerun this when the bridge.rs or static_bridge.h file changes.
+    // Rerun this when the bridge.rs or static_bridge.h file changes.
     println!("cargo:rerun-if-changed=src/bridge.rs");
     println!("cargo:rerun-if-changed=src/bridge.h");
 
@@ -114,7 +75,7 @@ fn main() {
     println!("cargo:rerun-if-changed=patches");
 
     // Apply embedded patches before building
-    apply_embedded_patches().expect("Failed to apply embedded patches");
+    apply_patches().expect("Failed to apply our patches");
 
     // flush std::out
     std::io::stdout().flush().unwrap();
@@ -126,75 +87,8 @@ fn main() {
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
     let out_dir = Path::new(&out_dir);
-    let out_dir_depends = out_dir.join("depends");
-
-    if fs::exists(&out_dir_depends).unwrap_or(false) {
-        println!("cargo:debug=Detected depends directory in OUT_DIR, skipping copying");
-    } else {
-        // Copy the whole contrib/depends directory recursively to the out_dir/depends directory
-        fs_extra::copy_items(
-            &[&contrib_depends_dir],
-            &out_dir_depends,
-            &fs_extra::dir::CopyOptions::new().copy_inside(true),
-        )
-        .expect("Failed to copy contrib/depends to target dir");
-    }
-
-    let contrib_depends_dir = out_dir_depends;
-
-    let mut target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
-    target = match target.as_str() {
-        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu".to_string(),
-        "armv7-linux-androideabi" => "armv7a-linux-androideabi".to_string(),
-        "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32".to_string(),
-        "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
-        _ => target,
-    };
-    println!("cargo:warning=Building for target: {}", target);
-
-    match target.as_str() {
-        "x86_64-apple-darwin"
-        | "aarch64-apple-darwin"
-        | "aarch64-apple-ios"
-        | "aarch64-apple-iossimulator"
-        | "x86_64-unknown-linux-gnu"
-        | "aarch64-linux-gnu"
-        | "aarch64-linux-android"
-        | "x86_64-linux-android"
-        | "armv7a-linux-androideabi"
-        | "x86_64-w64-mingw32" => {}
-        _ => panic!("target unsupported: {}", target),
-    }
-
-    println!(
-        "cargo:warning=Running make HOST={} in contrib/depends",
-        target
-    );
-
-    let mut cmd = std::process::Command::new("env");
-    if (target.contains("-apple-")) {
-        cmd.arg("-i");
-        let path = std::env::var("PATH").unwrap_or_default();
-        cmd.arg(format!("PATH={}", path));
-    }
-    cmd.arg("make")
-        .arg(format!("HOST={}", target))
-        .arg("DEBUG=")
-        // .arg("DEPENDS_UNTRUSTED_FAST_BUILDS=yes")
-        .current_dir(&contrib_depends_dir)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    
-    let child = cmd.spawn().expect("make command to be executable");
-
-    let status = execute_child_with_pipe(child).expect("make command to execute");
-
-    if !status.success() {
-        eprintln!("make command failed with exit code: {:?}", status.code());
-        panic!("make command failed");
-    }
-
-    println!("cargo:warning=make command completed successfully");
+    let (contrib_depends_dir, target) =
+        compile_dependencies(contrib_depends_dir, out_dir.join("depends"));
 
     // Build with the monero library all dependencies required
     let mut config = Config::new("monero");
@@ -206,14 +100,11 @@ fn main() {
     config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
     println!("cargo:warning=Using toolchain file: {}", toolchain_file);
 
-    let depends_lib_dir = 
-        contrib_depends_dir
-            .join(format!("{}/lib", target));
+    let depends_lib_dir = contrib_depends_dir.join(format!("{}/lib", target));
 
     println!(
         "cargo:rustc-link-search=native={}",
-        depends_lib_dir
-            .display()
+        depends_lib_dir.display()
     );
 
     let output_directory = config
@@ -432,7 +323,7 @@ fn main() {
     if target.contains("w64-mingw32") {
         println!("cargo:rustc-link-lib=static:-bundle=boost_locale");
         println!("cargo:rustc-link-lib=static:-bundle=iconv");
-        
+
         // Link C++ standard library and GCC runtime statically
         println!("cargo:rustc-link-arg=-static-libstdc++");
         println!("cargo:rustc-link-arg=-static-libgcc");
@@ -442,7 +333,8 @@ fn main() {
     println!("cargo:rustc-link-lib=static:-bundle=sodium");
 
     // Link OpenSSL statically (on android we use openssl-sys's vendored version instead)
-    #[cfg(not(target_os = "android"))] { 
+    #[cfg(not(target_os = "android"))]
+    {
         println!("cargo:rustc-link-lib=static:-bundle=ssl"); // This is OpenSSL (libsll)
         println!("cargo:rustc-link-lib=static:-bundle=crypto"); // This is OpenSSLs crypto library (libcrypto)
     }
@@ -450,14 +342,14 @@ fn main() {
     // Link unbound statically
     println!("cargo:rustc-link-lib=static:-bundle=unbound");
     println!("cargo:rustc-link-lib=static:-bundle=expat"); // Expat is required by unbound
-                                                   // println!("cargo:rustc-link-lib=static:-bundle=nghttp2");
-                                                   // println!("cargo:rustc-link-lib=static:-bundle=event");
-    // Android
-    #[cfg(target_os = "android")] {
+                                                           // println!("cargo:rustc-link-lib=static:-bundle=nghttp2");
+                                                           // println!("cargo:rustc-link-lib=static:-bundle=event");
+                                                           // Android
+    #[cfg(target_os = "android")]
+    {
         println!("cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/");
         // println!("cargo:rustc-link-lib=static:-bundle=c++_static");
     }
-
 
     // Link protobuf statically
     // println!("cargo:rustc-link-lib=static:-bundle=protobuf");
@@ -494,56 +386,123 @@ fn main() {
     build.compile("monero-sys");
 }
 
-/// Split a multi-file patch into individual file patches
-fn split_patch_by_files(
-    patch_content: &str,
-) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
-    let mut file_patches = Vec::new();
-    let lines: Vec<&str> = patch_content.lines().collect();
+/// Compile the dependencies
+fn compile_dependencies(
+    contrib_depends: std::path::PathBuf,
+    out_dir: std::path::PathBuf,
+) -> (std::path::PathBuf, String) {
+    let mut target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
+    target = match target.as_str() {
+        "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu".to_string(),
+        "armv7-linux-androideabi" => "armv7a-linux-androideabi".to_string(),
+        "x86_64-pc-windows-gnu" => "x86_64-w64-mingw32".to_string(),
+        "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
+        _ => target,
+    };
+    println!("cargo:warning=Building for target: {}", target);
 
-    let mut current_file_patch = String::new();
-    let mut current_file_path: Option<String> = None;
-    let mut in_file_section = false;
-
-    for line in lines {
-        if line.starts_with("diff --git ") {
-            // Save previous file patch if we have one
-            if let Some(file_path) = current_file_path.take() {
-                if !current_file_patch.trim().is_empty() {
-                    file_patches.push((file_path, current_file_patch.clone()));
-                }
-            }
-
-            // Start new file patch
-            current_file_patch.clear();
-            current_file_patch.push_str(line);
-            current_file_patch.push('\n');
-
-            // Extract file path from diff line (e.g., "diff --git a/src/wallet/api/wallet.cpp b/src/wallet/api/wallet.cpp")
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 {
-                let file_path = parts[2].strip_prefix("a/").unwrap_or(parts[2]);
-                current_file_path = Some(file_path.to_string());
-            }
-            in_file_section = true;
-        } else if in_file_section {
-            current_file_patch.push_str(line);
-            current_file_patch.push('\n');
-        }
+    match target.as_str() {
+        "x86_64-apple-darwin"
+        | "aarch64-apple-darwin"
+        | "aarch64-apple-ios"
+        | "aarch64-apple-iossimulator"
+        | "x86_64-unknown-linux-gnu"
+        | "aarch64-linux-gnu"
+        | "aarch64-linux-android"
+        | "x86_64-linux-android"
+        | "armv7a-linux-androideabi"
+        | "x86_64-w64-mingw32" => {}
+        _ => panic!("target unsupported: {}", target),
     }
 
-    // Don't forget the last file
-    if let Some(file_path) = current_file_path {
-        if !current_file_patch.trim().is_empty() {
-            file_patches.push((file_path, current_file_patch));
-        }
+    println!(
+        "cargo:warning=Running make HOST={} in contrib/depends",
+        target
+    );
+
+    // Copy monero_c/contrib/depends to out_dir/depends in order to build the dependencies there
+    fs_extra::copy_items(
+        &[&contrib_depends],
+        &out_dir,
+        &fs_extra::dir::CopyOptions::new().copy_inside(true),
+    )
+    .expect("Failed to copy contrib/depends to target dir");
+
+    let mut cmd = std::process::Command::new("env");
+    if target.contains("-apple-") {
+        cmd.arg("-i");
+        let path = std::env::var("PATH").unwrap_or_default();
+        cmd.arg(format!("PATH={}", path));
+    }
+    cmd.arg("make")
+        .arg(format!("HOST={}", target))
+        .arg("DEBUG=")
+        .current_dir(&out_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let child = cmd
+        .spawn()
+        .expect("[make depends] make command to be executable");
+
+    let status = execute_child_with_pipe(child, String::from("[make depends] "))
+        .expect("[make depends] make command to execute");
+
+    if !status.success() {
+        panic!(
+            "[make depends] command failed with exit code: {:?}",
+            status.code()
+        );
     }
 
-    Ok(file_patches)
+    println!("cargo:info=[make depends] make command completed successfully");
+
+    (out_dir, target)
 }
 
+/// Execute a child process with piped stdout/stderr and display output in real-time
+fn execute_child_with_pipe(
+    mut child: std::process::Child,
+    prefix: String,
+) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+    use std::io::{BufRead, BufReader};
+    use std::thread;
 
-fn apply_embedded_patches() -> Result<(), Box<dyn std::error::Error>> {
+    let stdout = child.stdout.take().expect("Failed to get stdout");
+    let stderr = child.stderr.take().expect("Failed to get stderr");
+
+    let prefix_clone = prefix.clone();
+    // Spawn threads to handle stdout and stderr
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("cargo:debug={}{}", &prefix_clone, line);
+            }
+        }
+    });
+
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                println!("cargo:debug={}{}", &prefix, line);
+            }
+        }
+    });
+
+    // Wait for the process to complete
+    let status = child.wait()?;
+
+    // Wait for output threads to complete
+    stdout_handle.join().unwrap();
+    stderr_handle.join().unwrap();
+
+    Ok(status)
+}
+
+/// Applies the [`EMBEDDED_PATCHES`] to the monero codebase.
+fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
     let monero_dir = Path::new("monero");
 
     if !monero_dir.exists() {
@@ -612,4 +571,52 @@ fn apply_embedded_patches() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Split a multi-file patch into individual file patches
+fn split_patch_by_files(
+    patch_content: &str,
+) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    let mut file_patches = Vec::new();
+    let lines: Vec<&str> = patch_content.lines().collect();
+
+    let mut current_file_patch = String::new();
+    let mut current_file_path: Option<String> = None;
+    let mut in_file_section = false;
+
+    for line in lines {
+        if line.starts_with("diff --git ") {
+            // Save previous file patch if we have one
+            if let Some(file_path) = current_file_path.take() {
+                if !current_file_patch.trim().is_empty() {
+                    file_patches.push((file_path, current_file_patch.clone()));
+                }
+            }
+
+            // Start new file patch
+            current_file_patch.clear();
+            current_file_patch.push_str(line);
+            current_file_patch.push('\n');
+
+            // Extract file path from diff line (e.g., "diff --git a/src/wallet/api/wallet.cpp b/src/wallet/api/wallet.cpp")
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 {
+                let file_path = parts[2].strip_prefix("a/").unwrap_or(parts[2]);
+                current_file_path = Some(file_path.to_string());
+            }
+            in_file_section = true;
+        } else if in_file_section {
+            current_file_patch.push_str(line);
+            current_file_patch.push('\n');
+        }
+    }
+
+    // Don't forget the last file
+    if let Some(file_path) = current_file_path {
+        if !current_file_patch.trim().is_empty() {
+            file_patches.push((file_path, current_file_patch));
+        }
+    }
+
+    Ok(file_patches)
 }

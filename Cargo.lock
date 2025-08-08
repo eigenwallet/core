@@ -17883,18 +17883,3 @@ dependencies = [
  "syn 2.0.104",
  "winnow 0.7.12",
 ]
-
-[[patch.unused]]
-name = "bdk_chain"
-version = "0.20.0"
-source = "git+https://github.com/Einliterflasche/bdk?branch=bump/rusqlite-0.32#2e57dc7495c14ed334fb525bf17f002d0a8ff6df"
-
-[[patch.unused]]
-name = "bdk_electrum"
-version = "0.19.0"
-source = "git+https://github.com/Einliterflasche/bdk?branch=bump/rusqlite-0.32#2e57dc7495c14ed334fb525bf17f002d0a8ff6df"
-
-[[patch.unused]]
-name = "bdk_wallet"
-version = "1.0.0-beta.5"
-source = "git+https://github.com/Einliterflasche/bdk?branch=bump/rusqlite-0.32#2e57dc7495c14ed334fb525bf17f002d0a8ff6df"

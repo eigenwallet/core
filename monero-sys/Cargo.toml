@@ -33,6 +33,3 @@ testcontainers = "0.15"
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
-
-[target.aarch64-linux-android.profile.release]
-codegen-units = 1
