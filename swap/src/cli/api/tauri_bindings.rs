@@ -17,6 +17,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::Display;
+use throttle::throttle as make_throttle;
+use throttle::Throttle as ThrottleFn;
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 use uuid::Uuid;
@@ -27,7 +29,7 @@ use uuid::Uuid;
 pub enum TauriEvent {
     SwapProgress(TauriSwapProgressEventWrapper),
     ContextInitProgress(TauriContextStatusEvent),
-    CliLog(TauriLogEvent),
+    CliLogIndex(TauriLogIndexEvent),
     BalanceChange(BalanceResponse),
     SwapDatabaseStateUpdate(TauriDatabaseStateEvent),
     TimelockChange(TauriTimelockChangeEvent),
@@ -185,6 +187,10 @@ pub struct TorBootstrapStatus {
 struct TauriHandleInner {
     app_handle: tauri::AppHandle,
     pending_approvals: Arc<Mutex<HashMap<Uuid, PendingApproval>>>,
+    // In-memory rolling log buffer for GUI pagination
+    log_buffer: Arc<Mutex<LogBuffer>>,
+    // Throttler for CliLogIndex emissions
+    log_index_throttle: Arc<ThrottleFn<TauriLogIndexEvent>>,
 }
 
 #[derive(Clone)]
@@ -199,13 +205,30 @@ impl TauriHandle {
     pub fn new(tauri_handle: tauri::AppHandle) -> Self {
         use std::collections::HashMap;
 
-        Self(
-            #[cfg(feature = "tauri")]
-            Arc::new(TauriHandleInner {
-                app_handle: tauri_handle,
-                pending_approvals: Arc::new(Mutex::new(HashMap::new())),
-            }),
-        )
+        {
+            // Build a throttler that emits CliLogIndex via the unified channel at most every 500ms
+            let app_for_throttle = tauri_handle.clone();
+            let throttler = make_throttle(
+                move |ev: TauriLogIndexEvent| {
+                    let _ = tauri::Emitter::emit(
+                        &app_for_throttle,
+                        TAURI_UNIFIED_EVENT_NAME,
+                        TauriEvent::CliLogIndex(ev),
+                    );
+                },
+                Duration::from_millis(500),
+            );
+
+            Self(
+                #[cfg(feature = "tauri")]
+                Arc::new(TauriHandleInner {
+                    app_handle: tauri_handle,
+                    pending_approvals: Arc::new(Mutex::new(HashMap::new())),
+                    log_buffer: Arc::new(Mutex::new(LogBuffer::new(50_000))),
+                    log_index_throttle: Arc::new(throttler),
+                }),
+            )
+        }
     }
 
     #[allow(unused_variables)]
@@ -405,6 +428,41 @@ impl TauriHandle {
             }
         }
     }
+    /// Append raw log text into the in-memory ring buffer and emit index update event via unified channel
+    #[cfg(feature = "tauri")]
+    pub fn append_cli_log_and_emit_index(&self, chunk: String) {
+        let inner = self.0.as_ref();
+        let mut buffer = inner.log_buffer.lock().expect("log buffer poisoned");
+
+        for line in chunk.split('\n') {
+            if line.is_empty() {
+                continue;
+            }
+            buffer.push(line.to_string());
+        }
+
+        let base_index = buffer.base_index;
+        let end_index = buffer.end_index();
+        drop(buffer);
+
+        // Throttle emission via shared throttler
+        inner.log_index_throttle.call(TauriLogIndexEvent {
+            base_index,
+            end_index,
+        });
+    }
+
+    /// Retrieve a window of log lines by absolute indices [start_index, end_index)
+    #[cfg(feature = "tauri")]
+    pub fn get_log_window(
+        &self,
+        start_index: u64,
+        end_index: u64,
+    ) -> crate::cli::api::request::GetLogWindowResponse {
+        let inner = self.0.as_ref();
+        let buffer = inner.log_buffer.lock().expect("log buffer poisoned");
+        buffer.slice(start_index, end_index)
+    }
 }
 
 impl Display for ApprovalRequest {
@@ -460,9 +518,7 @@ pub trait TauriEmitter {
         self.emit_unified_event(TauriEvent::ContextInitProgress(event));
     }
 
-    fn emit_cli_log_event(&self, event: TauriLogEvent) {
-        self.emit_unified_event(TauriEvent::CliLog(event));
-    }
+    // Note: moved into inherent impl above to fix trait Self field access
 
     fn emit_swap_state_change_event(&self, swap_id: Uuid) {
         self.emit_unified_event(TauriEvent::SwapDatabaseStateUpdate(
@@ -779,6 +835,75 @@ pub enum PendingCompleted<P> {
     Pending(P),
     Completed,
 }
+// -----------------------------
+// Log buffering for GUI fetching
+// -----------------------------
+#[cfg(feature = "tauri")]
+struct LogBuffer {
+    lines: Vec<String>,
+    capacity: usize,
+    /// Absolute index of the first element in `lines`
+    base_index: u64,
+}
+
+#[cfg(feature = "tauri")]
+impl LogBuffer {
+    fn new(capacity: usize) -> Self {
+        Self {
+            lines: Vec::with_capacity(capacity.min(1024)),
+            capacity,
+            base_index: 0,
+        }
+    }
+
+    fn push(&mut self, line: String) {
+        self.lines.push(line);
+        if self.lines.len() > self.capacity {
+            // drop oldest chunk to maintain capacity
+            let drop_count = self.capacity / 10 + 1; // ~10%
+            self.lines.drain(0..drop_count);
+            self.base_index += drop_count as u64;
+        }
+    }
+
+    fn end_index(&self) -> u64 {
+        self.base_index + self.lines.len() as u64
+    }
+
+    fn slice(
+        &self,
+        start_index: u64,
+        end_index: u64,
+    ) -> crate::cli::api::request::GetLogWindowResponse {
+        let current_end = self.end_index();
+        let start = start_index.max(self.base_index);
+        let end = end_index.min(current_end);
+
+        let mut lines: Vec<String> = Vec::new();
+        if end > start {
+            let rel_start = (start - self.base_index) as usize;
+            let rel_end = (end - self.base_index) as usize;
+            lines.extend(self.lines[rel_start..rel_end].iter().cloned());
+        }
+
+        crate::cli::api::request::GetLogWindowResponse {
+            base_index: self.base_index,
+            end_index: current_end,
+            lines,
+        }
+    }
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Clone)]
+pub struct TauriLogIndexEvent {
+    #[typeshare(serialized_as = "number")]
+    pub base_index: u64,
+    #[typeshare(serialized_as = "number")]
+    pub end_index: u64,
+}
+
+// Request/Response types for fetching log windows are defined in request.rs
 
 #[derive(Serialize, Clone)]
 #[typeshare]

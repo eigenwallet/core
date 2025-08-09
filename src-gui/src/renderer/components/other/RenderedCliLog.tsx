@@ -5,7 +5,14 @@ import { logsToRawString } from "utils/parseUtils";
 import ScrollablePaperTextBox from "./ScrollablePaperTextBox";
 
 function RenderedCliLog({ log }: { log: CliLog }) {
-  const { timestamp, level, fields, target } = log;
+  const {
+    timestamp,
+    level,
+    fields = {},
+    target,
+  } = log as CliLog & {
+    fields?: Record<string, unknown>;
+  };
 
   const levelColorMap = {
     DEBUG: "#1976d2", // Blue
@@ -42,8 +49,10 @@ function RenderedCliLog({ log }: { log: CliLog }) {
           flexDirection: "column",
         }}
       >
-        <Typography variant="subtitle2">{fields.message}</Typography>
-        {Object.entries(fields).map(([key, value]) => {
+        <Typography variant="subtitle2">
+          {(fields as any)?.message ?? ""}
+        </Typography>
+        {Object.entries(fields ?? {}).map(([key, value]) => {
           if (key !== "message") {
             return (
               <Typography variant="caption" key={key}>
@@ -61,43 +70,61 @@ function RenderedCliLog({ log }: { log: CliLog }) {
 export default function CliLogsBox({
   label,
   logs,
+  logPairs,
   topRightButton = null,
   autoScroll = false,
   minHeight,
+  topAdornment,
+  onReachTop,
 }: {
   label: string;
   logs: (CliLog | string)[];
+  logPairs?: [number, CliLog | string][];
   topRightButton?: ReactNode;
   autoScroll?: boolean;
   minHeight?: string;
+  topAdornment?: ReactNode;
+  onReachTop?: () => void;
 }) {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const memoizedLogs = useMemo(() => {
-    if (searchQuery.length === 0) {
-      return logs;
-    }
-    return logs.filter((log) =>
+  // Build view dataset from pairs if provided; fallback to logs
+  const memoizedPairs = useMemo(() => {
+    const pairs: [number, CliLog | string][] = logPairs
+      ? logPairs
+      : logs.map((log, idx) => [idx, log]);
+    if (searchQuery.length === 0) return pairs;
+    return pairs.filter(([, log]) =>
       JSON.stringify(log).toLowerCase().includes(searchQuery.toLowerCase()),
     );
-  }, [logs, searchQuery]);
+  }, [logs, logPairs, searchQuery]);
 
   return (
     <ScrollablePaperTextBox
       minHeight={minHeight}
       title={label}
-      copyValue={logsToRawString(logs)}
+      copyValue={logsToRawString(memoizedPairs.map(([, log]) => log))}
       searchQuery={searchQuery}
       setSearchQuery={setSearchQuery}
       topRightButton={topRightButton}
       autoScroll={autoScroll}
-      rows={memoizedLogs.map((log) =>
+      topAdornment={topAdornment}
+      onReachTop={onReachTop}
+      rows={memoizedPairs.map(([displayIdx, log]) =>
         typeof log === "string" ? (
-          <Typography key={log} component="pre">
-            {log}
+          <Typography key={`${displayIdx}-${log}`} component="pre">
+            [{displayIdx}] {log}
           </Typography>
         ) : (
-          <RenderedCliLog log={log} key={JSON.stringify(log)} />
+          <Box
+            key={`${displayIdx}-${JSON.stringify(log)}`}
+            sx={{ display: "flex", gap: 1 }}
+          >
+            <Typography variant="caption" sx={{ width: 80 }}>
+              [{displayIdx}]
+            </Typography>
+            <RenderedCliLog log={log} />
+          </Box>
         ),
       )}
     />

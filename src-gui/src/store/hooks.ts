@@ -21,7 +21,7 @@ import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
 import { parseDateString } from "utils/parseUtils";
 import { useMemo } from "react";
-import { isCliLogRelatedToSwap } from "models/cliModel";
+import { CliLog, isCliLogRelatedToSwap } from "models/cliModel";
 import { SettingsState } from "./features/settingsSlice";
 import { NodesSlice } from "./features/nodesSlice";
 import { RatesState } from "./features/ratesSlice";
@@ -140,9 +140,47 @@ export function useActiveSwapLogs() {
   const logs = useAppSelector((s) => s.logs.state.logs);
 
   return useMemo(
-    () => logs.filter((log) => isCliLogRelatedToSwap(log, swapId)),
+    () =>
+      logs
+        .slice()
+        .sort((a, b) => a[0] - b[0])
+        .map(([, log]) => log)
+        .filter((log) => isCliLogRelatedToSwap(log, swapId)),
     [logs, swapId],
   );
+}
+
+// Returns [index, log] pairs for the active swap only, ordered by index
+export function useActiveSwapLogPairs(): [number, CliLog | string][] {
+  const swapId = useActiveSwapId();
+  const logs = useAppSelector((s) => s.logs.state.logs);
+  return useMemo(
+    () =>
+      logs
+        .slice()
+        .sort((a, b) => a[0] - b[0])
+        .filter(([, log]) => isCliLogRelatedToSwap(log, swapId)),
+    [logs, swapId],
+  );
+}
+
+// Returns all logs ordered by their index as a flat list
+export function useOrderedLogs(): (CliLog | string)[] {
+  const logs = useAppSelector((s) => s.logs.state.logs);
+  return useMemo(
+    () =>
+      logs
+        .slice()
+        .sort((a, b) => a[0] - b[0])
+        .map(([, log]) => log),
+    [logs],
+  );
+}
+
+// Returns [index, log] pairs ordered by index
+export function useOrderedLogPairs(): [number, CliLog | string][] {
+  const logs = useAppSelector((s) => s.logs.state.logs);
+  return useMemo(() => logs.slice().sort((a, b) => a[0] - b[0]), [logs]);
 }
 
 export function useAllMakers() {

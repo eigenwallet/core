@@ -9,7 +9,7 @@ use swap::cli::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
             CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
             CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs,
-            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
+            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogWindowArgs, GetLogsArgs,
             GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse,
             GetRestoreHeightArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
@@ -23,6 +23,7 @@ use swap::cli::{
     command::Bitcoin,
 };
 use tauri::{async_runtime::RwLock, Manager, RunEvent};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
@@ -212,6 +213,8 @@ pub fn run() {
             reject_approval_request,
             get_restore_height,
             dfx_authenticate,
+            get_log_window,
+            put_logs_into_clipboard,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -253,6 +256,7 @@ tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
 tauri_command!(redact, RedactArgs);
 tauri_command!(send_monero, SendMoneroArgs);
+// get_log_window must be usable without context, so we do not use the macro
 
 // These commands require no arguments
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
@@ -392,6 +396,35 @@ async fn reject_approval_request(
         .to_string_result()?;
 
     Ok(RejectApprovalResponse { success: true })
+}
+
+#[tauri::command]
+async fn get_log_window(
+    args: GetLogWindowArgs,
+    state: tauri::State<'_, State>,
+) -> Result<swap::cli::api::request::GetLogWindowResponse, String> {
+    Ok(state
+        .handle
+        .get_log_window(args.start_index, args.end_index))
+}
+
+/// Copies a log window to the system clipboard as plain text.
+/// This command does not require the core Context; it reads from the in-memory buffer.
+#[tauri::command]
+async fn put_logs_into_clipboard(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, State>,
+) -> Result<(), String> {
+    // Fetch the entire available buffer by requesting a very wide range
+    let window = state.handle.get_log_window(0, u64::MAX);
+
+    let text = window.lines.join("\n");
+
+    app.clipboard()
+        .write_text(text)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 #[tauri::command]

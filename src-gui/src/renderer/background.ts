@@ -7,7 +7,7 @@ import {
   approvalEventReceived,
   backgroundProgressEventReceived,
 } from "store/features/rpcSlice";
-import { receivedCliLog } from "store/features/logsSlice";
+import { receivedCliLogIndex } from "store/features/logsSlice";
 import { poolStatusReceived } from "store/features/poolSlice";
 import { swapProgressEventReceived } from "store/features/swapSlice";
 import logger from "utils/logger";
@@ -109,8 +109,9 @@ export async function setupBackgroundTasks(): Promise<void> {
         store.dispatch(contextStatusEventReceived(eventData));
         break;
 
-      case "CliLog":
-        store.dispatch(receivedCliLog(eventData));
+      case "CliLogIndex":
+        console.log("CliLogIndex", eventData);
+        store.dispatch(receivedCliLogIndex(eventData));
         break;
 
       case "BalanceChange":
