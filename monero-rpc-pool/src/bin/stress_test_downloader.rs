@@ -143,7 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Arc::new(
         reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(3 * 60 + 30)) // used in wallet2
+            .timeout(std::time::Duration::from_secs(10 * 60 + 30)) // used in wallet2
             .build()
             .expect("Failed to build reqwest client"),
     );

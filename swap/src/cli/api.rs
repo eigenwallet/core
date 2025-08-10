@@ -860,7 +860,9 @@ async fn open_monero_wallet(
                             // None means the user rejected the password request
                             // We prompt him to select a wallet again
                             None => {
-                                seed_choice = request_seed_choice(tauri_handle.clone().unwrap(), database).await?;
+                                seed_choice =
+                                    request_seed_choice(tauri_handle.clone().unwrap(), database)
+                                        .await?;
                                 continue;
                             }
                         };
