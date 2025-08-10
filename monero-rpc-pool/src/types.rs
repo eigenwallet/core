@@ -67,24 +67,6 @@ impl NodeHealthStats {
             self.success_count as f64 / total as f64
         }
     }
-
-    pub fn reliability_score(&self) -> f64 {
-        let success_rate = self.success_rate();
-        let total_requests = self.success_count + self.failure_count;
-
-        // Weight success rate by total requests (more requests = more reliable data)
-        let request_weight = (total_requests as f64).min(200.0) / 200.0;
-        let mut score = success_rate * request_weight;
-
-        // Factor in latency - lower latency = higher score
-        if let Some(avg_latency) = self.avg_latency_ms {
-            // Normalize latency to 0-1 range (assuming 0-2000ms range)
-            let latency_factor = 1.0 - (avg_latency.min(2000.0) / 2000.0);
-            score = score * 0.8 + latency_factor * 0.2; // 80% success rate, 20% latency
-        }
-
-        score
-    }
 }
 
 /// A complete node record combining address, metadata, and health stats
@@ -113,9 +95,5 @@ impl NodeRecord {
 
     pub fn success_rate(&self) -> f64 {
         self.health.success_rate()
-    }
-
-    pub fn reliability_score(&self) -> f64 {
-        self.health.reliability_score()
     }
 }

@@ -175,4 +175,18 @@ impl ConnectionPool {
             }
         }
     }
+
+    /// Check if there's an available (unlocked) connection for the given key.
+    pub async fn has_available_connection(&self, key: &StreamKey) -> bool {
+        let map = self.inner.read().await;
+        if let Some(vec_lock) = map.get(key) {
+            let vec = vec_lock.read().await;
+            for sender_mutex in vec.iter() {
+                if sender_mutex.try_lock().is_ok() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
