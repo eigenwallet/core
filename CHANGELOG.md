@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.0.0-beta.7] - 2025-08-10
-
-## [3.0.0-beta.7] - 2025-08-08
-
 - GUI: Speedup startup by concurrently bootstrapping Tor and requesting the user to select a wallet
 - GUI: Add white background to QR code modal to make it better scannable
 - GUI + CLI + ASB: Add `/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa` to the default list of rendezvous points
