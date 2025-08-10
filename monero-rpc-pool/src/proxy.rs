@@ -242,7 +242,7 @@ async fn proxy_to_multiple_nodes(
 
         match error {
             Some(error) => {
-                push_error(&mut collected_errors, node, error);
+                push_error(&mut collected_errors, winner, error);
             }
             None => {
                 tracing::trace!(
