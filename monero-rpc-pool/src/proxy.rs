@@ -4,11 +4,9 @@ use axum::{
     http::{request::Parts, response, StatusCode},
     response::Response,
 };
-use futures::{stream::Stream, StreamExt};
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::{
@@ -167,18 +165,13 @@ async fn proxy_to_multiple_nodes(
                     winner = winner_node.clone();
                     response
                 }
-                Err(e) => {
-                    // Pair failed (both or main failed and hedge unavailable). Record both nodes.
-                    push_error(
-                        &mut collected_errors,
-                        node,
-                        HandlerError::PhyiscalError(e.clone()),
-                    );
-                    if let Some(hedge_node) = next.clone() {
+                Err(node_errors) => {
+                    // One or both nodes failed; record the specific errors for each
+                    for (failed_node, error) in node_errors {
                         push_error(
                             &mut collected_errors,
-                            hedge_node,
-                            HandlerError::PhyiscalError(e),
+                            failed_node,
+                            HandlerError::PhyiscalError(error),
                         );
                     }
                     continue;
@@ -294,6 +287,10 @@ async fn maybe_wrap_with_tls(
     }
 }
 
+/// Result type for hedged requests that tracks individual node failures
+type HedgedResult =
+    Result<(Response, (String, String, u16)), Vec<((String, String, u16), SingleRequestError)>>;
+
 /// Proxies a singular axum::Request to a given given main node with a specified hegde node
 /// If the main nodes response hasn't finished after SOFT_TIMEOUT, we proxy to the hedge node
 /// We then race the two responses, and return the one that finishes first (and is not an error)
@@ -302,7 +299,7 @@ async fn proxy_to_node_with_hedge(
     request: CloneableRequest,
     main_node: &(String, String, u16),
     hedge_node: &(String, String, u16),
-) -> Result<(Response, (String, String, u16)), SingleRequestError> {
+) -> HedgedResult {
     use std::future::Future;
 
     // Start the main request immediately
@@ -317,7 +314,7 @@ async fn proxy_to_node_with_hedge(
     let mut soft_timer = Box::pin(tokio::time::sleep(SOFT_TIMEOUT));
     let mut soft_timer_armed = true;
 
-    // If the main fails, keep its error to return if hedge also fails
+    // Track errors from both nodes
     let mut main_error: Option<SingleRequestError> = None;
 
     loop {
@@ -344,12 +341,18 @@ async fn proxy_to_node_with_hedge(
 
                         // If hedge exists, await it and prefer its result
                         if let Some(hf) = &mut hedge_fut {
-                            let hedge_res = hf.await;
-                            return hedge_res
-                                .map(|resp| (resp, hedge_node.clone()))
-                                .or_else(|_| Err(main_error.take().unwrap()));
+                            match hf.await {
+                                Ok(resp) => return Ok((resp, hedge_node.clone())),
+                                Err(hedge_err) => {
+                                    // Both failed, return errors for both nodes
+                                    let mut errors = vec![(main_node.clone(), main_error.take().unwrap())];
+                                    errors.push((hedge_node.clone(), hedge_err));
+                                    return Err(errors);
+                                }
+                            }
                         } else {
-                            return Err(main_error.take().unwrap());
+                            // Only main was tried and failed
+                            return Err(vec![(main_node.clone(), main_error.take().unwrap())]);
                         }
                     }
                 }
@@ -369,11 +372,15 @@ async fn proxy_to_node_with_hedge(
             res = &mut hedge_wait => {
                 match res {
                     Ok(resp) => return Ok((resp, hedge_node.clone())),
-                    Err(_hedge_err) => {
-                        // Hedge failed; if main already failed, return main's error, otherwise keep waiting on main
-                        if let Some(err) = main_error.take() {
-                            return Err(err);
+                    Err(h_err) => {
+                        // Hedge failed; if main already failed, return both errors
+                        if let Some(m_err) = main_error.take() {
+                            return Err(vec![
+                                (main_node.clone(), m_err),
+                                (hedge_node.clone(), h_err),
+                            ]);
                         }
+                        // Otherwise keep waiting on main
                         hedge_fut = None;
                     }
                 }
@@ -537,49 +544,6 @@ pub struct CloneableRequest {
     pub body: Vec<u8>,
 }
 
-/// A response that buffers the first 1KB for error checking and keeps the rest as a stream
-pub struct StreamableResponse {
-    parts: response::Parts,
-    first_chunk: Vec<u8>,
-    remaining_stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>>>,
-}
-
-/// A wrapper stream that tracks bandwidth usage
-struct BandwidthTrackingStream<S> {
-    inner: S,
-    bandwidth_tracker: Arc<crate::pool::BandwidthTracker>,
-}
-
-impl<S> BandwidthTrackingStream<S> {
-    fn new(inner: S, bandwidth_tracker: Arc<crate::pool::BandwidthTracker>) -> Self {
-        Self {
-            inner,
-            bandwidth_tracker,
-        }
-    }
-}
-
-impl<S> Stream for BandwidthTrackingStream<S>
-where
-    S: Stream<Item = Result<Vec<u8>, axum::Error>> + Unpin,
-{
-    type Item = Result<Vec<u8>, axum::Error>;
-
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let result = Pin::new(&mut self.inner).poll_next(cx);
-
-        if let std::task::Poll::Ready(Some(Ok(ref chunk))) = result {
-            let chunk_size = chunk.len() as u64;
-            self.bandwidth_tracker.record_bytes(chunk_size);
-        }
-
-        result
-    }
-}
-
 /// A cloneable response that buffers the body in memory
 #[derive(Clone)]
 pub struct CloneableResponse {
@@ -624,117 +588,6 @@ impl CloneableRequest {
                 .and_then(|m| m.as_str().map(|s| s.to_string())),
             Err(_) => None,
         }
-    }
-}
-
-impl StreamableResponse {
-    const ERROR_CHECK_SIZE: usize = 1024; // 1KB
-
-    /// Convert a streaming response with bandwidth tracking
-    pub async fn from_response_with_tracking(
-        response: Response<Body>,
-        node_pool: Option<Arc<crate::pool::NodePool>>,
-    ) -> Result<Self, axum::Error> {
-        let (parts, body) = response.into_parts();
-        let mut body_stream = body.into_data_stream();
-
-        let mut first_chunk = Vec::new();
-        let mut remaining_chunks = Vec::new();
-        let mut total_read = 0;
-
-        // Collect chunks until we have at least 1KB for error checking
-        while total_read < Self::ERROR_CHECK_SIZE {
-            match body_stream.next().await {
-                Some(Ok(chunk)) => {
-                    let chunk_bytes = chunk.to_vec();
-                    let needed = Self::ERROR_CHECK_SIZE - total_read;
-
-                    if chunk_bytes.len() <= needed {
-                        // Entire chunk goes to first_chunk
-                        first_chunk.extend_from_slice(&chunk_bytes);
-                        total_read += chunk_bytes.len();
-                    } else {
-                        // Split the chunk
-                        first_chunk.extend_from_slice(&chunk_bytes[..needed]);
-                        remaining_chunks.push(chunk_bytes[needed..].to_vec());
-                        total_read += needed;
-                        break;
-                    }
-                }
-                Some(Err(e)) => return Err(e),
-                None => break, // End of stream
-            }
-        }
-
-        // Track bandwidth for the first chunk if we have a node pool
-        if let Some(ref node_pool) = node_pool {
-            node_pool.record_bandwidth(first_chunk.len() as u64);
-        }
-
-        // Create stream for remaining data
-        let remaining_stream =
-            if !remaining_chunks.is_empty() || total_read >= Self::ERROR_CHECK_SIZE {
-                let initial_chunks = remaining_chunks.into_iter().map(Ok);
-                let rest_stream = body_stream.map(|result| {
-                    result
-                        .map(|chunk| chunk.to_vec())
-                        .map_err(|e| axum::Error::new(e))
-                });
-                let combined_stream = futures::stream::iter(initial_chunks).chain(rest_stream);
-
-                // Wrap with bandwidth tracking if we have a node pool
-                let final_stream: Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>> =
-                    if let Some(node_pool) = node_pool.clone() {
-                        let bandwidth_tracker = node_pool.get_bandwidth_tracker();
-                        Box::pin(BandwidthTrackingStream::new(
-                            combined_stream,
-                            bandwidth_tracker,
-                        ))
-                    } else {
-                        Box::pin(combined_stream)
-                    };
-
-                Some(final_stream)
-            } else {
-                None
-            };
-
-        Ok(StreamableResponse {
-            parts,
-            first_chunk,
-            remaining_stream,
-        })
-    }
-
-    /// Get the status code
-    pub fn status(&self) -> StatusCode {
-        self.parts.status
-    }
-
-    /// Check for JSON-RPC errors in the first chunk
-    pub fn get_jsonrpc_error(&self) -> Option<String> {
-        get_jsonrpc_error(&self.first_chunk)
-    }
-
-    /// Convert to a streaming response
-    pub fn into_response(self) -> Response<Body> {
-        let body = if let Some(remaining_stream) = self.remaining_stream {
-            // Create a stream that starts with the first chunk, then continues with the rest
-            let first_chunk_stream =
-                futures::stream::once(futures::future::ready(Ok(self.first_chunk)));
-            let combined_stream = first_chunk_stream.chain(remaining_stream);
-            Body::from_stream(combined_stream)
-        } else {
-            // Only the first chunk exists
-            Body::from(self.first_chunk)
-        };
-
-        Response::from_parts(self.parts, body)
-    }
-
-    /// Get the size of the response (first chunk only, for bandwidth tracking)
-    pub fn first_chunk_size(&self) -> usize {
-        self.first_chunk.len()
     }
 }
 
