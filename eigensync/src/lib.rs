@@ -16,19 +16,6 @@ use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 
 use crate::protocol::{client, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange, ServerRequest};
 
-pub static INIT_AUTOMERGE: OnceLock<AutoCommit> = OnceLock::new();
-
-fn get_init_autocommit() -> AutoCommit {
-    INIT_AUTOMERGE.get_or_init(|| AutoCommit::load(&[133, 111, 74, 131, 88, 3, 75, 84, 1, 48, 0, 
-                                                    16, 139, 82, 195, 59, 223, 191, 74, 44, 186, 
-                                                    159, 214, 214, 200, 14, 181, 60, 1, 1, 0, 0, 
-                                                    0, 5, 21, 7, 52, 1, 66, 2, 86, 2, 112, 2, 
-                                                    127, 5, 115, 119, 97, 112, 115, 1, 127, 
-                                                    0, 127, 0, 127, 0]).unwrap().with_actor(ActorId::random()))
-        .clone()
-}
-
-
 pub type SyncBehaviour = request_response::cbor::Behaviour<ServerRequest, Response>;
 
 pub struct SyncLoop {
