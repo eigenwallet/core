@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
+- GUI: You can now change the Monero Node without having to restart.
+
 ## [3.0.0-beta.8] - 2025-08-10
 
 - GUI: Speedup startup by concurrently bootstrapping Tor and requesting the user to select a wallet
 - GUI: Add white background to QR code modal to make it better scannable
 - GUI + CLI + ASB: Add `/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa` to the default list of rendezvous points
 - GUI + CLI + ASB: Monero RPC pool now prioritizes nodes with pre-established TCP connections
-- ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
 
 ## [3.0.0-beta.6] - 2025-08-07
 
