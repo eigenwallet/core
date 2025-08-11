@@ -8,8 +8,6 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 
 const PROTOCOL: &str = "/eigensync/1.0.0";
-type OutEvent = request_response::Event<ServerRequest, Response>;
-type Message = request_response::Message<ServerRequest, Response>;
 
 #[derive(NetworkBehaviour)]
 pub struct Behaviour {
