@@ -25,7 +25,13 @@ import SendTransactionModal from "../SendTransactionModal";
 import { useNavigate } from "react-router-dom";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
+import SeedPhraseButton from "../SeedPhraseButton";
+import SeedPhraseModal from "../SeedPhraseModal";
 import DfxButton from "./DFXWidget";
+import {
+  GetMoneroSeedResponse,
+  GetRestoreHeightResponse,
+} from "models/tauriModel";
 
 interface WalletActionButtonsProps {
   balance: {
@@ -37,11 +43,16 @@ export default function WalletActionButtons({
   balance,
 }: WalletActionButtonsProps) {
   const navigate = useNavigate();
+
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
+  const [seedPhrase, setSeedPhrase] = useState<
+    [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
+  >(null);
 
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
+
   const handleMenuClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setMenuAnchorEl(event.currentTarget);
   };
@@ -55,6 +66,7 @@ export default function WalletActionButtons({
         open={restoreHeightDialogOpen}
         onClose={() => setRestoreHeightDialogOpen(false)}
       />
+      <SeedPhraseModal onClose={() => setSeedPhrase(null)} seed={seedPhrase} />
       <SendTransactionModal
         balance={balance}
         open={sendDialogOpen}
@@ -100,6 +112,10 @@ export default function WalletActionButtons({
             </ListItemIcon>
             <Typography>Restore Height</Typography>
           </MenuItem>
+          <SeedPhraseButton
+            onMenuClose={handleMenuClose}
+            onSeedPhraseSuccess={setSeedPhrase}
+          />
         </Menu>
       </Box>
     </>

@@ -238,11 +238,6 @@ export default function WalletOverview({
             pulsating={isSyncing}
           />
           <Box sx={{ textAlign: "right" }}>
-            {isSyncing && timeEstimation?.hasDirectKnowledge && (
-              <Typography variant="body2" color="text.secondary">
-                {timeEstimation.blocksLeft?.toLocaleString()} blocks left
-              </Typography>
-            )}
             {poolStatus && isSyncing && !timeEstimation?.isStuck && (
               <>
                 <Typography
@@ -260,6 +255,11 @@ export default function WalletOverview({
                     )}
                 </Typography>
               </>
+            )}
+            {isSyncing && timeEstimation?.hasDirectKnowledge && (
+              <Typography variant="body2" color="text.secondary">
+                {timeEstimation.blocksLeft?.toLocaleString()} blocks left
+              </Typography>
             )}
           </Box>
         </Box>

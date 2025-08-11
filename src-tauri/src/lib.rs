@@ -6,16 +6,16 @@ use swap::cli::{
     api::{
         data,
         request::{
-            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, CheckElectrumNodeArgs,
-            CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs,
-            CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs,
-            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
-            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
-            GetMoneroMainAddressArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse,
-            GetRestoreHeightArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
-            MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
-            SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
+            CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
+            CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse,
+            ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs,
+            GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
+            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
+            SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -206,12 +206,14 @@ pub fn run() {
             get_monero_balance,
             send_monero,
             get_monero_sync_progress,
+            get_monero_seed,
             check_seed,
             get_pending_approvals,
             set_monero_restore_height,
             reject_approval_request,
             get_restore_height,
             dfx_authenticate,
+            change_monero_node,
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -253,6 +255,7 @@ tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
 tauri_command!(redact, RedactArgs);
 tauri_command!(send_monero, SendMoneroArgs);
+tauri_command!(change_monero_node, ChangeMoneroNodeArgs);
 
 // These commands require no arguments
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
@@ -268,6 +271,7 @@ tauri_command!(get_restore_height, GetRestoreHeightArgs, no_args);
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
+tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
 
 /// Here we define Tauri commands whose implementation is not delegated to the Request trait
 #[tauri::command]

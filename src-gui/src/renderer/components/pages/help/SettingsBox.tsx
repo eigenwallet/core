@@ -834,7 +834,7 @@ function RendezvousPointsSetting() {
                           label="Add new rendezvous point"
                           value={newPoint}
                           onValidatedChange={setNewPoint}
-                          placeholder="/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE"
+                          placeholder="/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
                           fullWidth
                           isValid={isValidMultiAddressWithPeerId}
                           variant="outlined"

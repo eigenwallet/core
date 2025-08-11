@@ -1,7 +1,7 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
-    ApprovalRequestType, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
+    ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
@@ -2002,6 +2002,32 @@ impl Request for GetMoneroSyncProgressArgs {
 }
 
 #[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetMoneroSeedArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetMoneroSeedResponse {
+    pub seed: String,
+}
+
+impl Request for GetMoneroSeedArgs {
+    type Response = GetMoneroSeedResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        let seed = wallet.seed().await?;
+
+        Ok(GetMoneroSeedResponse { seed })
+    }
+}
+
+#[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetPendingApprovalsResponse {
     pub approvals: Vec<crate::cli::api::tauri_bindings::ApprovalRequest>,
@@ -2012,4 +2038,35 @@ pub struct GetPendingApprovalsResponse {
 pub struct DfxAuthenticateResponse {
     pub access_token: String,
     pub kyc_url: String,
+}
+
+// ChangeMoneroNode
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChangeMoneroNodeArgs {
+    pub node_config: MoneroNodeConfig,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChangeMoneroNodeResponse {
+    pub success: bool,
+}
+
+impl Request for ChangeMoneroNodeArgs {
+    type Response = ChangeMoneroNodeResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        change_monero_node(self, ctx).await
+    }
+}
+
+#[tracing::instrument(fields(method = "change_monero_node"), skip(context))]
+pub async fn change_monero_node(
+    args: ChangeMoneroNodeArgs,
+    context: Arc<Context>,
+) -> Result<ChangeMoneroNodeResponse> {
+    context.change_monero_node(args.node_config).await?;
+
+    Ok(ChangeMoneroNodeResponse { success: true })
 }

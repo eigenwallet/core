@@ -76,9 +76,10 @@ pub fn init(
         "swap_env",
         "swap_fs",
         "swap_serde",
+        "monero_rpc_pool",
     ];
 
-    let INFO_LEVEL_CRATES: Vec<&str> = vec!["monero_rpc_pool"];
+    let INFO_LEVEL_CRATES: Vec<&str> = vec![];
 
     // General log file for non-verbose logs
     let file_appender: RollingFileAppender = tracing_appender::rolling::never(&dir, "swap-all.log");

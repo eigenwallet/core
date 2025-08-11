@@ -44,6 +44,8 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
+  MoneroNodeConfig,
+  GetMoneroSeedResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -105,6 +107,7 @@ export const PRESET_RENDEZVOUS_POINTS = [
   "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
   "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
   "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
+  "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
 ];
 
 export async function fetchSellersAtPresetRendezvousPoints() {
@@ -493,9 +496,14 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
   );
 }
 
-export async function getMoneroSeed(): Promise<string> {
-  // Returns the wallet's seed phrase as a single string. Backend must expose the `get_monero_seed` command.
-  return await invokeNoArgs<string>("get_monero_seed");
+export async function getMoneroSeed(): Promise<GetMoneroSeedResponse> {
+  return await invokeNoArgs<GetMoneroSeedResponse>("get_monero_seed");
+}
+
+export async function getMoneroSeedAndRestoreHeight(): Promise<
+  [GetMoneroSeedResponse, GetRestoreHeightResponse]
+> {
+  return Promise.all([getMoneroSeed(), getRestoreHeight()]);
 }
 
 // Wallet management functions that handle Redux dispatching
@@ -639,4 +647,34 @@ export async function saveFilesInDialog(files: Record<string, string>) {
 
 export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
   return await invokeNoArgs<DfxAuthenticateResponse>("dfx_authenticate");
+}
+
+export async function changeMoneroNode(
+  nodeConfig: MoneroNodeConfig,
+): Promise<void> {
+  await invoke<{ node_config: MoneroNodeConfig }, void>("change_monero_node", {
+    node_config: nodeConfig,
+  });
+}
+
+// Helper function to create MoneroNodeConfig from current settings
+export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
+  const network = getNetwork();
+  const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
+  const moneroNodeUrl =
+    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+
+  const moneroNodeConfig =
+    useMoneroRpcPool ||
+    moneroNodeUrl == null ||
+    !(await getMoneroNodeStatus(moneroNodeUrl, network))
+      ? { type: "Pool" as const }
+      : {
+          type: "SingleNode" as const,
+          content: {
+            url: moneroNodeUrl,
+          },
+        };
+
+  return moneroNodeConfig;
 }

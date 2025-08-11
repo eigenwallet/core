@@ -3,7 +3,7 @@ mod repl;
 
 use clap::Parser;
 use cli::{Cli, Cmd};
-use swap_controller_api::AsbApiClient;
+use swap_controller_api::{AsbApiClient, MoneroSeedResponse};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -42,6 +42,19 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         Cmd::MoneroAddress => {
             let response = client.monero_address().await?;
             println!("The primary Monero address is {}", response.address);
+        }
+        Cmd::MoneroSeed => {
+            let MoneroSeedResponse {
+                seed,
+                restore_height,
+            } = client.monero_seed().await?;
+
+            println!("The seed of the internal Monero wallet is: \n{}", seed);
+            println!();
+            println!(
+                "The restore height of the internal Monero wallet is {}",
+                restore_height
+            );
         }
         Cmd::Multiaddresses => {
             let response = client.multiaddresses().await?;
