@@ -14,7 +14,7 @@ struct Foo {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333")?;
+    let multiaddr = Multiaddr::from_str("/ip4/0.0.0.0/tcp/3333")?;
 
     // for constant peer id
     let keypair = identity::Keypair::ed25519_from_bytes(
