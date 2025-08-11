@@ -55,7 +55,7 @@ export default function SeedPhraseModal({
         </Typography>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} variant="contained">
+        <Button onClick={onClose} variant="outlined">
           Close
         </Button>
       </DialogActions>
