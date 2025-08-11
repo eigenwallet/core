@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Box,
   Typography,
@@ -18,7 +18,7 @@ import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import AppsIcon from "@mui/icons-material/Apps";
-import { useAppSelector } from "store/hooks";
+import { useAppSelector, useAppDispatch } from "store/hooks";
 import {
   PiconeroAmount,
   FiatPiconeroAmount,
@@ -39,12 +39,14 @@ import ReceiveButton from "renderer/components/features/wallet/ReceiveButton.mob
 import SendButton from "renderer/components/features/wallet/SendButton.mobile";
 import DFXButton from "renderer/components/pages/monero/components/DFXWidget";
 import { useNavigate } from "react-router-dom";
+import { setUserHasSeenIntroduction } from "store/features/settingsSlice";
 
 /**
  * Mobile HomePage - displays wallet overview with real balance and transaction data
  */
 export default function HomePage() {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const theme = useTheme();
   const { balance, history, mainAddress, syncProgress } = useAppSelector(
     (state) => state.wallet.state,
@@ -58,6 +60,15 @@ export default function HomePage() {
   useEffect(() => {
     initializeMoneroWallet();
   }, []);
+
+  const handleIntroductionClick = () => {
+    // Reset introduction modal to show it again
+    dispatch(setUserHasSeenIntroduction(false));
+  };
+
+  const handleBeginSwapClick = () => {
+    navigate("/swap", { viewTransition: true });
+  };
 
   return (
     <Box
@@ -115,18 +126,10 @@ export default function HomePage() {
         <Typography variant="h6" gutterBottom>
           Get Started
         </Typography>
-        <Stack direction="row" spacing={2} sx={{ overflowX: "auto", pb: 1 }}>
-          <GetStartedCard
-            gradient="linear-gradient(135deg, #5b5bff 0%, #b85bff 100%)"
-            title="Begin Swaping"
-            subtitle="Swap BTC → XMR"
-          />
-          <GetStartedCard
-            gradient="linear-gradient(135deg, #ff8080 0%, #ff4d6d 100%)"
-            title="Introduction"
-            subtitle="What is eigenwalle"
-          />
-        </Stack>
+        <SwipeableGetStartedCards
+          onIntroductionClick={handleIntroductionClick}
+          onBeginSwapClick={handleBeginSwapClick}
+        />
       </Box>
 
       {/* Transactions */}
@@ -181,31 +184,217 @@ export default function HomePage() {
   );
 }
 
+// Swipeable Get Started Cards Component
+function SwipeableGetStartedCards({
+  onIntroductionClick,
+  onBeginSwapClick,
+}: {
+  onIntroductionClick: () => void;
+  onBeginSwapClick: () => void;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [startX, setStartX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const cards = [
+    {
+      gradient: "linear-gradient(135deg, #5b5bff 0%, #b85bff 100%)",
+      title: "Begin Swaping",
+      subtitle: "Swap BTC → XMR",
+      onClick: onBeginSwapClick,
+    },
+    {
+      gradient: "linear-gradient(135deg, #ff8080 0%, #ff4d6d 100%)",
+      title: "Introduction",
+      subtitle: "What is eigenwalle",
+      onClick: onIntroductionClick,
+    },
+  ];
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setStartX(e.touches[0].clientX);
+    setIsDragging(true);
+    setDragOffset(0);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    
+    const currentX = e.touches[0].clientX;
+    const offset = currentX - startX;
+    setDragOffset(offset);
+    
+    // Prevent default scrolling when swiping horizontally
+    if (Math.abs(offset) > 10) {
+      e.preventDefault();
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging) return;
+    
+    const threshold = 50; // Minimum swipe distance
+    
+    if (Math.abs(dragOffset) > threshold) {
+      if (dragOffset > 0 && currentIndex > 0) {
+        // Swipe right - go to previous card
+        setCurrentIndex(currentIndex - 1);
+      } else if (dragOffset < 0 && currentIndex < cards.length - 1) {
+        // Swipe left - go to next card
+        setCurrentIndex(currentIndex + 1);
+      }
+    }
+    
+    setIsDragging(false);
+    setDragOffset(0);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setStartX(e.clientX);
+    setIsDragging(true);
+    setDragOffset(0);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    
+    const currentX = e.clientX;
+    const offset = currentX - startX;
+    setDragOffset(offset);
+  };
+
+  const handleMouseUp = () => {
+    if (!isDragging) return;
+    
+    const threshold = 50;
+    
+    if (Math.abs(dragOffset) > threshold) {
+      if (dragOffset > 0 && currentIndex > 0) {
+        setCurrentIndex(currentIndex - 1);
+      } else if (dragOffset < 0 && currentIndex < cards.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      }
+    }
+    
+    setIsDragging(false);
+    setDragOffset(0);
+  };
+
+  return (
+    <Box
+      sx={{
+        position: "relative",
+        width: "100%",
+        overflow: "hidden",
+        touchAction: "pan-y", // Allow vertical scrolling but capture horizontal
+      }}
+    >
+      <Box
+        ref={containerRef}
+        sx={{
+          display: "flex",
+          width: `${cards.length * 100}%`,
+          transform: `translateX(${(-currentIndex * 100) / cards.length + (isDragging ? (dragOffset / window.innerWidth) * 100 / cards.length : 0)}%)`,
+          transition: isDragging ? "none" : "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          cursor: isDragging ? "grabbing" : "grab",
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {cards.map((card, index) => (
+          <Box
+            key={index}
+            sx={{
+              width: `${100 / cards.length}%`,
+              px: 1,
+              flexShrink: 0,
+            }}
+          >
+            <GetStartedCard
+              gradient={card.gradient}
+              title={card.title}
+              subtitle={card.subtitle}
+              onClick={card.onClick}
+              isClickable={!isDragging && Math.abs(dragOffset) < 10}
+            />
+          </Box>
+        ))}
+      </Box>
+      
+      {/* Dots indicator */}
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          gap: 1,
+          mt: 2,
+        }}
+      >
+        {cards.map((_, index) => (
+          <Box
+            key={index}
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              backgroundColor: index === currentIndex ? "primary.main" : "grey.300",
+              transition: "background-color 0.3s",
+            }}
+          />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 // Reusable Get Started card
 function GetStartedCard({
   gradient,
   title,
   subtitle,
+  onClick,
+  isClickable = true,
 }: {
   gradient: string;
   title: string;
   subtitle: string;
+  onClick?: () => void;
+  isClickable?: boolean;
 }) {
   return (
     <Card
       sx={{
-        minWidth: 220,
+        width: "100%",
         borderRadius: 3,
         background: gradient,
         color: "#fff",
-        flexShrink: 0,
+        cursor: onClick && isClickable ? "pointer" : "default",
+        transition: "transform 0.2s",
+        "&:hover": onClick && isClickable ? {
+          transform: "scale(1.02)",
+        } : {},
+        "&:active": onClick && isClickable ? {
+          transform: "scale(0.98)",
+        } : {},
+      }}
+      onClick={() => {
+        if (onClick && isClickable) {
+          onClick();
+        }
       }}
     >
-      <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+      <CardContent sx={{ p: 3, "&:last-child": { pb: 3 } }}>
+        <Typography variant="h6" fontWeight={600} gutterBottom>
           {title}
         </Typography>
-        <Typography variant="caption" sx={{ opacity: 0.9 }}>
+        <Typography variant="body2" sx={{ opacity: 0.9 }}>
           {subtitle}
         </Typography>
       </CardContent>
