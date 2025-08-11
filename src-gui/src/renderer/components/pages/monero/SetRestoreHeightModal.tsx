@@ -81,7 +81,7 @@ export default function SetRestoreHeightModal({
   return (
     <MobileDialog open={open} onClose={onClose}>
       <MobileDialogHeader title="Set Restore Height" onClose={onClose} />
-      <DialogContent sx={{ minWidth: "500px", minHeight: "300px" }}>
+      <DialogContent sx={{ minHeight: "300px", md: { minWidth: "500px" } }}>
         <Accordion
           elevation={0}
           expanded={restoreOption === RestoreOption.BlockHeight}
