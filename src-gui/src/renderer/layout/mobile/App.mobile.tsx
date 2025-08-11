@@ -9,6 +9,7 @@ import HomePage from "./pages/HomePage";
 
 import GlobalSnackbarProvider from "renderer/components/snackbar/GlobalSnackbarProvider";
 import SettingsPage from "./pages/SettingsPage";
+import FeedbackPage from "./pages/FeedbackPage";
 
 export default function App() {
   return (
@@ -34,8 +35,8 @@ function InnerContent() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/feedback" element={<FeedbackPage />} />
         {/* <Route path="/history" element={<HistoryPage />} /> */}
-        {/* <Route path="/feedback" element={<FeedbackPage />} /> */}
       </Routes>
     </Box>
   );
