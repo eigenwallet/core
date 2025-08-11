@@ -27,6 +27,7 @@ use super::AccessMode;
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
 pub struct EigensyncDocument {
+    // swap_id, swap
     states: HashMap<String, String>
 }
 
@@ -325,7 +326,7 @@ impl Database for SqliteDatabase {
             eigensync_handle.write().await.modify(|document| {
                 document.states.insert(swap_id_str.clone(), swap.clone());
                 Ok(())
-            })?;
+            }).await?;
         }
 
         sqlx::query!(
