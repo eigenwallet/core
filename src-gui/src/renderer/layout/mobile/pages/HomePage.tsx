@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
   Typography,
@@ -15,7 +15,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import AppsIcon from "@mui/icons-material/Apps";
 import { useAppSelector } from "store/hooks";
@@ -39,6 +39,8 @@ import ReceiveButton from "renderer/components/features/wallet/ReceiveButton.mob
 import SendButton from "renderer/components/features/wallet/SendButton.mobile";
 import DFXButton from "renderer/components/pages/monero/components/DFXWidget";
 import { useNavigate } from "react-router-dom";
+import SwipeableActionBottomSheet from "renderer/components/modal/SwipeableActionBottomSheet";
+import TextIconButton from "renderer/components/buttons/TextIconButton";
 
 /**
  * Mobile HomePage - displays wallet overview with real balance and transaction data
@@ -50,6 +52,7 @@ export default function HomePage() {
     (state) => state.wallet.state,
   );
   const bitcoinBalance = useAppSelector((state) => state.rpc.state.balance);
+  const [bottomSheetOpen, setBottomSheetOpen] = useState(false);
 
   const isLoading = balance === null;
   const hasTransactions =
@@ -108,6 +111,9 @@ export default function HomePage() {
         <ReceiveButton address={mainAddress} />
         <SendButton balance={balance} />
         <DFXButton />
+        <TextIconButton label="More" onClick={() => setBottomSheetOpen(true)}>
+          <MoreVertIcon />
+        </TextIconButton>
       </Stack>
 
       {/* Get Started */}
@@ -173,6 +179,13 @@ export default function HomePage() {
       >
         <HelpOutlineIcon />
       </IconButton>
+
+      {/* Mobile Action Bottom Sheet */}
+      <SwipeableActionBottomSheet
+        open={bottomSheetOpen}
+        onOpen={() => setBottomSheetOpen(true)}
+        onClose={() => setBottomSheetOpen(false)}
+      />
     </Box>
   );
 }
