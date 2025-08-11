@@ -8,13 +8,14 @@ use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
-use crate::seed::Seed;
+use crate::seed::{self, Seed};
 use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
-use eigensync::EigensyncHandle;
+use eigensync::{EigensyncHandle, EigensyncHandleBackgroundSync};
 use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
+use tokio_util::task::AbortOnDropHandle;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -183,7 +184,6 @@ impl Default for SwapLock {
 /// For example, the `history` command doesn't require wallet initialization.
 ///
 /// Many fields are wrapped in `Arc` for thread-safe sharing.
-#[derive(Clone)]
 pub struct Context {
     pub db: Arc<dyn Database + Send + Sync>,
     pub swap_lock: Arc<SwapLock>,
@@ -195,6 +195,8 @@ pub struct Context {
     tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     #[allow(dead_code)]
     monero_rpc_pool_handle: Option<Arc<monero_rpc_pool::PoolHandle>>,
+    #[allow(dead_code)]
+    background_sync_task: Option<AbortOnDropHandle<()>>,
 }
 
 /// A conveniant builder struct for [`Context`].
@@ -449,7 +451,9 @@ impl ContextBuilder {
         let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333").context("")?;
         let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
 
-        let eigensync_handle = Arc::new(RwLock::new(EigensyncHandle::new(multiaddr, server_peer_id).unwrap()));
+        let mut eigensync_handle = Arc::new(RwLock::new(EigensyncHandle::new(
+            multiaddr, server_peer_id, seed.derive_eigensync_identity()).await.unwrap()));
+        let background_sync_task = eigensync_handle.background_sync();
 
         let db = open_db(
             data_dir.join("sqlite"),
@@ -546,6 +550,7 @@ impl ContextBuilder {
             tauri_handle: self.tauri_handle,
             tor_client: tor,
             monero_rpc_pool_handle,
+            background_sync_task: Some(background_sync_task),
         };
 
         tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
@@ -582,6 +587,7 @@ impl Context {
             tauri_handle: None,
             tor_client: None,
             monero_rpc_pool_handle: None,
+            background_sync_task: None,
         }
     }
 

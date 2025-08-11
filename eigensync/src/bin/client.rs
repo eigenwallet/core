@@ -5,7 +5,7 @@ use automerge::{AutoCommit};
 use autosurgeon::{hydrate, Hydrate, Reconcile};
 use eigensync::EigensyncHandle;
 use libp2p::{
-    Multiaddr, PeerId,
+    identity, Multiaddr, PeerId
 };
 use uuid::Uuid;
 
@@ -50,7 +50,11 @@ async fn main() -> anyhow::Result<()> {
     let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333").context("")?;
     let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
 
-    let mut eigensync = EigensyncHandle::<State>::new(multiaddr, server_peer_id).unwrap();
+    let keypair = identity::Keypair::ed25519_from_bytes(
+        hex::decode("f77cb5d03f443675b431454acd7d45f6f032ab4d71b7ff672e662cc3e765e705").unwrap(),
+    )
+    .unwrap();
+    let mut eigensync = EigensyncHandle::<State>::new(multiaddr, server_peer_id, keypair).await.unwrap();
 
     eigensync.modify(|state| {
         add_swap(state, SwapState {
@@ -74,7 +78,6 @@ async fn main() -> anyhow::Result<()> {
     
             Ok(())
         }).await.unwrap();
-        let _ = eigensync.save_and_sync().await.inspect_err(|e| eprintln!("Error: {:?}", e));
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
 

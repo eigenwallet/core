@@ -323,10 +323,10 @@ impl Database for SqliteDatabase {
         let swap_id_str = swap_id.to_string();
 
         if let Some(eigensync_handle) = &self.eigensync_handle {
-            eigensync_handle.write().await.modify(|document| {
+            eigensync_handle.write().await.save_updates_local(|document| {
                 document.states.insert(swap_id_str.clone(), swap.clone());
                 Ok(())
-            }).await?;
+            })?;
         }
 
         sqlx::query!(

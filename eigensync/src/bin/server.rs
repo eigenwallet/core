@@ -67,7 +67,6 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
                         ServerRequest::UploadChangesToServer { changes } => {
 
                             println!("Received ServerRequest::UploadChangesToServer");
-                            println!("Changes: {:?}", changes);
                             let peer_changes = global_changes.entry(peer).or_insert(Vec::new());
 
                             // extend but dont duplicate changes

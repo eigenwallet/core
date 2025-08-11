@@ -3179,6 +3179,7 @@ dependencies = [
  "libp2p",
  "serde",
  "tokio",
+ "tokio-util",
  "uuid",
 ]
 
