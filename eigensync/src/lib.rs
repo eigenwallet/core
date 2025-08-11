@@ -178,6 +178,10 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
             .collect()
     }
 
+    pub fn get_document_state(&mut self) -> anyhow::Result<T> {
+        hydrate(&self.document).context("Failed to hydrate document")
+    }
+
     pub async fn modify(&mut self, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
         self.save_updates_local(f)?;
 
@@ -207,6 +211,8 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
         }
 
         self.document.apply_changes(new_changes).context("Failed to apply changes")?;
+
+        println!("Document state after sync: {:?}", hydrate::<_, T>(&self.document).unwrap());
 
         Ok(())
     }

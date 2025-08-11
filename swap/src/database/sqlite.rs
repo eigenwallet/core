@@ -352,6 +352,18 @@ impl Database for SqliteDatabase {
     }
 
     async fn get_state(&self, swap_id: Uuid) -> Result<State> {
+        if let Some(eigensync_handle) = &self.eigensync_handle {
+            let document_state = eigensync_handle.write().await.get_document_state()?;
+            // Check if we have a state for this swap_id in the document
+            if let Some(state_str) = document_state.states.get(&swap_id.to_string()) {
+                // Parse the state string from the document and insert it into the database
+                let swap: Swap = serde_json::from_str(state_str)?;
+                let state = State::from(swap);
+                println!("Inserting state {:?} from document", state);
+                self.insert_latest_state(swap_id, state).await?;
+            }
+        }
+
         let swap_id = swap_id.to_string();
         let row = sqlx::query!(
             r#"
@@ -372,10 +384,31 @@ impl Database for SqliteDatabase {
             .context(format!("No state in database for swap: {}", swap_id))?;
         let swap: Swap = serde_json::from_str(&row.state)?;
 
+        if let Some(eigensync_handle) = &self.eigensync_handle {
+            eigensync_handle.write().await.save_updates_local(|document| {
+                let swap_json = serde_json::to_string(&swap)?;
+                println!("Inserting state {:?} from database", swap_json);
+                document.states.insert(swap_id.clone(), swap_json);
+                Ok(())
+            })?;
+        }
+
         Ok(swap.into())
     }
 
     async fn all(&self) -> Result<Vec<(Uuid, State)>> {
+        if let Some(eigensync_handle) = &self.eigensync_handle {
+            let document_state = eigensync_handle.write().await.get_document_state()?;
+            // Check if we have a state for this swap_id in the document
+            for (swap_id, state_str) in document_state.states.iter() {
+                // Parse the state string from the document and insert it into the database
+                let swap: Swap = serde_json::from_str(state_str)?;
+                let state = State::from(swap);
+                println!("Inserting state {:?} from document", state);
+                self.insert_latest_state(swap_id.parse::<Uuid>().unwrap(), state).await?;
+            }
+        }
+        
         let rows = sqlx::query!(
             r#"
             SELECT swap_id, state
@@ -416,11 +449,41 @@ impl Database for SqliteDatabase {
             })
             .collect::<Vec<(Uuid, State)>>();
 
+        if let Some(eigensync_handle) = &self.eigensync_handle {
+            for (swap_id, state) in result.iter() {
+                let state_json = serde_json::to_string(&Swap::from(state.clone()))?;
+                eigensync_handle.write().await.save_updates_local(|document| {
+                    document.states.insert(swap_id.to_string(), state_json.clone());
+                    println!("Inserting state {:?} from database in all", state_json.clone());
+                    Ok(())
+                })?;
+            }
+        }
+
+        // if let Some(eigensync_handle) = &self.eigensync_handle {
+        //     eigensync_handle.write().await.save_updates_local(|document| {
+        //         document.states.insert(swap_id.clone(), swap.to_string());
+        //         Ok(())
+        //     })?;
+        // }
+
         Ok(result)
     }
 
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>> {
         let swap_id = swap_id.to_string();
+
+        if let Some(eigensync_handle) = &self.eigensync_handle {
+            let document_state = eigensync_handle.write().await.get_document_state()?;
+            // Check if we have a state for this swap_id in the document
+            for (swap_id, state_str) in document_state.states.iter() {
+                // Parse the state string from the document and insert it into the database
+                let swap: Swap = serde_json::from_str(state_str)?;
+                let state = State::from(swap);
+                println!("Inserting state {:?} from document", state);
+                self.insert_latest_state(swap_id.parse::<Uuid>().unwrap(), state).await?;
+            }
+        }
 
         // TODO: We should use query! instead of query here to allow for at-compile-time validation
         // I didn't manage to generate the mappings for the query! macro because of problems with sqlx-cli
@@ -447,6 +510,18 @@ impl Database for SqliteDatabase {
                 Ok(state)
             })
             .collect::<Result<Vec<State>>>();
+
+        if let Some(eigensync_handle) = &self.eigensync_handle {
+            if let Ok(states) = &result {
+                eigensync_handle.write().await.save_updates_local(|document| {
+                    let states_json: Vec<String> = states.iter().map(|state| 
+                        serde_json::to_string(&Swap::from(state.clone()))).collect::<Result<Vec<String>, _>>()?;
+                    document.states.insert(swap_id.clone(), states_json.join(","));
+                    println!("Inserting state {:?} from database in get_states", states_json);
+                    Ok(())
+                })?;
+            }
+        }
 
         result
     }
