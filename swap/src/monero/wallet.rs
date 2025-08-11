@@ -476,6 +476,7 @@ impl Wallets {
         self.main_wallet
             .call(move |wallet| wallet.set_daemon(&new_daemon))
             .await?;
+
         Ok(())
     }
 

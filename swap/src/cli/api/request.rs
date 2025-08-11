@@ -2033,10 +2033,7 @@ pub async fn change_monero_node(
     args: ChangeMoneroNodeArgs,
     context: Arc<Context>,
 ) -> Result<ChangeMoneroNodeResponse> {
-    context
-        .change_monero_node(args.node_config)
-        .await
-        .context("Failed to change Monero node")?;
+    context.change_monero_node(args.node_config).await?;
 
     Ok(ChangeMoneroNodeResponse { success: true })
 }

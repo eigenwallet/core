@@ -78,6 +78,11 @@ export function createMainListeners() {
           fetchSellersAtPresetRendezvousPoints(),
           initializeMoneroWallet(),
         ]);
+
+        // Also set the Monero node to the current one
+        // In case the user changed this WHILE the context was unavailable
+        const nodeConfig = await getCurrentMoneroNodeConfig();
+        await changeMoneroNode(nodeConfig);
       }
     },
   });
