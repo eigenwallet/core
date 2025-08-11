@@ -1,19 +1,26 @@
 import { ListItemIcon, MenuItem, Typography } from "@mui/material";
 import { Key as KeyIcon } from "@mui/icons-material";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { getMoneroSeed } from "renderer/rpc";
-import { GetMoneroSeedResponse } from "models/tauriModel";
+import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
+import {
+  GetMoneroSeedResponse,
+  GetRestoreHeightResponse,
+} from "models/tauriModel";
 
 interface SeedPhraseButtonProps {
   onMenuClose: () => void;
-  onSeedPhraseSuccess: (response: GetMoneroSeedResponse) => void;
+  onSeedPhraseSuccess: (
+    response: [GetMoneroSeedResponse, GetRestoreHeightResponse],
+  ) => void;
 }
 
 export default function SeedPhraseButton({
   onMenuClose,
   onSeedPhraseSuccess,
 }: SeedPhraseButtonProps) {
-  const handleSeedPhraseSuccess = (response: GetMoneroSeedResponse) => {
+  const handleSeedPhraseSuccess = (
+    response: [GetMoneroSeedResponse, GetRestoreHeightResponse],
+  ) => {
     onSeedPhraseSuccess(response);
     onMenuClose();
   };
@@ -21,7 +28,7 @@ export default function SeedPhraseButton({
   return (
     <MenuItem component="div">
       <PromiseInvokeButton
-        onInvoke={getMoneroSeed}
+        onInvoke={getMoneroSeedAndRestoreHeight}
         onSuccess={handleSeedPhraseSuccess}
         displayErrorSnackbar={true}
         variant="text"

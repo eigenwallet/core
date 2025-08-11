@@ -28,6 +28,10 @@ import SetRestoreHeightModal from "../SetRestoreHeightModal";
 import SeedPhraseButton from "../SeedPhraseButton";
 import SeedPhraseModal from "../SeedPhraseModal";
 import DfxButton from "./DFXWidget";
+import {
+  GetMoneroSeedResponse,
+  GetRestoreHeightResponse,
+} from "models/tauriModel";
 
 interface WalletActionButtonsProps {
   balance: {
@@ -39,28 +43,21 @@ export default function WalletActionButtons({
   balance,
 }: WalletActionButtonsProps) {
   const navigate = useNavigate();
+
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
-  const [seedPhraseDialogOpen, setSeedPhraseDialogOpen] = useState(false);
-  const [seedPhrase, setSeedPhrase] = useState<string>("");
+  const [seedPhrase, setSeedPhrase] = useState<
+    [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
+  >(null);
 
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
+
   const handleMenuClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setMenuAnchorEl(event.currentTarget);
   };
   const handleMenuClose = () => {
     setMenuAnchorEl(null);
-  };
-
-  const handleSeedPhraseSuccess = (seed: string) => {
-    setSeedPhrase(seed);
-    setSeedPhraseDialogOpen(true);
-  };
-
-  const handleSeedPhraseModalClose = () => {
-    setSeedPhraseDialogOpen(false);
-    setSeedPhrase(""); // Clear seed phrase when modal closes for security
   };
 
   return (
@@ -69,11 +66,7 @@ export default function WalletActionButtons({
         open={restoreHeightDialogOpen}
         onClose={() => setRestoreHeightDialogOpen(false)}
       />
-      <SeedPhraseModal
-        open={seedPhraseDialogOpen}
-        onClose={handleSeedPhraseModalClose}
-        seedPhrase={seedPhrase}
-      />
+      <SeedPhraseModal onClose={() => setSeedPhrase(null)} seed={seedPhrase} />
       <SendTransactionModal
         balance={balance}
         open={sendDialogOpen}
@@ -121,7 +114,7 @@ export default function WalletActionButtons({
           </MenuItem>
           <SeedPhraseButton
             onMenuClose={handleMenuClose}
-            onSeedPhraseSuccess={handleSeedPhraseSuccess}
+            onSeedPhraseSuccess={setSeedPhrase}
           />
         </Menu>
       </Box>

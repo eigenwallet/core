@@ -496,9 +496,14 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
   );
 }
 
-export async function getMoneroSeed(): Promise<string> {
-  const response = await invokeNoArgs<GetMoneroSeedResponse>("get_monero_seed");
-  return response.seed;
+export async function getMoneroSeed(): Promise<GetMoneroSeedResponse> {
+  return await invokeNoArgs<GetMoneroSeedResponse>("get_monero_seed");
+}
+
+export async function getMoneroSeedAndRestoreHeight(): Promise<
+  [GetMoneroSeedResponse, GetRestoreHeightResponse]
+> {
+  return Promise.all([getMoneroSeed(), getRestoreHeight()]);
 }
 
 // Wallet management functions that handle Redux dispatching
