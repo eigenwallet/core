@@ -150,7 +150,10 @@ export default function HomePage() {
             </Typography>
           </Stack>
         ) : (
-          <MobileTransactionHistory transactions={history!.transactions} />
+          <MobileTransactionHistory 
+            transactions={history!.transactions} 
+            onViewAll={() => navigate("/transactions", { viewTransition: true })}
+          />
         )}
       </Box>
 
@@ -213,50 +216,41 @@ function GetStartedCard({
 // Mobile-specific transaction history component
 function MobileTransactionHistory({
   transactions,
+  onViewAll,
 }: {
   transactions: TransactionInfo[];
+  onViewAll?: () => void;
 }) {
-  // Group transactions by date
-  const transactionGroups = _(transactions)
-    .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD"))
-    .map((txs, dateKey) => ({
-      date: dateKey,
-      displayDate: dayjs(dateKey).format("MMMM D, YYYY"),
-      transactions: _.orderBy(txs, ["timestamp"], ["desc"]),
-    }))
-    .orderBy(["date"], ["desc"])
-    .take(3) // Show only the most recent 3 groups for mobile
-    .value();
+  // Get the 4 most recent transactions
+  const recentTransactions = _.orderBy(transactions, ["timestamp"], ["desc"]).slice(0, 4);
 
   return (
-    <Stack spacing={3}>
-      {transactionGroups.map((group) => (
-        <Box key={group.date}>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mb: 1, fontSize: "0.75rem" }}
+    <Stack spacing={2}>
+      <Stack spacing={1.5}>
+        {recentTransactions.map((tx, index) => (
+          <React.Fragment key={tx.tx_hash}>
+            <TransactionItem transaction={tx} />
+            {index < recentTransactions.length - 1 && <Divider sx={{ opacity: 0.3 }} />}
+          </React.Fragment>
+        ))}
+      </Stack>
+      
+      {transactions.length > 4 && onViewAll && (
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={onViewAll}
+            sx={{
+              borderRadius: 20,
+              px: 3,
+              py: 1,
+              textTransform: "none",
+              fontWeight: 500,
+            }}
           >
-            {group.displayDate}
-          </Typography>
-          <Stack spacing={1.5}>
-            {group.transactions.slice(0, 3).map((tx) => (
-              <React.Fragment key={tx.tx_hash}>
-                <TransactionItem transaction={tx} />
-                <Divider sx={{ opacity: 0.3 }} />
-              </React.Fragment>
-            ))}
-          </Stack>
+            View all
+          </Button>
         </Box>
-      ))}
-      {transactions.length > 9 && (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ textAlign: "center", fontStyle: "italic" }}
-        >
-          Showing recent transactions only
-        </Typography>
       )}
     </Stack>
   );
