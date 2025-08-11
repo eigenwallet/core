@@ -1,0 +1,28 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            WITH scored AS (\n                SELECT \n                    n.scheme,\n                    n.host,\n                    n.port,\n                    CASE \n                        WHEN (COALESCE(stats.success_count, 0) + COALESCE(stats.failure_count, 0)) > 0 \n                        THEN CAST(COALESCE(stats.success_count, 0) AS REAL) / CAST(COALESCE(stats.success_count, 0) + COALESCE(stats.failure_count, 0) AS REAL)\n                        ELSE 0.0 \n                    END as base_score,\n                    MAX(\n                        ABS(RANDOM()) / CAST(0x7fffffffffffffff AS REAL),\n                        ABS(RANDOM()) / CAST(0x7fffffffffffffff AS REAL),\n                        ABS(RANDOM()) / CAST(0x7fffffffffffffff AS REAL)\n                    ) as r\n                FROM monero_nodes n\n                LEFT JOIN (\n                    SELECT \n                        node_id,\n                        SUM(CASE WHEN was_successful THEN 1 ELSE 0 END) as success_count,\n                        SUM(CASE WHEN NOT was_successful THEN 1 ELSE 0 END) as failure_count\n                    FROM (\n                        SELECT node_id, was_successful\n                        FROM health_checks \n                        ORDER BY timestamp DESC \n                        LIMIT 1000\n                    ) recent_checks\n                    GROUP BY node_id\n                ) stats ON n.id = stats.node_id\n                WHERE n.network = ?\n            )\n            SELECT scheme, host, port\n            FROM scored\n            ORDER BY (base_score * r) DESC, r DESC\n            LIMIT ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "scheme",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "host",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "port",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [false, false, false]
+  },
+  "hash": "4ce7c42906ba69e0c8e1c0dad952956edd582a0edecd45710e22dcb28785eeab"
+}

@@ -23,6 +23,8 @@ pub enum Cmd {
     MoneroBalance,
     /// Get Monero wallet address
     MoneroAddress,
+    /// Get Monero seed and restore height
+    MoneroSeed,
     /// Get external multiaddresses
     Multiaddresses,
     /// Get active connection count
