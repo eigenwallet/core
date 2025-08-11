@@ -26,13 +26,32 @@ import { useIsMobile } from "utils/useIsMobile";
 
 interface TransactionItemProps {
   transaction: TransactionInfo;
+  onClick?: () => void;
 }
 
-export default function TransactionItem({ transaction }: TransactionItemProps) {
-  const isIncoming = transaction.direction === TransactionDirection.In;
-  const displayDate = dayjs(transaction.timestamp * 1000).format(
-    "MMM DD YYYY, HH:mm",
+// Custom Monero Icon SVG component
+function MoneroIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm7.5 15h-3V9.5l-4.5 4.5-4.5-4.5V15h-3V8h3l4.5 4.5L16.5 8h3v7z"/>
+    </svg>
   );
+}
+
+export default function TransactionItem({ transaction, onClick }: TransactionItemProps) {
+  const isIncoming = transaction.direction === TransactionDirection.In;
+  const isMobile = useIsMobile();
+  
+  // Different date formats for mobile vs desktop
+  const displayDate = isMobile 
+    ? dayjs(transaction.timestamp * 1000).format("MMM DD, HH:mm")
+    : dayjs(transaction.timestamp * 1000).format("MMM DD YYYY, HH:mm");
 
   const amountStyles = isIncoming
     ? { color: "success.tint" }
@@ -41,6 +60,156 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
 
+  // Mobile layout
+  if (isMobile) {
+    return (
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          py: 1,
+          cursor: onClick ? "pointer" : "default",
+          "&:hover": onClick ? {
+            backgroundColor: "action.hover",
+            borderRadius: 1,
+          } : {},
+        }}
+        onClick={onClick}
+      >
+        {/* Left Section - Icon with Monero badge */}
+        <Box
+          sx={{
+            position: "relative",
+            mr: 2,
+          }}
+        >
+          {/* Main transaction icon */}
+          <Box
+            sx={{
+              width: 48,
+              height: 48,
+              borderRadius: "50%",
+              backgroundColor: isIncoming ? "success.main" : "error.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "white",
+            }}
+          >
+            {isIncoming ? <IncomingIcon fontSize="medium" /> : <OutgoingIcon fontSize="medium" />}
+          </Box>
+          
+          {/* Monero badge in bottom right corner */}
+          <Box
+            sx={{
+              position: "absolute",
+              bottom: -2,
+              right: -2,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              backgroundColor: "warning.main",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "2px solid",
+              borderColor: "background.paper",
+            }}
+          >
+            <MoneroIcon size={10} />
+          </Box>
+        </Box>
+
+        {/* Middle Section - Transaction details */}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          {/* Transaction type */}
+          <Typography
+            variant="body1"
+            sx={{
+              fontWeight: 500,
+              fontSize: "1rem",
+              color: "text.primary",
+              lineHeight: 1.2,
+            }}
+          >
+            {isIncoming ? "Received Monero" : "Sent Monero"}
+          </Typography>
+          
+          {/* Date */}
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              fontSize: "0.875rem",
+              lineHeight: 1.2,
+            }}
+          >
+            {displayDate}
+          </Typography>
+        </Box>
+
+        {/* Right Section - Amount display */}
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            minWidth: 0,
+          }}
+        >
+          {/* Cryptocurrency amount */}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                opacity: !isIncoming ? 1 : 0,
+                fontWeight: "bold",
+                ...amountStyles,
+                fontSize: "1rem",
+              }}
+            >
+              {!isIncoming ? "−" : ""}
+            </Typography>
+            <Typography
+              variant="h6"
+              sx={{ 
+                fontWeight: "bold", 
+                ...amountStyles,
+                fontSize: "1rem",
+              }}
+            >
+              <PiconeroAmount
+                amount={transaction.amount}
+                labelStyles={{ fontSize: 14, ml: -0.3 }}
+                disableTooltip
+              />
+            </Typography>
+          </Box>
+          
+          {/* Fiat equivalent */}
+          <Typography 
+            variant="caption" 
+            sx={{ 
+              color: "text.secondary",
+              fontSize: "0.875rem",
+            }}
+          >
+            <FiatPiconeroAmount amount={transaction.amount} />
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Desktop layout (unchanged)
   return (
     <Box
       sx={{
@@ -111,11 +280,6 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
             <Typography variant="caption">
               <FiatPiconeroAmount amount={transaction.amount} />
             </Typography>
-            {useIsMobile() && (
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                {displayDate}
-              </Typography>
-            )}
           </Box>
         </Box>
       </Box>
@@ -127,15 +291,13 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
           gap: 1,
         }}
       >
-        {!useIsMobile() && (
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            sx={{ fontSize: 14 }}
-          >
-            {displayDate}
-          </Typography>
-        )}
+        <Typography
+          variant="body1"
+          color="text.secondary"
+          sx={{ fontSize: 14 }}
+        >
+          {displayDate}
+        </Typography>
         <ConfirmationsBadge confirmations={transaction.confirmations} />
         <IconButton
           onClick={(event) => {

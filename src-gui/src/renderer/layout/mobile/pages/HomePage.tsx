@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
   Typography,
@@ -39,6 +39,7 @@ import ReceiveButton from "renderer/components/features/wallet/ReceiveButton.mob
 import SendButton from "renderer/components/features/wallet/SendButton.mobile";
 import DFXButton from "renderer/components/pages/monero/components/DFXWidget";
 import { useNavigate } from "react-router-dom";
+import TransactionDetailsBottomSheet from "renderer/components/modal/TransactionDetailsBottomSheet";
 
 /**
  * Mobile HomePage - displays wallet overview with real balance and transaction data
@@ -54,6 +55,20 @@ export default function HomePage() {
   const isLoading = balance === null;
   const hasTransactions =
     history && history.transactions && history.transactions.length > 0;
+
+  // Bottom sheet state
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionInfo | null>(null);
+  const [bottomSheetOpen, setBottomSheetOpen] = useState(false);
+
+  const handleTransactionClick = (transaction: TransactionInfo) => {
+    setSelectedTransaction(transaction);
+    setBottomSheetOpen(true);
+  };
+
+  const handleBottomSheetClose = () => {
+    setBottomSheetOpen(false);
+    setSelectedTransaction(null);
+  };
 
   useEffect(() => {
     initializeMoneroWallet();
@@ -153,6 +168,7 @@ export default function HomePage() {
           <MobileTransactionHistory 
             transactions={history!.transactions} 
             onViewAll={() => navigate("/transactions", { viewTransition: true })}
+            onTransactionClick={handleTransactionClick}
           />
         )}
       </Box>
@@ -177,6 +193,13 @@ export default function HomePage() {
       >
         <HelpOutlineIcon />
       </IconButton>
+
+      {/* Transaction Details Bottom Sheet */}
+      <TransactionDetailsBottomSheet
+        open={bottomSheetOpen}
+        onClose={handleBottomSheetClose}
+        transaction={selectedTransaction}
+      />
     </Box>
   );
 }
@@ -217,9 +240,11 @@ function GetStartedCard({
 function MobileTransactionHistory({
   transactions,
   onViewAll,
+  onTransactionClick,
 }: {
   transactions: TransactionInfo[];
   onViewAll?: () => void;
+  onTransactionClick?: (transaction: TransactionInfo) => void;
 }) {
   // Get the 4 most recent transactions
   const recentTransactions = _.orderBy(transactions, ["timestamp"], ["desc"]).slice(0, 4);
@@ -229,7 +254,10 @@ function MobileTransactionHistory({
       <Stack spacing={1.5}>
         {recentTransactions.map((tx, index) => (
           <React.Fragment key={tx.tx_hash}>
-            <TransactionItem transaction={tx} />
+            <TransactionItem 
+              transaction={tx} 
+              onClick={onTransactionClick ? () => onTransactionClick(tx) : undefined}
+            />
             {index < recentTransactions.length - 1 && <Divider sx={{ opacity: 0.3 }} />}
           </React.Fragment>
         ))}
