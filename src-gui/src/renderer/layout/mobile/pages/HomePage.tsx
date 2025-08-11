@@ -176,6 +176,7 @@ export default function HomePage() {
           backdropFilter: "blur(10px)",
           zIndex: theme.zIndex.fab,
         }}
+        onClick={() => navigate("/feedback", { viewTransition: true })}
       >
         <HelpOutlineIcon />
       </IconButton>
