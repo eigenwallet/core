@@ -212,7 +212,7 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
 
         self.document.apply_changes(new_changes).context("Failed to apply changes")?;
 
-        println!("Document state after sync: {:?}", hydrate::<_, T>(&self.document).unwrap());
+       // println!("Document state after sync: {:?}", hydrate::<_, T>(&self.document).unwrap());
 
         Ok(())
     }

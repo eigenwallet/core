@@ -329,24 +329,29 @@ impl Database for SqliteDatabase {
             })?;
         }
 
-        sqlx::query!(
+        let res = sqlx::query!(
             r#"
-            insert into swap_states (
-                swap_id,
-                entered_at,
-                state
-                ) values (?, ?, ?);
+            INSERT INTO swap_states (swap_id, entered_at, state)
+            SELECT ?, ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM swap_states WHERE swap_id = ? AND state = ?
+            );
         "#,
             swap_id_str,
             entered_at,
+            swap,
+            swap_id_str,
             swap
         )
         .execute(&self.pool)
         .await?;
-
-        // Emit event to Tauri, the frontend will then send another request to get the latest state
-        // This is why we don't send the state here
-        self.tauri_handle.emit_swap_state_change_event(swap_id);
+        
+        // Emit only on actual insertion
+        if res.rows_affected() > 0 {
+            if let Some(tauri_handle) = &self.tauri_handle {
+                tauri_handle.emit_swap_state_change_event(swap_id);
+            }
+        }
 
         Ok(())
     }
