@@ -25,6 +25,8 @@ import SendTransactionModal from "../SendTransactionModal";
 import { useNavigate } from "react-router-dom";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
+import SeedPhraseButton from "../SeedPhraseButton";
+import SeedPhraseModal from "../SeedPhraseModal";
 import DfxButton from "./DFXWidget";
 
 interface WalletActionButtonsProps {
@@ -39,6 +41,8 @@ export default function WalletActionButtons({
   const navigate = useNavigate();
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
+  const [seedPhraseDialogOpen, setSeedPhraseDialogOpen] = useState(false);
+  const [seedPhrase, setSeedPhrase] = useState<string>("");
 
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
@@ -49,11 +53,26 @@ export default function WalletActionButtons({
     setMenuAnchorEl(null);
   };
 
+  const handleSeedPhraseSuccess = (seed: string) => {
+    setSeedPhrase(seed);
+    setSeedPhraseDialogOpen(true);
+  };
+
+  const handleSeedPhraseModalClose = () => {
+    setSeedPhraseDialogOpen(false);
+    setSeedPhrase(""); // Clear seed phrase when modal closes for security
+  };
+
   return (
     <>
       <SetRestoreHeightModal
         open={restoreHeightDialogOpen}
         onClose={() => setRestoreHeightDialogOpen(false)}
+      />
+      <SeedPhraseModal
+        open={seedPhraseDialogOpen}
+        onClose={handleSeedPhraseModalClose}
+        seedPhrase={seedPhrase}
       />
       <SendTransactionModal
         balance={balance}
@@ -100,6 +119,10 @@ export default function WalletActionButtons({
             </ListItemIcon>
             <Typography>Restore Height</Typography>
           </MenuItem>
+          <SeedPhraseButton
+            onMenuClose={handleMenuClose}
+            onSeedPhraseSuccess={handleSeedPhraseSuccess}
+          />
         </Menu>
       </Box>
     </>
