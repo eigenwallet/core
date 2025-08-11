@@ -44,6 +44,7 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
+  MoneroNodeConfig,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -640,4 +641,34 @@ export async function saveFilesInDialog(files: Record<string, string>) {
 
 export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
   return await invokeNoArgs<DfxAuthenticateResponse>("dfx_authenticate");
+}
+
+export async function changeMoneroNode(
+  nodeConfig: MoneroNodeConfig,
+): Promise<void> {
+  await invoke<{ node_config: MoneroNodeConfig }, void>("change_monero_node", {
+    node_config: nodeConfig,
+  });
+}
+
+// Helper function to create MoneroNodeConfig from current settings
+export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
+  const network = getNetwork();
+  const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
+  const moneroNodeUrl =
+    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+
+  const moneroNodeConfig =
+    useMoneroRpcPool ||
+    moneroNodeUrl == null ||
+    !(await getMoneroNodeStatus(moneroNodeUrl, network))
+      ? { type: "Pool" as const }
+      : {
+          type: "SingleNode" as const,
+          content: {
+            url: moneroNodeUrl,
+          },
+        };
+
+  return moneroNodeConfig;
 }

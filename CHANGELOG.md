@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
+- GUI: You can now change the Monero Node without having to restart.
+
 ## [3.0.0-beta.8] - 2025-08-10
 
 - GUI: Speedup startup by concurrently bootstrapping Tor and requesting the user to select a wallet
