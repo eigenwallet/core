@@ -650,11 +650,11 @@ impl Context {
 
         // Update the wallet manager's daemon configuration
         monero_manager
-            .change_monero_node(daemon)
+            .change_monero_node(daemon.clone())
             .await
             .context("Failed to change Monero node in wallet manager")?;
 
-        tracing::info!("Successfully changed Monero node configuration");
+        tracing::info!(?daemon, "Switched Monero node");
 
         Ok(())
     }

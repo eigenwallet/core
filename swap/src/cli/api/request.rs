@@ -2033,14 +2033,10 @@ pub async fn change_monero_node(
     args: ChangeMoneroNodeArgs,
     context: Arc<Context>,
 ) -> Result<ChangeMoneroNodeResponse> {
-    tracing::info!("Changing Monero node configuration");
-
     context
         .change_monero_node(args.node_config)
         .await
         .context("Failed to change Monero node")?;
-
-    tracing::info!("Successfully changed Monero node configuration");
 
     Ok(ChangeMoneroNodeResponse { success: true })
 }

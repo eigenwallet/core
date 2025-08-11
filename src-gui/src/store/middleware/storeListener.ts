@@ -146,7 +146,7 @@ export function createMainListeners() {
       try {
         const nodeConfig = await getCurrentMoneroNodeConfig();
         await changeMoneroNode(nodeConfig);
-        logger.info("Successfully changed Monero node configuration");
+        logger.info("Changed Monero node configuration to: ", nodeConfig);
       } catch (error) {
         logger.error("Failed to change Monero node configuration:", error);
       }
