@@ -329,46 +329,37 @@ impl Database for SqliteDatabase {
             })?;
         }
 
-        let res = sqlx::query!(
+        // Get the current state
+        let current_state = self.get_states(swap_id).await?;
+        
+        // if any match, no op
+        if current_state.contains(&state) {
+            return Ok(());
+        }
+
+        sqlx::query!(
             r#"
-            INSERT INTO swap_states (swap_id, entered_at, state)
-            SELECT ?, ?, ?
-            WHERE NOT EXISTS (
-                SELECT 1 FROM swap_states WHERE swap_id = ? AND state = ?
-            );
+            insert into swap_states (
+                swap_id,
+                entered_at,
+                state
+                ) values (?, ?, ?);
         "#,
             swap_id_str,
             entered_at,
-            swap,
-            swap_id_str,
             swap
         )
         .execute(&self.pool)
         .await?;
-        
-        // Emit only on actual insertion
-        if res.rows_affected() > 0 {
-            if let Some(tauri_handle) = &self.tauri_handle {
-                tauri_handle.emit_swap_state_change_event(swap_id);
-            }
-        }
+
+        // Emit event to Tauri, the frontend will then send another request to get the latest state
+        // This is why we don't send the state here
+        self.tauri_handle.emit_swap_state_change_event(swap_id);
 
         Ok(())
     }
 
     async fn get_state(&self, swap_id: Uuid) -> Result<State> {
-        if let Some(eigensync_handle) = &self.eigensync_handle {
-            let document_state = eigensync_handle.write().await.get_document_state()?;
-            // Check if we have a state for this swap_id in the document
-            if let Some(state_str) = document_state.states.get(&swap_id.to_string()) {
-                // Parse the state string from the document and insert it into the database
-                let swap: Swap = serde_json::from_str(state_str)?;
-                let state = State::from(swap);
-                println!("Inserting state {:?} from document", state);
-                self.insert_latest_state(swap_id, state).await?;
-            }
-        }
-
         let swap_id = swap_id.to_string();
         let row = sqlx::query!(
             r#"
