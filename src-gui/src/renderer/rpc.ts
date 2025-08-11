@@ -45,6 +45,7 @@ import {
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
   MoneroNodeConfig,
+  GetMoneroSeedResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -495,9 +496,14 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
   );
 }
 
-export async function getMoneroSeed(): Promise<string> {
-  // Returns the wallet's seed phrase as a single string. Backend must expose the `get_monero_seed` command.
-  return await invokeNoArgs<string>("get_monero_seed");
+export async function getMoneroSeed(): Promise<GetMoneroSeedResponse> {
+  return await invokeNoArgs<GetMoneroSeedResponse>("get_monero_seed");
+}
+
+export async function getMoneroSeedAndRestoreHeight(): Promise<
+  [GetMoneroSeedResponse, GetRestoreHeightResponse]
+> {
+  return Promise.all([getMoneroSeed(), getRestoreHeight()]);
 }
 
 // Wallet management functions that handle Redux dispatching

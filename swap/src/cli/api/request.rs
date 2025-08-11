@@ -1995,6 +1995,32 @@ impl Request for GetMoneroSyncProgressArgs {
 }
 
 #[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetMoneroSeedArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetMoneroSeedResponse {
+    pub seed: String,
+}
+
+impl Request for GetMoneroSeedArgs {
+    type Response = GetMoneroSeedResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        let seed = wallet.seed().await?;
+
+        Ok(GetMoneroSeedResponse { seed })
+    }
+}
+
+#[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetPendingApprovalsResponse {
     pub approvals: Vec<crate::cli::api::tauri_bindings::ApprovalRequest>,
