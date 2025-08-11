@@ -34,6 +34,12 @@ pub struct Swap {
     pub state: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MoneroSeedResponse {
+    pub seed: String,
+    pub restore_height: u64,
+}
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -44,6 +50,8 @@ pub trait AsbApi {
     async fn monero_balance(&self) -> Result<MoneroBalanceResponse, ErrorObjectOwned>;
     #[method(name = "monero_address")]
     async fn monero_address(&self) -> Result<MoneroAddressResponse, ErrorObjectOwned>;
+    #[method(name = "monero_seed")]
+    async fn monero_seed(&self) -> Result<MoneroSeedResponse, ErrorObjectOwned>;
     #[method(name = "multiaddresses")]
     async fn multiaddresses(&self) -> Result<MultiaddressesResponse, ErrorObjectOwned>;
     #[method(name = "active_connections")]
