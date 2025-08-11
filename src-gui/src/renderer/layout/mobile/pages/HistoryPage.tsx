@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Box,
   IconButton,
@@ -13,12 +13,27 @@ import TransactionItem from "renderer/components/pages/monero/components/Transac
 import { TransactionInfo } from "models/tauriModel";
 import dayjs from "dayjs";
 import _ from "lodash";
+import TransactionDetailsBottomSheet from "renderer/components/modal/TransactionDetailsBottomSheet";
 
 export default function TransactionsPage() {
   const navigate = useNavigate();
   const { history } = useAppSelector((state) => state.wallet.state);
   
   const hasTransactions = history && history.transactions && history.transactions.length > 0;
+
+  // Bottom sheet state
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionInfo | null>(null);
+  const [bottomSheetOpen, setBottomSheetOpen] = useState(false);
+
+  const handleTransactionClick = (transaction: TransactionInfo) => {
+    setSelectedTransaction(transaction);
+    setBottomSheetOpen(true);
+  };
+
+  const handleBottomSheetClose = () => {
+    setBottomSheetOpen(false);
+    setSelectedTransaction(null);
+  };
 
   return (
     <Box>
@@ -49,9 +64,19 @@ export default function TransactionsPage() {
             No transactions found
           </Typography>
         ) : (
-          <AllTransactionHistory transactions={history!.transactions} />
+          <AllTransactionHistory 
+            transactions={history!.transactions}
+            onTransactionClick={handleTransactionClick}
+          />
         )}
       </Box>
+
+      {/* Transaction Details Bottom Sheet */}
+      <TransactionDetailsBottomSheet
+        open={bottomSheetOpen}
+        onClose={handleBottomSheetClose}
+        transaction={selectedTransaction}
+      />
     </Box>
   );
 }
@@ -59,10 +84,12 @@ export default function TransactionsPage() {
 // Component to display all transactions grouped by date
 function AllTransactionHistory({
   transactions,
+  onTransactionClick,
 }: {
   transactions: TransactionInfo[];
+  onTransactionClick?: (transaction: TransactionInfo) => void;
 }) {
-  // Group transactions by date
+  
   const transactionGroups = _(transactions)
     .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD"))
     .map((txs, dateKey) => ({
@@ -87,7 +114,10 @@ function AllTransactionHistory({
           <Stack spacing={1.5}>
             {group.transactions.map((tx, index) => (
               <React.Fragment key={tx.tx_hash}>
-                <TransactionItem transaction={tx} />
+                <TransactionItem 
+                  transaction={tx}
+                  onClick={onTransactionClick ? () => onTransactionClick(tx) : undefined}
+                />
                 {index < group.transactions.length - 1 && <Divider sx={{ opacity: 0.3 }} />}
               </React.Fragment>
             ))}
