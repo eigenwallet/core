@@ -21,13 +21,13 @@ jobs:
           - bin: swap
             crate: swap
             target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             archive_ext: tar
           # Temporarily disabled armv7 Linux builds
           # - bin: swap
           #   crate: swap
           #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
+          #   os: ubuntu-22.04
           #   archive_ext: tar
           - bin: swap
             crate: swap
@@ -48,13 +48,13 @@ jobs:
           - bin: asb
             crate: swap-asb
             target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             archive_ext: tar
           # Temporarily disabled armv7 Linux builds
           # - bin: asb
           #   crate: swap-asb
           #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
+          #   os: ubuntu-22.04
           #   archive_ext: tar
           - bin: asb
             crate: swap-asb
@@ -75,13 +75,13 @@ jobs:
           - bin: asb-controller
             crate: swap-controller
             target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             archive_ext: tar
           # Temporarily disabled armv7 Linux builds
           # - bin: asb-controller
           #   crate: swap-controller
           #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
+          #   os: ubuntu-22.04
           #   archive_ext: tar
           - bin: asb-controller
             crate: swap-controller
@@ -102,13 +102,13 @@ jobs:
           - bin: orchestrator
             crate: swap-orchestrator
             target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             archive_ext: tar
           # Temporarily disabled armv7 Linux builds
           # - bin: orchestrator
           #   crate: swap-orchestrator
           #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
+          #   os: ubuntu-22.04
           #   archive_ext: tar
           - bin: orchestrator
             crate: swap-orchestrator
@@ -139,7 +139,7 @@ jobs:
         uses: ./.github/actions/set-monero-env
 
       - uses: actionhippie/swap-space@v1
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         with:
           size: 15G
 
@@ -166,11 +166,11 @@ jobs:
           cache-directories: ""
 
       - name: Configure apt for retries
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         run: ${{ env.APT_SET_CONF_COMMAND }}
 
-      - name: Install dependencies (ubuntu-latest)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Install dependencies (ubuntu-22.04)
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt update
           sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }} git
@@ -233,7 +233,7 @@ jobs:
         run: gtar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
 
       - name: Pack linux archive
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         shell: bash
         run: tar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
 
@@ -273,7 +273,7 @@ jobs:
 
   build_and_push_docker:
     name: Build and Push Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build_binaries
     permissions:
       contents: read
@@ -295,7 +295,7 @@ jobs:
       - name: Configure apt for retries
         run: ${{ env.APT_SET_CONF_COMMAND }}
 
-      - name: Install dependencies (ubuntu-latest)
+      - name: Install dependencies (ubuntu-22.04)
         run: |
           sudo apt update
           sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }}
