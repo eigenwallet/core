@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GUI: You can now change the Monero Node without having to restart.
 - GUI: You can now export the seed phrase of the Monero wallet.
 - GUI + CLI: Temporarily require a minimum of 12 confirmations for Monero transactions. Just a pre-caution given the Qubic shenanigans.
+- GUI + CLI + ASB: Add `/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X`, `/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk` to the default list of rendezvous points
 
 ## [3.0.0-beta.8] - 2025-08-10
 
