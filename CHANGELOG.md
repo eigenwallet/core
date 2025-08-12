@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.9] - 2025-08-12
+
 - ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
 - GUI: You can now change the Monero Node without having to restart.
 - GUI: You can now export the seed phrase of the Monero wallet.
@@ -633,7 +635,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.8...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.9...HEAD
+[3.0.0-beta.9]: https://github.com/eigenwallet/core/compare/3.0.0-beta.8...3.0.0-beta.9
 [3.0.0-beta.8]: https://github.com/eigenwallet/core/compare/3.0.0-beta.7...3.0.0-beta.8
 [3.0.0-beta.7]: https://github.com/eigenwallet/core/compare/3.0.0-beta.7...3.0.0-beta.7
 [3.0.0-beta.7]: https://github.com/eigenwallet/core/compare/3.0.0-beta.6...3.0.0-beta.7
