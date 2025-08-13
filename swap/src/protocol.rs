@@ -152,7 +152,7 @@ pub trait Database {
     async fn get_addresses(&self, peer_id: PeerId) -> Result<Vec<Multiaddr>>;
     async fn get_all_peer_addresses(&self) -> Result<Vec<(PeerId, Vec<Multiaddr>)>>;
     async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<String>;
-    async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()>;
+    async fn insert_latest_state(&self, swap_id: Uuid, state: State, entered_at: Option<OffsetDateTime>) -> Result<()>;
     async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: OffsetDateTime) -> Result<()>;
     async fn get_state(&self, swap_id: Uuid) -> Result<State>;
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;

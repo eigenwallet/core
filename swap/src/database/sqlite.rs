@@ -58,8 +58,7 @@ impl EigensyncDatabaseAdapter {
             let document = self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present");
             
             for (document_key, _state) in document.states.iter() {
-                // TODO: Fix upload_states signature
-                // self.upload_states(document_key, &document).await?;
+                self.upload_states().await?;
                 self.download_states(document_key, &document).await?;
             }
         }
@@ -68,7 +67,18 @@ impl EigensyncDatabaseAdapter {
     pub async fn upload_states(&self) -> anyhow::Result<()> {
         // get from db -> write into document
 
-        todo!("Fix upload_states implementation - signature and tuple destructuring issues")
+        for (swap_id, state, timestamp) in self.db.all().await? {
+            let swap = Swap::from(state);
+            let state_json = serde_json::to_string(&swap)?;
+            let key = format!("{}_{}", swap_id.to_string(), timestamp.to_string());
+            
+            self.eigensync_handle.write().await.modify(|document| {
+                document.states.insert(key, state_json);
+                Ok(())
+            }).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn download_states(&self, document_key: &str, document: &EigensyncDocument) -> anyhow::Result<()> {
@@ -79,6 +89,7 @@ impl EigensyncDatabaseAdapter {
         let db_states = self.db.get_states(Uuid::from_str(swap_id).expect("Swap ID should be a valid UUID")).await.expect("States should be present");
         
         for document_state in document_states {
+            let timestamp = document_key.split("_").nth(1).expect("Timestamp should be present");
             let swap: Swap = serde_json::from_str(&document_state)?;
             let state: State = swap.into();
             if db_states.contains(&state) {
@@ -86,7 +97,14 @@ impl EigensyncDatabaseAdapter {
             }
 
             // TODO: Extract timestamp from document_key
-            self.db.insert_latest_state(Uuid::from_str(swap_id).expect("Swap ID should be a valid UUID"), state).await?;
+            self.db.insert_latest_state(Uuid::from_str(swap_id)
+                .expect("Swap ID should be a valid UUID"), 
+                        state, 
+                        Some(OffsetDateTime::from_unix_timestamp(
+                                        timestamp.parse::<i64>()
+                                            .expect("Timestamp should be a valid i64"))
+                        .expect("Invalid timestamp")))
+                        .await?;
         }
         Ok(())
     }
@@ -365,10 +383,9 @@ impl Database for SqliteDatabase {
     }
 
     // TODO: This needs to take a timestamp as well (or None and then we generate it here)
-    async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
-        let entered_at = OffsetDateTime::now_utc();
-
+    async fn insert_latest_state(&self, swap_id: Uuid, state: State, entered_at: Option<OffsetDateTime>) -> Result<()> {
         let swap = serde_json::to_string(&Swap::from(state))?;
+        let entered_at = entered_at.unwrap_or(OffsetDateTime::now_utc());
         let entered_at = entered_at.to_string();
         let swap_id_str = swap_id.to_string();        
 
@@ -490,6 +507,13 @@ impl Database for SqliteDatabase {
                 Some((swap_id, state, entered_at))
             })
             .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
+
+        // if let Some(eigensync_handle) = &self.eigensync_handle {
+        //     eigensync_handle.write().await.save_updates_local(|document| {
+        //         document.states.insert(swap_id.clone(), swap.to_string());
+        //         Ok(())
+        //     })?;
+        // }
 
         Ok(result)
     }
