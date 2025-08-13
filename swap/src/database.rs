@@ -105,7 +105,7 @@ pub async fn open_db(
         let sqlite = SqliteDatabase::open(sqlite_path, access_mode)
             .await?
             .with_tauri_handle(tauri_handle.into())
-            .with_eigensync_handle(eigensync_handle.into());
+            .with_eigensync_adapter(eigensync_handle.into());
 
         Ok(Arc::new(sqlite))
     } else {
@@ -116,7 +116,7 @@ pub async fn open_db(
         let sqlite = SqliteDatabase::open(sqlite_path, access_mode)
             .await?
             .with_tauri_handle(tauri_handle.into())
-            .with_eigensync_handle(eigensync_handle.into());
+            .with_eigensync_adapter(eigensync_handle.into());
 
         Ok(Arc::new(sqlite))
     }
