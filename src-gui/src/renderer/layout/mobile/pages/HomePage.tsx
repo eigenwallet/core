@@ -138,27 +138,6 @@ export default function HomePage() {
         )}
       </Box>
 
-      {/* Floating help button */}
-      <IconButton
-        sx={{
-          position: "fixed",
-          bottom: 24,
-          right: 24,
-          width: 48,
-          height: 48,
-          borderRadius: "50%",
-          backgroundColor:
-            theme.palette.mode === "dark"
-              ? "rgba(255,255,255,0.08)"
-              : theme.palette.grey[200],
-          backdropFilter: "blur(10px)",
-          zIndex: theme.zIndex.fab,
-        }}
-        onClick={() => navigate("/feedback", { viewTransition: true })}
-      >
-        <HelpOutlineIcon />
-      </IconButton>
-
       {/* Mobile Action Bottom Sheet */}
       <SwipeableActionBottomSheet
         open={actionBottomSheetOpen}
