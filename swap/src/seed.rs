@@ -74,6 +74,11 @@ impl Seed {
         identity::Keypair::ed25519_from_bytes(bytes).expect("we always pass 32 bytes")
     }
 
+    pub fn derive_eigensync_identity(&self) -> identity::Keypair {
+        let bytes = self.derive(b"NETWORK").derive(b"EIGENSYNC_IDENTITY").bytes();
+        identity::Keypair::ed25519_from_bytes(bytes).expect("we always pass 32 bytes")
+    }
+
     /// Create seed from a Monero wallet mnemonic string
     pub fn from_mnemonic(mnemonic: String) -> Result<Self, Error> {
         let monero_seed = MoneroSeed::from_string(Language::English, Zeroizing::new(mnemonic))

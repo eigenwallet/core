@@ -7,21 +7,88 @@ use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use autosurgeon::{Hydrate, Reconcile};
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
+use tokio::sync::RwLock;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use eigensync::EigensyncHandle;
+
 use super::AccessMode;
+
+#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
+pub struct EigensyncDocument {
+    // swap_id, swap
+    // TODO: Instead of just UUID as key, we want ot use:
+    //      (swap_id, entered_at) as a key
+    //      We cannot use a tupe as a key so we encode as swap-id + "_" + entered_at
+    states: HashMap<String, String>
+}
+
+pub struct EigensyncDatabaseAdapter {
+    eigensync_handle: Arc<RwLock<EigensyncHandle<EigensyncDocument>>>,
+    db: SqliteDatabase,
+}
 
 pub struct SqliteDatabase {
     pool: Pool<Sqlite>,
     tauri_handle: Option<TauriHandle>,
+}
+
+impl EigensyncDatabaseAdapter {
+    pub fn new(eigensync_handle: Arc<RwLock<EigensyncHandle<EigensyncDocument>>>, sqlite_database: SqliteDatabase) -> Self {
+        Self { eigensync_handle, db: sqlite_database }
+    }
+
+    pub async fn run(&mut self) -> anyhow::Result<()> {
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            
+            let document = self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present");
+            
+            for (document_key, _state) in document.states.iter() {
+                // TODO: Fix upload_states signature
+                // self.upload_states(document_key, &document).await?;
+                self.download_states(document_key, &document).await?;
+            }
+        }
+    }
+
+    pub async fn upload_states(&self) -> anyhow::Result<()> {
+        // get from db -> write into document
+
+        todo!("Fix upload_states implementation - signature and tuple destructuring issues")
+    }
+
+    pub async fn download_states(&self, document_key: &str, document: &EigensyncDocument) -> anyhow::Result<()> {
+        // get from document -> write into db
+        
+        let document_states: HashSet<String> = document.states.values().cloned().collect();
+        let swap_id = document_key.split("_").next().expect("Swap ID should be present");
+        let db_states = self.db.get_states(Uuid::from_str(swap_id).expect("Swap ID should be a valid UUID")).await.expect("States should be present");
+        
+        for document_state in document_states {
+            let swap: Swap = serde_json::from_str(&document_state)?;
+            let state: State = swap.into();
+            if db_states.contains(&state) {
+                continue;
+            }
+
+            // TODO: Extract timestamp from document_key
+            self.db.insert_latest_state(Uuid::from_str(swap_id).expect("Swap ID should be a valid UUID"), state).await?;
+        }
+        Ok(())
+    }
 }
 
 impl SqliteDatabase {
@@ -296,12 +363,13 @@ impl Database for SqliteDatabase {
             .ok_or_else(|| anyhow!("Could not get swap start date"))
     }
 
+    // TODO: This needs to take a timestamp as well (or None and then we generate it here)
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
         let entered_at = OffsetDateTime::now_utc();
 
         let swap = serde_json::to_string(&Swap::from(state))?;
         let entered_at = entered_at.to_string();
-        let swap_id_str = swap_id.to_string();
+        let swap_id_str = swap_id.to_string();        
 
         sqlx::query!(
             r#"
@@ -321,6 +389,29 @@ impl Database for SqliteDatabase {
         // Emit event to Tauri, the frontend will then send another request to get the latest state
         // This is why we don't send the state here
         self.tauri_handle.emit_swap_state_change_event(swap_id);
+
+        Ok(())
+    }
+
+    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: OffsetDateTime) -> Result<()> {
+        let swap = serde_json::to_string(&Swap::from(state))?;
+        let entered_at = entered_at.to_string();
+        let swap_id_str = swap_id.to_string();
+        
+        sqlx::query!(
+            r#"
+            insert into swap_states (
+                swap_id,
+                entered_at,
+                state
+                ) values (?, ?, ?);
+        "#,
+            swap_id_str,
+            entered_at,
+            swap
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -349,12 +440,13 @@ impl Database for SqliteDatabase {
         Ok(swap.into())
     }
 
-    async fn all(&self) -> Result<Vec<(Uuid, State)>> {
+    // TODO: Return timestamp here as well
+    async fn all(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT swap_id, state
+            SELECT swap_id, state, entered_at
             FROM (
-                SELECT max(id), swap_id, state
+                SELECT max(id), swap_id, state, entered_at
                 FROM swap_states
                 GROUP BY swap_id
             )
@@ -366,8 +458,8 @@ impl Database for SqliteDatabase {
         let result = rows
             .iter()
             .filter_map(|row| {
-                let (Some(swap_id), Some(state)) = (&row.swap_id, &row.state) else {
-                    tracing::error!("Row didn't contain state or swap_id when it should have");
+                let (Some(swap_id), Some(state), Some(entered_at)) = (&row.swap_id, &row.state, &row.entered_at) else {
+                    tracing::error!("Row didn't contain state, swap_id or entered_at when it should have");
                     return None;
                 };
 
@@ -386,9 +478,17 @@ impl Database for SqliteDatabase {
                     }
                 };
 
-                Some((swap_id, state))
+                let entered_at = match OffsetDateTime::parse(entered_at, &time::format_description::well_known::Rfc3339) {
+                    Ok(timestamp) => timestamp,
+                    Err(e) => {
+                        tracing::error!(%swap_id, entered_at = %entered_at, error = ?e, "Failed to parse timestamp");
+                        return None;
+                    }
+                };
+
+                Some((swap_id, state, entered_at))
             })
-            .collect::<Vec<(Uuid, State)>>();
+            .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
 
         Ok(result)
     }
@@ -421,7 +521,6 @@ impl Database for SqliteDatabase {
                 Ok(state)
             })
             .collect::<Result<Vec<State>>>();
-
         result
     }
 
@@ -526,10 +625,17 @@ mod tests {
 
         assert_eq!(latest_loaded.len(), 2);
 
-        assert!(latest_loaded.contains(&(swap_id_1, state_2)));
-        assert!(latest_loaded.contains(&(swap_id_2, state_3)));
+        // Check that the correct states are present for each swap_id
+        let swap_1_states: Vec<_> = latest_loaded.iter().filter(|(id, _, _)| *id == swap_id_1).collect();
+        let swap_2_states: Vec<_> = latest_loaded.iter().filter(|(id, _, _)| *id == swap_id_2).collect();
+        
+        assert_eq!(swap_1_states.len(), 1);
+        assert_eq!(swap_2_states.len(), 1);
+        assert_eq!(swap_1_states[0].1, state_2);
+        assert_eq!(swap_2_states[0].1, state_3);
 
-        assert!(!latest_loaded.contains(&(swap_id_1, state_1)));
+        // Verify that state_1 is not the latest state for swap_id_1
+        assert_ne!(swap_1_states[0].1, state_1);
     }
 
     #[tokio::test]

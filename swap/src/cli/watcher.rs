@@ -160,7 +160,7 @@ impl Watcher {
             .await?
             .into_iter()
             // Filter for BobState
-            .filter_map(|(uuid, state)| match state {
+            .filter_map(|(uuid, state, _)| match state {
                 State::Bob(bob_state) => Some((uuid, bob_state)),
                 _ => None,
             })

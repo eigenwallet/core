@@ -1,8 +1,11 @@
 pub use alice::Alice;
 pub use bob::Bob;
+use eigensync::EigensyncHandle;
 pub use sqlite::SqliteDatabase;
+use tokio::sync::RwLock;
 
 use crate::cli::api::tauri_bindings::TauriHandle;
+use crate::database::sqlite::EigensyncDocument;
 use crate::protocol::{Database, State};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -13,7 +16,7 @@ use swap_fs::ensure_directory_exists;
 
 mod alice;
 mod bob;
-mod sqlite;
+pub mod sqlite;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Swap {
@@ -94,6 +97,7 @@ pub async fn open_db(
     sqlite_path: impl AsRef<Path>,
     access_mode: AccessMode,
     tauri_handle: impl Into<Option<TauriHandle>>,
+    eigensync_handle: impl Into<Option<Arc<RwLock<EigensyncHandle<EigensyncDocument>>>>>,
 ) -> Result<Arc<dyn Database + Send + Sync>> {
     if sqlite_path.as_ref().exists() {
         tracing::debug!("Using existing sqlite database.");
@@ -101,6 +105,8 @@ pub async fn open_db(
         let sqlite = SqliteDatabase::open(sqlite_path, access_mode)
             .await?
             .with_tauri_handle(tauri_handle.into());
+            // TODO: Implement with_eigensync_adapter method
+            // .with_eigensync_adapter(eigensync_handle.into());
 
         Ok(Arc::new(sqlite))
     } else {
@@ -111,6 +117,8 @@ pub async fn open_db(
         let sqlite = SqliteDatabase::open(sqlite_path, access_mode)
             .await?
             .with_tauri_handle(tauri_handle.into());
+            // TODO: Implement with_eigensync_adapter method
+            // .with_eigensync_adapter(eigensync_handle.into());
 
         Ok(Arc::new(sqlite))
     }

@@ -242,7 +242,7 @@ pub struct GetSwapInfoResponse {
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     pub timelock: Option<ExpiredTimelocks>,
-    pub monero_receive_pool: MoneroAddressPool,
+    pub monero_receive_pool: Option<MoneroAddressPool>,
 }
 
 impl Request for GetSwapInfoArgs {
@@ -796,7 +796,7 @@ pub async fn get_swap_infos_all(context: Arc<Context>) -> Result<Vec<GetSwapInfo
     let swap_ids = context.db.all().await?;
     let mut swap_infos = Vec::new();
 
-    for (swap_id, _) in swap_ids {
+    for (swap_id, _, _) in swap_ids {
         match get_swap_info(GetSwapInfoArgs { swap_id }, context.clone()).await {
             Ok(swap_info) => swap_infos.push(swap_info),
             Err(error) => {
@@ -884,7 +884,14 @@ pub async fn get_swap_info(
 
     let timelock = swap_state.expired_timelocks(bitcoin_wallet.clone()).await?;
 
-    let monero_receive_pool = context.db.get_monero_address_pool(args.swap_id).await?;
+    let monero_receive_pool = context
+        .db
+        .get_monero_address_pool(args.swap_id)
+        .await
+        .inspect_err(|err| {
+            tracing::error!(%args.swap_id, %err, "Failed to get monero receive pool");
+        })
+        .ok();
 
     Ok(GetSwapInfoResponse {
         swap_id: args.swap_id,
@@ -1321,7 +1328,7 @@ pub async fn cancel_and_refund(
 pub async fn get_history(context: Arc<Context>) -> Result<GetHistoryResponse> {
     let swaps = context.db.all().await?;
     let mut vec: Vec<GetHistoryEntry> = Vec::new();
-    for (swap_id, state) in swaps {
+    for (swap_id, state, _) in swaps {
         let state: BobState = state.try_into()?;
         vec.push(GetHistoryEntry {
             swap_id,

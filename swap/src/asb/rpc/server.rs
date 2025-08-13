@@ -129,7 +129,7 @@ impl AsbApiServer for RpcImpl {
 
         let swaps = swaps
             .into_iter()
-            .map(|(swap_id, state)| {
+            .map(|(swap_id, state, _)| {
                 let state_str = match state {
                     crate::protocol::State::Alice(state) => format!("{state}"),
                     crate::protocol::State::Bob(state) => format!("{state}"),
