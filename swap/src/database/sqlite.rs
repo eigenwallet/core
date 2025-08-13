@@ -58,7 +58,8 @@ impl EigensyncDatabaseAdapter {
             let document = self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present");
             
             for (document_key, _state) in document.states.iter() {
-                self.upload_states(document_key, &document).await?;
+                // TODO: Fix upload_states signature
+                // self.upload_states(document_key, &document).await?;
                 self.download_states(document_key, &document).await?;
             }
         }
@@ -67,13 +68,7 @@ impl EigensyncDatabaseAdapter {
     pub async fn upload_states(&self) -> anyhow::Result<()> {
         // get from db -> write into document
 
-        for (swap_id, state, timestamp) in self.db.all().await? {
-            let swap = Swap::from(state);
-            let state_json = serde_json::to_string(&swap)?;
-            let key = format!("{}_{}", swap_id.to_string(), timestamp.to_string());
-            
-            document.write().states.insert(key, state_json);
-        }
+        todo!("Fix upload_states implementation - signature and tuple destructuring issues")
     }
 
     pub async fn download_states(&self, document_key: &str, document: &EigensyncDocument) -> anyhow::Result<()> {
@@ -399,6 +394,27 @@ impl Database for SqliteDatabase {
         Ok(())
     }
 
+    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: OffsetDateTime) -> Result<()> {
+        let swap = serde_json::to_string(&Swap::from(state))?;
+        let entered_at = entered_at.to_string();
+        let swap_id_str = swap_id.to_string();
+        
+        sqlx::query!(
+            r#"
+            insert into swap_states (
+                swap_id,
+                entered_at,
+                state
+                ) values (?, ?, ?);
+        "#,
+            swap_id_str,
+            entered_at,
+            swap
+        )
+        .execute(&self.pool)
+        .await?;
+    }
+
     async fn get_state(&self, swap_id: Uuid) -> Result<State> {
         let swap_id = swap_id.to_string();
         let row = sqlx::query!(
@@ -424,12 +440,12 @@ impl Database for SqliteDatabase {
     }
 
     // TODO: Return timestamp here as well
-    async fn all(&self) -> Result<Vec<(Uuid, State)>> {
+    async fn all(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT swap_id, state
+            SELECT swap_id, state, entered_at
             FROM (
-                SELECT max(id), swap_id, state
+                SELECT max(id), swap_id, state, entered_at
                 FROM swap_states
                 GROUP BY swap_id
             )
@@ -441,8 +457,8 @@ impl Database for SqliteDatabase {
         let result = rows
             .iter()
             .filter_map(|row| {
-                let (Some(swap_id), Some(state)) = (&row.swap_id, &row.state) else {
-                    tracing::error!("Row didn't contain state or swap_id when it should have");
+                let (Some(swap_id), Some(state), Some(entered_at)) = (&row.swap_id, &row.state, &row.entered_at) else {
+                    tracing::error!("Row didn't contain state, swap_id or entered_at when it should have");
                     return None;
                 };
 
@@ -461,16 +477,9 @@ impl Database for SqliteDatabase {
                     }
                 };
 
-                Some((swap_id, state))
+                Some((swap_id, state, entered_at))
             })
-            .collect::<Vec<(Uuid, State)>>();
-
-        // if let Some(eigensync_handle) = &self.eigensync_handle {
-        //     eigensync_handle.write().await.save_updates_local(|document| {
-        //         document.states.insert(swap_id.clone(), swap.to_string());
-        //         Ok(())
-        //     })?;
-        // }
+            .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
 
         Ok(result)
     }
