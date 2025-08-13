@@ -14,7 +14,6 @@ use rust_decimal::Decimal;
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
 use tokio::sync::RwLock;
-use tokio::task;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
@@ -650,10 +649,17 @@ mod tests {
 
         assert_eq!(latest_loaded.len(), 2);
 
-        assert!(latest_loaded.contains(&(swap_id_1, state_2)));
-        assert!(latest_loaded.contains(&(swap_id_2, state_3)));
+        // Check that the correct states are present for each swap_id
+        let swap_1_states: Vec<_> = latest_loaded.iter().filter(|(id, _, _)| *id == swap_id_1).collect();
+        let swap_2_states: Vec<_> = latest_loaded.iter().filter(|(id, _, _)| *id == swap_id_2).collect();
+        
+        assert_eq!(swap_1_states.len(), 1);
+        assert_eq!(swap_2_states.len(), 1);
+        assert_eq!(swap_1_states[0].1, state_2);
+        assert_eq!(swap_2_states[0].1, state_3);
 
-        assert!(!latest_loaded.contains(&(swap_id_1, state_1)));
+        // Verify that state_1 is not the latest state for swap_id_1
+        assert_ne!(swap_1_states[0].1, state_1);
     }
 
     #[tokio::test]
