@@ -100,11 +100,7 @@ export default function HomePage() {
           }}
         />
         <Typography variant="h5" fontWeight={600} flexGrow={1}>
-          Wallet 1
-          <ExpandMoreIcon
-            fontSize="small"
-            sx={{ ml: 0.5, verticalAlign: "middle" }}
-          />
+          eigenwallet
         </Typography>
         <IconButton
           size="small"
@@ -130,25 +126,6 @@ export default function HomePage() {
           <MoreVertIcon />
         </TextIconButton>
       </Stack>
-
-      {/* Get Started */}
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          Get Started
-        </Typography>
-        <Stack direction="row" spacing={2} sx={{ overflowX: "auto", pb: 1 }}>
-          <GetStartedCard
-            gradient="linear-gradient(135deg, #5b5bff 0%, #b85bff 100%)"
-            title="Begin Swaping"
-            subtitle="Swap BTC → XMR"
-          />
-          <GetStartedCard
-            gradient="linear-gradient(135deg, #ff8080 0%, #ff4d6d 100%)"
-            title="Introduction"
-            subtitle="What is eigenwalle"
-          />
-        </Stack>
-      </Box>
 
       {/* Transactions */}
       <Box flexGrow={1}>
@@ -214,38 +191,6 @@ export default function HomePage() {
         transaction={selectedTransaction}
       />
     </Box>
-  );
-}
-
-// Reusable Get Started card
-function GetStartedCard({
-  gradient,
-  title,
-  subtitle,
-}: {
-  gradient: string;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <Card
-      sx={{
-        minWidth: 220,
-        borderRadius: 3,
-        background: gradient,
-        color: "#fff",
-        flexShrink: 0,
-      }}
-    >
-      <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
-        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-          {title}
-        </Typography>
-        <Typography variant="caption" sx={{ opacity: 0.9 }}>
-          {subtitle}
-        </Typography>
-      </CardContent>
-    </Card>
   );
 }
 
