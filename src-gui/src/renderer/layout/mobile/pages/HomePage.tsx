@@ -42,6 +42,8 @@ import { useNavigate } from "react-router-dom";
 import SwipeableActionBottomSheet from "renderer/components/modal/SwipeableActionBottomSheet";
 import TextIconButton from "renderer/components/buttons/TextIconButton";
 import TransactionDetailsBottomSheet from "renderer/components/modal/TransactionDetailsBottomSheet";
+import AvatarWithProgress from "renderer/components/other/AvatarWithProgress";
+import Header from "../components/Header";
 
 /**
  * Mobile HomePage - displays wallet overview with real balance and transaction data
@@ -49,12 +51,14 @@ import TransactionDetailsBottomSheet from "renderer/components/modal/Transaction
 export default function HomePage() {
   const navigate = useNavigate();
   const theme = useTheme();
-  const { balance, history, mainAddress, syncProgress } = useAppSelector(
+  const { balance, history, mainAddress } = useAppSelector(
     (state) => state.wallet.state,
   );
   const bitcoinBalance = useAppSelector((state) => state.rpc.state.balance);
 
-  const isLoading = balance === null;
+  const syncProgress = 0.8;
+
+  const isLoading = true;
   const hasTransactions =
     history && history.transactions && history.transactions.length > 0;
 
@@ -87,29 +91,7 @@ export default function HomePage() {
       }}
     >
       {/* Header */}
-      <Stack direction="row" alignItems="center" spacing={2}>
-        {/* Gradient avatar placeholder */}
-        <Box
-          sx={{
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            background:
-              "radial-gradient(circle at 30% 30%, #00FFC2 0%, #004F3B 100%)",
-            border: `2px solid ${theme.palette.background.paper}`,
-          }}
-        />
-        <Typography variant="h5" fontWeight={600} flexGrow={1}>
-          eigenwallet
-        </Typography>
-        <IconButton
-          size="small"
-          color="inherit"
-          onClick={() => navigate("/settings", { viewTransition: true })}
-        >
-          <SettingsIcon />
-        </IconButton>
-      </Stack>
+      <Header />
 
       {/* Balances */}
       <Stack spacing={1}>
