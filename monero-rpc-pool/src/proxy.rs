@@ -271,7 +271,7 @@ async fn maybe_wrap_with_tls(
         // Get root certificates for proper TLS verification
         let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
         root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        
+
         // Create TLS client config with proper certificate validation
         let config = tokio_rustls::rustls::ClientConfig::builder()
             .with_root_certificates(root_cert_store)

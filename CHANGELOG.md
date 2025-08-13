@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+GUI + CLI + ASB: Fix an issue where the Monero RPC pool would fail to build TLS handshakes over Tor
+
 ## [3.0.0-beta.9] - 2025-08-12
 
 - ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
