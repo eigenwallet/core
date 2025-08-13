@@ -1,4 +1,4 @@
-use arti_client::{TorClient, TorClientConfig};
+use arti_client::{config::StreamTimeoutConfig, TorClient, TorClientConfig};
 use clap::Parser;
 use cuprate_epee_encoding::{epee_object, from_bytes, to_bytes};
 use futures::stream::{self, StreamExt};
@@ -10,8 +10,11 @@ use monero_rpc_pool::{
 };
 use reqwest;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 #[derive(Parser)]
@@ -103,7 +106,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup Tor client if requested
     let tor_client = if args.tor {
         println!("Setting up Tor client...");
-        let config = TorClientConfig::default();
+        let mut config_builder = TorClientConfig::builder();
+        config_builder
+            .stream_timeouts()
+            .connect_timeout(Duration::from_secs(45));
+        config_builder
+            .stream_timeouts()
+            .resolve_timeout(Duration::from_secs(45));
+        config_builder
+            .stream_timeouts()
+            .resolve_ptr_timeout(Duration::from_secs(45));
+
+        let config = config_builder.build().unwrap();
         let runtime = TokioRustlsRuntime::current().expect("We are always running with tokio");
 
         let client = TorClient::with_runtime(runtime)

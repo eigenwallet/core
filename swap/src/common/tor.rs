@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::sync::Arc;
+use std::{path::Path, time::Duration};
 
 use crate::cli::api::tauri_bindings::{
     TauriBackgroundProgress, TauriEmitter, TauriHandle, TorBootstrapStatus,
@@ -7,6 +7,8 @@ use crate::cli::api::tauri_bindings::{
 use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
 use futures::StreamExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+static TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Creates an unbootstrapped Tor client
 pub async fn create_tor_client(
@@ -19,7 +21,16 @@ pub async fn create_tor_client(
 
     // The client configuration describes how to connect to the Tor network,
     // and what directories to use for storing persistent state.
-    let config = TorClientConfigBuilder::from_directories(state_dir, cache_dir)
+    let mut config = TorClientConfigBuilder::from_directories(state_dir, cache_dir);
+
+    config
+        .stream_timeouts()
+        .connect_timeout(TOR_CONNECT_TIMEOUT);
+    config
+        .stream_timeouts()
+        .resolve_timeout(TOR_CONNECT_TIMEOUT);
+
+    let config = config
         .build()
         .expect("We initialized the Tor client all required attributes");
 
