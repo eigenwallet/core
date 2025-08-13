@@ -36,6 +36,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize crypto provider for tokio-rustls
+    tokio_rustls::rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| "Failed to install crypto provider")?;
+
     let args = Args::parse();
 
     tracing_subscriber::fmt()

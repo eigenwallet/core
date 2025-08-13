@@ -13,7 +13,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite},
     time::timeout,
 };
-use tokio_native_tls::native_tls::TlsConnector;
+
 use tracing::{error, info_span, Instrument};
 
 use crate::AppState;
@@ -268,17 +268,24 @@ async fn maybe_wrap_with_tls(
     host: &str,
 ) -> Result<Box<dyn HyperStream>, SingleRequestError> {
     if scheme == "https" {
-        let tls_connector = TlsConnector::builder()
-            .danger_accept_invalid_certs(true)
-            .danger_accept_invalid_hostnames(true)
-            .build()
-            .map_err(|e| {
-                SingleRequestError::ConnectionError(format!("TLS connector error: {}", e))
-            })?;
-        let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
+        // Get root certificates for proper TLS verification
+        let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
+        root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-        let tls_stream = tls_connector.connect(host, stream).await.map_err(|e| {
-            SingleRequestError::ConnectionError(format!("TLS connection error: {}", e))
+        // Create TLS client config with proper certificate validation
+        let config = tokio_rustls::rustls::ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+
+        let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
+
+        let server_name = host
+            .to_string()
+            .try_into()
+            .map_err(|_| SingleRequestError::ConnectionError("Invalid DNS name".to_string()))?;
+
+        let tls_stream = connector.connect(server_name, stream).await.map_err(|e| {
+            SingleRequestError::ConnectionError(format!("TLS connection error: {:?}", e))
         })?;
 
         Ok(Box::new(tls_stream))
@@ -432,13 +439,13 @@ async fn proxy_to_single_node(
                 let stream = tor_client
                     .connect(address)
                     .await
-                    .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
 
                 Box::new(stream)
             } else {
                 let stream = TcpStream::connect(address)
                     .await
-                    .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
 
                 Box::new(stream)
             };
@@ -448,8 +455,10 @@ async fn proxy_to_single_node(
         .await
         .map_err(|_| SingleRequestError::Timeout("Connection timed out".to_string()))??;
 
+        let maybe_tls_stream = TokioIo::new(maybe_tls_stream);
+
         // Build an HTTP/1 connection over the stream.
-        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(maybe_tls_stream))
+        let (sender, conn) = hyper::client::conn::http1::handshake(maybe_tls_stream)
             .await
             .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
