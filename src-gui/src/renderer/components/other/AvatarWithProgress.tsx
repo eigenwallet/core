@@ -94,6 +94,7 @@ export default function AvatarWithProgress({
           fill="none"
           strokeDasharray={circumference}
           strokeDashoffset={dashOffset}
+          style={{ transition: "stroke-dashoffset 600ms ease" }}
         />
       </Box>
 
