@@ -413,6 +413,8 @@ impl Database for SqliteDatabase {
         )
         .execute(&self.pool)
         .await?;
+
+        Ok(())
     }
 
     async fn get_state(&self, swap_id: Uuid) -> Result<State> {
