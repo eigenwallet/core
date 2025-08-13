@@ -9,6 +9,7 @@ use futures::StreamExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 static TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+static TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Creates an unbootstrapped Tor client
 pub async fn create_tor_client(
@@ -28,7 +29,7 @@ pub async fn create_tor_client(
         .connect_timeout(TOR_CONNECT_TIMEOUT);
     config
         .stream_timeouts()
-        .resolve_timeout(TOR_CONNECT_TIMEOUT);
+        .resolve_timeout(TOR_RESOLVE_TIMEOUT);
 
     let config = config
         .build()
