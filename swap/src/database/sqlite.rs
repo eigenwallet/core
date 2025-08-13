@@ -479,6 +479,14 @@ impl Database for SqliteDatabase {
                     }
                 };
 
+                let entered_at = match OffsetDateTime::parse(entered_at, &time::format_description::well_known::Rfc3339) {
+                    Ok(timestamp) => timestamp,
+                    Err(e) => {
+                        tracing::error!(%swap_id, entered_at = %entered_at, error = ?e, "Failed to parse timestamp");
+                        return None;
+                    }
+                };
+
                 Some((swap_id, state, entered_at))
             })
             .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
