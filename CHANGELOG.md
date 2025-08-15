@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ORCHESTRATOR: We incorrectly passed the `--mainnet` flag to the `asb` binary but it is the default for the asb.
+- CONTROLLER: Add a `bitcoin-seed` command to the controller. You can use it to export the descriptor of the internal Bitcoin wallet.
+
 ## [3.0.0-beta.10] - 2025-08-14
 
-GUI + CLI + ASB: Fix an issue where the Monero RPC pool would fail to build TLS handshakes over Tor
+- GUI + CLI + ASB: Fix an issue where the Monero RPC pool would fail to build TLS handshakes over Tor
 
 ## [3.0.0-beta.9] - 2025-08-12
 

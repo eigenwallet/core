@@ -80,6 +80,10 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 }
             }
         }
+        Cmd::BitcoinSeed => {
+            let response = client.bitcoin_seed().await?;
+            println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}", response.descriptor);
+        }
     }
     Ok(())
 }

@@ -19,6 +19,8 @@ pub enum Cmd {
     CheckConnection,
     /// Get Bitcoin balance
     BitcoinBalance,
+    /// Get Bitcoin descriptor containing private keys
+    BitcoinSeed,
     /// Get Monero balance
     MoneroBalance,
     /// Get Monero wallet address
