@@ -59,6 +59,7 @@ tower-http = { version = "0.6.6", features = ["cors"] }
 # TLS/Security
 tokio-rustls = "0.26"
 webpki-roots = "1"
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
 
 # Tor networking
 arti-client = { workspace = true, features = ["tokio"] }
