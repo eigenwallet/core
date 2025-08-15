@@ -18,7 +18,7 @@ import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import AppsIcon from "@mui/icons-material/Apps";
-import { useAppSelector } from "store/hooks";
+import { useAppSelector, useIsContextAvailable } from "store/hooks";
 import {
   PiconeroAmount,
   FiatPiconeroAmount,
@@ -55,6 +55,8 @@ export default function HomePage() {
     (state) => state.wallet.state,
   );
   const bitcoinBalance = useAppSelector((state) => state.rpc.state.balance);
+
+  const isContextAvailable = useIsContextAvailable();
 
   const isLoading = true;
   const hasTransactions =
@@ -99,10 +101,10 @@ export default function HomePage() {
 
       {/* Quick actions */}
       <Stack direction="row" spacing={2} justifyContent="center">
-        <ReceiveButton address={mainAddress} />
-        <SendButton balance={balance} />
-        <DFXButton />
-        <TextIconButton label="More" onClick={() => setActionBottomSheetOpen(true)}>
+        <ReceiveButton address={mainAddress} disabled={!isContextAvailable} />
+        <SendButton balance={balance} disabled={!isContextAvailable} />
+        <DFXButton disabled={!isContextAvailable} />
+        <TextIconButton label="More" onClick={() => setActionBottomSheetOpen(true)} disabled={!isContextAvailable}>
           <MoreVertIcon />
         </TextIconButton>
       </Stack>

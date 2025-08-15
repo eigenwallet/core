@@ -37,7 +37,7 @@ function DFXLogo({ height = 24 }: { height?: number }) {
 }
 
 // Component for DFX button and modal
-export default function DfxButton() {
+export default function DfxButton({ disabled }: { disabled: boolean }) {
   const [dfxUrl, setDfxUrl] = useState<string | null>(null);
 
   const handleOpenDfx = async () => {
@@ -95,6 +95,7 @@ export default function DfxButton() {
         open={dfxUrl != null}
         onOpen={handleOpenDfx}
         onClose={handleCloseModal}
+        disabled={disabled}
       >
         {content}
       </DFXWidgetMobile>
@@ -117,15 +118,17 @@ function DFXWidgetMobile({
   open,
   onOpen,
   onClose,
+  disabled,
 }: {
   children: React.ReactNode;
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
+  disabled: boolean;
 }) {
   return (
     <>
-      <TextIconButton label="Buy" onClick={onOpen}>
+      <TextIconButton label="Buy" onClick={onOpen} disabled={disabled}>
         <EuroIcon />
       </TextIconButton>
       <MobileDialog open={open} onClose={onClose}>

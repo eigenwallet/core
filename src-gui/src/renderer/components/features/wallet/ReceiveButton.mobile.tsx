@@ -5,12 +5,12 @@ import { useState } from "react";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 
-export default function ReceiveButton({ address }: { address: string }) {
+export default function ReceiveButton({ address, disabled }: { address: string, disabled: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
-      <TextIconButton label="Receive" onClick={() => setOpen(true)}>
+      <TextIconButton label="Receive" onClick={() => setOpen(true)} disabled={disabled}>
         <ArrowDownwardIcon />
       </TextIconButton>
       <Drawer open={open} onClose={() => setOpen(false)} anchor="bottom">

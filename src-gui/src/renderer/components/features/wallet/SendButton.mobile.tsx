@@ -12,10 +12,12 @@ import { useIsMobile } from "../../../../utils/useIsMobile";
 
 export default function SendButton({
   balance,
+  disabled,
 }: {
   balance: {
     unlocked_balance: string;
   };
+  disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pendingApprovals = usePendingSendMoneroApproval();
@@ -57,6 +59,7 @@ export default function SendButton({
       open={open}
       onOpen={() => setOpen(true)}
       onClose={handleClose}
+      disabled={disabled}
     >
       {content}
     </SendTransactionMobile>
@@ -114,15 +117,17 @@ function SendTransactionMobile({
   open,
   onOpen,
   onClose,
+  disabled,
 }: {
   children: React.ReactNode;
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
+  disabled: boolean;
 }) {
   return (
     <>
-      <TextIconButton label="Send" onClick={onOpen}>
+      <TextIconButton label="Send" onClick={onOpen} disabled={disabled}>
         <ArrowUpwardIcon />
       </TextIconButton>
       <Drawer open={open} onClose={onClose} anchor="bottom">
