@@ -51,7 +51,7 @@ import Header from "../components/Header";
 export default function HomePage() {
   const navigate = useNavigate();
   const theme = useTheme();
-  const { balance, history, mainAddress } = useAppSelector(
+  const { balance, history, mainAddress, syncProgress } = useAppSelector(
     (state) => state.wallet.state,
   );
   const bitcoinBalance = useAppSelector((state) => state.rpc.state.balance);
@@ -95,7 +95,7 @@ export default function HomePage() {
 
       {/* Balances */}
       <Stack spacing={1}>
-        <MoneroWalletOverview balance={balance} />
+        <MoneroWalletOverview balance={balance} syncProgress={syncProgress} />
         <BitcoinWalletOverview bitcoinBalance={bitcoinBalance} />
       </Stack>
 

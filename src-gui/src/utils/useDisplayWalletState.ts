@@ -1,21 +1,15 @@
 import { TauriContextStatusEvent } from "models/tauriModel";
 import { useAppSelector, usePendingBackgroundProcesses } from "store/hooks";
-import { useState } from "react";
 
 export function useDisplayWalletState() {
-  const { syncProgress } = useAppSelector(
-    (state) => state.wallet.state,
-  );
-
   const backgroundProgress = usePendingBackgroundProcesses().map(([_, status]) => status);
   const contextStatus = useAppSelector((s) => s.rpc.status);
 
   let stateLabel = "loading";
-  let isLoading = false;
+  let isLoading = true;
   let isError = false;
   let contextProgress = 1;
   let backgroundProcessesProgress = 1;
-  let moneroWalletProgress = syncProgress?.progress_percentage ?? 100;
 
   if (contextStatus === TauriContextStatusEvent.Available) {
     stateLabel = "ready";
@@ -28,11 +22,6 @@ export function useDisplayWalletState() {
     contextProgress = 0;
     isLoading = false;
     isError = true;
-  }
-
-  if(moneroWalletProgress !== 100) {
-    stateLabel = "syncing monero wallet";
-    isLoading = true;
   }
 
   if (backgroundProgress.length > 0) {
@@ -82,8 +71,7 @@ export function useDisplayWalletState() {
       backgroundProcessesProgress = (8-numberOfAdditionalProcesses)/8;
   }
 
-  const progress = contextProgress*0.2 + backgroundProcessesProgress*0.4 + moneroWalletProgress/100*0.4;
-  console.log(contextProgress, backgroundProcessesProgress, moneroWalletProgress, progress);
+  const progress = contextProgress*0.2 + backgroundProcessesProgress*0.8;
   return { stateLabel, progress, isLoading, isError };
 }
 

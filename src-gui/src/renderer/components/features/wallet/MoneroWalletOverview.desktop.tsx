@@ -12,17 +12,15 @@ import {
 import { PiconeroAmount } from "renderer/components/other/Units";
 import { FiatPiconeroAmount } from "renderer/components/other/Units";
 import StateIndicator from "renderer/components/pages/monero/components/StateIndicator";
+import { GetMoneroSyncProgressResponse } from "models/tauriModel";
+import MoneroSyncingProgressBar from "./MoneroSyncingProgressBar";
 
 interface WalletOverviewProps {
   balance?: {
     unlocked_balance: string;
     total_balance: string;
   };
-  syncProgress?: {
-    current_block: number;
-    target_block: number;
-    progress_percentage: number;
-  };
+  syncProgress?: GetMoneroSyncProgressResponse;
 }
 
 // Component for displaying wallet address and balance
