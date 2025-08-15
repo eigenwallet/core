@@ -825,13 +825,13 @@ pub async fn get_swap_info(
         .db
         .get_peer_id(args.swap_id)
         .await
-        .with_context(|| "Could not get PeerID")?;
+        .with_context(|| format!("Could not get PeerID for swap {}", args.swap_id))?;
 
     let addresses = context
         .db
         .get_addresses(peer_id)
         .await
-        .with_context(|| "Could not get addressess")?;
+        .unwrap_or(vec![]);
 
     let start_date = context.db.get_swap_start_date(args.swap_id).await?;
 

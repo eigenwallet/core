@@ -5,6 +5,7 @@ use crate::cli::api::tauri_bindings::SeedChoice;
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
+use crate::database::eigensync::EigensyncDatabaseAdapter;
 use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
@@ -197,6 +198,7 @@ pub struct Context {
     monero_rpc_pool_handle: Option<Arc<monero_rpc_pool::PoolHandle>>,
     #[allow(dead_code)]
     background_sync_task: Option<AbortOnDropHandle<()>>,
+    eigensync: Option<AbortOnDropHandle<()>>,
 }
 
 /// A conveniant builder struct for [`Context`].
@@ -508,20 +510,28 @@ impl ContextBuilder {
                 (),
             );
 
-        let multiaddr = Multiaddr::from_str("/ip4/213.199.56.68/tcp/3333").context("")?;
+        let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333").context("")?;
         let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
 
         let mut eigensync_handle = Arc::new(RwLock::new(EigensyncHandle::new(
             multiaddr, server_peer_id, seed.derive_eigensync_identity()).await.unwrap()));
+            
         let background_sync_task = eigensync_handle.background_sync();
 
         let db = open_db(
             data_dir.join("sqlite"),
             AccessMode::ReadWrite,
-            self.tauri_handle.clone(),
-            eigensync_handle,
+            self.tauri_handle.clone()
         )
         .await?;
+
+        let mut db_adapter = EigensyncDatabaseAdapter::new(eigensync_handle.clone(), db.clone());
+
+        tracing::info!("opened db");
+
+        let eigensync = AbortOnDropHandle::new(tokio::task::spawn(async move {
+            db_adapter.run().await.unwrap();
+        }));
 
         database_progress_handle.finish();
 
@@ -595,6 +605,7 @@ impl ContextBuilder {
             tor_client: unbootstrapped_tor_client,
             monero_rpc_pool_handle,
             background_sync_task: Some(background_sync_task),
+            eigensync: Some(eigensync),
         };
 
         tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
@@ -623,7 +634,7 @@ impl Context {
             bitcoin_wallet: Some(bob_bitcoin_wallet),
             monero_manager: Some(bob_monero_wallet),
             config,
-            db: open_db(db_path, AccessMode::ReadWrite, None, None)
+            db: open_db(db_path, AccessMode::ReadWrite, None)
                 .await
                 .expect("Could not open sqlite database"),
             swap_lock: SwapLock::new().into(),
@@ -632,6 +643,7 @@ impl Context {
             tor_client: None,
             monero_rpc_pool_handle: None,
             background_sync_task: None,
+            eigensync: None,
         }
     }
 

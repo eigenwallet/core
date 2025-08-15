@@ -47,7 +47,7 @@ pub struct Swap {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let multiaddr = Multiaddr::from_str("/ip4/213.199.56.68/tcp/3333").context("")?;
+    let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333").context("")?;
     let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
 
     let keypair = identity::Keypair::ed25519_from_bytes(

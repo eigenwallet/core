@@ -21,92 +21,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
-
 use eigensync::EigensyncHandle;
 
 use super::AccessMode;
-
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
-pub struct EigensyncDocument {
-    // swap_id, swap
-    // TODO: Instead of just UUID as key, we want ot use:
-    //      (swap_id, entered_at) as a key
-    //      We cannot use a tupe as a key so we encode as swap-id + "_" + entered_at
-    states: HashMap<String, String>
-}
-
-pub struct EigensyncDatabaseAdapter {
-    eigensync_handle: Arc<RwLock<EigensyncHandle<EigensyncDocument>>>,
-    db: SqliteDatabase,
-}
+use super::eigensync::EigensyncDocument;
 
 pub struct SqliteDatabase {
     pool: Pool<Sqlite>,
     tauri_handle: Option<TauriHandle>,
-}
-
-impl EigensyncDatabaseAdapter {
-    pub fn new(eigensync_handle: Arc<RwLock<EigensyncHandle<EigensyncDocument>>>, sqlite_database: SqliteDatabase) -> Self {
-        Self { eigensync_handle, db: sqlite_database }
-    }
-
-    pub async fn run(&mut self) -> anyhow::Result<()> {
-        loop {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            
-            let document = self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present");
-            
-            for (document_key, _state) in document.states.iter() {
-                self.upload_states().await?;
-                self.download_states(document_key, &document).await?;
-            }
-        }
-    }
-
-    pub async fn upload_states(&self) -> anyhow::Result<()> {
-        // get from db -> write into document
-
-        for (swap_id, state, timestamp) in self.db.all().await? {
-            let swap = Swap::from(state);
-            let state_json = serde_json::to_string(&swap)?;
-            let key = format!("{}_{}", swap_id.to_string(), timestamp.to_string());
-            
-            self.eigensync_handle.write().await.modify(|document| {
-                document.states.insert(key, state_json);
-                Ok(())
-            }).await?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn download_states(&self, document_key: &str, document: &EigensyncDocument) -> anyhow::Result<()> {
-        // get from document -> write into db
-        
-        let document_states: HashSet<String> = document.states.values().cloned().collect();
-        let swap_id = document_key.split("_").next().expect("Swap ID should be present");
-        let db_states = self.db.get_states(Uuid::from_str(swap_id).expect("Swap ID should be a valid UUID")).await.expect("States should be present");
-        
-        for document_state in document_states {
-            let timestamp = document_key.split("_").nth(1).expect("Timestamp should be present");
-            let swap: Swap = serde_json::from_str(&document_state)?;
-            let state: State = swap.into();
-            if db_states.contains(&state) {
-                continue;
-            }
-
-            // TODO: Extract timestamp from document_key
-            self.db.insert_latest_state(Uuid::from_str(swap_id)
-                .expect("Swap ID should be a valid UUID"), 
-                        state, 
-                        Some(OffsetDateTime::from_unix_timestamp(
-                                        timestamp.parse::<i64>()
-                                            .expect("Timestamp should be a valid i64"))
-                        .expect("Invalid timestamp")))
-                        .await?;
-        }
-        Ok(())
-    }
 }
 
 impl SqliteDatabase {
@@ -239,11 +161,11 @@ impl Database for SqliteDatabase {
         .await?;
 
         if row.is_empty() {
-            return Err(anyhow!(
-                "No Monero address pool found for swap ID: {}",
-                swap_id
-            ));
+            // Return empty pool instead of error
+            return Ok(MoneroAddressPool::new(vec![]));
         }
+
+        tracing::info!("Row: {:?}", row);
 
         let addresses = row
             .iter()
@@ -264,6 +186,8 @@ impl Database for SqliteDatabase {
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+
+        tracing::info!("Addresses: {:?}", addresses.len());
 
         Ok(MoneroAddressPool::new(addresses))
     }
@@ -382,9 +306,9 @@ impl Database for SqliteDatabase {
     }
 
     // TODO: This needs to take a timestamp as well (or None and then we generate it here)
-    async fn insert_latest_state(&self, swap_id: Uuid, state: State, entered_at: Option<OffsetDateTime>) -> Result<()> {
+    async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
         let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = entered_at.unwrap_or(OffsetDateTime::now_utc());
+        let entered_at = OffsetDateTime::now_utc();
         let entered_at = entered_at.to_string();
         let swap_id_str = swap_id.to_string();        
 
@@ -430,6 +354,10 @@ impl Database for SqliteDatabase {
         .execute(&self.pool)
         .await?;
 
+        tracing::info!("inserted existing state");
+
+        self.tauri_handle.emit_swap_state_change_event(swap_id);
+
         Ok(())
     }
 
@@ -457,6 +385,30 @@ impl Database for SqliteDatabase {
         Ok(swap.into())
     }
 
+    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT swap_id, state, entered_at
+            FROM swap_states
+            ORDER BY entered_at DESC
+            "#
+        )
+            .fetch_all(&self.pool)
+            .await?;
+            
+            let result = rows
+            .iter()
+            .filter_map(|row| {
+                let (Some(swap_id), Some(state), Some(entered_at)) = (&row.swap_id, &row.state, &row.entered_at) else {
+                    tracing::error!("Row didn't contain state, swap_id or entered_at when it should have");
+                    return None;
+                };
+
+                Some((swap_id, state, entered_at))
+            })
+            .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
+    }
+
     // TODO: Return timestamp here as well
     async fn all(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>> {
         let rows = sqlx::query!(
@@ -471,6 +423,8 @@ impl Database for SqliteDatabase {
         )
         .fetch_all(&self.pool)
         .await?;
+
+        tracing::info!("Raw rows from database: {}", rows.len());
 
         let result = rows
             .iter()
@@ -497,15 +451,18 @@ impl Database for SqliteDatabase {
 
                 let entered_at = match OffsetDateTime::parse(entered_at, &time::format_description::well_known::Rfc3339) {
                     Ok(timestamp) => timestamp,
-                    Err(e) => {
-                        tracing::error!(%swap_id, entered_at = %entered_at, error = ?e, "Failed to parse timestamp");
-                        return None;
+                    Err(_) => {
+                        // Try parsing with a more flexible format
+                        let format = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour]:[offset_minute]:[offset_second]").ok()?;
+                        OffsetDateTime::parse(entered_at, &format).ok()?
                     }
                 };
 
                 Some((swap_id, state, entered_at))
             })
             .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
+
+        tracing::info!("Processed {} swaps from database", result.len());
 
         // if let Some(eigensync_handle) = &self.eigensync_handle {
         //     eigensync_handle.write().await.save_updates_local(|document| {
