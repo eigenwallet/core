@@ -7,6 +7,7 @@ use axum::{
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::{
@@ -15,6 +16,10 @@ use tokio::{
 };
 
 use tracing::{error, info_span, Instrument};
+use tokio_rustls::rustls::{
+    self,
+    client::{ServerCertVerified, ServerCertVerifier},
+};
 
 use crate::AppState;
 
@@ -29,6 +34,22 @@ static SOFT_TIMEOUT: Duration = TIMEOUT.checked_div(2).unwrap();
 /// Trait alias for a stream that can be used with hyper
 trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
+
+struct NoCertificateVerification;
+
+impl ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+}
 
 #[axum::debug_handler]
 pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> Response {
@@ -268,16 +289,17 @@ async fn maybe_wrap_with_tls(
     host: &str,
 ) -> Result<Box<dyn HyperStream>, SingleRequestError> {
     if scheme == "https" {
-        // Get root certificates for proper TLS verification
-        let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
-        root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-        // Create TLS client config with proper certificate validation
-        let config = tokio_rustls::rustls::ClientConfig::builder()
+        // Create a TLS client config that accepts all certificates and versions
+        let root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
+        let mut config = tokio_rustls::rustls::ClientConfig::builder()
             .with_root_certificates(root_cert_store)
             .with_no_client_auth();
+        config
+            .dangerous()
+            .set_certificate_verifier(Arc::new(NoCertificateVerification));
+        config.versions = tokio_rustls::rustls::ALL_VERSIONS.to_vec();
 
-        let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
 
         let server_name = host
             .to_string()
