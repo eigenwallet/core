@@ -1,4 +1,4 @@
-import { Box, Button, Card, Grow, Typography } from "@mui/material";
+import { Box, Button, Card, Grow, SxProps, Typography } from "@mui/material";
 import NumberInput from "renderer/components/inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useTheme } from "@mui/material/styles";
@@ -19,6 +19,7 @@ interface SendAmountInputProps {
   xmrPrice: number;
   showFiatRate: boolean;
   disabled?: boolean;
+  sx?: SxProps;
 }
 
 export default function SendAmountInput({
@@ -33,6 +34,7 @@ export default function SendAmountInput({
   xmrPrice,
   showFiatRate,
   disabled = false,
+  sx,
 }: SendAmountInputProps) {
   const theme = useTheme();
 
@@ -116,11 +118,11 @@ export default function SendAmountInput({
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        border: `1px solid ${theme.palette.grey[800]}`,
         width: "100%",
-        height: 250,
+        minHeight: 250,
         opacity: disabled ? 0.6 : 1,
         pointerEvents: disabled ? "none" : "auto",
+        ...sx,
       }}
     >
       <Box
@@ -209,7 +211,6 @@ export default function SendAmountInput({
               amount={piconerosToXmr(parseFloat(balance.unlocked_balance))}
             />
           </Typography>
-          <Typography color="text.secondary">XMR</Typography>
         </Box>
         <Button
           variant={isMaxSelected ? "contained" : "secondary"}
