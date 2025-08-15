@@ -203,12 +203,8 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
 
         println!("Applying changes {:?}", new_changes.len());
 
-        for change in new_changes.clone() {
-            // print the changes that are not in the document yet
-            if !self.document.get_changes(&[]).contains(&&change) {
-                println!("Change {:?} is not in the document yet", hydrate::<_, T>(&self.document).unwrap());
-            }
-        }
+        let counter = new_changes.iter().filter(|change| !self.document.get_changes(&[]).contains(&&change)).count();
+        println!("{} changes are not in the document yet", counter);
 
         self.document.apply_changes(new_changes).context("Failed to apply changes")?;
 
