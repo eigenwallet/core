@@ -21,6 +21,7 @@ import "@fontsource/roboto";
 import FeedbackPage from "./pages/feedback/FeedbackPage";
 import IntroductionModal from "./modal/introduction/IntroductionModal";
 import MoneroWalletPage from "./pages/monero/MoneroWalletPage";
+import TransactionsPage from "./pages/monero/TransactionsPage";
 import SeedSelectionDialog from "./modal/seed-selection/SeedSelectionDialog";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -79,6 +80,7 @@ function InnerContent() {
       <Routes>
         <Route path="/" element={<MoneroWalletPage />} />
         <Route path="/monero-wallet" element={<MoneroWalletPage />} />
+        <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/swap" element={<SwapPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/bitcoin-wallet" element={<WalletPage />} />

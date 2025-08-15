@@ -43,7 +43,7 @@ export default function MoneroWalletPage() {
         displayCopyIcon={true}
       />
       <WalletActionButtons balance={balance} />
-      <TransactionHistory history={history} />
+      <TransactionHistory history={history} limit={4} showViewAllButton={true} />
     </Box>
   );
 }
