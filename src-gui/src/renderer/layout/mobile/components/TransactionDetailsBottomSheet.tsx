@@ -19,52 +19,12 @@ import {
   PiconeroAmount,
 } from "renderer/components/other/Units";
 import dayjs from "dayjs";
+import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 
 interface TransactionDetailsBottomSheetProps {
   open: boolean;
   onClose: () => void;
   transaction: TransactionInfo | null;
-}
-
-// Reusable component for displaying copyable data in a styled box
-function CopyableDataBox({
-  children,
-  onCopy,
-}: {
-  children: React.ReactNode;
-  onCopy: () => void;
-}) {
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        py: 1.5,
-        px: 2,
-        backgroundColor: "action.hover",
-        borderRadius: 1,
-      }}
-    >
-      <Typography
-        variant="body2"
-        sx={{
-          fontFamily: "monospace",
-          color: "text.primary",
-          flex: 1,
-          mr: 1,
-        }}
-      >
-        {children}
-      </Typography>
-      <IconButton
-        size="small"
-        onClick={onCopy}
-      >
-        <CopyIcon fontSize="small" />
-      </IconButton>
-    </Box>
-  );
 }
 
 export default function TransactionDetailsBottomSheet({
@@ -326,9 +286,7 @@ export default function TransactionDetailsBottomSheet({
             >
               From
             </Typography>
-            <CopyableDataBox onCopy={() => handleCopyToClipboard(fromAddress)}>
-              {truncateAddress(fromAddress)}
-            </CopyableDataBox>
+            <ActionableMonospaceTextBox content={fromAddress} enableQrCode={false} />
           </Box>
 
           {/* Transaction ID field */}
@@ -346,9 +304,7 @@ export default function TransactionDetailsBottomSheet({
             >
               Transaction ID
             </Typography>
-            <CopyableDataBox onCopy={() => handleCopyToClipboard(transaction.tx_hash)}>
-              {truncateAddress(transaction.tx_hash, 14)}
-            </CopyableDataBox>
+            <ActionableMonospaceTextBox content={transaction.tx_hash} enableQrCode={false} />
           </Box>
 
           {/* Fees field */}
@@ -366,13 +322,9 @@ export default function TransactionDetailsBottomSheet({
             >
               Fees
             </Typography>
-            <CopyableDataBox onCopy={() => handleCopyToClipboard(transaction.fee.toString())}>
-              <PiconeroAmount
-                amount={transaction.fee}
-                labelStyles={{ fontSize: 14 }}
-                disableTooltip
-              />
-            </CopyableDataBox>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, fontFamily: "monospace", backgroundColor: theme.palette.grey[900], p: 1, borderRadius: 2 }}>
+              <PiconeroAmount amount={transaction.fee} fixedPrecision={12} labelStyles={{ fontSize: 14 }} />
+            </Box>
           </Box>
         </Stack>
       </Box>

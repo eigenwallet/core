@@ -3,7 +3,7 @@ import QRCode from "react-qr-code";
 import TextIconButton from "renderer/components/buttons/TextIconButton";
 import { useState } from "react";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import MonospaceTextBox from "renderer/components/other/MonospaceTextBox";
+import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 
 export default function ReceiveButton({ address }: { address: string }) {
   const [open, setOpen] = useState(false);
@@ -38,7 +38,7 @@ export default function ReceiveButton({ address }: { address: string }) {
           >
             <QRCode value={address} size={200} />
           </Box>
-          <MonospaceTextBox>{address}</MonospaceTextBox>
+          <ActionableMonospaceTextBox content={address} enableQrCode={false} />
         </Box>
       </Drawer>
     </>

@@ -39,9 +39,9 @@ import ReceiveButton from "renderer/components/features/wallet/ReceiveButton.mob
 import SendButton from "renderer/components/features/wallet/SendButton.mobile";
 import DFXButton from "renderer/components/pages/monero/components/DFXWidget";
 import { useNavigate } from "react-router-dom";
-import SwipeableActionBottomSheet from "renderer/components/modal/SwipeableActionBottomSheet";
+import SwipeableActionBottomSheet from "renderer/layout/mobile/components/SwipeableActionBottomSheet";
 import TextIconButton from "renderer/components/buttons/TextIconButton";
-import TransactionDetailsBottomSheet from "renderer/components/modal/TransactionDetailsBottomSheet";
+import TransactionDetailsBottomSheet from "renderer/layout/mobile/components/TransactionDetailsBottomSheet";
 import AvatarWithProgress from "renderer/components/other/AvatarWithProgress";
 import Header from "../components/Header";
 
@@ -55,8 +55,6 @@ export default function HomePage() {
     (state) => state.wallet.state,
   );
   const bitcoinBalance = useAppSelector((state) => state.rpc.state.balance);
-
-  const syncProgress = 0.8;
 
   const isLoading = true;
   const hasTransactions =

@@ -5,6 +5,7 @@ import {
     DialogContent,
     Button,
     Dialog,
+    Fade,
 } from '@mui/material'
 import { Stack } from '@mui/material'
 import AvatarWithProgress from 'renderer/components/other/AvatarWithProgress'
@@ -14,7 +15,9 @@ import SettingsIcon from '@mui/icons-material/Settings'
 import ShimmerTypography from 'renderer/components/other/ShimmerTypography'
 import { useState } from 'react'
 import { useDisplayWalletState } from 'utils/useDisplayWalletState'
-import DaemonStatusAlert, { BackgroundProgressAlerts } from 'renderer/components/alert/DaemonStatusAlert'
+import DaemonStatusAlert, {
+    BackgroundProgressAlerts,
+} from 'renderer/components/alert/DaemonStatusAlert'
 import FundsLeftInWalletAlert from 'renderer/components/alert/FundsLeftInWalletAlert'
 import UnfinishedSwapsAlert from 'renderer/components/alert/UnfinishedSwapsAlert'
 
@@ -30,9 +33,7 @@ export default function Header() {
                 {/* Avatar with instagram-like ring and progress */}
                 <AvatarWithProgress
                     size={56}
-                    progress={
-                        progress
-                    }
+                    progress={progress}
                     gradientSeed="to be replaced with wallet keyy"
                     onClick={() => setAvatarDialogOpen(true)}
                 />
@@ -40,9 +41,15 @@ export default function Header() {
                     <Typography variant="h5" fontWeight={600}>
                         eigenwallet
                     </Typography>
-                    <ShimmerTypography variant="caption" sx={{ opacity: 0.85 }} active={isLoading}>
-                        {stateLabel}
-                    </ShimmerTypography>
+                    {isLoading && (
+                        <ShimmerTypography
+                            variant="caption"
+                            sx={{ opacity: 0.85 }}
+                            active={isLoading}
+                        >
+                            {stateLabel}
+                        </ShimmerTypography>
+                    )}
                 </Stack>
                 <IconButton
                     size="small"
@@ -58,7 +65,6 @@ export default function Header() {
                 open={avatarDialogOpen}
                 onClose={() => setAvatarDialogOpen(false)}
             >
-
                 <DialogTitle>Wallet State</DialogTitle>
                 <DialogContent>
                     <Stack spacing={2} sx={{ pt: 1 }}>

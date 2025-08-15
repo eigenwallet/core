@@ -6,14 +6,13 @@ import {
   ListItemText,
   Box,
   Typography,
-  IconButton,
   useTheme,
   Drawer,
 } from "@mui/material";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import RestoreIcon from "@mui/icons-material/Restore";
-import WithdrawDialog from "./wallet/WithdrawDialog";
-import SetRestoreHeightModal from "../pages/monero/SetRestoreHeightModal";
+import WithdrawDialog from "renderer/components/modal/wallet/WithdrawDialog";
+import SetRestoreHeightModal from "renderer/components/pages/monero/SetRestoreHeightModal";
 
 interface SwipeableActionBottomSheetProps {
   open: boolean;
