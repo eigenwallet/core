@@ -9,6 +9,12 @@ BINUTILS_VER=2.42
 MINGW_VER=v12.0.0
 GCC_VER=14.3.0
 
+# Some flags for running only certain parts of the script.
+# Set these to 1 before running the script to make use of them.
+ONLY_WINPTHREADS="${ONLY_WINPTHREADS:-}"
+ONLY_COPY_DLLS="${ONLY_COPY_DLLS:-}"
+ONLY_VERIFY="${ONLY_VERIFY:-}"
+
 # OS Detection and validation
 detected=$(uname -s)-$(uname -m)
 case "$detected" in
@@ -42,12 +48,6 @@ if [ ! -d "$SRC_TAURI_DIR" ]; then
     echo "Current directory: $(pwd)"
     exit 1
 fi
-
-echo "Current directory: $(pwd)"
-
-# Allow building only winpthreads by setting ONLY_WINPTHREADS=1
-ONLY_WINPTHREADS="${ONLY_WINPTHREADS:-}"
-ONLY_COPY_DLLS="${ONLY_COPY_DLLS:-}"
 
 install_deps() {
     # Package installation (idempotent)
@@ -305,6 +305,69 @@ copy_dlls() {
     cp -f $PREFIX/x86_64-w64-mingw32/lib/{libstdc++-6,libgcc_s_seh-1}.dll $SRC_TAURI_DIR/
 }
 
+verify_installation() {
+    # 1. check that ~/opt/gcc-mingw-14.3/ exists 
+    # 2. check that `x86_64-w64-mingw32-g++ --version` works and the output contains 14.3 
+    # 3. make sure the dll's are in the src-tauri directory
+
+	echo "Verifying cross-compiler installation"
+
+	local has_error=0
+
+	# Ensure PREFIX dir exists
+	if [ ! -d "$PREFIX" ]; then
+		echo "ERROR: Expected install directory not found: $PREFIX"
+		has_error=1
+	else
+		echo "OK: Found install directory $PREFIX"
+	fi
+
+	# Ensure the compiler is on PATH for the check
+	if ! command -v x86_64-w64-mingw32-g++ >/dev/null 2>&1; then
+		export PATH="$PREFIX/bin:$PATH"
+	fi
+
+	# Check compiler exists and version matches expected major.minor (e.g., 14.3)
+	local gcc_out=""
+	local gcc_short_ver
+	gcc_short_ver="${GCC_VER%.*}"
+	if ! gcc_out="$(x86_64-w64-mingw32-g++ --version 2>/dev/null)"; then
+		echo "ERROR: x86_64-w64-mingw32-g++ is not runnable or not found on PATH"
+		has_error=1
+	else
+		if echo "$gcc_out" | grep -q "$gcc_short_ver"; then
+			echo "OK: x86_64-w64-mingw32-g++ version contains $gcc_short_ver"
+		else
+			echo "ERROR: x86_64-w64-mingw32-g++ version does not contain $gcc_short_ver"
+			echo "$gcc_out" | head -n1
+			has_error=1
+		fi
+	fi
+
+	# Check DLLs in src-tauri directory
+	local missing_dlls=()
+	for dll in libstdc++-6.dll libgcc_s_seh-1.dll; do
+		if [ ! -f "$SRC_TAURI_DIR/$dll" ]; then
+			missing_dlls+=("$dll")
+		fi
+	done
+	if [ ${#missing_dlls[@]} -eq 0 ]; then
+		echo "OK: Required DLLs are present in $SRC_TAURI_DIR"
+	else
+		echo "ERROR: Missing DLLs in $SRC_TAURI_DIR: ${missing_dlls[*]}"
+		echo "Hint: run `just prepare-windows-build` to build and copy the required DLLs"
+		has_error=1
+	fi
+
+	if [ "$has_error" -eq 0 ]; then
+		echo "Verification successful"
+		return 0
+	else
+		echo "Verification failed"
+		return 1
+	fi
+}
+
 if [ -n "${ONLY_WINPTHREADS}" ]; then
     echo "ONLY_WINPTHREADS set; building winpthreads.dll"
     install_deps
@@ -319,6 +382,11 @@ if [ -n "${ONLY_COPY_DLLS}" ]; then
     exit 0
 fi
 
+if [ -n "${ONLY_VERIFY}" ]; then
+    verify_installation
+    exit 0
+fi
+
 install_deps
 download_sources
 
@@ -328,5 +396,7 @@ prepare_gcc_build
 build_mingw_crt
 finish_gcc
 build_winpthreads
+
+verify_installation
 
 echo "Done"

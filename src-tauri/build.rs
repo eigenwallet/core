@@ -1,6 +1,11 @@
 fn main() {
     #[cfg(target_os = "windows")]
     {
+        #[cfg(not(host_os = "linux"))]
+        {
+            panic!("Compiling for Windows is currently only supported from Linux (x86_64)");
+        }
+
         // make sure the .dll's are exist -- else panic
         if !["libstdc++-6.dll", "libgcc_s_seh-1.dll"]
             .into_iter()
