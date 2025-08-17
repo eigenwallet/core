@@ -113,3 +113,6 @@ prepare_mac_os_brew_dependencies:
 # E.g code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
 code2prompt_single_crate crate:
 	cd {{crate}} && code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
+
+prepare-windows-build:
+    cd dev_scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
