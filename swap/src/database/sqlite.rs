@@ -165,7 +165,7 @@ impl Database for SqliteDatabase {
             return Ok(MoneroAddressPool::new(vec![]));
         }
 
-        tracing::info!("Row: {:?}", row);
+        //tracing::info!("Row: {:?}", row);
 
         let addresses = row
             .iter()
@@ -395,18 +395,30 @@ impl Database for SqliteDatabase {
         )
             .fetch_all(&self.pool)
             .await?;
+
+        tracing::info!("Raw rows from database: {}", rows.len());
+        //tracing::info!("Rows: {:?}", rows);
             
             let result = rows
             .iter()
             .filter_map(|row| {
-                let (Some(swap_id), Some(state), Some(entered_at)) = (&row.swap_id, &row.state, &row.entered_at) else {
-                    tracing::error!("Row didn't contain state, swap_id or entered_at when it should have");
-                    return None;
+                let (swap_id, state, entered_at) = (&row.swap_id, &row.state, &row.entered_at);
+
+                let swap_id = Uuid::from_str(swap_id).ok().expect("Failed to parse swap_id");
+                let state = serde_json::from_str::<Swap>(state).ok().expect("Failed to parse state");
+                let entered_at = match OffsetDateTime::parse(entered_at, &time::format_description::well_known::Rfc3339) {
+                    Ok(t) => t,
+                    Err(_) => {
+                        let fmt = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour]:[offset_minute]:[offset_second]").ok().expect("Failed to parse entered_at");
+                        OffsetDateTime::parse(entered_at, &fmt).ok().expect("Failed to parse entered_at")
+                    }
                 };
 
-                Some((swap_id, state, entered_at))
+                Some((swap_id, State::from(state), entered_at))
             })
             .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
+
+        Ok(result)
     }
 
     // TODO: Return timestamp here as well

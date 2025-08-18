@@ -193,14 +193,12 @@ impl EigensyncDatabaseAdapter {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             tracing::info!("running eigensync sync");
-            
-            let document = self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present");
-            
+                        
             if let Err(e) = self.upload_states().await {
                 tracing::error!("Error uploading states: {:?}", e);
             }
 
-            if let Err(e) = self.download_states(&document).await {
+            if let Err(e) = self.download_states().await {
                 tracing::error!("Error downloading states: {:?}", e);
             }
         }
@@ -209,10 +207,15 @@ impl EigensyncDatabaseAdapter {
     pub async fn upload_states(&self) -> anyhow::Result<()> {
         // get from db -> write into document
 
-        tracing::info!("uploading states");
+        tracing::info!("uploading {} states", self.db.get_all_states().await?.len());
 
         //states table
         for (swap_id, state, timestamp) in self.db.get_all_states().await? {
+            if self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present").states.contains_key(&StateKey((swap_id, timestamp))) {
+                tracing::info!("state already exists");
+                continue;
+            }
+
             self.eigensync_handle.write().await.modify(|document| {
                 document.states.insert(StateKey((swap_id, timestamp)), state);
                 Ok(())
@@ -258,13 +261,14 @@ impl EigensyncDatabaseAdapter {
             }).await?;
         }
 
-        tracing::info!("Uploaded {} states", self.db.get_all_states().await?.len());
+        //tracing::info!("Uploaded {} states", self.db.get_all_states().await?.len());
 
         Ok(())
     }
 
-    pub async fn download_states(&self, document: &EigensyncDocument) -> anyhow::Result<()> {
+    pub async fn download_states(&self) -> anyhow::Result<()> {
         // get from document -> write into db
+        let document = self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present");
         
         tracing::info!("Document has {} states", document.states.len());
 
@@ -285,10 +289,11 @@ impl EigensyncDatabaseAdapter {
                 .ok_or_else(|| anyhow!("State not found for key"))?
                 .clone();
 
-            // if db_states.iter().any(|(_, _, db_timestamp)| db_timestamp == &timestamp) {
-            //     tracing::info!(?document_state, ?timestamp, "state already exists");
-            //     continue;
-            // }
+            if db_states.iter().any(|(_, _, db_timestamp)| db_timestamp == &timestamp) {
+                tracing::info!(?timestamp, "state already exists");
+                continue;
+            }
+
             let parsed_timestamp = timestamp;
 
             let swap_uuid = swap_id;
@@ -317,7 +322,7 @@ impl EigensyncDatabaseAdapter {
 
         //peers table
         let document_peers: HashSet<Uuid> = document.peers.keys().cloned().collect();
-        let db_peers = self.db.get_all_peer_addresses().await?;
+        //let db_peers = self.db.get_all_peer_addresses().await?;
 
         for swap_id in document_peers {
             tracing::info!("Downloading peer: {:?}", swap_id);

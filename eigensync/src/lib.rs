@@ -183,9 +183,9 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
     }
 
     pub async fn modify(&mut self, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
-        self.save_updates_local(f)?;
+        self.save_updates_local(f).context("Failed to save updates local")?;
 
-        let _ = self.sync_with_server().await.unwrap();
+        //let _ = self.sync_with_server().await.context("Failed to sync with server")?;
 
         Ok(())
     }
@@ -203,8 +203,8 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
 
         println!("Applying changes {:?}", new_changes.len());
 
-        let counter = new_changes.iter().filter(|change| !self.document.get_changes(&[]).contains(&&change)).count();
-        println!("{} changes are not in the document yet", counter);
+        // let counter = new_changes.iter().filter(|change| !self.document.get_changes(&[]).contains(&&change)).count();
+        // println!("{} changes are not in the document yet", counter);
 
         self.document.apply_changes(new_changes).context("Failed to apply changes")?;
 
@@ -214,7 +214,7 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
     }
 
     pub fn save_updates_local(&mut self,  f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
-        let mut state = hydrate(&self.document).unwrap();
+        let mut state = hydrate(&self.document).context("Failed to hydrate document")?;
         f(&mut state)?;
         reconcile(&mut self.document, state)
             .context("Failed to reconcile")?;
@@ -235,8 +235,8 @@ where
         let handle = self.clone();
         AbortOnDropHandle::new(tokio::task::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                let _ = handle.write().await.sync_with_server().await;
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let _ = handle.write().await.sync_with_server().await.context("Failed to sync with server");
             }
         }))
     }

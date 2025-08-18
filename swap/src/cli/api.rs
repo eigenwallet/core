@@ -530,7 +530,7 @@ impl ContextBuilder {
         tracing::info!("opened db");
 
         let eigensync = AbortOnDropHandle::new(tokio::task::spawn(async move {
-            db_adapter.run().await.unwrap();
+            db_adapter.run().await.context("Failed to run eigensync");
         }));
 
         database_progress_handle.finish();

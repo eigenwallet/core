@@ -1,17 +1,9 @@
-use std::{
-    collections::{HashMap, HashSet}, hash::Hash, marker::PhantomData, ops::Deref, str::FromStr, sync::{Arc, Mutex, OnceLock}, time::Duration
-};
+use std::collections::HashMap;
 
-use anyhow::{Context, Result};
-use automerge::{ActorId, AutoCommit, Change};
-use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
-use eigensync::{protocol::{client, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange}, EigensyncHandle, ServerDatabase};
-use libp2p::{
-    futures::StreamExt,
-    identity, noise, request_response,
-    swarm::{self, SwarmEvent},
-    tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
-};
+use automerge::AutoCommit;
+use autosurgeon::{hydrate, Hydrate, Reconcile};
+use eigensync::EigensyncHandle;
+use libp2p::{identity, Multiaddr, PeerId};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
@@ -40,9 +32,13 @@ fn get_state(document: &AutoCommit) -> State {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let server = Arc::new(Mutex::new(ServerDatabase::new()));
-    let mut alice: EigensyncHandle<State> = EigensyncHandle::new(Arc::clone(&server));
-    let mut bob: EigensyncHandle<State> = EigensyncHandle::new(Arc::clone(&server));
+    let server_addr = "/ip4/127.0.0.1/tcp/9999".parse::<Multiaddr>()?;
+    let server_id = PeerId::random();
+    let alice_keypair = identity::Keypair::generate_ed25519();
+    let bob_keypair = identity::Keypair::generate_ed25519();
+
+    let mut alice: EigensyncHandle<State> = EigensyncHandle::new(server_addr.clone(), server_id, alice_keypair).await?;
+    let mut bob: EigensyncHandle<State> = EigensyncHandle::new(server_addr, server_id, bob_keypair).await?;
 
     let mut alice_state = get_state(&alice.document);
 
@@ -61,29 +57,33 @@ async fn main() -> anyhow::Result<()> {
     });
 
     
-    alice.sync_with_server().unwrap();
+    alice.sync_with_server().await?;
     
-    let mut bob_state = get_state(&bob.document);
-    
-    bob.update_state(&mut bob_state).unwrap();
+    bob.sync_with_server().await?;
+    let bob_state = get_state(&bob.document);
     
     assert_eq!(alice_state, bob_state, "bob got alice swaps");
 
-    add_swap(&mut bob_state.clone(), SwapState {
-        state_id: Uuid::new_v4(),
-        swap_id: 1,
-        state: 1,
-        amount: 200,
-    });
+    // Move the add_swap call into save_updates_local closure above
 
-    bob.save_updates_local(&bob_state).unwrap();
+    bob.save_updates_local(|state| {
+        add_swap(state, SwapState {
+            state_id: Uuid::new_v4(),
+            swap_id: 1,
+            state: 1,
+            amount: 200,
+        });
+        Ok(())
+    })?;
 
-    bob.sync_with_server().unwrap();
+    bob.sync_with_server().await?;
 
-    alice.sync_with_server().unwrap();
+    alice.sync_with_server().await?;
 
-    alice.update_state(&mut alice_state).unwrap();
+    alice_state = get_state(&alice.document);
 
+    let bob_state = get_state(&bob.document);
+    
     assert_eq!(
         alice_state, bob_state,
         "Alice and Bob should have the same state {:?}", bob_state
