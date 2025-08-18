@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ORCHESTRATOR: We incorrectly passed the `--mainnet` flag to the `asb` binary but it is the default for the asb.
 - CONTROLLER: Add a `bitcoin-seed` command to the controller. You can use it to export the descriptor of the internal Bitcoin wallet.
-- MONERO-RPC-POOL: Accept all TLS certificates and allow all protocol versions.
+- CLI + GUI + ASB: Accept self-signed TLS certificates and TLS certificates with older protocol versions.
 
 ## [3.0.0-beta.10] - 2025-08-14
 
