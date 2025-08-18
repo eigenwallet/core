@@ -24,7 +24,7 @@ import {
   FiatPiconeroAmount,
   SatsAmount,
 } from "renderer/components/other/Units";
-import TransactionItem from "renderer/components/pages/monero/components/TransactionItem";
+import TransactionItem from "renderer/components/pages/monero/components/Transactions/TransactionItem";
 import { TransactionInfo } from "models/tauriModel";
 import { initializeMoneroWallet } from "renderer/rpc";
 import dayjs from "dayjs";

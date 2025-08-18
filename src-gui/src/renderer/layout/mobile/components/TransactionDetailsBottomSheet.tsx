@@ -10,8 +10,7 @@ import {
     Skeleton,
 } from '@mui/material'
 import {
-    ArrowBack as ArrowBackIcon,
-    ContentCopy as CopyIcon,
+    Close as CloseIcon,
 } from '@mui/icons-material'
 import { TransactionDirection, TransactionInfo } from 'models/tauriModel'
 import {
@@ -20,7 +19,7 @@ import {
 } from 'renderer/components/other/Units'
 import dayjs from 'dayjs'
 import ActionableMonospaceTextBox from 'renderer/components/other/ActionableMonospaceTextBox'
-import ConfirmationsBadge from 'renderer/components/pages/monero/components/ConfirmationsBadge'
+import ConfirmationsBadge from 'renderer/components/pages/monero/components/Transactions/ConfirmationsBadge'
 
 interface TransactionDetailsBottomSheetProps {
     open: boolean
@@ -196,17 +195,19 @@ export default function TransactionDetailsBottomSheet({
                 {/* Header */}
                 <Box
                     sx={{
+                        position: "relative",
                         display: 'flex',
                         alignItems: 'center',
+                        justifyContent: 'center',
                         gap: 2,
                         mb: 3,
                     }}
                 >
-                    <IconButton onClick={onClose} size="small">
-                        <ArrowBackIcon />
+                    <IconButton onClick={onClose} size="small" sx={{position: "absolute", left: 0}}>
+                        <CloseIcon />
                     </IconButton>
                     <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        Transaction Details
+                        Details
                     </Typography>
                 </Box>
 

@@ -9,7 +9,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft } from "@mui/icons-material";
 import { useAppSelector } from "store/hooks";
-import TransactionItem from "renderer/components/pages/monero/components/TransactionItem";
+import TransactionItem from "renderer/components/pages/monero/components/Transactions/TransactionItem";
 import { TransactionInfo } from "models/tauriModel";
 import dayjs from "dayjs";
 import _ from "lodash";

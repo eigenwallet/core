@@ -1,6 +1,6 @@
 import MobileDialog from "../../modal/MobileDialog";
 import MobileDialogHeader from "../../modal/MobileDialogHeader";
-import SendTransactionContent from "./components/SendTransactionContent";
+import SendTransactionContent from "../../features/wallet/SendTransactionContent";
 import SendApprovalContent from "./components/SendApprovalContent";
 import { useState } from "react";
 import SendSuccessContent from "./components/SendSuccessContent";
