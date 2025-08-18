@@ -10,7 +10,7 @@ export default function ReceiveButton({ address, disabled }: { address: string, 
 
   return (
     <>
-      <TextIconButton label="Receive" onClick={() => setOpen(true)} disabled={disabled}>
+      <TextIconButton label="Receive" onClick={() => setOpen(true)} disabled={disabled} isMainActionButton>
         <ArrowDownwardIcon />
       </TextIconButton>
       <Drawer open={open} onClose={() => setOpen(false)} anchor="bottom">

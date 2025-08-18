@@ -128,7 +128,7 @@ function DFXWidgetMobile({
 }) {
   return (
     <>
-      <TextIconButton label="Buy" onClick={onOpen} disabled={disabled}>
+      <TextIconButton label="Buy" onClick={onOpen} disabled={disabled} isMainActionButton>
         <EuroIcon />
       </TextIconButton>
       <MobileDialog open={open} onClose={onClose}>

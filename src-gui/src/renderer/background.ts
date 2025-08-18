@@ -143,7 +143,6 @@ export async function setupBackgroundTasks(): Promise<void> {
         break;
 
       case "MoneroWalletUpdate":
-        console.log("MoneroWalletUpdate", eventData);
         if (eventData.type === "BalanceChange") {
           store.dispatch(setBalance(eventData.content));
         }

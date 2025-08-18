@@ -85,7 +85,7 @@ export default function SendButton({
 
   return (
     <>
-      <TextIconButton label="Send" onClick={() => setOpen(true)} disabled={disabled}>
+      <TextIconButton label="Send" onClick={() => setOpen(true)} disabled={disabled} isMainActionButton>
         <ArrowUpwardIcon />
       </TextIconButton>
       <SwipeableDrawer open={open} onOpen={() => setOpen(true)} onClose={handleClose} anchor="bottom" disableSwipeToOpen={true} slotProps={{ paper: { sx: { minHeight: "90vh", borderTopLeftRadius: 16, borderTopRightRadius: 16 } } }}>

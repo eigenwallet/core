@@ -100,14 +100,14 @@ export default function HomePage() {
       </Stack>
 
       {/* Quick actions */}
-      <Stack direction="row" spacing={2} justifyContent="center">
+      <Box sx={{ display: "flex", gap: 2, justifyContent: "center", mx: 3 }}>
         <ReceiveButton address={mainAddress} disabled={!isContextAvailable} />
         <SendButton balance={balance} disabled={!isContextAvailable} />
         <DFXButton disabled={!isContextAvailable} />
-        <TextIconButton label="More" onClick={() => setActionBottomSheetOpen(true)} disabled={!isContextAvailable}>
+        <TextIconButton label="More" onClick={() => setActionBottomSheetOpen(true)} disabled={!isContextAvailable} isMainActionButton>
           <MoreVertIcon />
         </TextIconButton>
-      </Stack>
+      </Box>
 
       {/* Transactions */}
       <Box flexGrow={1}>
