@@ -135,6 +135,7 @@ function MobileTransactionLayout({
         </Typography>
         
         {/* Date */}
+        {transaction.confirmations > 10 ? (
         <Typography
           variant="caption"
           sx={{
@@ -145,6 +146,11 @@ function MobileTransactionLayout({
         >
           {displayDate}
         </Typography>
+        ) : (
+          <Box sx={{position: "relative", top: 3}}>
+          <ConfirmationsBadge confirmations={transaction.confirmations} />
+          </Box>
+        )}
       </Box>
 
       {/* Right Section - Amount display */}

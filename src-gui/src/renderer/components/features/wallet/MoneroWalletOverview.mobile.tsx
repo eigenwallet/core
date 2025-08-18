@@ -146,7 +146,7 @@ export default function MoneroWalletOverview({
                             color="text.secondary"
                             sx={{ position: 'relative', bottom: -10 }}
                         >
-                            Syncing – {blocksLeft.toLocaleString()} blocks left
+                            Syncing – {blocksLeft > 1 ? blocksLeft.toLocaleString() + " blocks left" : "1 block left"}
                         </ShimmerTypography>
                         <LinearProgress
                             value={syncProgress.progress_percentage}
