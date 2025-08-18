@@ -1,0 +1,1 @@
+UPDATE monero_nodes SET scheme = 'https' WHERE host LIKE '%ravfx%';
