@@ -33,3 +33,23 @@ test suite.
 cargo install cargo-nextest
 cargo nextest run
 ```
+
+## Donations
+
+If you want to donate to the project, you can use the following address. Donations will be used to fund development.
+
+Please only do so if you do not need the money. We'd rather you keep it but people ask from time to time so we're adding it here.
+
+```gpg
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o is our donation address for Github (signed by binarybaron)
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWlQAKCRCZt10+FHai
+bhasAQDGrAkZu+FFwDZDUEZzrIVS42he+GeMiS+ykpXyL5I7RQD/dXCR3f39zFsK
+1A7y45B3a8ZJYTzC7bbppg6cEnCoWQE=
+=j+Vz
+-----END PGP SIGNATURE-----
+```

@@ -38,6 +38,7 @@ import {
   setFiatCurrency,
   setTheme,
   setTorEnabled,
+  setEnableMoneroTor,
   setUseMoneroRpcPool,
   setDonateToDevelopment,
 } from "store/features/settingsSlice";
@@ -91,6 +92,7 @@ export default function SettingsBox() {
             <Table>
               <TableBody>
                 <TorSettings />
+                <MoneroTorSettings />
                 <DonationTipSetting />
                 <ElectrumRpcUrlSetting />
                 <MoneroRpcPoolSetting />
@@ -716,6 +718,42 @@ export function TorSettings() {
 }
 
 /**
+ * A setting that allows you to enable or disable routing Monero wallet traffic through Tor.
+ * This setting is only visible when Tor is enabled.
+ */
+function MoneroTorSettings() {
+  const dispatch = useAppDispatch();
+  const torEnabled = useSettings((settings) => settings.enableTor);
+  const enableMoneroTor = useSettings((settings) => settings.enableMoneroTor);
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
+    dispatch(setEnableMoneroTor(event.target.checked));
+
+  // Hide this setting if Tor is disabled entirely
+  if (!torEnabled) {
+    return null;
+  }
+
+  return (
+    <TableRow>
+      <TableCell>
+        <SettingLabel
+          label="Route Monero traffic through Tor"
+          tooltip="When enabled, Monero wallet traffic will be routed through Tor for additional privacy. Requires main Tor setting to be enabled."
+        />
+      </TableCell>
+      <TableCell>
+        <Switch
+          checked={enableMoneroTor}
+          onChange={handleChange}
+          color="primary"
+        />
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/**
  * A setting that allows you to manage rendezvous points for maker discovery
  */
 function RendezvousPointsSetting() {
@@ -796,7 +834,7 @@ function RendezvousPointsSetting() {
                           label="Add new rendezvous point"
                           value={newPoint}
                           onValidatedChange={setNewPoint}
-                          placeholder="/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE"
+                          placeholder="/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
                           fullWidth
                           isValid={isValidMultiAddressWithPeerId}
                           variant="outlined"

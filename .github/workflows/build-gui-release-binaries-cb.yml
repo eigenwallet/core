@@ -98,6 +98,8 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         run: |
           brew update
+          brew install python@3.13 || true
+          brew link --overwrite python@3.13
           brew install ${{ env.DEPS_MONERO_MACOS }} git
           brew reinstall --build-from-source unbound expat 
           brew install protobuf@21

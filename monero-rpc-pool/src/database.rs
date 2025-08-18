@@ -2,8 +2,31 @@ use std::path::PathBuf;
 
 use crate::types::{NodeAddress, NodeHealthStats, NodeMetadata, NodeRecord};
 use anyhow::Result;
+use monero::Network;
 use sqlx::SqlitePool;
 use tracing::{info, warn};
+
+/// Convert a string to a Network enum
+pub fn parse_network(s: &str) -> Result<Network, anyhow::Error> {
+    match s.to_lowercase().as_str() {
+        "mainnet" => Ok(Network::Mainnet),
+        "stagenet" => Ok(Network::Stagenet),
+        "testnet" => Ok(Network::Testnet),
+        _ => anyhow::bail!(
+            "Invalid network: {}. Must be mainnet, stagenet, or testnet",
+            s
+        ),
+    }
+}
+
+/// Convert a Network enum to a string for database storage
+pub fn network_to_string(network: &Network) -> &'static str {
+    match network {
+        Network::Mainnet => "mainnet",
+        Network::Stagenet => "stagenet",
+        Network::Testnet => "testnet",
+    }
+}
 
 #[derive(Clone)]
 pub struct Database {
@@ -43,7 +66,7 @@ impl Database {
         &self,
         scheme: &str,
         host: &str,
-        port: i64,
+        port: u16,
         was_successful: bool,
         latency_ms: Option<f64>,
     ) -> Result<()> {
@@ -134,7 +157,8 @@ impl Database {
                     .parse()
                     .unwrap_or_else(|_| chrono::Utc::now());
 
-                let metadata = NodeMetadata::new(row.id, row.network, first_seen_at);
+                let network = parse_network(&row.network).unwrap_or(Network::Mainnet);
+                let metadata = NodeMetadata::new(row.id, network, first_seen_at);
                 let health = NodeHealthStats {
                     success_count: row.success_count,
                     failure_count: row.failure_count,
@@ -208,38 +232,52 @@ impl Database {
     }
 
     /// Get top nodes based on success rate
+    /// Adds randomness
     pub async fn get_top_nodes_by_recent_success(
         &self,
         network: &str,
         limit: i64,
     ) -> Result<Vec<NodeAddress>> {
+        // Randomized ordering: r = max of 3 Uniform(0,1) (biased toward 1).
+        // Rank by (base_score * r) so top nodes remain preferred but can shuffle.
+        // r is drawn once per row in the CTE and reused in ORDER BY.
+        // Increase RANDOM() terms in MAX(...) to strengthen the bias.
         let rows = sqlx::query!(
             r#"
-            SELECT 
-                n.scheme,
-                n.host,
-                n.port
-            FROM monero_nodes n
-            LEFT JOIN (
+            WITH scored AS (
                 SELECT 
-                    node_id,
-                    SUM(CASE WHEN was_successful THEN 1 ELSE 0 END) as success_count,
-                    SUM(CASE WHEN NOT was_successful THEN 1 ELSE 0 END) as failure_count
-                FROM (
-                    SELECT node_id, was_successful
-                    FROM health_checks 
-                    ORDER BY timestamp DESC 
-                    LIMIT 1000
-                ) recent_checks
-                GROUP BY node_id
-            ) stats ON n.id = stats.node_id
-            WHERE n.network = ?
-            ORDER BY 
-                CASE 
-                    WHEN (COALESCE(stats.success_count, 0) + COALESCE(stats.failure_count, 0)) > 0 
-                    THEN CAST(COALESCE(stats.success_count, 0) AS REAL) / CAST(COALESCE(stats.success_count, 0) + COALESCE(stats.failure_count, 0) AS REAL)
-                    ELSE 0.0 
-                END DESC
+                    n.scheme,
+                    n.host,
+                    n.port,
+                    CASE 
+                        WHEN (COALESCE(stats.success_count, 0) + COALESCE(stats.failure_count, 0)) > 0 
+                        THEN CAST(COALESCE(stats.success_count, 0) AS REAL) / CAST(COALESCE(stats.success_count, 0) + COALESCE(stats.failure_count, 0) AS REAL)
+                        ELSE 0.0 
+                    END as base_score,
+                    MAX(
+                        ABS(RANDOM()) / CAST(0x7fffffffffffffff AS REAL),
+                        ABS(RANDOM()) / CAST(0x7fffffffffffffff AS REAL),
+                        ABS(RANDOM()) / CAST(0x7fffffffffffffff AS REAL)
+                    ) as r
+                FROM monero_nodes n
+                LEFT JOIN (
+                    SELECT 
+                        node_id,
+                        SUM(CASE WHEN was_successful THEN 1 ELSE 0 END) as success_count,
+                        SUM(CASE WHEN NOT was_successful THEN 1 ELSE 0 END) as failure_count
+                    FROM (
+                        SELECT node_id, was_successful
+                        FROM health_checks 
+                        ORDER BY timestamp DESC 
+                        LIMIT 1000
+                    ) recent_checks
+                    GROUP BY node_id
+                ) stats ON n.id = stats.node_id
+                WHERE n.network = ?
+            )
+            SELECT scheme, host, port
+            FROM scored
+            ORDER BY (base_score * r) DESC, r DESC
             LIMIT ?
             "#,
             network,

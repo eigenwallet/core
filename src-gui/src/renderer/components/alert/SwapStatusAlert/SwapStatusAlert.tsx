@@ -216,6 +216,10 @@ export function StateAlert({
       }
       return <PunishTimelockExpiredAlert />;
 
+    // If the Bitcoin lock transaction has not been published yet
+    // there is no need to display an alert
+    case BobStateName.BtcLockReadyToPublish:
+      return null;
     default:
       exhaustiveGuard(swap.state_name);
   }

@@ -268,7 +268,7 @@ async fn start_alice(
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
-    let (event_loop, swap_handle) = asb::EventLoop::new(
+    let (event_loop, swap_handle, _service) = asb::EventLoop::new(
         swarm,
         env_config,
         bitcoin_wallet,
@@ -314,6 +314,7 @@ async fn init_test_wallets(
         monero_daemon,
         monero::Network::Mainnet,
         true,
+        None,
         None,
     )
     .await
@@ -1125,7 +1126,7 @@ pub struct SlowCancelConfig;
 impl GetConfig for SlowCancelConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(180),
+            bitcoin_cancel_timelock: CancelTimelock::new(180).into(),
             ..env::Regtest::get_config()
         }
     }
@@ -1136,7 +1137,7 @@ pub struct FastCancelConfig;
 impl GetConfig for FastCancelConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10),
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
             ..env::Regtest::get_config()
         }
     }
@@ -1147,8 +1148,8 @@ pub struct FastPunishConfig;
 impl GetConfig for FastPunishConfig {
     fn get_config() -> Config {
         Config {
-            bitcoin_cancel_timelock: CancelTimelock::new(10),
-            bitcoin_punish_timelock: PunishTimelock::new(10),
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_punish_timelock: PunishTimelock::new(10).into(),
             ..env::Regtest::get_config()
         }
     }

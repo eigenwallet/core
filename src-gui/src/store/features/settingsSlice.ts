@@ -7,6 +7,9 @@ const DEFAULT_RENDEZVOUS_POINTS = [
   "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
   "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
   "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
+  "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
+  "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
+  "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
 ];
 
 export interface SettingsState {
@@ -19,6 +22,8 @@ export interface SettingsState {
   fiatCurrency: FiatCurrency;
   /// Whether to enable Tor for p2p connections
   enableTor: boolean;
+  /// Whether to route Monero wallet traffic through Tor
+  enableMoneroTor: boolean;
   /// Whether to use the Monero RPC pool for load balancing (true) or custom nodes (false)
   useMoneroRpcPool: boolean;
   userHasSeenIntroduction: boolean;
@@ -118,6 +123,10 @@ const initialState: SettingsState = {
         "ssl://bitcoin.stackwallet.com:50002",
         "ssl://b.1209k.com:50002",
         "tcp://electrum.coinucopia.io:50001",
+        "ssl://mainnet.foundationdevices.com:50002",
+        "tcp://bitcoin.lu.ke:50001",
+        "tcp://se-mma-crypto-payments-001.mullvad.net:50001",
+        "ssl://electrum.coinfinity.co:50002",
       ],
       [Blockchain.Monero]: [],
     },
@@ -126,6 +135,7 @@ const initialState: SettingsState = {
   fetchFiatPrices: false,
   fiatCurrency: FiatCurrency.Usd,
   enableTor: true,
+  enableMoneroTor: false, // Default to not routing Monero traffic through Tor
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
@@ -215,6 +225,9 @@ const alertsSlice = createSlice({
     setTorEnabled(slice, action: PayloadAction<boolean>) {
       slice.enableTor = action.payload;
     },
+    setEnableMoneroTor(slice, action: PayloadAction<boolean>) {
+      slice.enableMoneroTor = action.payload;
+    },
     setUseMoneroRpcPool(slice, action: PayloadAction<boolean>) {
       slice.useMoneroRpcPool = action.payload;
     },
@@ -236,6 +249,7 @@ export const {
   setFetchFiatPrices,
   setFiatCurrency,
   setTorEnabled,
+  setEnableMoneroTor,
   setUseMoneroRpcPool,
   setUserHasSeenIntroduction,
   addRendezvousPoint,

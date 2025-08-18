@@ -3,7 +3,7 @@ pub mod tauri_bindings;
 
 use crate::cli::api::tauri_bindings::SeedChoice;
 use crate::cli::command::{Bitcoin, Monero};
-use crate::common::tor::init_tor_client;
+use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
@@ -24,6 +24,7 @@ use tauri_bindings::{
 };
 use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
+use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tracing::level_filters::LevelFilter;
 use tracing::Level;
@@ -204,6 +205,7 @@ pub struct ContextBuilder {
     debug: bool,
     json: bool,
     tor: bool,
+    enable_monero_tor: bool,
     tauri_handle: Option<TauriHandle>,
 }
 
@@ -227,6 +229,7 @@ impl ContextBuilder {
             debug: false,
             json: false,
             tor: false,
+            enable_monero_tor: false,
             tauri_handle: None,
         }
     }
@@ -280,6 +283,12 @@ impl ContextBuilder {
         self
     }
 
+    /// Whether to route Monero wallet traffic through Tor (default false)
+    pub fn with_enable_monero_tor(mut self, enable_monero_tor: bool) -> Self {
+        self.enable_monero_tor = enable_monero_tor;
+        self
+    }
+
     /// Takes the builder, initializes the context by initializing the wallets and other components and returns the Context.
     pub async fn build(self) -> Result<Context> {
         // This is the data directory for the eigenwallet (wallet files)
@@ -314,19 +323,100 @@ impl ContextBuilder {
             );
         });
 
-        // Start the rpc pool for the monero wallet
-        let (server_info, mut status_receiver, pool_handle) =
-            monero_rpc_pool::start_server_with_random_port(
-                monero_rpc_pool::config::Config::new_random_port(
-                    "127.0.0.1".to_string(),
-                    base_data_dir.join("monero-rpc-pool"),
-                ),
-                match self.is_testnet {
-                    true => crate::monero::Network::Stagenet,
-                    false => crate::monero::Network::Mainnet,
-                },
-            )
-            .await?;
+        let future_seed_choice_and_database = {
+            let tauri_handle = self.tauri_handle.clone();
+
+            async move {
+                // Initialize wallet database for tracking recent wallets
+                let wallet_database = monero_sys::Database::new(eigenwallet_data_dir.clone())
+                    .await
+                    .context("Failed to initialize wallet database")?;
+
+                // Request the user to select a wallet to use
+                let seed_choice = match tauri_handle {
+                    Some(tauri_handle) => {
+                        Some(request_seed_choice(tauri_handle, &wallet_database).await?)
+                    }
+                    None => None,
+                };
+
+                anyhow::Result::<_>::Ok((wallet_database, seed_choice))
+            }
+        };
+
+        // Create unbootstrapped Tor client early if enabled
+        let future_unbootstrapped_tor_client_rpc_pool = {
+            let tauri_handle = self.tauri_handle.clone();
+            async move {
+                let unbootstrapped_tor_client = if self.tor {
+                    match create_tor_client(&base_data_dir).await.inspect_err(|err| {
+                    tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
+                }) {
+                    Ok(client) => Some(client),
+                    Err(_) => None,
+                }
+                } else {
+                    tracing::warn!("Internal Tor client not enabled, skipping initialization");
+                    None
+                };
+
+                // Start the rpc pool for the monero wallet with optional Tor client based on enable_monero_tor setting
+                let (server_info, status_receiver, pool_handle) =
+                    monero_rpc_pool::start_server_with_random_port(
+                        monero_rpc_pool::config::Config::new_random_port_with_tor_client(
+                            base_data_dir.join("monero-rpc-pool"),
+                            if self.enable_monero_tor {
+                                unbootstrapped_tor_client.clone()
+                            } else {
+                                None
+                            },
+                            match self.is_testnet {
+                                true => monero::Network::Stagenet,
+                                false => monero::Network::Mainnet,
+                            },
+                        ),
+                    )
+                    .await?;
+
+                let bootstrap_tor_client_task = AbortOnDropHandle::new(tokio::spawn({
+                    let unbootstrapped_tor_client = unbootstrapped_tor_client.clone();
+                    let tauri_handle = tauri_handle.clone();
+
+                    async move {
+                        if let Some(tor_client) = unbootstrapped_tor_client {
+                            bootstrap_tor_client(tor_client.clone(), tauri_handle.clone())
+                        .await
+                        .inspect_err(|err| {
+                            tracing::warn!(%err, "Failed to bootstrap Tor client. It will remain unbootstrapped");
+                        })
+                        .ok();
+                        }
+                    }
+                }));
+
+                anyhow::Result::<_>::Ok((
+                    unbootstrapped_tor_client,
+                    bootstrap_tor_client_task,
+                    server_info,
+                    status_receiver,
+                    pool_handle,
+                ))
+            }
+        };
+
+        let (
+            (wallet_database, seed_choice),
+            (
+                unbootstrapped_tor_client,
+                bootstrap_tor_client_task,
+                server_info,
+                mut status_receiver,
+                pool_handle,
+            ),
+        ) = tokio::try_join!(
+            future_seed_choice_and_database,
+            future_unbootstrapped_tor_client_rpc_pool
+        )?;
 
         // Listen for pool status updates and forward them to frontend
         let pool_tauri_handle = self.tauri_handle.clone();
@@ -356,18 +446,14 @@ impl ContextBuilder {
             ssl: false,
         };
 
-        // Initialize wallet database for tracking recent wallets
-        let wallet_database = monero_sys::Database::new(eigenwallet_data_dir.clone())
-            .await
-            .context("Failed to initialize wallet database")?;
-
         // Prompt the user to open/create a Monero wallet
-        let (wallet, seed) = request_and_open_monero_wallet(
+        let (wallet, seed) = open_monero_wallet(
             self.tauri_handle.clone(),
             eigenwallet_data_dir,
             base_data_dir,
             env_config,
             &daemon,
+            seed_choice,
             &wallet_database,
         )
         .await?;
@@ -460,25 +546,7 @@ impl ContextBuilder {
             }
         };
 
-        let initialize_tor_client = async {
-            // Don't init a tor client unless we should use it.
-            if !self.tor {
-                tracing::warn!("Internal Tor client not enabled, skipping initialization");
-                return Ok(None);
-            }
-
-            let maybe_tor_client = init_tor_client(&data_dir, tauri_handle.clone())
-                .await
-                .inspect_err(|err| {
-                    tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
-                })
-                .ok();
-
-            Ok(maybe_tor_client)
-        };
-
-        let (bitcoin_wallet, tor) =
-            tokio::try_join!(initialize_bitcoin_wallet, initialize_tor_client,)?;
+        let bitcoin_wallet = initialize_bitcoin_wallet.await?;
 
         // If we have a bitcoin wallet and a tauri handle, we start a background task
         if let Some(wallet) = bitcoin_wallet.clone() {
@@ -492,6 +560,8 @@ impl ContextBuilder {
                 tokio::spawn(watcher.run());
             }
         }
+
+        bootstrap_tor_client_task.await?;
 
         let context = Context {
             db,
@@ -510,7 +580,7 @@ impl ContextBuilder {
             swap_lock,
             tasks,
             tauri_handle: self.tauri_handle,
-            tor_client: tor,
+            tor_client: unbootstrapped_tor_client,
             monero_rpc_pool_handle,
         };
 
@@ -574,6 +644,65 @@ impl Context {
     pub fn tauri_handle(&self) -> Option<TauriHandle> {
         self.tauri_handle.clone()
     }
+
+    /// Change the Monero node configuration for all wallets
+    pub async fn change_monero_node(&self, node_config: MoneroNodeConfig) -> Result<()> {
+        let monero_manager = self
+            .monero_manager
+            .as_ref()
+            .context("Monero wallet manager not available")?;
+
+        // Determine the daemon configuration based on the node config
+        let daemon = match node_config {
+            MoneroNodeConfig::Pool => {
+                // Use the pool handle to get server info
+                let pool_handle = self
+                    .monero_rpc_pool_handle
+                    .as_ref()
+                    .context("Pool handle not available")?;
+
+                let server_info = pool_handle.server_info();
+                let pool_url: String = server_info.clone().into();
+                tracing::info!("Switching to Monero RPC pool: {}", pool_url);
+
+                monero_sys::Daemon {
+                    address: pool_url,
+                    ssl: false,
+                }
+            }
+            MoneroNodeConfig::SingleNode { url } => {
+                tracing::info!("Switching to single Monero node: {}", url);
+
+                // Parse the URL to determine SSL and address
+                let (address, ssl) = if url.starts_with("https://") {
+                    (
+                        url.strip_prefix("https://").unwrap_or(&url).to_string(),
+                        true,
+                    )
+                } else if url.starts_with("http://") {
+                    (
+                        url.strip_prefix("http://").unwrap_or(&url).to_string(),
+                        false,
+                    )
+                } else {
+                    // Default to HTTP if no protocol specified
+                    (url, false)
+                };
+
+                monero_sys::Daemon { address, ssl }
+            }
+        };
+
+        // Update the wallet manager's daemon configuration
+        monero_manager
+            .change_monero_node(daemon.clone())
+            .await
+            .context("Failed to change Monero node in wallet manager")?;
+
+        tracing::info!(?daemon, "Switched Monero node");
+
+        Ok(())
+    }
 }
 
 impl fmt::Debug for Context {
@@ -632,6 +761,21 @@ async fn request_and_open_monero_wallet_legacy(
     Ok(wallet)
 }
 
+/// Requests the user to select a seed choice from a list of recent wallets
+async fn request_seed_choice(
+    tauri_handle: TauriHandle,
+    database: &monero_sys::Database,
+) -> Result<SeedChoice> {
+    let recent_wallets = database.get_recent_wallets(5).await?;
+    let recent_wallets: Vec<String> = recent_wallets.into_iter().map(|w| w.wallet_path).collect();
+
+    let seed_choice = tauri_handle
+        .request_seed_selection_with_recent_wallets(recent_wallets)
+        .await?;
+
+    Ok(seed_choice)
+}
+
 /// Opens or creates a Monero wallet after asking the user via the Tauri UI.
 ///
 /// The user can:
@@ -641,36 +785,24 @@ async fn request_and_open_monero_wallet_legacy(
 ///
 /// Errors if the user aborts, provides an incorrect password, or the wallet
 /// fails to open/create.
-async fn request_and_open_monero_wallet(
+async fn open_monero_wallet(
     tauri_handle: Option<TauriHandle>,
     eigenwallet_data_dir: &PathBuf,
     legacy_data_dir: &PathBuf,
     env_config: EnvConfig,
     daemon: &monero_sys::Daemon,
-    wallet_database: &monero_sys::Database,
+    seed_choice: Option<SeedChoice>,
+    database: &monero_sys::Database,
 ) -> Result<(monero_sys::WalletHandle, Seed), Error> {
     let eigenwallet_wallets_dir = eigenwallet_data_dir.join("wallets");
 
-    let wallet = match tauri_handle {
-        Some(tauri_handle) => {
-            // Get recent wallets from database
-            let recent_wallets: Vec<String> = wallet_database
-                .get_recent_wallets(5)
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(|w| w.wallet_path)
-                .collect();
-
+    let wallet = match seed_choice {
+        Some(mut seed_choice) => {
             // This loop continually requests the user to select a wallet file
             // It then requests the user to provide a password.
             // It repeats until the user provides a valid password or rejects the password request
             // When the user rejects the password request, we prompt him to select a wallet again
             loop {
-                let seed_choice = tauri_handle
-                    .request_seed_selection_with_recent_wallets(recent_wallets.clone())
-                    .await?;
-
                 let _monero_progress_handle = tauri_handle
                     .new_background_process_with_initial_progress(
                         TauriBackgroundProgress::OpeningMoneroWallet,
@@ -724,7 +856,9 @@ async fn request_and_open_monero_wallet(
                         .await
                         .context("Failed to create wallet from provided seed")?
                     }
-                    SeedChoice::FromWalletPath { wallet_path } => {
+                    SeedChoice::FromWalletPath { ref wallet_path } => {
+                        let wallet_path = wallet_path.clone();
+
                         // Helper function to verify password
                         let verify_password = |password: String| -> Result<bool> {
                             monero_sys::WalletHandle::verify_wallet_password(
@@ -785,6 +919,9 @@ async fn request_and_open_monero_wallet(
                             // None means the user rejected the password request
                             // We prompt him to select a wallet again
                             None => {
+                                seed_choice =
+                                    request_seed_choice(tauri_handle.clone().unwrap(), database)
+                                        .await?;
                                 continue;
                             }
                         };
@@ -829,7 +966,7 @@ async fn request_and_open_monero_wallet(
             }
         }
 
-        // If we don't have a tauri handle, we use the seed.pem file
+        // If we don't have a seed choice, we use the legacy wallet
         // This is used for the CLI to monitor the blockchain
         None => {
             let wallet =

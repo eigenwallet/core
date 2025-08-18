@@ -159,6 +159,20 @@ impl TorTransport {
         Ok(ret)
     }
 
+    /// Creates an unbootstrapped `TorTransport`. It will bootstrap in the background.
+    /// This can silently fail
+    pub async fn unbootstrapped() -> Result<Self, TorError> {
+        let builder = Self::builder();
+        let ret = Self::from_builder(&builder, AddressConversion::DnsOnly)?;
+        let bootstrap_client = ret.client.clone();
+        tokio::spawn(async move {
+            if let Err(e) = bootstrap_client.bootstrap().await {
+                tracing::error!("Tor bootstrap failed: {}", e);
+            }
+        });
+        Ok(ret)
+    }
+
     /// Builds a `TorTransport` from an Arti `TorClientBuilder` but does not bootstrap it.
     ///
     /// # Errors
@@ -221,7 +235,7 @@ impl TorTransport {
         let request_stream = Box::pin(handle_rend_requests(request_stream));
 
         let multiaddr = service
-            .onion_name()
+            .onion_address()
             .ok_or_else(|| anyhow::anyhow!("Onion service has no onion address"))?
             .to_multiaddr(port);
 
@@ -304,7 +318,7 @@ impl Transport for TorTransport {
             .services
             .iter()
             .position(|(service, _)| {
-                service.onion_name().map_or(false, |name| {
+                service.onion_address().map_or(false, |name| {
                     name.to_multiaddr(address.port()) == onion_address
                 })
             })

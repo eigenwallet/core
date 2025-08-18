@@ -11,6 +11,10 @@ pub trait PriceFeed: Sized {
     type Error: std::error::Error + Send + Sync + 'static;
     type Update;
 
-    async fn connect(url: url::Url) -> Result<Self, Self::Error>;
-    async fn next_update(&mut self) -> Result<Self::Update, Self::Error>;
+    fn connect(
+        url: url::Url,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Error>> + Send;
+    fn next_update(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Self::Update, Self::Error>> + Send;
 }
