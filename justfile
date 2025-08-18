@@ -50,6 +50,9 @@ gui-mainnet:
 gui_build:
         cd src-gui && yarn build
 
+build-gui-windows:
+    cargo tauri build --target x86_64-pc-windows-gnu -- -vv
+
 # Run the Rust tests
 tests:
         cargo nextest run
