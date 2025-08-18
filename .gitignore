@@ -10,6 +10,9 @@ build/
 monero-rpc-pool/temp_db.sqlite
 monero-rpc-pool/temp.db
 
+# Shared temporary database for SQLx cache regeneration
+tempdb.sqlite
+
 # auto-generated files by swap-orchestrator
 swap-orchestrator/docker-compose.yml
 swap-orchestrator/config.toml

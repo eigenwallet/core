@@ -5,10 +5,10 @@
 # Script to regenerate SQLx query cache for monero-rpc-pool
 # 
 # This script:
-# 1. Creates a temporary SQLite database in a temp directory
+# 1. Creates a temporary SQLite database in the workspace root
 # 2. Runs all database migrations to set up the schema
 # 3. Regenerates the SQLx query cache (.sqlx directory)
-# 4. Cleans up temporary files automatically
+# 4. Cleans up temporary database file automatically
 #
 # Usage:
 #   ./regenerate_sqlx_cache.sh
@@ -25,19 +25,15 @@ set -e  # Exit on any error
 
 echo "🔄 Regenerating SQLx query cache..."
 
-# Create a temporary directory for the database
-TEMP_DIR=$(mktemp -d)
-TEMP_DB="$TEMP_DIR/temp_sqlx_cache.sqlite"
+WORKSPACE_ROOT="$(pwd)"
+
+# Use shared temporary database in workspace root
+TEMP_DB="$WORKSPACE_ROOT/tempdb.sqlite"
 DATABASE_URL="sqlite:$TEMP_DB"
 
-echo "📁 Using temporary database: $TEMP_DB"
+rm -f "$TEMP_DB"
 
-# Function to cleanup on exit
-cleanup() {
-    echo "🧹 Cleaning up temporary files..."
-    rm -rf "$TEMP_DIR"
-}
-trap cleanup EXIT
+echo "📁 Using temporary database: $TEMP_DB"
 
 # Export DATABASE_URL for sqlx commands
 export DATABASE_URL
@@ -45,11 +41,13 @@ export DATABASE_URL
 echo "🗄️  Creating database..."
 cargo sqlx database create
 
-echo "🔄 Running migrations..."
-cargo sqlx migrate run
+for dir in swap monero-sys monero-rpc-pool; do
+    echo "🔄 Running migrations in $dir..."
+    (cd "$WORKSPACE_ROOT/$dir" && cargo sqlx migrate run --ignore-missing)
+done
 
 echo "⚡ Preparing SQLx query cache..."
-cargo sqlx prepare
+cargo sqlx prepare --workspace 
 
 echo "✅ SQLx query cache regenerated successfully!"
 echo "📝 The .sqlx directory has been updated with the latest query metadata."
