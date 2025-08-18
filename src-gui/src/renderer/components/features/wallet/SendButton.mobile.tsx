@@ -27,7 +27,7 @@ export default function SendButton({
   balance: {
     unlocked_balance: string;
   };
-  disabled: boolean;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [successResponse, setSuccessResponse] =

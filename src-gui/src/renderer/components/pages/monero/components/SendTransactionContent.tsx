@@ -54,6 +54,9 @@ export default function SendTransactionContent({
 
   const theme = useTheme();
 
+  if (!balance || !balance.unlocked_balance) {
+    return <></>
+  }
 
   return (
     <>

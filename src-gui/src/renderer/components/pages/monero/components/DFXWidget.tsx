@@ -37,7 +37,7 @@ function DFXLogo({ height = 24 }: { height?: number }) {
 }
 
 // Component for DFX button and modal
-export default function DfxButton({ disabled }: { disabled: boolean }) {
+export default function DfxButton({ disabled }: { disabled?: boolean }) {
   const [dfxUrl, setDfxUrl] = useState<string | null>(null);
 
   const handleOpenDfx = async () => {

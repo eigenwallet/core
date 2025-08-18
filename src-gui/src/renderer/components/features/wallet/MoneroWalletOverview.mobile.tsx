@@ -37,6 +37,11 @@ export default function MoneroWalletOverview({
     const isSyncing = syncProgress && syncProgress.progress_percentage < 100
     const blocksLeft = syncProgress?.target_block - syncProgress?.current_block
 
+    const pendingBalance = balance
+        ? parseFloat(balance.total_balance) -
+          parseFloat(balance.unlocked_balance)
+        : 0
+
     return (
         <Card
             sx={{
@@ -47,7 +52,7 @@ export default function MoneroWalletOverview({
                 borderRadius: 3,
             }}
         >
-            <CardContent sx={{ p: 2, pb: 1, position: 'relative' }}>
+            <CardContent sx={{ p: 2, "&:last-child": { pb: 2 }, position: 'relative' }}>
                 <Box
                     sx={{
                         display: 'flex',
@@ -97,11 +102,7 @@ export default function MoneroWalletOverview({
                         </Typography>
                     </Box>
                     <Box>
-                        <Typography
-                            variant="h4"
-                            fontWeight={700}
-                            sx={{ mr: 1 }}
-                        >
+                        <Typography variant="h4" fontWeight={700}>
                             {balance ? (
                                 <PiconeroAmount
                                     amount={parseFloat(
@@ -117,9 +118,34 @@ export default function MoneroWalletOverview({
                         </Typography>
                     </Box>
                 </Box>
+                {pendingBalance > 0 && (
+                    <Box
+                        sx={{
+                            display: 'flex',
+                            flexDirection: 'row',
+                            gap: 1,
+                            justifyContent: 'flex-end',
+                            width: '100%',
+                        }}
+                    >
+                        <ShimmerTypography
+                            variant="body2"
+                            color="warning"
+                        >
+                            Pending
+                        </ShimmerTypography>
+                        <Typography variant="body2" color="text.secondary">
+                            <PiconeroAmount amount={pendingBalance} />
+                        </Typography>
+                    </Box>
+                )}
                 {isSyncing && (
                     <>
-                        <ShimmerTypography variant="body2" color="text.secondary" sx={{ position: 'relative', bottom: -10 }}>
+                        <ShimmerTypography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ position: 'relative', bottom: -10 }}
+                        >
                             Syncing – {blocksLeft.toLocaleString()} blocks left
                         </ShimmerTypography>
                         <LinearProgress

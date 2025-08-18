@@ -9,7 +9,7 @@ export default function SendButton({
   balance: {
     unlocked_balance: string;
   };
-  disabled: boolean;
+  disabled?: boolean;
 }) {
   return useIsMobile() ? (
     <SendButtonMobile balance={balance} disabled={disabled} />

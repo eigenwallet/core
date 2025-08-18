@@ -1,7 +1,6 @@
-import React from "react";
-import { Typography } from "@mui/material";
+import { Typography, useTheme } from "@mui/material";
 import type { TypographyProps } from "@mui/material";
-import { keyframes } from "@mui/system";
+import { alpha, keyframes } from "@mui/system";
 
 export interface ShimmerTypographyProps extends TypographyProps {
   active?: boolean;
@@ -13,12 +12,23 @@ const shimmerKeyframes = keyframes`
   100% { background-position: -200% 0; }
 `;
 
+function resolveColor(path: string, theme) {
+  const colorPalette = path.split('.').reduce((obj, key) => obj?.[key], theme.palette);
+  return typeof colorPalette === 'string' ? colorPalette : colorPalette.main;
+}
+
 export default function ShimmerTypography({
   active = true,
   durationMs = 3600,
   sx,
+  color = "text.primary",
   ...props
 }: ShimmerTypographyProps) {
+
+  const theme = useTheme();
+  
+  const hexColor = resolveColor(color, theme);
+
   return (
     <Typography
       {...props}
@@ -27,7 +37,7 @@ export default function ShimmerTypography({
         ...(active
           ? {
               background:
-                "linear-gradient(90deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.3) 100%)",
+                `linear-gradient(90deg, ${alpha(hexColor, 0.3)} 0%, ${alpha(hexColor, 1)} 50%, ${alpha(hexColor, 0.3)} 100%)`,
               backgroundSize: "200% 100%",
               WebkitBackgroundClip: "text",
               backgroundClip: "text",
