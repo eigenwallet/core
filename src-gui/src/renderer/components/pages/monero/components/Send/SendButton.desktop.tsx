@@ -3,9 +3,9 @@ import { useState } from "react";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { SendMoneroResponse } from "models/tauriModel";
 import { usePendingSendMoneroApproval } from "store/hooks";
-import SendTransactionContent from "renderer/components/pages/monero/components/SendTransactionContent";
-import SendApprovalContent from "renderer/components/pages/monero/components/SendApprovalContent";
-import SendSuccessContent from "renderer/components/pages/monero/components/SendSuccessContent";
+import SendTransactionContent from "./SendTransactionContent";
+import SendApprovalContent from "./SendApprovalContent";
+import SendSuccessContent from "./SendSuccessContent";
 import MobileDialog from "renderer/components/modal/MobileDialog";
 
 export default function SendButton({

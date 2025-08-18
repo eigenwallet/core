@@ -4,13 +4,13 @@ import { useState } from "react";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { SendMoneroResponse } from "models/tauriModel";
 import { useAppSelector, usePendingSendMoneroApproval } from "store/hooks";
-import SendTransactionContent from "renderer/components/features/wallet/Send/SendTransactionContent";
-import SendApprovalContent from "renderer/components/pages/monero/components/SendApprovalContent";
-import SendSuccessContent from "renderer/components/pages/monero/components/SendSuccessContent";
+import SendTransactionContent from "./SendTransactionContent";
+import SendApprovalContent from "./SendApprovalContent";
+import SendSuccessContent from "./SendSuccessContent";
 import MobileDialog from "renderer/components/modal/MobileDialog";
 import MobileDialogHeader from "renderer/components/modal/MobileDialogHeader";
 import { useCreateSendTransaction } from "utils/useCreateSendTransaction";
-import SendAmountInput from "renderer/components/pages/monero/components/SendAmountInput";
+import SendAmountInput from "./SendAmountInput";
 import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 
 enum SendTransactionState {

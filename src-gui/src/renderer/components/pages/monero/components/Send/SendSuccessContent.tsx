@@ -7,10 +7,10 @@ import {
 import MonospaceTextBox from "renderer/components/other/MonospaceTextBox";
 import ArrowOutwardIcon from "@mui/icons-material/ArrowOutward";
 import { SendMoneroResponse } from "models/tauriModel";
-import { getMoneroTxExplorerUrl } from "../../../../../utils/conversionUtils";
+import { getMoneroTxExplorerUrl } from "utils/conversionUtils";
 import { isTestnet } from "store/config";
 import { open } from "@tauri-apps/plugin-shell";
-import { useIsMobile } from "../../../../../utils/useIsMobile";
+import { useIsMobile } from "utils/useIsMobile";
 
 export default function SendSuccessContent({
   onClose,

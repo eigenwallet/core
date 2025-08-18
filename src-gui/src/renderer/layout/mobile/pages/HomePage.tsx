@@ -33,10 +33,10 @@ import {
   WalletActionButtons,
   WalletOverview,
 } from "renderer/components/pages/monero/components";
-import MoneroWalletOverview from "renderer/components/features/wallet/MoneroWalletOverview.mobile";
-import BitcoinWalletOverview from "renderer/components/features/wallet/BitcoinWalletOverview.mobile";
-import ReceiveButton from "renderer/components/features/wallet/ReceiveButton.mobile";
-import SendButton from "renderer/components/features/wallet/SendButton.mobile";
+import MoneroWalletOverview from "renderer/components/pages/monero/components/Overview/MoneroWalletOverview.mobile";
+import BitcoinWalletOverview from "renderer/components/pages/monero/components/Overview/BitcoinWalletOverview.mobile";
+import ReceiveButton from "renderer/components/pages/monero/components/ReceiveButton.mobile";
+import SendButton from "renderer/components/pages/monero/components/Send/SendButton.mobile";
 import DFXButton from "renderer/components/pages/monero/components/DFXWidget";
 import { useNavigate } from "react-router-dom";
 import SwipeableActionBottomSheet from "renderer/layout/mobile/components/SwipeableActionBottomSheet";

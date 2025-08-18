@@ -1,4 +1,4 @@
-import { useIsMobile } from "../../../../utils/useIsMobile";
+import { useIsMobile } from "utils/useIsMobile";
 import SendButtonMobile from "./SendButton.mobile";
 import SendButtonDesktop from "./SendButton.desktop";
 

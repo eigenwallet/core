@@ -13,7 +13,6 @@ import { PiconeroAmount } from "renderer/components/other/Units";
 import { FiatPiconeroAmount } from "renderer/components/other/Units";
 import StateIndicator from "renderer/components/pages/monero/components/StateIndicator";
 import { GetMoneroSyncProgressResponse } from "models/tauriModel";
-import MoneroSyncingProgressBar from "./MoneroSyncingProgressBar";
 
 interface WalletOverviewProps {
   balance?: {

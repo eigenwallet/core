@@ -1,9 +1,9 @@
 import MobileDialog from "../../modal/MobileDialog";
 import MobileDialogHeader from "../../modal/MobileDialogHeader";
-import SendTransactionContent from "../../features/wallet/SendTransactionContent";
-import SendApprovalContent from "./components/SendApprovalContent";
+import SendTransactionContent from "renderer/components/pages/monero/components/Send/SendTransactionContent";
+import SendApprovalContent from "renderer/components/pages/monero/components/Send/SendApprovalContent";
 import { useState } from "react";
-import SendSuccessContent from "./components/SendSuccessContent";
+import SendSuccessContent from "renderer/components/pages/monero/components/Send/SendSuccessContent";
 import { usePendingSendMoneroApproval } from "store/hooks";
 import { SendMoneroResponse } from "models/tauriModel";
 

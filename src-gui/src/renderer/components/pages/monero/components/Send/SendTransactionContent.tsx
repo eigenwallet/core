@@ -4,15 +4,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Typography,
   useTheme,
 } from "@mui/material";
-import { useState } from "react";
-import { xmrToPiconeros } from "../../../../../utils/conversionUtils";
 import SendAmountInput from "./SendAmountInput";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
-import { sendMoneroTransaction } from "renderer/rpc";
 import { useAppSelector } from "store/hooks";
 import { SendMoneroResponse } from "models/tauriModel";
 import { useCreateSendTransaction } from "utils/useCreateSendTransaction";

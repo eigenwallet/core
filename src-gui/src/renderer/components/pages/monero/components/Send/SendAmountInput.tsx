@@ -2,7 +2,7 @@ import { Box, Button, Card, Grow, SxProps, Typography } from "@mui/material";
 import NumberInput from "renderer/components/inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useTheme } from "@mui/material/styles";
-import { piconerosToXmr } from "../../../../../utils/conversionUtils";
+import { piconerosToXmr } from "utils/conversionUtils";
 import { MoneroAmount } from "renderer/components/other/Units";
 
 interface SendAmountInputProps {

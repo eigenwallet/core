@@ -16,7 +16,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
 import DfxButton from "./DFXWidget";
-import SendButton from "renderer/components/features/wallet/SendButton";
+import SendButton from "./Send/SendButton";
 
 interface WalletActionButtonsProps {
   balance: {
