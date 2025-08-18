@@ -1,4 +1,5 @@
 use cmake::Config;
+use fs_extra::error::ErrorKind;
 use std::fs;
 use std::io::Write as _;
 use std::path::Path;
@@ -282,47 +283,47 @@ fn main() {
             .stdout;
         let resource_dir = String::from_utf8_lossy(&resource_dir).trim().to_owned();
         println!("cargo:rustc-link-search=native={resource_dir}/lib/darwin");
-        println!("cargo:rustc-link-lib=static:-bundle=clang_rt.osx");
+        println!("cargo:rustc-link-lib=static=clang_rt.osx");
     }
 
-    // Link libwallet and libwallet_api statically
-    println!("cargo:rustc-link-lib=static:-bundle=wallet");
-    println!("cargo:rustc-link-lib=static:-bundle=wallet_api");
+    // Link libwallet_api before libwallet for correct static link resolution on GNU ld
+    println!("cargo:rustc-link-lib=static=wallet_api");
+    println!("cargo:rustc-link-lib=static=wallet");
 
     // Link targets of monero codebase statically
-    println!("cargo:rustc-link-lib=static:-bundle=epee");
-    println!("cargo:rustc-link-lib=static:-bundle=easylogging");
-    println!("cargo:rustc-link-lib=static:-bundle=lmdb");
-    println!("cargo:rustc-link-lib=static:-bundle=randomx");
-    println!("cargo:rustc-link-lib=static:-bundle=cncrypto");
-    println!("cargo:rustc-link-lib=static:-bundle=net");
-    println!("cargo:rustc-link-lib=static:-bundle=ringct");
-    println!("cargo:rustc-link-lib=static:-bundle=ringct_basic");
-    println!("cargo:rustc-link-lib=static:-bundle=checkpoints");
-    println!("cargo:rustc-link-lib=static:-bundle=multisig");
-    println!("cargo:rustc-link-lib=static:-bundle=version");
-    println!("cargo:rustc-link-lib=static:-bundle=cryptonote_basic");
-    println!("cargo:rustc-link-lib=static:-bundle=cryptonote_format_utils_basic");
-    println!("cargo:rustc-link-lib=static:-bundle=common");
-    println!("cargo:rustc-link-lib=static:-bundle=cryptonote_core");
-    println!("cargo:rustc-link-lib=static:-bundle=hardforks");
-    println!("cargo:rustc-link-lib=static:-bundle=blockchain_db");
-    println!("cargo:rustc-link-lib=static:-bundle=device");
+    println!("cargo:rustc-link-lib=static=epee");
+    println!("cargo:rustc-link-lib=static=easylogging");
+    println!("cargo:rustc-link-lib=static=lmdb");
+    println!("cargo:rustc-link-lib=static=randomx");
+    println!("cargo:rustc-link-lib=static=cncrypto");
+    println!("cargo:rustc-link-lib=static=net");
+    println!("cargo:rustc-link-lib=static=ringct");
+    println!("cargo:rustc-link-lib=static=ringct_basic");
+    println!("cargo:rustc-link-lib=static=checkpoints");
+    println!("cargo:rustc-link-lib=static=multisig");
+    println!("cargo:rustc-link-lib=static=version");
+    println!("cargo:rustc-link-lib=static=cryptonote_basic");
+    println!("cargo:rustc-link-lib=static=cryptonote_format_utils_basic");
+    println!("cargo:rustc-link-lib=static=common");
+    println!("cargo:rustc-link-lib=static=cryptonote_core");
+    println!("cargo:rustc-link-lib=static=hardforks");
+    println!("cargo:rustc-link-lib=static=blockchain_db");
+    println!("cargo:rustc-link-lib=static=device");
     // Link device_trezor (stub version when USE_DEVICE_TREZOR=OFF)
-    println!("cargo:rustc-link-lib=static:-bundle=device_trezor");
-    println!("cargo:rustc-link-lib=static:-bundle=mnemonics");
-    println!("cargo:rustc-link-lib=static:-bundle=rpc_base");
+    println!("cargo:rustc-link-lib=static=device_trezor");
+    println!("cargo:rustc-link-lib=static=mnemonics");
+    println!("cargo:rustc-link-lib=static=rpc_base");
 
     // Static linking for boost
-    println!("cargo:rustc-link-lib=static:-bundle=boost_serialization");
-    println!("cargo:rustc-link-lib=static:-bundle=boost_filesystem");
-    println!("cargo:rustc-link-lib=static:-bundle=boost_thread");
-    println!("cargo:rustc-link-lib=static:-bundle=boost_chrono");
-    println!("cargo:rustc-link-lib=static:-bundle=boost_program_options");
+    println!("cargo:rustc-link-lib=static=boost_serialization");
+    println!("cargo:rustc-link-lib=static=boost_filesystem");
+    println!("cargo:rustc-link-lib=static=boost_thread");
+    println!("cargo:rustc-link-lib=static=boost_chrono");
+    println!("cargo:rustc-link-lib=static=boost_program_options");
 
     if target.contains("w64-mingw32") {
-        println!("cargo:rustc-link-lib=static:-bundle=boost_locale");
-        println!("cargo:rustc-link-lib=static:-bundle=iconv");
+        println!("cargo:rustc-link-lib=static=boost_locale");
+        println!("cargo:rustc-link-lib=static=iconv");
 
         // Link C++ standard library and GCC runtime statically
         println!("cargo:rustc-link-arg=-static-libstdc++");
@@ -330,29 +331,29 @@ fn main() {
     }
 
     // Link libsodium statically
-    println!("cargo:rustc-link-lib=static:-bundle=sodium");
+    println!("cargo:rustc-link-lib=static=sodium");
 
     // Link OpenSSL statically (on android we use openssl-sys's vendored version instead)
     #[cfg(not(target_os = "android"))]
     {
-        println!("cargo:rustc-link-lib=static:-bundle=ssl"); // This is OpenSSL (libsll)
-        println!("cargo:rustc-link-lib=static:-bundle=crypto"); // This is OpenSSLs crypto library (libcrypto)
+        println!("cargo:rustc-link-lib=static=ssl"); // This is OpenSSL (libsll)
+        println!("cargo:rustc-link-lib=static=crypto"); // This is OpenSSLs crypto library (libcrypto)
     }
 
     // Link unbound statically
-    println!("cargo:rustc-link-lib=static:-bundle=unbound");
-    println!("cargo:rustc-link-lib=static:-bundle=expat"); // Expat is required by unbound
-                                                           // println!("cargo:rustc-link-lib=static:-bundle=nghttp2");
-                                                           // println!("cargo:rustc-link-lib=static:-bundle=event");
-                                                           // Android
+    println!("cargo:rustc-link-lib=static=unbound");
+    println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
+                                                   // println!("cargo:rustc-link-lib=static=nghttp2");
+                                                   // println!("cargo:rustc-link-lib=static=event");
+                                                   // Android
     #[cfg(target_os = "android")]
     {
         println!("cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/");
-        // println!("cargo:rustc-link-lib=static:-bundle=c++_static");
+        // println!("cargo:rustc-link-lib=static=c++_static");
     }
 
     // Link protobuf statically
-    // println!("cargo:rustc-link-lib=static:-bundle=protobuf");
+    // println!("cargo:rustc-link-lib=static=protobuf");
 
     #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-arg=-mmacosx-version-min=11.0");
@@ -421,12 +422,18 @@ fn compile_dependencies(
     );
 
     // Copy monero_c/contrib/depends to out_dir/depends in order to build the dependencies there
-    fs_extra::copy_items(
+    match fs_extra::copy_items(
         &[&contrib_depends],
         &out_dir,
         &fs_extra::dir::CopyOptions::new().copy_inside(true),
-    )
-    .expect("Failed to copy contrib/depends to target dir");
+    ) {
+        Ok(_) => (),
+        Err(e) if matches!(e.kind, ErrorKind::AlreadyExists) => (), // Ignore the error if the directory already exists
+        Err(e) => {
+            eprintln!("Failed to copy contrib/depends to target dir: {}", e);
+            std::process::exit(1);
+        }
+    }
 
     let mut cmd = std::process::Command::new("env");
     if target.contains("-apple-") {
