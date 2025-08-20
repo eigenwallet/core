@@ -1,4 +1,5 @@
-use crate::bitcoin::{ExpiredTimelocks, Wallet};
+use crate::bitcoin::Wallet;
+use swap_core::bitcoin::ExpiredTimelocks;
 use crate::monero::BlockHeight;
 use crate::protocol::bob::BobState;
 use crate::protocol::Database;

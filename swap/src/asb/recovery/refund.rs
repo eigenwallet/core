@@ -1,4 +1,4 @@
-use crate::bitcoin::{self};
+use crate::bitcoin;
 use crate::common::retry;
 use crate::monero;
 use crate::protocol::alice::AliceState;
@@ -27,7 +27,7 @@ pub enum Error {
 
 pub async fn refund(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     db: Arc<dyn Database>,
 ) -> Result<AliceState> {

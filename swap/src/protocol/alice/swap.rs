@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::asb::{EventLoopHandle, LatestRate};
-use crate::bitcoin::ExpiredTimelocks;
+use swap_core::bitcoin::ExpiredTimelocks;
 use crate::common::retry;
 use crate::monero::TransferProof;
 use crate::protocol::alice::{AliceState, Swap};
-use crate::{bitcoin, monero};
+use crate::monero;
+use swap_core::bitcoin;
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
 use swap_env::env::Config;
@@ -59,7 +60,7 @@ async fn next_state<LR>(
     swap_id: Uuid,
     state: AliceState,
     event_loop_handle: &mut EventLoopHandle,
-    bitcoin_wallet: &bitcoin::Wallet,
+    bitcoin_wallet: &crate::bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
     mut rate_service: LR,

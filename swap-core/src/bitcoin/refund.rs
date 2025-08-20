@@ -1,14 +1,14 @@
-use crate::bitcoin::wallet::Watchable;
+use crate::bitcoin;
 use crate::bitcoin::{
-    verify_sig, Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey,
-    TooManyInputs, Transaction, TxCancel,
+    Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey, TooManyInputs,
+    Transaction, TxCancel, verify_sig,
 };
-use crate::{bitcoin, monero};
 use ::bitcoin::sighash::SighashCache;
-use ::bitcoin::{secp256k1, ScriptBuf, Weight};
-use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
-use anyhow::{bail, Context, Result};
+use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
+use ::bitcoin::{ScriptBuf, Weight, secp256k1};
+use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::Descriptor;
+use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -103,12 +103,10 @@ impl TxRefund {
     pub fn extract_monero_private_key(
         &self,
         published_refund_tx: Arc<bitcoin::Transaction>,
-        s_a: monero::Scalar,
+        s_a: curve25519_dalek::scalar::Scalar,
         a: bitcoin::SecretKey,
         S_b_bitcoin: bitcoin::PublicKey,
-    ) -> Result<monero::PrivateKey> {
-        let s_a = monero::PrivateKey { scalar: s_a };
-
+    ) -> Result<curve25519_dalek::scalar::Scalar> {
         let tx_refund_sig = self
             .extract_signature_by_key(published_refund_tx, a.public())
             .context("Failed to extract signature from Bitcoin refund tx")?;
@@ -117,7 +115,11 @@ impl TxRefund {
         let s_b = bitcoin::recover(S_b_bitcoin, tx_refund_sig, tx_refund_encsig)
             .context("Failed to recover Monero secret key from Bitcoin signature")?;
 
-        let s_b = monero::private_key_from_secp256k1_scalar(s_b.into());
+        // To convert a secp256k1 scalar to a curve25519 scalar, we need to reverse the bytes
+        // because a secp256k1 scalar is big endian, whereas a curve25519 scalar is little endian
+        let mut bytes = s_b.to_bytes();
+        bytes.reverse();
+        let s_b = curve25519_dalek::scalar::Scalar::from_bytes_mod_order(bytes);
 
         let spend_key = s_a + s_b;
 

@@ -1,4 +1,4 @@
-use crate::bitcoin::EncryptedSignature;
+use swap_core::bitcoin::EncryptedSignature;
 use crate::monero;
 use crate::monero::BlockHeight;
 use crate::monero::TransferProof;

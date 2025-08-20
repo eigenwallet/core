@@ -1,7 +1,8 @@
 use crate::network::swap_setup::{protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse};
 use crate::protocol::bob::{State0, State2};
 use crate::protocol::{Message1, Message3};
-use crate::{bitcoin, cli, monero};
+use crate::{cli, monero};
+use swap_core::bitcoin;
 use anyhow::{Context, Result};
 use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
@@ -24,13 +25,13 @@ use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};
 #[allow(missing_debug_implementations)]
 pub struct Behaviour {
     env_config: env::Config,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
     new_swaps: VecDeque<(PeerId, NewSwap)>,
     completed_swaps: VecDeque<(PeerId, Completed)>,
 }
 
 impl Behaviour {
-    pub fn new(env_config: env::Config, bitcoin_wallet: Arc<bitcoin::Wallet>) -> Self {
+    pub fn new(env_config: env::Config, bitcoin_wallet: Arc<crate::bitcoin::Wallet>) -> Self {
         Self {
             env_config,
             bitcoin_wallet,
@@ -116,12 +117,12 @@ pub struct Handler {
     env_config: env::Config,
     timeout: Duration,
     new_swaps: VecDeque<NewSwap>,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
     keep_alive: bool,
 }
 
 impl Handler {
-    fn new(env_config: env::Config, bitcoin_wallet: Arc<bitcoin::Wallet>) -> Self {
+    fn new(env_config: env::Config, bitcoin_wallet: Arc<crate::bitcoin::Wallet>) -> Self {
         Self {
             env_config,
             outbound_stream: OptionFuture::from(None),

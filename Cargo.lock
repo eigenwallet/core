@@ -1219,6 +1219,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin-wallet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bdk_wallet",
+ "bitcoin 0.32.6",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "bitcoin_hashes"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10625,6 +10637,7 @@ dependencies = [
  "big-bytes",
  "bitcoin 0.32.6",
  "bitcoin-harness",
+ "bitcoin-wallet",
  "bmrng",
  "comfy-table",
  "config",
@@ -10674,6 +10687,7 @@ dependencies = [
  "structopt",
  "strum 0.26.3",
  "swap-controller-api",
+ "swap-core",
  "swap-env",
  "swap-feed",
  "swap-fs",
@@ -10756,6 +10770,31 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "swap-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bdk_electrum",
+ "bdk_wallet",
+ "bitcoin 0.32.6",
+ "bitcoin-wallet",
+ "curve25519-dalek-ng",
+ "ecdsa_fun",
+ "electrum-pool",
+ "monero",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "swap-serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "typeshare",
 ]
 
 [[package]]

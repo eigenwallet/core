@@ -1,4 +1,5 @@
-use crate::bitcoin::{self, Txid};
+use crate::bitcoin;
+use swap_core::bitcoin::Txid;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
@@ -14,7 +15,7 @@ pub enum Error {
 
 pub async fn punish(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
     db: Arc<dyn Database>,
 ) -> Result<(Txid, AliceState)> {
     let state = db.get_state(swap_id).await?.try_into()?;

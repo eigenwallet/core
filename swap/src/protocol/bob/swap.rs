@@ -1,5 +1,5 @@
-use crate::bitcoin::wallet::ScriptStatus;
-use crate::bitcoin::{ExpiredTimelocks, TxCancel, TxRefund};
+use bitcoin_wallet::primitives::ScriptStatus;
+use swap_core::bitcoin::{ExpiredTimelocks, TxCancel, TxRefund};
 use crate::cli::api::tauri_bindings::LockBitcoinDetails;
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriSwapProgressEvent};
 use crate::cli::EventLoopHandle;
@@ -9,7 +9,7 @@ use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, 
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::state::*;
 use crate::protocol::{bob, Database};
-use crate::{bitcoin, monero};
+use crate::monero;
 use anyhow::{bail, Context as AnyContext, Result};
 use std::sync::Arc;
 use std::time::Duration;
@@ -101,7 +101,7 @@ async fn next_state(
     state: BobState,
     event_loop_handle: &mut EventLoopHandle,
     db: Arc<dyn Database + Send + Sync>,
-    bitcoin_wallet: &bitcoin::Wallet,
+    bitcoin_wallet: &crate::bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     monero_receive_pool: MoneroAddressPool,
     event_emitter: Option<TauriHandle>,
@@ -267,7 +267,7 @@ async fn next_state(
                 },
             );
 
-            let (tx_early_refund_status, tx_lock_status) = tokio::join!(
+            let (tx_early_refund_status, tx_lock_status): (bitcoin_wallet::Subscription, bitcoin_wallet::Subscription) = tokio::join!(
                 bitcoin_wallet.subscribe_to(state3.construct_tx_early_refund()),
                 bitcoin_wallet.subscribe_to(state3.tx_lock.clone())
             );
@@ -324,7 +324,7 @@ async fn next_state(
             let cancel_timelock_expires = tx_lock_status.wait_until(|status| {
                 // Emit a tauri event on new confirmations
                 match status {
-                    ScriptStatus::Confirmed(confirmed) => {
+                    bitcoin_wallet::primitives::ScriptStatus::Confirmed(confirmed) => {
                         event_emitter.emit_swap_progress_event(
                             swap_id,
                             TauriSwapProgressEvent::BtcLockTxInMempool {
@@ -333,7 +333,7 @@ async fn next_state(
                             },
                         );
                     }
-                    ScriptStatus::InMempool => {
+                    bitcoin_wallet::primitives::ScriptStatus::InMempool => {
                         event_emitter.emit_swap_progress_event(
                             swap_id,
                             TauriSwapProgressEvent::BtcLockTxInMempool {
@@ -342,7 +342,7 @@ async fn next_state(
                             },
                         );
                     }
-                    ScriptStatus::Unseen | ScriptStatus::Retrying => {
+                    bitcoin_wallet::primitives::ScriptStatus::Unseen | bitcoin_wallet::primitives::ScriptStatus::Retrying => {
                         event_emitter.emit_swap_progress_event(
                             swap_id,
                             TauriSwapProgressEvent::BtcLockTxInMempool {
@@ -413,7 +413,7 @@ async fn next_state(
 
             let tx_early_refund = state.construct_tx_early_refund();
 
-            let (tx_lock_status, tx_early_refund_status) = tokio::join!(
+            let (tx_lock_status, tx_early_refund_status): (bitcoin_wallet::Subscription, bitcoin_wallet::Subscription) = tokio::join!(
                 bitcoin_wallet.subscribe_to(state.tx_lock.clone()),
                 bitcoin_wallet.subscribe_to(tx_early_refund.clone())
             );
@@ -498,7 +498,7 @@ async fn next_state(
                 return Ok(BobState::CancelTimelockExpired(state.cancel()));
             }
 
-            let (tx_lock_status, tx_early_refund_status) = tokio::join!(
+            let (tx_lock_status, tx_early_refund_status): (bitcoin_wallet::Subscription, bitcoin_wallet::Subscription) = tokio::join!(
                 bitcoin_wallet.subscribe_to(state.tx_lock.clone()),
                 bitcoin_wallet.subscribe_to(state.construct_tx_early_refund())
             );
@@ -550,7 +550,7 @@ async fn next_state(
                 return Ok(BobState::CancelTimelockExpired(state.cancel()));
             }
 
-            let (tx_lock_status, tx_early_refund_status) = tokio::join!(
+            let (tx_lock_status, tx_early_refund_status): (bitcoin_wallet::Subscription, bitcoin_wallet::Subscription) = tokio::join!(
                 bitcoin_wallet.subscribe_to(state.tx_lock.clone()),
                 bitcoin_wallet.subscribe_to(state.construct_tx_early_refund())
             );
@@ -702,7 +702,7 @@ async fn next_state(
             let tx_refund = state.construct_tx_refund()?;
             let tx_early_refund = state.construct_tx_early_refund();
 
-            let (tx_refund_status, tx_early_refund_status) = tokio::join!(
+            let (tx_refund_status, tx_early_refund_status): (bitcoin_wallet::Subscription, bitcoin_wallet::Subscription) = tokio::join!(
                 bitcoin_wallet.subscribe_to(tx_refund.clone()),
                 bitcoin_wallet.subscribe_to(tx_early_refund.clone()),
             );
@@ -753,7 +753,7 @@ async fn next_state(
             );
 
             // Wait for confirmations
-            let (tx_lock_status, tx_early_refund_status) = tokio::join!(
+            let (tx_lock_status, tx_early_refund_status): (bitcoin_wallet::Subscription, bitcoin_wallet::Subscription) = tokio::join!(
                 bitcoin_wallet.subscribe_to(state.tx_lock.clone()),
                 bitcoin_wallet.subscribe_to(tx_early_refund_tx.clone()),
             );

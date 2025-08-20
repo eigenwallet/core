@@ -5,7 +5,8 @@ use crate::network::swap_setup::{
 };
 use crate::protocol::alice::{State0, State3};
 use crate::protocol::{Message0, Message2, Message4};
-use crate::{asb, bitcoin, monero};
+use crate::{asb, monero};
+use swap_core::bitcoin;
 use anyhow::{anyhow, Context, Result};
 use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
@@ -55,7 +56,7 @@ pub struct WalletSnapshot {
 
 impl WalletSnapshot {
     pub async fn capture(
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
         monero_wallet: &monero::Wallets,
         external_redeem_address: &Option<bitcoin::Address>,
         transfer_amount: bitcoin::Amount,

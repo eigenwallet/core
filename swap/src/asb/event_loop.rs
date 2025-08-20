@@ -10,7 +10,8 @@ use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap};
 use crate::protocol::{Database, State};
-use crate::{bitcoin, monero};
+use crate::{monero};
+use swap_core::bitcoin;
 use anyhow::{anyhow, Context, Result};
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
@@ -38,7 +39,7 @@ where
 {
     swarm: libp2p::Swarm<Behaviour<LR>>,
     env_config: env::Config,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     db: Arc<dyn Database + Send + Sync>,
     latest_rate: LR,
@@ -128,7 +129,7 @@ where
     pub fn new(
         swarm: Swarm<Behaviour<LR>>,
         env_config: env::Config,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
         monero_wallet: Arc<monero::Wallets>,
         db: Arc<dyn Database + Send + Sync>,
         latest_rate: LR,

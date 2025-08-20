@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use crate::{asb, bitcoin, cli};
+use crate::{asb, cli};
+use swap_core::bitcoin;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "bitcoin-wallet",
   "electrum-pool",
   "libp2p-rendezvous-server",
   "libp2p-tor",
@@ -13,6 +14,7 @@ members = [
   "swap-asb",
   "swap-controller",
   "swap-controller-api",
+  "swap-core",
   "swap-env",
   "swap-feed",
   "swap-fs",
@@ -30,6 +32,21 @@ bdk_electrum = { version = "0.23.0", default-features = false }
 bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
+# Cryptography
+curve25519-dalek = { version = "4", package = "curve25519-dalek-ng" }
+ecdsa_fun = { version = "0.10", default-features = false, features = [
+  "libsecp_compat",
+  "serde",
+  "adaptor",
+] }
+sha2 = "0.10"
+# Randomness
+rand_chacha = "0.3"
+rand = "0.8"
+
+# Async
+async-trait = "0.1"
+
 anyhow = "1"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
@@ -38,17 +55,28 @@ jsonrpsee = { version = "0.25", default-features = false }
 libp2p = { version = "0.53.2" }
 monero = { version = "0.12", features = ["serde_support"] }
 once_cell = "1.19"
-rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
 rust_decimal_macros = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "time",
+  "macros",
+  "sync",
+] }
 toml = "0.9.5"
 tracing = { version = "0.1", features = ["attributes"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "fmt",
+  "ansi",
+  "env-filter",
+  "time",
+  "tracing-log",
+  "json",
+] }
 typeshare = "1.0"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
@@ -64,7 +92,11 @@ tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "18111286b58
 dialoguer = "0.11"
 
 # Build dependencies
-vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
+vergen = { version = "8.3", default-features = false, features = [
+  "build",
+  "git",
+  "git2",
+] }
 
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51

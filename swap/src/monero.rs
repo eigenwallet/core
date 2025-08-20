@@ -6,7 +6,6 @@ pub use ::monero::{Address, PrivateKey, PublicKey};
 pub use curve25519_dalek::scalar::Scalar;
 pub use wallet::{Daemon, Wallet, Wallets, WatchRequest};
 
-use crate::bitcoin;
 use anyhow::{bail, Result};
 use rand::{CryptoRng, RngCore};
 use rust_decimal::prelude::*;
@@ -16,6 +15,7 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
 use std::str::FromStr;
+use swap_core::bitcoin;
 use typeshare::typeshare;
 
 pub const PICONERO_OFFSET: u64 = 1_000_000_000_000;
@@ -32,14 +32,14 @@ impl fmt::Display for BlockHeight {
     }
 }
 
-pub fn private_key_from_secp256k1_scalar(scalar: bitcoin::Scalar) -> PrivateKey {
+pub fn private_key_from_secp256k1_scalar(scalar: bitcoin::Scalar) -> Scalar {
     let mut bytes = scalar.to_bytes();
 
     // we must reverse the bytes because a secp256k1 scalar is big endian, whereas a
     // ed25519 scalar is little endian
     bytes.reverse();
 
-    PrivateKey::from_scalar(Scalar::from_bytes_mod_order(bytes))
+    Scalar::from_bytes_mod_order(bytes)
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

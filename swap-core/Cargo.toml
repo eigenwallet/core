@@ -1,0 +1,40 @@
+[package]
+name = "swap-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+
+# Bitcoin stuff
+bitcoin = { workspace = true }
+bitcoin-wallet = { path = "../bitcoin-wallet" }
+monero = { workspace = true }
+bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
+bdk_electrum = { workspace = true }
+electrum-pool = { path = "../electrum-pool" }
+ecdsa_fun = { workspace = true }
+sha2 = { workspace = true }
+curve25519-dalek = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+typeshare = { workspace = true }
+swap-serde = { path = "../swap-serde" }
+
+# Tracing
+tracing = { workspace = true }
+
+# Errors
+thiserror = { workspace = true }
+
+# Randomness
+rand_chacha = { workspace = true }
+rand = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,14 +1,11 @@
-use crate::bitcoin::wallet::{EstimateFeeRate, Subscription};
-use crate::bitcoin::{
-    self, current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxLock, Txid, Wallet,
-};
+use crate::bitcoin::Wallet;
 use crate::monero::wallet::WatchRequest;
 use crate::monero::TransferProof;
 use crate::monero::{self, MoneroAddressPool, TxHash};
 use crate::monero_ext::ScalarExt;
 use crate::protocol::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
 use anyhow::{anyhow, bail, Context, Result};
+use bitcoin_wallet::primitives::{EstimateFeeRate, Subscription};
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::nonce::Deterministic;
 use ecdsa_fun::Signature;
@@ -19,6 +16,10 @@ use sha2::Sha256;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
+use swap_core::bitcoin::{
+    self, current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
+    TxLock, Txid,
+};
 use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
 
@@ -207,7 +208,7 @@ impl State0 {
 
     pub async fn receive(
         self,
-        wallet: &bitcoin::Wallet<
+        wallet: &crate::bitcoin::Wallet<
             bdk_wallet::rusqlite::Connection,
             impl EstimateFeeRate + Send + Sync + 'static,
         >,
@@ -228,7 +229,7 @@ impl State0 {
             bail!("Alice's dleq proof doesn't verify")
         }
 
-        let tx_lock = bitcoin::TxLock::new(
+        let tx_lock = swap_core::bitcoin::TxLock::new(
             wallet,
             self.btc,
             self.tx_lock_fee,
@@ -525,7 +526,7 @@ impl State3 {
 
     pub async fn expired_timelock(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<ExpiredTimelocks> {
         let tx_cancel = TxCancel::new(
             &self.tx_lock,
@@ -552,7 +553,7 @@ impl State3 {
 
     pub async fn check_for_tx_early_refund(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<Option<Arc<Transaction>>> {
         let tx_early_refund = self.construct_tx_early_refund();
         let tx = bitcoin_wallet
@@ -594,7 +595,7 @@ pub struct State4 {
 impl State4 {
     pub async fn check_for_tx_redeem(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<Option<State5>> {
         let tx_redeem =
             bitcoin::TxRedeem::new(&self.tx_lock, &self.redeem_address, self.tx_redeem_fee);
@@ -606,7 +607,9 @@ impl State4 {
             let tx_redeem_sig =
                 tx_redeem.extract_signature_by_key(tx_redeem_candidate, self.b.public())?;
             let s_a = bitcoin::recover(self.S_a_bitcoin, tx_redeem_sig, tx_redeem_encsig)?;
-            let s_a = monero::private_key_from_secp256k1_scalar(s_a.into());
+            let s_a = monero::PrivateKey::from_scalar(monero::private_key_from_secp256k1_scalar(
+                s_a.into(),
+            ));
 
             Ok(Some(State5 {
                 s_a,
@@ -628,7 +631,10 @@ impl State4 {
         self.b.encsign(self.S_a_bitcoin, tx_redeem.digest())
     }
 
-    pub async fn watch_for_redeem_btc(&self, bitcoin_wallet: &bitcoin::Wallet) -> Result<State5> {
+    pub async fn watch_for_redeem_btc(
+        &self,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
+    ) -> Result<State5> {
         let tx_redeem =
             bitcoin::TxRedeem::new(&self.tx_lock, &self.redeem_address, self.tx_redeem_fee);
 
@@ -647,7 +653,7 @@ impl State4 {
 
     pub async fn expired_timelock(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<ExpiredTimelocks> {
         let tx_cancel = TxCancel::new(
             &self.tx_lock,
@@ -807,7 +813,7 @@ pub struct State6 {
 impl State6 {
     pub async fn expired_timelock(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<ExpiredTimelocks> {
         let tx_cancel = TxCancel::new(
             &self.tx_lock,
@@ -840,7 +846,7 @@ impl State6 {
 
     pub async fn check_for_tx_cancel(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<Option<Arc<Transaction>>> {
         let tx_cancel = self.construct_tx_cancel()?;
 
@@ -854,7 +860,7 @@ impl State6 {
 
     pub async fn submit_tx_cancel(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<(Txid, Subscription)> {
         let transaction = self
             .construct_tx_cancel()?
@@ -868,7 +874,7 @@ impl State6 {
 
     pub async fn publish_refund_btc(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<bitcoin::Txid> {
         let signed_tx_refund = self.signed_refund_transaction()?;
         let signed_tx_refund_txid = signed_tx_refund.compute_txid();
@@ -929,7 +935,7 @@ impl State6 {
 
     pub async fn check_for_tx_early_refund(
         &self,
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: &crate::bitcoin::Wallet,
     ) -> Result<Option<Arc<Transaction>>> {
         let tx_early_refund = self.construct_tx_early_refund();
 

@@ -1,5 +1,6 @@
 use super::tauri_bindings::TauriHandle;
-use crate::bitcoin::{wallet, CancelTimelock, ExpiredTimelocks, PunishTimelock};
+use crate::bitcoin::wallet;
+use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
     ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
@@ -16,7 +17,8 @@ use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swarm;
 use crate::protocol::bob::{BobState, Swap};
 use crate::protocol::{bob, Database, State};
-use crate::{bitcoin, cli, monero};
+use crate::{cli, monero};
+use swap_core::bitcoin;
 use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
 use ::monero::Network;

@@ -1,4 +1,4 @@
-use crate::bitcoin::Scalar;
+use swap_core::bitcoin::Scalar;
 use ecdsa_fun::fun::marker::{NonZero, Secret};
 
 pub trait ScalarExt {

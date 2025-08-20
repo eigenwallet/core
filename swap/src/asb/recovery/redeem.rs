@@ -1,4 +1,5 @@
-use crate::bitcoin::{Txid, Wallet};
+use crate::bitcoin::Wallet;
+use swap_core::bitcoin::Txid;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};

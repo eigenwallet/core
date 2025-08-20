@@ -1,7 +1,8 @@
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
 use super::api::SwapLock;
 use super::cancel_and_refund;
-use crate::bitcoin::{ExpiredTimelocks, Wallet};
+use crate::bitcoin::Wallet;
+use swap_core::bitcoin::ExpiredTimelocks;
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};

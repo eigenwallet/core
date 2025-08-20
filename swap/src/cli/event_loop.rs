@@ -1,4 +1,4 @@
-use crate::bitcoin::EncryptedSignature;
+use swap_core::bitcoin::EncryptedSignature;
 use crate::cli::behaviour::{Behaviour, OutEvent};
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::{self, Request, Response};

@@ -1,4 +1,4 @@
-use crate::bitcoin;
+use swap_core::bitcoin;
 use crate::monero::{Scalar, TransferProof};
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::quote::BidQuote;
@@ -104,7 +104,7 @@ impl Behaviour {
     pub fn new(
         alice: PeerId,
         env_config: env::Config,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
         identify_params: (identity::Keypair, XmrBtcNamespace),
     ) -> Self {
         let agentVersion = format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), identify_params.1);

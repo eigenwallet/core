@@ -1,11 +1,12 @@
 use super::request::BalanceResponse;
-use crate::bitcoin;
+use swap_core::bitcoin;
 use crate::cli::api::request::{
     GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse,
 };
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
-use crate::{bitcoin::ExpiredTimelocks, monero, network::quote::BidQuote};
+use crate::{monero, network::quote::BidQuote};
+use swap_core::bitcoin::ExpiredTimelocks;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;

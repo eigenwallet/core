@@ -9,7 +9,7 @@ use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
-use crate::{bitcoin, common, monero};
+use crate::{common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
 use futures::future::try_join_all;
@@ -17,6 +17,7 @@ use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
+use swap_core::bitcoin;
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
 use tauri_bindings::{
@@ -188,7 +189,7 @@ pub struct Context {
     pub config: Config,
     pub tasks: Arc<PendingTaskList>,
     tauri_handle: Option<TauriHandle>,
-    bitcoin_wallet: Option<Arc<bitcoin::Wallet>>,
+    bitcoin_wallet: Option<Arc<crate::bitcoin::Wallet>>,
     pub monero_manager: Option<Arc<monero::Wallets>>,
     tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     #[allow(dead_code)]
@@ -538,7 +539,7 @@ impl ContextBuilder {
 
                     bitcoin_progress_handle.finish();
 
-                    Ok::<std::option::Option<Arc<bitcoin::wallet::Wallet>>, Error>(Some(Arc::new(
+                    Ok::<std::option::Option<Arc<crate::bitcoin::Wallet>>, Error>(Some(Arc::new(
                         wallet,
                     )))
                 }
@@ -601,7 +602,7 @@ impl Context {
         seed: Seed,
         env_config: EnvConfig,
         db_path: PathBuf,
-        bob_bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bob_bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
         bob_monero_wallet: Arc<monero::Wallets>,
     ) -> Self {
         let config = Config::for_harness(seed, env_config);
@@ -637,7 +638,7 @@ impl Context {
         Ok(())
     }
 
-    pub fn bitcoin_wallet(&self) -> Option<Arc<bitcoin::Wallet>> {
+    pub fn bitcoin_wallet(&self) -> Option<Arc<crate::bitcoin::Wallet>> {
         self.bitcoin_wallet.clone()
     }
 
@@ -718,12 +719,13 @@ async fn init_bitcoin_wallet(
     env_config: EnvConfig,
     bitcoin_target_block: u16,
     tauri_handle_option: Option<TauriHandle>,
-) -> Result<bitcoin::Wallet<bdk_wallet::rusqlite::Connection, bitcoin::wallet::Client>> {
-    let mut builder = bitcoin::wallet::WalletBuilder::default()
+) -> Result<crate::bitcoin::Wallet<bdk_wallet::rusqlite::Connection, crate::bitcoin::wallet::Client>>
+{
+    let mut builder = crate::bitcoin::wallet::WalletBuilder::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)
         .electrum_rpc_urls(electrum_rpc_urls)
-        .persister(bitcoin::wallet::PersisterConfig::SqliteFile {
+        .persister(crate::bitcoin::wallet::PersisterConfig::SqliteFile {
             data_dir: data_dir.to_path_buf(),
         })
         .finality_confirmations(env_config.bitcoin_finality_confirmations)
