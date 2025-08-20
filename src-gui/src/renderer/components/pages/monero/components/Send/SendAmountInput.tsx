@@ -1,9 +1,9 @@
 import { Box, Button, Card, Grow, SxProps, Typography } from "@mui/material";
 import NumberInput from "renderer/components/inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
-import { useTheme } from "@mui/material/styles";
 import { piconerosToXmr } from "utils/conversionUtils";
 import { MoneroAmount } from "renderer/components/other/Units";
+import { useAppSelector } from "store/hooks";
 
 interface SendAmountInputProps {
   balance: {
@@ -15,9 +15,6 @@ interface SendAmountInputProps {
   onMaxToggled?: () => void;
   currency: string;
   onCurrencyChange: (currency: string) => void;
-  fiatCurrency: string;
-  xmrPrice: number;
-  showFiatRate: boolean;
   disabled?: boolean;
   sx?: SxProps;
 }
@@ -30,13 +27,14 @@ export default function SendAmountInput({
   onAmountChange,
   onMaxClicked,
   onMaxToggled,
-  fiatCurrency,
-  xmrPrice,
-  showFiatRate,
   disabled = false,
   sx,
 }: SendAmountInputProps) {
-  const theme = useTheme();
+  const fiatCurrency = useAppSelector((state) => state.settings.fiatCurrency);
+  const showFiatRate = useAppSelector(
+    (state) => state.settings.fetchFiatPrices,
+  );
+  const xmrPrice = useAppSelector((state) => state.rates.xmrPrice);
 
   const isMaxSelected = amount === "<MAX>";
 

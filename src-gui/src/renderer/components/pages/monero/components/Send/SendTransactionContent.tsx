@@ -9,7 +9,6 @@ import {
 import SendAmountInput from "./SendAmountInput";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
-import { useAppSelector } from "store/hooks";
 import { SendMoneroResponse } from "models/tauriModel";
 import { useCreateSendTransaction } from "utils/useCreateSendTransaction";
 
@@ -42,12 +41,6 @@ export default function SendTransactionContent({
     handleSendSuccess,
   } = useCreateSendTransaction(onSuccess);
 
-  const fiatCurrency = useAppSelector((state) => state.settings.fiatCurrency);
-  const showFiatRate = useAppSelector(
-    (state) => state.settings.fetchFiatPrices,
-  );
-  const xmrPrice = useAppSelector((state) => state.rates.xmrPrice);
-
   const theme = useTheme();
 
   if (!balance || !balance.unlocked_balance) {
@@ -65,9 +58,6 @@ export default function SendTransactionContent({
             onAmountChange={handleAmountChange}
             onMaxToggled={handleMaxToggled}
             currency={currency}
-            fiatCurrency={fiatCurrency}
-            xmrPrice={xmrPrice}
-            showFiatRate={showFiatRate}
             onCurrencyChange={handleCurrencyChange}
             disabled={isSending}
             sx={{

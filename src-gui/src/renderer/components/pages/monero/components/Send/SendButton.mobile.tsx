@@ -12,6 +12,7 @@ import MobileDialogHeader from "renderer/components/modal/MobileDialogHeader";
 import { useCreateSendTransaction } from "utils/useCreateSendTransaction";
 import SendAmountInput from "./SendAmountInput";
 import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
+import SendEnterAddressContent from "./SendEnterAdressContent";
 
 enum SendTransactionState {
   EnterAddress,
@@ -48,37 +49,29 @@ export default function SendButton({
     handleSend,
     setIsSending,
     handleSendSuccess,
+    handleClear,
   } = useCreateSendTransaction(setSuccessResponse);
 
   const pendingApprovals = usePendingSendMoneroApproval();
   const hasPendingApproval = pendingApprovals.length > 0;
 
-  const fiatCurrency = useAppSelector((state) => state.settings.fiatCurrency);
-  const showFiatRate = useAppSelector(
-    (state) => state.settings.fetchFiatPrices,
-  );
-  const xmrPrice = useAppSelector((state) => state.rates.xmrPrice);
-
-  const theme = useTheme();
 
   const showSuccess = successResponse !== null;
 
-  let sendTransactionState: SendTransactionState, label: string;
+  let step: SendTransactionState;
   if (hasPendingApproval) {
-    sendTransactionState = SendTransactionState.ApprovalPending
-    label = "Confirm"
+    step = SendTransactionState.ApprovalPending
   } else if (showSuccess) {
-    sendTransactionState = SendTransactionState.Success
-    label = "Succesfully Sent"
-  } else if (!sendAddress) {
-    sendTransactionState = SendTransactionState.EnterAddress
-    label = "Select Recepient"
+    step = SendTransactionState.Success
+  } else if (!addressConfirmed) {
+    step = SendTransactionState.EnterAddress
   } else if (addressConfirmed) {
-    sendTransactionState = SendTransactionState.EnterAmount
-    label = "Choose Amount"
+    step = SendTransactionState.EnterAmount
   }
 
   const handleClose = () => {
+    setAddressConfirmed(false);
+    handleClear();
     setOpen(false);
     setSuccessResponse(null);
   };
@@ -99,14 +92,15 @@ export default function SendButton({
             pb: 8,
           }}
         >
-          {sendTransactionState === SendTransactionState.EnterAddress && (
-            <SendTransactionContent
-              balance={balance}
-              onClose={handleClose}
-              onSuccess={setSuccessResponse}
+          {step === SendTransactionState.EnterAddress && (
+            <SendEnterAddressContent
+              onContinue={() => setAddressConfirmed(true)}
+              address={sendAddress}
+              onAddressChange={handleAddressChange}
+              onAddressValidityChange={setValidAddress}
             />
           )}
-          {sendTransactionState === SendTransactionState.EnterAmount && (
+          {step === SendTransactionState.EnterAmount && (
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, width: "100%" }}>
               <Typography variant="h6" sx={{ textAlign: "center" }}>Choose Amount</Typography>
               <SendAmountInput
@@ -115,9 +109,6 @@ export default function SendButton({
               onAmountChange={handleAmountChange}
               onMaxToggled={handleMaxToggled}
               currency={currency}
-              fiatCurrency={fiatCurrency}
-              xmrPrice={xmrPrice}
-              showFiatRate={showFiatRate}
               onCurrencyChange={handleCurrencyChange}
               disabled={isSending}
               sx={{
@@ -134,10 +125,10 @@ export default function SendButton({
             </PromiseInvokeButton>
             </Box>
           )}
-          {sendTransactionState === SendTransactionState.ApprovalPending && (
+          {hasPendingApproval && (
             <SendApprovalContent onClose={handleClose} />
           )}
-          {sendTransactionState === SendTransactionState.Success && (
+          {step === SendTransactionState.Success && (
             <SendSuccessContent onClose={handleClose} successDetails={successResponse} />
           )}
         </Box>

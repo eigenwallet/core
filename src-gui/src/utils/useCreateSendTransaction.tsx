@@ -128,6 +128,6 @@ export function useCreateSendTransaction(onSuccess: (response: SendMoneroRespons
         handleSend,
         setIsSending,
         handleSendSuccess,
-        xmrPrice,
+        handleClear,
     }
 }
