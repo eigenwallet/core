@@ -13,6 +13,11 @@ import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import RestoreIcon from "@mui/icons-material/Restore";
 import WithdrawDialog from "renderer/components/modal/wallet/WithdrawDialog";
 import SetRestoreHeightModal from "renderer/components/pages/monero/SetRestoreHeightModal";
+import SeedPhraseButton from "renderer/components/pages/monero/SeedPhraseButton";
+import { GetMoneroSeedResponse, GetRestoreHeightResponse } from "models/tauriModel";
+import SeedPhraseModal from "renderer/components/pages/monero/SeedPhraseModal";
+import { Key as KeyIcon } from "@mui/icons-material";
+import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
 
 interface SwipeableActionBottomSheetProps {
   open: boolean;
@@ -28,6 +33,9 @@ export default function SwipeableActionBottomSheet({
   const theme = useTheme();
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
+  const [seedPhrase, setSeedPhrase] = useState<
+    [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
+  >(null);
 
   const handleWithdrawClick = () => {
     onClose();
@@ -39,20 +47,11 @@ export default function SwipeableActionBottomSheet({
     setRestoreHeightDialogOpen(true);
   };
 
-  const actions = [
-    {
-      id: "withdraw-bitcoin",
-      label: "Withdraw Bitcoin",
-      icon: <AccountBalanceWalletIcon />,
-      onClick: handleWithdrawClick,
-    },
-    {
-      id: "restore-height",
-      label: "Restore Height",
-      icon: <RestoreIcon />,
-      onClick: handleRestoreHeightClick,
-    },
-  ];
+  const handleSeedPhraseClick = async () => {
+    onClose();
+    const seedPhrase = await getMoneroSeedAndRestoreHeight();
+    setSeedPhrase(seedPhrase);
+  };
 
   return (
     <>
@@ -84,22 +83,52 @@ export default function SwipeableActionBottomSheet({
         </Box>
         
         <List sx={{ py: 0 }}>
-          {actions.map((action) => (
-            <ListItem
-              key={action.id}
-              onClick={action.onClick}
-              sx={{
-                cursor: "pointer",
-                "&:hover": {
-                  backgroundColor: theme.palette.action.hover,
-                },
-                py: 2,
-              }}
-            >
-              <ListItemIcon>{action.icon}</ListItemIcon>
-              <ListItemText primary={action.label} />
-            </ListItem>
-          ))}
+          <ListItem
+            onClick={handleWithdrawClick}
+            sx={{
+              cursor: "pointer",
+              "&:hover": {
+                backgroundColor: theme.palette.action.hover,
+              },
+              py: 2,
+            }}
+          >
+            <ListItemIcon>
+              <AccountBalanceWalletIcon />
+            </ListItemIcon>
+            <ListItemText primary="Withdraw Bitcoin" />
+          </ListItem>
+          
+          <ListItem
+            onClick={handleRestoreHeightClick}
+            sx={{
+              cursor: "pointer",
+              "&:hover": {
+                backgroundColor: theme.palette.action.hover,
+              },
+              py: 2,
+            }}
+          >
+            <ListItemIcon>
+              <RestoreIcon />
+            </ListItemIcon>
+            <ListItemText primary="Restore Height" />
+          </ListItem>
+          <ListItem
+            onClick={handleSeedPhraseClick}
+            sx={{
+              cursor: "pointer",
+              "&:hover": {
+                backgroundColor: theme.palette.action.hover,
+              },
+              py: 2,
+            }}
+          >
+            <ListItemIcon>
+              <KeyIcon />
+            </ListItemIcon>
+            <ListItemText primary="Seed Phrase" />
+          </ListItem>
         </List>
       </Drawer>
 
@@ -111,6 +140,10 @@ export default function SwipeableActionBottomSheet({
       <SetRestoreHeightModal
         open={restoreHeightDialogOpen}
         onClose={() => setRestoreHeightDialogOpen(false)}
+      />
+      <SeedPhraseModal
+        onClose={() => setSeedPhrase(null)}
+        seed={seedPhrase}
       />
     </>
   );
