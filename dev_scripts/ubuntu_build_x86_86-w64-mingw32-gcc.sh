@@ -192,8 +192,6 @@ download_sources() {
     download_if_missing "https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}/gcc-${GCC_VER}.tar.xz.sig"
     ensure_key_and_verify "gcc-${GCC_VER}.tar.xz" "gcc-${GCC_VER}.tar.xz.sig"
     tar xf "gcc-${GCC_VER}.tar.xz"
-
-
 }
 
 
@@ -207,7 +205,7 @@ build_binutils() {
       --with-sysroot=$PREFIX \
       --disable-multilib
     make -j$(nproc)
-    sudo make install
+    make install
     export PATH="$PREFIX/bin:$PATH"
 
     echo "Built binutils"
@@ -221,7 +219,7 @@ build_mingw_headers() {
       --host=x86_64-w64-mingw32 \
       --prefix=$PREFIX/x86_64-w64-mingw32
     make -j$(nproc)
-    sudo make install
+    make install
 
     # fixes a path mismatch issue
     if [ ! -L "$PREFIX/mingw" ]; then
@@ -242,7 +240,7 @@ prepare_gcc_build() {
       --disable-multilib \
       --enable-languages=c,c++
     make all-gcc -j$(nproc)
-    sudo make install-gcc
+    make install-gcc
 
     echo "Built gcc"
 }
@@ -256,7 +254,7 @@ build_mingw_crt() {
       --prefix=$PREFIX/x86_64-w64-mingw32 \
       --with-sysroot=$PREFIX
     make -j$(nproc)
-    sudo make install
+    make install
 
     echo "Built mingw-w64 CRT"
 }
@@ -266,7 +264,7 @@ finish_gcc() {
 
     cd $BUILD/build-gcc
     make -j$(nproc)
-    sudo make install
+    make install
 
     # Add to PATH only if not already present
     if [[ ":$PATH:" != *":$PREFIX/bin:"* ]]; then
@@ -295,7 +293,7 @@ build_winpthreads() {
 
     # 3. Build & install
     make -j$(nproc)
-    sudo make install
+    make install
 
     echo "Built winpthreads.dll"
 }
@@ -396,6 +394,7 @@ prepare_gcc_build
 build_mingw_crt
 finish_gcc
 build_winpthreads
+copy_dlls
 
 verify_installation
 
