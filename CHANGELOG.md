@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.11] - 2025-08-20
+
 - ORCHESTRATOR: We incorrectly passed the `--mainnet` flag to the `asb` binary but it is the default for the asb.
 - CONTROLLER: Add a `bitcoin-seed` command to the controller. You can use it to export the descriptor of the internal Bitcoin wallet.
 - CLI + GUI + ASB: Accept self-signed TLS certificates and TLS certificates with older protocol versions.
@@ -643,7 +645,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.10...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.11...HEAD
+[3.0.0-beta.11]: https://github.com/eigenwallet/core/compare/3.0.0-beta.10...3.0.0-beta.11
 [3.0.0-beta.10]: https://github.com/eigenwallet/core/compare/3.0.0-beta.9...3.0.0-beta.10
 [3.0.0-beta.9]: https://github.com/eigenwallet/core/compare/3.0.0-beta.8...3.0.0-beta.9
 [3.0.0-beta.8]: https://github.com/eigenwallet/core/compare/3.0.0-beta.7...3.0.0-beta.8
