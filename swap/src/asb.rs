@@ -1,7 +1,7 @@
-pub mod command;
 mod event_loop;
 mod network;
 mod recovery;
+pub mod rpc;
 
 pub use event_loop::{EventLoop, EventLoopHandle};
 pub use network::behaviour::{Behaviour, OutEvent};

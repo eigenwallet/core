@@ -186,6 +186,9 @@ fn main() {
     if target.contains("linux") && target.contains("x86_64") {
         println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
     }
+    if target.contains("linux") && target.contains("aarch64") {
+        println!("cargo:rustc-link-search=native=/usr/lib/aarch64-linux-gnu");
+    }
 
     println!(
         "cargo:rustc-link-search=native={}",

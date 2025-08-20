@@ -202,7 +202,7 @@ echo ""
 
 # Always use local .deb file - build if needed
 echo "🔍  Ensuring local .deb file exists..."
-MANIFEST_FILE="flatpak/net.unstoppableswap.gui.json"
+MANIFEST_FILE="flatpak/org.eigenwallet.app.json"
 TEMP_MANIFEST=""
 
 # Look for the .deb file in the expected location
@@ -259,11 +259,11 @@ jq --arg deb_path "file://$DEB_ABSOLUTE_PATH" --arg deb_hash "$DEB_SHA256" '
             "url": $deb_path,
             "sha256": $deb_hash,
             "dest": ".",
-            "dest-filename": "unstoppableswap.deb"
+            "dest-filename": "eigenwallet.deb"
         }
     ] |
     .modules[0]."build-commands" = [
-        "ar -x unstoppableswap.deb",
+        "ar -x eigenwallet.deb",
         "tar -xf data.tar.gz",
         "install -Dm755 usr/bin/unstoppableswap-gui-rs /app/bin/unstoppableswap-gui-rs"
     ]
@@ -312,15 +312,15 @@ flatpak build-update-repo "${DELTA_ARGS[@]}" "$REPO_DIR"
 
 # Create bundle for direct download
 echo "📦  Creating Flatpak bundle..."
-BUNDLE_ARGS=("$REPO_DIR" "net.unstoppableswap.gui.flatpak")
+BUNDLE_ARGS=("$REPO_DIR" "org.eigenwallet.app.flatpak")
 if [ -n "$GPG_SIGN" ]; then
     BUNDLE_ARGS+=("--gpg-sign=$GPG_SIGN")
 fi
-flatpak build-bundle "${BUNDLE_ARGS[@]}" net.unstoppableswap.gui
+flatpak build-bundle "${BUNDLE_ARGS[@]}" org.eigenwallet.app
 
 # Generate .flatpakrepo file
 echo "📝  Generating .flatpakrepo file..."
-cat > "$REPO_DIR/unstoppableswap.flatpakrepo" << EOF
+cat > "$REPO_DIR/eigenwallet.flatpakrepo" << EOF
 [Flatpak Repo]
 Title=eigenwallet
 Name=eigenwallet
@@ -329,25 +329,25 @@ Homepage=https://github.com/${GITHUB_USER}/${REPO_NAME}
 Comment=Unstoppable cross-chain atomic swaps
 Description=Repository for eigenwallet applications - providing secure and decentralized XMR-BTC atomic swaps
 Icon=${PAGES_URL}/icon.png
-SuggestRemoteName=unstoppableswap
+SuggestRemoteName=eigenwallet
 EOF
 
 # Add GPG key if signing
 if [ -n "$GPG_SIGN" ]; then
     echo "🔑  Adding GPG key to .flatpakrepo..."
     GPG_KEY_B64=$(gpg --export "$GPG_SIGN" | base64 -w 0)
-    echo "GPGKey=$GPG_KEY_B64" >> "$REPO_DIR/unstoppableswap.flatpakrepo"
+    echo "GPGKey=$GPG_KEY_B64" >> "$REPO_DIR/eigenwallet.flatpakrepo"
 fi
 
 # Generate .flatpakref file
 echo "📝  Generating .flatpakref file..."
-cat > "$REPO_DIR/net.unstoppableswap.gui.flatpakref" << EOF
+cat > "$REPO_DIR/org.eigenwallet.app.flatpakref" << EOF
 [Flatpak Ref]
 Title=eigenwallet GUI
-Name=net.unstoppableswap.gui
+Name=org.eigenwallet.app
 Branch=stable
 Url=${PAGES_URL}/
-SuggestRemoteName=unstoppableswap
+SuggestRemoteName=eigenwallet
 Homepage=https://github.com/${GITHUB_USER}/${REPO_NAME}
 Icon=${PAGES_URL}/icon.png
 RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -357,11 +357,11 @@ EOF
 # Add GPG key if signing
 if [ -n "$GPG_SIGN" ]; then
     GPG_KEY_B64=$(gpg --export "$GPG_SIGN" | base64 -w 0)
-    echo "GPGKey=$GPG_KEY_B64" >> "$REPO_DIR/net.unstoppableswap.gui.flatpakref"
+    echo "GPGKey=$GPG_KEY_B64" >> "$REPO_DIR/org.eigenwallet.app.flatpakref"
 fi
 
 # Copy bundle to repo directory
-cp net.unstoppableswap.gui.flatpak "$REPO_DIR/"
+cp org.eigenwallet.app.flatpak "$REPO_DIR/"
 
 # Use index.html from flatpak directory
 if [ -f "flatpak/index.html" ]; then
@@ -425,8 +425,8 @@ if [ "$PUSH_FLAG" = "--push" ]; then
     echo "🌐  Your Flatpak repository is available at: $PAGES_URL"
     echo ""
     echo "📋  Users can install with:"
-    echo "   flatpak remote-add --user unstoppableswap $PAGES_URL/unstoppableswap.flatpakrepo"
-    echo "   flatpak install unstoppableswap net.unstoppableswap.gui"
+    echo "   flatpak remote-add --user eigenwallet $PAGES_URL/eigenwallet.flatpakrepo"
+    echo "   flatpak install eigenwallet org.eigenwallet.app"
     echo ""
     if [ -n "$GPG_SIGN" ]; then
         echo "🔐  Repository is signed with GPG key: $GPG_SIGN"

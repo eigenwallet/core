@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "3.0.0-beta.5"
+version = "3.0.0-beta.11"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "XMR/BTC trustless atomic swaps."
@@ -44,6 +44,7 @@ electrum-pool = { path = "../electrum-pool" }
 fns = "0.0.7"
 futures = { workspace = true }
 hex = { workspace = true }
+jsonrpsee = { workspace = true, features = ["server"] }
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
 moka = { version = "0.12", features = ["sync", "future"] }
@@ -72,6 +73,7 @@ sigma_fun = { version = "0.7", default-features = false, features = ["ed25519", 
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 structopt = "0.3"
 strum = { version = "0.26", features = ["derive"] }
+swap-controller-api = { path = "../swap-controller-api" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-fs = { path = "../swap-fs" }
@@ -115,4 +117,4 @@ testcontainers = "0.15"
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen-git2 = { version = "1", features = ["build"] }
+vergen-git2 = { workspace = true }

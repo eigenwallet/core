@@ -1,0 +1,27 @@
+[package]
+name = "swap-orchestrator"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "orchestrator"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+bitcoin = { workspace = true }
+chrono = "0.4.41"
+compose_spec = "0.3.0"
+dialoguer = { workspace = true }
+monero = { workspace = true }
+serde_yaml = "0.9.34"
+swap-env = { path = "../swap-env" }
+toml = { workspace = true }
+url = { workspace = true }
+
+[build-dependencies]
+anyhow = { workspace = true }
+vergen = { workspace = true }
+
+[lints]
+workspace = true

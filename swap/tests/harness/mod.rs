@@ -268,7 +268,7 @@ async fn start_alice(
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
-    let (event_loop, swap_handle) = asb::EventLoop::new(
+    let (event_loop, swap_handle, _service) = asb::EventLoop::new(
         swarm,
         env_config,
         bitcoin_wallet,

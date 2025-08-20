@@ -200,9 +200,10 @@ namespace Monero
             subtract_fee_indices); // Subtract fee from all outputs
     }
 
-    inline bool setWalletDaemon(Wallet &wallet, const std::string &daemon_address)
+    inline bool setWalletDaemon(Wallet &wallet, const std::string &daemon_address, bool try_ssl)
     {
-        return wallet.setDaemon(daemon_address);
+        std::string ssl = try_ssl ? "autodetect" : "disabled";
+        return wallet.setDaemon(daemon_address, ssl);
     }
 
     inline std::unique_ptr<std::string> pendingTransactionTxId(const PendingTransaction &tx)

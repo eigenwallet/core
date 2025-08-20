@@ -4,25 +4,94 @@ use axum::{
     http::{request::Parts, response, StatusCode},
     response::Response,
 };
-use futures::{stream::Stream, StreamExt};
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
+use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio_native_tls::native_tls::TlsConnector;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    time::timeout,
+};
+
+use tokio_rustls::rustls::{
+    self,
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    pki_types::{CertificateDer, ServerName, UnixTime},
+    DigitallySignedStruct, Error as TlsError, SignatureScheme,
+};
 use tracing::{error, info_span, Instrument};
 
 use crate::AppState;
+
+/// wallet2.h has a default timeout of 3 minutes + 30 seconds.
+/// We assume this is a reasonable timeout. We use half of that that.
+/// https://github.com/SNeedlewoods/seraphis_wallet/blob/5f714f147fd29228698070e6bd80e41ce2f86fb0/src/wallet/wallet2.h#L238
+static TIMEOUT: Duration = Duration::from_secs(3 * 60 + 30).checked_div(2).unwrap();
+
+/// If the main node does not finish within this period, we start a hedged request.
+static SOFT_TIMEOUT: Duration = TIMEOUT.checked_div(2).unwrap();
 
 /// Trait alias for a stream that can be used with hyper
 trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
 
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, TlsError> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
+    }
+}
+
 #[axum::debug_handler]
 pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> Response {
-    static POOL_SIZE: usize = 10;
+    static POOL_SIZE: usize = 20;
 
     // Get the pool of nodes
     let available_pool = state
@@ -31,9 +100,9 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
         .await
         .map_err(|e| HandlerError::PoolError(e.to_string()))
         .map(|nodes| {
-            let pool: Vec<(String, String, i64)> = nodes
+            let pool: Vec<(String, String, u16)> = nodes
                 .into_iter()
-                .map(|node| (node.scheme, node.host, node.port as i64))
+                .map(|node| (node.scheme, node.host, node.port))
                 .collect();
 
             pool
@@ -73,17 +142,49 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
 async fn proxy_to_multiple_nodes(
     state: &AppState,
     request: CloneableRequest,
-    nodes: Vec<(String, String, i64)>,
+    nodes: Vec<(String, String, u16)>,
 ) -> Result<Response, HandlerError> {
     if nodes.is_empty() {
         return Err(HandlerError::NoNodes);
     }
 
-    let mut collected_errors: Vec<((String, String, i64), HandlerError)> = Vec::new();
+    // Sort nodes to prioritize those with available connections
+    // Check if we're using Tor for this request
+    let use_tor = match &state.tor_client {
+        Some(tc)
+            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
+        {
+            true
+        }
+        _ => false,
+    };
+
+    // Create a vector of (node, has_connection) pairs
+    let mut nodes_with_availability = Vec::new();
+    for node in nodes.iter() {
+        let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
+        let has_connection = state.connection_pool.has_available_connection(&key).await;
+        nodes_with_availability.push((node.clone(), has_connection));
+    }
+
+    // Sort: nodes with available connections come first
+    nodes_with_availability.sort_by(|a, b| {
+        // If a has connection and b doesn't, a comes first
+        // If both have or both don't have, maintain original order
+        b.1.cmp(&a.1)
+    });
+
+    // Extract just the sorted nodes
+    let nodes: Vec<(String, String, u16)> = nodes_with_availability
+        .into_iter()
+        .map(|(node, _)| node)
+        .collect();
+
+    let mut collected_errors: Vec<((String, String, u16), HandlerError)> = Vec::new();
 
     fn push_error(
-        errors: &mut Vec<((String, String, i64), HandlerError)>,
-        node: (String, String, i64),
+        errors: &mut Vec<((String, String, u16), HandlerError)>,
+        node: (String, String, u16),
         error: HandlerError,
     ) {
         tracing::debug!("Proxy request to {} failed: {}", display_node(&node), error);
@@ -95,86 +196,123 @@ async fn proxy_to_multiple_nodes(
     // Success is defined as either:
     // - a raw HTTP response with a 200 response code
     // - a JSON-RPC response with status code 200 and no error field
-    for node in nodes {
-        // Node attempt logging without creating spans to reduce overhead
+    for pair in nodes.chunks(2) {
+        let node = pair[0].clone();
+        let next = pair.get(1).cloned();
+
         let node_uri = display_node(&node);
 
         // Start timing the request
         let latency = std::time::Instant::now();
 
-        let response = match proxy_to_single_node(state, request.clone(), &node)
-            .instrument(info_span!(
-                "connection",
-                node = node_uri,
-                tor = state.tor_client.is_some(),
-            ))
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                push_error(&mut collected_errors, node, HandlerError::PhyiscalError(e));
-                continue;
+        let mut winner = node.clone();
+        let response = if let Some(hedge_node) = next.as_ref() {
+            let hedge_node_uri = display_node(hedge_node);
+
+            // Use hedged proxy: race node vs next
+            match proxy_to_node_with_hedge(state, request.clone(), &node, hedge_node)
+                .instrument(info_span!(
+                    "connection",
+                    node = node_uri,
+                    hedge_node = hedge_node_uri,
+                    tor = state.tor_client.is_some(),
+                ))
+                .await
+            {
+                Ok((response, winner_node)) => {
+                    // Completed this pair; move on to next pair in iterator
+                    winner = winner_node.clone();
+                    response
+                }
+                Err(node_errors) => {
+                    // One or both nodes failed; record the specific errors for each
+                    for (failed_node, error) in node_errors {
+                        push_error(
+                            &mut collected_errors,
+                            failed_node,
+                            HandlerError::PhyiscalError(error),
+                        );
+                    }
+                    continue;
+                }
+            }
+        } else {
+            // No hedge available; single node
+            match proxy_to_single_node(state, request.clone(), &node)
+                .instrument(info_span!(
+                    "connection",
+                    node = node_uri,
+                    tor = state.tor_client.is_some(),
+                ))
+                .await
+            {
+                Ok(response) => response,
+                Err(e) => {
+                    push_error(&mut collected_errors, node, HandlerError::PhyiscalError(e));
+                    continue;
+                }
             }
         };
 
         // Calculate the latency
         let latency = latency.elapsed().as_millis() as f64;
 
-        // Convert response to streamable to check first 1KB for errors
-        let streamable_response = StreamableResponse::from_response_with_tracking(
-            response,
-            Some(state.node_pool.clone()),
-        )
-        .await
-        .map_err(|e| {
-            HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
-        })?;
+        // Fully buffer the response before forwarding it to the caller
+        let buffered_response = CloneableResponse::from_response(response)
+            .await
+            .map_err(|e| {
+                HandlerError::CloneRequestError(format!("Failed to buffer response: {}", e))
+            })?;
 
-        let error = match streamable_response.get_jsonrpc_error() {
+        // Record total bytes for bandwidth statistics
+        state
+            .node_pool
+            .record_bandwidth(buffered_response.body.len() as u64);
+
+        let error = match buffered_response.get_jsonrpc_error() {
             Some(error) => {
-                // Check if we have already got two previous JSON-RPC errors
-                // If we did, we assume there is a reason for it
-                // We return the response as is (streaming).
+                // Check if we have already got two previous JSON-RPC errors.
+                // If we did, we assume there is a reason for it and return the response anyway.
                 if collected_errors
                     .iter()
                     .filter(|(_, error)| matches!(error, HandlerError::JsonRpcError(_)))
                     .count()
                     >= 2
                 {
-                    return Ok(streamable_response.into_response());
+                    return Ok(buffered_response.to_response());
                 }
 
                 Some(HandlerError::JsonRpcError(error))
             }
-            None if streamable_response.status().is_client_error()
-                || streamable_response.status().is_server_error() =>
+            None if buffered_response.status().is_client_error()
+                || buffered_response.status().is_server_error() =>
             {
-                Some(HandlerError::HttpError(streamable_response.status()))
+                Some(HandlerError::HttpError(buffered_response.status()))
             }
             _ => None,
         };
 
         match error {
             Some(error) => {
-                push_error(&mut collected_errors, node, error);
+                push_error(&mut collected_errors, winner, error);
             }
             None => {
                 tracing::trace!(
-                    "Proxy request to {} succeeded, streaming response",
-                    node_uri
+                    "Proxy request to {} succeeded, returning buffered response",
+                    display_node(&winner)
                 );
 
                 // Only record errors if we have gotten a successful response
-                // This helps prevent logging errors if its our likely our fault (no internet)
-                for (node, _) in collected_errors.iter() {
-                    record_failure(&state, &node.0, &node.1, node.2).await;
+                // This helps prevent logging errors if it's likely our fault (e.g. no internet).
+                for (node_failed, _) in collected_errors.iter() {
+                    record_failure(&state, &node_failed.0, &node_failed.1, node_failed.2).await;
                 }
 
                 // Record the success with actual latency
-                record_success(&state, &node.0, &node.1, node.2, latency).await;
+                record_success(&state, &winner.0, &winner.1, winner.2, latency).await;
 
-                // Finally return the successful streaming response
-                return Ok(streamable_response.into_response());
+                // Return the buffered response (no streaming)
+                return Ok(buffered_response.into_response());
             }
         }
     }
@@ -189,22 +327,126 @@ async fn maybe_wrap_with_tls(
     host: &str,
 ) -> Result<Box<dyn HyperStream>, SingleRequestError> {
     if scheme == "https" {
-        let tls_connector = TlsConnector::builder()
-            .danger_accept_invalid_certs(true)
-            .danger_accept_invalid_hostnames(true)
-            .build()
-            .map_err(|e| {
-                SingleRequestError::ConnectionError(format!("TLS connector error: {}", e))
-            })?;
-        let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
+        // Create a TLS client config that accepts all certificates and versions
+        let config = tokio_rustls::rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+            .with_no_client_auth();
 
-        let tls_stream = tls_connector.connect(host, stream).await.map_err(|e| {
-            SingleRequestError::ConnectionError(format!("TLS connection error: {}", e))
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+
+        let server_name = ServerName::try_from(host.to_string())
+            .map_err(|_| SingleRequestError::ConnectionError("Invalid DNS name".to_string()))?;
+
+        let tls_stream = connector.connect(server_name, stream).await.map_err(|e| {
+            SingleRequestError::ConnectionError(format!("TLS connection error: {:?}", e))
         })?;
 
         Ok(Box::new(tls_stream))
     } else {
         Ok(Box::new(stream))
+    }
+}
+
+/// Result type for hedged requests that tracks individual node failures
+type HedgedResult =
+    Result<(Response, (String, String, u16)), Vec<((String, String, u16), SingleRequestError)>>;
+
+/// Proxies a singular axum::Request to a given given main node with a specified hegde node
+/// If the main nodes response hasn't finished after SOFT_TIMEOUT, we proxy to the hedge node
+/// We then race the two responses, and return the one that finishes first (and is not an error)
+async fn proxy_to_node_with_hedge(
+    state: &crate::AppState,
+    request: CloneableRequest,
+    main_node: &(String, String, u16),
+    hedge_node: &(String, String, u16),
+) -> HedgedResult {
+    use std::future::Future;
+
+    // Start the main request immediately
+    let mut main_fut = Box::pin(proxy_to_single_node(state, request.clone(), main_node));
+
+    // Hedge request will be started after the soft timeout, unless the main fails first
+    let mut hedge_fut: Option<
+        Pin<Box<dyn Future<Output = Result<Response, SingleRequestError>> + Send>>,
+    > = None;
+
+    // Timer to trigger the hedge request
+    let mut soft_timer = Box::pin(tokio::time::sleep(SOFT_TIMEOUT));
+    let mut soft_timer_armed = true;
+
+    // Track errors from both nodes
+    let mut main_error: Option<SingleRequestError> = None;
+
+    loop {
+        // A future that awaits the hedge if present; otherwise stays pending
+        let mut hedge_wait = futures::future::poll_fn(|cx| {
+            if let Some(f) = hedge_fut.as_mut() {
+                f.as_mut().poll(cx)
+            } else {
+                std::task::Poll::Pending
+            }
+        });
+
+        tokio::select! {
+            res = &mut main_fut => {
+                match res {
+                    Ok(resp) => return Ok((resp, main_node.clone())),
+                    Err(err) => {
+                        // Start hedge immediately if not yet started
+                        main_error = Some(err);
+                        if hedge_fut.is_none() {
+                            tracing::debug!("Starting hedge request");
+                            hedge_fut = Some(Box::pin(proxy_to_single_node(state, request.clone(), hedge_node)));
+                        }
+
+                        // If hedge exists, await it and prefer its result
+                        if let Some(hf) = &mut hedge_fut {
+                            match hf.await {
+                                Ok(resp) => return Ok((resp, hedge_node.clone())),
+                                Err(hedge_err) => {
+                                    // Both failed, return errors for both nodes
+                                    let mut errors = vec![(main_node.clone(), main_error.take().unwrap())];
+                                    errors.push((hedge_node.clone(), hedge_err));
+                                    return Err(errors);
+                                }
+                            }
+                        } else {
+                            // Only main was tried and failed
+                            return Err(vec![(main_node.clone(), main_error.take().unwrap())]);
+                        }
+                    }
+                }
+            }
+
+            // Start hedge after soft timeout if not already started
+            _ = &mut soft_timer, if soft_timer_armed => {
+                // Disarm timer so it does not keep firing
+                soft_timer_armed = false;
+                if hedge_fut.is_none() {
+                    tracing::debug!("Starting hedge request");
+                    hedge_fut = Some(Box::pin(proxy_to_single_node(state, request.clone(), hedge_node)));
+                }
+            }
+
+            // If hedge is started, also race it
+            res = &mut hedge_wait => {
+                match res {
+                    Ok(resp) => return Ok((resp, hedge_node.clone())),
+                    Err(h_err) => {
+                        // Hedge failed; if main already failed, return both errors
+                        if let Some(m_err) = main_error.take() {
+                            return Err(vec![
+                                (main_node.clone(), m_err),
+                                (hedge_node.clone(), h_err),
+                            ]);
+                        }
+                        // Otherwise keep waiting on main
+                        hedge_fut = None;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -216,7 +458,7 @@ async fn maybe_wrap_with_tls(
 async fn proxy_to_single_node(
     state: &crate::AppState,
     request: CloneableRequest,
-    node: &(String, String, i64),
+    node: &(String, String, u16),
 ) -> Result<Response, SingleRequestError> {
     use crate::connection_pool::GuardedSender;
 
@@ -239,31 +481,44 @@ async fn proxy_to_single_node(
     let mut guarded_sender: Option<GuardedSender> = state.connection_pool.try_get(&key).await;
 
     if guarded_sender.is_none() {
-        // Need to build a new TCP/Tor stream.
-        let boxed_stream = if use_tor {
-            let tor_client = state.tor_client.as_ref().ok_or_else(|| {
-                SingleRequestError::ConnectionError("Tor requested but client missing".into())
-            })?;
-            let stream = tor_client
-                .connect(format!("{}:{}", node.1, node.2))
-                .await
-                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
-        } else {
-            let stream = TcpStream::connect(format!("{}:{}", node.1, node.2))
-                .await
-                .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
-            maybe_wrap_with_tls(stream, &node.0, &node.1).await?
-        };
+        // Build a new connection, and wrap it with TLS if needed.
+        let address = (node.1.as_str(), node.2);
+
+        let maybe_tls_stream = timeout(TIMEOUT, async {
+            let no_tls_stream: Box<dyn HyperStream> = if use_tor {
+                let tor_client = state.tor_client.as_ref().ok_or_else(|| {
+                    SingleRequestError::ConnectionError("Tor requested but client missing".into())
+                })?;
+
+                let stream = tor_client
+                    .connect(address)
+                    .await
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
+
+                Box::new(stream)
+            } else {
+                let stream = TcpStream::connect(address)
+                    .await
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
+
+                Box::new(stream)
+            };
+
+            maybe_wrap_with_tls(no_tls_stream, &node.0, &node.1).await
+        })
+        .await
+        .map_err(|_| SingleRequestError::Timeout("Connection timed out".to_string()))??;
+
+        let maybe_tls_stream = TokioIo::new(maybe_tls_stream);
 
         // Build an HTTP/1 connection over the stream.
-        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(boxed_stream))
+        let (sender, conn) = hyper::client::conn::http1::handshake(maybe_tls_stream)
             .await
             .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 
         // Drive the connection in the background.
         tokio::spawn(async move {
-            let _ = conn.await; // Just drive the connection, errors handled per-request
+            let _ = conn.await;
         });
 
         // Insert into pool and obtain exclusive access for this request.
@@ -283,7 +538,7 @@ async fn proxy_to_single_node(
 
     let mut guarded_sender = guarded_sender.expect("sender must be set");
 
-    // Forward the request to the node.  URI stays relative, so no rewrite.
+    // Forward the request to the node. URI stays relative, so no rewrite.
     let response = match guarded_sender.send_request(request.to_request()).await {
         Ok(response) => response,
         Err(e) => {
@@ -294,12 +549,23 @@ async fn proxy_to_single_node(
     };
 
     // Convert hyper Response<Incoming> to axum Response<Body>
+    // Buffer the entire response to avoid "end of file before message length reached" errors
     let (parts, body) = response.into_parts();
-    let stream = body
-        .into_data_stream()
-        .map(|result| result.map_err(|e| axum::Error::new(e)));
-    let axum_body = Body::from_stream(stream);
 
+    // Collect the entire body into memory
+    let body_bytes = match body.collect().await {
+        Ok(collected) => collected.to_bytes().to_vec(),
+        Err(e) => {
+            // If we fail to read the full body, mark connection as failed
+            guarded_sender.mark_failed().await;
+            return Err(SingleRequestError::SendRequestError(format!(
+                "Failed to read response body: {}",
+                e
+            )));
+        }
+    };
+
+    let axum_body = Body::from(body_bytes);
     Ok(Response::from_parts(parts, axum_body))
 }
 
@@ -312,7 +578,7 @@ fn get_jsonrpc_error(body: &[u8]) -> Option<String> {
             .and_then(|e| e.as_str().map(|s| s.to_string()));
     }
 
-    // If we can't parse JSON, treat it as an error
+    // If we can't parse JSON, don't treat it as an error
     None
 }
 
@@ -339,49 +605,6 @@ impl RequestDifferentiator for CloneableRequest {
 pub struct CloneableRequest {
     parts: Parts,
     pub body: Vec<u8>,
-}
-
-/// A response that buffers the first 1KB for error checking and keeps the rest as a stream
-pub struct StreamableResponse {
-    parts: response::Parts,
-    first_chunk: Vec<u8>,
-    remaining_stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>>>,
-}
-
-/// A wrapper stream that tracks bandwidth usage
-struct BandwidthTrackingStream<S> {
-    inner: S,
-    bandwidth_tracker: Arc<crate::pool::BandwidthTracker>,
-}
-
-impl<S> BandwidthTrackingStream<S> {
-    fn new(inner: S, bandwidth_tracker: Arc<crate::pool::BandwidthTracker>) -> Self {
-        Self {
-            inner,
-            bandwidth_tracker,
-        }
-    }
-}
-
-impl<S> Stream for BandwidthTrackingStream<S>
-where
-    S: Stream<Item = Result<Vec<u8>, axum::Error>> + Unpin,
-{
-    type Item = Result<Vec<u8>, axum::Error>;
-
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let result = Pin::new(&mut self.inner).poll_next(cx);
-
-        if let std::task::Poll::Ready(Some(Ok(ref chunk))) = result {
-            let chunk_size = chunk.len() as u64;
-            self.bandwidth_tracker.record_bytes(chunk_size);
-        }
-
-        result
-    }
 }
 
 /// A cloneable response that buffers the body in memory
@@ -428,117 +651,6 @@ impl CloneableRequest {
                 .and_then(|m| m.as_str().map(|s| s.to_string())),
             Err(_) => None,
         }
-    }
-}
-
-impl StreamableResponse {
-    const ERROR_CHECK_SIZE: usize = 1024; // 1KB
-
-    /// Convert a streaming response with bandwidth tracking
-    pub async fn from_response_with_tracking(
-        response: Response<Body>,
-        node_pool: Option<Arc<crate::pool::NodePool>>,
-    ) -> Result<Self, axum::Error> {
-        let (parts, body) = response.into_parts();
-        let mut body_stream = body.into_data_stream();
-
-        let mut first_chunk = Vec::new();
-        let mut remaining_chunks = Vec::new();
-        let mut total_read = 0;
-
-        // Collect chunks until we have at least 1KB for error checking
-        while total_read < Self::ERROR_CHECK_SIZE {
-            match body_stream.next().await {
-                Some(Ok(chunk)) => {
-                    let chunk_bytes = chunk.to_vec();
-                    let needed = Self::ERROR_CHECK_SIZE - total_read;
-
-                    if chunk_bytes.len() <= needed {
-                        // Entire chunk goes to first_chunk
-                        first_chunk.extend_from_slice(&chunk_bytes);
-                        total_read += chunk_bytes.len();
-                    } else {
-                        // Split the chunk
-                        first_chunk.extend_from_slice(&chunk_bytes[..needed]);
-                        remaining_chunks.push(chunk_bytes[needed..].to_vec());
-                        total_read += needed;
-                        break;
-                    }
-                }
-                Some(Err(e)) => return Err(e),
-                None => break, // End of stream
-            }
-        }
-
-        // Track bandwidth for the first chunk if we have a node pool
-        if let Some(ref node_pool) = node_pool {
-            node_pool.record_bandwidth(first_chunk.len() as u64);
-        }
-
-        // Create stream for remaining data
-        let remaining_stream =
-            if !remaining_chunks.is_empty() || total_read >= Self::ERROR_CHECK_SIZE {
-                let initial_chunks = remaining_chunks.into_iter().map(Ok);
-                let rest_stream = body_stream.map(|result| {
-                    result
-                        .map(|chunk| chunk.to_vec())
-                        .map_err(|e| axum::Error::new(e))
-                });
-                let combined_stream = futures::stream::iter(initial_chunks).chain(rest_stream);
-
-                // Wrap with bandwidth tracking if we have a node pool
-                let final_stream: Pin<Box<dyn Stream<Item = Result<Vec<u8>, axum::Error>> + Send>> =
-                    if let Some(node_pool) = node_pool.clone() {
-                        let bandwidth_tracker = node_pool.get_bandwidth_tracker();
-                        Box::pin(BandwidthTrackingStream::new(
-                            combined_stream,
-                            bandwidth_tracker,
-                        ))
-                    } else {
-                        Box::pin(combined_stream)
-                    };
-
-                Some(final_stream)
-            } else {
-                None
-            };
-
-        Ok(StreamableResponse {
-            parts,
-            first_chunk,
-            remaining_stream,
-        })
-    }
-
-    /// Get the status code
-    pub fn status(&self) -> StatusCode {
-        self.parts.status
-    }
-
-    /// Check for JSON-RPC errors in the first chunk
-    pub fn get_jsonrpc_error(&self) -> Option<String> {
-        get_jsonrpc_error(&self.first_chunk)
-    }
-
-    /// Convert to a streaming response
-    pub fn into_response(self) -> Response<Body> {
-        let body = if let Some(remaining_stream) = self.remaining_stream {
-            // Create a stream that starts with the first chunk, then continues with the rest
-            let first_chunk_stream =
-                futures::stream::once(futures::future::ready(Ok(self.first_chunk)));
-            let combined_stream = first_chunk_stream.chain(remaining_stream);
-            Body::from_stream(combined_stream)
-        } else {
-            // Only the first chunk exists
-            Body::from(self.first_chunk)
-        };
-
-        Response::from_parts(self.parts, body)
-    }
-
-    /// Get the size of the response (first chunk only, for bandwidth tracking)
-    pub fn first_chunk_size(&self) -> usize {
-        self.first_chunk.len()
     }
 }
 
@@ -614,7 +726,7 @@ enum HandlerError {
     PhyiscalError(SingleRequestError),
     HttpError(axum::http::StatusCode),
     JsonRpcError(String),
-    AllRequestsFailed(Vec<((String, String, i64), HandlerError)>),
+    AllRequestsFailed(Vec<((String, String, u16), HandlerError)>),
     CloneRequestError(String),
 }
 
@@ -622,6 +734,7 @@ enum HandlerError {
 enum SingleRequestError {
     ConnectionError(String),
     SendRequestError(String),
+    Timeout(String),
 }
 
 impl std::fmt::Display for HandlerError {
@@ -653,15 +766,16 @@ impl std::fmt::Display for SingleRequestError {
         match self {
             SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {}", msg),
+            SingleRequestError::Timeout(msg) => write!(f, "Timeout: {}", msg),
         }
     }
 }
 
-fn display_node(node: &(String, String, i64)) -> String {
+fn display_node(node: &(String, String, u16)) -> String {
     format!("{}://{}:{}", node.0, node.1, node.2)
 }
 
-async fn record_success(state: &AppState, scheme: &str, host: &str, port: i64, latency_ms: f64) {
+async fn record_success(state: &AppState, scheme: &str, host: &str, port: u16, latency_ms: f64) {
     if let Err(e) = state
         .node_pool
         .record_success(scheme, host, port, latency_ms)
@@ -674,7 +788,7 @@ async fn record_success(state: &AppState, scheme: &str, host: &str, port: i64, l
     }
 }
 
-async fn record_failure(state: &AppState, scheme: &str, host: &str, port: i64) {
+async fn record_failure(state: &AppState, scheme: &str, host: &str, port: u16) {
     if let Err(e) = state.node_pool.record_failure(scheme, host, port).await {
         error!(
             "Failed to record failure for {}://{}:{}: {}",

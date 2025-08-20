@@ -44,6 +44,8 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
+  MoneroNodeConfig,
+  GetMoneroSeedResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -75,7 +77,7 @@ import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 
 /// These are the official donation address for the eigenwallet/core project
 const DONATION_ADDRESS_MAINNET =
-  "49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa";
+  "8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq";
 const DONATION_ADDRESS_STAGENET =
   "56E274CJxTyVuuFG651dLURKyneoJ5LsSA5jMq4By9z9GBNYQKG8y5ejTYkcvZxarZW6if14ve8xXav2byK4aRnvNdKyVxp";
 
@@ -89,13 +91,13 @@ const DONATION_ADDRESS_MAINNET_SIG = `
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA512
 
-56E274CJxTyVuuFG651dLURKyneoJ5LsSA5jMq4By9z9GBNYQKG8y5ejTYkcvZxarZW6if14ve8xXav2byK4aRnvNdKyVxp is our donation address (signed by binarybaron)
+8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq is our donation address (signed by binarybaron)
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaFvzWQAKCRCZt10+FHai
-bvC6APoCzCto6RsNYwUr7j1ou3xeVNiwMkUQbE0erKt70pT+tQD/fAvPxHtPyb56
-XGFQ0pxL1PKzMd9npBGmGJhC4aTljQ4=
-=OUK4
+iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWUAAKCRCZt10+FHai
+bsC/AQCkisePNGhApMnwJiOoF79AoSoQVmF98GIKxvLm8SHFvQEA68gb3n/Klt/v
+lYP1r+qmB2kRe52F62orp40CV2jSnAM=
+=gzXB
 -----END PGP SIGNATURE-----
 `;
 
@@ -105,6 +107,9 @@ export const PRESET_RENDEZVOUS_POINTS = [
   "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
   "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
   "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
+  "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
+  "/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X",
+  "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk",
 ];
 
 export async function fetchSellersAtPresetRendezvousPoints() {
@@ -493,9 +498,14 @@ export async function getMoneroSyncProgress(): Promise<GetMoneroSyncProgressResp
   );
 }
 
-export async function getMoneroSeed(): Promise<string> {
-  // Returns the wallet's seed phrase as a single string. Backend must expose the `get_monero_seed` command.
-  return await invokeNoArgs<string>("get_monero_seed");
+export async function getMoneroSeed(): Promise<GetMoneroSeedResponse> {
+  return await invokeNoArgs<GetMoneroSeedResponse>("get_monero_seed");
+}
+
+export async function getMoneroSeedAndRestoreHeight(): Promise<
+  [GetMoneroSeedResponse, GetRestoreHeightResponse]
+> {
+  return Promise.all([getMoneroSeed(), getRestoreHeight()]);
 }
 
 // Wallet management functions that handle Redux dispatching
@@ -639,4 +649,34 @@ export async function saveFilesInDialog(files: Record<string, string>) {
 
 export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
   return await invokeNoArgs<DfxAuthenticateResponse>("dfx_authenticate");
+}
+
+export async function changeMoneroNode(
+  nodeConfig: MoneroNodeConfig,
+): Promise<void> {
+  await invoke<{ node_config: MoneroNodeConfig }, void>("change_monero_node", {
+    node_config: nodeConfig,
+  });
+}
+
+// Helper function to create MoneroNodeConfig from current settings
+export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
+  const network = getNetwork();
+  const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
+  const moneroNodeUrl =
+    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+
+  const moneroNodeConfig =
+    useMoneroRpcPool ||
+    moneroNodeUrl == null ||
+    !(await getMoneroNodeStatus(moneroNodeUrl, network))
+      ? { type: "Pool" as const }
+      : {
+          type: "SingleNode" as const,
+          content: {
+            url: moneroNodeUrl,
+          },
+        };
+
+  return moneroNodeConfig;
 }

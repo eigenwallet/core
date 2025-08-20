@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::cli::api::{
@@ -29,7 +30,7 @@ pub struct Wallets {
     /// The network we're on.
     network: Network,
     /// The monero node we connect to.
-    daemon: Daemon,
+    daemon: Arc<RwLock<Daemon>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
@@ -275,6 +276,8 @@ impl Wallets {
                 .await;
         }
 
+        let daemon = Arc::new(RwLock::new(daemon));
+
         let wallets = Self {
             wallet_dir,
             network,
@@ -323,6 +326,8 @@ impl Wallets {
                 .await;
         }
 
+        let daemon = Arc::new(RwLock::new(daemon));
+
         let wallets = Self {
             wallet_dir,
             network,
@@ -367,6 +372,8 @@ impl Wallets {
             .await
             .context("Couldn't fetch blockchain height")?;
 
+        let daemon = self.daemon.read().await.clone();
+
         let wallet = Wallet::open_or_create_from_keys(
             wallet_path.clone(),
             None,
@@ -376,7 +383,7 @@ impl Wallets {
             spend_key,
             blockheight,
             false, // We don't sync the swap wallet, just import the transaction
-            self.daemon.clone(),
+            daemon,
         )
         .await
         .context(format!(
@@ -458,6 +465,19 @@ impl Wallets {
                 .await
                 .context("Failed to get blockchain height")?,
         })
+    }
+
+    pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
+        {
+            let mut daemon = self.daemon.write().await;
+            *daemon = new_daemon.clone();
+        }
+
+        self.main_wallet
+            .call(move |wallet| wallet.set_daemon(&new_daemon))
+            .await?;
+
+        Ok(())
     }
 
     /// Get the last 5 recently used wallets

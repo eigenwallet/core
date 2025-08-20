@@ -69,11 +69,11 @@ test_monero_sys:
 
 # Builds the ASB and Swap binaries
 swap:
-	cd swap && cargo build --bin asb --bin=swap
+	cargo build -p swap-asb --bin asb && cd swap && cargo build --bin=swap
 
 # Run the asb on testnet
 asb-testnet:
-	cd swap && cargo run --bin asb -- --trace --testnet start
+	cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:
@@ -90,6 +90,9 @@ bindings:
 # Format the code
 fmt:
 	dprint fmt
+
+generate-sqlx-cache:
+	./regenerate_sqlx_cache.sh
 
 # Run eslint for the GUI frontend
 check_gui_eslint:

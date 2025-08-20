@@ -122,7 +122,7 @@ impl NodePool {
         &self,
         scheme: &str,
         host: &str,
-        port: i64,
+        port: u16,
         latency_ms: f64,
     ) -> Result<()> {
         self.db
@@ -131,7 +131,7 @@ impl NodePool {
         Ok(())
     }
 
-    pub async fn record_failure(&self, scheme: &str, host: &str, port: i64) -> Result<()> {
+    pub async fn record_failure(&self, scheme: &str, host: &str, port: u16) -> Result<()> {
         self.db
             .record_health_check(scheme, host, port, false, None)
             .await?;

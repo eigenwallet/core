@@ -1,12 +1,14 @@
-use crate::bitcoin::{bitcoin_address, Amount};
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
 use serde::Serialize;
 use std::ffi::OsString;
+use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use structopt::StructOpt;
-use swap_env::config::GetDefaults;
+use swap::bitcoin::{bitcoin_address, Amount};
+use swap_env::defaults::GetDefaults;
 use swap_env::env;
 use swap_env::env::GetConfig;
 use uuid::Uuid;
@@ -26,14 +28,27 @@ where
     let command: RawCommand = args.cmd;
 
     let arguments = match command {
-        RawCommand::Start { resume_only } => Arguments {
-            testnet,
-            json,
-            trace,
-            config_path: config_path(config, testnet)?,
-            env_config: env_config(testnet),
-            cmd: Command::Start { resume_only },
-        },
+        RawCommand::Start {
+            resume_only,
+            rpc_bind_host,
+            rpc_bind_port,
+        } => {
+            // Validate RPC bind arguments early
+            validate_rpc_bind_args(&rpc_bind_host, &rpc_bind_port)?;
+
+            Arguments {
+                testnet,
+                json,
+                trace,
+                config_path: config_path(config, testnet)?,
+                env_config: env_config(testnet),
+                cmd: Command::Start {
+                    resume_only,
+                    rpc_bind_host,
+                    rpc_bind_port,
+                },
+            }
+        }
         RawCommand::History { only_unfinished } => Arguments {
             testnet,
             json,
@@ -202,6 +217,8 @@ pub struct Arguments {
 pub enum Command {
     Start {
         resume_only: bool,
+        rpc_bind_host: Option<String>,
+        rpc_bind_port: Option<u16>,
     },
     History {
         only_unfinished: bool,
@@ -259,13 +276,6 @@ pub struct RawArguments {
     pub trace: bool,
 
     #[structopt(
-        short,
-        long = "disable-timestamp",
-        help = "Disable timestamping of log messages"
-    )]
-    pub disable_timestamp: bool,
-
-    #[structopt(
         long = "config",
         help = "Provide a custom path to the configuration file. The configuration file must be a toml file.",
         parse(from_os_str)
@@ -286,6 +296,16 @@ pub enum RawCommand {
             help = "For maintenance only. When set, no new swap requests will be accepted, but existing unfinished swaps will be resumed."
         )]
         resume_only: bool,
+        #[structopt(
+            long = "rpc-bind-host",
+            help = "Host address to bind the JSON-RPC server to (e.g., 127.0.0.1). Must be used together with --rpc-bind-port."
+        )]
+        rpc_bind_host: Option<String>,
+        #[structopt(
+            long = "rpc-bind-port",
+            help = "Port to bind the JSON-RPC server to (e.g., 9944). Must be used together with --rpc-bind-host."
+        )]
+        rpc_bind_port: Option<u16>,
     },
     #[structopt(about = "Prints all logging messages issued in the past.")]
     Logs {
@@ -390,6 +410,24 @@ pub struct RecoverCommandParams {
     pub swap_id: Uuid,
 }
 
+fn validate_rpc_bind_args(host: &Option<String>, port: &Option<u16>) -> Result<()> {
+    match (host, port) {
+        (Some(host_str), Some(port_val)) => {
+            let socket_addr = format!("{}:{}", host_str, port_val);
+            SocketAddr::from_str(&socket_addr).context("Invalid socket address")?;
+
+            Ok(())
+        }
+        (None, None) => Ok(()),
+        (Some(_), None) => {
+            bail!("--rpc-bind-host was provided but --rpc-bind-port was not. Both must be provided together or neither.");
+        }
+        (None, Some(_)) => {
+            bail!("--rpc-bind-port was provided but --rpc-bind-host was not. Both must be provided together or neither.");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,7 +452,11 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
-            cmd: Command::Start { resume_only: false },
+            cmd: Command::Start {
+                resume_only: false,
+                rpc_bind_host: None,
+                rpc_bind_port: None,
+            },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
@@ -456,6 +498,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Balance,
         };
         let args = parse_args(raw_ars).unwrap();
@@ -480,6 +523,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::WithdrawBtc {
                 amount: None,
                 address: bitcoin_address::parse_and_validate(BITCOIN_MAINNET_ADDRESS, false)
@@ -510,6 +554,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Cancel {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -538,6 +583,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Refund {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -566,6 +612,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::Punish {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -594,6 +641,7 @@ mod tests {
             trace: false,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
+
             cmd: Command::SafelyAbort {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -616,7 +664,12 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
-            cmd: Command::Start { resume_only: false },
+
+            cmd: Command::Start {
+                resume_only: false,
+                rpc_bind_host: None,
+                rpc_bind_port: None,
+            },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
@@ -636,6 +689,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::History {
                 only_unfinished: false,
             },
@@ -658,6 +712,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Balance,
         };
         let args = parse_args(raw_ars).unwrap();
@@ -678,6 +733,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::ExportMoneroWallet,
         };
         let args = parse_args(raw_ars).unwrap();
@@ -705,6 +761,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::WithdrawBtc {
                 amount: None,
                 address: bitcoin_address::parse_and_validate(BITCOIN_TESTNET_ADDRESS, true)
@@ -735,6 +792,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Cancel {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -764,6 +822,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Refund {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -793,6 +852,7 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::Punish {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
@@ -822,29 +882,10 @@ mod tests {
             trace: false,
             config_path: default_testnet_conf_path,
             env_config: testnet_env_config,
+
             cmd: Command::SafelyAbort {
                 swap_id: Uuid::parse_str(SWAP_ID).unwrap(),
             },
-        };
-        let args = parse_args(raw_ars).unwrap();
-        assert_eq!(expected_args, args);
-    }
-
-    #[test]
-    fn ensure_disable_timestamp_mapping() {
-        let default_mainnet_conf_path = env::Mainnet::get_config_file_defaults()
-            .unwrap()
-            .config_path;
-        let mainnet_env_config = env::Mainnet::get_config();
-
-        let raw_ars = vec![BINARY_NAME, "--disable-timestamp", "start"];
-        let expected_args = Arguments {
-            testnet: false,
-            json: false,
-            trace: false,
-            config_path: default_mainnet_conf_path,
-            env_config: mainnet_env_config,
-            cmd: Command::Start { resume_only: false },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
@@ -864,7 +905,12 @@ mod tests {
             trace: true,
             config_path: default_mainnet_conf_path,
             env_config: mainnet_env_config,
-            cmd: Command::Start { resume_only: false },
+
+            cmd: Command::Start {
+                resume_only: false,
+                rpc_bind_host: None,
+                rpc_bind_port: None,
+            },
         };
         let args = parse_args(raw_ars).unwrap();
         assert_eq!(expected_args, args);
@@ -899,5 +945,27 @@ mod tests {
             error_message,
             "Bitcoin address network mismatch, expected `Testnet`"
         );
+    }
+
+    #[test]
+    fn test_rpc_bind_validation() {
+        // Both None should be valid
+        assert!(validate_rpc_bind_args(&None, &None).is_ok());
+
+        // Both Some should be valid with valid values
+        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(9944)).is_ok());
+        assert!(validate_rpc_bind_args(&Some("0.0.0.0".to_string()), &Some(8080)).is_ok());
+        assert!(validate_rpc_bind_args(&Some("localhost".to_string()), &Some(3000)).is_ok());
+
+        // One Some, one None should be invalid
+        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &None).is_err());
+        assert!(validate_rpc_bind_args(&None, &Some(9944)).is_err());
+
+        // Invalid host should be invalid
+        assert!(validate_rpc_bind_args(&Some("invalid@host".to_string()), &Some(9944)).is_err());
+        assert!(validate_rpc_bind_args(&Some("".to_string()), &Some(9944)).is_err());
+
+        // Port 0 should be invalid
+        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(0)).is_err());
     }
 }

@@ -37,6 +37,14 @@ pub struct AppState {
 /// Manages background tasks for the RPC pool
 pub struct PoolHandle {
     pub status_update_handle: JoinHandle<()>,
+    pub server_info: ServerInfo,
+}
+
+impl PoolHandle {
+    /// Get the current server info for the pool
+    pub fn server_info(&self) -> &ServerInfo {
+        &self.server_info
+    }
 }
 
 impl Drop for PoolHandle {
@@ -92,6 +100,10 @@ pub async fn create_app_with_receiver(
 
     let pool_handle = PoolHandle {
         status_update_handle,
+        server_info: ServerInfo {
+            port: config.port,
+            host: config.host.clone(),
+        },
     };
 
     let app_state = AppState {
@@ -103,7 +115,7 @@ pub async fn create_app_with_receiver(
     // Build the app
     let app = Router::new()
         .route("/stats", get(stats_handler))
-        .route("/*path", any(proxy_handler))
+        .route("/{*path}", any(proxy_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
@@ -145,7 +157,7 @@ pub async fn start_server_with_random_port(
     PoolHandle,
 )> {
     let host = config.host.clone();
-    let (app, status_receiver, pool_handle) = create_app_with_receiver(config).await?;
+    let (app, status_receiver, mut pool_handle) = create_app_with_receiver(config).await?;
 
     // Bind to port 0 to get a random available port
     let listener = tokio::net::TcpListener::bind(format!("{}:0", host)).await?;
@@ -155,6 +167,9 @@ pub async fn start_server_with_random_port(
         port: actual_addr.port(),
         host: host.clone(),
     };
+
+    // Update the pool handle with the actual server info
+    pool_handle.server_info = server_info.clone();
 
     info!(
         "Started server on {}:{} (random port)",

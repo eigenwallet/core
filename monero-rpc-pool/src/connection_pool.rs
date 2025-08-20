@@ -38,7 +38,7 @@ use axum::body::Body;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 /// Key for the map – `(scheme, host, port, via_tor)`.
-pub type StreamKey = (String, String, i64, bool);
+pub type StreamKey = (String, String, u16, bool);
 
 /// Alias for hyper's HTTP/1 sender.
 pub type HttpSender = hyper::client::conn::http1::SendRequest<Body>;
@@ -64,6 +64,7 @@ impl std::ops::Deref for GuardedSender {
         &self.guard
     }
 }
+
 impl std::ops::DerefMut for GuardedSender {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.guard
@@ -174,5 +175,19 @@ impl ConnectionPool {
                 );
             }
         }
+    }
+
+    /// Check if there's an available (unlocked) connection for the given key.
+    pub async fn has_available_connection(&self, key: &StreamKey) -> bool {
+        let map = self.inner.read().await;
+        if let Some(vec_lock) = map.get(key) {
+            let vec = vec_lock.read().await;
+            for sender_mutex in vec.iter() {
+                if sender_mutex.try_lock().is_ok() {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
