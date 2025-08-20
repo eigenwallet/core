@@ -266,15 +266,6 @@ finish_gcc() {
     make -j$(nproc)
     make install
 
-    # Add to PATH only if not already present
-    if [[ ":$PATH:" != *":$PREFIX/bin:"* ]]; then
-        export PATH="$PREFIX/bin:$PATH"
-    fi
-
-    # add path to bashrc
-    if ! grep -q "export PATH=\"$PREFIX/bin:\$PATH\"" ~/.bashrc; then
-        echo "export PATH=\"$PREFIX/bin:\$PATH\"" >> ~/.bashrc
-    fi
 
     echo "Built gcc"
 }
@@ -301,6 +292,19 @@ build_winpthreads() {
 copy_dlls() {
     echo "Copying dll's to src-tauri/"
     cp -f $PREFIX/x86_64-w64-mingw32/lib/{libstdc++-6,libgcc_s_seh-1}.dll $SRC_TAURI_DIR/
+}
+
+setup_path() {
+    # Add to PATH only if not already present
+    if [[ ":$PATH:" != *":$PREFIX/bin:"* ]]; then
+        export PATH="$PREFIX/bin:$PATH"
+    fi
+
+    # add path to bashrc
+    if ! grep -q "export PATH=\"$PREFIX/bin:\$PATH\"" ~/.bashrc; then
+        echo "export PATH=\"$PREFIX/bin:\$PATH\"" >> ~/.bashrc
+    fi
+
 }
 
 verify_installation() {
@@ -395,6 +399,8 @@ build_mingw_crt
 finish_gcc
 build_winpthreads
 copy_dlls
+
+setup_path
 
 verify_installation
 
