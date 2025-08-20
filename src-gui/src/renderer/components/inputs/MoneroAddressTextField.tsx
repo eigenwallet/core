@@ -24,6 +24,7 @@ type MoneroAddressTextFieldProps = TextFieldProps & {
   onAddressChange: (address: string) => void;
   onAddressValidityChange: (valid: boolean) => void;
   helperText?: string;
+  disableHistory?: boolean;
 };
 
 export default function MoneroAddressTextField({
@@ -31,6 +32,7 @@ export default function MoneroAddressTextField({
   onAddressChange,
   onAddressValidityChange,
   helperText,
+  disableHistory,
   ...props
 }: MoneroAddressTextFieldProps) {
   const [addresses, setAddresses] = useState<string[]>([]);
@@ -76,7 +78,7 @@ export default function MoneroAddressTextField({
         variant="outlined"
         slotProps={{
           input: {
-            endAdornment: addresses?.length > 0 && (
+            endAdornment: addresses?.length > 0 && !disableHistory && (
               <IconButton onClick={() => setShowDialog(true)} size="small">
                 <ImportContactsIcon />
               </IconButton>

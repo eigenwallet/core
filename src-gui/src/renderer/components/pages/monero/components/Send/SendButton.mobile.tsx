@@ -13,6 +13,7 @@ import { useCreateSendTransaction } from "utils/useCreateSendTransaction";
 import SendAmountInput from "./SendAmountInput";
 import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import SendEnterAddressContent from "./SendEnterAdressContent";
+import SendEnterAmountContent from "./SendEnterAmountContent";
 
 enum SendTransactionState {
   EnterAddress,
@@ -81,12 +82,13 @@ export default function SendButton({
       <TextIconButton label="Send" onClick={() => setOpen(true)} disabled={disabled} isMainActionButton>
         <ArrowUpwardIcon />
       </TextIconButton>
-      <SwipeableDrawer open={open} onOpen={() => setOpen(true)} onClose={handleClose} anchor="bottom" disableSwipeToOpen={true} slotProps={{ paper: { sx: { minHeight: "90vh", borderTopLeftRadius: 16, borderTopRightRadius: 16 } } }}>
+      <SwipeableDrawer open={open} onOpen={() => setOpen(true)} onClose={handleClose} anchor="bottom" disableSwipeToOpen={true} slotProps={{ paper: { sx: {borderTopLeftRadius: 16, borderTopRightRadius: 16 } } }}>
         <Box
           sx={{
+            minHeight: "70vh",
             display: "flex",
+            alignItems: "stretch",
             flexDirection: "column",
-            alignItems: "center",
             gap: 2,
             p: 2,
             pb: 8,
@@ -101,29 +103,19 @@ export default function SendButton({
             />
           )}
           {step === SendTransactionState.EnterAmount && (
-            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, width: "100%" }}>
-              <Typography variant="h6" sx={{ textAlign: "center" }}>Choose Amount</Typography>
-              <SendAmountInput
+            <SendEnterAmountContent
               balance={balance}
-              amount={sendAmount}
+              sendAmount={sendAmount}
               onAmountChange={handleAmountChange}
               onMaxToggled={handleMaxToggled}
               currency={currency}
               onCurrencyChange={handleCurrencyChange}
-              disabled={isSending}
-              sx={{
-                bgcolor: "transparent",
-                minHeight: 180,
-                justifyContent: "space-between",
-                my: 5,
-              }}
+              isSending={isSending}
+              isSendDisabled={isSendDisabled}
+              onSend={handleSend}
+              onSendSuccess={handleSendSuccess}
+              onPendingChange={setIsSending}
             />
-            <PromiseInvokeButton variant="contained" onInvoke={handleSend} onSuccess={handleSendSuccess} onPendingChange={setIsSending}
-              disabled={isSendDisabled}
-            >
-              Continue
-            </PromiseInvokeButton>
-            </Box>
           )}
           {hasPendingApproval && (
             <SendApprovalContent onClose={handleClose} />
