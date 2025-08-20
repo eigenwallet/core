@@ -96,6 +96,7 @@ export default function SendButton({
         >
           {step === SendTransactionState.EnterAddress && (
             <SendEnterAddressContent
+              open={open}
               onContinue={() => setAddressConfirmed(true)}
               address={sendAddress}
               onAddressChange={handleAddressChange}

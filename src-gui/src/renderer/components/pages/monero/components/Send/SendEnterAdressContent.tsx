@@ -1,14 +1,20 @@
-import { Box, Button, Skeleton, Typography } from '@mui/material'
+import { Box, Button, Card, Skeleton, Typography } from '@mui/material'
+import { readText } from '@tauri-apps/plugin-clipboard-manager'
 import { useEffect, useState } from 'react'
 import MoneroAddressTextField from 'renderer/components/inputs/MoneroAddressTextField'
 import { getMoneroAddresses } from 'renderer/rpc'
+import { isTestnet } from 'store/config'
+import { isXmrAddressValid } from 'utils/conversionUtils'
+import ContentPasteIcon from '@mui/icons-material/ContentPaste'
 
 export default function SendEnterAddressContent({
+    open,
     onContinue,
     address,
     onAddressChange,
     onAddressValidityChange,
 }: {
+    open: boolean
     onContinue: () => void
     address: string
     onAddressChange: (address: string) => void
@@ -17,6 +23,9 @@ export default function SendEnterAddressContent({
     const [isValidAddress, setIsValidAddress] = useState(false)
     const [previousAddresses, setPreviousAddresses] = useState<string[]>([])
     const [historyLoading, setHistoryLoading] = useState(false)
+    const [clipboardAddress, setClipboardAddress] = useState<string | null>(
+        null
+    )
 
     const handleValidityChange = (valid: boolean) => {
         setIsValidAddress(valid)
@@ -30,8 +39,20 @@ export default function SendEnterAddressContent({
             setPreviousAddresses(response.addresses)
             setHistoryLoading(false)
         }
+
+        const getClipBoardAddress = async () => {
+            const clipboardAddress = await readText()
+            if (
+                clipboardAddress &&
+                isXmrAddressValid(clipboardAddress, isTestnet())
+            ) {
+                setClipboardAddress(clipboardAddress)
+            }
+        }
+
         fetchAddresses()
-    }, [])
+        getClipBoardAddress()
+    }, [open])
 
     return (
         <Box
@@ -44,13 +65,22 @@ export default function SendEnterAddressContent({
                 alignItems: 'center',
             }}
         >
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
+            <Box
+                sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 3,
+                    width: '100%',
+                }}
+            >
                 <Typography variant="h6" align="center">
                     Select Recepient
                 </Typography>
 
                 <Box>
-                    <Typography variant="body1" sx={{pb: 1}}>To</Typography>
+                    <Typography variant="body1" sx={{ pb: 1 }}>
+                        To
+                    </Typography>
                     <MoneroAddressTextField
                         address={address}
                         onAddressChange={onAddressChange}
@@ -59,6 +89,38 @@ export default function SendEnterAddressContent({
                         disableHistory={true}
                         fullWidth
                     />
+                    {clipboardAddress && (
+                        <Card
+                            elevation={1}
+                            sx={{ p: 2, bgcolor: 'grey.800', borderRadius: 2, mt: 1, cursor: 'pointer' }}
+                            onClick={() => onAddressChange(clipboardAddress)}
+                        >
+                            <Box
+                                sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1,
+                                }}
+                            >
+                                <ContentPasteIcon />
+                                <Typography>Paste from Clipboard</Typography>
+                            </Box>
+
+                            <Typography
+                                sx={{
+                                    fontFamily: 'monospace',
+                                    width: '100%',
+                                    display: 'block',
+                                    pt: 1,
+                                }}
+                                variant="caption"
+                                color="text.secondary"
+                                noWrap
+                            >
+                                {clipboardAddress}
+                            </Typography>
+                        </Card>
+                    )}
                 </Box>
 
                 <Box>
@@ -95,7 +157,11 @@ export default function SendEnterAddressContent({
                     )}
                 </Box>
             </Box>
-            <Button onClick={onContinue} disabled={!isValidAddress} variant='contained'>
+            <Button
+                onClick={onContinue}
+                disabled={!isValidAddress}
+                variant="contained"
+            >
                 Continue
             </Button>
         </Box>
