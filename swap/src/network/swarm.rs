@@ -3,7 +3,6 @@ use crate::libp2p_ext::MultiAddrExt;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::seed::Seed;
 use crate::{asb, cli};
-use swap_core::bitcoin;
 use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::swarm::NetworkBehaviour;
@@ -12,6 +11,7 @@ use libp2p::{identity, Multiaddr, Swarm};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin;
 use swap_env::env;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 

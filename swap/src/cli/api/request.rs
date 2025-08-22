@@ -1,6 +1,5 @@
 use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::wallet;
-use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use crate::cli::api::tauri_bindings::{
     ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
@@ -18,7 +17,6 @@ use crate::network::swarm;
 use crate::protocol::bob::{BobState, Swap};
 use crate::protocol::{bob, Database, State};
 use crate::{cli, monero};
-use swap_core::bitcoin;
 use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
 use ::monero::Network;
@@ -38,6 +36,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin;
+use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use thiserror::Error;
 use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;

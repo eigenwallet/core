@@ -1,4 +1,3 @@
-use crate::bitcoin;
 use crate::common::retry;
 use crate::monero;
 use crate::protocol::alice::AliceState;

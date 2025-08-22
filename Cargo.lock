@@ -10755,7 +10755,6 @@ dependencies = [
  "jsonrpsee",
  "monero",
  "rustyline",
- "serde_json",
  "shell-words",
  "swap-controller-api",
  "tokio",
@@ -10769,7 +10768,6 @@ dependencies = [
  "jsonrpsee",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -10789,13 +10787,16 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rust_decimal",
  "serde",
+ "serde_cbor",
  "serde_json",
  "sha2 0.10.9",
+ "swap-env",
  "swap-serde",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
  "typeshare",
+ "uuid",
 ]
 
 [[package]]

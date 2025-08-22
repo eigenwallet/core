@@ -7,22 +7,22 @@ edition = "2024"
 anyhow = { workspace = true }
 
 # Bitcoin stuff
+bdk_electrum = { workspace = true }
+bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
-monero = { workspace = true }
-bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
-bdk_electrum = { workspace = true }
-electrum-pool = { path = "../electrum-pool" }
-ecdsa_fun = { workspace = true }
-sha2 = { workspace = true }
 curve25519-dalek = { workspace = true }
+ecdsa_fun = { workspace = true }
+electrum-pool = { path = "../electrum-pool" }
+monero = { workspace = true }
+sha2 = { workspace = true }
 
 # Serialization
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-typeshare = { workspace = true }
 swap-serde = { path = "../swap-serde" }
-rust_decimal = { workspace = true }
+typeshare = { workspace = true }
 
 # Tracing
 tracing = { workspace = true }
@@ -31,11 +31,16 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 
 # Randomness
-rand_chacha = { workspace = true }
 rand = { workspace = true }
+rand_chacha = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
+
+[dev-dependencies]
+serde_cbor = { workspace = true }
+swap-env = { path = "../swap-env" }
+uuid = { workspace = true }
 
 [lints]
 workspace = true

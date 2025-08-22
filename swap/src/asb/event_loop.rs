@@ -2,6 +2,7 @@ use self::quote::{
     make_quote, unlocked_monero_balance_with_timeout, QuoteCacheKey, QUOTE_CACHE_TTL,
 };
 use crate::asb::{Behaviour, OutEvent};
+use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::quote::BidQuote;
@@ -10,8 +11,6 @@ use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap};
 use crate::protocol::{Database, State};
-use crate::{monero};
-use swap_core::bitcoin;
 use anyhow::{anyhow, Context, Result};
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
@@ -25,6 +24,7 @@ use std::convert::TryInto;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin;
 use swap_env::env;
 use swap_feed::LatestRate;
 use tokio::sync::{mpsc, oneshot};

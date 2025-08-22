@@ -1,12 +1,10 @@
 use super::request::BalanceResponse;
-use swap_core::bitcoin;
 use crate::cli::api::request::{
     GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse,
 };
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::{monero, network::quote::BidQuote};
-use swap_core::bitcoin::ExpiredTimelocks;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
@@ -18,6 +16,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::Display;
+use swap_core::bitcoin;
+use swap_core::bitcoin::ExpiredTimelocks;
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 use uuid::Uuid;

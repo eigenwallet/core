@@ -29,7 +29,6 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;

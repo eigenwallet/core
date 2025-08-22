@@ -1,4 +1,3 @@
-use swap_core::bitcoin;
 use crate::monero::{Scalar, TransferProof};
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::quote::BidQuote;

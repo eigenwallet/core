@@ -1,5 +1,5 @@
-use swap_core::bitcoin::Scalar;
 use ecdsa_fun::fun::marker::{NonZero, Secret};
+use swap_core::bitcoin::Scalar;
 
 pub trait ScalarExt {
     fn to_secpfun_scalar(&self) -> ecdsa_fun::fun::Scalar;

@@ -1,12 +1,12 @@
 use crate::bitcoin;
 use crate::bitcoin::{
-    Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey, TooManyInputs,
-    Transaction, TxCancel, verify_sig,
+    verify_sig, Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey,
+    TooManyInputs, Transaction, TxCancel,
 };
 use ::bitcoin::sighash::SighashCache;
-use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
-use ::bitcoin::{ScriptBuf, Weight, secp256k1};
-use anyhow::{Context, Result, bail};
+use ::bitcoin::{secp256k1, ScriptBuf, Weight};
+use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
+use anyhow::{bail, Context, Result};
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;

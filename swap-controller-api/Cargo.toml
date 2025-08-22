@@ -9,8 +9,5 @@ jsonrpsee = { workspace = true, features = ["macros", "server", "client-core", "
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-[dev-dependencies]
-tokio = { workspace = true, features = ["test-util"] }
-
 [lints]
 workspace = true

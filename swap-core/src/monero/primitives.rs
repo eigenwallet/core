@@ -1,3 +1,4 @@
+use crate::bitcoin;
 use anyhow::{bail, Result};
 use curve25519_dalek::scalar::Scalar;
 use rand::{CryptoRng, RngCore};
@@ -8,12 +9,10 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
 use std::str::FromStr;
-use crate::bitcoin;
 use typeshare::typeshare;
 
 use ::monero::network::Network;
 use ::monero::{PrivateKey, PublicKey};
-
 
 pub const PICONERO_OFFSET: u64 = 1_000_000_000_000;
 
@@ -663,16 +662,16 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct MoneroPrivateKey(#[serde(with = "monero_private_key")] ::monero::PrivateKey);
+    pub struct MoneroPrivateKey(
+        #[serde(with = "swap_serde::monero::private_key")] ::monero::PrivateKey,
+    );
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
     pub struct MoneroAmount(#[serde(with = "swap_serde::monero::amount")] ::monero::Amount);
 
     #[test]
     fn serde_monero_private_key_json() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
-            Scalar::random(&mut OsRng),
-        ));
+        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
         let encoded = serde_json::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -680,9 +679,7 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_cbor() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
-            crate::monero::Scalar::random(&mut OsRng),
-        ));
+        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
         let encoded = serde_cbor::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -690,7 +687,7 @@ mod tests {
 
     #[test]
     fn serde_monero_amount() {
-        let amount = MoneroAmount(crate::monero::Amount::from_piconero(1000));
+        let amount = MoneroAmount(::monero::Amount::from_pico(1000));
         let encoded = serde_cbor::to_vec(&amount).unwrap();
         let decoded: MoneroAmount = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(amount, decoded);

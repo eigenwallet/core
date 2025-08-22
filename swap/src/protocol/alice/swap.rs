@@ -5,14 +5,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::asb::{EventLoopHandle, LatestRate};
-use swap_core::bitcoin::ExpiredTimelocks;
 use crate::common::retry;
+use crate::monero;
 use crate::monero::TransferProof;
 use crate::protocol::alice::{AliceState, Swap};
-use crate::monero;
-use swap_core::bitcoin;
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
+use swap_core::bitcoin::ExpiredTimelocks;
 use swap_env::env::Config;
 use tokio::select;
 use tokio::time::timeout;

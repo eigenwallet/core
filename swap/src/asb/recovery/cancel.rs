@@ -1,10 +1,10 @@
 use crate::bitcoin::{parse_rpc_error_code, RpcErrorCode, Wallet};
-use swap_core::bitcoin::Txid;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
 use std::convert::TryInto;
 use std::sync::Arc;
+use swap_core::bitcoin::Txid;
 use uuid::Uuid;
 
 pub async fn cancel(

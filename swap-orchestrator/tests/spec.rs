@@ -1,6 +1,7 @@
+use std::path::PathBuf;
 use swap_orchestrator::compose::{
-    IntoSpec, OrchestratorImage, OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
-    OrchestratorPorts,
+    DockerBuildInput, IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
+    OrchestratorInput, OrchestratorNetworks, OrchestratorPorts, ASB_DATA_DIR,
 };
 use swap_orchestrator::{asb, electrs, images};
 
@@ -18,15 +19,13 @@ fn test_orchestrator_spec_generation() {
         networks: OrchestratorNetworks {
             monero: monero::Network::Stagenet,
             bitcoin: bitcoin::Network::Testnet,
-            electrs: electrs::Network::Testnet,
-            asb: asb::Network::Testnet,
         },
         images: OrchestratorImages {
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
-            asb: OrchestratorImage::Build(images::ASB_IMAGE.to_string()),
-            asb_controller: OrchestratorImage::Build(images::ASB_CONTROLLER_IMAGE.to_string()),
+            asb: OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE),
+            asb_controller: OrchestratorImage::Build(images::ASB_CONTROLLER_IMAGE_FROM_SOURCE),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),

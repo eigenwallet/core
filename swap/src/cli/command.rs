@@ -1,4 +1,3 @@
-use swap_core::bitcoin::{bitcoin_address, Amount};
 use crate::cli::api::request::{
     BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs,
     GetHistoryArgs, ListSellersArgs, MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
@@ -12,6 +11,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 use structopt::{clap, StructOpt};
+use swap_core::bitcoin::{bitcoin_address, Amount};
 use url::Url;
 use uuid::Uuid;
 

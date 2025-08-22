@@ -1,4 +1,3 @@
-use swap_core::bitcoin::EncryptedSignature;
 use crate::cli::behaviour::{Behaviour, OutEvent};
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::{self, Request, Response};
@@ -18,6 +17,7 @@ use libp2p::{PeerId, Swarm};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin::EncryptedSignature;
 use uuid::Uuid;
 
 static REQUEST_RESPONSE_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(60);

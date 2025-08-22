@@ -1,7 +1,6 @@
 use crate::asb::event_loop::EventLoopService;
-use crate::protocol::Database;
 use crate::monero;
-use swap_core::bitcoin;
+use crate::protocol::Database;
 use anyhow::{Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
