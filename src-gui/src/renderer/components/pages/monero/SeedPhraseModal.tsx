@@ -1,10 +1,8 @@
 import {
   Box,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
-  DialogTitle,
   Typography,
 } from "@mui/material";
 import ActionableMonospaceTextBox from "../../other/ActionableMonospaceTextBox";
@@ -12,6 +10,8 @@ import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
 } from "models/tauriModel";
+import MobileDialog from "../../modal/MobileDialog";
+import MobileDialogHeader from "renderer/components/modal/MobileDialogHeader";
 
 interface SeedPhraseModalProps {
   onClose: () => void;
@@ -27,8 +27,8 @@ export default function SeedPhraseModal({
   }
 
   return (
-    <Dialog open={true} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Wallet Seed Phrase</DialogTitle>
+    <MobileDialog open={true} onClose={onClose} maxWidth="md" fullWidth>
+      <MobileDialogHeader title="Wallet Seed Phrase" onClose={onClose} />
       <DialogContent>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <ActionableMonospaceTextBox
@@ -59,6 +59,6 @@ export default function SeedPhraseModal({
           Close
         </Button>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }

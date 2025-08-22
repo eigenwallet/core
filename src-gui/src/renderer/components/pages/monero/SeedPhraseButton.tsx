@@ -1,6 +1,6 @@
 import { ListItemIcon, MenuItem, Typography } from "@mui/material";
 import { Key as KeyIcon } from "@mui/icons-material";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
 import {
   GetMoneroSeedResponse,

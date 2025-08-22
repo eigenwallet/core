@@ -3,7 +3,6 @@ import {
   AccordionDetails,
   AccordionSummary,
   Button,
-  Dialog,
   DialogActions,
   DialogContent,
   TextField,
@@ -11,12 +10,13 @@ import {
   Radio,
 } from "@mui/material";
 
-import { DialogTitle } from "@mui/material";
+import MobileDialogHeader from "renderer/components/modal/MobileDialogHeader";
 import { useState, useEffect } from "react";
 import { getRestoreHeight, setMoneroRestoreHeight } from "renderer/rpc";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { Dayjs } from "dayjs";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
+import MobileDialog from "renderer/components/modal/MobileDialog";
 
 enum RestoreOption {
   BlockHeight = "blockHeight",
@@ -79,9 +79,9 @@ export default function SetRestoreHeightModal({
   };
 
   return (
-    <Dialog open={open} onClose={onClose}>
-      <DialogTitle>Set Restore Height</DialogTitle>
-      <DialogContent sx={{ minWidth: "500px", minHeight: "300px" }}>
+    <MobileDialog open={open} onClose={onClose}>
+      <MobileDialogHeader title="Set Restore Height" onClose={onClose} />
+      <DialogContent sx={{ minHeight: "300px", md: { minWidth: "500px" } }}>
         <Accordion
           elevation={0}
           expanded={restoreOption === RestoreOption.BlockHeight}
@@ -137,6 +137,6 @@ export default function SetRestoreHeightModal({
           Confirm
         </PromiseInvokeButton>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }
