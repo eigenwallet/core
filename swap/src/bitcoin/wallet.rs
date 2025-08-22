@@ -2054,6 +2054,129 @@ impl Client {
     }
 }
 
+#[derive(Clone)]
+pub struct SyncRequestBuilderFactory {
+    chain_tip: bdk_wallet::chain::CheckPoint,
+    spks: Vec<((KeychainKind, u32), ScriptBuf)>,
+}
+
+impl SyncRequestBuilderFactory {
+    fn build(self) -> SyncRequestBuilder<(KeychainKind, u32)> {
+        SyncRequest::builder()
+            .chain_tip(self.chain_tip)
+            .spks_with_indexes(self.spks)
+    }
+}
+
+#[async_trait::async_trait]
+impl<Persister, C> bitcoin_wallet::BitcoinWallet for Wallet<Persister, C>
+where
+    Persister: WalletPersister + Send + Sized,
+    <Persister as WalletPersister>::Error: std::error::Error + Send + Sync + 'static,
+    C: EstimateFeeRate + Sync + Send + 'static,
+{
+    async fn balance(&self) -> Result<Amount> {
+        self.balance().await
+    }
+
+    async fn balance_info(&self) -> Result<Balance> {
+        self.balance_info().await
+    }
+
+    async fn new_address(&self) -> Result<Address> {
+        self.new_address().await
+    }
+
+    async fn send_to_address(
+        &self,
+        address: Address,
+        amount: Amount,
+        spending_fee: Amount,
+        change_override: Option<Address>,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        self.send_to_address(address, amount, spending_fee, change_override)
+            .await
+    }
+
+    async fn send_to_address_dynamic_fee(
+        &self,
+        address: Address,
+        amount: Amount,
+        change_override: Option<Address>,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        self.send_to_address_dynamic_fee(address, amount, change_override)
+            .await
+    }
+
+    async fn sweep_balance_to_address_dynamic_fee(
+        &self,
+        address: Address,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        self.sweep_balance_to_address_dynamic_fee(address).await
+    }
+
+    async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction> {
+        self.sign_and_finalize(psbt).await
+    }
+
+    async fn broadcast(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, bitcoin_wallet::Subscription)> {
+        self.broadcast(transaction, kind).await
+    }
+
+    async fn sync(&self) -> Result<()> {
+        self.sync().await
+    }
+
+    async fn subscribe_to(
+        &self,
+        tx: impl bitcoin_wallet::Watchable + Send + Sync + 'static,
+    ) -> bitcoin_wallet::Subscription {
+        self.subscribe_to(tx).await
+    }
+
+    async fn status_of_script<T>(&self, tx: &T) -> Result<bitcoin_wallet::primitives::ScriptStatus>
+    where
+        T: bitcoin_wallet::Watchable + Send + Sync,
+    {
+        self.status_of_script(tx).await
+    }
+
+    async fn get_raw_transaction(
+        &self,
+        txid: Txid,
+    ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
+        self.get_raw_transaction(txid).await
+    }
+
+    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+        self.max_giveable(locking_script_size).await
+    }
+
+    async fn estimate_fee(
+        &self,
+        weight: Weight,
+        transfer_amount: Option<Amount>,
+    ) -> Result<Amount> {
+        self.estimate_fee(weight, transfer_amount).await
+    }
+
+    fn network(&self) -> Network {
+        self.network
+    }
+
+    fn finality_confirmations(&self) -> u32 {
+        self.finality_confirmations
+    }
+
+    async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
+        self.wallet_export(role).await
+    }
+}
+
 impl EstimateFeeRate for Client {
     async fn estimate_feerate(&self, target_block: u32) -> Result<FeeRate> {
         // Now that the Electrum client methods are async, we can parallelize the calls
@@ -3440,128 +3563,5 @@ TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=00000000000
             let _fee2 = cached2.estimate_feerate(6).await.unwrap();
             assert_eq!(mock.estimate_call_count(), 1); // Still 1, cache was shared
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct SyncRequestBuilderFactory {
-    chain_tip: bdk_wallet::chain::CheckPoint,
-    spks: Vec<((KeychainKind, u32), ScriptBuf)>,
-}
-
-impl SyncRequestBuilderFactory {
-    fn build(self) -> SyncRequestBuilder<(KeychainKind, u32)> {
-        SyncRequest::builder()
-            .chain_tip(self.chain_tip)
-            .spks_with_indexes(self.spks)
-    }
-}
-
-#[async_trait::async_trait]
-impl<Persister, C> bitcoin_wallet::BitcoinWallet for Wallet<Persister, C>
-where
-    Persister: WalletPersister + Send + Sized,
-    <Persister as WalletPersister>::Error: std::error::Error + Send + Sync + 'static,
-    C: EstimateFeeRate + Sync + Send + 'static,
-{
-    async fn balance(&self) -> Result<Amount> {
-        self.balance().await
-    }
-
-    async fn balance_info(&self) -> Result<Balance> {
-        self.balance_info().await
-    }
-
-    async fn new_address(&self) -> Result<Address> {
-        self.new_address().await
-    }
-
-    async fn send_to_address(
-        &self,
-        address: Address,
-        amount: Amount,
-        spending_fee: Amount,
-        change_override: Option<Address>,
-    ) -> Result<bitcoin::psbt::Psbt> {
-        self.send_to_address(address, amount, spending_fee, change_override)
-            .await
-    }
-
-    async fn send_to_address_dynamic_fee(
-        &self,
-        address: Address,
-        amount: Amount,
-        change_override: Option<Address>,
-    ) -> Result<bitcoin::psbt::Psbt> {
-        self.send_to_address_dynamic_fee(address, amount, change_override)
-            .await
-    }
-
-    async fn sweep_balance_to_address_dynamic_fee(
-        &self,
-        address: Address,
-    ) -> Result<bitcoin::psbt::Psbt> {
-        self.sweep_balance_to_address_dynamic_fee(address).await
-    }
-
-    async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction> {
-        self.sign_and_finalize(psbt).await
-    }
-
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, bitcoin_wallet::Subscription)> {
-        self.broadcast(transaction, kind).await
-    }
-
-    async fn sync(&self) -> Result<()> {
-        self.sync().await
-    }
-
-    async fn subscribe_to(
-        &self,
-        tx: impl bitcoin_wallet::Watchable + Send + Sync + 'static,
-    ) -> bitcoin_wallet::Subscription {
-        self.subscribe_to(tx).await
-    }
-
-    async fn status_of_script<T>(&self, tx: &T) -> Result<bitcoin_wallet::primitives::ScriptStatus>
-    where
-        T: bitcoin_wallet::Watchable + Send + Sync,
-    {
-        self.status_of_script(tx).await
-    }
-
-    async fn get_raw_transaction(
-        &self,
-        txid: Txid,
-    ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
-        self.get_raw_transaction(txid).await
-    }
-
-    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        self.max_giveable(locking_script_size).await
-    }
-
-    async fn estimate_fee(
-        &self,
-        weight: Weight,
-        transfer_amount: Option<Amount>,
-    ) -> Result<Amount> {
-        self.estimate_fee(weight, transfer_amount).await
-    }
-
-    fn network(&self) -> Network {
-        self.network
-    }
-
-    fn finality_confirmations(&self) -> u32 {
-        self.finality_confirmations
-    }
-
-    async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
-        self.wallet_export(role).await
     }
 }
