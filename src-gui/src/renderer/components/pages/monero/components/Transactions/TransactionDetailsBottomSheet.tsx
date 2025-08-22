@@ -117,21 +117,6 @@ export default function TransactionDetailsBottomSheet({
 
                     {/* Transaction Details Skeleton */}
                     <Stack spacing={3}>
-                        {/* From field skeleton */}
-                        <Box>
-                            <Skeleton
-                                variant="text"
-                                width={40}
-                                height={16}
-                                sx={{ mb: 1 }}
-                            />
-                            <Skeleton
-                                variant="rectangular"
-                                height={48}
-                                sx={{ borderRadius: 1 }}
-                            />
-                        </Box>
-
                         {/* Transaction ID field skeleton */}
                         <Box>
                             <Skeleton
@@ -294,27 +279,6 @@ export default function TransactionDetailsBottomSheet({
 
                 {/* Transaction Details Section */}
                 <Stack spacing={3}>
-                    {/* From field */}
-                    <Box>
-                        <Typography
-                            variant="caption"
-                            sx={{
-                                color: 'text.secondary',
-                                textTransform: 'uppercase',
-                                fontWeight: 600,
-                                letterSpacing: 1,
-                                mb: 1,
-                                display: 'block',
-                            }}
-                        >
-                            From
-                        </Typography>
-                        <ActionableMonospaceTextBox
-                            content={fromAddress}
-                            enableQrCode={false}
-                        />
-                    </Box>
-
                     {/* Transaction ID field */}
                     <Box>
                         <Typography
