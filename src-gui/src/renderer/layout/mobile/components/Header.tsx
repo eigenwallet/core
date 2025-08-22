@@ -6,6 +6,7 @@ import {
     Button,
     Dialog,
     Fade,
+    Drawer,
 } from '@mui/material'
 import { Stack } from '@mui/material'
 import AvatarWithProgress from 'renderer/components/other/AvatarWithProgress'
@@ -61,9 +62,17 @@ export default function Header() {
                     <SettingsIcon />
                 </IconButton>
             </Stack>
-            <Dialog
+            <Drawer
+                anchor="bottom"
                 open={avatarDialogOpen}
                 onClose={() => setAvatarDialogOpen(false)}
+                sx={{
+                    "& .MuiDrawer-paper": {
+                        borderTopLeftRadius: 16,
+                        borderTopRightRadius: 16,
+                        pb: 4,
+                    },
+                }}
             >
                 <DialogTitle>Wallet State</DialogTitle>
                 <DialogContent>
@@ -73,7 +82,7 @@ export default function Header() {
                         <UnfinishedSwapsAlert />
                     </Stack>
                 </DialogContent>
-            </Dialog>
+            </Drawer>
         </>
     )
 }
