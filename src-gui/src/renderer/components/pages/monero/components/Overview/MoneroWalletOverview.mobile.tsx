@@ -6,6 +6,7 @@ import {
     CardContent,
     useTheme,
     LinearProgress,
+    alpha,
 } from '@mui/material'
 import {
     PiconeroAmount,
@@ -18,6 +19,7 @@ import {
 } from 'models/tauriModel'
 import { relative } from 'path'
 import ShimmerTypography from 'renderer/components/other/ShimmerTypography'
+import useMoneroSyncProgress from 'utils/useMoneroSyncProgress'
 
 interface MoneroWalletOverviewProps {
     balance: GetMoneroBalanceResponse | null
@@ -34,8 +36,7 @@ export default function MoneroWalletOverview({
 }: MoneroWalletOverviewProps) {
     const theme = useTheme()
 
-    const isSyncing = syncProgress && syncProgress.progress_percentage < 100
-    const blocksLeft = syncProgress?.target_block - syncProgress?.current_block
+    const { isSyncing, loadingBarStyle, loadingBarPercentage, loadingBarBuffer, primaryProgressInformation } = useMoneroSyncProgress();
 
     const pendingBalance = balance
         ? parseFloat(balance.total_balance) -
@@ -141,16 +142,18 @@ export default function MoneroWalletOverview({
                 )}
                 {isSyncing && (
                     <>
+                        <Box sx={{ position: 'relative', bottom: -5, pt:1 }}>
                         <ShimmerTypography
                             variant="body2"
                             color="text.secondary"
-                            sx={{ position: 'relative', bottom: -10 }}
-                        >
-                            Syncing – {blocksLeft > 1 ? blocksLeft.toLocaleString() + " blocks left" : "1 block left"}
+                            >
+                            Syncing {primaryProgressInformation ? `– ${primaryProgressInformation}` : ""}
                         </ShimmerTypography>
+                        </Box>
                         <LinearProgress
-                            value={syncProgress.progress_percentage}
-                            variant="determinate"
+                            value={loadingBarPercentage}
+                            valueBuffer={loadingBarBuffer}
+                            variant={loadingBarStyle}
                             sx={{
                                 width: '100%',
                                 position: 'absolute',

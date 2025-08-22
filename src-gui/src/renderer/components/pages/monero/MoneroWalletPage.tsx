@@ -13,7 +13,7 @@ import { useIsMobile } from "../../../../utils/useIsMobile";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
-  const { mainAddress, balance, syncProgress, history } = useAppSelector(
+  const { mainAddress, balance, history } = useAppSelector(
     (state) => state.wallet.state,
   );
   const isMobile = useIsMobile();
@@ -40,7 +40,7 @@ export default function MoneroWalletPage() {
         px: isMobile ? 0 : 0,
       }}
     >
-      <WalletOverview balance={balance} syncProgress={syncProgress} />
+      <WalletOverview balance={balance} />
       <ActionableMonospaceTextBox
         content={mainAddress}
         displayCopyIcon={true}
