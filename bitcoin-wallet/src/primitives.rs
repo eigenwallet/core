@@ -41,6 +41,8 @@ impl Subscription {
         let conf_target = self.finality_confirmations;
         let txid = self.txid;
 
+        tracing::info!(%txid, required_confirmation=%conf_target, "Waiting for Bitcoin transaction finality");
+
         let mut seen_confirmations = 0;
 
         self.wait_until(|status| match status {
@@ -48,6 +50,10 @@ impl Subscription {
                 let confirmations = inner.confirmations();
 
                 if confirmations > seen_confirmations {
+                    tracing::info!(%txid,
+                        seen_confirmations = %confirmations,
+                        needed_confirmations = %conf_target,
+                        "Waiting for Bitcoin transaction finality");
                     seen_confirmations = confirmations;
                 }
 
