@@ -41,7 +41,7 @@ import DFXButton from "renderer/components/pages/monero/components/DFXWidget";
 import { useNavigate } from "react-router-dom";
 import SwipeableActionBottomSheet from "renderer/layout/mobile/components/SwipeableActionBottomSheet";
 import TextIconButton from "renderer/components/buttons/TextIconButton";
-import TransactionDetailsBottomSheet from "renderer/layout/mobile/components/TransactionDetailsBottomSheet";
+import TransactionDetailsBottomSheet from "renderer/components/pages/monero/components/Transactions/TransactionDetailsBottomSheet";
 import AvatarWithProgress from "renderer/components/other/AvatarWithProgress";
 import Header from "../components/Header";
 

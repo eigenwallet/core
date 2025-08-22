@@ -13,7 +13,7 @@ import TransactionItem from "renderer/components/pages/monero/components/Transac
 import { TransactionInfo } from "models/tauriModel";
 import dayjs from "dayjs";
 import _ from "lodash";
-import TransactionDetailsBottomSheet from "renderer/layout/mobile/components/TransactionDetailsBottomSheet";
+import TransactionDetailsBottomSheet from "renderer/components/pages/monero/components/Transactions/TransactionDetailsBottomSheet";
 
 export default function TransactionsPage() {
   const navigate = useNavigate();
