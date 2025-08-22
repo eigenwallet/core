@@ -22,6 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 typeshare = { workspace = true }
 swap-serde = { path = "../swap-serde" }
+rust_decimal = { workspace = true }
 
 # Tracing
 tracing = { workspace = true }
