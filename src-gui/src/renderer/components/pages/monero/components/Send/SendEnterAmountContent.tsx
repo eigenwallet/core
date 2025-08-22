@@ -33,7 +33,7 @@ export default function SendEnterAmountContent({
   onPendingChange,
 }: SendEnterAmountContentProps) {
   return (
-    <Box sx={{ display: "flex", flex: 1, flexDirection: "column", justifyContent: "space-between", alignItems: "center" }}>
+    <Box sx={{ display: "flex", flex: 1, flexDirection: "column", justifyContent: "space-between", alignItems: "center", width: '100%' }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
       <Typography variant="h6" sx={{ textAlign: "center" }}>Choose Amount</Typography>
       <SendAmountInput
@@ -58,6 +58,12 @@ export default function SendEnterAmountContent({
         onSuccess={onSendSuccess} 
         onPendingChange={onPendingChange}
         disabled={isSendDisabled}
+        sx={{
+            width: '100%',
+            p: 2,
+            fontSize: 16,
+            borderRadius: 3,
+        }}
       >
         Continue
       </PromiseInvokeButton>

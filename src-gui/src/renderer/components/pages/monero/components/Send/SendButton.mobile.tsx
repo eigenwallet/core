@@ -91,7 +91,7 @@ export default function SendButton({
             flexDirection: "column",
             gap: 2,
             p: 2,
-            pb: 8,
+            pb: 3,
           }}
         >
           {step === SendTransactionState.EnterAddress && (

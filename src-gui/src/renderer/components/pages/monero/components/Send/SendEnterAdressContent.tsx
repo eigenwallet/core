@@ -161,6 +161,12 @@ export default function SendEnterAddressContent({
                 onClick={onContinue}
                 disabled={!isValidAddress}
                 variant="contained"
+                sx={{
+                    width: '100%',
+                    p: 2,
+                    fontSize: 16,
+                    borderRadius: 3,
+                }}
             >
                 Continue
             </Button>
