@@ -1,4 +1,4 @@
-import { Box, Button, SwipeableDrawer, Typography, useTheme } from "@mui/material";
+import { Badge, Box, Button, SwipeableDrawer, Typography, useTheme } from "@mui/material";
 import TextIconButton from "renderer/components/buttons/TextIconButton";
 import { useState } from "react";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
@@ -55,7 +55,9 @@ export default function SendButton({
 
   const pendingApprovals = usePendingSendMoneroApproval();
   const hasPendingApproval = pendingApprovals.length > 0;
-
+  if(hasPendingApproval && !open) {
+    setOpen(true);
+  }
 
   const showSuccess = successResponse !== null;
 
@@ -71,6 +73,10 @@ export default function SendButton({
   }
 
   const handleClose = () => {
+    if (hasPendingApproval) {
+      return;
+    }
+
     setAddressConfirmed(false);
     handleClear();
     setOpen(false);
@@ -79,9 +85,25 @@ export default function SendButton({
 
   return (
     <>
+      <Box sx={{ position: 'relative', flex: 1 }}>
+        {isSending && (
+          <Box sx={{
+            position: 'absolute',
+            top: 2,
+            right: 2,
+            width: 16,
+            height: 16,
+            bgcolor: "primary.main",
+            borderRadius: 10,
+            zIndex: 1,
+            boxShadow: 2,
+          }}/>
+        )}
+
       <TextIconButton label="Send" onClick={() => setOpen(true)} disabled={disabled} isMainActionButton>
         <ArrowUpwardIcon />
       </TextIconButton>
+      </Box>
       <SwipeableDrawer open={open} onOpen={() => setOpen(true)} onClose={handleClose} anchor="bottom" disableSwipeToOpen={true} slotProps={{ paper: { sx: {borderTopLeftRadius: 16, borderTopRightRadius: 16 } } }}>
         <Box
           sx={{

@@ -97,7 +97,12 @@ export default function SendSuccessContent({
           gap: 1,
         }}
       >
-        <Button onClick={onClose} variant="contained" color="primary">
+        <Button onClick={onClose} variant="contained" color="primary" sx={ isMobile && {
+            width: '100%',
+            p: 2,
+            fontSize: 16,
+            borderRadius: 3,
+          }}>
           Done
         </Button>
         <Button
@@ -105,6 +110,10 @@ export default function SendSuccessContent({
           size="small"
           endIcon={<ArrowOutwardIcon />}
           onClick={() => open(explorerUrl)}
+          sx={ isMobile && {
+            fontSize: 14,
+            p: 2,
+          }}
         >
           View on Explorer
         </Button>
