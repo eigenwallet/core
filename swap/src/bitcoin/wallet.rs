@@ -3461,9 +3461,9 @@ impl SyncRequestBuilderFactory {
 #[async_trait::async_trait]
 impl<Persister, C> bitcoin_wallet::BitcoinWallet for Wallet<Persister, C>
 where
-    Persister: WalletPersister + Sized + Send + Sync,
+    Persister: WalletPersister + Send + Sized,
     <Persister as WalletPersister>::Error: std::error::Error + Send + Sync + 'static,
-    C: EstimateFeeRate + Send + Sync + 'static,
+    C: EstimateFeeRate + Sync + Send + 'static,
 {
     async fn balance(&self) -> Result<Amount> {
         self.balance().await

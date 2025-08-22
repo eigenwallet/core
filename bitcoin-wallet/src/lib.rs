@@ -6,7 +6,7 @@ use bdk_wallet::{export::FullyNodedExport, Balance};
 use bitcoin::{Address, Amount, Network, Psbt, Txid, Weight};
 
 #[async_trait::async_trait]
-pub trait BitcoinWallet: Send + Sync {
+pub trait BitcoinWallet {
     async fn balance(&self) -> Result<Amount>;
 
     async fn balance_info(&self) -> Result<Balance>;
