@@ -37,7 +37,7 @@ conquer-once = "0.4"
 curve25519-dalek = { workspace = true }
 data-encoding = "2.6"
 derive_builder = "0.20.2"
-dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs", subdir = "dfx-swiss-sdk", optional = true }
+dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs", optional = true }
 dialoguer = "0.11"
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
 ed25519-dalek = "1"
