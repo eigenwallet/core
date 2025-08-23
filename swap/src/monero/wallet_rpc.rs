@@ -1,29 +1,8 @@
 use ::monero::Network;
-use anyhow::{bail, Context, Error, Result};
-use once_cell::sync::Lazy;
+use anyhow::{Context, Error, Result};
 use serde::Deserialize;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::time::Duration;
-
-// See: https://www.moneroworld.com/#nodes, https://monero.fail
-// We don't need any testnet nodes because we don't support testnet at all
-static MONERO_DAEMONS: Lazy<[MoneroDaemon; 12]> = Lazy::new(|| {
-    [
-        MoneroDaemon::new("http://xmr-node.cakewallet.com:18081", Network::Mainnet),
-        MoneroDaemon::new("http://nodex.monerujo.io:18081", Network::Mainnet),
-        MoneroDaemon::new("http://nodes.hashvault.pro:18081", Network::Mainnet),
-        MoneroDaemon::new("http://p2pmd.xmrvsbeast.com:18081", Network::Mainnet),
-        MoneroDaemon::new("http://node.monerodevs.org:18089", Network::Mainnet),
-        MoneroDaemon::new("http://xmr-node-uk.cakewallet.com:18081", Network::Mainnet),
-        MoneroDaemon::new("http://xmr.litepay.ch:18081", Network::Mainnet),
-        MoneroDaemon::new("http://stagenet.xmr-tw.org:38081", Network::Stagenet),
-        MoneroDaemon::new("http://node.monerodevs.org:38089", Network::Stagenet),
-        MoneroDaemon::new("http://singapore.node.xmr.pm:38081", Network::Stagenet),
-        MoneroDaemon::new("http://xmr-lux.boldsuck.org:38081", Network::Stagenet),
-        MoneroDaemon::new("http://stagenet.community.rino.io:38081", Network::Stagenet),
-    ]
-});
 
 #[derive(Debug, Clone)]
 pub struct MoneroDaemon {
@@ -90,40 +69,6 @@ struct MoneroDaemonGetInfoResponse {
     mainnet: bool,
     stagenet: bool,
     testnet: bool,
-}
-
-/// Chooses an available Monero daemon based on the specified network.
-async fn choose_monero_daemon(network: Network) -> Result<MoneroDaemon, Error> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .https_only(false)
-        .build()?;
-
-    // We only want to check for daemons that match the specified network
-    let network_matching_daemons = MONERO_DAEMONS
-        .iter()
-        .filter(|daemon| daemon.network == network);
-
-    for daemon in network_matching_daemons {
-        match daemon.is_available(&client).await {
-            Ok(true) => {
-                tracing::debug!(%daemon, "Found available Monero daemon");
-                return Ok(daemon.clone());
-            }
-            Err(err) => {
-                tracing::debug!(?err, %daemon, "Failed to connect to Monero daemon");
-                continue;
-            }
-            Ok(false) => continue,
-        }
-    }
-
-    bail!("No Monero daemon could be found. Please specify one manually or try again later.")
-}
-
-/// Public wrapper around [`choose_monero_daemon`].
-pub async fn choose_monero_node(network: Network) -> Result<MoneroDaemon, Error> {
-    choose_monero_daemon(network).await
 }
 
 #[cfg(test)]
