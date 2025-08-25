@@ -669,7 +669,10 @@ impl Wallet {
 
         // to watch for confirmations, watching a single output is enough
         let subscription = self
-            .subscribe_to((txid, transaction.output[0].script_pubkey.clone()))
+            .subscribe_to(Box::new((
+                txid,
+                transaction.output[0].script_pubkey.clone(),
+            )))
             .await;
 
         let client = self.electrum_client.lock().await;
@@ -763,7 +766,7 @@ impl Wallet {
             .await
     }
 
-    pub async fn subscribe_to(&self, tx: impl Watchable + Send + Sync + 'static) -> Subscription {
+    pub async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         let txid = tx.id();
         let script = tx.script();
 
@@ -2133,15 +2136,15 @@ where
 
     async fn subscribe_to(
         &self,
-        tx: impl bitcoin_wallet::Watchable + Send + Sync + 'static,
+        tx: Box<dyn bitcoin_wallet::Watchable>,
     ) -> bitcoin_wallet::Subscription {
         self.subscribe_to(tx).await
     }
 
-    async fn status_of_script<T>(&self, tx: &T) -> Result<bitcoin_wallet::primitives::ScriptStatus>
-    where
-        T: bitcoin_wallet::Watchable + Send + Sync,
-    {
+    async fn status_of_script(
+        &self,
+        tx: &dyn bitcoin_wallet::Watchable,
+    ) -> Result<bitcoin_wallet::primitives::ScriptStatus> {
         self.status_of_script(tx).await
     }
 

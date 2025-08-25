@@ -6,7 +6,7 @@ use bdk_wallet::{export::FullyNodedExport, Balance};
 use bitcoin::{Address, Amount, Network, Psbt, Txid, Weight};
 
 #[async_trait::async_trait]
-pub trait BitcoinWallet {
+pub trait BitcoinWallet: Send + Sync {
     async fn balance(&self) -> Result<Amount>;
 
     async fn balance_info(&self) -> Result<Balance>;
@@ -43,11 +43,9 @@ pub trait BitcoinWallet {
 
     async fn sync(&self) -> Result<()>;
 
-    async fn subscribe_to(&self, tx: impl Watchable + Send + Sync + 'static) -> Subscription;
+    async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription;
 
-    async fn status_of_script<T>(&self, tx: &T) -> Result<ScriptStatus>
-    where
-        T: Watchable + Send + Sync;
+    async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus>;
 
     async fn get_raw_transaction(
         &self,

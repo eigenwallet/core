@@ -47,7 +47,7 @@ pub async fn punish(
 
     tracing::info!(%swap_id, "Trying to manually punish swap");
 
-    let txid = state3.punish_btc(&bitcoin_wallet).await?;
+    let txid = state3.punish_btc(bitcoin_wallet.as_ref()).await?;
 
     let state = AliceState::BtcPunished {
         state3: state3.clone(),

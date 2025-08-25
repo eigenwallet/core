@@ -34,12 +34,10 @@ thiserror = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 
-# Async runtime
-tokio = { workspace = true }
-
 [dev-dependencies]
 serde_cbor = { workspace = true }
 swap-env = { path = "../swap-env" }
+tokio = { workspace = true }
 uuid = { workspace = true }
 
 [lints]

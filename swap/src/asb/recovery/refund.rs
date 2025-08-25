@@ -1,5 +1,6 @@
 use crate::common::retry;
 use crate::monero;
+use crate::protocol::alice::swap::XmrRefundable;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};

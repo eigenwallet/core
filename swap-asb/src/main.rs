@@ -33,7 +33,7 @@ use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{open_db, AccessMode};
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::swap::is_complete;
+use swap::protocol::alice::is_complete;
 use swap::protocol::alice::{run, AliceState};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;

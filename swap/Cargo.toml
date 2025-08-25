@@ -22,7 +22,7 @@ bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
 anyhow = { workspace = true }
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
 async-compression = { version = "0.3", features = ["bzip2", "tokio"] }
-async-trait = "0.1"
+async-trait = { workspace = true }
 asynchronous-codec = "0.7.0"
 atty = "0.2"
 backoff = { workspace = true }
@@ -70,7 +70,7 @@ serde_cbor = "0.11"
 serde_json = { workspace = true }
 serde_with = { version = "1", features = ["macros"] }
 sha2 = { workspace = true }
-sigma_fun = { version = "0.7", default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
+sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 structopt = "0.3"
 strum = { version = "0.26", features = ["derive"] }
@@ -79,6 +79,7 @@ swap-core = { path = "../swap-core" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-fs = { path = "../swap-fs" }
+swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
 thiserror = { workspace = true }

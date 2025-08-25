@@ -1,6 +1,7 @@
 use crate::bitcoin;
 use anyhow::{bail, Result};
-use curve25519_dalek::scalar::Scalar;
+pub use curve25519_dalek::scalar::Scalar;
+use monero::Address;
 use rand::{CryptoRng, RngCore};
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
@@ -12,7 +13,7 @@ use std::str::FromStr;
 use typeshare::typeshare;
 
 use ::monero::network::Network;
-use ::monero::{PrivateKey, PublicKey};
+pub use ::monero::{PrivateKey, PublicKey};
 
 pub const PICONERO_OFFSET: u64 = 1_000_000_000_000;
 
@@ -338,7 +339,12 @@ impl MoneroAddressPool {
         for address in self.0.iter() {
             if let Some(address) = address.address {
                 if address.network != network {
-                    bail!("Address pool contains addresses on the wrong network (address {} is on {:?}, expected {:?})", address, address.network, network);
+                    bail!(
+                        "Address pool contains addresses on the wrong network (address {} is on {:?}, expected {:?})",
+                        address,
+                        address.network,
+                        network
+                    );
                 }
             }
         }
@@ -382,6 +388,34 @@ impl From<::monero::Address> for MoneroAddressPool {
             "user address".to_string(),
         )
         .expect("Percentage 1 is always valid")])
+    }
+}
+
+/// A request to watch for a transfer.
+pub struct WatchRequest {
+    pub public_view_key: super::PublicViewKey,
+    pub public_spend_key: monero::PublicKey,
+    /// The proof of the transfer.
+    pub transfer_proof: TransferProof,
+    /// The expected amount of the transfer.
+    pub expected_amount: monero::Amount,
+    /// The number of confirmations required for the transfer to be considered confirmed.
+    pub confirmation_target: u64,
+}
+
+/// Transfer a specified amount of money to a specified address.
+pub struct TransferRequest {
+    pub public_spend_key: monero::PublicKey,
+    pub public_view_key: super::PublicViewKey,
+    pub amount: monero::Amount,
+}
+
+impl TransferRequest {
+    pub fn address_and_amount(&self, network: Network) -> (Address, monero::Amount) {
+        (
+            Address::standard(network, self.public_spend_key, self.public_view_key.0),
+            self.amount,
+        )
     }
 }
 

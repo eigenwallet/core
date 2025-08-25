@@ -171,7 +171,7 @@ impl std::fmt::Display for ScriptStatus {
 /// transaction ID and the specific output script that is going to change.
 /// A transaction can obviously have multiple outputs but our protocol purposes,
 /// we are usually interested in a specific one.
-pub trait Watchable {
+pub trait Watchable: Send + Sync {
     /// The transaction ID.
     fn id(&self) -> Txid;
     /// The script of the output we are interested in.
@@ -189,6 +189,26 @@ impl Watchable for (Txid, ScriptBuf) {
 
     fn script(&self) -> ScriptBuf {
         self.1.clone()
+    }
+}
+
+impl Watchable for &dyn Watchable {
+    fn id(&self) -> Txid {
+        (*self).id()
+    }
+
+    fn script(&self) -> ScriptBuf {
+        (*self).script()
+    }
+}
+
+impl Watchable for Box<dyn Watchable> {
+    fn id(&self) -> Txid {
+        (**self).id()
+    }
+
+    fn script(&self) -> ScriptBuf {
+        (**self).script()
     }
 }
 

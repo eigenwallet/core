@@ -19,7 +19,7 @@ pub async fn cancel_and_refund(
 
     let state = match refund(swap_id, bitcoin_wallet, db).await {
         Ok(s) => s,
-        Err(e) => bail!(e),
+        Err(e) => bail!("{}", e),
     };
 
     Ok(state)

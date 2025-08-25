@@ -19,7 +19,7 @@ pub struct TxLock {
 
 impl TxLock {
     pub async fn new(
-        wallet: &impl bitcoin_wallet::BitcoinWallet,
+        wallet: &dyn bitcoin_wallet::BitcoinWallet,
         amount: Amount,
         spending_fee: Amount,
         A: PublicKey,
@@ -279,7 +279,7 @@ mod tests {
     async fn bob_make_psbt(
         A: PublicKey,
         B: PublicKey,
-        wallet: &impl bitcoin_wallet::BitcoinWallet,
+        wallet: &dyn bitcoin_wallet::BitcoinWallet,
         amount: Amount,
         spending_fee: Amount,
     ) -> PartiallySignedTransaction {

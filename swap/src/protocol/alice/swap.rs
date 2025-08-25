@@ -13,6 +13,7 @@ use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
 use swap_core::bitcoin::ExpiredTimelocks;
 use swap_env::env::Config;
+use swap_machine::alice::State3;
 use tokio::select;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -35,7 +36,7 @@ where
 {
     let mut current_state = swap.state;
 
-    while !is_complete(&current_state) && !exit_early(&current_state) {
+    while !swap_machine::alice::is_complete(&current_state) && !exit_early(&current_state) {
         current_state = next_state(
             swap.swap_id,
             current_state,
@@ -75,7 +76,9 @@ where
 
     Ok(match state {
         AliceState::Started { state3 } => {
-            let tx_lock_status = bitcoin_wallet.subscribe_to(state3.tx_lock.clone()).await;
+            let tx_lock_status = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_lock.clone()))
+                .await;
 
             match timeout(
                 env_config.bitcoin_lock_mempool_timeout,
@@ -97,7 +100,9 @@ where
             }
         }
         AliceState::BtcLockTransactionSeen { state3 } => {
-            let tx_lock_status = bitcoin_wallet.subscribe_to(state3.tx_lock.clone()).await;
+            let tx_lock_status = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_lock.clone()))
+                .await;
 
             match timeout(
                 env_config.bitcoin_lock_confirmed_timeout,
@@ -232,7 +237,9 @@ where
                 let tx_early_refund_txid = tx_early_refund.compute_txid();
 
                 // Bob might cancel the swap and refund for himself. We won't need to early refund anymore.
-                let tx_cancel_status = bitcoin_wallet.subscribe_to(state3.tx_cancel()).await;
+                let tx_cancel_status = bitcoin_wallet
+                    .subscribe_to(Box::new(state3.tx_cancel()))
+                    .await;
 
                 let backoff = backoff::ExponentialBackoffBuilder::new()
                     // We give up after 6 hours
@@ -337,7 +344,9 @@ where
             transfer_proof,
             state3,
         } => {
-            let tx_lock_status = bitcoin_wallet.subscribe_to(state3.tx_lock.clone()).await;
+            let tx_lock_status = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_lock.clone()))
+                .await;
 
             tokio::select! {
                 result = event_loop_handle.send_transfer_proof(transfer_proof.clone()) => {
@@ -369,8 +378,9 @@ where
             transfer_proof,
             state3,
         } => {
-            let tx_lock_status_subscription =
-                bitcoin_wallet.subscribe_to(state3.tx_lock.clone()).await;
+            let tx_lock_status_subscription = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_lock.clone()))
+                .await;
 
             select! {
                 biased; // make sure the cancel timelock expiry future is polled first
@@ -424,7 +434,9 @@ where
                         "Waiting for cancellation timelock to expire",
                     );
 
-                    let tx_lock_status = bitcoin_wallet.subscribe_to(state3.tx_lock.clone()).await;
+                    let tx_lock_status = bitcoin_wallet
+                        .subscribe_to(Box::new(state3.tx_lock.clone()))
+                        .await;
 
                     tx_lock_status
                         .wait_until_confirmed_with(state3.cancel_timelock)
@@ -496,7 +508,9 @@ where
             }
         }
         AliceState::BtcRedeemTransactionPublished { state3, .. } => {
-            let subscription = bitcoin_wallet.subscribe_to(state3.tx_redeem()).await;
+            let subscription = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_redeem()))
+                .await;
 
             match subscription.wait_until_final().await {
                 Ok(_) => AliceState::BtcRedeemed,
@@ -539,7 +553,9 @@ where
             transfer_proof,
             state3,
         } => {
-            let tx_cancel_status = bitcoin_wallet.subscribe_to(state3.tx_cancel()).await;
+            let tx_cancel_status = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_cancel()))
+                .await;
 
             select! {
                 spend_key = state3.watch_for_btc_tx_refund(bitcoin_wallet) => {
@@ -647,15 +663,83 @@ where
     })
 }
 
-pub fn is_complete(state: &AliceState) -> bool {
-    matches!(
-        state,
-        AliceState::XmrRefunded
-            | AliceState::BtcRedeemed
-            | AliceState::BtcPunished { .. }
-            | AliceState::SafelyAborted
-            | AliceState::BtcEarlyRefunded(_)
-    )
+pub trait XmrRefundable {
+    async fn refund_xmr(
+        &self,
+        monero_wallet: Arc<monero::Wallets>,
+        swap_id: Uuid,
+        spend_key: monero::PrivateKey,
+        transfer_proof: TransferProof,
+    ) -> Result<()>;
+}
+
+impl XmrRefundable for State3 {
+    async fn refund_xmr(
+        &self,
+        monero_wallet: Arc<monero::Wallets>,
+        swap_id: Uuid,
+        spend_key: monero::PrivateKey,
+        transfer_proof: TransferProof,
+    ) -> Result<()> {
+        let view_key = self.v;
+
+        // Ensure that the XMR to be refunded are spendable by awaiting 10 confirmations
+        // on the lock transaction.
+        tracing::info!("Waiting for Monero lock transaction to be confirmed");
+        let transfer_proof_2 = transfer_proof.clone();
+        monero_wallet
+            .wait_until_confirmed(
+                self.lock_xmr_watch_request(transfer_proof_2, 10),
+                Some(move |(confirmations, target_confirmations)| {
+                    tracing::debug!(
+                        %confirmations,
+                        %target_confirmations,
+                        "Monero lock transaction got a confirmation"
+                    );
+                }),
+            )
+            .await
+            .context("Failed to wait for Monero lock transaction to be confirmed")?;
+
+        tracing::info!("Refunding Monero");
+
+        tracing::debug!(%swap_id, "Opening temporary Monero wallet from keys");
+        let swap_wallet = monero_wallet
+            .swap_wallet(swap_id, spend_key, view_key, transfer_proof.tx_hash())
+            .await
+            .context(format!("Failed to open/create swap wallet `{}`", swap_id))?;
+
+        // Update blockheight to ensure that the wallet knows the funds are unlocked
+        tracing::debug!(%swap_id, "Updating temporary Monero wallet's blockheight");
+        let _ = swap_wallet
+            .blockchain_height()
+            .await
+            .context("Couldn't get Monero blockheight")?;
+
+        tracing::debug!(%swap_id, "Sweeping Monero to redeem address");
+        let main_address = monero_wallet.main_wallet().await.main_address().await;
+
+        swap_wallet
+            .sweep(&main_address)
+            .await
+            .context("Failed to sweep Monero to redeem address")?;
+
+        Ok(())
+    }
+}
+
+impl XmrRefundable for Box<State3> {
+    async fn refund_xmr(
+        &self,
+        monero_wallet: Arc<monero::Wallets>,
+        swap_id: Uuid,
+        spend_key: monero::PrivateKey,
+        transfer_proof: TransferProof,
+    ) -> Result<()> {
+        (**self)
+            .refund_xmr(monero_wallet, swap_id, spend_key, transfer_proof)
+            .await
+    }
 }
 
 /// This function is used to check if Alice is in a state where it is clear that she has already received the encrypted signature from Bob.

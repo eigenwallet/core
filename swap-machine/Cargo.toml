@@ -1,0 +1,29 @@
+[package]
+name = "swap-machine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bitcoin = { workspace = true }
+bitcoin-wallet = { path = "../bitcoin-wallet" }
+conquer-once = "0.4"
+curve25519-dalek = { workspace = true }
+ecdsa_fun = { workspace = true }
+libp2p = { workspace = true }
+monero = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
+swap-core = { path = "../swap-core" }
+swap-env = { path = "../swap-env" }
+swap-serde = { path = "../swap-serde" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+
+[lints]
+workspace = true

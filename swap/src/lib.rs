@@ -23,7 +23,6 @@ pub mod common;
 pub mod database;
 pub mod libp2p_ext;
 pub mod monero;
-mod monero_ext;
 pub mod network;
 pub mod protocol;
 pub mod seed;

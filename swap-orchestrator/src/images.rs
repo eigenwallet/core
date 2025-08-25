@@ -23,7 +23,7 @@ pub static BITCOIND_IMAGE: &str =
     "getumbrel/bitcoind@sha256:c565266ea302c9ab2fc490f04ff14e584210cde3d0d991b8309157e5dfae9e8d";
 
 /// eigenwallet asb v3.0.0-beta.5 (https://github.com/eigenwallet/core/pkgs/container/asb/477796831?tag=3.0.0-beta.5)
-pub static ASB_IMAGE: &str = "ghcr.io/eigenwallet/asb@sha256:ad0daf2ee68d05f6cb08df3d4ec856a07b0fb00df62dd5412298ecc2380f4ca6";
+/// pub static ASB_IMAGE: &str = "ghcr.io/eigenwallet/asb@sha256:ad0daf2ee68d05f6cb08df3d4ec856a07b0fb00df62dd5412298ecc2380f4ca6";
 
 // TOOD: Add pre-built images here
 /// eigenwallet asb v3.0.0-beta.5 (https://github.com/eigenwallet/core/commit/886dbcbef2dda534d1a0763750f1e6c5e1f57564)

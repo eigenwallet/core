@@ -10691,6 +10691,7 @@ dependencies = [
  "swap-env",
  "swap-feed",
  "swap-fs",
+ "swap-machine",
  "swap-serde",
  "tauri",
  "tempfile",
@@ -10767,7 +10768,6 @@ dependencies = [
  "bitcoin 0.32.6",
  "jsonrpsee",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -10847,6 +10847,32 @@ dependencies = [
  "anyhow",
  "directories-next",
  "tracing",
+]
+
+[[package]]
+name = "swap-machine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitcoin 0.32.6",
+ "bitcoin-wallet",
+ "conquer-once",
+ "curve25519-dalek-ng",
+ "ecdsa_fun",
+ "libp2p",
+ "monero",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "sha2 0.10.9",
+ "sigma_fun",
+ "swap-core",
+ "swap-env",
+ "swap-serde",
+ "thiserror 1.0.69",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

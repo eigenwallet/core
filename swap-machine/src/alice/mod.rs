@@ -1,9 +1,4 @@
-use crate::monero;
-use crate::monero::wallet::{TransferRequest, WatchRequest};
-use crate::monero::BlockHeight;
-use crate::monero::TransferProof;
-use crate::monero_ext::ScalarExt;
-use crate::protocol::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
+use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
 use anyhow::{anyhow, bail, Context, Result};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -14,6 +9,9 @@ use swap_core::bitcoin::{
     current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
     TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
 };
+use swap_core::monero;
+use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
+use swap_core::monero::ScalarExt;
 use swap_env::env::Config;
 use uuid::Uuid;
 
@@ -85,6 +83,17 @@ pub enum AliceState {
         transfer_proof: TransferProof,
     },
     SafelyAborted,
+}
+
+pub fn is_complete(state: &AliceState) -> bool {
+    matches!(
+        state,
+        AliceState::XmrRefunded
+            | AliceState::BtcRedeemed
+            | AliceState::BtcPunished { .. }
+            | AliceState::SafelyAborted
+            | AliceState::BtcEarlyRefunded(_)
+    )
 }
 
 impl fmt::Display for AliceState {
@@ -228,7 +237,7 @@ impl State0 {
 pub struct State1 {
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
-    s_a: monero::Scalar,
+    s_a: swap_core::monero::Scalar,
     S_a_monero: monero::PublicKey,
     S_a_bitcoin: swap_core::bitcoin::PublicKey,
     S_b_monero: monero::PublicKey,
@@ -454,7 +463,7 @@ pub struct State3 {
 impl State3 {
     pub async fn expired_timelocks(
         &self,
-        bitcoin_wallet: &crate::bitcoin::Wallet,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<ExpiredTimelocks> {
         let tx_cancel = self.tx_cancel();
 
@@ -548,7 +557,7 @@ impl State3 {
 
     pub async fn check_for_tx_cancel(
         &self,
-        bitcoin_wallet: &crate::bitcoin::Wallet,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<Option<Arc<Transaction>>> {
         let tx_cancel = self.tx_cancel();
         let tx = bitcoin_wallet
@@ -561,7 +570,7 @@ impl State3 {
 
     pub async fn fetch_tx_refund(
         &self,
-        bitcoin_wallet: &crate::bitcoin::Wallet,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<Option<Arc<Transaction>>> {
         let tx_refund = self.tx_refund();
         let tx = bitcoin_wallet
@@ -572,66 +581,19 @@ impl State3 {
         Ok(tx)
     }
 
-    pub async fn submit_tx_cancel(&self, bitcoin_wallet: &crate::bitcoin::Wallet) -> Result<Txid> {
+    pub async fn submit_tx_cancel(
+        &self,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    ) -> Result<Txid> {
         let transaction = self.signed_cancel_transaction()?;
         let (tx_id, _) = bitcoin_wallet.broadcast(transaction, "cancel").await?;
         Ok(tx_id)
     }
 
-    pub async fn refund_xmr(
+    pub async fn punish_btc(
         &self,
-        monero_wallet: Arc<monero::Wallets>,
-        swap_id: Uuid,
-        spend_key: monero::PrivateKey,
-        transfer_proof: TransferProof,
-    ) -> Result<()> {
-        let view_key = self.v;
-
-        // Ensure that the XMR to be refunded are spendable by awaiting 10 confirmations
-        // on the lock transaction.
-        tracing::info!("Waiting for Monero lock transaction to be confirmed");
-        let transfer_proof_2 = transfer_proof.clone();
-        monero_wallet
-            .wait_until_confirmed(
-                self.lock_xmr_watch_request(transfer_proof_2, 10),
-                Some(move |(confirmations, target_confirmations)| {
-                    tracing::debug!(
-                        %confirmations,
-                        %target_confirmations,
-                        "Monero lock transaction got a confirmation"
-                    );
-                }),
-            )
-            .await
-            .context("Failed to wait for Monero lock transaction to be confirmed")?;
-
-        tracing::info!("Refunding Monero");
-
-        tracing::debug!(%swap_id, "Opening temporary Monero wallet from keys");
-        let swap_wallet = monero_wallet
-            .swap_wallet(swap_id, spend_key, view_key, transfer_proof.tx_hash())
-            .await
-            .context(format!("Failed to open/create swap wallet `{}`", swap_id))?;
-
-        // Update blockheight to ensure that the wallet knows the funds are unlocked
-        tracing::debug!(%swap_id, "Updating temporary Monero wallet's blockheight");
-        let _ = swap_wallet
-            .blockchain_height()
-            .await
-            .context("Couldn't get Monero blockheight")?;
-
-        tracing::debug!(%swap_id, "Sweeping Monero to redeem address");
-        let main_address = monero_wallet.main_wallet().await.main_address().await;
-
-        swap_wallet
-            .sweep(&main_address)
-            .await
-            .context("Failed to sweep Monero to redeem address")?;
-
-        Ok(())
-    }
-
-    pub async fn punish_btc(&self, bitcoin_wallet: &crate::bitcoin::Wallet) -> Result<Txid> {
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    ) -> Result<Txid> {
         let signed_tx_punish = self.signed_punish_transaction()?;
 
         let (txid, subscription) = bitcoin_wallet.broadcast(signed_tx_punish, "punish").await?;
@@ -688,9 +650,11 @@ impl State3 {
 
     pub async fn watch_for_btc_tx_refund(
         &self,
-        bitcoin_wallet: &crate::bitcoin::Wallet,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<monero::PrivateKey> {
-        let tx_refund_status = bitcoin_wallet.subscribe_to(self.tx_refund()).await;
+        let tx_refund_status = bitcoin_wallet
+            .subscribe_to(Box::new(self.tx_refund()))
+            .await;
 
         tx_refund_status
             .wait_until_seen()

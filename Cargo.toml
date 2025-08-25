@@ -18,6 +18,7 @@ members = [
   "swap-env",
   "swap-feed",
   "swap-fs",
+  "swap-machine",
   "swap-orchestrator",
   "swap-serde",
   "throttle",
@@ -39,6 +40,7 @@ rand = "0.8"
 # Randomness
 rand_chacha = "0.3"
 sha2 = "0.10"
+sigma_fun = { version = "0.7", default-features = false }
 
 # Async
 async-trait = "0.1"
