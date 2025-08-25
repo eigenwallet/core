@@ -330,7 +330,7 @@ pub async fn main() -> Result<()> {
             ]);
 
             let all_swaps = db.all().await?;
-            for (swap_id, state) in all_swaps {
+            for (swap_id, state, _) in all_swaps {
                 let state: AliceState = state
                     .try_into()
                     .expect("Alice database only has Alice states");

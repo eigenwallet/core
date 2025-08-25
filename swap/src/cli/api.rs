@@ -5,17 +5,22 @@ use crate::cli::api::tauri_bindings::SeedChoice;
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
+use crate::database::eigensync::EigensyncDatabaseAdapter;
 use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
-use crate::seed::Seed;
+use crate::seed::{self, Seed};
 use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
+use eigensync::{EigensyncHandle, EigensyncHandleBackgroundSync};
 use futures::future::try_join_all;
+use libp2p::{Multiaddr, PeerId};
+use tokio_util::task::AbortOnDropHandle;
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
@@ -24,7 +29,6 @@ use tauri_bindings::{
 };
 use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
-use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tracing::level_filters::LevelFilter;
 use tracing::Level;
@@ -181,7 +185,6 @@ impl Default for SwapLock {
 /// For example, the `history` command doesn't require wallet initialization.
 ///
 /// Many fields are wrapped in `Arc` for thread-safe sharing.
-#[derive(Clone)]
 pub struct Context {
     pub db: Arc<dyn Database + Send + Sync>,
     pub swap_lock: Arc<SwapLock>,
@@ -193,6 +196,9 @@ pub struct Context {
     tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     #[allow(dead_code)]
     monero_rpc_pool_handle: Option<Arc<monero_rpc_pool::PoolHandle>>,
+    #[allow(dead_code)]
+    background_sync_task: Option<AbortOnDropHandle<()>>,
+    eigensync: Option<AbortOnDropHandle<()>>,
 }
 
 /// A conveniant builder struct for [`Context`].
@@ -504,12 +510,28 @@ impl ContextBuilder {
                 (),
             );
 
+        let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333").context("")?;
+        let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
+
+        let mut eigensync_handle = Arc::new(RwLock::new(EigensyncHandle::new(
+            multiaddr, server_peer_id, seed.derive_eigensync_identity()).await.unwrap()));
+            
+        let background_sync_task = eigensync_handle.background_sync();
+
         let db = open_db(
             data_dir.join("sqlite"),
             AccessMode::ReadWrite,
-            self.tauri_handle.clone(),
+            self.tauri_handle.clone()
         )
         .await?;
+
+        let mut db_adapter = EigensyncDatabaseAdapter::new(eigensync_handle.clone(), db.clone());
+
+        tracing::info!("opened db");
+
+        let eigensync = AbortOnDropHandle::new(tokio::task::spawn(async move {
+            db_adapter.run().await.context("Failed to run eigensync");
+        }));
 
         database_progress_handle.finish();
 
@@ -582,6 +604,8 @@ impl ContextBuilder {
             tauri_handle: self.tauri_handle,
             tor_client: unbootstrapped_tor_client,
             monero_rpc_pool_handle,
+            background_sync_task: Some(background_sync_task),
+            eigensync: Some(eigensync),
         };
 
         tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
@@ -618,6 +642,8 @@ impl Context {
             tauri_handle: None,
             tor_client: None,
             monero_rpc_pool_handle: None,
+            background_sync_task: None,
+            eigensync: None,
         }
     }
 

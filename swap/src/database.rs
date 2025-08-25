@@ -13,7 +13,8 @@ use swap_fs::ensure_directory_exists;
 
 mod alice;
 mod bob;
-mod sqlite;
+pub mod sqlite;
+pub mod eigensync;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Swap {
