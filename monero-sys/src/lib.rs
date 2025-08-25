@@ -178,17 +178,18 @@ impl TryFrom<String> for Daemon {
 }
 
 impl Daemon {
-    /// Convert the daemon configuration to a URL
-    pub fn to_url(&self) -> Url {
+    /// Try to convert the daemon configuration to a URL
+    pub fn try_to_url(&self) -> Result<Url, url::ParseError> {
         let scheme = if self.ssl { "https" } else { "http" };
         Url::parse(&format!("{}://{}:{}", scheme, self.hostname, self.port))
-            .expect("Valid URL from daemon components")
     }
 }
 
-impl Into<Url> for Daemon {
-    fn into(self) -> Url {
-        self.to_url()
+impl TryInto<Url> for Daemon {
+    type Error = url::ParseError;
+
+    fn try_into(self) -> Result<Url, Self::Error> {
+        self.try_to_url()
     }
 }
 
