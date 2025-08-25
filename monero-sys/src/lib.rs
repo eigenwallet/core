@@ -179,17 +179,10 @@ impl TryFrom<String> for Daemon {
 
 impl Daemon {
     /// Try to convert the daemon configuration to a URL
-    pub fn try_to_url(&self) -> Result<Url, url::ParseError> {
+    pub fn to_url_string(&self) -> String {
         let scheme = if self.ssl { "https" } else { "http" };
-        Url::parse(&format!("{}://{}:{}", scheme, self.hostname, self.port))
-    }
-}
 
-impl TryInto<Url> for Daemon {
-    type Error = url::ParseError;
-
-    fn try_into(self) -> Result<Url, Self::Error> {
-        self.try_to_url()
+        format!("{}://{}:{}", scheme, self.hostname, self.port)
     }
 }
 

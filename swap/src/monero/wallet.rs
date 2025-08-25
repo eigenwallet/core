@@ -277,7 +277,7 @@ impl Wallets {
                 .await;
         }
 
-        let rpc_client = SimpleRequestRpc::new(daemon.try_to_url()?.to_string()).await?;
+        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -328,7 +328,7 @@ impl Wallets {
                 .await;
         }
 
-        let rpc_client = SimpleRequestRpc::new(daemon.try_to_url()?.to_string()).await?;
+        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -350,9 +350,12 @@ impl Wallets {
 
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
         use monero_oxide_rpc::Rpc;
-        let (_, rpc_client) = self.daemon.read().await.clone();
+        let (daemon, rpc_client) = self.daemon.read().await.clone();
 
-        let height = rpc_client.get_height().await?;
+        let height = rpc_client
+            .get_height()
+            .await
+            .context(format!("Failed with node {}", daemon.to_url_string()))?;
 
         Ok(height as u64)
     }
@@ -480,7 +483,7 @@ impl Wallets {
     pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
         {
             let mut daemon = self.daemon.write().await;
-            let rpc_client = SimpleRequestRpc::new(new_daemon.try_to_url()?.to_string()).await?;
+            let rpc_client = SimpleRequestRpc::new(new_daemon.to_url_string()).await?;
             *daemon = (new_daemon.clone(), rpc_client);
         }
 
