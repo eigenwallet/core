@@ -126,23 +126,10 @@ jobs:
           #   target: x86_64-pc-windows-msvc
           #   os: windows-latest
           #   archive_ext: zip
+
     runs-on: ${{ matrix.os }}
+
     steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@v4.1.7
-        with:
-          ref: ${{ github.event.release.target_commitish }}
-          token: ${{ secrets.BOTTY_GITHUB_TOKEN }}
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
-      - uses: actionhippie/swap-space@v1
-        if: matrix.os == 'ubuntu-latest'
-        with:
-          size: 15G
-
       - name: Restore Rust/Cargo cache from S3
         uses: whywaita/actions-cache-s3@v2
         with:
@@ -159,43 +146,20 @@ jobs:
           aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
 
-      - name: Install Rust toolchain (no internal cache)
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v4
         with:
-          rustflags: ""
-          cache-directories: ""
+          submodules: recursive
 
-      - name: Configure apt for retries
-        if: matrix.os == 'ubuntu-latest'
-        run: ${{ env.APT_SET_CONF_COMMAND }}
+      - name: Set up environment variables
+        uses: ./.github/actions/set-monero-env
 
-      - name: Install dependencies (ubuntu-latest)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt update
-          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }} git
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-
-      - name: Install Monero build dependencies (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: |
-          brew update
-          brew install ${{ env.DEPS_MONERO_MACOS }} git
-          brew reinstall --build-from-source unbound expat 
-          brew install protobuf@21
-
-      - name: Install Monero build dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: msys2/setup-msys2@v2
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
         with:
-          update: true
-          install: ${{ env.DEPS_MONERO_WINDOWS_MSYS2 }} git
+          platform: ${{ matrix.platform }}
+          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-        
       - name: Cross Build ${{ matrix.target }} ${{ matrix.bin }} binary
         if: matrix.target == 'armv7-unknown-linux-gnueabihf'
         run: |
@@ -284,7 +248,7 @@ jobs:
         with:
           ref: ${{ github.event.release.target_commitish }}
           submodules: recursive
-          
+
       - name: Set up environment variables
         uses: ./.github/actions/set-monero-env
 
@@ -295,10 +259,19 @@ jobs:
       - name: Configure apt for retries
         run: ${{ env.APT_SET_CONF_COMMAND }}
 
-      - name: Install dependencies (ubuntu-latest)
-        run: |
-          sudo apt update
-          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }}
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up environment variables
+        uses: ./.github/actions/set-monero-env
+
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
+        with:
+          platform: ${{ matrix.platform }}
+          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2

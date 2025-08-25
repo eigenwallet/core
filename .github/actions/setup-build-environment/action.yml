@@ -1,0 +1,86 @@
+name: "Setup Build Environment"
+description: "Sets up the build environment with Node, Rust, dependencies, and tooling for Tauri builds"
+
+inputs:
+  platform:
+    description: "The platform being built for (e.g., ubuntu-24.04, macos-latest, windows-latest)"
+    required: true
+  rust-targets:
+    description: "Additional Rust targets to install (comma-separated)"
+    required: false
+    default: ""
+  install-windows-deps:
+    description: "Whether to install Windows-specific dependencies"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up swap space (Ubuntu only)
+      if: startsWith(inputs.platform, 'ubuntu')
+      uses: actionhippie/swap-space@v1
+      with:
+        size: 15G
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@1.87
+      with:
+        targets: ${{ inputs.rust-targets }}
+
+    - name: Configure apt for retries (Ubuntu only)
+      if: startsWith(inputs.platform, 'ubuntu')
+      shell: bash
+      run: ${{ env.APT_SET_CONF_COMMAND }}
+
+    - name: Install Tauri dependencies (Ubuntu)
+      if: startsWith(inputs.platform, 'ubuntu')
+      shell: bash
+      run: |
+        sudo apt update;
+        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} git
+
+    - name: Clone submodules
+      shell: bash
+      run: git submodule update --init --recursive
+
+    - name: Work around spurious network errors in curl 8.0
+      shell: bash
+      run: |
+        echo "CARGO_HTTP_MULTIPLEXING=false" >> $GITHUB_ENV
+
+    - name: Install frontend dependencies
+      working-directory: src-gui
+      shell: bash
+      run: yarn install --network-timeout 600000
+
+    - name: Install tauri-cli globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: tauri-cli@2.8.0
+
+    - name: Install just globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: just@1.42.4
+
+    - name: Install typeshare-cli globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: typeshare-cli@1.13.3
+
+    - name: Install dprint globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: dprint@0.50.1
+
+    - name: Prepare Windows build by building gcc from source
+      if: inputs.install-windows-deps == 'true' && startsWith(inputs.platform, 'windows')
+      shell: bash
+      run: |
+        just prepare-windows-build

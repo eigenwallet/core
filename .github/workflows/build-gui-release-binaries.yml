@@ -34,7 +34,7 @@ jobs:
             args: "--target aarch64-apple-darwin"
           - platform: "macos-13" # for Intel based macs.
             args: "--target x86_64-apple-darwin"
-          - platform: "ubuntu-24.04" # We build on an older version to support older glib versions
+          - platform: "ubuntu-22.04" # We build on an older version to support older glib versions
             args: "--bundles deb,appimage"
           # Temporarily disabled Windows builds
           # - platform: "windows-latest"
@@ -49,69 +49,12 @@ jobs:
       - name: Set up environment variables
         uses: ./.github/actions/set-monero-env
 
-      - uses: actionhippie/swap-space@v1
-        if: matrix.platform == env.UBUNTU_PLATFORM_ID
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
         with:
-          size: 15G
-
-      - name: setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@1.80
-        with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Configure apt for retries (ubuntu only)
-        if: matrix.platform == env.UBUNTU_PLATFORM_ID
-        run: ${{ env.APT_SET_CONF_COMMAND }}
-
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == env.UBUNTU_PLATFORM_ID # This must match the platform value defined above.
-        run: |
-          sudo apt update;
-          sudo apt install -y ${{ env.DEPS_MONERO_LINUX }} ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} git
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-
-      - name: work around spurious network errors in curl 8.0
-        shell: bash
-        run: |
-          echo "CARGO_HTTP_MULTIPLEXING=false" >> $GITHUB_ENV
-
-      - name: install frontend dependencies
-        working-directory: src-gui
-        # Set the yarn network timeout to a high value to avoid spurious network errors
-        run: yarn install --network-timeout 600000
-
-      - name: install tauri-cli globally
-        uses: taiki-e/install-action@v2
-        with:
-          tool: tauri-cli@2.8.0
-
-      - name: install just globally
-        uses: taiki-e/install-action@v2
-        with:
-          tool: just@1.42.4
-
-      - name: install typeshare-cli globally
-        uses: taiki-e/install-action@v2
-        with:
-          tool: typeshare-cli@1.13.3
-
-      - name: install dprint globally
-        uses: taiki-e/install-action@v2
-        with:
-          tool: dprint@0.50.1
-
-      - name: prepare the windows build by building gcc from source (yuck)
-        shell: bash
-        run: |
-          just prepare-windows-build
+          platform: ${{ matrix.platform }}
+          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
       - name: build tauri app and upload to github releases page
         uses: tauri-apps/tauri-action@v0
