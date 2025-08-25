@@ -151,13 +151,13 @@ pub trait Database {
     async fn insert_address(&self, peer_id: PeerId, address: Multiaddr) -> Result<()>;
     async fn get_addresses(&self, peer_id: PeerId) -> Result<Vec<Multiaddr>>;
     async fn get_all_peer_addresses(&self) -> Result<Vec<(PeerId, Vec<Multiaddr>)>>;
-    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<String>;
+    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<i64>;
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()>;
-    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: OffsetDateTime) -> Result<()>;
+    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: i64) -> Result<()>;
     async fn get_state(&self, swap_id: Uuid) -> Result<State>;
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;
-    async fn all(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>>;
-    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>>;
+    async fn all(&self) -> Result<Vec<(Uuid, State, i64)>>;
+    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, i64)>>;
     async fn insert_buffered_transfer_proof(
         &self,
         swap_id: Uuid,

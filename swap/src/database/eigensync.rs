@@ -5,7 +5,6 @@ use autosurgeon::reconcile::NoKey;
 use eigensync::EigensyncHandle;
 use libp2p::{Multiaddr, PeerId};
 // serde kept via Cargo features; no direct derives used here
-use time::OffsetDateTime;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use rust_decimal::Decimal;
@@ -32,7 +31,7 @@ pub struct EigensyncDocument {
 struct MoneroAddressKey((Uuid, Option<String>));
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
-struct StateKey((Uuid, OffsetDateTime));
+struct StateKey((Uuid, i64));
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 struct PeerAddressesKey((PeerId, Multiaddr));
@@ -124,13 +123,7 @@ impl TryFrom<EigensyncWire> for EigensyncDocument {
                 let swap_id_s = it.next().ok_or_else(|| anyhow!("bad state key"))?;
                 let ts_s = it.next().ok_or_else(|| anyhow!("bad state key"))?;
                 let swap_id = Uuid::parse_str(swap_id_s)?;
-                let timestamp = match OffsetDateTime::parse(ts_s, &time::format_description::well_known::Rfc3339) {
-                    Ok(t) => t,
-                    Err(_) => {
-                        let fmt = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour]:[offset_minute]:[offset_second]")?;
-                        OffsetDateTime::parse(ts_s, &fmt)?
-                    }
-                };
+                let timestamp = ts_s.parse::<i64>()?;
                 let swap: Swap = serde_json::from_str(&v)?;
                 let state: State = swap.into();
                 Ok((StateKey((swap_id, timestamp)), state))
@@ -294,12 +287,10 @@ impl EigensyncDatabaseAdapter {
                 continue;
             }
 
-            let parsed_timestamp = timestamp;
-
             let swap_uuid = swap_id;
 
             tracing::info!("inserting existing state");
-            if let Err(e) = self.db.insert_existing_state(swap_uuid, document_state, parsed_timestamp).await {
+            if let Err(e) = self.db.insert_existing_state(swap_uuid, document_state, timestamp).await {
                 tracing::error!("Error inserting existing state: {:?}", e);
             }
         }

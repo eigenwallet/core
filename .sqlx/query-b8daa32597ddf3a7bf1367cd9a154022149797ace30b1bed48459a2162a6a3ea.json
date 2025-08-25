@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n            SELECT swap_id, state, entered_at\n            FROM swap_states\n            ORDER BY entered_at DESC\n            ",
+  "query": "\n            SELECT swap_id, state, entered_at as \"entered_at: i64\"\n            FROM swap_states\n            ORDER BY entered_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -14,9 +14,9 @@
         "type_info": "Text"
       },
       {
-        "name": "entered_at",
+        "name": "entered_at: i64",
         "ordinal": 2,
-        "type_info": "Text"
+        "type_info": "Integer"
       }
     ],
     "parameters": {
@@ -28,5 +28,5 @@
       false
     ]
   },
-  "hash": "94a7664d9deaf4a914f055a437e562f0b461ed7937cf96cbb4d51a370aeef586"
+  "hash": "b8daa32597ddf3a7bf1367cd9a154022149797ace30b1bed48459a2162a6a3ea"
 }

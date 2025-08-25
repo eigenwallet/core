@@ -287,12 +287,12 @@ impl Database for SqliteDatabase {
         Ok(peer_map.into_iter().collect())
     }
 
-    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<String> {
+    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<i64> {
         let swap_id = swap_id.to_string();
 
         let row = sqlx::query!(
             r#"
-                SELECT min(entered_at) as start_date
+                SELECT min(entered_at) as "start_date: i64"
                 FROM swap_states
                 WHERE swap_id = ?
                 "#,
@@ -308,9 +308,8 @@ impl Database for SqliteDatabase {
     // TODO: This needs to take a timestamp as well (or None and then we generate it here)
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
         let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = OffsetDateTime::now_utc();
-        let entered_at = entered_at.to_string();
-        let swap_id_str = swap_id.to_string();        
+        let entered_at = OffsetDateTime::now_utc().unix_timestamp();
+        let swap_id_str = swap_id.to_string();
 
         sqlx::query!(
             r#"
@@ -334,9 +333,8 @@ impl Database for SqliteDatabase {
         Ok(())
     }
 
-    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: OffsetDateTime) -> Result<()> {
+    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: i64) -> Result<()> {
         let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = entered_at.to_string();
         let swap_id_str = swap_id.to_string();
         
         sqlx::query!(
@@ -385,10 +383,10 @@ impl Database for SqliteDatabase {
         Ok(swap.into())
     }
 
-    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>> {
+    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, i64)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT swap_id, state, entered_at
+            SELECT swap_id, state, entered_at as "entered_at: i64"
             FROM swap_states
             ORDER BY entered_at DESC
             "#
@@ -406,26 +404,20 @@ impl Database for SqliteDatabase {
 
                 let swap_id = Uuid::from_str(swap_id).ok().expect("Failed to parse swap_id");
                 let state = serde_json::from_str::<Swap>(state).ok().expect("Failed to parse state");
-                let entered_at = match OffsetDateTime::parse(entered_at, &time::format_description::well_known::Rfc3339) {
-                    Ok(t) => t,
-                    Err(_) => {
-                        let fmt = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour]:[offset_minute]:[offset_second]").ok().expect("Failed to parse entered_at");
-                        OffsetDateTime::parse(entered_at, &fmt).ok().expect("Failed to parse entered_at")
-                    }
-                };
+                let entered_at = *entered_at;
 
                 Some((swap_id, State::from(state), entered_at))
             })
-            .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
+            .collect::<Vec<(Uuid, State, i64)>>();
 
         Ok(result)
     }
 
     // TODO: Return timestamp here as well
-    async fn all(&self) -> Result<Vec<(Uuid, State, OffsetDateTime)>> {
+    async fn all(&self) -> Result<Vec<(Uuid, State, i64)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT swap_id, state, entered_at
+            SELECT swap_id, state, entered_at as "entered_at: i64"
             FROM (
                 SELECT max(id), swap_id, state, entered_at
                 FROM swap_states
@@ -461,18 +453,11 @@ impl Database for SqliteDatabase {
                     }
                 };
 
-                let entered_at = match OffsetDateTime::parse(entered_at, &time::format_description::well_known::Rfc3339) {
-                    Ok(timestamp) => timestamp,
-                    Err(_) => {
-                        // Try parsing with a more flexible format
-                        let format = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour]:[offset_minute]:[offset_second]").ok()?;
-                        OffsetDateTime::parse(entered_at, &format).ok()?
-                    }
-                };
+                let entered_at = *entered_at;
 
                 Some((swap_id, state, entered_at))
             })
-            .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
+            .collect::<Vec<(Uuid, State, i64)>>();
 
         tracing::info!("Processed {} swaps from database", result.len());
 

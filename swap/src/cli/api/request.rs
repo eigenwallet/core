@@ -219,7 +219,8 @@ pub struct GetSwapInfoResponse {
     pub swap_id: Uuid,
     pub seller: AliceAddress,
     pub completed: bool,
-    pub start_date: String,
+    #[typeshare(serialized_as = "number")]
+    pub start_date: i64,
     #[typeshare(serialized_as = "string")]
     pub state_name: String,
     #[typeshare(serialized_as = "number")]

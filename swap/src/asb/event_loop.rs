@@ -19,7 +19,6 @@ use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChann
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::future::Cache;
-use time::OffsetDateTime;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
@@ -195,7 +194,7 @@ where
         let unfinished_swaps = swaps
             .into_iter()
             .filter(|(_swap_id, state, _entered_at)| !state.swap_finished())
-            .collect::<Vec<(Uuid, State, OffsetDateTime)>>();
+            .collect::<Vec<(Uuid, State, i64)>>();
 
         for (swap_id, state, _) in unfinished_swaps {
             let peer_id = match self.db.get_peer_id(swap_id).await {
