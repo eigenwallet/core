@@ -16,19 +16,7 @@ SELECT
     id,
     swap_id,
     -- Convert string timestamp to Unix timestamp
-    -- First try RFC3339 format, then fall back to the custom format
-    CASE 
-        WHEN strftime('%Y-%m-%dT%H:%M:%S', entered_at) IS NOT NULL THEN
-            -- RFC3339 format (e.g., "2024-01-01T12:00:00Z")
-            strftime('%s', entered_at)
-        WHEN strftime('%Y-%m-%d %H:%M:%S', substr(entered_at, 1, 19)) IS NOT NULL THEN
-            -- Custom format (e.g., "2024-01-01 12:00:00.123456789 +00:00:00")
-            -- Extract just the date and time part (first 19 characters) before parsing
-            strftime('%s', substr(entered_at, 1, 19))
-        ELSE
-            -- If parsing fails, use current timestamp as fallback
-            strftime('%s', 'now')
-    END AS entered_at,
+    strftime('%s', substr(entered_at, 1, 19)) AS entered_at,
     state
 FROM swap_states;
 
