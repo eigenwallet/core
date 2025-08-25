@@ -755,13 +755,6 @@ impl State5 {
             .await
             .context("Failed to open Monero wallet")?;
 
-        // Update blockheight to ensure that the wallet knows the funds are unlocked
-        tracing::debug!(%swap_id, "Updating temporary Monero wallet's blockheight");
-        let _ = wallet
-            .blockchain_height()
-            .await
-            .context("Couldn't get Monero blockheight")?;
-
         tracing::debug!(%swap_id, receive_address=?monero_receive_pool, "Sweeping Monero to receive address");
 
         let main_address = monero_wallet.main_wallet().await.main_address().await;

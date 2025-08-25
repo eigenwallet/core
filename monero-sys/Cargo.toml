@@ -15,6 +15,7 @@ swap-serde = { path = "../swap-serde" }
 tokio = { workspace = true, features = ["sync", "time", "rt"] }
 tracing = { workspace = true }
 typeshare = { workspace = true }
+url = { workspace = true }
 uuid = { workspace = true }
 
 [build-dependencies]

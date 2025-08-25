@@ -49,6 +49,10 @@ where
     F: Future<Output = Result<()>>,
     C: GetConfig,
 {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install default rustls provider");
+
     let cli = Cli::default();
 
     tracing_subscriber::fmt()
@@ -304,7 +308,8 @@ async fn init_test_wallets(
         .map_to_host_port_ipv4(image::RPC_PORT)
         .expect("rpc port should be mapped to some external port");
     let monero_daemon = Daemon {
-        address: format!("http://127.0.0.1:{}", monerod_port),
+        hostname: "127.0.0.1".to_string(),
+        port: monerod_port,
         ssl: false,
     };
 
