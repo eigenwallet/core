@@ -17,7 +17,7 @@ impl Network {
 impl IntoFlag for Network {
     fn to_flag(self) -> Flag {
         match self.0 {
-            bitcoin::Network::Bitcoin => flag!("--network=mainnet"),
+            bitcoin::Network::Bitcoin => flag!("--network=bitcoin"),
             bitcoin::Network::Testnet => flag!("--network=testnet"),
             _ => panic!("Only Mainnet and Testnet are supported"),
         }

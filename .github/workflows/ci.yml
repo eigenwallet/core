@@ -44,7 +44,6 @@ jobs:
 
       - name: Run BDK regression script
         run: ./swap/tests/bdk.sh
-
   sqlx_test:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
@@ -60,7 +59,6 @@ jobs:
         run: |
           cd swap
           ./sqlite_dev_setup.sh
-
   build:
     strategy:
       fail-fast: false
