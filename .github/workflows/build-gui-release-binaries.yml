@@ -42,13 +42,6 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -87,12 +80,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: actionhippie/swap-space@v1
-        with:
-          size: 15G
 
       - name: Publish Release
         uses: crabnebula-dev/cloud-release@v0

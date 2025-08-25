@@ -15,41 +15,6 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4.1.7
-        with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
-      - uses: actionhippie/swap-space@v1
-        with:
-          size: 15G
-
-      - name: Restore Rust/Cargo cache from S3
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -63,34 +28,10 @@ jobs:
       - name: Run clippy with all features enabled
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      - name: Save Rust/Cargo cache to S3
-        if: ${{ always() }}
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-
   bdk_test:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -108,22 +49,12 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
           platform: ${{ matrix.platform }}
           rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
           install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
-
-      - name: Install sqlx-cli
-        run: cargo install --locked --version 0.6.3 sqlx-cli
 
       - name: Run sqlite_dev_setup.sh script
         run: |
@@ -150,76 +81,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4.1.7
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
         with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
-      - uses: actionhippie/swap-space@v1
-        if: matrix.os == 'ubuntu-latest-m'
-        with:
-          size: 15G
-
-      - name: Restore Rust/Cargo cache from S3
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ matrix.target }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-
-      - name: Install Rust toolchain (no internal cache)
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-          cache-directories: ""
-
-      - name: Configure apt for retries
-        if: matrix.os == 'ubuntu-latest-m'
-        run: ${{ env.APT_SET_CONF_COMMAND }}
-
-      - name: Install dependencies (ubuntu-latest-m)
-        if: matrix.os == 'ubuntu-latest-m' # This must match the platform value defined above.
-        run: |
-          sudo apt update
-          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }} git
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-
-      - name: Install Monero build dependencies (macOS)
-        if: startsWith(matrix.os, 'macos-')
-        run: |
-          brew update
-          brew install ${{ env.DEPS_MONERO_MACOS }}
-          brew reinstall --build-from-source unbound expat
-          brew install protobuf@21
-
-      - name: Install Monero build dependencies (Windows)
-        if: matrix.os == 'windows-latest-l'
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: ${{ env.DEPS_MONERO_WINDOWS_MSYS2 }}
+          platform: ${{ matrix.platform }}
+          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
       - name: Build binary
         if: matrix.target != 'armv7-unknown-linux-gnueabihf'
         run: cargo build -p swap --target ${{ matrix.target }}
-
-      - name: Install cross (armv7)
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
-        run: cargo install cross --locked
 
       - name: Build binary (armv7)
         if: matrix.target == 'armv7-unknown-linux-gnueabihf'
@@ -236,23 +107,6 @@ jobs:
         with:
           name: asb-${{ matrix.target }}
           path: target/${{ matrix.target }}/debug/asb
-
-      - name: Save Rust/Cargo cache to S3
-        if: ${{ always() }}
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ matrix.target }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
 
   test:
     strategy:
@@ -275,64 +129,12 @@ jobs:
           swap-storage: false
           tool-cache: false
 
-      - name: Checkout sources
-        uses: actions/checkout@v4.1.7
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
         with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
-      - uses: actionhippie/swap-space@v1
-        if: matrix.os == 'ubuntu-latest-m'
-        with:
-          size: 15G
-
-      - name: Restore Rust/Cargo cache from S3
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-
-      - name: Install Rust toolchain (no internal cache)
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-          cache-directories: ""
-
-      - name: Configure apt for retries
-        if: matrix.os == 'ubuntu-latest-m'
-        run: ${{ env.APT_SET_CONF_COMMAND }}
-
-      - name: Install dependencies (ubuntu-latest-m)
-        if: matrix.os == 'ubuntu-latest-m'
-        run: |
-          sudo apt update
-          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }}
-
-      - name: Install Monero build dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew update
-          brew install ${{ env.DEPS_MONERO_MACOS }}
-          brew reinstall --build-from-source unbound expat
-          brew install protobuf@21
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-
-      - name: Build tests
-        run: cargo build --tests --workspace --all-features
+          platform: ${{ matrix.platform }}
+          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
       - name: Run monero-harness tests
         if: matrix.os == 'ubuntu-latest-m'
@@ -340,23 +142,6 @@ jobs:
 
       - name: Run library tests for swap
         run: cargo test --package swap --lib
-
-      - name: Save Rust/Cargo cache to S3
-        if: ${{ always() }}
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
 
   docker_tests:
     strategy:
@@ -403,31 +188,16 @@ jobs:
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
           - package: monero-sys
             test_name: harness_test
+
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4.1.7
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
         with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
-      - uses: actionhippie/swap-space@v1
-        with:
-          size: 15G
-
-      - name: Configure apt for retries
-        run: ${{ env.APT_SET_CONF_COMMAND }}
-
-      - name: Install dependencies (ubuntu-latest-m)
-        run: |
-          sudo apt update
-          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }}
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
+          platform: ${{ matrix.platform }}
+          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
       - name: Run test ${{ matrix.test_name }}
         run: cargo test --package ${{ matrix.package }} --test ${{ matrix.test_name }} -- --nocapture
@@ -436,67 +206,12 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4.1.7
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
         with:
-          submodules: recursive
-
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
-      - uses: actionhippie/swap-space@v1
-        with:
-          size: 15G
-
-      - name: Restore Rust/Cargo cache from S3
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-
-      - name: Install Rust toolchain (no internal cache)
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          rustflags: ""
-          cache-directories: ""
-
-      - name: Configure apt for retries
-        run: ${{ env.APT_SET_CONF_COMMAND }}
-
-      - name: Install dependencies (ubuntu-latest-m)
-        run: |
-          sudo apt update
-          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }}
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
+          platform: ${{ matrix.platform }}
+          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
       - name: Run cargo check on stable rust
         run: cargo check --all-targets
-
-      - name: Save Rust/Cargo cache to S3
-        if: ${{ always() }}
-        uses: whywaita/actions-cache-s3@v2
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}

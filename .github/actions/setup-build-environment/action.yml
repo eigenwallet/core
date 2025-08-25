@@ -17,6 +17,14 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Configure apt for retries (Ubuntu only)
+      if: startsWith(inputs.platform, 'ubuntu')
+      shell: bash
+      run: ${{ env.APT_SET_CONF_COMMAND }}
+
+    - name: Set env variables
+      uses: ./.github/actions/set-monero-env
+
     - name: Set up swap space (Ubuntu only)
       if: startsWith(inputs.platform, 'ubuntu')
       uses: actionhippie/swap-space@v1
@@ -33,17 +41,12 @@ runs:
       with:
         targets: ${{ inputs.rust-targets }}
 
-    - name: Configure apt for retries (Ubuntu only)
-      if: startsWith(inputs.platform, 'ubuntu')
-      shell: bash
-      run: ${{ env.APT_SET_CONF_COMMAND }}
-
     - name: Install Tauri dependencies (Ubuntu)
       if: startsWith(inputs.platform, 'ubuntu')
       shell: bash
       run: |
         sudo apt update;
-        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} git
+        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{env.DEPS_TAURI_LINUX }} git
 
     - name: Clone submodules
       shell: bash
@@ -78,6 +81,17 @@ runs:
       uses: taiki-e/install-action@v2
       with:
         tool: dprint@0.50.1
+
+    - name: Install sqlx-cli globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: sqlx-cli@0.6.3
+
+    - name: Install cross (armv7)
+      if: platform == 'armv7-unknown-linux-gnueabihf'
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
 
     - name: Prepare Windows build by building gcc from source
       if: inputs.install-windows-deps == 'true' && startsWith(inputs.platform, 'windows')
