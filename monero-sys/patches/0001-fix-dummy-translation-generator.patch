@@ -1,0 +1,70 @@
+From 953bb8df6beefd9f5897521b4678e8e0955c4713 Mon Sep 17 00:00:00 2001
+From: Czarek Nakamoto <cyjan@mrcyjanek.net>
+Date: Mon, 14 Jul 2025 23:19:35 +0200
+Subject: [PATCH] fix: dummy translation generator
+
+---
+ CMakeLists.txt            | 35 ++++++++++++++++++++++++++---------
+ src/common/CMakeLists.txt |  3 +--
+ 2 files changed, 27 insertions(+), 11 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 46bd5eb1b..7301f76d6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -664,15 +664,32 @@ function (monero_add_library_with_deps)
+ endfunction ()
+ 
+ # Generate header for embedded translations
+-# Generate header for embedded translations, use target toolchain if depends, otherwise use the
+-# lrelease and lupdate binaries from the host
+-include(ExternalProject)
+-ExternalProject_Add(generate_translations_header
+-  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/translations"
+-  BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/translations"
+-  STAMP_DIR ${LRELEASE_PATH}
+-  CMAKE_ARGS -DLRELEASE_PATH=${LRELEASE_PATH}
+-  INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "")
++file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/translations/translation_files.h"
++"#ifndef TRANSLATION_FILES_H
++#define TRANSLATION_FILES_H
++
++#include <string>
++
++static const struct embedded_file {
++  const std::string *name;
++  const std::string *data;
++} embedded_files[] = {
++  {NULL, NULL}
++};
++
++static bool find_embedded_file(const std::string &name, std::string &data) {
++  const struct embedded_file *p;
++  for (p = embedded_files; p->name != NULL; p++) {
++    if (*p->name == name) {
++      data = *p->data;
++      return true;
++    }
++  }
++  return false;
++}
++
++#endif /* TRANSLATION_FILES_H */
++")
+ include_directories("${CMAKE_CURRENT_BINARY_DIR}/translations")
+ add_subdirectory(external)
+ 
+diff --git a/src/common/CMakeLists.txt b/src/common/CMakeLists.txt
+index b712ee6b1..a1dff7e5d 100644
+--- a/src/common/CMakeLists.txt
++++ b/src/common/CMakeLists.txt
+@@ -65,8 +65,7 @@ monero_private_headers(common
+ monero_add_library(common
+   ${common_sources}
+   ${common_headers}
+-  ${common_private_headers}
+-  DEPENDS generate_translations_header)
++  ${common_private_headers})
+ target_link_libraries(common
+   PUBLIC
+     cncrypto

@@ -1,0 +1,22 @@
+From 1ac620cf1afd6515daa127039311ba9c9a2a1ea3 Mon Sep 17 00:00:00 2001
+From: Czarek Nakamoto <cyjan@mrcyjanek.net>
+Date: Tue, 15 Jul 2025 19:58:34 +0200
+Subject: [PATCH] fix: ___isPlatformVersionAtLeast
+
+---
+ src/virtual_memory.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/external/randomx/src/virtual_memory.c b/external/randomx/src/virtual_memory.c
+index d2cdcda..5158ea4 100644
+--- a/external/randomx/src/virtual_memory.c
++++ b/external/randomx/src/virtual_memory.c
+@@ -35,7 +35,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include <TargetConditionals.h>
+ #include <AvailabilityMacros.h>
+ # if TARGET_OS_OSX
+-#  define USE_PTHREAD_JIT_WP	1
++#  define USE_PTHREAD_JIT_WP	0
+ #  include <pthread.h>
+ #  include <sys/utsname.h>
+ #  include <stdio.h>

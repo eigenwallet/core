@@ -1,0 +1,38 @@
+From 6d9116c6d57d72f9bab5d28740209ffdefc9d197 Mon Sep 17 00:00:00 2001
+From: Czarek Nakamoto <cyjan@mrcyjanek.net>
+Date: Mon, 18 Nov 2024 10:57:37 -0500
+Subject: [PATCH] include locale only when targeting WIN32
+
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 46bd5eb1b..d5cfecf39 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1085,7 +1085,11 @@ if(NOT Boost_FOUND)
+ elseif(Boost_FOUND)
+   message(STATUS "Found Boost Version: ${Boost_VERSION_STRING}")
+ 
+-  set(BOOST_COMPONENTS filesystem thread date_time chrono serialization program_options locale)
++  set(BOOST_COMPONENTS filesystem thread date_time chrono serialization program_options)
++
++  if(WIN32)
++    list(APPEND BOOST_COMPONENTS locale)
++  endif()
+ 
+   # Boost System is header-only since 1.69
+   if (Boost_VERSION_STRING VERSION_LESS 1.69.0)
+diff --git a/src/wallet/api/wallet.cpp b/src/wallet/api/wallet.cpp
+index 96393eaaa..b6f527ae5 100644
+--- a/src/wallet/api/wallet.cpp
++++ b/src/wallet/api/wallet.cpp
+@@ -48,7 +48,10 @@
+ #include <sstream>
+ #include <unordered_map>
+ 
++#ifdef WIN32
+ #include <boost/locale.hpp>
++#endif
++
+ #include <boost/filesystem.hpp>
+ 
+ using namespace std;
