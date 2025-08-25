@@ -43,11 +43,6 @@ cargo sqlx database create
 
 for dir in swap monero-sys monero-rpc-pool; do
     echo "🔄 Running migrations in $dir..."
-    (cd "$WORKSPACE_ROOT/$dir" && cargo sqlx migrate run --ignore-missing)
-done
-
-echo "⚡ Preparing SQLx query cache..."
-cargo sqlx prepare --workspace 
     (cd "$WORKSPACE_ROOT/$dir" && rm -rf .sqlx && cargo sqlx migrate run --ignore-missing)
 done
 
