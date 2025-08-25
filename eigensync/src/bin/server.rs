@@ -35,15 +35,15 @@ async fn main() -> anyhow::Result<()> {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::MAX))
         .build();
 
-    swarm.listen_on(multiaddr)?;
+    swarm.listen_on(multiaddr.clone())?;
 
     println!(
-        "Listening on /ip4/127.0.0.1/tcp/3333/p2p/{}",
+        "Listening on {}/p2p/{}",
+        multiaddr,
         swarm.local_peer_id()
     );
 
     let mut global_changes: HashMap<PeerId, Vec<SerializedChange>> = HashMap::new();
-
 
     loop {
         tokio::select! {
@@ -71,11 +71,11 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
 
                             // extend but dont duplicate changes
                             let new_changes: Vec<_> = changes.into_iter().filter(|c| !peer_changes.contains(c)).collect();
-                            peer_changes.extend(new_changes);
+                            peer_changes.extend(new_changes.clone());
                             
                             // TODO: only send changes that the client doesn't have yet
                             let response = Response::NewChanges { changes: peer_changes.clone() };
-                            swarm.behaviour_mut().send_response(channel, response).unwrap();
+                            swarm.behaviour_mut().send_response(channel, response).expect("Failed to send response");
                         }
                     }
                 }
