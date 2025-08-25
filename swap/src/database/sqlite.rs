@@ -13,6 +13,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
+use time::UtcDateTime;
 use tokio::sync::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -187,8 +188,6 @@ impl Database for SqliteDatabase {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        tracing::info!("Addresses: {:?}", addresses.len());
-
         Ok(MoneroAddressPool::new(addresses))
     }
 
@@ -287,7 +286,7 @@ impl Database for SqliteDatabase {
         Ok(peer_map.into_iter().collect())
     }
 
-    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<i64> {
+    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<UtcDateTime> {
         let swap_id = swap_id.to_string();
 
         let row = sqlx::query!(
@@ -301,8 +300,9 @@ impl Database for SqliteDatabase {
         .fetch_one(&self.pool)
         .await?;
 
-        row.start_date
-            .ok_or_else(|| anyhow!("Could not get swap start date"))
+        let start_date = row.start_date.ok_or_else(|| anyhow!("Could not get swap start date"))?;
+        let start_date = UtcDateTime::from_unix_timestamp(start_date)?;
+        Ok(start_date)
     }
 
     // TODO: This needs to take a timestamp as well (or None and then we generate it here)
@@ -333,9 +333,11 @@ impl Database for SqliteDatabase {
         Ok(())
     }
 
-    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: i64) -> Result<()> {
+    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: UtcDateTime) -> Result<()> {
         let swap = serde_json::to_string(&Swap::from(state))?;
         let swap_id_str = swap_id.to_string();
+
+        let entered_at = entered_at.unix_timestamp();
         
         sqlx::query!(
             r#"
@@ -383,7 +385,7 @@ impl Database for SqliteDatabase {
         Ok(swap.into())
     }
 
-    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, i64)>> {
+    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>> {
         let rows = sqlx::query!(
             r#"
             SELECT swap_id, state, entered_at as "entered_at: i64"
@@ -394,9 +396,6 @@ impl Database for SqliteDatabase {
             .fetch_all(&self.pool)
             .await?;
 
-        tracing::info!("Raw rows from database: {}", rows.len());
-        //tracing::info!("Rows: {:?}", rows);
-            
             let result = rows
             .iter()
             .filter_map(|row| {
@@ -404,17 +403,17 @@ impl Database for SqliteDatabase {
 
                 let swap_id = Uuid::from_str(swap_id).ok().expect("Failed to parse swap_id");
                 let state = serde_json::from_str::<Swap>(state).ok().expect("Failed to parse state");
-                let entered_at = *entered_at;
+                let entered_at = UtcDateTime::from_unix_timestamp(*entered_at).ok().expect("Failed to parse entered_at");
 
                 Some((swap_id, State::from(state), entered_at))
             })
-            .collect::<Vec<(Uuid, State, i64)>>();
+            .collect::<Vec<(Uuid, State, UtcDateTime)>>();
 
         Ok(result)
     }
 
     // TODO: Return timestamp here as well
-    async fn all(&self) -> Result<Vec<(Uuid, State, i64)>> {
+    async fn all(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>> {
         let rows = sqlx::query!(
             r#"
             SELECT swap_id, state, entered_at as "entered_at: i64"
@@ -453,11 +452,11 @@ impl Database for SqliteDatabase {
                     }
                 };
 
-                let entered_at = *entered_at;
+                let entered_at = UtcDateTime::from_unix_timestamp(*entered_at).ok().expect("Failed to parse entered_at");
 
                 Some((swap_id, state, entered_at))
             })
-            .collect::<Vec<(Uuid, State, i64)>>();
+            .collect::<Vec<(Uuid, State, UtcDateTime)>>();
 
         tracing::info!("Processed {} swaps from database", result.len());
 

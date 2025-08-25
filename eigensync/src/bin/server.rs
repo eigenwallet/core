@@ -1,11 +1,12 @@
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use anyhow::{Context};
-use eigensync::protocol::{server, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange, ServerRequest};
+use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, SerializedChange, ServerRequest};
 use libp2p::{
-    futures::StreamExt, identity, noise, request_response::{self, ResponseChannel}, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
+    futures::StreamExt, identity, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
 };
-use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
+use autosurgeon::{Hydrate, Reconcile};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
 struct Foo {
@@ -14,6 +15,11 @@ struct Foo {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize tracing with info level
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new("info"))
+        .init();
+    
     let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333")?;
 
     // for constant peer id
@@ -37,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
 
     swarm.listen_on(multiaddr.clone())?;
 
-    println!(
+    tracing::info!(
         "Listening on {}/p2p/{}",
         multiaddr,
         swarm.local_peer_id()
@@ -61,34 +67,38 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
         })) => {
             match message {
                 request_response::Message::Request { request, channel, .. } => {
-                    eprintln!("Received request from client {:?}", peer);
 
                     match request {
                         ServerRequest::UploadChangesToServer { changes } => {
+                            let saved_changed_of_peer = global_changes.entry(peer).or_insert(Vec::new());
 
-                            println!("Received ServerRequest::UploadChangesToServer");
-                            let peer_changes = global_changes.entry(peer).or_insert(Vec::new());
+                            // Saved all changes the client sent us but we don't have yet stored for him
+                            let changes_clone = changes.clone();
+                            let uploaded_new_changes: Vec<_> = changes.into_iter().filter(|c| !saved_changed_of_peer.contains(c)).collect();
+                            saved_changed_of_peer.extend(uploaded_new_changes.clone());
 
-                            // extend but dont duplicate changes
-                            let new_changes: Vec<_> = changes.into_iter().filter(|c| !peer_changes.contains(c)).collect();
-                            peer_changes.extend(new_changes.clone());
-                            
-                            // TODO: only send changes that the client doesn't have yet
-                            let response = Response::NewChanges { changes: peer_changes.clone() };
+                            // Check which changes the client is missing
+                            let changes_client_is_missing: Vec<_> = saved_changed_of_peer.iter().filter(|c| !changes_clone.contains(c)).cloned().collect();
+
+                            tracing::info!("Sending {} changes to client", changes_client_is_missing.len());
+
+                            // Send the changes the client is missing to the client
+                            let response = Response::NewChanges { changes: changes_client_is_missing };
                             swarm.behaviour_mut().send_response(channel, response).expect("Failed to send response");
                         }
                     }
                 }
-                request_response::Message::Response { request_id, .. } => eprintln!("Received response for request of id {:?}", request_id),
+                request_response::Message::Response { request_id, .. } => tracing::info!("Received response for request of id {:?}", request_id),
             }
         }
         SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-            eprintln!("Connection established with peer: {:?}", peer_id);
+            tracing::info!("Connection established with peer: {:?}", peer_id);
         }
         SwarmEvent::ConnectionClosed { peer_id, .. } => {
-            eprintln!("Connection closed with peer: {:?}", peer_id);
+            tracing::info!("Connection closed with peer: {:?}", peer_id);
         }
-        other => eprintln!("Received event: {:?}", other),
+        other => {
+            tracing::info!("Received event: {:?}", other);
+        },
     };
-    Ok(())
-}
+    Ok(())}

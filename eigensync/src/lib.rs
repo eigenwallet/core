@@ -182,14 +182,6 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
         hydrate(&self.document).context("Failed to hydrate document")
     }
 
-    pub async fn modify(&mut self, f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
-        self.save_updates_local(f).context("Failed to save updates local")?;
-
-        //let _ = self.sync_with_server().await.context("Failed to sync with server")?;
-
-        Ok(())
-    }
-
     pub async fn sync_with_server(&mut self) -> anyhow::Result<()> {
         let (sender, receiver) = oneshot::channel();
 
@@ -201,19 +193,21 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
         let new_changes_serialized = receiver.await?.map_err(|e| anyhow::anyhow!(e))?;
         let new_changes: Vec<Change> = new_changes_serialized.into_iter().map(Change::from).collect();
 
-        println!("Applying changes {:?}", new_changes.len());
+        tracing::info!("Applying changes {:?}", new_changes.len());
 
         // let counter = new_changes.iter().filter(|change| !self.document.get_changes(&[]).contains(&&change)).count();
         // println!("{} changes are not in the document yet", counter);
 
+        tracing::info!("document changes before sync: {:?}", self.document.get_changes(&[]).len());
         self.document.apply_changes(new_changes).context("Failed to apply changes")?;
+        tracing::info!("document changes after sync: {:?}", self.document.get_changes(&[]).len());
 
        // println!("Document state after sync: {:?}", hydrate::<_, T>(&self.document).unwrap());
 
         Ok(())
     }
 
-    pub fn save_updates_local(&mut self,  f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
+    pub fn modify(&mut self,  f: impl FnOnce(&mut T) -> anyhow::Result<()>) -> anyhow::Result<()> {
         let mut state = hydrate(&self.document).context("Failed to hydrate document")?;
         f(&mut state)?;
         reconcile(&mut self.document, state)

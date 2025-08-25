@@ -64,9 +64,9 @@ async fn main() -> anyhow::Result<()> {
     
     assert_eq!(alice_state, bob_state, "bob got alice swaps");
 
-    // Move the add_swap call into save_updates_local closure above
+    // Move the add_swap call into modify closure above
 
-    bob.save_updates_local(|state| {
+    bob.modify(|state| {
         add_swap(state, SwapState {
             state_id: Uuid::new_v4(),
             swap_id: 1,

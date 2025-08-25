@@ -901,7 +901,7 @@ pub async fn get_swap_info(
             addresses: addresses.iter().map(|a| a.to_string()).collect(),
         },
         completed: is_completed,
-        start_date,
+        start_date: start_date.unix_timestamp(),
         state_name: format!("{}", swap_state),
         xmr_amount,
         btc_amount,
