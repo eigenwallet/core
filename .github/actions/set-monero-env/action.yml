@@ -13,6 +13,12 @@ runs:
         # Tauri Linux dependencies
         echo "DEPS_TAURI_LINUX=libwebkit2gtk-4.1-dev curl wget file libxdo-dev libayatana-appindicator3-dev librsvg2-dev" >> $GITHUB_ENV
 
+        # Build tooling (Linux)
+        echo "DEPS_BUILD_LINUX=autoconf "
+
+        # Build tooling (macos)
+        echo "DEPS_BUILD_MACOS=autoconf "
+
         # APT configuration for better reliability
         echo 'APT_SET_CONF_COMMAND<<EOF
         sudo tee -a /etc/apt/apt.conf.d/80-custom << APTEOF
