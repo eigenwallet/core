@@ -153,7 +153,7 @@ enum ElectrumServerType {
 }
 
 mod prompt {
-    use dialoguer::{theme::ColorfulTheme, Input, Select};
+    use dialoguer::{theme::ColorfulTheme, Select};
     use swap_env::prompt as config_prompt;
     use url::Url;
 
