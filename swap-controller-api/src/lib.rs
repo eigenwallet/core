@@ -9,6 +9,11 @@ pub struct BitcoinBalanceResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BitcoinSeedResponse {
+    pub descriptor: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MoneroBalanceResponse {
     pub balance: u64,
 }
@@ -46,6 +51,8 @@ pub trait AsbApi {
     async fn check_connection(&self) -> Result<(), ErrorObjectOwned>;
     #[method(name = "bitcoin_balance")]
     async fn bitcoin_balance(&self) -> Result<BitcoinBalanceResponse, ErrorObjectOwned>;
+    #[method(name = "bitcoin_seed")]
+    async fn bitcoin_seed(&self) -> Result<BitcoinSeedResponse, ErrorObjectOwned>;
     #[method(name = "monero_balance")]
     async fn monero_balance(&self) -> Result<MoneroBalanceResponse, ErrorObjectOwned>;
     #[method(name = "monero_address")]

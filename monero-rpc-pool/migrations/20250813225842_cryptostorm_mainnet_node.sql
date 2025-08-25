@@ -1,0 +1,2 @@
+DELETE FROM monero_nodes WHERE host = 'xmr.cryptostorm.is' AND port = 18081;
+INSERT INTO monero_nodes (scheme, host, port, network, first_seen_at) VALUES ('https', 'xmr.cryptostorm.is', 18081, 'mainnet', datetime('now'));

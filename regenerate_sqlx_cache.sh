@@ -48,6 +48,11 @@ done
 
 echo "⚡ Preparing SQLx query cache..."
 cargo sqlx prepare --workspace 
+    (cd "$WORKSPACE_ROOT/$dir" && rm -rf .sqlx && cargo sqlx migrate run --ignore-missing)
+done
+
+echo "⚡ Preparing SQLx query cache..."
+cargo sqlx prepare --workspace
 
 echo "✅ SQLx query cache regenerated successfully!"
 echo "📝 The .sqlx directory has been updated with the latest query metadata."

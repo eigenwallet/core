@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.11] - 2025-08-20
+
+- ORCHESTRATOR: We incorrectly passed the `--mainnet` flag to the `asb` binary but it is the default for the asb.
+- CONTROLLER: Add a `bitcoin-seed` command to the controller. You can use it to export the descriptor of the internal Bitcoin wallet.
+- CLI + GUI + ASB: Accept self-signed TLS certificates and TLS certificates with older protocol versions.
+
+## [3.0.0-beta.10] - 2025-08-14
+
+- GUI + CLI + ASB: Fix an issue where the Monero RPC pool would fail to build TLS handshakes over Tor
+
+## [3.0.0-beta.9] - 2025-08-12
+
 - ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
 - GUI: You can now change the Monero Node without having to restart.
 - GUI: You can now export the seed phrase of the Monero wallet.
+- GUI + CLI: Temporarily require a minimum of 12 confirmations for Monero transactions. Just a pre-caution given the Qubic shenanigans.
+- GUI + CLI + ASB: Add `/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X`, `/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk` to the default list of rendezvous points
 
 ## [3.0.0-beta.8] - 2025-08-10
 
@@ -631,7 +645,10 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.8...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.11...HEAD
+[3.0.0-beta.11]: https://github.com/eigenwallet/core/compare/3.0.0-beta.10...3.0.0-beta.11
+[3.0.0-beta.10]: https://github.com/eigenwallet/core/compare/3.0.0-beta.9...3.0.0-beta.10
+[3.0.0-beta.9]: https://github.com/eigenwallet/core/compare/3.0.0-beta.8...3.0.0-beta.9
 [3.0.0-beta.8]: https://github.com/eigenwallet/core/compare/3.0.0-beta.7...3.0.0-beta.8
 [3.0.0-beta.7]: https://github.com/eigenwallet/core/compare/3.0.0-beta.7...3.0.0-beta.7
 [3.0.0-beta.7]: https://github.com/eigenwallet/core/compare/3.0.0-beta.6...3.0.0-beta.7

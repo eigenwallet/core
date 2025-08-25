@@ -64,6 +64,7 @@ impl std::ops::Deref for GuardedSender {
         &self.guard
     }
 }
+
 impl std::ops::DerefMut for GuardedSender {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.guard

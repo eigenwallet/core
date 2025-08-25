@@ -7,13 +7,20 @@ use axum::{
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     time::timeout,
 };
-use tokio_native_tls::native_tls::TlsConnector;
+
+use tokio_rustls::rustls::{
+    self,
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    pki_types::{CertificateDer, ServerName, UnixTime},
+    DigitallySignedStruct, Error as TlsError, SignatureScheme,
+};
 use tracing::{error, info_span, Instrument};
 
 use crate::AppState;
@@ -29,6 +36,58 @@ static SOFT_TIMEOUT: Duration = TIMEOUT.checked_div(2).unwrap();
 /// Trait alias for a stream that can be used with hyper
 trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
+
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, TlsError> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
+    }
+}
 
 #[axum::debug_handler]
 pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> Response {
@@ -268,17 +327,19 @@ async fn maybe_wrap_with_tls(
     host: &str,
 ) -> Result<Box<dyn HyperStream>, SingleRequestError> {
     if scheme == "https" {
-        let tls_connector = TlsConnector::builder()
-            .danger_accept_invalid_certs(true)
-            .danger_accept_invalid_hostnames(true)
-            .build()
-            .map_err(|e| {
-                SingleRequestError::ConnectionError(format!("TLS connector error: {}", e))
-            })?;
-        let tls_connector = tokio_native_tls::TlsConnector::from(tls_connector);
+        // Create a TLS client config that accepts all certificates and versions
+        let config = tokio_rustls::rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+            .with_no_client_auth();
 
-        let tls_stream = tls_connector.connect(host, stream).await.map_err(|e| {
-            SingleRequestError::ConnectionError(format!("TLS connection error: {}", e))
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+
+        let server_name = ServerName::try_from(host.to_string())
+            .map_err(|_| SingleRequestError::ConnectionError("Invalid DNS name".to_string()))?;
+
+        let tls_stream = connector.connect(server_name, stream).await.map_err(|e| {
+            SingleRequestError::ConnectionError(format!("TLS connection error: {:?}", e))
         })?;
 
         Ok(Box::new(tls_stream))
@@ -432,13 +493,13 @@ async fn proxy_to_single_node(
                 let stream = tor_client
                     .connect(address)
                     .await
-                    .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
 
                 Box::new(stream)
             } else {
                 let stream = TcpStream::connect(address)
                     .await
-                    .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
 
                 Box::new(stream)
             };
@@ -448,8 +509,10 @@ async fn proxy_to_single_node(
         .await
         .map_err(|_| SingleRequestError::Timeout("Connection timed out".to_string()))??;
 
+        let maybe_tls_stream = TokioIo::new(maybe_tls_stream);
+
         // Build an HTTP/1 connection over the stream.
-        let (sender, conn) = hyper::client::conn::http1::handshake(TokioIo::new(maybe_tls_stream))
+        let (sender, conn) = hyper::client::conn::http1::handshake(maybe_tls_stream)
             .await
             .map_err(|e| SingleRequestError::ConnectionError(e.to_string()))?;
 

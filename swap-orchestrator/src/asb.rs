@@ -18,7 +18,9 @@ impl Network {
 impl IntoFlag for Network {
     fn to_flag(self) -> Flag {
         match self.0 {
-            (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => flag!("--mainnet"),
+            // Mainnet is the default for the asb
+            (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => Flag(None),
+            // Testnet requires the --testnet flag
             (monero::Network::Stagenet, bitcoin::Network::Testnet) => flag!("--testnet"),
             _ => panic!("Only either Mainnet Bitcoin & Mainnet Monero or Testnet Bitcoin & Stagenet Monero are supported"),
         }

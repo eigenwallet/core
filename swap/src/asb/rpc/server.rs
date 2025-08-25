@@ -7,8 +7,8 @@ use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
 use swap_controller_api::{
-    ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, MoneroAddressResponse,
-    MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse, Swap,
+    ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
+    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -70,6 +70,20 @@ impl AsbApiServer for RpcImpl {
         let balance = self.bitcoin_wallet.balance().await.into_json_rpc_result()?;
 
         Ok(BitcoinBalanceResponse { balance })
+    }
+
+    async fn bitcoin_seed(&self) -> Result<BitcoinSeedResponse, ErrorObjectOwned> {
+        static EXPORT_ROLE: &str = "asb";
+
+        let wallet_export = self
+            .bitcoin_wallet
+            .wallet_export(EXPORT_ROLE)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(BitcoinSeedResponse {
+            descriptor: format!("{}", wallet_export.descriptor()),
+        })
     }
 
     async fn monero_balance(&self) -> Result<MoneroBalanceResponse, ErrorObjectOwned> {
