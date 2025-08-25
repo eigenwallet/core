@@ -100,6 +100,10 @@ uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = "1.8.1"
 
+# monero-oxide
+monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
+monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }
+
 [target.'cfg(not(windows))'.dependencies]
 tokio-tar = "0.3"
 

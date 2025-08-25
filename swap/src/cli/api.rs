@@ -441,10 +441,7 @@ impl ContextBuilder {
         };
 
         // Create a daemon struct for the monero wallet based on the node address
-        let daemon = monero_sys::Daemon {
-            address: monero_node_address,
-            ssl: false,
-        };
+        let daemon = monero_sys::Daemon::try_from(monero_node_address)?;
 
         // Prompt the user to open/create a Monero wallet
         let (wallet, seed) = open_monero_wallet(
@@ -665,31 +662,12 @@ impl Context {
                 let pool_url: String = server_info.clone().into();
                 tracing::info!("Switching to Monero RPC pool: {}", pool_url);
 
-                monero_sys::Daemon {
-                    address: pool_url,
-                    ssl: false,
-                }
+                monero_sys::Daemon::try_from(pool_url)?
             }
             MoneroNodeConfig::SingleNode { url } => {
                 tracing::info!("Switching to single Monero node: {}", url);
 
-                // Parse the URL to determine SSL and address
-                let (address, ssl) = if url.starts_with("https://") {
-                    (
-                        url.strip_prefix("https://").unwrap_or(&url).to_string(),
-                        true,
-                    )
-                } else if url.starts_with("http://") {
-                    (
-                        url.strip_prefix("http://").unwrap_or(&url).to_string(),
-                        false,
-                    )
-                } else {
-                    // Default to HTTP if no protocol specified
-                    (url, false)
-                };
-
-                monero_sys::Daemon { address, ssl }
+                monero_sys::Daemon::try_from(url.clone())?
             }
         };
 
