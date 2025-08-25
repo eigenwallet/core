@@ -277,7 +277,7 @@ impl Wallets {
                 .await;
         }
 
-        let rpc_client = SimpleRequestRpc::new(format!("{}", daemon)).await?;
+        let rpc_client = SimpleRequestRpc::new(daemon.to_url().to_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -328,7 +328,7 @@ impl Wallets {
                 .await;
         }
 
-        let rpc_client = SimpleRequestRpc::new(format!("{}", daemon)).await?;
+        let rpc_client = SimpleRequestRpc::new(daemon.to_url().to_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -480,7 +480,7 @@ impl Wallets {
     pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
         {
             let mut daemon = self.daemon.write().await;
-            let rpc_client = SimpleRequestRpc::new(format!("{}", new_daemon)).await?;
+            let rpc_client = SimpleRequestRpc::new(new_daemon.to_url().to_string()).await?;
             *daemon = (new_daemon.clone(), rpc_client);
         }
 

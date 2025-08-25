@@ -152,13 +152,6 @@ pub struct Daemon {
     pub ssl: bool,
 }
 
-impl Display for Daemon {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let url: Url = self.clone().into();
-        write!(f, "{}", url.to_string())
-    }
-}
-
 impl TryFrom<String> for Daemon {
     type Error = anyhow::Error;
 
@@ -184,11 +177,18 @@ impl TryFrom<String> for Daemon {
     }
 }
 
-impl Into<Url> for Daemon {
-    fn into(self) -> Url {
+impl Daemon {
+    /// Convert the daemon configuration to a URL
+    pub fn to_url(&self) -> Url {
         let scheme = if self.ssl { "https" } else { "http" };
         Url::parse(&format!("{}://{}:{}", scheme, self.hostname, self.port))
             .expect("Valid URL from daemon components")
+    }
+}
+
+impl Into<Url> for Daemon {
+    fn into(self) -> Url {
+        self.to_url()
     }
 }
 
