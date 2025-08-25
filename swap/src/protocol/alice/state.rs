@@ -595,13 +595,6 @@ impl State3 {
             .await
             .context(format!("Failed to open/create swap wallet `{}`", swap_id))?;
 
-        // Update blockheight to ensure that the wallet knows the funds are unlocked
-        tracing::debug!(%swap_id, "Updating temporary Monero wallet's blockheight");
-        let _ = swap_wallet
-            .blockchain_height()
-            .await
-            .context("Couldn't get Monero blockheight")?;
-
         tracing::debug!(%swap_id, "Sweeping Monero to redeem address");
         let main_address = monero_wallet.main_wallet().await.main_address().await;
 

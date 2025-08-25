@@ -32,6 +32,7 @@ use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     oneshot,
 };
+use url::Url;
 
 use bridge::ffi::{self, TransactionHistory};
 use typeshare::typeshare;
@@ -146,8 +147,43 @@ pub struct TxReceipt {
 /// A remote node to connect to.
 #[derive(Debug, Clone, Default)]
 pub struct Daemon {
-    pub address: String,
+    pub hostname: String,
+    pub port: u16,
     pub ssl: bool,
+}
+
+impl TryFrom<String> for Daemon {
+    type Error = anyhow::Error;
+
+    fn try_from(address: String) -> Result<Self, Self::Error> {
+        let url = Url::parse(&address).context("Failed to parse daemon URL")?;
+
+        let hostname = url
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("No hostname found in URL"))?
+            .to_string();
+
+        let port = url
+            .port()
+            .ok_or_else(|| anyhow::anyhow!("No port found in URL"))?;
+
+        let ssl = url.scheme() == "https";
+
+        Ok(Daemon {
+            hostname,
+            port,
+            ssl,
+        })
+    }
+}
+
+impl Daemon {
+    /// Try to convert the daemon configuration to a URL
+    pub fn to_url_string(&self) -> String {
+        let scheme = if self.ssl { "https" } else { "http" };
+
+        format!("{}://{}:{}", scheme, self.hostname, self.port)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -504,7 +540,7 @@ impl WalletHandle {
         self.call(move |wallet| wallet.synchronized()).await
     }
 
-    /// Get the restore height of the wallet.
+    /// Set the restore height of the wallet.
     pub async fn set_restore_height(&self, height: u64) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.set_restore_height(height))
             .await
@@ -883,7 +919,8 @@ impl WalletHandle {
                 let mut manager = WalletManager::new(
                     // Dummy daemon address
                     Daemon {
-                        address: "localhost:18081".to_string(),
+                        hostname: "localhost".to_string(),
+                        port: 18081,
                         ssl: false,
                     },
                     &wallet_name,
@@ -993,7 +1030,7 @@ impl WalletManager {
             inner: RawWalletManager::new(manager),
         };
 
-        manager.set_daemon_address(&daemon.address);
+        manager.set_daemon_address(&daemon);
 
         Ok(manager)
     }
@@ -1243,7 +1280,8 @@ impl WalletManager {
     }
 
     /// Set the address of the remote node ("daemon").
-    fn set_daemon_address(&mut self, address: &str) {
+    fn set_daemon_address(&mut self, daemon: &Daemon) {
+        let address = format!("{}:{}", daemon.hostname, daemon.port);
         tracing::debug!(%address, "Updating wallet manager's remote node");
 
         let_cxx_string!(address = address);
@@ -1385,7 +1423,7 @@ impl FfiWallet {
             backoff(None, None),
             || {
                 wallet
-                    .init(&daemon.address, daemon.ssl)
+                    .init(&daemon)
                     .context("Failed to initialize wallet")
                     .map_err(backoff::Error::transient)
             },
@@ -1440,7 +1478,7 @@ impl FfiWallet {
 
     pub fn set_daemon(&mut self, daemon: &Daemon) -> anyhow::Result<()> {
         let ssl = daemon.ssl;
-        let address = daemon.address.clone();
+        let address = format!("{}:{}", daemon.hostname, daemon.port);
 
         tracing::debug!(%address, %ssl, "Setting daemon address");
 
@@ -1465,8 +1503,9 @@ impl FfiWallet {
 
     /// Initialize the wallet and download initial values from the remote node.
     /// Does not actuallyt sync the wallet, use any of the refresh methods to do that.
-    fn init(&mut self, daemon_address: &str, ssl: bool) -> anyhow::Result<()> {
-        tracing::debug!(%daemon_address, %ssl, "Initializing wallet");
+    fn init(&mut self, daemon: &Daemon) -> anyhow::Result<()> {
+        let daemon_address = format!("{}:{}", daemon.hostname, daemon.port);
+        tracing::debug!(%daemon_address, ssl=%daemon.ssl, "Initializing wallet");
 
         let_cxx_string!(daemon_address = daemon_address);
         let_cxx_string!(daemon_username = "");
@@ -1482,7 +1521,7 @@ impl FfiWallet {
                 0,
                 &daemon_username,
                 &daemon_password,
-                ssl,
+                daemon.ssl,
                 false,
                 &proxy_address,
             )
