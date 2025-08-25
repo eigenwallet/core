@@ -130,6 +130,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -203,6 +205,8 @@ jobs:
       contents: read
       packages: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:

@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
+      - uses: actions/checkout@v4
+
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -32,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
+      - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -48,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
+      - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -79,6 +83,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
+      - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -127,6 +132,7 @@ jobs:
           swap-storage: false
           tool-cache: false
 
+      - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -190,6 +196,7 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
+      - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
@@ -204,6 +211,7 @@ jobs:
     runs-on: ubuntu-latest-m
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
+      - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
