@@ -41,12 +41,18 @@ runs:
       with:
         targets: ${{ inputs.rust-targets }}
 
-    - name: Install Tauri dependencies (Ubuntu)
+    - name: Install Tauri and build dependencies (Ubuntu)
       if: startsWith(inputs.platform, 'ubuntu')
       shell: bash
       run: |
         sudo apt update;
-        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{env.DEPS_TAURI_LINUX }} git
+        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
+
+    - name: Install build dependencies (macos)
+      if: startsWith(inputs.platform, 'macos')
+      shell: bash
+      run: |
+        brew install ${{ env.DEPS_BUILD_MACOS }}
 
     - name: Clone submodules
       shell: bash
