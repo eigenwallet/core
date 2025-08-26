@@ -20,9 +20,9 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          platform: ubuntu-latest-m
+          rust-targets: ""
+          install-windows-deps: "false"
 
       - name: Run clippy with default features
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -38,9 +38,9 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          platform: ubuntu-latest-m
+          rust-targets: ""
+          install-windows-deps: "false"
 
       - name: Build swap
         run: cargo build --bin swap
@@ -55,9 +55,9 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          platform: ubuntu-latest-m
+          rust-targets: ""
+          install-windows-deps: "false"
 
       - name: Run sqlite_dev_setup.sh script
         run: |
@@ -87,17 +87,12 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
+          platform: ${{ matrix.os }}
           rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
           install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
 
       - name: Build binary
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
         run: cargo build -p swap --target ${{ matrix.target }}
-
-      - name: Build binary (armv7)
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
-        run: cross build -p swap --target ${{ matrix.target }}
 
       - name: Upload swap binary
         uses: actions/upload-artifact@v4
@@ -136,9 +131,9 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          platform: ${{ matrix.os }}
+          rust-targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          install-windows-deps: ${{ startsWith(matrix.os, 'windows') && 'true' || 'false' }}
 
       - name: Run monero-harness tests
         if: matrix.os == 'ubuntu-latest-m'
@@ -200,9 +195,9 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          platform: "ubuntu-latest-m"
+          rust-targets: ""
+          install-windows-deps: "false"
 
       - name: Run test ${{ matrix.test_name }}
         run: cargo test --package ${{ matrix.package }} --test ${{ matrix.test_name }} -- --nocapture
@@ -215,9 +210,9 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          platform: ubuntu-latest-m
+          rust-targets: ""
+          install-windows-deps: "false"
 
       - name: Run cargo check on stable rust
         run: cargo check --all-targets
