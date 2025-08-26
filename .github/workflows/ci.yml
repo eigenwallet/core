@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   static_analysis:
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +20,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ubuntu-latest-m
+          platform: ubuntu-latest
           rust-targets: ""
           install-windows-deps: "false"
 
@@ -31,14 +31,14 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   bdk_test:
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ubuntu-latest-m
+          platform: ubuntu-latest
           rust-targets: ""
           install-windows-deps: "false"
 
@@ -48,14 +48,14 @@ jobs:
       - name: Run BDK regression script
         run: ./swap/tests/bdk.sh
   sqlx_test:
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ubuntu-latest-m
+          platform: ubuntu-latest
           rust-targets: ""
           install-windows-deps: "false"
 
@@ -69,10 +69,10 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest-m
+            os: ubuntu-latest
           # Temporarily disabled armv7 Linux builds
           # - target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest-m
+          #   os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-13
           - target: aarch64-apple-darwin
@@ -110,12 +110,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest-m, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - name: (Free disk space on Ubuntu)
-        if: matrix.os == 'ubuntu-latest-m'
+        if: matrix.os == 'ubuntu-latest'
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
         with:
           # removing all of these takes ~10 mins, so just do as needed
@@ -136,7 +136,7 @@ jobs:
           install-windows-deps: ${{ startsWith(matrix.os, 'windows') && 'true' || 'false' }}
 
       - name: Run monero-harness tests
-        if: matrix.os == 'ubuntu-latest-m'
+        if: matrix.os == 'ubuntu-latest'
         run: cargo test --package monero-harness --all-features
 
       - name: Run library tests for swap
@@ -188,14 +188,14 @@ jobs:
           - package: monero-sys
             test_name: harness_test
 
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: "ubuntu-latest-m"
+          platform: "ubuntu-latest"
           rust-targets: ""
           install-windows-deps: "false"
 
@@ -203,14 +203,14 @@ jobs:
         run: cargo test --package ${{ matrix.package }} --test ${{ matrix.test_name }} -- --nocapture
 
   check_stable:
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ubuntu-latest-m
+          platform: ubuntu-latest
           rust-targets: ""
           install-windows-deps: "false"
 
