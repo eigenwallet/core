@@ -72,19 +72,30 @@ trait IntoDaemon {
 
 impl IntoDaemon for url::Url {
     fn into_daemon(self) -> Result<Daemon> {
-        let address = self.to_string();
+        let hostname = self
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("No hostname found in URL"))?
+            .to_string();
+
+        let port = self
+            .port()
+            .ok_or_else(|| anyhow::anyhow!("No port found in URL"))?;
+
         let ssl = self.scheme() == "https";
 
-        Ok(Daemon { address, ssl })
+        Ok(Daemon {
+            hostname,
+            port,
+            ssl,
+        })
     }
 }
 
 impl IntoDaemon for monero_rpc_pool::ServerInfo {
     fn into_daemon(self) -> Result<Daemon> {
-        let address = format!("http://{}:{}", self.host, self.port);
-
         Ok(Daemon {
-            address,
+            hostname: self.host,
+            port: self.port,
             ssl: false,
         })
     }

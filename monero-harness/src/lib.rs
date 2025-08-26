@@ -73,9 +73,9 @@ impl<'c> Monero {
 
         let daemon = {
             let monerod_port = monerod_container.get_host_port_ipv4(RPC_PORT);
-            let monerod_url = format!("http://127.0.0.1:{}", monerod_port);
             Daemon {
-                address: monerod_url,
+                hostname: "127.0.0.1".to_string(),
+                port: monerod_port,
                 ssl: false,
             }
         };
@@ -83,13 +83,19 @@ impl<'c> Monero {
         {
             let client = reqwest::Client::new();
             let response = client
-                .get(format!("{}/get_info", &daemon.address))
+                .get(format!(
+                    "http://{}:{}/get_info",
+                    daemon.hostname, daemon.port
+                ))
                 .send()
                 .await?;
             tracing::debug!("Monerod response at /get_info: {:?}", response.status());
 
             let response = client
-                .get(format!("{}/json_rpc", &daemon.address))
+                .get(format!(
+                    "http://{}:{}/json_rpc",
+                    daemon.hostname, daemon.port
+                ))
                 .send()
                 .await?;
             tracing::debug!(
