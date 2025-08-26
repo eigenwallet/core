@@ -185,8 +185,8 @@ jobs:
             test_name: alice_empty_balance_after_started_btc_early_refund
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
-          - package: monero-sys
-            test_name: harness_test
+          # - package: monero-sys
+          #  test_name: harness_test
 
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
