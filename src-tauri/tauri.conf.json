@@ -29,13 +29,7 @@
   "bundle": {
     "createUpdaterArtifacts": true,
     "active": true,
-    "targets": [
-      "appimage",
-      "dmg",
-      "nsis",
-      "app",
-      "deb"
-    ],
+    "targets": ["appimage", "dmg", "nsis", "app", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -53,11 +47,7 @@
       "webviewInstallMode": {
         "type": "embedBootstrapper"
       }
-    },
-    "resources": [
-      "libstdc++-6.dll",
-      "libgcc_s_seh-1.dll"
-    ]
+    }
   },
   "plugins": {
     "updater": {
