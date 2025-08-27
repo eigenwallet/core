@@ -102,7 +102,22 @@ jobs:
       - name: Run library tests for swap
         run: cargo test --package swap --lib
 
+  prepare_docker_tests:
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' || !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
+        with:
+          host: ${{ matrix.os }}
+
+      - name: Run cargo build once to build the cache
+        run: cargo build --package swap
+
   docker_tests:
+    needs: prepare_docker_tests
     strategy:
       fail-fast: false
       matrix:
@@ -149,12 +164,6 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
-        with:
-          host: "ubuntu-latest"
-
       - name: Run test ${{ matrix.test_name }}
         run: cargo test --package ${{ matrix.package }} --test ${{ matrix.test_name }} -- --nocapture
 
