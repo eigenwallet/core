@@ -2,23 +2,19 @@ name: "Setup Build Environment"
 description: "Sets up the build environment with Node, Rust, dependencies, and tooling for Tauri builds"
 
 inputs:
-  platform:
-    description: "The platform being built for (e.g., ubuntu-24.04, macos-latest, windows-latest)"
+  host:
+    description: "The host being built on (e.g., ubuntu-24.04, macos-latest)"
     required: true
   rust-targets:
-    description: "Additional Rust targets to install (comma-separated)"
+    description: "Additional Rust targets to install and prepare for (e.g. x86_64-pc-windows-gnu when crossbuilding)"
     required: false
     default: ""
-  install-windows-deps:
-    description: "Whether to install Windows-specific dependencies"
-    required: false
-    default: "false"
 
 runs:
   using: "composite"
   steps:
     - name: Configure apt for retries (Ubuntu only)
-      if: startsWith(inputs.platform, 'ubuntu')
+      if: startsWith(inputs.host, 'ubuntu')
       shell: bash
       run: ${{ env.APT_SET_CONF_COMMAND }}
 
@@ -41,14 +37,14 @@ runs:
         targets: ${{ inputs.rust-targets }}
 
     - name: Install Tauri and build dependencies (Ubuntu)
-      if: startsWith(inputs.platform, 'ubuntu')
+      if: startsWith(inputs.host, 'ubuntu')
       shell: bash
       run: |
         sudo apt update;
         sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
 
     - name: Install build dependencies (macos)
-      if: startsWith(inputs.platform, 'macos')
+      if: startsWith(inputs.host, 'macos')
       shell: bash
       run: |
         brew install ${{ env.DEPS_BUILD_MACOS }}
@@ -93,13 +89,13 @@ runs:
         tool: sqlx-cli@0.6.3
 
     - name: Install cross (armv7)
-      if: inputs.platform == 'armv7-unknown-linux-gnueabihf'
+      if: inputs.host == 'armv7-unknown-linux-gnueabihf'
       uses: taiki-e/install-action@v2
       with:
         tool: cross
 
     - name: Prepare Windows build by building gcc from source
-      if: inputs.install-windows-deps == 'true' && startsWith(inputs.platform, 'windows')
+      if: contains(inputs.rust-targets, 'windows')
       shell: bash
       run: |
         just prepare-windows-build

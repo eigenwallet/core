@@ -30,26 +30,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest" # for Arm based macs (M1 and above).
-            args: "--target aarch64-apple-darwin"
-          - platform: "macos-13" # for Intel based macs.
-            args: "--target x86_64-apple-darwin"
-          - platform: "ubuntu-22.04" # We build on an older version to support older glib versions
-            args: "--bundles deb,appimage"
-          # Temporarily disabled Windows builds
-          # - platform: "windows-latest"
-          #   args: ""
+          - host: "macos-latest" # for Arm based macs (M1 and above).
+            target: "aarch64-apple-darwin"
+          - host: "macos-13" # for Intel based macs.
+            target: "x86_64-apple-darwin"
+          - host: "ubuntu-22.04" # We build on an older version to support older glib versions
+            target: "x86_64-unknown-linux-gnu"
+          - host: "ubuntu-22.04" # cross build windows from ubuntu
+            target: "x86_64-pc-windows-gnu"
 
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.host }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          host: ${{ matrix.host }}
+          rust-targets: ${{ matrix.target }}
 
       - name: build tauri app and upload to github releases page
         uses: tauri-apps/tauri-action@v0
@@ -66,7 +64,6 @@ jobs:
         with:
           releaseId: ${{ github.event.release.id }}
           projectPath: src-tauri
-          args: ${{ matrix.args }}
           tauriScript: cargo tauri
 
       - name: upload to crabnebula release (not for previews)
@@ -75,6 +72,7 @@ jobs:
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
+          args: --target ${{ matrix.target }}
 
   publish:
     if: ${{ !contains(github.ref_name, 'preview') }} # don't publish previews to crabnebula

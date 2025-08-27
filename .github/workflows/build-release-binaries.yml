@@ -17,115 +17,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        bin: [swap, asb, asb-controller, orchestrator]
+        target:
+          [
+            x86_64-unknown-linux-gnu,
+            aarch64-apple-darwin,
+            x86_64-apple-darwin,
+            x86_64-pc-windows-gnu,
+          ]
+        host: [ubuntu-22.04] # default host: ubuntu
+        archive_extension: [tar] # default extension: tar
         include:
-          - bin: swap
-            crate: swap
-            target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive_ext: tar
-          # Temporarily disabled armv7 Linux builds
-          # - bin: swap
-          #   crate: swap
-          #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
-          #   archive_ext: tar
-          - bin: swap
-            crate: swap
-            target: x86_64-apple-darwin
-            os: macos-13
-            archive_ext: tar
-          - bin: swap
-            crate: swap
-            target: aarch64-apple-darwin
-            os: macos-latest
-            archive_ext: tar
-          # Temporarily disabled Windows builds
-          # - bin: swap
-          #   crate: swap
-          #   target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          #   archive_ext: zip
-          - bin: asb
-            crate: swap-asb
-            target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive_ext: tar
-          # Temporarily disabled armv7 Linux builds
-          # - bin: asb
-          #   crate: swap-asb
-          #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
-          #   archive_ext: tar
-          - bin: asb
-            crate: swap-asb
-            target: x86_64-apple-darwin
-            os: macos-13
-            archive_ext: tar
-          - bin: asb
-            crate: swap-asb
-            target: aarch64-apple-darwin
-            os: macos-latest
-            archive_ext: tar
-          # Temporarily disabled Windows builds
-          # - bin: asb
-          #   crate: swap-asb
-          #   target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          #   archive_ext: zip
-          - bin: asb-controller
-            crate: swap-controller
-            target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive_ext: tar
-          # Temporarily disabled armv7 Linux builds
-          # - bin: asb-controller
-          #   crate: swap-controller
-          #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
-          #   archive_ext: tar
-          - bin: asb-controller
-            crate: swap-controller
-            target: x86_64-apple-darwin
-            os: macos-13
-            archive_ext: tar
-          - bin: asb-controller
-            crate: swap-controller
-            target: aarch64-apple-darwin
-            os: macos-latest
-            archive_ext: tar
-          # Temporarily disabled Windows builds
-          # - bin: asb-controller
-          #   crate: swap-controller
-          #   target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          #   archive_ext: zip
-          - bin: orchestrator
-            crate: swap-orchestrator
-            target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive_ext: tar
-          # Temporarily disabled armv7 Linux builds
-          # - bin: orchestrator
-          #   crate: swap-orchestrator
-          #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
-          #   archive_ext: tar
-          - bin: orchestrator
-            crate: swap-orchestrator
-            target: x86_64-apple-darwin
-            os: macos-13
-            archive_ext: tar
-          - bin: orchestrator
-            crate: swap-orchestrator
-            target: aarch64-apple-darwin
-            os: macos-latest
-            archive_ext: tar
-          # Temporarily disabled Windows builds
-          # - bin: orchestrator
-          #   crate: swap-orchestrator
-          #   target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          #   archive_ext: zip
+          # build for arm macos on arm macos
+          - target: aarch64-apple-darwin
+            host: macos-latest
+          # build for intel macos on intel macos
+          - target: x86_64-apple-darwin
+            host: macos-13
+          # use .zip for windows
+          - target: x86_64-pc-windows-gnu
+            archive_extension: zip
 
     runs-on: ${{ matrix.os }}
 
@@ -135,24 +46,11 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
-
-      - name: Cross Build ${{ matrix.target }} ${{ matrix.bin }} binary
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
-        run: |
-          curl -L "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz" | tar xzv
-          sudo mv cross /usr/bin
-          sudo mv cross-util /usr/bin
-          cross build --target=${{ matrix.target }} --release --package ${{ matrix.crate }} --bin ${{ matrix.bin }}
-
-      - name: Build ${{ matrix.target }} ${{ matrix.bin }} release binary
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
-        run: cargo build --target=${{ matrix.target }} --release --package ${{ matrix.crate }} --bin ${{ matrix.bin }}
+          host: ${{ matrix.host }}
+          rust-targets: ${{ matrix.target }}
 
       - name: Smoke test the binary
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.bin != 'orchestrator'
+        if: matrix.bin != 'orchestrator' # ignore orchestrator, since it's interactive
         run: target/${{ matrix.target }}/release/${{ matrix.bin }} --help
 
       - id: create-archive-name
@@ -166,22 +64,22 @@ jobs:
           triple = "${{ matrix.target }}".split("-")
           arch = triple[0]
 
-          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name }}_{os_info.system}_{arch}.${{ matrix.archive_ext }}'
+          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name }}_{os_info.system}_{arch}.${{ matrix.archive_extension }}'
 
           print(f'::set-output name=archive::{archive_name}')
 
       - name: Pack macos archive
-        if: startsWith(matrix.os, 'macos')
+        if: contains(matrix.target, 'macos')
         shell: bash
         run: gtar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
 
       - name: Pack linux archive
-        if: matrix.os == 'ubuntu-latest'
+        if: contains(matrix.target, 'ubuntu')
         shell: bash
         run: tar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
 
       - name: Pack windows archive
-        if: matrix.os == 'windows-latest'
+        if: contains(matrix.target, 'windows')
         shell: bash
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.bin }}.exe ./${{ matrix.bin }}.exe
@@ -210,9 +108,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.platform }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          host: ${{ matrix.platform }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2

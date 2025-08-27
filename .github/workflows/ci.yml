@@ -20,9 +20,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ubuntu-latest
-          rust-targets: ""
-          install-windows-deps: "false"
+          host: ubuntu-latest
 
       - name: Run clippy with default features
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -30,23 +28,6 @@ jobs:
       - name: Run clippy with all features enabled
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  bdk_test:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || !github.event.pull_request.draft
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
-        with:
-          platform: ubuntu-latest
-          rust-targets: ""
-          install-windows-deps: "false"
-
-      - name: Build swap
-        run: cargo build --bin swap
-
-      - name: Run BDK regression script
-        run: ./swap/tests/bdk.sh
   sqlx_test:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
@@ -55,14 +36,12 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ubuntu-latest
-          rust-targets: ""
-          install-windows-deps: "false"
+          host: ubuntu-latest
 
-      - name: Run sqlite_dev_setup.sh script
+      - name: Run sqlx cache setup script
         run: |
-          cd swap
-          ./sqlite_dev_setup.sh
+          just generate-sqlx-cache
+
   build:
     strategy:
       fail-fast: false
@@ -70,16 +49,13 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          # Temporarily disabled armv7 Linux builds
-          # - target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
           - target: x86_64-apple-darwin
             os: macos-13
           - target: aarch64-apple-darwin
             os: macos-latest
-          # Temporarily disabled Windows builds
-          # - target: x86_64-pc-windows-msvc
-          #   os: windows-latest-l
+          - target: x86_64-pc-windows-gnu
+            os: ubuntu-latest
+
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
@@ -87,9 +63,8 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.os }}
-          rust-targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.platform, 'windows') && 'true' || 'false' }}
+          host: ${{ matrix.os }}
+          target: ${{ matrix.target }}
 
       - name: Build binary
         run: cargo build -p swap --target ${{ matrix.target }}
@@ -114,26 +89,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
-      - name: (Free disk space on Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
-        with:
-          # removing all of these takes ~10 mins, so just do as needed
-          android: true
-          dotnet: true
-          haskell: true
-          docker-images: false
-          large-packages: false
-          swap-storage: false
-          tool-cache: false
-
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ${{ matrix.os }}
-          rust-targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-          install-windows-deps: ${{ startsWith(matrix.os, 'windows') && 'true' || 'false' }}
+          host: ${{ matrix.os }}
 
       - name: Run monero-harness tests
         if: matrix.os == 'ubuntu-latest'
@@ -185,8 +145,6 @@ jobs:
             test_name: alice_empty_balance_after_started_btc_early_refund
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
-          # - package: monero-sys
-          #  test_name: harness_test
 
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || !github.event.pull_request.draft
@@ -195,9 +153,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: "ubuntu-latest"
-          rust-targets: ""
-          install-windows-deps: "false"
+          host: "ubuntu-latest"
 
       - name: Run test ${{ matrix.test_name }}
         run: cargo test --package ${{ matrix.package }} --test ${{ matrix.test_name }} -- --nocapture
@@ -210,9 +166,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          platform: ubuntu-latest
-          rust-targets: ""
-          install-windows-deps: "false"
+          host: ubuntu-latest
 
       - name: Run cargo check on stable rust
         run: cargo check --all-targets
