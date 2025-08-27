@@ -111,7 +111,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.os }}
+          host: ubuntu-22.04
 
       - name: Run cargo build once to build the cache
         run: cargo build --package swap
