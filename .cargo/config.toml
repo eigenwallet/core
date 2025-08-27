@@ -1,8 +1,8 @@
+# Global stack size for all targets - 12MB
+[build]
+rustflags = ["-C", "link-args=-z stack-size=12582912"]
+
 # Cross-compilation support for armv7
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"
 
-# Windows defaults to smaller stack sizes which isn't enough due to
-# our ginormous call stacks
-[target.'cfg(windows)']
-rustflags = ["-C", "link-args=/STACK:8388608"]
