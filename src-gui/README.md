@@ -9,6 +9,8 @@
 - For formatting and bindings: `dprint` (`cargo install dprint@0.50.0`) and `typeshare` (`cargo install typeshare-cli`)
 - If you are on Windows and you want to use the `check-bindings` command you'll need to manually install the GNU DiffUtils ([installation](https://gnuwin32.sourceforge.net/packages/diffutils.htm)) and GNU CoreUtils ([installtion](https://gnuwin32.sourceforge.net/packages/coreutils.htm)). Remember to add the installation path (probably `C:\Program Files (x86)\GnuWin32\bin`) to the `PATH` in your enviroment variables.
 
+- Compiling for Windows is only possible from Ubuntu (x86_64). It requires a very recent mingw version which you'll need to build from source. You can do this by running `just prepare-windows-build` from the root of the repository.
+
 ## Start development servers
 
 For development, we need to run both `vite` and `tauri` servers:

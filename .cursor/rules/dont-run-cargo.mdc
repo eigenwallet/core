@@ -1,9 +1,11 @@
 ---
-description: Don't run cargo commands. Ask the user to compile.
+description: Don't run cargo clean. Ask the user to confirm.
 globs:
 alwaysApply: true
 ---
 
-Only run cargo commands after asking the user. Prefer not to run cargo commands. Ask the user to compile.
+Only run cargo clean after asking the user. 
 
-If the user says "run cargo commands" then use cargo commands.
+If the user says "run cargo clean" then use cargo clean.
+
+The codebase takes a long ass time to compile, that's why.
