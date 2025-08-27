@@ -37,14 +37,14 @@ runs:
         targets: ${{ inputs.target }}
 
     - name: Install Tauri and build dependencies (Ubuntu)
-      if: startsWith(inputs.host, 'ubuntu')
+      if: contains(inputs.host, 'ubuntu')
       shell: bash
       run: |
         sudo apt update;
         sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
 
     - name: Install build dependencies (macos)
-      if: startsWith(inputs.host, 'macos')
+      if: contains(inputs.host, 'macos')
       shell: bash
       run: |
         brew install ${{ env.DEPS_BUILD_MACOS }}
