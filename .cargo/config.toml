@@ -1,8 +1,14 @@
+# Stack size for executables - 12MB
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))']
+rustflags = ["-C", "link-arg=-Wl,-z,stack-size=12582912"]
+
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-Wl,-stack_size,0xc00000"]
+
+[target.'cfg(target_os = "windows")']
+rustflags = ["-C", "link-args=/STACK:12582912"]
+
 # Cross-compilation support for armv7
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"
 
-# Windows defaults to smaller stack sizes which isn't enough due to
-# our ginormous call stacks
-[target.'cfg(windows)']
-rustflags = ["-C", "link-args=/STACK:8388608"]

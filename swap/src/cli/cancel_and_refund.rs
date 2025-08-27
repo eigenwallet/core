@@ -1,10 +1,11 @@
-use crate::bitcoin::{ExpiredTimelocks, Wallet};
+use crate::bitcoin::Wallet;
 use crate::monero::BlockHeight;
 use crate::protocol::bob::BobState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
 use bitcoin::Txid;
 use std::sync::Arc;
+use swap_core::bitcoin::ExpiredTimelocks;
 use uuid::Uuid;
 
 pub async fn cancel_and_refund(
@@ -18,7 +19,7 @@ pub async fn cancel_and_refund(
 
     let state = match refund(swap_id, bitcoin_wallet, db).await {
         Ok(s) => s,
-        Err(e) => bail!(e),
+        Err(e) => bail!("{}", e),
     };
 
     Ok(state)
