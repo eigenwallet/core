@@ -14,7 +14,7 @@ runs:
         # echo "DEPS_TAURI_LINUX=libwebkit2gtk-4.1-dev curl wget file libxdo-dev libayatana-appindicator3-dev librsvg2-dev" >> $GITHUB_ENV
 
         # Build tooling (Linux)
-        echo "DEPS_BUILD_LINUX=autoconf nsis mingw-w64 build-essential pkg-config libtool ccache make cmake gcc g++ git curl lbzip2 gperf g++-mingw-w64-x86-64 openssl" >> $GITHUB_ENV
+        echo "DEPS_BUILD_LINUX=autoconf nsis mingw-w64 build-essential pkg-config libtool ccache make cmake gcc g++ git curl lbzip2 gperf g++-mingw-w64-x86-64" >> $GITHUB_ENV
 
         # Build tooling (macos)
         echo "DEPS_BUILD_MACOS=autoconf automake pkg-config libtool ccache make cmake gcc git curl lbzip2 gperf" >> $GITHUB_ENV

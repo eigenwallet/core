@@ -86,7 +86,7 @@ runs:
     - name: Install sqlx-cli globally
       uses: taiki-e/install-action@v2
       with:
-        tool: sqlx-cli@0.6.3
+        tool: sqlx-cli@0.8.6
 
     - name: Install cross (armv7)
       if: inputs.host == 'armv7-unknown-linux-gnueabihf'
