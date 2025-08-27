@@ -1,9 +1,9 @@
-use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin_wallet::primitives::Subscription;
+use ecdsa_fun::Signature;
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::nonce::Deterministic;
-use ecdsa_fun::Signature;
 use monero::BlockHeight;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -12,11 +12,11 @@ use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    self, current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxLock, Txid,
+    self, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxLock, Txid,
+    current_epoch,
 };
-use swap_core::monero::primitives::WatchRequest;
 use swap_core::monero::ScalarExt;
+use swap_core::monero::primitives::WatchRequest;
 use swap_core::monero::{self, TransferProof};
 use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
