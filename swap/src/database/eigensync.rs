@@ -2,8 +2,10 @@ use std::{collections::{HashMap, HashSet}, str::FromStr, sync::Arc, time::{Durat
 
 use autosurgeon::{Hydrate, HydrateError, Reconcile, Reconciler};
 use autosurgeon::reconcile::NoKey;
+use bdk::bitcoin::hashes::hash160::Hash;
 use eigensync::EigensyncHandle;
 use libp2p::{Multiaddr, PeerId};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 // serde kept via Cargo features; no direct derives used here
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -13,62 +15,86 @@ use time::UtcDateTime;
 
 use crate::{database::Swap, monero::{LabeledMoneroAddress, MoneroAddressPool, TransferProof}, protocol::{Database, State}};
 
+#[derive(Serialize, Deserialize, Clone, Eq, Hash, PartialEq, Hydrate, Reconcile, Debug)]
+struct KeyWrapper<T>(T, String);
+
+impl<T: Serialize> KeyWrapper<T> {
+    fn new(key: T) -> Self {
+        let json = serde_json::to_string(&key).unwrap();
+        Self(key, json)
+    }
+}
+
+impl<T> AsRef<str> for KeyWrapper<T> {
+    fn as_ref(&self) -> &str {
+        &self.1
+    }
+}
+
+impl<T: DeserializeOwned> From<String> for KeyWrapper<T> {
+    fn from(s: String) -> Self {
+        Self(serde_json::from_str(&s).unwrap(), s)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EigensyncDocument {
     // swap_id, swap
-    states: HashMap<StateKey, State>, // swap_states table
+    states: HashMap<InnerStateKey, State>, // swap_states table
     // peer_addresses table
-    peer_addresses: HashMap<PeerAddressesKey, ()>, // (peer_id, address)
+    peer_addresses: HashMap<InnerPeerAddressesKey, ()>, // (peer_id, address)
     // peers table
     peers: HashMap<Uuid, PeerId>, //  (swap_id, peer_id)
     // monero_addresses table
-    monero_addresses: HashMap<MoneroAddressKey, (Decimal, String)>, // (swap_id, address) -> (percentage, label)
+    monero_addresses: HashMap<InnerMoneroAddressKey, MoneroAddressValue>, // (swap_id, address) -> (percentage, label)
     // buffered_transfer_proofs table
     buffered_transfer_proofs: HashMap<Uuid, TransferProof>, // (swap_id, proof)
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-struct MoneroAddressKey((Uuid, Option<String>));
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
+struct MoneroAddressValue(Decimal, String);
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-struct StateKey((Uuid, UtcDateTime));
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
+struct InnerMoneroAddressKey(Uuid, Option<String>);
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-struct PeerAddressesKey((PeerId, Multiaddr));
+type MoneroAddressKey = KeyWrapper<InnerMoneroAddressKey>;
+
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
+struct InnerStateKey(Uuid, UtcDateTime);
+
+type StateKey = KeyWrapper<InnerStateKey>;
+
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
+struct InnerPeerAddressesKey(PeerId, Multiaddr);
+
+type PeerAddressesKey = KeyWrapper<InnerPeerAddressesKey>;
 
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
 struct EigensyncWire {
-    states: HashMap<String, String>,
+    states: HashMap<StateKey, String>,
     // encode (peer_id, addr) -> "peer_id|addr", unit value as bool true
-    peer_addresses: HashMap<String, bool>,
+    peer_addresses: HashMap<PeerAddressesKey, bool>,
     // swap_id -> peer_id
     peers: HashMap<String, String>,
     // encode (swap_id, address?) -> "swap_id|address_or_-"; store (Decimal, String) as (String, String)
-    monero_addresses: HashMap<String, String>,
+    monero_addresses: HashMap<MoneroAddressKey, String>,
     // buffered_transfer_proofs table
     buffered_transfer_proofs: HashMap<String, String>, // (swap_id, proof)
 }
 
 impl From<&EigensyncDocument> for EigensyncWire {
     fn from(src: &EigensyncDocument) -> Self {
-        fn enc_pair(a: &str, b: &str) -> String { format!("{a}|{b}") }
-        fn enc_mo_key(swap: &Uuid, addr: &Option<String>) -> String {
-            enc_pair(swap.to_string().as_str(), addr.as_deref().unwrap_or("-"))
-        }
-
-        let peer_addresses = src.peer_addresses.iter()
-            .map(|(key, _)| (enc_pair(&key.0.0.to_string(), &key.0.1.to_string()), true))
+        let peer_addresses = src.peer_addresses.iter().map(|(key, _)|
+            (KeyWrapper::new(key.clone()), true))
             .collect();
 
-        let monero_addresses = src.monero_addresses.iter().map(|(key, (pct, label))| {
-            (enc_mo_key(&key.0.0, &key.0.1), format!("{pct}|{label}"))
+        let monero_addresses = src.monero_addresses.iter().map(|(key, value)| {
+            (KeyWrapper::new(key.clone()), serde_json::to_string(value).unwrap())
         }).collect();
 
         let states = src.states.iter().map(|(key, state)| {
-            let key_str = format!("{}_{}", key.0.0, key.0.1);
             let state_json = serde_json::to_string(&Swap::from(state.clone())).unwrap();
-            (key_str, state_json)
+            (KeyWrapper::new(key.clone()), state_json)
         }).collect();
 
         let peers = src.peers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
@@ -88,51 +114,26 @@ impl From<&EigensyncDocument> for EigensyncWire {
 impl TryFrom<EigensyncWire> for EigensyncDocument {
     type Error = anyhow::Error;
     fn try_from(w: EigensyncWire) -> anyhow::Result<Self> {
-        fn dec_pair(s: &str) -> anyhow::Result<(String, String)> {
-            let mut it = s.splitn(2, '|');
-            let a = it.next().ok_or_else(|| anyhow::anyhow!("bad key"))?.to_string();
-            let b = it.next().ok_or_else(|| anyhow::anyhow!("bad key"))?.to_string();
-            Ok((a, b))
-        }
-        fn dec_mo_key(s: &str) -> anyhow::Result<(Uuid, Option<String>)> {
-            let (swap, addr) = dec_pair(s)?;
-            let swap_id = Uuid::parse_str(&swap)?;
-            Ok((swap_id, if addr == "-" { None } else { Some(addr) }))
-        }
-
         let peer_addresses = w.peer_addresses.into_iter().map(|(k, _)| {
-            let (p, a) = dec_pair(&k)?;
-            let peer_id = PeerId::from_str(&p)?;
-            let addr = Multiaddr::from_str(&a)?;
-            Ok((PeerAddressesKey((peer_id, addr)), ()))
-        }).collect::<anyhow::Result<HashMap<PeerAddressesKey, ()>>>()?;
+            let (peer_id, addr) = (k.0.0, k.0.1);
+            Ok((InnerPeerAddressesKey(peer_id, addr), ()))
+        }).collect::<anyhow::Result<HashMap<InnerPeerAddressesKey, ()>>>()?;
 
         let monero_addresses = w.monero_addresses.into_iter().map(|(k, v)| {
-            let (swap, addr) = dec_mo_key(&k)?;
-            let parts: Vec<&str> = v.split('|').collect();
-            let pct = parts[0];
-            let label = parts[1];
-            let dec = Decimal::from_str(pct)?;
-            Ok((MoneroAddressKey((swap, addr)), (dec, label.to_string())))
-        }).collect::<anyhow::Result<HashMap<MoneroAddressKey, (Decimal, String)>>>()?;
+            let value: MoneroAddressValue = serde_json::from_str(&v)?;
+            Ok((k.0, value))
+        }).collect::<anyhow::Result<HashMap<InnerMoneroAddressKey, MoneroAddressValue>>>()?;
 
         let states = w
             .states
             .into_iter()
             .map(|(k, v)| {
-                let mut it = k.splitn(2, '_');
-                let swap_id_s = it.next().ok_or_else(|| anyhow!("bad state key"))?;
-                let ts_s = it.next().ok_or_else(|| anyhow!("bad state key"))?;
-                let swap_id = Uuid::parse_str(swap_id_s)?;
+                let swap_id = k.0.0;
+                let timestamp = k.0.1;
                 let swap: Swap = serde_json::from_str(&v)?;
                 let state: State = swap.into();
                 // convert to utc date time from string like "2025-07-28 15:23:12.0 +00"
-                let format = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour]")
-                    .expect("Failed to create format description");
-                let timestamp = time::OffsetDateTime::parse(ts_s, &format)
-                    .expect("Failed to parse timestamp")
-                    .into();
-                Ok((StateKey((swap_id, timestamp)), state))
+                Ok((InnerStateKey(swap_id, timestamp), state))
             })
             .collect::<anyhow::Result<HashMap<_, _>>>()?;
 
@@ -205,80 +206,59 @@ impl EigensyncDatabaseAdapter {
 
     pub async fn upload_states(&self) -> anyhow::Result<()> {
         // get from db -> write into document
+        let mut new_states = HashMap::new();
+        let mut new_peers = HashMap::new();
+        let mut new_addresses = HashMap::new();
+        let mut new_proof = HashMap::new();
+        let mut new_peer_addresses = HashMap::new();
 
-        let all_states_time = Instant::now();
-        //states table
+        let mut document_lock = self.eigensync_handle.write().await;
+        let document_state = document_lock.get_document_state().expect("Eigensync document should be present");
+        let swap_states = document_state.states;
+
         for (swap_id, state, timestamp) in self.db.get_all_states().await? {
-            let one_state_time = Instant::now();
-            if self.eigensync_handle.write().await.get_document_state().expect("Eigensync document should be present").states.contains_key(&StateKey((swap_id, timestamp))) {
+            if swap_states.contains_key(&InnerStateKey(swap_id, timestamp)) {
                 continue;
             }
 
-            let start_time = Instant::now();
-            self.eigensync_handle.write().await.modify(|document| {
-                document.states.insert(StateKey((swap_id, timestamp)), state);
-                Ok(())
-            })?;
-            tracing::info!("state inserted, took {:?}", start_time.elapsed());
+            let peer_id = self.db.get_peer_id(swap_id).await?;
+            let address_pool = self.db.get_monero_address_pool(swap_id).await?;
+            let mut temp_monero_addresses = HashMap::new();
+            let proof = self.db.get_buffered_transfer_proof(swap_id).await?;
 
-            let start_time = Instant::now();
-            //peers table
-            if let Ok(peer_id) = self.db.get_peer_id(swap_id).await {
-                self.eigensync_handle.write().await.modify(|document| {
-                    document.peers.insert(swap_id, peer_id);
-                    Ok(())
-                })?;
+            for labeled in address_pool.iter() {
+                let address_opt_str = labeled.address().map(|a| a.to_string());
+                let percentage = labeled.percentage();
+                let label = labeled.label().to_string();
+                temp_monero_addresses.insert(InnerMoneroAddressKey(swap_id, address_opt_str), MoneroAddressValue(percentage, label));
             }
-            tracing::info!("peer inserted, took {:?}", start_time.elapsed());
 
-            let start_time = Instant::now();
-            if let Ok(address_pool) = self.db.get_monero_address_pool(swap_id).await {
-                // Collect all monero address entries in a temporary HashMap
-                let mut temp_monero_addresses = HashMap::new();
-                for labeled in address_pool.iter() {
-                    let address_opt_str = labeled.address().map(|a| a.to_string());
-                    let percentage = labeled.percentage();
-                    let label = labeled.label().to_string();
-                    temp_monero_addresses.insert(MoneroAddressKey((swap_id, address_opt_str)), (percentage, label));
-                }
-                
-                // Insert all monero addresses at once
-                if !temp_monero_addresses.is_empty() {
-                    self.eigensync_handle.write().await.modify(|document| {
-                        document.monero_addresses.extend(temp_monero_addresses);
-                        Ok(())
-                    })?;
-                }
+            new_states.insert(InnerStateKey(swap_id, timestamp), state);
+            new_peers.insert(swap_id, peer_id);
+            new_addresses.extend(temp_monero_addresses);
+            if let Some(proof) = proof {
+                new_proof.insert(swap_id, proof);
             }
-            tracing::info!("monero addresses inserted, took {:?}", start_time.elapsed());
-
-            let start_time = Instant::now();
-            if let Ok(proof) = self.db.get_buffered_transfer_proof(swap_id).await {
-                if let Some(proof) = proof {
-                    self.eigensync_handle.write().await.modify(|document| {
-                        document.buffered_transfer_proofs.insert(swap_id, proof);
-                        Ok(())
-                    })?;
-                }
-            }
-            tracing::info!("buffered transfer proof inserted, took {:?}", start_time.elapsed());
-            tracing::info!("one state took {:?}", one_state_time.elapsed());
         }
 
-        tracing::info!("uploading {} states took {:?}", self.db.get_all_states().await?.len(), all_states_time.elapsed());
-
-        //peer_addresses table
-        let start_time = Instant::now();
+        let document_peer_addresses = document_state.peer_addresses;
         for (peer_id, addresses) in self.db.get_all_peer_addresses().await? {
-            self.eigensync_handle.write().await.modify(|document| {
-                for address in addresses {
-                    document.peer_addresses.insert(PeerAddressesKey((peer_id, address)), ());
+            for address in addresses {
+                let key = InnerPeerAddressesKey(peer_id, address);
+                if !document_peer_addresses.contains_key(&key) {
+                    new_peer_addresses.insert(key, ());
                 }
-                Ok(())
-            })?;
+            }
         }
-        tracing::info!("peer addresses inserted, took {:?}", start_time.elapsed());
-        //tracing::info!("Uploaded {} states", self.db.get_all_states().await?.len());
+
+        document_lock.modify(|document| {
+            document.peers.extend(new_peers);
+            document.states.extend(new_states);
+            document.monero_addresses.extend(new_addresses);
+            document.buffered_transfer_proofs.extend(new_proof);
+            document.peer_addresses.extend(new_peer_addresses);
+            Ok(())
+        })?;
 
         Ok(())
     }
@@ -290,15 +270,15 @@ impl EigensyncDatabaseAdapter {
         tracing::info!("Document has {} states", document.states.len());
 
         // States table
-        let document_states: HashSet<StateKey> = document.states.keys().cloned().collect();
+        let document_states: HashSet<InnerStateKey> = document.states.keys().cloned().collect();
         let document_states_len = document_states.len();
         let db_states = self.db.get_all_states().await?;
 
         let mut document_states = document_states.into_iter().collect::<Vec<_>>();
-        document_states.sort_by_key(|state_key| state_key.0.1);
+        document_states.sort_by_key(|state_key| state_key.1);
 
         for state_key in document_states {
-            let (swap_id, timestamp) = (state_key.0.0, state_key.0.1);
+            let (swap_id, timestamp) = (state_key.0, state_key.1);
 
             let document_state: State = document
                 .states
@@ -318,11 +298,11 @@ impl EigensyncDatabaseAdapter {
         }
 
         //peer_addresses table
-        let document_peer_addresses: HashSet<PeerAddressesKey> = document.peer_addresses.keys().cloned().collect();
+        let document_peer_addresses: HashSet<InnerPeerAddressesKey> = document.peer_addresses.keys().cloned().collect();
         let db_peer_addresses = self.db.get_all_peer_addresses().await?;
 
         for peer_address_key in document_peer_addresses {
-            let (peer_id, address) = (peer_address_key.0.0, peer_address_key.0.1);
+            let (peer_id, address) = (peer_address_key.0, peer_address_key.1);
 
             if db_peer_addresses.iter().any(|(p, a)| p == &peer_id && a.contains(&address)) {
                 continue;
@@ -352,11 +332,11 @@ impl EigensyncDatabaseAdapter {
         }
 
         //monero_addresses table
-        let document_monero_addresses: HashSet<MoneroAddressKey> = document.monero_addresses.keys().cloned().collect();
+        let document_monero_addresses: HashSet<InnerMoneroAddressKey> = document.monero_addresses.keys().cloned().collect();
         let db_monero_addresses = self.db.get_monero_addresses().await?;
 
         for monero_address_key in document_monero_addresses {
-            let (swap_id, address) = (monero_address_key.0.0.clone(), monero_address_key.0.1.clone());
+            let (swap_id, address) = (monero_address_key.0.clone(), monero_address_key.1.clone());
 
             // Check if the address exists in the database
             let address_exists = if let Some(addr_str) = &address {
@@ -371,7 +351,7 @@ impl EigensyncDatabaseAdapter {
             }
 
             // Get the percentage and label from the document
-            let (percentage, label) = document.monero_addresses.get(&monero_address_key)
+            let MoneroAddressValue(percentage, label) = document.monero_addresses.get(&monero_address_key)
                 .ok_or_else(|| anyhow!("Monero address data not found"))?;
             
             // Create a MoneroAddressPool with the address data

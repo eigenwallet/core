@@ -98,7 +98,7 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = "1.8.1"
-autosurgeon = "0.8.7"
+autosurgeon = { version = "0.8.7", features = ["uuid"] }
 automerge = "0.6.1"
 
 [target.'cfg(not(windows))'.dependencies]
