@@ -108,7 +108,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.platform }}
+          host: ubuntu-latest
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
