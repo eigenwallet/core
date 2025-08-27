@@ -95,6 +95,7 @@ runs:
         tool: cross
 
     - name: Make sure we really have the rust target installed
+      if: ${{ inputs.target }} != ''
       shell: bash
       run: |
         rustup target add ${{ inputs.target }}
