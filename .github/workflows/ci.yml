@@ -89,42 +89,6 @@ jobs:
           aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
 
-<<<<<<< HEAD
-=======
-  bdk_test:
-    runs-on: ubuntu-latest-m
-    if: github.event_name == 'push' || !github.event.pull_request.draft
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4.1.7
-        with:
-          submodules: recursive
-        
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
-
-      - uses: actionhippie/swap-space@v1
-        with:
-          size: 15G
-
-      - name: Configure apt for retries
-        run: ${{ env.APT_SET_CONF_COMMAND }}
-
-      - name: Install dependencies (ubuntu-latest-m)
-        run: |
-          sudo apt update
-          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }}
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-        
-      - name: Build swap
-        run: cargo build --bin swap
-
-      - name: Run BDK regression script
-        run: ./swap/tests/bdk.sh
-
->>>>>>> master
   build:
     strategy:
       fail-fast: false
