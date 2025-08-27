@@ -5,7 +5,7 @@ inputs:
   host:
     description: "The host being built on (e.g., ubuntu-24.04, macos-latest)"
     required: true
-  rust-targets:
+  target:
     description: "Additional Rust targets to install and prepare for (e.g. x86_64-pc-windows-gnu when crossbuilding)"
     required: false
     default: ""
@@ -34,7 +34,7 @@ runs:
     - name: Install Rust stable
       uses: dtolnay/rust-toolchain@1.87
       with:
-        targets: ${{ inputs.rust-targets }}
+        targets: ${{ inputs.target }}
 
     - name: Install Tauri and build dependencies (Ubuntu)
       if: startsWith(inputs.host, 'ubuntu')
@@ -94,8 +94,13 @@ runs:
       with:
         tool: cross
 
+    - name: Make sure we really have the rust target installed
+      shell: bash
+      run: |
+        rustup target add ${{ inputs.target }}
+
     - name: Prepare Windows build by building gcc from source
-      if: contains(inputs.rust-targets, 'windows')
+      if: contains(inputs.target, 'windows')
       shell: bash
       run: |
         just prepare-windows-build

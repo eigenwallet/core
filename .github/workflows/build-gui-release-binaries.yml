@@ -47,7 +47,7 @@ jobs:
         uses: ./.github/actions/setup-build-environment
         with:
           host: ${{ matrix.host }}
-          rust-targets: ${{ matrix.target }}
+          target: ${{ matrix.target }}
 
       - name: build tauri app and upload to github releases page
         uses: tauri-apps/tauri-action@v0
