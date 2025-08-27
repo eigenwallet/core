@@ -7,17 +7,25 @@ use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use autosurgeon::{Hydrate, Reconcile};
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
+use time::UtcDateTime;
+use tokio::sync::RwLock;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
+use eigensync::EigensyncHandle;
 
 use super::AccessMode;
+use super::eigensync::EigensyncDocument;
 
 pub struct SqliteDatabase {
     pool: Pool<Sqlite>,
@@ -154,11 +162,11 @@ impl Database for SqliteDatabase {
         .await?;
 
         if row.is_empty() {
-            return Err(anyhow!(
-                "No Monero address pool found for swap ID: {}",
-                swap_id
-            ));
+            // Return empty pool instead of error
+            return Ok(MoneroAddressPool::new(vec![]));
         }
+
+        //tracing::info!("Row: {:?}", row);
 
         let addresses = row
             .iter()
@@ -278,12 +286,12 @@ impl Database for SqliteDatabase {
         Ok(peer_map.into_iter().collect())
     }
 
-    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<String> {
+    async fn get_swap_start_date(&self, swap_id: Uuid) -> Result<UtcDateTime> {
         let swap_id = swap_id.to_string();
 
         let row = sqlx::query!(
             r#"
-                SELECT min(entered_at) as start_date
+                SELECT min(entered_at) as "start_date: i64"
                 FROM swap_states
                 WHERE swap_id = ?
                 "#,
@@ -292,15 +300,15 @@ impl Database for SqliteDatabase {
         .fetch_one(&self.pool)
         .await?;
 
-        row.start_date
-            .ok_or_else(|| anyhow!("Could not get swap start date"))
+        let start_date = row.start_date.ok_or_else(|| anyhow!("Could not get swap start date"))?;
+        let start_date = UtcDateTime::from_unix_timestamp(start_date)?;
+        Ok(start_date)
     }
 
+    // TODO: This needs to take a timestamp as well (or None and then we generate it here)
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
-        let entered_at = OffsetDateTime::now_utc();
-
         let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = entered_at.to_string();
+        let entered_at = OffsetDateTime::now_utc().unix_timestamp();
         let swap_id_str = swap_id.to_string();
 
         sqlx::query!(
@@ -320,6 +328,34 @@ impl Database for SqliteDatabase {
 
         // Emit event to Tauri, the frontend will then send another request to get the latest state
         // This is why we don't send the state here
+        self.tauri_handle.emit_swap_state_change_event(swap_id);
+
+        Ok(())
+    }
+
+    async fn insert_existing_state(&self, swap_id: Uuid, state: State, entered_at: UtcDateTime) -> Result<()> {
+        let swap = serde_json::to_string(&Swap::from(state))?;
+        let swap_id_str = swap_id.to_string();
+
+        let entered_at = entered_at.unix_timestamp();
+        
+        sqlx::query!(
+            r#"
+            insert into swap_states (
+                swap_id,
+                entered_at,
+                state
+                ) values (?, ?, ?);
+        "#,
+            swap_id_str,
+            entered_at,
+            swap
+        )
+        .execute(&self.pool)
+        .await?;
+
+        tracing::info!("inserted existing state");
+
         self.tauri_handle.emit_swap_state_change_event(swap_id);
 
         Ok(())
@@ -349,12 +385,40 @@ impl Database for SqliteDatabase {
         Ok(swap.into())
     }
 
-    async fn all(&self) -> Result<Vec<(Uuid, State)>> {
+    async fn get_all_states(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT swap_id, state
+            SELECT swap_id, state, entered_at as "entered_at: i64"
+            FROM swap_states
+            ORDER BY entered_at DESC
+            "#
+        )
+            .fetch_all(&self.pool)
+            .await?;
+
+            let result = rows
+            .iter()
+            .filter_map(|row| {
+                let (swap_id, state, entered_at) = (&row.swap_id, &row.state, &row.entered_at);
+
+                let swap_id = Uuid::from_str(swap_id).ok().expect("Failed to parse swap_id");
+                let state = serde_json::from_str::<Swap>(state).ok().expect("Failed to parse state");
+                let entered_at = UtcDateTime::from_unix_timestamp(*entered_at).ok().expect("Failed to parse entered_at");
+
+                Some((swap_id, State::from(state), entered_at))
+            })
+            .collect::<Vec<(Uuid, State, UtcDateTime)>>();
+
+        Ok(result)
+    }
+
+    // TODO: Return timestamp here as well
+    async fn all(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT swap_id, state, entered_at as "entered_at: i64"
             FROM (
-                SELECT max(id), swap_id, state
+                SELECT max(id), swap_id, state, entered_at
                 FROM swap_states
                 GROUP BY swap_id
             )
@@ -363,11 +427,13 @@ impl Database for SqliteDatabase {
         .fetch_all(&self.pool)
         .await?;
 
+        tracing::info!("Raw rows from database: {}", rows.len());
+
         let result = rows
             .iter()
             .filter_map(|row| {
-                let (Some(swap_id), Some(state)) = (&row.swap_id, &row.state) else {
-                    tracing::error!("Row didn't contain state or swap_id when it should have");
+                let (Some(swap_id), Some(state), Some(entered_at)) = (&row.swap_id, &row.state, &row.entered_at) else {
+                    tracing::error!("Row didn't contain state, swap_id or entered_at when it should have");
                     return None;
                 };
 
@@ -386,9 +452,20 @@ impl Database for SqliteDatabase {
                     }
                 };
 
-                Some((swap_id, state))
+                let entered_at = UtcDateTime::from_unix_timestamp(*entered_at).ok().expect("Failed to parse entered_at");
+
+                Some((swap_id, state, entered_at))
             })
-            .collect::<Vec<(Uuid, State)>>();
+            .collect::<Vec<(Uuid, State, UtcDateTime)>>();
+
+        tracing::info!("Processed {} swaps from database", result.len());
+
+        // if let Some(eigensync_handle) = &self.eigensync_handle {
+        //     eigensync_handle.write().await.save_updates_local(|document| {
+        //         document.states.insert(swap_id.clone(), swap.to_string());
+        //         Ok(())
+        //     })?;
+        // }
 
         Ok(result)
     }
@@ -421,7 +498,6 @@ impl Database for SqliteDatabase {
                 Ok(state)
             })
             .collect::<Result<Vec<State>>>();
-
         result
     }
 
@@ -526,10 +602,17 @@ mod tests {
 
         assert_eq!(latest_loaded.len(), 2);
 
-        assert!(latest_loaded.contains(&(swap_id_1, state_2)));
-        assert!(latest_loaded.contains(&(swap_id_2, state_3)));
+        // Check that the correct states are present for each swap_id
+        let swap_1_states: Vec<_> = latest_loaded.iter().filter(|(id, _, _)| *id == swap_id_1).collect();
+        let swap_2_states: Vec<_> = latest_loaded.iter().filter(|(id, _, _)| *id == swap_id_2).collect();
+        
+        assert_eq!(swap_1_states.len(), 1);
+        assert_eq!(swap_2_states.len(), 1);
+        assert_eq!(swap_1_states[0].1, state_2);
+        assert_eq!(swap_2_states[0].1, state_3);
 
-        assert!(!latest_loaded.contains(&(swap_id_1, state_1)));
+        // Verify that state_1 is not the latest state for swap_id_1
+        assert_ne!(swap_1_states[0].1, state_1);
     }
 
     #[tokio::test]

@@ -20,6 +20,7 @@ import { isTestnet } from "store/config";
 import { getBitcoinTxExplorerUrl } from "utils/conversionUtils";
 import SwapLogFileOpenButton from "./SwapLogFileOpenButton";
 import ExportLogsButton from "./ExportLogsButton";
+import { parseDateString } from "utils/parseUtils";
 
 export default function HistoryRowExpanded({
   swap,
@@ -39,7 +40,9 @@ export default function HistoryRowExpanded({
           <TableBody>
             <TableRow>
               <TableCell>Started on</TableCell>
-              <TableCell>{swap.start_date}</TableCell>
+              <TableCell>
+                {new Date(parseDateString(swap.start_date)).toLocaleString()}
+              </TableCell>
             </TableRow>
             <TableRow>
               <TableCell>Swap ID</TableCell>
@@ -112,7 +115,7 @@ export default function HistoryRowExpanded({
               <TableCell>Monero receive pool</TableCell>
               <TableCell>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  {swap.monero_receive_pool.map((pool, index) => (
+                  {swap.monero_receive_pool?.map((pool, index) => (
                     <Box
                       key={index}
                       sx={{
