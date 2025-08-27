@@ -38,7 +38,7 @@ jobs:
           - target: x86_64-pc-windows-gnu
             archive_extension: zip
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.host }}
 
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +48,9 @@ jobs:
         with:
           host: ${{ matrix.host }}
           target: ${{ matrix.target }}
+
+      - name: Build ${{ matrix.bin }} in release mode
+        run: cargo build --bin ${{ matrix.bin }} --release -vv
 
       - name: Smoke test the binary
         if: matrix.bin != 'orchestrator' # ignore orchestrator, since it's interactive
@@ -69,12 +72,12 @@ jobs:
           print(f'::set-output name=archive::{archive_name}')
 
       - name: Pack macos archive
-        if: contains(matrix.target, 'macos')
+        if: contains(matrix.target, 'apple')
         shell: bash
         run: gtar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
 
       - name: Pack linux archive
-        if: contains(matrix.target, 'ubuntu')
+        if: contains(matrix.target, 'linux')
         shell: bash
         run: tar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
 

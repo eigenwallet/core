@@ -8,7 +8,7 @@ inputs:
   target:
     description: "Additional Rust targets to install and prepare for (e.g. x86_64-pc-windows-gnu when crossbuilding)"
     required: false
-    default: ""
+    default: "x86_64-unknown-linux-gnu"
 
 runs:
   using: "composite"
@@ -41,7 +41,7 @@ runs:
       shell: bash
       run: |
         sudo apt update;
-        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
+        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
 
     - name: Install build dependencies (macos)
       if: contains(inputs.host, 'macos')
