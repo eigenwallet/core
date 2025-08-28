@@ -6,7 +6,11 @@ import {
 } from "models/tauriModelExt";
 import { SatsAmount, PiconeroAmount } from "renderer/components/other/Units";
 import { Box, Typography, Divider, Theme } from "@mui/material";
-import { useActiveSwapId, usePendingLockBitcoinApproval } from "store/hooks";
+import {
+  useActiveSwapId,
+  usePendingLockBitcoinApproval,
+  usePendingSelectOfferApproval,
+} from "store/hooks";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
 import CheckIcon from "@mui/icons-material/Check";
@@ -28,6 +32,7 @@ export default function SwapSetupInflightPage({
   btc_lock_amount,
 }: TauriSwapProgressEventContent<"SwapSetupInflight">) {
   const request = useActiveLockBitcoinApprovalRequest();
+  const pendingSelectOfferApprovals = usePendingSelectOfferApproval();
 
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const expirationTs =
@@ -150,19 +155,21 @@ export default function SwapSetupInflightPage({
             Deny
           </PromiseInvokeButton>
 
-          <PromiseInvokeButton
-            variant="contained"
-            color="primary"
-            size="large"
-            onInvoke={() =>
-              resolveApproval(request.request_id, true as unknown as object)
-            }
-            displayErrorSnackbar
-            requiresContext
-            endIcon={<CheckIcon />}
-          >
-            {`Confirm`}
-          </PromiseInvokeButton>
+          {pendingSelectOfferApprovals.length === 0 && (
+            <PromiseInvokeButton
+              variant="contained"
+              color="primary"
+              size="large"
+              onInvoke={() =>
+                resolveApproval(request.request_id, true as unknown as object)
+              }
+              displayErrorSnackbar
+              requiresContext
+              endIcon={<CheckIcon />}
+            >
+              {`Confirm`}
+            </PromiseInvokeButton>
+          )}
         </Box>
         <Typography
           variant="caption"
