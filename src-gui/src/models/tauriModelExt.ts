@@ -6,6 +6,7 @@ import {
   PendingCompleted,
   QuoteWithAddress,
   SelectMakerDetails,
+  SelectOfferDetails,
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
   SendMoneroDetails,
@@ -314,6 +315,15 @@ export type PendingSelectMakerApprovalRequest = PendingApprovalRequest & {
   request: { type: "SelectMaker"; content: SelectMakerDetails };
 };
 
+export type PendingSelectOfferApprovalRequest = PendingApprovalRequest & {
+  request: { type: "SelectOffer"; content: QuoteWithAddress };
+};
+
+export type PendingSpecifyRedeemRefundApprovalRequest =
+  PendingApprovalRequest & {
+    request: { type: "SpecifyRedeemRefund"; content: SelectOfferDetails };
+  };
+
 export type PendingSendMoneroApprovalRequest = PendingApprovalRequest & {
   request: { type: "SendMonero"; content: SendMoneroDetails };
 };
@@ -332,6 +342,30 @@ export function isPendingSelectMakerApprovalEvent(
 
   // Check if the request is a SelectMaker request
   return event.request.type === "SelectMaker";
+}
+
+export function isPendingSelectOfferApprovalEvent(
+  event: ApprovalRequest,
+): event is PendingSelectOfferApprovalRequest {
+  // Check if the request is pending
+  if (event.request_status.state !== "Pending") {
+    return false;
+  }
+
+  // Check if the request is a SelectOffer request
+  return event.request.type === "SelectOffer";
+}
+
+export function isPendingSpecifyRedeemRefundApprovalEvent(
+  event: ApprovalRequest,
+): event is PendingSpecifyRedeemRefundApprovalRequest {
+  // Check if the request is pending
+  if (event.request_status.state !== "Pending") {
+    return false;
+  }
+
+  // Check if the request is a SpecifyRedeemRefund request
+  return event.request.type === "SpecifyRedeemRefund";
 }
 
 export function isPendingSendMoneroApprovalEvent(
@@ -357,6 +391,11 @@ export function isPendingPasswordApprovalEvent(
   // Check if the request is a PasswordRequest request
   return event.request.type === "PasswordRequest";
 }
+
+export type SortableQuoteWithAddress = QuoteWithAddress & {
+  expiration_ts?: number;
+  request_id?: string | null;
+};
 
 /**
  * Checks if any funds have been locked yet based on the swap progress event

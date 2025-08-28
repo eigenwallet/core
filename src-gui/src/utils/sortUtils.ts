@@ -1,5 +1,6 @@
 import {
   PendingSelectMakerApprovalRequest,
+  PendingSelectOfferApprovalRequest,
   SortableQuoteWithAddress,
 } from "models/tauriModelExt";
 import { QuoteWithAddress } from "models/tauriModel";
@@ -13,6 +14,31 @@ export function sortApprovalsAndKnownQuotes(
   const sortableQuotes = pendingSelectMakerApprovals.map((approval) => {
     return {
       ...approval.request.content.maker,
+      expiration_ts:
+        approval.request_status.state === "Pending"
+          ? approval.request_status.content.expiration_ts
+          : undefined,
+      request_id: approval.request_id,
+    } as SortableQuoteWithAddress;
+  });
+
+  sortableQuotes.push(
+    ...known_quotes.map((quote) => ({
+      ...quote,
+      request_id: null,
+    })),
+  );
+
+  return sortMakerApprovals(sortableQuotes);
+}
+
+export function sortSelectOfferApprovalsAndKnownQuotes(
+  pendingSelectOfferApprovals: PendingSelectOfferApprovalRequest[],
+  known_quotes: QuoteWithAddress[],
+) {
+  const sortableQuotes = pendingSelectOfferApprovals.map((approval) => {
+    return {
+      ...approval.request.content,
       expiration_ts:
         approval.request_status.state === "Pending"
           ? approval.request_status.content.expiration_ts
