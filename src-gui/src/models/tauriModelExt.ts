@@ -319,10 +319,9 @@ export type PendingSelectOfferApprovalRequest = PendingApprovalRequest & {
   request: { type: "SelectOffer"; content: QuoteWithAddress };
 };
 
-export type PendingSpecifyRedeemRefundApprovalRequest =
-  PendingApprovalRequest & {
-    request: { type: "SpecifyRedeemRefund"; content: SelectOfferDetails };
-  };
+export type PendingSelectOfferApprovalRequest = PendingApprovalRequest & {
+  request: { type: "SelectOffer"; content: SelectOfferDetails };
+};
 
 export type PendingSendMoneroApprovalRequest = PendingApprovalRequest & {
   request: { type: "SendMonero"; content: SendMoneroDetails };
@@ -354,18 +353,6 @@ export function isPendingSelectOfferApprovalEvent(
 
   // Check if the request is a SelectOffer request
   return event.request.type === "SelectOffer";
-}
-
-export function isPendingSpecifyRedeemRefundApprovalEvent(
-  event: ApprovalRequest,
-): event is PendingSpecifyRedeemRefundApprovalRequest {
-  // Check if the request is pending
-  if (event.request_status.state !== "Pending") {
-    return false;
-  }
-
-  // Check if the request is a SpecifyRedeemRefund request
-  return event.request.type === "SpecifyRedeemRefund";
 }
 
 export function isPendingSendMoneroApprovalEvent(

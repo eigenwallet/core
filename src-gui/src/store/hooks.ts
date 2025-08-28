@@ -12,8 +12,8 @@ import {
   isPendingSelectMakerApprovalEvent,
   PendingSelectOfferApprovalRequest,
   isPendingSelectOfferApprovalEvent,
-  PendingSpecifyRedeemRefundApprovalRequest,
-  isPendingSpecifyRedeemRefundApprovalEvent,
+  PendingSelectOfferApprovalRequest,
+  isPendingSelectOfferApprovalEvent,
   haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
   PendingSendMoneroApprovalRequest,
@@ -228,11 +228,6 @@ export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalReque
 export function usePendingSelectOfferApproval(): PendingSelectOfferApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSelectOfferApprovalEvent(c));
-}
-
-export function usePendingSpecifyRedeemRefundApproval(): PendingSpecifyRedeemRefundApprovalRequest[] {
-  const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSpecifyRedeemRefundApprovalEvent(c));
 }
 
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {

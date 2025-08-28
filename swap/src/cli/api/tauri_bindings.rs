@@ -149,12 +149,9 @@ pub enum ApprovalRequestType {
     /// Request approval for maker selection.
     /// Contains available makers and swap details.
     SelectMaker(SelectMakerDetails),
-    /// Request approval for offer selection.
-    /// Contains the selected offer details.
-    SelectOffer(QuoteWithAddress),
     /// Request user to specify Bitcoin refund and Monero receive addresses.
     /// Contains the selected offer details for context.
-    SpecifyRedeemRefund(SelectOfferDetails),
+    SelectOffer(SelectOfferDetails),
     /// Request seed selection from user.
     /// User can choose between random seed, provide their own, or select wallet file.
     SeedSelection(SeedSelectionDetails),
@@ -436,7 +433,6 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::LockBitcoin(..) => write!(f, "LockBitcoin()"),
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SelectOffer(..) => write!(f, "SelectOffer()"),
-            ApprovalRequestType::SpecifyRedeemRefund(..) => write!(f, "SpecifyRedeemRefund()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
             ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
@@ -457,12 +453,6 @@ pub trait TauriEmitter {
         details: SelectMakerDetails,
         timeout_secs: u64,
     ) -> Result<bool>;
-
-    async fn request_offer_selection(
-        &self,
-        quote: QuoteWithAddress,
-        timeout_secs: u64,
-    ) -> Result<String>;
 
     async fn request_specify_redeem_refund(
         &self,
@@ -573,22 +563,13 @@ impl TauriEmitter for TauriHandle {
             .unwrap_or(false))
     }
 
-    async fn request_offer_selection(
-        &self,
-        quote: QuoteWithAddress,
-        timeout_secs: u64,
-    ) -> Result<String> {
-        self.request_approval(ApprovalRequestType::SelectOffer(quote), Some(timeout_secs))
-            .await
-    }
-
     async fn request_specify_redeem_refund(
         &self,
         details: SelectOfferDetails,
         timeout_secs: u64,
     ) -> Result<SelectOfferApprovalRequest> {
         self.request_approval(
-            ApprovalRequestType::SpecifyRedeemRefund(details),
+            ApprovalRequestType::SelectOffer(details),
             Some(timeout_secs),
         )
         .await
@@ -673,17 +654,6 @@ impl TauriEmitter for Option<TauriHandle> {
     ) -> Result<bool> {
         match self {
             Some(tauri) => tauri.request_maker_selection(details, timeout_secs).await,
-            None => bail!("No Tauri handle available"),
-        }
-    }
-
-    async fn request_offer_selection(
-        &self,
-        quote: QuoteWithAddress,
-        timeout_secs: u64,
-    ) -> Result<String> {
-        match self {
-            Some(tauri) => tauri.request_offer_selection(quote, timeout_secs).await,
             None => bail!("No Tauri handle available"),
         }
     }
