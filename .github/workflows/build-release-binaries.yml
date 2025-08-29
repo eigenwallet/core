@@ -10,7 +10,7 @@ env:
   DOCKER_ASB_CONTROLLER_IMAGE_NAME: ghcr.io/eigenwallet/asb-controller
 
 concurrency:
-  group: build-release-${{ github.event.release.tag_name }}
+  group: build-release-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
