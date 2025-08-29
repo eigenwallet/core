@@ -31,23 +31,23 @@ RUN --mount=type=cache,target=/var/cache/apt \
     lbzip2 \
     gperf \
     g++- \
+    libglib2.0-dev \
     # Left out as we are not compiling for Windows in this Dockerfile
     # mingw-w64-x86-64 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # See ./rust-toolchain.toml for the Rust version
-# This dynamically reads from the ./rust-toolchain.toml file
-RUN --mount=type=bind,source=.,target=/src,ro \
-    set -eu; \
-    RUST_VERSION=$(awk -F\" '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' ./rust-toolchain.toml); \
-    test -n "$RUST_VERSION"; \
+# This reads from the `rust-toolchain.toml` file to determine which Rust version to install
+COPY rust-toolchain.toml /tmp/rust-toolchain.toml
+RUN set -eu; \
+    RUST_VERSION=$(awk -F\" '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' /tmp/rust-toolchain.toml); \
     echo "Using Rust $RUST_VERSION"; \
-    curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_VERSION" --profile minimal
+    curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_VERSION" --profile complete
+
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# We use cargo-chef to our dependency graph
-# TOOD: pin this to a commit
+# We use cargo-chef to cache our dependency graph (recipe.json)
 RUN cargo install cargo-chef --locked
 
 # Probe if all submodules are present
@@ -59,6 +59,10 @@ RUN --mount=type=bind,source=.,target=/src,ro \
 # required to build it and cache dependencies
 FROM toolchain AS planner
 COPY . .
+
+# Generate a recipe file
+# Contains **ALL** dependencies of the entire Cargo workspace
+# We can later use `cargo chef cook --package PACKAGE_TO_BUILD` to install the dependencies for a single one of the packages
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Now we build the application
@@ -66,9 +70,16 @@ FROM toolchain AS builder
 
 # Build just the external dependencies first
 COPY --from=planner /recipe.json recipe.json
+
+# Install dependencies required for `swap-asb`
 RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
-    cargo chef cook --release --recipe-path recipe.json
+    cargo chef cook --release --recipe-path recipe.json --package swap-asb
+
+# Install dependencies required for `swap-controller`
+RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+    --mount=type=cache,target=/root/.cargo/git,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json --package swap-controller
 
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
