@@ -1,6 +1,7 @@
 name: "Build swap, asb, asb-controller, and orchestrator release binaries"
 
 on:
+  pull_request:
   release:
     types: [created]
 
@@ -55,18 +56,10 @@ jobs:
 
       - name: Build ${{ matrix.bin }} in release mode
         run: |
-          cargo build --bin ${{ matrix.bin }} --target ${{ matrix.target }} --release -vv
-
-      - name: Specify binary output path (windows)
-        if: contains(matrix.target, 'windows')
-        run: |
-          BIN_PATH=target/x86_64-pc-windows-gnu/release/${{ matrix.bin }}.exe
-          echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
-
-      - name: Specify binary output path (Linux/Mac)
-        if: contains(matrix.target , 'windows') == false
-        run: |
-          BIN_PATH=target/release/${{ matrix.bin }}
+          BIN_PATH="$(
+            cargo build --bin orchestrator --release -q --message-format=json \
+            | jq -r "select(.reason == \"compiler-artifact\" and .executable != null) | .executable"
+          )"
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
 
       - name: Smoke test the binary
