@@ -496,14 +496,14 @@ fn execute_child_with_pipe(
     // Spawn threads to handle stdout and stderr
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             println!("cargo:debug={}{}", &prefix_clone, line);
         }
     });
 
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             println!("cargo:debug={}{}", &prefix, line);
         }
     });
