@@ -44,6 +44,7 @@ import {
   SetRestoreHeightArgs,
   SetRestoreHeightResponse,
   GetRestoreHeightResponse,
+  SelectOfferApprovalRequest,
   MoneroNodeConfig,
   GetMoneroSeedResponse,
 } from "models/tauriModel";
@@ -204,11 +205,7 @@ export async function withdrawBtc(address: string): Promise<string> {
   return response.txid;
 }
 
-export async function buyXmr(
-  bitcoin_change_address: string | null,
-  monero_receive_address: string,
-  donation_percentage: DonateToDevelopmentTip,
-) {
+export async function buyXmr() {
   // Get all available makers from the Redux store
   const state = store.getState();
   const allMakers = [
@@ -221,37 +218,9 @@ export async function buyXmr(
     providerToConcatenatedMultiAddr(maker),
   );
 
-  const address_pool: LabeledMoneroAddress[] = [];
-  if (donation_percentage !== false) {
-    const donation_address = isTestnet()
-      ? DONATION_ADDRESS_STAGENET
-      : DONATION_ADDRESS_MAINNET;
-
-    address_pool.push(
-      {
-        address: monero_receive_address,
-        percentage: 1 - donation_percentage,
-        label: "Your wallet",
-      },
-      {
-        address: donation_address,
-        percentage: donation_percentage,
-        label: "Tip to the developers",
-      },
-    );
-  } else {
-    address_pool.push({
-      address: monero_receive_address,
-      percentage: 1,
-      label: "Your wallet",
-    });
-  }
-
   await invoke<BuyXmrArgs, BuyXmrResponse>("buy_xmr", {
     rendezvous_points: PRESET_RENDEZVOUS_POINTS,
     sellers,
-    monero_receive_pool: address_pool,
-    bitcoin_change_address,
   });
 }
 
@@ -644,6 +613,51 @@ export async function saveLogFiles(
 export async function saveFilesInDialog(files: Record<string, string>) {
   await invokeUnsafe<void>("save_txt_files", {
     files,
+  });
+}
+
+/**
+ * Confirms an offer with specified redeem and refund addresses.
+ * @param request_id - The approval request ID to resolve
+ * @param donationRatio - Ratio to donate to developers (false for no donation)
+ * @param redeemAddress - Monero address to receive funds (null means address is auto picked with internal address)
+ * @param refundAddress - Bitcoin address for refunds (null means address is auto picked with internal address)
+ */
+export async function confirmOfferWithAddresses(
+  request_id: string,
+  donationRatio: number | false,
+  redeemAddress: string | null,
+  refundAddress: string | null,
+) {
+  const address_pool: LabeledMoneroAddress[] = [];
+  if (donationRatio !== false) {
+    const donation_address = isTestnet()
+      ? DONATION_ADDRESS_STAGENET
+      : DONATION_ADDRESS_MAINNET;
+
+    address_pool.push(
+      {
+        address: redeemAddress,
+        percentage: 1 - donationRatio,
+        label: "Your wallet",
+      },
+      {
+        address: donation_address,
+        percentage: donationRatio,
+        label: "Tip to the developers",
+      },
+    );
+  } else {
+    address_pool.push({
+      address: redeemAddress,
+      percentage: 1,
+      label: "Your wallet",
+    });
+  }
+
+  await resolveApproval<SelectOfferApprovalRequest>(request_id, {
+    bitcoin_change_address: refundAddress,
+    monero_receive_pool: address_pool,
   });
 }
 

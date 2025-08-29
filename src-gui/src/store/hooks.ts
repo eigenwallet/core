@@ -10,6 +10,10 @@ import {
   PendingLockBitcoinApprovalRequest,
   PendingSelectMakerApprovalRequest,
   isPendingSelectMakerApprovalEvent,
+  PendingSelectOfferApprovalRequest,
+  isPendingSelectOfferApprovalEvent,
+  PendingSelectOfferApprovalRequest,
+  isPendingSelectOfferApprovalEvent,
   haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
   PendingSendMoneroApprovalRequest,
@@ -219,6 +223,11 @@ export function usePendingSendMoneroApproval(): PendingSendMoneroApprovalRequest
 export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingSelectMakerApprovalEvent(c));
+}
+
+export function usePendingSelectOfferApproval(): PendingSelectOfferApprovalRequest[] {
+  const approvals = usePendingApprovals();
+  return approvals.filter((c) => isPendingSelectOfferApprovalEvent(c));
 }
 
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {

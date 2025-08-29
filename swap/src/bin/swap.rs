@@ -55,7 +55,7 @@ mod tests {
             (Amount::from_btc(0.0009).unwrap(), Amount::from_sat(1000)),
         ])));
 
-        let (amount, fees) = determine_btc_to_swap(
+        let (_, amount, fees) = determine_btc_to_swap(
             true,
             quote_with_max(0.01),
             get_dummy_address(),
@@ -93,7 +93,7 @@ mod tests {
             (Amount::from_btc(0.1).unwrap(), Amount::from_sat(1000)),
         ])));
 
-        let (amount, fees) = determine_btc_to_swap(
+        let (_, amount, fees) = determine_btc_to_swap(
             true,
             quote_with_max(0.01),
             get_dummy_address(),
@@ -131,7 +131,7 @@ mod tests {
             (Amount::from_btc(99.9).unwrap(), Amount::from_sat(1000)),
         ])));
 
-        let (amount, fees) = determine_btc_to_swap(
+        let (_, amount, fees) = determine_btc_to_swap(
             true,
             quote_with_max(0.01),
             async { panic!("should not request new address when initial balance  is > 0") },
@@ -165,7 +165,7 @@ mod tests {
             (Amount::from_btc(99.9).unwrap(), Amount::from_sat(1000)),
         ])));
 
-        let (amount, fees) = determine_btc_to_swap(
+        let (_, amount, fees) = determine_btc_to_swap(
             true,
             quote_with_max(0.01),
             async { panic!("should not request new address when initial balance is > 0") },
@@ -199,7 +199,7 @@ mod tests {
             (Amount::from_btc(0.01).unwrap(), Amount::from_sat(1000)),
         ])));
 
-        let (amount, fees) = determine_btc_to_swap(
+        let (_, amount, fees) = determine_btc_to_swap(
             true,
             quote_with_min(0.01),
             get_dummy_address(),
@@ -237,7 +237,7 @@ mod tests {
             (Amount::from_btc(0.01).unwrap(), Amount::from_sat(1000)),
         ])));
 
-        let (amount, fees) = determine_btc_to_swap(
+        let (_, amount, fees) = determine_btc_to_swap(
             true,
             quote_with_min(0.01),
             get_dummy_address(),
