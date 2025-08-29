@@ -58,7 +58,7 @@ jobs:
       - name: Build ${{ matrix.bin }} in release mode
         run: |
           BIN_PATH="$(
-            cargo build --bin orchestrator --release -q --message-format=json \
+            cargo build --bin ${{ matrix.bin }} --release -q --message-format=json \
             | jq -r "select(.reason == \"compiler-artifact\" and .executable != null) | .executable"
           )"
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
@@ -98,6 +98,7 @@ jobs:
           zip ${{ steps.create-archive-name.outputs.archive }} -j ${{ env.BIN_PATH }}
 
       - name: Upload archive
+        if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
