@@ -63,7 +63,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          releaseId: ${{ github.event.release.id }}
+          # Empty releaseId for PRs prevents uploading to GitHub releases
+          # Empty strings are treated as an omitted argument: https://github.com/actions/runner/issues/924
+          # When releaseId is omitted, no release is published: https://github.com/tauri-apps/tauri-action?tab=readme-ov-file#tips-and-caveats
+          releaseId: ${{ github.event.release.id || '' }}
           projectPath: src-tauri
           tauriScript: cargo tauri
 
