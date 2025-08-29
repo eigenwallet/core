@@ -158,7 +158,7 @@ fn main() {
             (_, true) => "-j1",
             (_, _) => "-j4",
         })
-        .build_arg(format!("-I."))
+        .build_arg("-I.")
         .build();
 
     let monero_build_dir = output_directory.join("build");
@@ -496,19 +496,15 @@ fn execute_child_with_pipe(
     // Spawn threads to handle stdout and stderr
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("cargo:debug={}{}", &prefix_clone, line);
-            }
+        for line in reader.lines().flatten() {
+            println!("cargo:debug={}{}", &prefix_clone, line);
         }
     });
 
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("cargo:debug={}{}", &prefix, line);
-            }
+        for line in reader.lines().flatten() {
+            println!("cargo:debug={}{}", &prefix, line);
         }
     });
 

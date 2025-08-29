@@ -47,7 +47,7 @@ The bridge between Rust and the Monero C++ code works as follows:
    - CXX can't handle some C++ types being returned by value (especially `std::string` and `std::vector`), so we wrap them in a pointer:
      - if we know we are the owner of the value we use `std::unique_ptr<T>`
      - if we don't know we use `std::shared_ptr<T>`
-     - in the case of `TransactionHistory` we use a raw pointer because we aren't the only owner of the value but also need to mutate it. 
+     - in the case of `TransactionHistory` we use a raw pointer because we aren't the only owner of the value but also need to mutate it.
        Such uses have to be manually verified!
 
 3. **Rust Wrapper (lib.rs)**:
@@ -76,17 +76,17 @@ The bridge between Rust and the Monero C++ code works as follows:
    2. Add its declaration to the `unsafe extern "C++"` block in bridge.rs
    3. Create a corresponding Rust wrapper method in lib.rs
    4. For functions returning strings or with other CXX limitations, add helper functions in bridge.h
-   
+
 7. **Ensuring Memory Safety**:
 
-  - *`Send and Sync`*:
-    - Don't `unsafe impl Sync`, it's never needed. Work around limitaions if necessary.
-    - You can `unsafe impl Send` for a Rust wrapper type *if* you verified that the type is safe to be moved around threads:
-      - By default, assume that *no type is `Send`*
-      - A type is *not `Send`* if it contains a reference/pointer to a non-`Send` type -- notably, `Wallet` and `WalletManager` are not `Send`
-      - A type is *not `Send`* if it uses thread local storage (`WalletManager` and `Wallet`)
-      - A type *is `Send`* if it contains only basic types: integers, strings, vectors of other basic types or other `Send` types.
-      - Never implement `Send` unless you have specifically verified that the type actually is.
-    - Even if it would be possible, try to avoid implementing `Send` if possible. For example, instead of implementing `unsafe impl Send for TransactionInfoHandle` we immediately copy the values it conaints into our own, Rust-native `TransactionInfo` struct.
+- _`Send and Sync`_:
+  - Don't `unsafe impl Sync`, it's never needed. Work around limitaions if necessary.
+  - You can `unsafe impl Send` for a Rust wrapper type _if_ you verified that the type is safe to be moved around threads:
+    - By default, assume that _no type is `Send`_
+    - A type is _not `Send`_ if it contains a reference/pointer to a non-`Send` type -- notably, `Wallet` and `WalletManager` are not `Send`
+    - A type is _not `Send`_ if it uses thread local storage (`WalletManager` and `Wallet`)
+    - A type _is `Send`_ if it contains only basic types: integers, strings, vectors of other basic types or other `Send` types.
+    - Never implement `Send` unless you have specifically verified that the type actually is.
+  - Even if it would be possible, try to avoid implementing `Send` if possible. For example, instead of implementing `unsafe impl Send for TransactionInfoHandle` we immediately copy the values it conaints into our own, Rust-native `TransactionInfo` struct.
 
 This architecture ensures memory safety while providing idiomatic access to the Monero wallet functionality from Rust.
