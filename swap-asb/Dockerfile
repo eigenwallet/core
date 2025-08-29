@@ -93,7 +93,7 @@ RUN cargo build --release --locked -vv -p swap-controller --bin=asb-controller
 # Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS runner
 
-COPY --from=builder /target/debug/asb /bin/asb
-COPY --from=builder /target/debug/asb-controller /bin/asb-controller
+COPY --from=builder /target/release/asb /bin/asb
+COPY --from=builder /target/release/asb-controller /bin/asb-controller
 
 ENTRYPOINT ["asb"]
