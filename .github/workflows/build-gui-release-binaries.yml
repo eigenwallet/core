@@ -2,17 +2,18 @@
 name: "Publish GUI release to GitHub"
 
 on:
+  pull_request:
   release:
     types: [created]
 
 concurrency:
-  group: build-gui-release-${{ github.event.release.tag_name }}
+  group: build-gui-release-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
   draft-cb-release:
-    # Do not publish preview releases to CloudNebula
-    if: ${{ !contains(github.ref_name, 'preview') }}
+    # don't do it for PR's
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -62,12 +63,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          releaseId: ${{ github.event.release.id }}
+          # Empty releaseId for PRs prevents uploading to GitHub releases
+          # Empty strings are treated as an omitted argument: https://github.com/actions/runner/issues/924
+          # When releaseId is omitted, no release is published: https://github.com/tauri-apps/tauri-action?tab=readme-ov-file#tips-and-caveats
+          releaseId: ${{ github.event.release.id || '' }}
           projectPath: src-tauri
-          tauriScript: cargo tauri
+          tauriScript: yarn tauri
 
       - name: upload to crabnebula release (not for previews)
-        if: ${{ !contains(github.ref_name, 'preview') }}
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
         uses: crabnebula-dev/cloud-release@v0
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework tauri
@@ -75,7 +79,8 @@ jobs:
           args: --target ${{ matrix.target }}
 
   publish:
-    if: ${{ !contains(github.ref_name, 'preview') }} # don't publish previews to crabnebula
+    # don't publish previews to crabnebula
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
     needs: [draft-cb-release, build_gui]
     runs-on: ubuntu-22.04
     steps:

@@ -1,6 +1,7 @@
 name: "Build swap, asb, asb-controller, and orchestrator release binaries"
 
 on:
+  pull_request:
   release:
     types: [created]
 
@@ -9,7 +10,7 @@ env:
   DOCKER_ASB_CONTROLLER_IMAGE_NAME: ghcr.io/eigenwallet/asb-controller
 
 concurrency:
-  group: build-release-${{ github.event.release.tag_name }}
+  group: build-release-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
@@ -18,29 +19,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # which binaries we want to build
         bin: [swap, asb, asb-controller, orchestrator]
-        target:
-          [
-            x86_64-unknown-linux-gnu,
-            aarch64-apple-darwin,
-            x86_64-apple-darwin,
-            x86_64-pc-windows-gnu,
-          ]
-        host: [ubuntu-22.04] # default host: ubuntu
-        archive_extension: [tar] # default extension: tar
+        # which target to build from which host and the archive we use
         include:
-          # build for arm macos on arm macos
-          - target: aarch64-apple-darwin
-            host: macos-latest
-            archive_extension: tar
-          # build for intel macos on intel macos
-          - target: x86_64-apple-darwin
-            host: macos-13
-            archive_extension: tar
-          # use .zip for windows
-          - target: x86_64-pc-windows-gnu
-            host: ubuntu-22.04
-            archive_extension: zip
+          - {
+              target: x86_64-unknown-linux-gnu,
+              host: ubuntu-22.04,
+              archive_extension: tar,
+              do_smoke_test: true,
+            }
+          - {
+              target: aarch64-apple-darwin,
+              host: macos-latest,
+              archive_extension: tar,
+              do_smoke_test: true,
+            }
+          - {
+              target: x86_64-apple-darwin,
+              host: macos-13,
+              archive_extension: tar,
+              do_smoke_test: true,
+            }
+          - {
+              target: x86_64-pc-windows-gnu,
+              host: ubuntu-22.04,
+              archive_extension: zip,
+              # Skip smoke test - cross-compiled Windows .exe cannot run on Linux build host
+              do_smoke_test: false,
+            }
+          # Binary-specific smoke test configuration
+          - bin: swap
+            smoke_test_args: "--help"
+            smoke_test_fake_interactive: false
+          - bin: asb
+            smoke_test_args: "--help"
+            smoke_test_fake_interactive: false
+          - bin: asb-controller
+            smoke_test_args: ""
+            smoke_test_fake_interactive: false
+          - bin: orchestrator
+            smoke_test_args: ""
+            smoke_test_fake_interactive: true
 
     runs-on: ${{ matrix.host }}
 
@@ -55,23 +75,26 @@ jobs:
 
       - name: Build ${{ matrix.bin }} in release mode
         run: |
-          cargo build --bin ${{ matrix.bin }} --target ${{ matrix.target }} --release -vv
-
-      - name: Specify binary output path (windows)
-        if: contains(matrix.target, 'windows')
-        run: |
-          BIN_PATH=./target/x86_64-pc-windows-gnu/release/${{ matrix.bin }}.exe
-          echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
-
-      - name: Specify binary output path (Linux/Mac)
-        if: contains(matrix.target , 'windows') == false
-        run: |
-          BIN_PATH=./target/release/${{ matrix.bin }}
+          BIN_PATH="$(
+            cargo build --bin ${{ matrix.bin }} --target ${{ matrix.target }} --release -q --message-format=json \
+            | jq -r "select(.reason == \"compiler-artifact\" and .executable != null) | .executable"
+          )"
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
 
       - name: Smoke test the binary
-        if: matrix.bin != 'orchestrator' # ignore orchestrator, since it's interactive
-        run: ${{ env.BIN_PATH }} --help
+        if: matrix.do_smoke_test
+        shell: bash
+        run: |
+          if [[ "${{ matrix.smoke_test_fake_interactive }}" == "true" ]]; then
+            # Use script to provide pseudo-terminal for interactive binaries
+            timeout 3s bash -c '0<&- script -qefc "${{ env.BIN_PATH }}" /dev/null | cat' || true
+          elif [[ -n "${{ matrix.smoke_test_args }}" ]]; then
+            # Run with arguments
+            ${{ env.BIN_PATH }} ${{ matrix.smoke_test_args }}
+          else
+            # Run without arguments with timeout for binaries that don't support --help
+            timeout 3s ${{ env.BIN_PATH }} || true
+          fi
 
       - id: create-archive-name
         shell: python
@@ -86,7 +109,7 @@ jobs:
           triple = "${{ matrix.target }}".split("-")
           arch = triple[0]
 
-          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name }}_{os_info.system}_{arch}.${{ matrix.archive_extension }}'
+          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name || format('pull_request_{0}', github.event.pull_request.number) }}_{os_info.system}_{arch}.${{ matrix.archive_extension }}'
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
               output_file.write(f'archive={archive_name}\n')
@@ -104,6 +127,7 @@ jobs:
           zip ${{ steps.create-archive-name.outputs.archive }} -j ${{ env.BIN_PATH }}
 
       - name: Upload archive
+        if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
@@ -115,6 +139,7 @@ jobs:
 
   build_and_push_docker:
     name: Build and Push Docker Image
+    if: github.event_name == 'release'
     runs-on: ubuntu-22.04
     needs: build_binaries
     permissions:
