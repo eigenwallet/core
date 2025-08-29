@@ -54,11 +54,20 @@ jobs:
 
       - name: Build ${{ matrix.bin }} in release mode
         run: |
-          BIN_PATH=$(
-            cargo build --bin ${{ matrix.bin }} --target ${{ matrix.target }} --release -vv \
-              --message-format=json \
-            | jq -r "select(.reason == \"compiler-artifact\" and .executable != null) | .executable"
-          )
+          cargo build --bin ${{ matrix.bin }} --target ${{ matrix.target }} --release -vv
+
+      - name: Specify binary output path (windows)
+        if: contains(matrix.target, 'windows')
+        shell: bash
+        run: |
+          BIN_PATH=./target/x86_64-pc-windows-gnu/release/${{ matrix.bin }}.exe
+          echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
+
+      - name: Specify binary output path (Linux/Mac)
+        if: not(contains(matrix.target, 'windows'))
+        shell: bash
+        run: |
+          BIN_PATH=./target/release/${{ matrix.bin }}
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
 
       - name: Smoke test the binary
