@@ -79,9 +79,7 @@ runs:
         tool: typeshare-cli@1.13.3
 
     - name: Install dprint globally
-      uses: taiki-e/install-action@v2
-      with:
-        tool: dprint@0.50.1
+      run: npm install --global dprint@0.50 # Use npm instead of cargo binstall because the binstall version uses musl which doesn't work
 
     - name: Install sqlx-cli globally
       uses: taiki-e/install-action@v2
