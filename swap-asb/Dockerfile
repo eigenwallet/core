@@ -1,71 +1,88 @@
-# This Dockerfile builds the asb binary
+# This Dockerfile builds the `asb` / `asb-controller` binary
+#
 # We need to build on Ubuntu because the monero-sys crate requires a bunch of system dependencies
 # We will try to use a smaller image here at some point
 #
 # Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
-FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS builder
+FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS toolchain
 
-WORKDIR /build
+# Install system dependencies
+# See .github/actions/set-monero-env/action.yml for required dependencies
+# The `--mount` allows us to agressively cache this step.
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && \
+    apt-get install -y --allow-change-held-packages \
+    autoconf \
+    # Left out as we are not compiling for Windows in this Dockerfile
+    # nsis \
+    # mingw-w64 \
+    build-essential \
+    pkg-config \
+    libtool \
+    ccache \
+    make \
+    cmake \
+    gcc \
+    g++ \
+    git \
+    curl \
+    lbzip2 \
+    gperf \
+    g++- \
+    # Left out as we are not compiling for Windows in this Dockerfile
+    # mingw-w64-x86-64 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
-# See .github/workflows/action.yml
-RUN apt-get update && \
-    apt-get install -y \
-        git \
-        curl \
-        clang \
-        libsnappy-dev \
-        build-essential \
-        cmake \
-        libboost-all-dev \
-        miniupnpc \
-        libunbound-dev \
-        graphviz \
-        doxygen \
-        libunwind8-dev \
-        pkg-config \
-        libssl-dev \
-        libzmq3-dev \
-        libsodium-dev \
-        libhidapi-dev \
-        libabsl-dev \
-        libusb-1.0-0-dev \
-        libprotobuf-dev \
-        protobuf-compiler \
-        libnghttp2-dev \
-        libevent-dev \
-        libexpat1-dev \
-        ccache && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Rust 1.87.0
 # See ./rust-toolchain.toml for the Rust version
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.87.0
+# This dynamically reads from the ./rust-toolchain.toml file
+RUN --mount=type=bind,source=.,target=/src,ro \
+    set -eu; \
+    RUST_VERSION=$(awk -F\" '/^[[:space:]]*channel[[:space:]]*=/ {print $2; exit}' ./rust-toolchain.toml); \
+    test -n "$RUST_VERSION"; \
+    echo "Using Rust $RUST_VERSION"; \
+    curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$RUST_VERSION" --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+# We use cargo-chef to our dependency graph
+# TOOD: pin this to a commit
+RUN cargo install cargo-chef --locked
+
+# Probe if all submodules are present
+FROM toolchain AS prober
+RUN --mount=type=bind,source=.,target=/src,ro \
+    test -f /src/monero-sys/monero/CMakeLists.txt
+
+# Analyze the current project to determine the minimum subset of files (Cargo.lock and Cargo.toml manifests)
+# required to build it and cache dependencies
+FROM toolchain AS planner
 COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Check that submodules are present (they should be initialized before building)
-RUN if [ ! -f "monero-sys/monero/CMakeLists.txt" ]; then \
-        echo "ERROR: Submodules not initialized. Run 'git submodule update --init --recursive' before building Docker image."; \
-        exit 1; \
-    fi
+# Now we build the application
+FROM toolchain AS builder
 
-WORKDIR /build/swap
+# Build just the external dependencies first
+COPY --from=planner /recipe.json recipe.json
+RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
+    --mount=type=cache,target=/root/.cargo/git,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json
 
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
 
-RUN cargo build --locked -vv -p swap-asb --bin=asb
-RUN cargo build --locked -vv -p swap-controller --bin=asb-controller
+# Now we build our binaries
+COPY . .
+
+RUN cargo build --release --locked -vv -p swap-asb --bin=asb
+RUN cargo build --release --locked -vv -p swap-controller --bin=asb-controller
 
 # Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS runner
 
-WORKDIR /data
-
-COPY --from=builder /build/target/debug/asb /bin/asb
-COPY --from=builder /build/target/debug/asb-controller /bin/asb-controller
+COPY --from=builder /target/debug/asb /bin/asb
+COPY --from=builder /target/debug/asb-controller /bin/asb-controller
 
 ENTRYPOINT ["asb"]
