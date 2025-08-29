@@ -80,7 +80,7 @@ jobs:
           triple = "${{ matrix.target }}".split("-")
           arch = triple[0]
 
-          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name || 'pr-build' }}_{os_info.system}_{arch}.${{ matrix.archive_extension }}'
+          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name || format('pull_request_{0}', github.event.pull_request.number) }}_{os_info.system}_{arch}.${{ matrix.archive_extension }}'
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
               output_file.write(f'archive={archive_name}\n')
