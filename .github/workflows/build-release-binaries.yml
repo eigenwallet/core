@@ -58,14 +58,12 @@ jobs:
 
       - name: Specify binary output path (windows)
         if: contains(matrix.target, 'windows')
-        shell: bash
         run: |
           BIN_PATH=./target/x86_64-pc-windows-gnu/release/${{ matrix.bin }}.exe
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
 
       - name: Specify binary output path (Linux/Mac)
-        if: not(contains(matrix.target, 'windows'))
-        shell: bash
+        if: contains(matrix.target , 'windows') == false
         run: |
           BIN_PATH=./target/release/${{ matrix.bin }}
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV

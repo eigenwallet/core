@@ -23,7 +23,7 @@ jobs:
           command: release draft ${{ env.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
 
-  build:
+  build_gui:
     permissions:
       contents: write
     strategy:
@@ -76,7 +76,7 @@ jobs:
 
   publish:
     if: ${{ !contains(github.ref_name, 'preview') }} # don't publish previews to crabnebula
-    needs: [draft-cb-release, build]
+    needs: [draft-cb-release, build_gui]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
