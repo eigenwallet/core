@@ -1,8 +1,9 @@
-import { Dialog } from "@mui/material";
-import SendTransactionContent from "./components/SendTransactionContent";
-import SendApprovalContent from "./components/SendApprovalContent";
+import MobileDialog from "../../modal/MobileDialog";
+import MobileDialogHeader from "../../modal/MobileDialogHeader";
+import SendTransactionContent from "renderer/components/pages/monero/components/Send/SendTransactionContent";
+import SendApprovalContent from "renderer/components/pages/monero/components/Send/SendApprovalContent";
 import { useState } from "react";
-import SendSuccessContent from "./components/SendSuccessContent";
+import SendSuccessContent from "renderer/components/pages/monero/components/Send/SendSuccessContent";
 import { usePendingSendMoneroApproval } from "store/hooks";
 import { SendMoneroResponse } from "models/tauriModel";
 
@@ -33,7 +34,7 @@ export default function SendTransactionModal({
   };
 
   return (
-    <Dialog
+    <MobileDialog
       open={open}
       onClose={handleClose}
       maxWidth="sm"
@@ -42,6 +43,7 @@ export default function SendTransactionModal({
         sx: { borderRadius: 2 },
       }}
     >
+      <MobileDialogHeader title="Send Monero" onClose={handleClose} />
       {!showSuccess && !hasPendingApproval && (
         <SendTransactionContent
           balance={balance}
@@ -58,6 +60,6 @@ export default function SendTransactionModal({
           successDetails={successResponse}
         />
       )}
-    </Dialog>
+    </MobileDialog>
   );
 }

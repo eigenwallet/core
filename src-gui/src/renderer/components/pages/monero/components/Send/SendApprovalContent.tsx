@@ -12,7 +12,8 @@ import { resolveApproval } from "renderer/rpc";
 import { usePendingSendMoneroApproval } from "store/hooks";
 import { PiconeroAmount } from "renderer/components/other/Units";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
+import { useIsMobile } from "utils/useIsMobile";
 
 interface SendApprovalContentProps {
   onClose: () => void;
@@ -23,6 +24,8 @@ export default function SendApprovalContent({
 }: SendApprovalContentProps) {
   const pendingApprovals = usePendingSendMoneroApproval();
   const [timeLeft, setTimeLeft] = useState<number>(0);
+
+  const isMobile = useIsMobile();
 
   const approval = pendingApprovals[0]; // Handle the first approval request
 
@@ -121,7 +124,7 @@ export default function SendApprovalContent({
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ p: 3, gap: 1 }}>
+      <DialogActions sx={isMobile ? {gap: 1, justifyContent: 'center' } : { p: 3, gap: 1 }}>
         <PromiseInvokeButton
           onInvoke={handleReject}
           onSuccess={onClose}
@@ -131,6 +134,12 @@ export default function SendApprovalContent({
           startIcon={<CloseIcon />}
           displayErrorSnackbar={true}
           requiresContext={false}
+          sx={isMobile && {
+            width: '100%',
+            p: 2,
+            fontSize: 16,
+            borderRadius: 3,
+          }}
         >
           Reject
         </PromiseInvokeButton>
@@ -142,6 +151,12 @@ export default function SendApprovalContent({
           startIcon={<CheckIcon />}
           displayErrorSnackbar={true}
           requiresContext={false}
+          sx={ isMobile && {
+            width: '100%',
+            p: 2,
+            fontSize: 16,
+            borderRadius: 3,
+          }}
         >
           Send
         </PromiseInvokeButton>
