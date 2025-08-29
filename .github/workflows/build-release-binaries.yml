@@ -17,29 +17,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # which binaries we want to build
         bin: [swap, asb, asb-controller, orchestrator]
-        target:
-          [
-            x86_64-unknown-linux-gnu,
-            aarch64-apple-darwin,
-            x86_64-apple-darwin,
-            x86_64-pc-windows-gnu,
-          ]
-        host: [ubuntu-22.04] # default host: ubuntu
-        archive_extension: [tar] # default extension: tar
+        # which target to build from which host and the archive we use
         include:
-          # build for arm macos on arm macos
-          - target: aarch64-apple-darwin
-            host: macos-latest
-            archive_extension: tar
-          # build for intel macos on intel macos
-          - target: x86_64-apple-darwin
-            host: macos-13
-            archive_extension: tar
-          # use .zip for windows
-          - target: x86_64-pc-windows-gnu
-            host: ubuntu-22.04
-            archive_extension: zip
+          - {
+              target: x86_64-unknown-linux-gnu,
+              host: ubuntu-22.04,
+              archive_extension: tar,
+            }
+          - {
+              target: aarch64-apple-darwin,
+              host: macos-latest,
+              archive_extension: tar,
+            }
+          - {
+              target: x86_64-apple-darwin,
+              host: macos-13,
+              archive_extension: tar,
+            }
+          - {
+              target: x86_64-pc-windows-gnu,
+              host: ubuntu-22.04,
+              archive_extension: zip,
+            }
 
     runs-on: ${{ matrix.host }}
 
@@ -59,13 +60,13 @@ jobs:
       - name: Specify binary output path (windows)
         if: contains(matrix.target, 'windows')
         run: |
-          BIN_PATH=./target/x86_64-pc-windows-gnu/release/${{ matrix.bin }}.exe
+          BIN_PATH=target/x86_64-pc-windows-gnu/release/${{ matrix.bin }}.exe
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
 
       - name: Specify binary output path (Linux/Mac)
         if: contains(matrix.target , 'windows') == false
         run: |
-          BIN_PATH=./target/release/${{ matrix.bin }}
+          BIN_PATH=target/release/${{ matrix.bin }}
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
 
       - name: Smoke test the binary
