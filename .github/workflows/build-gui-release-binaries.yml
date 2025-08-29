@@ -13,7 +13,7 @@ jobs:
   draft-cb-release:
     # Do not publish preview releases to CloudNebula
     if: ${{ !contains(github.ref_name, 'preview') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -77,7 +77,7 @@ jobs:
   publish:
     if: ${{ !contains(github.ref_name, 'preview') }} # don't publish previews to crabnebula
     needs: [draft-cb-release, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 

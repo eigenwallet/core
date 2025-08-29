@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   static_analysis:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +20,7 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ubuntu-latest
+          host: ubuntu-22.04
 
       - name: Run clippy with default features
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -29,14 +29,14 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   sqlx_test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ubuntu-latest
+          host: ubuntu-22.04
 
       - name: Run sqlx cache setup script
         run: |
@@ -48,26 +48,26 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
           - target: x86_64-apple-darwin
             os: macos-13
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.host }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.os }}
+          host: ${{ matrix.host }}
           target: ${{ matrix.target }}
 
       - name: Build binary
-        run: cargo build -p swap --target ${{ matrix.target }}
+        run: cargo build -p swap --target ${{ matrix.target }} -vv
 
       - name: Upload swap binary
         uses: actions/upload-artifact@v4
@@ -85,18 +85,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.host }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.os }}
+          host: ${{ matrix.host }}
 
       - name: Run monero-harness tests
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.host == 'ubuntu-22.04'
         run: cargo test --package monero-harness --all-features
 
       - name: Run library tests for swap
@@ -146,7 +146,7 @@ jobs:
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
@@ -160,14 +160,14 @@ jobs:
         run: cargo test --package ${{ matrix.package }} --test ${{ matrix.test_name }} -- --nocapture
 
   check_stable:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ubuntu-latest
+          host: ubuntu-22.04
 
       - name: Run cargo check on stable rust
         run: cargo check --all-targets
