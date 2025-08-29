@@ -153,8 +153,8 @@ jobs:
           file: ./swap-asb/Dockerfile
           push: true
           tags: |
-            ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
-            ${{ env.DOCKER_IMAGE_NAME }}:latest
+            ${{ env.DOCKER_ASB_IMAGE_NAME }}:${{ github.event.release.tag_name }}
+            ${{ env.DOCKER_ASB_IMAGE_NAME }}:latest
         if: steps.docker_tags.outputs.preview == 'false'
 
       - name: Build and push Docker image without latest tag (preview release) (asb)
@@ -163,7 +163,7 @@ jobs:
           context: .
           file: ./swap-asb/Dockerfile
           push: true
-          tags: ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
+          tags: ${{ env.DOCKER_ASB_IMAGE_NAME }}:${{ github.event.release.tag_name }}
         if: steps.docker_tags.outputs.preview == 'true'
 
       - name: Build and push Docker image (asb-controller)
@@ -173,8 +173,8 @@ jobs:
           file: ./swap-controller/Dockerfile
           push: true
           tags: |
-            ${{ env.DOCKER_IMAGE_NAME }}-controller:${{ github.event.release.tag_name }}
-            ${{ env.DOCKER_IMAGE_NAME }}-controller:latest
+            ${{ env.DOCKER_ASB_CONTROLLER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
+            ${{ env.DOCKER_ASB_CONTROLLER_IMAGE_NAME }}:latest
         if: steps.docker_tags.outputs.preview == 'false'
 
       - name: Build and push Docker image without latest tag (preview release) (asb-controller)
@@ -183,5 +183,5 @@ jobs:
           context: .
           file: ./swap-controller/Dockerfile
           push: true
-          tags: ${{ env.DOCKER_IMAGE_NAME }}-controller:${{ github.event.release.tag_name }}
+          tags: ${{ env.DOCKER_ASB_CONTROLLER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
         if: steps.docker_tags.outputs.preview == 'true'
