@@ -110,6 +110,7 @@ jobs:
 
   build_and_push_docker:
     name: Build and Push Docker Image
+    if: github.event_name == 'release'
     runs-on: ubuntu-22.04
     needs: build_binaries
     permissions:
