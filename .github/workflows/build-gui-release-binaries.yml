@@ -12,8 +12,8 @@ concurrency:
 
 jobs:
   draft-cb-release:
-    # Do not publish preview releases to CloudNebula
-    if: ${{ !contains(github.ref_name, 'preview') }}
+    # don't do it for PR's
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +68,7 @@ jobs:
           tauriScript: cargo tauri
 
       - name: upload to crabnebula release (not for previews)
-        if: ${{ !contains(github.ref_name, 'preview') }}
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
         uses: crabnebula-dev/cloud-release@v0
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework tauri
@@ -76,7 +76,8 @@ jobs:
           args: --target ${{ matrix.target }}
 
   publish:
-    if: ${{ !contains(github.ref_name, 'preview') }} # don't publish previews to crabnebula
+    # don't publish previews to crabnebula
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
     needs: [draft-cb-release, build_gui]
     runs-on: ubuntu-22.04
     steps:

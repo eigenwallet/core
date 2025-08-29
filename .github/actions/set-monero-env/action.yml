@@ -25,6 +25,11 @@ runs:
         APTEOF
         EOF' >> $GITHUB_ENV
 
+    - name: Crabnebula identifier
+      shell: bash
+      run: |
+        echo "CN_APPLICATION=unstoppableswap/unstoppableswap-gui-rs" >> $GITHUB_ENV
+
     - name: Set platform identifiers
       shell: bash
       run: |
