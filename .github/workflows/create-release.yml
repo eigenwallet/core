@@ -21,10 +21,12 @@ jobs:
         id: extract-version
         shell: python
         run: |
+          import os
           branch_name = "${{ github.event.pull_request.head.ref }}"
           version = branch_name.split("/")[1]
 
-          print(f"::set-output name=version::{version}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
+              output_file.write(f'archive={archive_name}\n')
 
       - name: Extract changelog section for release
         id: changelog

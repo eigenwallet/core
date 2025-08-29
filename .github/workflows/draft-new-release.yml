@@ -66,7 +66,7 @@ jobs:
           git add CHANGELOG.md Cargo.lock swap/Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json
           git commit --message "Prepare release ${{ github.event.inputs.version }}"
 
-          echo "::set-output name=commit::$(git rev-parse HEAD)"
+          echo "commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Push new branch
         run: git push origin release/${{ github.event.inputs.version }} --force

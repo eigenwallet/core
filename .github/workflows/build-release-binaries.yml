@@ -66,6 +66,8 @@ jobs:
         shell: python
         run: |
           import platform
+          import os
+
           os_info = platform.uname()
 
           arch = os_info.machine
@@ -75,7 +77,8 @@ jobs:
 
           archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name }}_{os_info.system}_{arch}.${{ matrix.archive_extension }}'
 
-          print(f'::set-output name=archive::{archive_name}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
+              output_file.write(f'archive={archive_name}\n')
 
       - name: Pack Linux/Mac binary (tar)
         if: matrix.archive_extension == 'tar'
