@@ -2,7 +2,6 @@
 	path = monero-sys/monero
 	url = https://github.com/mrcyjanek/monero
 	branch = cyjan-fix-ios
-[submodule "monero-sys/monero_c"]
-	path = monero-sys/monero_c
-	url = https://github.com/mrcyjanek/monero_c.git
-	branch = develop
+[submodule "monero-sys/monero-depends"]
+	path = monero-sys/monero-depends
+	url = https://github.com/eigenwallet/monero-depends.git

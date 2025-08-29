@@ -84,7 +84,7 @@ fn main() {
 
     let contrib_depends_dir = std::env::current_dir()
         .expect("current directory to be accessible")
-        .join("monero_c/contrib/depends");
+        .join("monero-depends");
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
     let out_dir = Path::new(&out_dir);
@@ -424,7 +424,7 @@ fn compile_dependencies(
         target
     );
 
-    // Copy monero_c/contrib/depends to out_dir/depends in order to build the dependencies there
+    // Copy monero-depends to out_dir/depends in order to build the dependencies there
     match fs_extra::copy_items(
         &[&contrib_depends],
         &out_dir,
