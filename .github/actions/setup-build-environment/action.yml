@@ -63,10 +63,10 @@ runs:
       shell: bash
       run: yarn install --network-timeout 600000
 
-    - name: Install tauri-cli globally
-      uses: taiki-e/install-action@v2
-      with:
-        tool: tauri-cli@2.8.0
+    - name: Install tauri-cli via yarn
+      shell: bash
+      run: |
+        yarn add -D @tauri-apps/cli@2.8.0
 
     - name: Install just globally
       uses: taiki-e/install-action@v2
