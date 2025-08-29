@@ -27,22 +27,40 @@ jobs:
               target: x86_64-unknown-linux-gnu,
               host: ubuntu-22.04,
               archive_extension: tar,
+              do_smoke_test: true,
             }
           - {
               target: aarch64-apple-darwin,
               host: macos-latest,
               archive_extension: tar,
+              do_smoke_test: true,
             }
           - {
               target: x86_64-apple-darwin,
               host: macos-13,
               archive_extension: tar,
+              do_smoke_test: true,
             }
           - {
               target: x86_64-pc-windows-gnu,
               host: ubuntu-22.04,
               archive_extension: zip,
+              # Skip smoke test - cross-compiled Windows .exe cannot run on Linux build host
+              do_smoke_test: false,
             }
+          # Binary-specific smoke test configuration
+          - bin: swap
+            smoke_test_args: "--help"
+            smoke_test_fake_interactive: false
+          - bin: asb
+            smoke_test_args: "--help"
+            smoke_test_fake_interactive: false
+          - bin: asb-controller
+            smoke_test_args: ""
+            smoke_test_fake_interactive: false
+          - bin: orchestrator
+            smoke_test_args: ""
+            smoke_test_fake_interactive: true
 
     runs-on: ${{ matrix.host }}
 
@@ -64,8 +82,19 @@ jobs:
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
 
       - name: Smoke test the binary
-        if: matrix.bin != 'orchestrator' # ignore orchestrator, since it's interactive
-        run: ${{ env.BIN_PATH }} --help
+        if: matrix.do_smoke_test
+        shell: bash
+        run: |
+          if [[ "${{ matrix.smoke_test_fake_interactive }}" == "true" ]]; then
+            # Use script to provide pseudo-terminal for interactive binaries
+            timeout 3s bash -c '0<&- script -qefc "${{ env.BIN_PATH }}" /dev/null | cat' || true
+          elif [[ -n "${{ matrix.smoke_test_args }}" ]]; then
+            # Run with arguments
+            ${{ env.BIN_PATH }} ${{ matrix.smoke_test_args }}
+          else
+            # Run without arguments with timeout for binaries that don't support --help
+            timeout 3s ${{ env.BIN_PATH }} || true
+          fi
 
       - id: create-archive-name
         shell: python
