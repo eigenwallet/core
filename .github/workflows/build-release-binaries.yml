@@ -58,7 +58,7 @@ jobs:
       - name: Build ${{ matrix.bin }} in release mode
         run: |
           BIN_PATH="$(
-            cargo build --bin ${{ matrix.bin }} --release -q --message-format=json \
+            cargo build --bin ${{ matrix.bin }} --target ${{ matrix.target }} --release -q --message-format=json \
             | jq -r "select(.reason == \"compiler-artifact\" and .executable != null) | .executable"
           )"
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
