@@ -4,6 +4,17 @@ use std::fs;
 use std::io::Write as _;
 use std::path::Path;
 
+/// Directory at which this repository is stored as a submodule
+/// https://github.com/eigenwallet/monero-depends
+///
+/// See `.gitmodules` at the root of workspace.
+static MONERO_DEPENDS_DIR: &str = "monero-depends";
+
+/// Directory at which the Monero C++ codebase is stored as a submodule
+///
+/// See `.gitmodules` at the root of workspace.
+static MONERO_CPP_DIR: &str = "monero";
+
 /// Represents a patch to be applied to the Monero codebase
 struct EmbeddedPatch {
     name: &'static str,
@@ -84,7 +95,7 @@ fn main() {
 
     let contrib_depends_dir = std::env::current_dir()
         .expect("current directory to be accessible")
-        .join("monero_c/contrib/depends");
+        .join(MONERO_DEPENDS_DIR);
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
     let out_dir = Path::new(&out_dir);
@@ -92,7 +103,7 @@ fn main() {
         compile_dependencies(contrib_depends_dir, out_dir.join("depends"));
 
     // Build with the monero library all dependencies required
-    let mut config = Config::new("monero");
+    let mut config = Config::new(MONERO_CPP_DIR);
 
     let toolchain_file = contrib_depends_dir
         .join(format!("{}/share/toolchain.cmake", target))
@@ -147,7 +158,7 @@ fn main() {
             (_, true) => "-j1",
             (_, _) => "-j4",
         })
-        .build_arg(format!("-I."))
+        .build_arg("-I.")
         .build();
 
     let monero_build_dir = output_directory.join("build");
@@ -424,7 +435,7 @@ fn compile_dependencies(
         target
     );
 
-    // Copy monero_c/contrib/depends to out_dir/depends in order to build the dependencies there
+    // Copy monero-depends to out_dir/depends in order to build the dependencies there
     match fs_extra::copy_items(
         &[&contrib_depends],
         &out_dir,
@@ -485,19 +496,15 @@ fn execute_child_with_pipe(
     // Spawn threads to handle stdout and stderr
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("cargo:debug={}{}", &prefix_clone, line);
-            }
+        for line in reader.lines().flatten() {
+            println!("cargo:debug={}{}", &prefix_clone, line);
         }
     });
 
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                println!("cargo:debug={}{}", &prefix, line);
-            }
+        for line in reader.lines().flatten() {
+            println!("cargo:debug={}{}", &prefix, line);
         }
     });
 
@@ -513,7 +520,7 @@ fn execute_child_with_pipe(
 
 /// Applies the [`EMBEDDED_PATCHES`] to the monero codebase.
 fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
-    let monero_dir = Path::new("monero");
+    let monero_dir = Path::new(MONERO_CPP_DIR);
 
     if !monero_dir.exists() {
         return Err("Monero directory not found. Please ensure the monero submodule is initialized and present.".into());

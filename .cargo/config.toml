@@ -9,7 +9,7 @@ rustflags = ["-C", "link-arg=/STACK:8388608"]
 
 # For the GNU/MinGW tool-chain
 [target.'cfg(all(windows, target_env = "gnu"))']
-linker = "x86_64-w64-mingw32-g++"  # Use g++ driver so -lstdc++ gets pulled in automatically
+linker = "x86_64-w64-mingw32-g++" # Use g++ driver so -lstdc++ gets pulled in automatically
 rustflags = [
   "-C",
   "link-arg=-Wl,--stack,8388608",
@@ -25,17 +25,17 @@ rustflags = [
   "link-arg=-lcrypt32",
   "-C",
   "link-arg=-static-libgcc",
-  "-C", "link-arg=-static-libstdc++",
+  "-C",
+  "link-arg=-static-libstdc++",
 ]
 
 [target.aarch64-linux-android]
 linker = "/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
 ar = "/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
 
- rustflags = [
+rustflags = [
   "-Lnative=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/18/lib/linux",
   "-lstatic=clang_rt.builtins-aarch64-android",
-#  "-Lnative=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android",
-#  "-lstatic=c++abi",
- ]
-
+  #  "-Lnative=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android",
+  #  "-lstatic=c++abi",
+]
