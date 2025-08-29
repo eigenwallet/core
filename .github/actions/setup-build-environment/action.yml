@@ -47,6 +47,7 @@ runs:
       if: contains(inputs.host, 'macos')
       shell: bash
       run: |
+        brew uninstall ${{ env.DEPS_BUILD_MACOS }} && \
         brew install --force ${{ env.DEPS_BUILD_MACOS }}
 
     - name: Clone submodules
