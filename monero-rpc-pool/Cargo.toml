@@ -40,13 +40,18 @@ crossbeam = "0.8.4"
 tokio = { workspace = true, features = ["full"] }
 
 # Serialization
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 typeshare = { workspace = true }
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "chrono", "migrate"] }
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "chrono",
+    "migrate",
+] }
 
 # Web framework and HTTP
 axum = { version = "0.8.4", features = ["macros"] }
