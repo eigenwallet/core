@@ -8,6 +8,7 @@ anyhow = { workspace = true }
 pgp = { workspace = true }
 tracing = { workspace = true }
 rand_chacha = { workspace = true }
+chrono = { workspace = true }
 
 [lints]
 workspace = true

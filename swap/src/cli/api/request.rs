@@ -225,6 +225,26 @@ impl Request for GetPgpInfoArgs {
     }
 }
 
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+pub struct DecryptPgpMessageArgs {
+    encrypted_message: String,
+}
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize)]
+pub struct DecryptPgpMessageResponse {
+    message: String,
+}
+
+impl Request for DecryptPgpMessageArgs {
+    type Response = DecryptPgpMessageResponse;
+
+    fn request(self, ctx: Arc<Context>) -> impl Future<Output = Result<Self::Response>> {
+        decrypt_pgp_message(self.encrypted_message, ctx)
+    }
+}
+
 // GetSwapInfo
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1354,6 +1374,29 @@ async fn get_pgp_info(context: Arc<Context>) -> Result<GetPgpInfoResponse> {
     Ok(GetPgpInfoResponse {
         fingerprint: pgp_key.fingerprint().to_string(),
         public_key: pgp_key.public_key(),
+    })
+}
+
+async fn decrypt_pgp_message(
+    message: String,
+    context: Arc<Context>,
+) -> Result<DecryptPgpMessageResponse> {
+    let seed_bytes = context
+        .monero_manager
+        .as_ref()
+        .context("need monero wallet to derive pgp key")?
+        .get_seed_bytes()
+        .await
+        .context("Failed to derive pgp key from monero seed")?;
+
+    let pgp_key = PgpKey::try_from_seed(seed_bytes)
+        .await
+        .context("Couldn't derive pgp key from seed")?;
+
+    Ok(DecryptPgpMessageResponse {
+        message: pgp_key
+            .decrypt(message)
+            .context("couldn't decrypt message")?,
     })
 }
 

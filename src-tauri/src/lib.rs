@@ -2,6 +2,7 @@ use std::io::Write;
 use std::result::Result;
 use std::sync::Arc;
 use std::{collections::HashMap, fmt::Debug};
+use swap::cli::api::request::DecryptPgpMessageArgs;
 use swap::cli::{
     api::{
         data,
@@ -178,6 +179,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            decrypt_pgp_message,
             get_balance,
             get_monero_addresses,
             get_swap_info,
@@ -248,6 +250,7 @@ pub fn run() {
 // Implementations are handled by the Request trait
 tauri_command!(get_balance, BalanceArgs);
 tauri_command!(buy_xmr, BuyXmrArgs);
+tauri_command!(decrypt_pgp_message, DecryptPgpMessageArgs);
 tauri_command!(resume_swap, ResumeSwapArgs);
 tauri_command!(withdraw_btc, WithdrawBtcArgs);
 tauri_command!(monero_recovery, MoneroRecoveryArgs);

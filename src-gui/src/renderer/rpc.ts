@@ -48,6 +48,8 @@ import {
   GetMoneroSeedResponse,
   GetPgpInfoResponse,
   GetPgpInfoArgs,
+  DecryptPgpMessageArgs,
+  DecryptPgpMessageResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -284,6 +286,19 @@ export async function getMoneroRecoveryKeys(
 
 export async function getPgpInfo(): Promise<GetPgpInfoResponse> {
   return await invokeNoArgs<GetPgpInfoResponse>("get_pgp_info");
+}
+
+export async function decryptPgpMessage(
+  encrypted_message: string,
+): Promise<string> {
+  return (
+    await invoke<DecryptPgpMessageArgs, DecryptPgpMessageResponse>(
+      "decrypt_pgp_message",
+      {
+        encrypted_message,
+      },
+    )
+  ).message;
 }
 
 export async function checkContextAvailability(): Promise<boolean> {

@@ -1,7 +1,10 @@
+use std::io::{BufReader, Read};
+
 use anyhow::{Context, Result};
+use chrono::Utc;
 use pgp::{
     composed::{
-        ArmorOptions, KeyType, SecretKeyParamsBuilder, SignedPublicKey, SignedSecretKey,
+        ArmorOptions, KeyType, Message, SecretKeyParamsBuilder, SignedPublicKey, SignedSecretKey,
         SubkeyParamsBuilder,
     },
     types::{KeyDetails, Password},
@@ -43,6 +46,7 @@ impl PgpKey {
 
         // Specify the key parameters (todo: check out what matters here)
         let key_params = SecretKeyParamsBuilder::default()
+            .created_at(chrono::DateTime::<Utc>::UNIX_EPOCH) // hardcode the earliest timestamp for reproducibility
             .key_type(KeyType::Ed25519Legacy)
             .can_certify(true)
             .can_sign(false)
@@ -80,5 +84,18 @@ impl PgpKey {
             .signed_public_key()
             .to_armored_string(ArmorOptions::default())
             .expect("valid key to produce valid string")
+    }
+
+    pub fn decrypt(&self, encrypted_message: String) -> Result<String> {
+        let reader = BufReader::new(encrypted_message.as_bytes());
+        let (mut message, _headers) =
+            Message::from_armor(reader).context("couldn't decrypt message")?;
+
+        let mut decrypted_message = String::new();
+        message
+            .read_to_string(&mut decrypted_message)
+            .context("couldn't read valid utf 8 from message")?;
+
+        Ok(decrypted_message)
     }
 }
