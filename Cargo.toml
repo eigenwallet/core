@@ -1,24 +1,25 @@
 [workspace]
 resolver = "2"
 members = [
-  "electrum-pool",
-  "libp2p-rendezvous-server",
-  "libp2p-tor",
-  "monero-rpc",
-  "monero-rpc-pool",
-  "monero-seed",
-  "monero-sys",
-  "src-tauri",
-  "swap",
-  "swap-asb",
-  "swap-controller",
-  "swap-controller-api",
-  "swap-env",
-  "swap-feed",
-  "swap-fs",
-  "swap-orchestrator",
-  "swap-serde",
-  "throttle",
+    "electrum-pool",
+    "libp2p-rendezvous-server",
+    "libp2p-tor",
+    "monero-rpc",
+    "monero-rpc-pool",
+    "monero-seed",
+    "monero-sys",
+    "pgp-utils",
+    "src-tauri",
+    "swap",
+    "swap-asb",
+    "swap-controller",
+    "swap-controller-api",
+    "swap-env",
+    "swap-feed",
+    "swap-fs",
+    "swap-orchestrator",
+    "swap-serde",
+    "throttle",
 ]
 
 [workspace.dependencies]
@@ -39,19 +40,33 @@ libp2p = { version = "0.53.2" }
 monero = { version = "0.12", features = ["serde_support"] }
 once_cell = "1.19"
 rand = "0.8"
+rand_chacha = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
 rust_decimal_macros = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "time",
+    "macros",
+    "sync",
+] }
 toml = "0.9.5"
 tracing = { version = "0.1", features = ["attributes"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "fmt",
+    "ansi",
+    "env-filter",
+    "time",
+    "tracing-log",
+    "json",
+] }
 typeshare = "1.0"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+pgp = "0.16.0"
 
 # Tor/Arti crates
 arti-client = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841", default-features = false }
@@ -64,7 +79,11 @@ tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "18111286b58
 dialoguer = "0.11"
 
 # Build dependencies
-vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
+vergen = { version = "8.3", default-features = false, features = [
+    "build",
+    "git",
+    "git2",
+] }
 vergen-git2 = { version = "1", features = ["build"] }
 
 [patch.crates-io]

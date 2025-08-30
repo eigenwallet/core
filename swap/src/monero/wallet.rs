@@ -15,6 +15,7 @@ use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::cli::api::{
     request::{GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse},
@@ -492,6 +493,23 @@ impl Wallets {
             .await?;
 
         Ok(())
+    }
+
+    /// Use the wallet's private key to derive a pgp key.
+    pub async fn get_seed_bytes(&self) -> Result<[u8; 32]> {
+        // Get seed from the main monero wallet.ok
+        let unparsed_seed = Zeroizing::new(
+            self.main_wallet()
+                .await
+                .seed()
+                .await
+                .context("can't get wallet seed")?,
+        );
+
+        let seed = monero_seed::Seed::from_string(monero_seed::Language::English, unparsed_seed)
+            .context("couldn't parse wallet seed")?;
+
+        Ok(*seed.entropy())
     }
 
     /// Get the last 5 recently used wallets

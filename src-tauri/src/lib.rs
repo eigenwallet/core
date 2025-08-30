@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::io::Write;
 use std::result::Result;
 use std::sync::Arc;
+use std::{collections::HashMap, fmt::Debug};
 use swap::cli::{
     api::{
         data,
@@ -12,7 +12,7 @@ use swap::cli::{
             ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs,
             GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSyncProgressArgs,
-            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
+            GetPendingApprovalsResponse, GetPgpInfoArgs, GetRestoreHeightArgs, GetSwapInfoArgs,
             GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
             SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
@@ -32,9 +32,9 @@ trait ToStringResult<T> {
     fn to_string_result(self) -> Result<T, String>;
 }
 
-impl<T, E: ToString> ToStringResult<T> for Result<T, E> {
+impl<T, E: Debug> ToStringResult<T> for Result<T, E> {
     fn to_string_result(self) -> Result<T, String> {
-        self.map_err(|e| e.to_string())
+        self.map_err(|e| format!("{:?}", e))
     }
 }
 
@@ -201,6 +201,7 @@ pub fn run() {
             resolve_approval_request,
             redact,
             save_txt_files,
+            get_pgp_info,
             get_monero_history,
             get_monero_main_address,
             get_monero_balance,
@@ -258,6 +259,7 @@ tauri_command!(send_monero, SendMoneroArgs);
 tauri_command!(change_monero_node, ChangeMoneroNodeArgs);
 
 // These commands require no arguments
+tauri_command!(get_pgp_info, GetPgpInfoArgs, no_args);
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
 tauri_command!(suspend_current_swap, SuspendCurrentSwapArgs, no_args);
 tauri_command!(get_swap_info, GetSwapInfoArgs);

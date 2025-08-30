@@ -23,6 +23,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
 dependencies = [
+ "bytes",
  "crypto-common",
  "generic-array",
 ]
@@ -372,7 +373,7 @@ checksum = "844e00dc1e665b3cf0bba745aa9c6464292ca512db0c11384511586701eb0335"
 dependencies = [
  "base64 0.21.7",
  "bcder",
- "bzip2",
+ "bzip2 0.4.4",
  "chrono",
  "cryptographic-message-syntax",
  "digest 0.10.7",
@@ -707,7 +708,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "942c7cd7ae39e91bde4820d74132e9862e62c2f386c3aa90ccf55949f5bad63a"
 dependencies = [
  "brotli 3.5.0",
- "bzip2",
+ "bzip2 0.4.4",
  "flate2",
  "futures-core",
  "memchr",
@@ -1492,6 +1493,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d7e60934ceec538daadb9d8432424ed043a904d8e0243f3c6446bce549a46ac"
 
 [[package]]
+name = "bitfields"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1d84268bbf9b487d31fe4b849edbefcd3911422d7a07de855a2da1f70ab3d1c"
+dependencies = [
+ "bitfields-impl",
+]
+
+[[package]]
+name = "bitfields-impl"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c93edde7bb4416c35c85048e34f78999dcb47d199bde3b1d79286156f3e2fb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1850,6 +1872,16 @@ checksum = "bdb116a6ef3f6c3698828873ad02c3014b3c85cadb88496095628e3ef1e347f8"
 dependencies = [
  "bzip2-sys",
  "libc",
+]
+
+[[package]]
+name = "bzip2"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49ecfb22d906f800d4fe833b6282cf4dc1c298f5057ca0b5445e5c209735ca47"
+dependencies = [
+ "bzip2-sys",
+ "libbz2-rs-sys",
 ]
 
 [[package]]
@@ -2778,7 +2810,7 @@ checksum = "0dc92fb57ca44df6db8059111ab3af99a63d5d0f8375d9972e319a379c6bab76"
 dependencies = [
  "generic-array",
  "rand_core 0.6.4",
- "serdect",
+ "serdect 0.2.0",
  "subtle",
  "zeroize",
 ]
@@ -2957,6 +2989,23 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "subtle-ng",
+ "zeroize",
+]
+
+[[package]]
+name = "cx448"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4c0cf476284b03eb6c10e78787b21c7abb7d7d43cb2f02532ba6b831ed892fa"
+dependencies = [
+ "crypto-bigint",
+ "elliptic-curve",
+ "pkcs8",
+ "rand_core 0.6.4",
+ "serdect 0.3.0",
+ "sha3",
+ "signature 2.2.0",
+ "subtle",
  "zeroize",
 ]
 
@@ -3954,6 +4003,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6043086bf7973472e0c7dff2142ea0b680d30e18d9cc40f267efbf222bd47"
 dependencies = [
  "base16ct",
+ "base64ct",
  "crypto-bigint",
  "digest 0.10.7",
  "ff",
@@ -3964,7 +4014,10 @@ dependencies = [
  "pkcs8",
  "rand_core 0.6.4",
  "sec1",
+ "serde_json",
+ "serdect 0.2.0",
  "subtle",
+ "tap",
  "zeroize",
 ]
 
@@ -6858,6 +6911,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libbz2-rs-sys"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0864a00c8d019e36216b69c2c4ce50b83b7bd966add3cf5ba554ec44f8bebcf5"
+
+[[package]]
 name = "libc"
 version = "0.2.175"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9713,6 +9772,85 @@ dependencies = [
 ]
 
 [[package]]
+name = "pgp"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f91d320242d9b686612b15526fe38711afdf856e112eaa4775ce25b0d9b12b11"
+dependencies = [
+ "aead",
+ "aes",
+ "aes-gcm",
+ "aes-kw",
+ "argon2",
+ "base64 0.22.1",
+ "bitfields",
+ "block-padding",
+ "blowfish",
+ "buffer-redux",
+ "byteorder",
+ "bytes",
+ "bzip2 0.5.2",
+ "camellia",
+ "cast5",
+ "cfb-mode",
+ "chrono",
+ "cipher",
+ "const-oid",
+ "crc24",
+ "curve25519-dalek 4.1.3",
+ "cx448",
+ "derive_builder",
+ "derive_more 2.0.1",
+ "des",
+ "digest 0.10.7",
+ "dsa",
+ "eax",
+ "ecdsa",
+ "ed25519-dalek 2.2.0",
+ "elliptic-curve",
+ "flate2",
+ "generic-array",
+ "hex",
+ "hkdf",
+ "idea",
+ "k256",
+ "log",
+ "md-5",
+ "nom",
+ "num-bigint-dig",
+ "num-traits",
+ "num_enum",
+ "ocb3",
+ "p256",
+ "p384",
+ "p521",
+ "rand 0.8.5",
+ "regex",
+ "ripemd",
+ "rsa",
+ "sha1",
+ "sha1-checked",
+ "sha2 0.10.9",
+ "sha3",
+ "signature 2.2.0",
+ "smallvec",
+ "snafu 0.8.8",
+ "twofish",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "pgp-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pgp 0.16.0",
+ "rand_chacha 0.3.1",
+ "tracing",
+]
+
+[[package]]
 name = "phf"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10669,7 +10807,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "rasn-derive",
- "snafu",
+ "snafu 0.7.5",
 ]
 
 [[package]]
@@ -11204,7 +11342,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "422ffe5b31ea4c7c76a361dc29b986e11fb6987313453088e1fd95f34ecc1ba6"
 dependencies = [
  "bitflags 2.9.3",
- "bzip2",
+ "bzip2 0.4.4",
  "chrono",
  "cpio",
  "digest 0.10.7",
@@ -11219,7 +11357,7 @@ dependencies = [
  "num",
  "num-derive",
  "num-traits",
- "pgp",
+ "pgp 0.14.2",
  "sha1",
  "sha2 0.10.9",
  "thiserror 2.0.16",
@@ -11895,6 +12033,7 @@ dependencies = [
  "der",
  "generic-array",
  "pkcs8",
+ "serdect 0.2.0",
  "subtle",
  "zeroize",
 ]
@@ -12326,6 +12465,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serdect"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f42f67da2385b51a5f9652db9c93d78aeaf7610bf5ec366080b6de810604af53"
+dependencies = [
+ "base16ct",
+ "serde",
+]
+
+[[package]]
 name = "serial_test"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12701,7 +12850,16 @@ checksum = "e4de37ad025c587a29e8f3f5605c00f70b98715ef90b9061a815b9e59e9042d6"
 dependencies = [
  "backtrace",
  "doc-comment",
- "snafu-derive",
+ "snafu-derive 0.7.5",
+]
+
+[[package]]
+name = "snafu"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4800ae0e2ebdfaea32ffb9745642acdc378740dcbd74d3fb3cd87572a34810c6"
+dependencies = [
+ "snafu-derive 0.8.8",
 ]
 
 [[package]]
@@ -12714,6 +12872,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "186f5ba9999528053fb497fdf0dd330efcc69cfe4ad03776c9d704bc54fee10f"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -13455,6 +13625,7 @@ dependencies = [
  "monero-sys",
  "once_cell",
  "pem",
+ "pgp-utils",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -13471,6 +13642,7 @@ dependencies = [
  "serial_test",
  "sha2 0.10.9",
  "sigma_fun",
+ "smallvec",
  "sqlx",
  "structopt",
  "strum 0.26.3",
@@ -18472,7 +18644,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93ab48844d61251bb3835145c521d88aa4031d7139e8485990f60ca911fa0815"
 dependencies = [
  "byteorder",
- "bzip2",
+ "bzip2 0.4.4",
  "crc32fast",
  "flate2",
  "thiserror 1.0.69",

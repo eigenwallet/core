@@ -25,6 +25,7 @@ import SeedSelectionDialog from "./modal/seed-selection/SeedSelectionDialog";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import PasswordEntryDialog from "./modal/password-entry/PasswordEntryDialog";
+import PgpPage from "./pages/pgp/PgpPage";
 
 declare module "@mui/material/styles" {
   interface Theme {
@@ -82,6 +83,7 @@ function InnerContent() {
         <Route path="/swap" element={<SwapPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/bitcoin-wallet" element={<WalletPage />} />
+        <Route path="/pgp" element={<PgpPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />
       </Routes>

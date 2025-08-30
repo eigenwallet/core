@@ -46,6 +46,8 @@ import {
   GetRestoreHeightResponse,
   MoneroNodeConfig,
   GetMoneroSeedResponse,
+  GetPgpInfoResponse,
+  GetPgpInfoArgs,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -278,6 +280,10 @@ export async function getMoneroRecoveryKeys(
       swap_id: swapId,
     },
   );
+}
+
+export async function getPgpInfo(): Promise<GetPgpInfoResponse> {
+  return await invokeNoArgs<GetPgpInfoResponse>("get_pgp_info");
 }
 
 export async function checkContextAvailability(): Promise<boolean> {

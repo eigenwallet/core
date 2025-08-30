@@ -28,10 +28,12 @@ use libp2p::core::Multiaddr;
 use libp2p::{identity, PeerId};
 use monero_seed::{Language, Seed as MoneroSeed};
 use once_cell::sync::Lazy;
+use pgp_utils::PgpKey;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryInto;
 use std::future::Future;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -201,6 +203,25 @@ impl Request for ListSellersArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         list_sellers(self, ctx).await
+    }
+}
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+pub struct GetPgpInfoArgs;
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize)]
+pub struct GetPgpInfoResponse {
+    fingerprint: String,
+    public_key: String,
+}
+
+impl Request for GetPgpInfoArgs {
+    type Response = GetPgpInfoResponse;
+
+    fn request(self, ctx: Arc<Context>) -> impl Future<Output = Result<Self::Response>> {
+        get_pgp_info(ctx)
     }
 }
 
@@ -1314,6 +1335,25 @@ pub async fn cancel_and_refund(
         json!({
             "result": state,
         })
+    })
+}
+
+async fn get_pgp_info(context: Arc<Context>) -> Result<GetPgpInfoResponse> {
+    let seed_bytes = context
+        .monero_manager
+        .as_ref()
+        .context("need monero wallet to derive pgp key")?
+        .get_seed_bytes()
+        .await
+        .context("Failed to derive pgp key from monero seed")?;
+
+    let pgp_key = PgpKey::try_from_seed(seed_bytes)
+        .await
+        .context("Couldn't derive pgp key from seed")?;
+
+    Ok(GetPgpInfoResponse {
+        fingerprint: pgp_key.fingerprint().to_string(),
+        public_key: pgp_key.public_key(),
     })
 }
 
