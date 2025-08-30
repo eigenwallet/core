@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use pgp::{
     composed::{
-        ArmorOptions, KeyType, Message, SecretKeyParamsBuilder, SignedPublicKey, SignedSecretKey,
-        SubkeyParamsBuilder,
+        ArmorOptions, KeyType, Message, MessageReader, SecretKeyParamsBuilder, SignedPublicKey,
+        SignedSecretKey, SubkeyParamsBuilder,
     },
     types::{KeyDetails, Password},
 };
@@ -87,15 +87,16 @@ impl PgpKey {
     }
 
     pub fn decrypt(&self, encrypted_message: String) -> Result<String> {
-        let reader = BufReader::new(encrypted_message.as_bytes());
-        let (mut message, _headers) =
-            Message::from_armor(reader).context("couldn't decrypt message")?;
+        let (message, _headers) =
+            Message::from_string(&encrypted_message).context("couldn't decode message")?;
 
-        let mut decrypted_message = String::new();
+        let mut decrypted = String::new();
         message
-            .read_to_string(&mut decrypted_message)
-            .context("couldn't read valid utf 8 from message")?;
+            .decrypt(&Password::empty(), &self.inner)
+            .context("couldn't decrypt message")?
+            .read_to_string(&mut decrypted)
+            .context("message was decrypted but not utf 8")?;
 
-        Ok(decrypted_message)
+        Ok(decrypted)
     }
 }
