@@ -41,13 +41,13 @@ jobs:
               archive_extension: tar,
               do_smoke_test: true,
             }
-          - {
-              target: x86_64-pc-windows-gnu,
-              host: ubuntu-22.04,
-              archive_extension: zip,
-              # Skip smoke test - cross-compiled Windows .exe cannot run on Linux build host
-              do_smoke_test: false,
-            }
+          #- {
+          #    target: x86_64-pc-windows-gnu,
+          #    host: ubuntu-22.04,
+          #    archive_extension: zip,
+          #    # Skip smoke test - cross-compiled Windows .exe cannot run on Linux build host
+          #    do_smoke_test: false,
+          #  }
           # Binary-specific smoke test configuration
           - bin: swap
             smoke_test_args: "--help"
