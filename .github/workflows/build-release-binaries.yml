@@ -19,50 +19,40 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # which binaries we want to build
-        bin: [swap, asb, asb-controller, orchestrator]
-        # which target to build from which host and the archive we use
-        include:
-          - {
-              target: x86_64-unknown-linux-gnu,
-              host: ubuntu-22.04,
-              archive_extension: tar,
-              do_smoke_test: true,
-            }
-          - {
-              target: aarch64-apple-darwin,
-              host: macos-latest,
-              archive_extension: tar,
-              do_smoke_test: true,
-            }
-          - {
-              target: x86_64-apple-darwin,
-              host: macos-13,
-              archive_extension: tar,
-              do_smoke_test: true,
-            }
-          #- {
-          #    target: x86_64-pc-windows-gnu,
-          #    host: ubuntu-22.04,
-          #    archive_extension: zip,
-          #    # Skip smoke test - cross-compiled Windows .exe cannot run on Linux build host
-          #    do_smoke_test: false,
-          #  }
-          # Binary-specific smoke test configuration
-          - bin: swap
+        target:
+          - target: x86_64-unknown-linux-gnu
+            host: ubuntu-22.04
+            archive_extension: tar
+            do_smoke_test: true
+          - target: aarch64-apple-darwin
+            host: macos-latest
+            archive_extension: tar
+            do_smoke_test: true
+          - target: x86_64-apple-darwin
+            host: macos-13
+            archive_extension: tar
+            do_smoke_test: true
+          # Once Windows works again, uncomment
+          # - target: x86_64-pc-windows-gnu
+          #   host: ubuntu-22.04
+          #   archive_extension: zip
+          #   do_smoke_test: false
+
+        bin:
+          - name: swap
             smoke_test_args: "--help"
             smoke_test_fake_interactive: false
-          - bin: asb
+          - name: asb
             smoke_test_args: "--help"
             smoke_test_fake_interactive: false
-          - bin: asb-controller
+          - name: asb-controller
             smoke_test_args: ""
             smoke_test_fake_interactive: false
-          - bin: orchestrator
+          - name: orchestrator
             smoke_test_args: ""
             smoke_test_fake_interactive: true
 
-    runs-on: ${{ matrix.host }}
+    runs-on: ${{ matrix.target.host }}
 
     steps:
       - uses: actions/checkout@v4
@@ -70,27 +60,31 @@ jobs:
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.host }}
-          target: ${{ matrix.target }}
+          host: ${{ matrix.target.host }}
+          target: ${{ matrix.target.target }}
 
-      - name: Build ${{ matrix.bin }} in release mode
+      - name: Build ${{ matrix.bin.name }} in release mode
         run: |
+          set -euo pipefail
           BIN_PATH="$(
-            cargo build --bin ${{ matrix.bin }} --target ${{ matrix.target }} --release -q --message-format=json \
-            | jq -r "select(.reason == \"compiler-artifact\" and .executable != null) | .executable"
+            cargo build --bin "${{ matrix.bin.name }}" --target "${{ matrix.target.target }}" --release -q --message-format=json \
+            | jq -re 'select(.reason=="compiler-artifact" and .executable!=null) | .executable' \
+            | tail -n1
           )"
-          echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
+          # Ensure we actually found a path (nice error if not)
+          [[ -n "$BIN_PATH" ]] || { echo "Failed to extract executable path from cargo output"; exit 1; }
+          echo "BIN_PATH=$BIN_PATH" >> "$GITHUB_ENV"
 
       - name: Smoke test the binary
-        if: matrix.do_smoke_test
+        if: ${{ matrix.target.do_smoke_test }}
         shell: bash
         run: |
-          if [[ "${{ matrix.smoke_test_fake_interactive }}" == "true" ]]; then
+          if [[ "${{ matrix.bin.smoke_test_fake_interactive }}" == "true" ]]; then
             # Use script to provide pseudo-terminal for interactive binaries
             timeout 3s bash -c '0<&- script -qefc "${{ env.BIN_PATH }}" /dev/null | cat' || true
-          elif [[ -n "${{ matrix.smoke_test_args }}" ]]; then
+          elif [[ -n "${{ matrix.bin.smoke_test_args }}" ]]; then
             # Run with arguments
-            ${{ env.BIN_PATH }} ${{ matrix.smoke_test_args }}
+            ${{ env.BIN_PATH }} ${{ matrix.bin.smoke_test_args }}
           else
             # Run without arguments with timeout for binaries that don't support --help
             timeout 3s ${{ env.BIN_PATH }} || true
@@ -106,22 +100,22 @@ jobs:
 
           arch = os_info.machine
 
-          triple = "${{ matrix.target }}".split("-")
+          triple = "${{ matrix.target.target }}".split("-")
           arch = triple[0]
 
-          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name || format('pull_request_{0}', github.event.pull_request.number) }}_{os_info.system}_{arch}.${{ matrix.archive_extension }}'
+          archive_name=f'${{ matrix.bin.name }}_${{ github.event.release.tag_name || format('pull_request_{0}', github.event.pull_request.number) }}_{os_info.system}_{arch}.${{ matrix.target.archive_extension }}'
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
               output_file.write(f'archive={archive_name}\n')
 
       - name: Pack Linux/Mac binary (tar)
-        if: matrix.archive_extension == 'tar'
+        if: ${{ matrix.target.archive_extension == 'tar' }}
         shell: bash
         run: |
           tar -cf ${{ steps.create-archive-name.outputs.archive }} -C $(dirname ${{ env.BIN_PATH }}) $(basename ${{ env.BIN_PATH }})
 
       - name: Pack Windows binary (zip)
-        if: matrix.archive_extension == 'zip'
+        if: ${{ matrix.target.archive_extension == 'zip' }}
         shell: bash
         run: |
           zip ${{ steps.create-archive-name.outputs.archive }} -j ${{ env.BIN_PATH }}
