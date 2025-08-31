@@ -66,13 +66,20 @@ jobs:
       - name: Build ${{ matrix.bin.name }} in release mode
         run: |
           set -euo pipefail
-          BIN_PATH="$(
-            cargo build --bin "${{ matrix.bin.name }}" --target "${{ matrix.target.target }}" --release -q --message-format=json \
-            | jq -re 'select(.reason=="compiler-artifact" and .executable!=null) | .executable' \
-            | tail -n1
-          )"
-          # Ensure we actually found a path (nice error if not)
-          [[ -n "$BIN_PATH" ]] || { echo "Failed to extract executable path from cargo output"; exit 1; }
+          json="$(mktemp)"
+
+          cargo build \
+            --bin "${{ matrix.bin.name }}" \
+            --target "${{ matrix.target.target }}" \
+            --release \
+            --message-format=json > "$json"
+
+          BIN_PATH="$(jq -re '
+            select(.reason=="compiler-artifact")
+            | select(.target.kind[]=="bin")
+            | .executable
+          ' "$json" | tail -n1)"
+
           echo "BIN_PATH=$BIN_PATH" >> "$GITHUB_ENV"
 
       - name: Smoke test the binary
