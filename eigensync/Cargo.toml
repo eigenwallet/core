@@ -11,6 +11,8 @@ repository = "https://github.com/UnstoppableSwap/unstoppableswap-gui"
 serde = { workspace = true }
 uuid = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
+directories-next = "2"
+clap = { workspace = true }
 
 # Automerge for CRDT functionality
 automerge = "0.6"
@@ -28,9 +30,8 @@ libp2p = { workspace = true, features = [
 ] }
 anyhow = { workspace = true }
 
-tracing = { workspace = true }
-tracing-appender = "0.2"
-tracing-subscriber = { workspace = true }
+tracing = { version = "0.1", features = ["attributes"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
 
 tokio = { workspace = true, features = [
     "rt-multi-thread",
@@ -42,6 +43,7 @@ env_logger = "0.11"
 autosurgeon = { version = "0.8.7", features = ["uuid"] }
 hex = { workspace = true }
 tokio-util = { version = "0.7.16", features = ["rt"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "chrono"] }
 
 [lints]
 workspace = true

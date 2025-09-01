@@ -128,7 +128,7 @@ impl Database for SqliteDatabase {
 
             sqlx::query!(
                 r#"
-            insert into monero_addresses (
+            insert or ignore into monero_addresses (
                 swap_id,
                 address,
                 percentage,
@@ -189,6 +189,28 @@ impl Database for SqliteDatabase {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(MoneroAddressPool::new(addresses))
+    }
+
+    async fn get_monero_address_pools(&self) -> Result<Vec<(Uuid, MoneroAddressPool)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT swap_id, address, percentage, label
+            FROM monero_addresses
+            GROUP BY swap_id
+            "#
+        )
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut pools = HashMap::new();
+
+        for row in rows.iter() {
+            let swap_id = Uuid::from_str(&row.swap_id)?;
+            let pool = self.get_monero_address_pool(swap_id).await?;
+            pools.insert(swap_id, pool);
+        }
+
+        Ok(pools.into_iter().collect())
     }
 
     async fn get_monero_addresses(&self) -> Result<Vec<monero::Address>> {

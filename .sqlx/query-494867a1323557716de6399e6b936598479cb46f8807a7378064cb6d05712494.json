@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT change\n            FROM change\n            WHERE peer_id = ?\n            ORDER BY id DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "change",
+        "ordinal": 0,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "494867a1323557716de6399e6b936598479cb46f8807a7378064cb6d05712494"
+}

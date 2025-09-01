@@ -41,7 +41,7 @@ export DATABASE_URL
 echo "🗄️  Creating database..."
 cargo sqlx database create
 
-for dir in swap monero-sys monero-rpc-pool; do
+for dir in swap monero-sys monero-rpc-pool eigensync; do
     echo "🔄 Running migrations in $dir..."
     (cd "$WORKSPACE_ROOT/$dir" && rm -rf .sqlx && cargo sqlx migrate run --ignore-missing)
 done

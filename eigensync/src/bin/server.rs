@@ -1,6 +1,7 @@
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{collections::HashMap, path::PathBuf, str::FromStr, time::Duration};
 
 use anyhow::{Context};
+use directories_next::ProjectDirs;
 use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, SerializedChange, ServerRequest};
 use libp2p::{
     futures::StreamExt, identity, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
@@ -8,10 +9,15 @@ use libp2p::{
 use autosurgeon::{Hydrate, Reconcile};
 use tracing_subscriber::EnvFilter;
 
-#[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
-struct Foo {
-    bar: u64,
+use clap::Parser;
+
+#[derive(Parser)]
+struct Cli {
+    #[arg(long)]
+    pub data_dir: PathBuf
 }
+
+use eigensync::database::Database;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,6 +25,10 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new("info"))
         .init();
+
+    let data_dir = Cli::parse().data_dir;
+
+    let db = Database::new(data_dir).await?;
     
     let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333")?;
 
@@ -49,16 +59,14 @@ async fn main() -> anyhow::Result<()> {
         swarm.local_peer_id()
     );
 
-    let mut global_changes: HashMap<PeerId, Vec<SerializedChange>> = HashMap::new();
-
     loop {
         tokio::select! {
-            event = swarm.select_next_some() => handle_event(&mut swarm, event, &mut global_changes).await?
+            event = swarm.select_next_some() => handle_event(&mut swarm, event, &db).await?
         }
     }
 }
 
-async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>, global_changes: &mut HashMap<PeerId, Vec<SerializedChange>>) -> anyhow::Result<()> {
+async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>, db: &Database) -> anyhow::Result<()> {
 
     match event {
         SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::Message {
@@ -70,15 +78,20 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
 
                     match request {
                         ServerRequest::UploadChangesToServer { changes } => {
-                            let saved_changed_of_peer = global_changes.entry(peer).or_insert(Vec::new());
+                            //let saved_changed_of_peer = global_changes.entry(peer).or_insert(Vec::new());
+                            let saved_changed_of_peer = db.get_peer_changes(peer).await?;
 
                             // Saved all changes the client sent us but we don't have yet stored for him
                             let changes_clone = changes.clone();
+
+                            tracing::info!("Received {} changes from client", changes.len());
+
                             let uploaded_new_changes: Vec<_> = changes.into_iter().filter(|c| !saved_changed_of_peer.contains(c)).collect();
-                            saved_changed_of_peer.extend(uploaded_new_changes.clone());
+                            
+                            db.insert_peer_changes(peer, uploaded_new_changes).await?;
 
                             // Check which changes the client is missing
-                            let changes_client_is_missing: Vec<_> = saved_changed_of_peer.iter().filter(|c| !changes_clone.contains(c)).cloned().collect();
+                            let changes_client_is_missing: Vec<_> = db.get_peer_changes(peer).await?.iter().filter(|c| !changes_clone.contains(c)).cloned().collect();
 
                             tracing::info!("Sending {} changes to client", changes_client_is_missing.len());
 

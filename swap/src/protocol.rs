@@ -147,6 +147,7 @@ pub trait Database {
         address: MoneroAddressPool,
     ) -> Result<()>;
     async fn get_monero_address_pool(&self, swap_id: Uuid) -> Result<MoneroAddressPool>;
+    async fn get_monero_address_pools(&self) -> Result<Vec<(Uuid, MoneroAddressPool)>>;
     async fn get_monero_addresses(&self) -> Result<Vec<monero::Address>>;
     async fn insert_address(&self, peer_id: PeerId, address: Multiaddr) -> Result<()>;
     async fn get_addresses(&self, peer_id: PeerId) -> Result<Vec<Multiaddr>>;

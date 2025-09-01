@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert or ignore into monero_addresses (\n                swap_id,\n                address,\n                percentage,\n                label\n                ) values (?, ?, ?, ?);\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "888b6068a36501c66d1f9ff0cfe93ad93c1d30ffb6963009e6e7923dcabf571c"
+}

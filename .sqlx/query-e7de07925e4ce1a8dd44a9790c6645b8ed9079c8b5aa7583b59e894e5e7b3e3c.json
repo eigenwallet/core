@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                INSERT or IGNORE INTO change (peer_id, change)\n                VALUES (?, ?)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e7de07925e4ce1a8dd44a9790c6645b8ed9079c8b5aa7583b59e894e5e7b3e3c"
+}

@@ -252,11 +252,16 @@ impl EigensyncDatabaseAdapter {
         }
 
         document_lock.modify(|document| {
-            document.peers.extend(new_peers);
-            document.states.extend(new_states);
-            document.monero_addresses.extend(new_addresses);
-            document.buffered_transfer_proofs.extend(new_proof);
-            document.peer_addresses.extend(new_peer_addresses);
+            document.peers.extend(new_peers.clone());
+            tracing::info!("Added {} peers", new_peers.len());
+            document.states.extend(new_states.clone());
+            tracing::info!("Added {} states", new_states.len());
+            document.monero_addresses.extend(new_addresses.clone());
+            tracing::info!("Added {} addresses", new_addresses.len());
+            document.buffered_transfer_proofs.extend(new_proof.clone());
+            tracing::info!("Added {} proofs", new_proof.len());
+            document.peer_addresses.extend(new_peer_addresses.clone());
+            tracing::info!("Added {} peer addresses", new_peer_addresses.len());
             Ok(())
         })?;
 
@@ -271,11 +276,12 @@ impl EigensyncDatabaseAdapter {
 
         // States table
         let document_states: HashSet<InnerStateKey> = document.states.keys().cloned().collect();
-        let document_states_len = document_states.len();
         let db_states = self.db.get_all_states().await?;
 
         let mut document_states = document_states.into_iter().collect::<Vec<_>>();
         document_states.sort_by_key(|state_key| state_key.1);
+
+        let mut counter = 0;
 
         for state_key in document_states {
             let (swap_id, timestamp) = (state_key.0, state_key.1);
@@ -295,9 +301,13 @@ impl EigensyncDatabaseAdapter {
             if let Err(e) = self.db.insert_existing_state(swap_uuid, document_state, timestamp).await {
                 tracing::error!("Error inserting existing state: {:?}", e);
             }
+            counter += 1;
         }
 
+        tracing::info!("Downloaded {} states", counter);
+    
         //peer_addresses table
+        let mut counter = 0;
         let document_peer_addresses: HashSet<InnerPeerAddressesKey> = document.peer_addresses.keys().cloned().collect();
         let db_peer_addresses = self.db.get_all_peer_addresses().await?;
 
@@ -309,7 +319,10 @@ impl EigensyncDatabaseAdapter {
             }
 
             self.db.insert_address(peer_id, address).await?;
+            counter += 1;
         }
+
+        tracing::info!("Downloaded {} peer addresses", counter);
 
         //peers table
         let document_peers: HashSet<Uuid> = document.peers.keys().cloned().collect();
@@ -329,26 +342,18 @@ impl EigensyncDatabaseAdapter {
             }
 
             self.db.insert_peer_id(swap_id, document_peer).await?;
+            counter += 1;
         }
 
+        tracing::info!("Downloaded {} peers", counter);
+
         //monero_addresses table
+        let mut counter = 0;
         let document_monero_addresses: HashSet<InnerMoneroAddressKey> = document.monero_addresses.keys().cloned().collect();
-        let db_monero_addresses = self.db.get_monero_addresses().await?;
+        let db_monero_addresses = self.db.get_monero_address_pools().await?;
 
         for monero_address_key in document_monero_addresses {
             let (swap_id, address) = (monero_address_key.0.clone(), monero_address_key.1.clone());
-
-            // Check if the address exists in the database
-            let address_exists = if let Some(addr_str) = &address {
-                db_monero_addresses.iter().any(|db_addr| db_addr.to_string() == *addr_str)
-            } else {
-                false // No address to check
-            };
-
-            if address_exists {
-                tracing::info!("monero address already exists");
-                continue;
-            }
 
             // Get the percentage and label from the document
             let MoneroAddressValue(percentage, label) = document.monero_addresses.get(&monero_address_key)
@@ -364,12 +369,17 @@ impl EigensyncDatabaseAdapter {
                     LabeledMoneroAddress::with_internal_address(*percentage, label.clone())?
                 }
             };
+
             let address_pool = MoneroAddressPool::new(vec![labeled]);
-            
+
             self.db.insert_monero_address_pool(swap_id, address_pool).await?;
+            counter += 1;
         }
 
+        tracing::info!("Downloaded {} monero addresses", counter);
+
         //buffered_transfer_proofs table
+        let mut counter = 0;
         let document_buffered_transfer_proofs: HashSet<Uuid> = document.buffered_transfer_proofs.keys().cloned().collect();
         
         for swap_id in document_buffered_transfer_proofs {
@@ -379,15 +389,15 @@ impl EigensyncDatabaseAdapter {
                 .clone();            
             
             if db_buffered_transfer_proof == Some(document_buffered_transfer_proof.clone()) {
-                tracing::info!("buffered transfer proof already exists");
                 continue;
             }
             
             self.db.insert_buffered_transfer_proof(swap_id, document_buffered_transfer_proof).await?;
+            counter += 1;
         }
-        
-        tracing::info!("Downloaded {} states", document_states_len);
     
+        tracing::info!("Downloaded {} buffered transfer proofs", counter);
+
         Ok(())
     }
 }

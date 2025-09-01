@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, sync::{Arc, OnceLock}, time::Duration};
 pub mod protocol;
+pub mod database;
 
 use anyhow::Context;
 //pub mod protocol;
@@ -193,14 +194,14 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
         let new_changes_serialized = receiver.await?.map_err(|e| anyhow::anyhow!(e))?;
         let new_changes: Vec<Change> = new_changes_serialized.into_iter().map(Change::from).collect();
 
-        tracing::info!("Applying changes {:?}", new_changes.len());
+        println!("Applying changes {:?}", new_changes.len());
 
         // let counter = new_changes.iter().filter(|change| !self.document.get_changes(&[]).contains(&&change)).count();
         // println!("{} changes are not in the document yet", counter);
 
-        tracing::info!("document changes before sync: {:?}", self.document.get_changes(&[]).len());
-        self.document.apply_changes(new_changes).context("Failed to apply changes")?;
-        tracing::info!("document changes after sync: {:?}", self.document.get_changes(&[]).len());
+        println!("document changes before sync: {:?}", self.document.get_changes(&[]).len());
+        self.document.apply_changes(new_changes)?;
+        println!("document changes after sync: {:?}", self.document.get_changes(&[]).len());
 
        // println!("Document state after sync: {:?}", hydrate::<_, T>(&self.document).unwrap());
 
@@ -229,6 +230,7 @@ where
         let handle = self.clone();
         AbortOnDropHandle::new(tokio::task::spawn(async move {
             loop {
+                println!("trying to sync with server");
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 let _ = handle.write().await.sync_with_server().await.context("Failed to sync with server");
             }

@@ -47,6 +47,7 @@ thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
 toml = "0.9.5"
 tracing = { version = "0.1", features = ["attributes"] }
+clap = { version = "4", features = ["derive"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
 typeshare = "1.0"
 url = { version = "2", features = ["serde"] }

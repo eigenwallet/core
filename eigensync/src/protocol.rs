@@ -29,6 +29,16 @@ impl AsRef<str> for EigensyncProtocol {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct SerializedChange(Vec<u8>);
 
+impl SerializedChange {
+    pub fn new(data: Vec<u8>) -> Self {
+        SerializedChange(data)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.clone()
+    }
+}
+
 impl From<Change> for SerializedChange {
     fn from(mut change: Change) -> Self {
         SerializedChange(change.bytes().to_vec())
