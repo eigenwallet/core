@@ -69,6 +69,7 @@ jobs:
           releaseId: ${{ github.event.release.id || '' }}
           projectPath: src-tauri
           tauriScript: yarn tauri
+          args: --target ${{ matrix.target }}
 
       - name: upload to crabnebula release (not for previews)
         if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
