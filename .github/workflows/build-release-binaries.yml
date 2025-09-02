@@ -33,10 +33,10 @@ jobs:
             archive_extension: tar
             do_smoke_test: true
           # Once Windows works again, uncomment
-          # - target: x86_64-pc-windows-gnu
-          #   host: ubuntu-22.04
-          #   archive_extension: zip
-          #   do_smoke_test: false
+          - target: x86_64-pc-windows-gnu
+            host: ubuntu-22.04
+            archive_extension: zip
+            do_smoke_test: false
 
         bin:
           - name: swap
