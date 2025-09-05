@@ -7,6 +7,7 @@ import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
 import { useState } from "react";
 import { sortApprovalsAndKnownQuotes } from "utils/sortUtils";
+import { QuoteWithAddress } from "models/tauriModel";
 
 export default function DepositAndChooseOfferPage({
   deposit_address,

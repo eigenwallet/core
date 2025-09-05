@@ -6,6 +6,7 @@ use crate::cli::api::request::{
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::{bitcoin::ExpiredTimelocks, monero, network::quote::BidQuote};
+use ::bitcoin::address::NetworkUnchecked;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
@@ -77,6 +78,14 @@ pub struct SelectMakerDetails {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelectOfferDetails {
+    #[typeshare(serialized_as = "string")]
+    pub swap_id: Uuid,
+    pub maker: QuoteWithAddress,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SendMoneroDetails {
     /// Destination address for the Monero transfer
     #[typeshare(serialized_as = "string")]
@@ -115,6 +124,14 @@ pub struct SeedSelectionDetails {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelectOfferApprovalRequest {
+    #[typeshare(serialized_as = "Option<string>")]
+    pub bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
+    pub monero_receive_pool: MoneroAddressPool,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApprovalRequest {
     request: ApprovalRequestType,
     request_status: RequestStatus,
@@ -132,6 +149,9 @@ pub enum ApprovalRequestType {
     /// Request approval for maker selection.
     /// Contains available makers and swap details.
     SelectMaker(SelectMakerDetails),
+    /// Request user to specify Bitcoin refund and Monero receive addresses.
+    /// Contains the selected offer details for context.
+    SelectOffer(SelectOfferDetails),
     /// Request seed selection from user.
     /// User can choose between random seed, provide their own, or select wallet file.
     SeedSelection(SeedSelectionDetails),
@@ -412,6 +432,7 @@ impl Display for ApprovalRequest {
         match self.request {
             ApprovalRequestType::LockBitcoin(..) => write!(f, "LockBitcoin()"),
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
+            ApprovalRequestType::SelectOffer(..) => write!(f, "SelectOffer()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
             ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
@@ -432,6 +453,12 @@ pub trait TauriEmitter {
         details: SelectMakerDetails,
         timeout_secs: u64,
     ) -> Result<bool>;
+
+    async fn request_specify_redeem_refund(
+        &self,
+        details: SelectOfferDetails,
+        timeout_secs: u64,
+    ) -> Result<SelectOfferApprovalRequest>;
 
     async fn request_seed_selection(&self) -> Result<SeedChoice>;
 
@@ -536,6 +563,18 @@ impl TauriEmitter for TauriHandle {
             .unwrap_or(false))
     }
 
+    async fn request_specify_redeem_refund(
+        &self,
+        details: SelectOfferDetails,
+        timeout_secs: u64,
+    ) -> Result<SelectOfferApprovalRequest> {
+        self.request_approval(
+            ApprovalRequestType::SelectOffer(details),
+            Some(timeout_secs),
+        )
+        .await
+    }
+
     async fn request_seed_selection(&self) -> Result<SeedChoice> {
         self.request_seed_selection_with_recent_wallets(vec![])
             .await
@@ -615,6 +654,21 @@ impl TauriEmitter for Option<TauriHandle> {
     ) -> Result<bool> {
         match self {
             Some(tauri) => tauri.request_maker_selection(details, timeout_secs).await,
+            None => bail!("No Tauri handle available"),
+        }
+    }
+
+    async fn request_specify_redeem_refund(
+        &self,
+        details: SelectOfferDetails,
+        timeout_secs: u64,
+    ) -> Result<SelectOfferApprovalRequest> {
+        match self {
+            Some(tauri) => {
+                tauri
+                    .request_specify_redeem_refund(details, timeout_secs)
+                    .await
+            }
             None => bail!("No Tauri handle available"),
         }
     }
