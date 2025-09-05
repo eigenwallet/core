@@ -7,9 +7,9 @@ import RouteListItemIconButton from "./RouteListItemIconButton";
 import UnfinishedSwapsBadge from "./UnfinishedSwapsCountBadge";
 import { useIsSwapRunning, useTotalUnreadMessagesCount } from "store/hooks";
 import SettingsIcon from "@mui/icons-material/Settings";
-import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import BitcoinIcon from "../icons/BitcoinIcon";
 import MoneroIcon from "../icons/MoneroIcon";
+import LockIcon from "@mui/icons-material/Lock";
 
 export default function NavigationHeader() {
   const totalUnreadCount = useTotalUnreadMessagesCount();
@@ -33,6 +33,9 @@ export default function NavigationHeader() {
           <UnfinishedSwapsBadge>
             <HistoryOutlinedIcon />
           </UnfinishedSwapsBadge>
+        </RouteListItemIconButton>
+        <RouteListItemIconButton name="PGP" route="/pgp">
+          <LockIcon />
         </RouteListItemIconButton>
         <RouteListItemIconButton name="Feedback" route="/feedback">
           <Badge
