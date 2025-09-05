@@ -1,13 +1,14 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr, time::Duration};
+use std::{collections::HashMap, fs::{self, File}, io::Write, path::{Path, PathBuf}, str::FromStr, time::Duration};
 
 use anyhow::{Context};
 use directories_next::ProjectDirs;
 use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, SerializedChange, ServerRequest};
 use libp2p::{
-    futures::StreamExt, identity, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
+    futures::StreamExt, identity::{self, ed25519}, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
 };
 use autosurgeon::{Hydrate, Reconcile};
 use tracing_subscriber::EnvFilter;
+use ed25519_dalek::{Signature as DalekSignature, PublicKey as DalekPublicKey, Verifier};
 
 use clap::Parser;
 
@@ -15,6 +16,17 @@ use clap::Parser;
 struct Cli {
     #[arg(long)]
     pub data_dir: PathBuf
+}
+
+fn verify_signed_change(sc: &SerializedChange) -> anyhow::Result<()> {
+    let buf = sc.to_bytes();
+    anyhow::ensure!(buf.len() >= 32 + 64 + 24, "change too short");
+    let (pk, rest) = buf.split_at(32);
+    let (sig, body) = rest.split_at(64);
+    let vk = DalekPublicKey::from_bytes(pk).map_err(|_| anyhow::anyhow!("invalid pubkey"))?;
+    let sig = DalekSignature::from_bytes(sig.try_into().unwrap())?;
+    vk.verify(body, &sig).map_err(|_| anyhow::anyhow!("invalid signature"))?;
+    Ok(())
 }
 
 use eigensync::database::Database;
@@ -28,15 +40,21 @@ async fn main() -> anyhow::Result<()> {
 
     let data_dir = Cli::parse().data_dir;
 
-    let db = Database::new(data_dir).await?;
+    let db = Database::new(data_dir.clone()).await?;
     
     let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333")?;
 
-    // for constant peer id
-    let keypair = identity::Keypair::ed25519_from_bytes(
-        hex::decode("6c0f291615972e0cc7efa86dc19480ba9999f64b79eee98cebdfdfb1fbf1dea6").unwrap(),
-    )
-    .unwrap();
+    let file_path_buf = data_dir.join("seed.hex");
+    let file_path = Path::new(&file_path_buf);
+    let keypair = if file_path.exists() {
+        let contents = fs::read_to_string(file_path)?;
+        identity::Keypair::ed25519_from_bytes(hex::decode(contents)?).unwrap()
+    } else {
+        let secret_key = ed25519::SecretKey::generate();
+        let mut file = File::create(file_path)?;
+        file.write_all(hex::encode(secret_key.as_ref()).as_bytes())?;
+        identity::Keypair::from(ed25519::Keypair::from(secret_key))
+    };
 
     let mut swarm = SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
@@ -77,25 +95,24 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
                 request_response::Message::Request { request, channel, .. } => {
 
                     match request {
-                        ServerRequest::UploadChangesToServer { changes } => {
-                            //let saved_changed_of_peer = global_changes.entry(peer).or_insert(Vec::new());
+                        ServerRequest::UploadChangesToServer { encrypted_changes: changes } => {
+                            // Verify all changes are signed before saving
+                            for (i, c) in changes.iter().enumerate() {
+                                if let Err(e) = verify_signed_change(c) {
+                                    let _ = swarm.behaviour_mut().send_response(channel, Response::Error { reason: format!("invalid change #{i}: {e}") });
+                                    return Ok(());
+                                }
+                            }
+
+                            // Existing logic
                             let saved_changed_of_peer = db.get_peer_changes(peer).await?;
-
-                            // Saved all changes the client sent us but we don't have yet stored for him
                             let changes_clone = changes.clone();
-
                             tracing::info!("Received {} changes from client", changes.len());
-
                             let uploaded_new_changes: Vec<_> = changes.into_iter().filter(|c| !saved_changed_of_peer.contains(c)).collect();
-                            
                             db.insert_peer_changes(peer, uploaded_new_changes).await?;
 
-                            // Check which changes the client is missing
                             let changes_client_is_missing: Vec<_> = db.get_peer_changes(peer).await?.iter().filter(|c| !changes_clone.contains(c)).cloned().collect();
-
                             tracing::info!("Sending {} changes to client", changes_client_is_missing.len());
-
-                            // Send the changes the client is missing to the client
                             let response = Response::NewChanges { changes: changes_client_is_missing };
                             swarm.behaviour_mut().send_response(channel, response).expect("Failed to send response");
                         }

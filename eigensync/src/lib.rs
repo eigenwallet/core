@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, marker::PhantomData, sync::{Arc, Onc
 pub mod protocol;
 pub mod database;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 //pub mod protocol;
 use libp2p::{
     futures::StreamExt, 
@@ -16,6 +16,112 @@ use automerge::{ActorId, AutoCommit, Change};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use tokio_util::task::AbortOnDropHandle;
 use crate::protocol::{client, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange, ServerRequest};
+
+use chacha20poly1305::aead::{Aead, Payload};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
+use blake3;
+use ed25519_dalek::{Signature as DalekSignature, PublicKey as DalekPublicKey, Verifier};
+
+fn ed25519_pub_bytes(k: &identity::Keypair) -> anyhow::Result<[u8; 32]> {
+    match k.public().try_into_ed25519() {
+        Ok(pk) => Ok(pk.to_bytes()),
+        Err(_) => Err(anyhow::anyhow!("unsupported key type")),
+    }
+}
+
+fn encrypt_and_sign(sign_key: &identity::Keypair, enc_key: &[u8; 32], change: &SerializedChange) -> anyhow::Result<SerializedChange> {
+    let aead = XChaCha20Poly1305::new(enc_key.into());
+    let pt = change.to_bytes();
+    let nonce = nonce_from_plaintext(enc_key, &pt);
+    let ct = aead.encrypt(
+        XNonce::from_slice(&nonce),
+        Payload { msg: &pt, aad: b"eigensync.v1" },
+    ).map_err(|_| anyhow::anyhow!("encryption failed"))?;
+
+    // signed body = nonce || ct
+    let mut body = Vec::with_capacity(24 + ct.len());
+    body.extend_from_slice(&nonce);
+    body.extend_from_slice(&ct);
+
+    // sign with libp2p identity (ed25519)
+    let sig = sign_key.sign(&body).map_err(|_| anyhow::anyhow!("sign failed"))?;
+    let pk = ed25519_pub_bytes(sign_key)?;
+
+    // store: pk(32) || sig(64) || body
+    let mut out = Vec::with_capacity(32 + 64 + body.len());
+    out.extend_from_slice(&pk);
+    out.extend_from_slice(&sig);
+    out.extend_from_slice(&body);
+
+    Ok(SerializedChange::new(out))
+}
+
+fn verify_and_decrypt(expected_pub: &[u8; 32], enc_key: &[u8; 32], enc: SerializedChange) -> anyhow::Result<SerializedChange> {
+    let buf = enc.to_bytes();
+    anyhow::ensure!(buf.len() >= 32 + 64 + 24, "ciphertext too short");
+    let (pk, rest) = buf.split_at(32);
+    let (sig, body) = rest.split_at(64);
+
+    // only accept our own identity’s changes
+    anyhow::ensure!(pk == expected_pub, "unexpected signer public key");
+
+    // verify signature
+    let vk = DalekPublicKey::from_bytes(pk).map_err(|_| anyhow::anyhow!("invalid pubkey"))?;
+    let sig = DalekSignature::from_bytes(sig.try_into().unwrap())?;
+    vk.verify(body, &sig).map_err(|_| anyhow::anyhow!("invalid signature"))?;
+
+    // decrypt
+    let (nonce, ct) = body.split_at(24);
+    let aead = XChaCha20Poly1305::new(enc_key.into());
+    let pt = aead.decrypt(
+        XNonce::from_slice(nonce),
+        Payload { msg: ct, aad: b"eigensync.v1" },
+    ).map_err(|_| anyhow::anyhow!("decryption failed"))?;
+
+    Ok(SerializedChange::new(pt))
+}
+
+fn key32(key: &[u8]) -> anyhow::Result<[u8; 32]> {
+    key.try_into().map_err(|_| anyhow::anyhow!("encryption key must be 32 bytes"))
+}
+
+fn nonce_from_plaintext(key32: &[u8; 32], pt: &[u8]) -> [u8; 24] {
+    let mut h = blake3::Hasher::new_keyed(key32);
+    h.update(b"eigensync.v1.nonce");
+    h.update(pt);
+    let out = h.finalize();
+    let mut nonce = [0u8; 24];
+    nonce.copy_from_slice(&out.as_bytes()[..24]);
+    nonce
+}
+
+fn encrypt_one(key: &[u8], change: &SerializedChange) -> anyhow::Result<SerializedChange> {
+    let key32 = key32(key)?;
+    let aead = XChaCha20Poly1305::new((&key32).into());
+    let pt = change.to_bytes();
+    let nonce = nonce_from_plaintext(&key32, &pt);
+    let ct = aead.encrypt(
+        XNonce::from_slice(&nonce),
+        Payload { msg: &pt, aad: b"eigensync.v1" },
+    )?;
+    let mut out = Vec::with_capacity(24 + ct.len());
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&ct);
+    Ok(SerializedChange::new(out))
+}
+
+fn decrypt_one(key: &[u8], enc: SerializedChange) -> anyhow::Result<SerializedChange> {
+    let key32 = key32(key)?;
+    let aead = XChaCha20Poly1305::new((&key32).into());
+    let buf = enc.to_bytes();
+    anyhow::ensure!(buf.len() >= 24, "ciphertext too short");
+    let (nonce, ct) = buf.split_at(24);
+    let pt = aead.decrypt(
+        XNonce::from_slice(nonce),
+        Payload { msg: ct, aad: b"eigensync.v1" },
+    )?;
+    Ok(SerializedChange::new(pt))
+}
 
 pub type SyncBehaviour = request_response::cbor::Behaviour<ServerRequest, Response>;
 
@@ -33,9 +139,9 @@ impl SyncLoop {
     }
     
     pub fn sync_with_server(&mut self, request: ChannelRequest, server_id: PeerId) {
-        let server_request = ServerRequest::UploadChangesToServer { changes: request.changes };
+        let server_request = ServerRequest::UploadChangesToServer { encrypted_changes: request.encrypted_changes };
         match &server_request {
-            ServerRequest::UploadChangesToServer { changes: _changes } => {
+            ServerRequest::UploadChangesToServer { encrypted_changes: _changes } => {
                 let request_id = self.swarm.behaviour_mut().send_request(&server_id, server_request);
                 self.response_map.insert(request_id, request.response_channel);
             },
@@ -131,13 +237,15 @@ pub async fn handle_event(
 pub struct EigensyncHandle<T: Reconcile + Hydrate + Default + Debug> {
     pub document: AutoCommit,
     sender: UnboundedSender<ChannelRequest>,
+    encryption_key: [u8; 32],
+    identity_key: identity::Keypair,
     _marker: PhantomData<T>,
 }
 
 impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
-    pub async fn new(server_addr: Multiaddr, server_id: PeerId, keypair: identity::Keypair) -> anyhow::Result<Self> {
+    pub async fn new(server_addr: Multiaddr, server_id: PeerId, keypair: identity::Keypair, encryption_key: [u8; 32]) -> anyhow::Result<Self> {
 
-        let mut swarm = SwarmBuilder::with_existing_identity(keypair)
+        let mut swarm = SwarmBuilder::with_existing_identity(keypair.clone())
             .with_tokio()
             .with_tcp(
                 tcp::Config::default(),
@@ -149,9 +257,9 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
             .context("Failed to create behaviour")?
             .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::MAX))
             .build();
-
+                
         swarm.add_peer_address(server_id.clone(), server_addr.clone());
-        println!("Dialing server at {}/{}", server_addr, server_id);
+        tracing::info!("Dialing server at {}/{}", server_addr, server_id);
 
         swarm.dial(server_id).context("Failed to dial")?;
         
@@ -168,7 +276,7 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
         let state = T::default();
         reconcile(&mut document, &state).unwrap();
 
-        Ok(Self { document, _marker: PhantomData , sender})
+        Ok(Self { document, _marker: PhantomData , sender, encryption_key: encryption_key.clone(), identity_key: keypair })
     }
 
     pub fn get_changes(&mut self) -> Vec<Change> {
@@ -187,23 +295,29 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
         let (sender, receiver) = oneshot::channel();
 
         let changes: Vec<SerializedChange> = self.get_changes().into_iter().map(SerializedChange::from).collect();
+                // Encrypt + sign each change (deterministic nonce)
+        let encrypted_changes: Vec<SerializedChange> = changes
+            .iter()
+            .map(|c| encrypt_and_sign(&self.identity_key, &self.encryption_key, c))
+            .collect::<anyhow::Result<_>>()?;
+
         self.sender
-            .send(ChannelRequest { changes, response_channel: sender })
+            .send(ChannelRequest { encrypted_changes, response_channel: sender })
             .context("Failed to send changes to server")?;
         
         let new_changes_serialized = receiver.await?.map_err(|e| anyhow::anyhow!(e))?;
-        let new_changes: Vec<Change> = new_changes_serialized.into_iter().map(Change::from).collect();
+        // Verify + decrypt server's changes
+        let expected_pub = ed25519_pub_bytes(&self.identity_key)?;
+        let decrypted_serialized: Vec<SerializedChange> = new_changes_serialized
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| verify_and_decrypt(&expected_pub, &self.encryption_key, c)
+                .with_context(|| format!("decryption/signature failed for server change #{i}")))
+            .collect::<anyhow::Result<_>>()?;
 
-        println!("Applying changes {:?}", new_changes.len());
+        let new_changes: Vec<Change> = decrypted_serialized.into_iter().map(Change::from).collect();
 
-        // let counter = new_changes.iter().filter(|change| !self.document.get_changes(&[]).contains(&&change)).count();
-        // println!("{} changes are not in the document yet", counter);
-
-        println!("document changes before sync: {:?}", self.document.get_changes(&[]).len());
         self.document.apply_changes(new_changes)?;
-        println!("document changes after sync: {:?}", self.document.get_changes(&[]).len());
-
-       // println!("Document state after sync: {:?}", hydrate::<_, T>(&self.document).unwrap());
 
         Ok(())
     }
@@ -230,9 +344,11 @@ where
         let handle = self.clone();
         AbortOnDropHandle::new(tokio::task::spawn(async move {
             loop {
-                println!("trying to sync with server");
+                tracing::info!("trying to sync with server");
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                let _ = handle.write().await.sync_with_server().await.context("Failed to sync with server");
+                if let Err(e) = handle.write().await.sync_with_server().await {
+                    tracing::error!(%e, "Eigensync background sync failed");
+                }
             }
         }))
     }

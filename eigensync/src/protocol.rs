@@ -53,14 +53,14 @@ impl From<SerializedChange> for Change {
 
 #[derive(Debug)]
 pub struct ChannelRequest {
-    pub changes: Vec<SerializedChange>,
+    pub encrypted_changes: Vec<SerializedChange>,
     pub response_channel: oneshot::Sender<Result<Vec<SerializedChange>, String>>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ServerRequest {
     UploadChangesToServer {
-        changes: Vec<SerializedChange>
+        encrypted_changes: Vec<SerializedChange>
     }
 }
 

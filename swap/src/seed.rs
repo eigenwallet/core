@@ -162,6 +162,10 @@ impl Seed {
 
         Ok(())
     }
+
+    pub fn derive_eigensync_encryption_key(&self) -> [u8; 32] {
+        self.derive(b"NETWORK").derive(b"EIGENSYNC_ENCRYPTION_KEY").bytes()
+    }
 }
 
 impl fmt::Debug for Seed {

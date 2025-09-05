@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n            SELECT swap_id, address, percentage, label\n            FROM monero_addresses\n            GROUP BY swap_id\n            ",
+  "query": "\n            SELECT swap_id, address, percentage, label\n            FROM monero_addresses\n            ORDER BY swap_id\n            ",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "165d0de4a3d9ad121171e9cc9648a3716c8dbf59497c157588faadb0d8754d03"
+  "hash": "3a286c86edc7fd3579fdfca41e385aa91e334f76f1d47be8ec9e87b39e37458b"
 }

@@ -162,11 +162,9 @@ impl Database for SqliteDatabase {
         .await?;
 
         if row.is_empty() {
-            // Return empty pool instead of error
-            return Ok(MoneroAddressPool::new(vec![]));
+            // Return error
+            return Err(anyhow::anyhow!("No monero address pool found for swap: {}", swap_id));
         }
-
-        //tracing::info!("Row: {:?}", row);
 
         let addresses = row
             .iter()
@@ -196,21 +194,39 @@ impl Database for SqliteDatabase {
             r#"
             SELECT swap_id, address, percentage, label
             FROM monero_addresses
-            GROUP BY swap_id
+            ORDER BY swap_id
             "#
         )
             .fetch_all(&self.pool)
             .await?;
 
-        let mut pools = HashMap::new();
+        let mut pools: HashMap<Uuid, Vec<LabeledMoneroAddress>> = HashMap::new();
 
         for row in rows.iter() {
             let swap_id = Uuid::from_str(&row.swap_id)?;
-            let pool = self.get_monero_address_pool(swap_id).await?;
-            pools.insert(swap_id, pool);
+            let address: Option<monero::Address> = row
+                    .address
+                    .clone()
+                    .map(|address| address.parse())
+                    .transpose()?;
+            let percentage = Decimal::from_f64(row.percentage).expect("Invalid percentage");
+            let label = row.label.clone();
+            let labeled_address = match address {
+                Some(address) => LabeledMoneroAddress::with_address(address, percentage, label)
+                    .map_err(|e| anyhow::anyhow!("Invalid percentage in database: {}", e))?,
+                None => LabeledMoneroAddress::with_internal_address(percentage, label)
+                    .map_err(|e| anyhow::anyhow!("Invalid percentage in database: {}", e))?,
+            };
+            
+            pools.entry(swap_id).or_insert_with(Vec::new).push(labeled_address);
         }
 
-        Ok(pools.into_iter().collect())
+        let result = pools
+            .into_iter()
+            .map(|(swap_id, addresses)| (swap_id, MoneroAddressPool::new(addresses)))
+            .collect();
+
+        Ok(result)
     }
 
     async fn get_monero_addresses(&self) -> Result<Vec<monero::Address>> {
@@ -327,7 +343,6 @@ impl Database for SqliteDatabase {
         Ok(start_date)
     }
 
-    // TODO: This needs to take a timestamp as well (or None and then we generate it here)
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
         let swap = serde_json::to_string(&Swap::from(state))?;
         let entered_at = OffsetDateTime::now_utc().unix_timestamp();
@@ -434,7 +449,6 @@ impl Database for SqliteDatabase {
         Ok(result)
     }
 
-    // TODO: Return timestamp here as well
     async fn all(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>> {
         let rows = sqlx::query!(
             r#"
@@ -448,8 +462,6 @@ impl Database for SqliteDatabase {
         )
         .fetch_all(&self.pool)
         .await?;
-
-        tracing::info!("Raw rows from database: {}", rows.len());
 
         let result = rows
             .iter()
@@ -480,8 +492,6 @@ impl Database for SqliteDatabase {
             })
             .collect::<Vec<(Uuid, State, UtcDateTime)>>();
 
-        tracing::info!("Processed {} swaps from database", result.len());
-
         // if let Some(eigensync_handle) = &self.eigensync_handle {
         //     eigensync_handle.write().await.save_updates_local(|document| {
         //         document.states.insert(swap_id.clone(), swap.to_string());
@@ -495,8 +505,6 @@ impl Database for SqliteDatabase {
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>> {
         let swap_id = swap_id.to_string();
 
-        // TODO: We should use query! instead of query here to allow for at-compile-time validation
-        // I didn't manage to generate the mappings for the query! macro because of problems with sqlx-cli
         let rows = sqlx::query!(
             r#"
            SELECT state

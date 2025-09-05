@@ -213,6 +213,7 @@ pub struct ContextBuilder {
     tor: bool,
     enable_monero_tor: bool,
     tauri_handle: Option<TauriHandle>,
+    eigensync_server_multiaddr: String,
 }
 
 impl ContextBuilder {
@@ -237,6 +238,7 @@ impl ContextBuilder {
             tor: false,
             enable_monero_tor: false,
             tauri_handle: None,
+            eigensync_server_multiaddr: "/ip4/127.0.0.1/tcp/3333".to_string(),
         }
     }
 
@@ -292,6 +294,12 @@ impl ContextBuilder {
     /// Whether to route Monero wallet traffic through Tor (default false)
     pub fn with_enable_monero_tor(mut self, enable_monero_tor: bool) -> Self {
         self.enable_monero_tor = enable_monero_tor;
+        self
+    }
+
+    /// Configures the Eigensync server multiaddr
+    pub fn with_eigensync_server(mut self, eigensync_server: impl Into<Option<String>>) -> Self {
+        self.eigensync_server_multiaddr = eigensync_server.into().unwrap().to_string();
         self
     }
 
@@ -510,11 +518,13 @@ impl ContextBuilder {
                 (),
             );
 
-        let multiaddr = Multiaddr::from_str("/ip4/127.0.0.1/tcp/3333").context("")?;
+        let multiaddr = Multiaddr::from_str(self.eigensync_server_multiaddr.as_ref()).context("Failed to parse Eigensync server multiaddr")?;
         let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
 
-        let mut eigensync_handle = Arc::new(RwLock::new(EigensyncHandle::new(
-            multiaddr, server_peer_id, seed.derive_eigensync_identity()).await.unwrap()));
+        let enc_key = seed.derive_eigensync_encryption_key();
+        let mut eigensync_handle = Arc::new(RwLock::new(
+            EigensyncHandle::new(multiaddr, server_peer_id, seed.derive_eigensync_identity(), enc_key).await?
+        ));
             
         let background_sync_task = eigensync_handle.background_sync();
 

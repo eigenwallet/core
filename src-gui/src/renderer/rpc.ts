@@ -345,6 +345,8 @@ export async function initializeContext() {
             url: moneroNodeUrl,
           },
         };
+  
+  const eigensyncServer = store.getState().settings.eigensyncServer;
 
   // Initialize Tauri settings
   const tauriSettings: TauriSettings = {
@@ -352,6 +354,7 @@ export async function initializeContext() {
     monero_node_config: moneroNodeConfig,
     use_tor: useTor,
     enable_monero_tor: useMoneroTor,
+    eigensync_server_multiaddr: eigensyncServer,
   };
 
   logger.info("Initializing context with settings", tauriSettings);

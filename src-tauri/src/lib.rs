@@ -445,6 +445,7 @@ async fn initialize_context(
         .with_debug(true)
         .with_tor(settings.use_tor)
         .with_enable_monero_tor(settings.enable_monero_tor)
+        .with_eigensync_server(settings.eigensync_server_multiaddr.clone())
         .with_tauri(tauri_handle.clone())
         .build()
         .await;

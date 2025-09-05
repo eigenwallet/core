@@ -14,8 +14,6 @@ pub struct Database {
     pub pool: SqlitePool,
 }
 
-
-
 impl Database {
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         if !data_dir.exists() {

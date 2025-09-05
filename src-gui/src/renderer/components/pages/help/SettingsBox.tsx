@@ -41,6 +41,7 @@ import {
   setEnableMoneroTor,
   setUseMoneroRpcPool,
   setDonateToDevelopment,
+  setEigensyncServer,
 } from "store/features/settingsSlice";
 import { useAppDispatch, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
@@ -100,6 +101,7 @@ export default function SettingsBox() {
                 <FetchFiatPricesSetting />
                 <ThemeSetting />
                 <RendezvousPointsSetting />
+                <EigensyncServerSetting />
               </TableBody>
             </Table>
           </TableContainer>
@@ -990,6 +992,48 @@ function DonationTipSetting() {
             </ul>
           </Typography>
         </Box>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/**
+ * A setting that allows you to configure the Eigensync server multiaddr
+ */
+function EigensyncServerSetting() {
+  const eigensyncServer = useSettings((s) => s.eigensyncServer);
+  const dispatch = useAppDispatch();
+
+  const handleServerChange = (newServer: string) => {
+    dispatch(setEigensyncServer(newServer));
+  };
+
+  const isValidMultiaddr = (addr: string) => {
+    // Basic validation for multiaddr format
+    // Should start with /ip4/ or /ip6/ or /dns/ or /dns4/ or /dns6/
+    // and contain /tcp/ followed by a port number
+    const multiaddrPattern = /^\/(ip4|ip6|dns|dns4|dns6)\/[^\/]+\/tcp\/\d+(\/p2p\/[a-zA-Z0-9]+)?$/;
+    return addr === "" || multiaddrPattern.test(addr);
+  };
+
+  return (
+    <TableRow>
+      <TableCell>
+        <SettingLabel
+          label="Eigensync Server"
+          tooltip="The multiaddr of the Eigensync server to connect to for data synchronization. Format: /ip4/127.0.0.1/tcp/3333"
+        />
+      </TableCell>
+      <TableCell>
+        <ValidatedTextField
+          value={eigensyncServer}
+          onValidatedChange={handleServerChange}
+          placeholder="/ip4/127.0.0.1/tcp/3333"
+          fullWidth
+          isValid={isValidMultiaddr}
+          variant="outlined"
+          noErrorWhenEmpty
+        />
       </TableCell>
     </TableRow>
   );
