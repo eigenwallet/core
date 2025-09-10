@@ -7,7 +7,7 @@ use libp2p::PeerId;
 use sqlx::SqlitePool;
 use tracing::info;
 
-use crate::protocol::SerializedChange;
+use crate::protocol::SignedEncryptedSerializedChange;
 
 #[derive(Clone)]
 pub struct Database {
@@ -37,7 +37,7 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_peer_changes(&self, peer_id: PeerId) -> Result<Vec<SerializedChange>> {
+    pub async fn get_peer_changes(&self, peer_id: PeerId) -> Result<Vec<SignedEncryptedSerializedChange>> {
         let peer_id = peer_id.to_string();
         
         let rows = sqlx::query!(
@@ -55,16 +55,16 @@ impl Database {
         let mut changes = Vec::new();
 
         for row in rows.iter() {
-            changes.push(SerializedChange::new(row.change.clone()));
+            changes.push(SignedEncryptedSerializedChange::new(row.change.clone()));
         }
         
 
         Ok(changes)
     }
 
-    pub async fn insert_peer_changes(&self, peer_id: PeerId, changes: Vec<SerializedChange>) -> Result<()> {
+    pub async fn insert_peer_changes(&self, peer_id: PeerId, changes: Vec<SignedEncryptedSerializedChange>) -> Result<()> {
         let peer_id = peer_id.to_string();
-
+    
         for change in changes {
             let serialized = change.to_bytes();
             sqlx::query!(
@@ -78,7 +78,7 @@ impl Database {
             .execute(&self.pool)
             .await?;
         }
-
+    
         Ok(())
     }
 }

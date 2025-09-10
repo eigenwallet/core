@@ -162,8 +162,9 @@ impl Seed {
 
         Ok(())
     }
-
-    pub fn derive_eigensync_encryption_key(&self) -> [u8; 32] {
+    
+    pub fn derive_eigensync_secret_key(&self) -> [u8; 32] {
+        // Alias for clarity; use this for XChaCha20Poly1305
         self.derive(b"NETWORK").derive(b"EIGENSYNC_ENCRYPTION_KEY").bytes()
     }
 }

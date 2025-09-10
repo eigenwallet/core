@@ -2,13 +2,12 @@ use std::{collections::HashMap, fs::{self, File}, io::Write, path::{Path, PathBu
 
 use anyhow::{Context};
 use directories_next::ProjectDirs;
-use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, SerializedChange, ServerRequest};
+use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, SignedEncryptedSerializedChange, ServerRequest};
 use libp2p::{
     futures::StreamExt, identity::{self, ed25519}, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
 };
 use autosurgeon::{Hydrate, Reconcile};
 use tracing_subscriber::EnvFilter;
-use ed25519_dalek::{Signature as DalekSignature, PublicKey as DalekPublicKey, Verifier};
 
 use clap::Parser;
 
@@ -16,17 +15,6 @@ use clap::Parser;
 struct Cli {
     #[arg(long)]
     pub data_dir: PathBuf
-}
-
-fn verify_signed_change(sc: &SerializedChange) -> anyhow::Result<()> {
-    let buf = sc.to_bytes();
-    anyhow::ensure!(buf.len() >= 32 + 64 + 24, "change too short");
-    let (pk, rest) = buf.split_at(32);
-    let (sig, body) = rest.split_at(64);
-    let vk = DalekPublicKey::from_bytes(pk).map_err(|_| anyhow::anyhow!("invalid pubkey"))?;
-    let sig = DalekSignature::from_bytes(sig.try_into().unwrap())?;
-    vk.verify(body, &sig).map_err(|_| anyhow::anyhow!("invalid signature"))?;
-    Ok(())
 }
 
 use eigensync::database::Database;
@@ -96,15 +84,6 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
 
                     match request {
                         ServerRequest::UploadChangesToServer { encrypted_changes: changes } => {
-                            // Verify all changes are signed before saving
-                            for (i, c) in changes.iter().enumerate() {
-                                if let Err(e) = verify_signed_change(c) {
-                                    let _ = swarm.behaviour_mut().send_response(channel, Response::Error { reason: format!("invalid change #{i}: {e}") });
-                                    return Ok(());
-                                }
-                            }
-
-                            // Existing logic
                             let saved_changed_of_peer = db.get_peer_changes(peer).await?;
                             let changes_clone = changes.clone();
                             tracing::info!("Received {} changes from client", changes.len());

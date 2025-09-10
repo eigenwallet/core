@@ -521,7 +521,7 @@ impl ContextBuilder {
         let multiaddr = Multiaddr::from_str(self.eigensync_server_multiaddr.as_ref()).context("Failed to parse Eigensync server multiaddr")?;
         let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
 
-        let enc_key = seed.derive_eigensync_encryption_key();
+        let enc_key = seed.derive_eigensync_secret_key();
         let mut eigensync_handle = Arc::new(RwLock::new(
             EigensyncHandle::new(multiaddr, server_peer_id, seed.derive_eigensync_identity(), enc_key).await?
         ));
