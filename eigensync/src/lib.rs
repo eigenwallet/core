@@ -182,7 +182,7 @@ pub async fn handle_event(
                     let sender = match response_map.remove(&request_id) {
                         Some(sender) => sender,
                         None => {
-                            println!("No sender for request id {:?}", request_id);
+                            tracing::error!("No sender for request id {:?}", request_id);
                             return Ok(());
                         }
                     };
@@ -193,7 +193,7 @@ pub async fn handle_event(
                     let sender = match response_map.remove(&request_id) {
                         Some(sender) => sender,
                         None => {
-                            println!("No sender for request id {:?}", request_id);
+                            tracing::error!("No sender for request id {:?}", request_id);
                             return Ok(());
                         }
                     };
@@ -206,7 +206,7 @@ pub async fn handle_event(
                 channel,
                 request_id,
             } => {
-                eprintln!("Received request of id {:?}", request_id);
+                tracing::error!("Received request of id {:?}", request_id);
             }
         },
         SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::OutboundFailure {
@@ -217,7 +217,7 @@ pub async fn handle_event(
             let sender = match response_map.remove(&request_id) {
                 Some(sender) => sender,
                 None => {
-                    println!("No sender for request id {:?}", request_id);
+                    tracing::error!("No sender for request id {:?}", request_id);
                     return Ok(());
                 }
             };
@@ -230,7 +230,7 @@ pub async fn handle_event(
                 let _ = sender.send(());
             }
         },
-        other => eprintln!("Received event: {:?}", other),
+        other => tracing::error!("Received event: {:?}", other),
     })
 }
 
@@ -259,7 +259,6 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
             .build();
                 
         swarm.add_peer_address(server_id.clone(), server_addr.clone());
-        tracing::info!("Dialing server at {}/{}", server_addr, server_id);
 
         swarm.dial(server_id).context("Failed to dial")?;
         
@@ -272,11 +271,28 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
 
         connection_ready_rx.await.context("Failed to establish connection")?;
 
-        let mut document = AutoCommit::new().with_actor(ActorId::random());
-        let state = T::default();
-        reconcile(&mut document, &state).unwrap();
+        let document = AutoCommit::new().with_actor(ActorId::random());
 
-        Ok(Self { document, _marker: PhantomData , sender, encryption_key: encryption_key.clone(), identity_key: keypair })
+        let mut handle = Self {
+            document,
+            _marker: PhantomData,
+            sender,
+            encryption_key: encryption_key.clone(),
+            identity_key: keypair,
+        };
+
+        // Initial pull from server. If it fails, continue (we may be offline).
+        if let Err(e) = handle.sync_with_server().await {
+            tracing::error!("Initial eigensync pull failed: {:?}", e);
+        }
+
+        // Seed default only if the document is still empty after the pull.
+        if handle.document.get_changes(&[]).is_empty() {
+            let state = T::default();
+            reconcile(&mut handle.document, &state).unwrap();
+        }
+
+        Ok(handle)
     }
 
     pub fn get_changes(&mut self) -> Vec<Change> {
