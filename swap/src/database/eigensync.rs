@@ -215,17 +215,10 @@ impl EigensyncDatabaseAdapter {
         let mut document_lock = self.eigensync_handle.write().await;
         let document_state = document_lock.get_document_state().expect("Eigensync document should be present");
         let swap_states = document_state.states;
+        let db_address_pools = self.db.get_monero_address_pools().await?;
 
-        for (swap_id, state, timestamp) in self.db.get_all_states().await? {
-            if swap_states.contains_key(&InnerStateKey(swap_id, timestamp)) {
-                continue;
-            }
-
-            let peer_id = self.db.get_peer_id(swap_id).await?;
-            let address_pool = self.db.get_monero_address_pool(swap_id).await?;
+        for (swap_id, address_pool) in db_address_pools {
             let mut temp_monero_addresses = HashMap::new();
-            let proof = self.db.get_buffered_transfer_proof(swap_id).await?;
-
             for labeled in address_pool.iter() {
                 let address_opt_str = labeled.address().map(|a| a.to_string());
                 let percentage = labeled.percentage();
@@ -233,9 +226,19 @@ impl EigensyncDatabaseAdapter {
                 temp_monero_addresses.insert(InnerMoneroAddressKey(swap_id, address_opt_str), MoneroAddressValue(percentage, label));
             }
 
+            new_addresses.extend(temp_monero_addresses);
+        }
+
+        for (swap_id, state, timestamp) in self.db.get_all_states().await? {
+            if swap_states.contains_key(&InnerStateKey(swap_id, timestamp)) {
+                continue;
+            }
+
+            let peer_id = self.db.get_peer_id(swap_id).await?;
+            let proof = self.db.get_buffered_transfer_proof(swap_id).await?;
+
             new_states.insert(InnerStateKey(swap_id, timestamp), state);
             new_peers.insert(swap_id, peer_id);
-            new_addresses.extend(temp_monero_addresses);
             if let Some(proof) = proof {
                 new_proof.insert(swap_id, proof);
             }
