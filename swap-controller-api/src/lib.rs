@@ -1,6 +1,8 @@
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObjectOwned;
+use monero::PrivateKey;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BitcoinBalanceResponse {
@@ -45,6 +47,18 @@ pub struct MoneroSeedResponse {
     pub restore_height: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CooperativeRedeemResponse {
+    /// Actual secret key
+    #[serde(with = "swap_serde::monero::private_key")]
+    pub inner: PrivateKey,
+    /// Monero lock tx id
+    pub lock_tx_id: String,
+    /// Monero lock tx key -> combined with tx id is the transfer proof
+    #[serde(with = "swap_serde::monero::private_key")]
+    pub lock_tx_key: PrivateKey,
+}
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -65,4 +79,9 @@ pub trait AsbApi {
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
     #[method(name = "get_swaps")]
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
+    #[method(name = "get_coop_redeem_key")]
+    async fn get_coop_redeem_info(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<Option<CooperativeRedeemResponse>, ErrorObjectOwned>;
 }

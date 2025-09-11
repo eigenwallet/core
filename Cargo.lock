@@ -13447,6 +13447,7 @@ dependencies = [
  "moka",
  "monero",
  "monero-harness",
+ "monero-oxide",
  "monero-rpc 0.1.0",
  "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide)",
  "monero-rpc-pool",
@@ -13546,6 +13547,7 @@ dependencies = [
  "shell-words",
  "swap-controller-api",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -13553,10 +13555,14 @@ name = "swap-controller-api"
 version = "0.1.0"
 dependencies = [
  "bitcoin 0.32.7",
+ "curve25519-dalek-ng",
  "jsonrpsee 0.25.1",
+ "monero",
  "serde",
  "serde_json",
+ "swap-serde",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

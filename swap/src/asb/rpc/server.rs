@@ -1,16 +1,20 @@
 use crate::asb::event_loop::EventLoopService;
-use crate::protocol::Database;
+use crate::protocol::alice::AliceState;
+use crate::protocol::{Database, State};
 use crate::{bitcoin, monero};
-use anyhow::{Context, Result};
+use ::monero::PrivateKey;
+use anyhow::{anyhow, Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
-    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse, Swap,
+    CooperativeRedeemResponse, MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse,
+    MultiaddressesResponse, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
+use uuid::Uuid;
 
 pub struct RpcServer {
     handle: ServerHandle,
@@ -157,6 +161,35 @@ impl AsbApiServer for RpcImpl {
             .collect();
 
         Ok(swaps)
+    }
+
+    async fn get_coop_redeem_info(
+        &self,
+        swap_id: Uuid,
+    ) -> Result<Option<CooperativeRedeemResponse>, ErrorObjectOwned> {
+        let states = self.db.get_states(swap_id).await.into_json_rpc_result()?;
+
+        if states.is_empty() {
+            return Ok(None);
+        }
+
+        states
+            .into_iter()
+            .find_map(|state| match state {
+                // Todo: maybe also allow XmrLockTransactionSent
+                State::Alice(AliceState::XmrLocked {
+                    transfer_proof,
+                    state3,
+                    ..
+                }) => Some(Some(CooperativeRedeemResponse {
+                    inner: PrivateKey::from_scalar(state3.s_a),
+                    lock_tx_id: transfer_proof.tx_hash().to_string(),
+                    lock_tx_key: transfer_proof.tx_key(),
+                })),
+                _ => None,
+            })
+            .context("swap not cooperatively redeemable because we didn't lock the Monero")
+            .into_json_rpc_result()
     }
 }
 

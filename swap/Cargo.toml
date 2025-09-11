@@ -19,6 +19,19 @@ bdk_core = { workspace = true }
 bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }
 bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
 
+# Monero
+monero-oxide = { workspace = true }
+monero = { workspace = true }
+monero-rpc = { path = "../monero-rpc" }
+monero-rpc-pool = { path = "../monero-rpc-pool" }
+monero-seed = { version = "0.1.0", path = "../monero-seed" }
+monero-sys = { path = "../monero-sys" }
+
+# monero-oxide
+monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
+monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }
+
+
 anyhow = { workspace = true }
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
 async-compression = { version = "0.3", features = ["bzip2", "tokio"] }
@@ -33,7 +46,7 @@ bmrng = "0.5.2"
 comfy-table = "7.1"
 config = { version = "0.14", default-features = false, features = ["toml"] }
 conquer-once = "0.4"
-curve25519-dalek = { package = "curve25519-dalek-ng", version = "4" }
+curve25519-dalek = { workspace = true }
 data-encoding = "2.6"
 derive_builder = "0.20.2"
 dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs", optional = true }
@@ -48,11 +61,6 @@ jsonrpsee = { workspace = true, features = ["server"] }
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
 moka = { version = "0.12", features = ["sync", "future"] }
-monero = { workspace = true }
-monero-rpc = { path = "../monero-rpc" }
-monero-rpc-pool = { path = "../monero-rpc-pool" }
-monero-seed = { version = "0.1.0", path = "../monero-seed" }
-monero-sys = { path = "../monero-sys" }
 once_cell = { workspace = true }
 pem = "3.0"
 proptest = "1"
@@ -77,7 +85,7 @@ swap-controller-api = { path = "../swap-controller-api" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-fs = { path = "../swap-fs" }
-swap-serde = { path = "../swap-serde" }
+swap-serde = { workspace = true }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
 thiserror = { workspace = true }
 throttle = { path = "../throttle" }
@@ -98,9 +106,6 @@ uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = "1.8.1"
 
-# monero-oxide
-monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
-monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }
 
 [target.'cfg(not(windows))'.dependencies]
 tokio-tar = "0.3"

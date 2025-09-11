@@ -82,7 +82,22 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::BitcoinSeed => {
             let response = client.bitcoin_seed().await?;
-            println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}", response.descriptor);
+            println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet:\n{}", response.descriptor);
+        }
+        Cmd::CooperativeRedeemKey { swap_id } => {
+            let response = client.get_coop_redeem_info(swap_id.clone()).await?;
+
+            let Some(response) = response else {
+                println!("Couldn't find any swap with id {swap_id} in the database");
+                return Ok(());
+            };
+
+            println!("Cooperative redeem key:");
+            println!("{}", response.inner);
+            println!("Monero lock transaction id:");
+            println!("{}", response.lock_tx_id);
+            println!("Monero lock transaction ley:");
+            println!("{}", response.lock_tx_key);
         }
     }
     Ok(())

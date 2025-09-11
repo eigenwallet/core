@@ -4,10 +4,11 @@ use crate::bitcoin::{
     TxLock, Txid, Wallet,
 };
 use crate::monero::wallet::WatchRequest;
-use crate::monero::TransferProof;
 use crate::monero::{self, MoneroAddressPool, TxHash};
+use crate::monero::{PrivateViewKey, TransferProof};
 use crate::monero_ext::ScalarExt;
 use crate::protocol::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
+use ::monero::PrivateKey;
 use anyhow::{anyhow, bail, Context, Result};
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::nonce::Deterministic;
@@ -62,6 +63,10 @@ pub enum BobState {
         state: State6,
         tx_lock_id: bitcoin::Txid,
     },
+    XmrCooperativelyRedeemable {
+        state: State5,
+        tx_lock_id: bitcoin::Txid,
+    },
     SafelyAborted,
 }
 
@@ -87,6 +92,9 @@ impl fmt::Display for BobState {
             BobState::BtcRefunded(..) => write!(f, "btc is refunded"),
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),
             BobState::BtcPunished { .. } => write!(f, "btc is punished"),
+            BobState::XmrCooperativelyRedeemable { .. } => {
+                write!(f, "xmr is cooperatively redeemable")
+            }
             BobState::BtcEarlyRefunded { .. } => write!(f, "btc is early refunded"),
             BobState::SafelyAborted => write!(f, "safely aborted"),
         }
@@ -118,7 +126,9 @@ impl BobState {
             | BobState::BtcEarlyRefundPublished(state) => {
                 Some(state.expired_timelock(&bitcoin_wallet).await?)
             }
-            BobState::BtcPunished { .. } => Some(ExpiredTimelocks::Punish),
+            BobState::BtcPunished { .. } | BobState::XmrCooperativelyRedeemable { .. } => {
+                Some(ExpiredTimelocks::Punish)
+            }
             BobState::BtcRefunded(_)
             | BobState::BtcEarlyRefunded { .. }
             | BobState::BtcRedeemed(_)
@@ -906,10 +916,18 @@ impl State6 {
         &self,
         s_a: monero::Scalar,
         lock_transfer_proof: TransferProof,
-    ) -> State5 {
+    ) -> Result<State5> {
         let s_a = monero::PrivateKey::from_scalar(s_a);
+        let s_b = PrivateKey::from_scalar(self.s_b);
 
-        State5 {
+        // Make sure we've got the correct key by making sure the
+        // derived spend key is the one we expect.
+        let corresponding_view_key = PrivateViewKey::from_spend_key(s_a + s_b);
+        if corresponding_view_key != self.v {
+            bail!("received bogus cooperative redeem key - doesn't match view key")
+        }
+
+        Ok(State5 {
             s_a,
             s_b: self.s_b,
             v: self.v,
@@ -917,7 +935,7 @@ impl State6 {
             tx_lock: self.tx_lock.clone(),
             monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
             lock_transfer_proof,
-        }
+        })
     }
 
     pub async fn check_for_tx_early_refund(

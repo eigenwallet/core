@@ -4,6 +4,7 @@ pub mod wallet_rpc;
 pub use ::monero::network::Network;
 pub use ::monero::{Address, PrivateKey, PublicKey};
 pub use curve25519_dalek::scalar::Scalar;
+use monero_oxide::primitives::keccak256;
 pub use wallet::{Daemon, Wallet, Wallets, WatchRequest};
 
 use crate::bitcoin;
@@ -58,6 +59,18 @@ impl PrivateViewKey {
         let private_key = PrivateKey::from_scalar(scalar);
 
         Self(private_key)
+    }
+
+    /// Construct the private view key corresponding to a private spend key.
+    pub fn from_spend_key(spend_key: PrivateKey) -> Self {
+        let bytes = spend_key.scalar.to_bytes();
+
+        // See zero to monero:
+        //  - page 34/85 annotation 1
+        //  - page 21/85 annotation 5
+        let scalar = Scalar::from_bytes_mod_order(keccak256(bytes));
+
+        Self(PrivateKey::from_scalar(scalar))
     }
 
     pub fn public(&self) -> PublicViewKey {
