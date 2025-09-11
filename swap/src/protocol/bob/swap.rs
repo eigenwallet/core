@@ -601,13 +601,15 @@ async fn next_state(
                 ),
             );
 
-            // Wait for the 10 confirmations to complete
-            watch_future
+            // Wait for the 10 confirmations to complete - if that fails we try to redeem anyway
+            let _ = watch_future
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to wait for XMR confirmations: {}", e))?;
+                .inspect_err(|e| tracing::warn!(error=%e, "Failed to wait for XMR confirmations - attempting to redeem anyway"));
 
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::RedeemingMonero);
+
+            tracing::info!("Monero lock transaction unlocked, redeeming the funds");
 
             let xmr_redeem_txids = retry(
                 "Redeeming Monero",
@@ -790,7 +792,7 @@ async fn next_state(
 
             BobState::BtcRefunded(state)
         }
-        BobState::BtcPunished { state, tx_lock_id } => {
+        BobState::BtcPunished { state, .. } => {
             tracing::info!("You have been punished for not refunding in time");
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcPunished);
             event_emitter.emit_swap_progress_event(
@@ -807,18 +809,15 @@ async fn next_state(
                     lock_transfer_proof,
                     ..
                 }) => {
-                    tracing::info!(
-                        "Alice has accepted our request to cooperatively redeem the XMR"
-                    );
-
                     let state5 = state
                         .attempt_cooperative_redeem(s_a, lock_transfer_proof)
                         .context("Can't cooperatively redeem Monero")?;
 
-                    return Ok(BobState::XmrCooperativelyRedeemable {
-                        state: state5,
-                        tx_lock_id,
-                    });
+                    tracing::info!(
+                        "Alice has accepted our request to cooperatively redeem the XMR"
+                    );
+
+                    return Ok(BobState::BtcRedeemed(state5));
                 }
                 Ok(Rejected { reason, .. }) => {
                     let err = Err(reason.clone())
@@ -855,79 +854,6 @@ async fn next_state(
                         .context("Failed to request cooperative XMR redeem from Alice");
                 }
             };
-        }
-        BobState::XmrCooperativelyRedeemable { state, tx_lock_id } => {
-            let watch_request = state.lock_xmr_watch_request_for_sweep();
-            let event_emitter_clone = event_emitter.clone();
-            let state5_clone = state.clone();
-
-            // Wait for XMR confirmations before redeeming
-            monero_wallet
-                .wait_until_confirmed(
-                    watch_request,
-                    Some(
-                        move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
-                            let event_emitter = event_emitter_clone.clone();
-                            let tx_hash = state5_clone.lock_transfer_proof.tx_hash();
-
-                            event_emitter.emit_swap_progress_event(
-                                swap_id,
-                                TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
-                                    xmr_lock_txid: tx_hash,
-                                    xmr_lock_tx_confirmations,
-                                    xmr_lock_tx_target_confirmations,
-                                },
-                            );
-                        },
-                    ),
-                )
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to wait for XMR confirmations during cooperative redeem: {}",
-                        e
-                    )
-                })?;
-
-            match retry(
-                "Redeeming Monero",
-                || async {
-                    state
-                        .redeem_xmr(&monero_wallet, swap_id, monero_receive_pool.clone())
-                        .await
-                        .map_err(backoff::Error::transient)
-                },
-                Duration::from_secs(2 * 60),
-                None,
-            )
-            .await
-            .context("Failed to redeem Monero")
-            {
-                Ok(xmr_redeem_txids) => {
-                    event_emitter.emit_swap_progress_event(
-                        swap_id,
-                        TauriSwapProgressEvent::XmrRedeemInMempool {
-                            xmr_redeem_txids,
-                            xmr_receive_pool: monero_receive_pool.clone(),
-                        },
-                    );
-
-                    return Ok(BobState::XmrRedeemed { tx_lock_id });
-                }
-                Err(error) => {
-                    event_emitter.emit_swap_progress_event(
-                        swap_id,
-                        TauriSwapProgressEvent::CooperativeRedeemRejected {
-                            reason: error.to_string(),
-                        },
-                    );
-
-                    let err: std::result::Result<_, anyhow::Error> =
-                        Err(error).context("Failed to redeem XMR with revealed XMR key");
-
-                    return err;
-                }
-            }
         }
         // TODO: Emit a Tauri event here
         BobState::BtcEarlyRefunded(state) => BobState::BtcEarlyRefunded(state),

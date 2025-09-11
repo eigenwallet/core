@@ -41,10 +41,6 @@ pub enum Bob {
         state: bob::State6,
         tx_lock_id: bitcoin::Txid,
     },
-    XmrCooperativelyRedeemable {
-        state: bob::State5,
-        tx_lock_id: bitcoin::Txid,
-    },
     BtcRedeemed(bob::State5),
     CancelTimelockExpired(bob::State6),
     BtcCancelled(bob::State6),
@@ -114,13 +110,6 @@ impl From<BobState> for Bob {
             BobState::BtcEarlyRefunded(state6) => {
                 Bob::Done(BobEndState::BtcEarlyRefunded(Box::new(state6)))
             }
-            BobState::XmrCooperativelyRedeemable {
-                state: state5,
-                tx_lock_id: lock_tx_id,
-            } => Bob::XmrCooperativelyRedeemable {
-                state: state5,
-                tx_lock_id: lock_tx_id,
-            },
             BobState::SafelyAborted => Bob::Done(BobEndState::SafelyAborted),
         }
     }
@@ -172,13 +161,6 @@ impl From<Bob> for BobState {
             Bob::BtcRefundPublished(state6) => BobState::BtcRefundPublished(state6),
             Bob::BtcEarlyRefundPublished(state6) => BobState::BtcEarlyRefundPublished(state6),
             Bob::BtcPunished { state, tx_lock_id } => BobState::BtcPunished { state, tx_lock_id },
-            Bob::XmrCooperativelyRedeemable {
-                state: state5,
-                tx_lock_id,
-            } => BobState::XmrCooperativelyRedeemable {
-                tx_lock_id,
-                state: state5,
-            },
             Bob::Done(end_state) => match end_state {
                 BobEndState::SafelyAborted => BobState::SafelyAborted,
                 BobEndState::XmrRedeemed { tx_lock_id } => BobState::XmrRedeemed { tx_lock_id },
@@ -208,9 +190,6 @@ impl fmt::Display for Bob {
             Bob::Done(end_state) => write!(f, "Done: {}", end_state),
             Bob::EncSigSent { .. } => f.write_str("Encrypted signature sent"),
             Bob::BtcPunished { .. } => f.write_str("Bitcoin punished"),
-            Bob::XmrCooperativelyRedeemable { .. } => {
-                f.write_str("Monero cooperatively redeemable")
-            }
         }
     }
 }

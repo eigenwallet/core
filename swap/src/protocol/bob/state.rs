@@ -63,10 +63,6 @@ pub enum BobState {
         state: State6,
         tx_lock_id: bitcoin::Txid,
     },
-    XmrCooperativelyRedeemable {
-        state: State5,
-        tx_lock_id: bitcoin::Txid,
-    },
     SafelyAborted,
 }
 
@@ -92,9 +88,7 @@ impl fmt::Display for BobState {
             BobState::BtcRefunded(..) => write!(f, "btc is refunded"),
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),
             BobState::BtcPunished { .. } => write!(f, "btc is punished"),
-            BobState::XmrCooperativelyRedeemable { .. } => {
-                write!(f, "xmr is cooperatively redeemable")
-            }
+
             BobState::BtcEarlyRefunded { .. } => write!(f, "btc is early refunded"),
             BobState::SafelyAborted => write!(f, "safely aborted"),
         }
@@ -126,9 +120,7 @@ impl BobState {
             | BobState::BtcEarlyRefundPublished(state) => {
                 Some(state.expired_timelock(&bitcoin_wallet).await?)
             }
-            BobState::BtcPunished { .. } | BobState::XmrCooperativelyRedeemable { .. } => {
-                Some(ExpiredTimelocks::Punish)
-            }
+            BobState::BtcPunished { .. } => Some(ExpiredTimelocks::Punish),
             BobState::BtcRefunded(_)
             | BobState::BtcEarlyRefunded { .. }
             | BobState::BtcRedeemed(_)
