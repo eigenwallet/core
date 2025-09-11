@@ -6,7 +6,8 @@ The `orchestrator` tool helps you setup a secure, reliable and production enviro
 
 Ensure you have [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on your machine.
 
-If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section or run this command if you're on a Linux x86 server:
+If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section or run the command below if you're on a Linux x86 server. It'll download the latest archive from Github, extract the binary and make it executable.
+
 ```bash
 wget "$(
   wget -qO- https://api.github.com/repos/eigenwallet/core/releases/latest \
