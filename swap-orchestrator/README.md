@@ -6,6 +6,15 @@ The `orchestrator` tool helps you setup a secure, reliable and production enviro
 
 Ensure you have [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on your machine.
 
+If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section or run this command:
+```bash
+wget "$(
+  wget -qO- https://api.github.com/repos/eigenwallet/core/releases/latest \
+  | grep -oE '"browser_download_url":\s*"[^"]*orchestrator_[^"]*_Linux_x86_64\.tar"' \
+  | head -n1 | cut -d'"' -f4
+)"
+```
+
 To generate the `config.toml` and `docker-compose.yml` files, run:
 
 ```bash
