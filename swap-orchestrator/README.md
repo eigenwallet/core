@@ -6,21 +6,30 @@ The `orchestrator` tool helps you setup a secure, reliable and production enviro
 
 Ensure you have [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on your machine.
 
-If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section or run the command below if you're on a Linux x86 server. It'll download the latest archive from Github, extract the binary and make it executable.
+If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section or run the commands below if you're on a Linux x86 server. It'll download the latest archive from Github, extract the binary and make it executable.
 
+Download the archive which contains the pre-compiled binary:
 ```bash
 wget "$(
   wget -qO- https://api.github.com/repos/eigenwallet/core/releases/latest \
   | grep -oE '"browser_download_url":\s*"[^"]*orchestrator_[^"]*_Linux_x86_64\.tar"' \
   | head -n1 | cut -d'"' -f4
 )"
+```
 
+Extract the archive to get the `orchestrator` binary
+```bash
 tar -xf orchestrator*.tar
+```
 
+Make the binary executable
+```bash
 chmod +x orchestrator
 ```
 
-To generate the `config.toml` and `docker-compose.yml` files, run:
+Run the command below to start the wizard.
+
+It’ll guide you through a bunch of questions to generate the `config.toml` file and the `docker-compose.yml` file based on your needs. You can always modify the `config.toml` later on to modify specific things about your `asb` like the minimum swap amount or the configured markup.
 
 ```bash
 ./orchestrator
