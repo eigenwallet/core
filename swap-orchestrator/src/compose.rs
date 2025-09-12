@@ -51,7 +51,7 @@ impl Into<OrchestratorPorts> for OrchestratorNetworks<monero::Network, bitcoin::
                 bitcoind_rpc: 8332,
                 bitcoind_p2p: 8333,
                 electrs: 50001,
-                asb_libp2p: 9839,
+                asb_libp2p: 9939,
                 asb_rpc_port: 9944,
             },
             (monero::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
