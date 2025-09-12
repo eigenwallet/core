@@ -238,7 +238,8 @@ prepare_gcc_build() {
       --prefix=$PREFIX \
       --with-sysroot=$PREFIX \
       --disable-multilib \
-      --enable-languages=c,c++
+      --enable-languages=c,c++ \
+      --enable-threads=posix
     make all-gcc -j$(nproc)
     make install-gcc
 
@@ -308,8 +309,8 @@ setup_path() {
 }
 
 verify_installation() {
-    # 1. check that ~/opt/gcc-mingw-14.3/ exists 
-    # 2. check that `x86_64-w64-mingw32-g++ --version` works and the output contains 14.3 
+    # 1. check that ~/opt/gcc-mingw-14.3/ exists
+    # 2. check that `x86_64-w64-mingw32-g++ --version` works and the output contains 14.3
     # 3. make sure the dll's are in the src-tauri directory
 
 	echo "Verifying cross-compiler installation"
@@ -396,8 +397,8 @@ build_binutils
 build_mingw_headers
 prepare_gcc_build
 build_mingw_crt
-finish_gcc
 build_winpthreads
+finish_gcc
 copy_dlls
 
 setup_path
