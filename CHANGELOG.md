@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + CLI: Fix an issue where it'd take a long time to redeem the Monero. We did not properly skip the block scanning.
+- ORCHESTRATOR: Change exposed mainnet port from `9839` to `9939`
 
 ## [3.0.0-beta.11] - 2025-08-20
 
