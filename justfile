@@ -33,10 +33,14 @@ tauri-mainnet:
 	cd src-tauri && cargo tauri dev --no-watch -- -vv
 
 # Start the Tauri app with mobile layout
-tauri-mobile:
+tauri-ios:
 	cd src-tauri && cargo tauri ios dev --no-watch --verbose --config tauri.mobile.conf.json -- -- --testnet
 
-tauri-mobile-mainnet:
+# Start the Tauri Desktop with mobile layout
+tauri-ios-like:
+	cd src-tauri && cargo tauri dev --no-watch --verbose --config tauri.mobile.conf.json -- -- --testnet
+
+tauri-ios-mainnet:
 	cd src-tauri && cargo tauri dev --no-watch --config tauri.mobile.conf.json
 
 # Install the GUI dependencies
