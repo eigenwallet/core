@@ -72,7 +72,7 @@ swap:
 	cargo build -p swap-asb --bin asb && cd swap && cargo build --bin=swap
 
 # Run the asb on testnet
-asb-testnet:
+asb:
 	cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Updates our submodules (currently only Monero C++ codebase)

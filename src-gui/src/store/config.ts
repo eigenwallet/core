@@ -6,7 +6,8 @@ import { Network } from "./features/settingsSlice";
 let matches: CliMatches;
 try {
   matches = await getMatches();
-} catch {
+} catch (e) {
+  console.error("couldn't get cli matches: " + e);
   matches = {
     args: {},
   };
