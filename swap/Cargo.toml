@@ -37,7 +37,6 @@ arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls"
 async-compression = { version = "0.3", features = ["bzip2", "tokio"] }
 async-trait = "0.1"
 asynchronous-codec = "0.7.0"
-atty = "0.2"
 backoff = { workspace = true }
 base64 = "0.22"
 big-bytes = "1"

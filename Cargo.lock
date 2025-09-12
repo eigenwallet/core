@@ -13413,7 +13413,6 @@ dependencies = [
  "async-compression 0.3.15",
  "async-trait",
  "asynchronous-codec 0.7.0",
- "atty",
  "backoff",
  "base64 0.22.1",
  "bdk",
