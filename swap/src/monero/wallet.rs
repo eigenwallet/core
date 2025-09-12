@@ -10,6 +10,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use crate::common::throttle::{throttle, Throttle};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
+use monero_simple_request_rpc::SimpleRequestRpc;
 use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 use tokio::sync::RwLock;
@@ -30,7 +31,7 @@ pub struct Wallets {
     /// The network we're on.
     network: Network,
     /// The monero node we connect to.
-    daemon: Arc<RwLock<Daemon>>,
+    daemon: Arc<RwLock<(Daemon, SimpleRequestRpc)>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
@@ -276,7 +277,8 @@ impl Wallets {
                 .await;
         }
 
-        let daemon = Arc::new(RwLock::new(daemon));
+        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
+        let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
             wallet_dir,
@@ -326,7 +328,8 @@ impl Wallets {
                 .await;
         }
 
-        let daemon = Arc::new(RwLock::new(daemon));
+        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
+        let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
             wallet_dir,
@@ -343,6 +346,18 @@ impl Wallets {
         let _ = wallets.record_wallet_access(&wallet_path).await;
 
         Ok(wallets)
+    }
+
+    pub async fn direct_rpc_block_height(&self) -> Result<u64> {
+        use monero_oxide_rpc::Rpc;
+        let (daemon, rpc_client) = self.daemon.read().await.clone();
+
+        let height = rpc_client
+            .get_height()
+            .await
+            .context(format!("Failed with node {}", daemon.to_url_string()))?;
+
+        Ok(height as u64)
     }
 
     /// Open the lock wallet of a specific swap.
@@ -366,13 +381,9 @@ impl Wallets {
         let filename = swap_id.to_string();
         let wallet_path = self.wallet_dir.join(&filename).display().to_string();
 
-        let blockheight = self
-            .main_wallet
-            .blockchain_height()
-            .await
-            .context("Couldn't fetch blockchain height")?;
+        let blockheight = self.direct_rpc_block_height().await?;
 
-        let daemon = self.daemon.read().await.clone();
+        let (daemon, _) = self.daemon.read().await.clone();
 
         let wallet = Wallet::open_or_create_from_keys(
             wallet_path.clone(),
@@ -404,6 +415,8 @@ impl Wallets {
             .scan_transaction(tx_lock_id.0.clone())
             .await
             .context("Couldn't import Monero lock transaction")?;
+
+        wallet.set_restore_height(blockheight).await?;
 
         Ok(Arc::new(wallet))
     }
@@ -470,7 +483,8 @@ impl Wallets {
     pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
         {
             let mut daemon = self.daemon.write().await;
-            *daemon = new_daemon.clone();
+            let rpc_client = SimpleRequestRpc::new(new_daemon.to_url_string()).await?;
+            *daemon = (new_daemon.clone(), rpc_client);
         }
 
         self.main_wallet

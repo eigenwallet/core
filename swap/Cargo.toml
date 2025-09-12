@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "3.0.0-beta.10"
+version = "3.0.0-beta.12"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "XMR/BTC trustless atomic swaps."
@@ -36,7 +36,7 @@ conquer-once = "0.4"
 curve25519-dalek = { package = "curve25519-dalek-ng", version = "4" }
 data-encoding = "2.6"
 derive_builder = "0.20.2"
-dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs", subdir = "dfx-swiss-sdk", optional = true }
+dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs", optional = true }
 dialoguer = "0.11"
 ecdsa_fun = { version = "0.10", default-features = false, features = ["libsecp_compat", "serde", "adaptor"] }
 ed25519-dalek = "1"
@@ -98,6 +98,10 @@ uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = "1.8.1"
 
+# monero-oxide
+monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
+monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }
+
 [target.'cfg(not(windows))'.dependencies]
 tokio-tar = "0.3"
 
@@ -117,4 +121,4 @@ testcontainers = "0.15"
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = { workspace = true }
+vergen-git2 = { workspace = true }

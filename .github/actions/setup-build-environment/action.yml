@@ -1,0 +1,107 @@
+name: "Setup Build Environment"
+description: "Sets up the build environment with Node, Rust, dependencies, and tooling for Tauri builds"
+
+inputs:
+  host:
+    description: "The host being built on (e.g., ubuntu-24.04, macos-latest)"
+    required: true
+  target:
+    description: "Additional Rust targets to install and prepare for (e.g. x86_64-pc-windows-gnu when crossbuilding)"
+    required: false
+    default: "x86_64-unknown-linux-gnu"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure apt for retries (Ubuntu only)
+      if: startsWith(inputs.host, 'ubuntu')
+      shell: bash
+      run: ${{ env.APT_SET_CONF_COMMAND }}
+
+    - name: Set env variables
+      uses: ./.github/actions/set-monero-env
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+
+    - name: Setup yarn
+      shell: bash
+      run: |
+        npm install --global yarn@1
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@1.87
+      with:
+        targets: ${{ inputs.target }}
+
+    - name: Install Tauri and build dependencies (Ubuntu)
+      if: contains(inputs.host, 'ubuntu')
+      shell: bash
+      run: |
+        sudo apt update;
+        sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
+
+    - name: Install build dependencies (macos)
+      if: contains(inputs.host, 'macos')
+      shell: bash
+      run: |
+        brew uninstall --force --ignore-dependencies ${{ env.DEPS_BUILD_MACOS }} && \
+        brew install --force ${{ env.DEPS_BUILD_MACOS }}
+
+    - name: Clone submodules
+      shell: bash
+      run: git submodule update --init --recursive
+
+    - name: Work around spurious network errors in curl 8.0
+      shell: bash
+      run: |
+        echo "CARGO_HTTP_MULTIPLEXING=false" >> $GITHUB_ENV
+
+    - name: Install frontend dependencies
+      working-directory: src-gui
+      shell: bash
+      run: yarn install --network-timeout 600000
+
+    - name: Install tauri-cli via yarn
+      shell: bash
+      run: |
+        yarn add -D @tauri-apps/cli@2.8.0
+
+    - name: Install just globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: just@1.42.4
+
+    - name: Install typeshare-cli globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: typeshare-cli@1.13.3
+
+    - name: Install dprint globally
+      shell: bash
+      run: npm install --global dprint@0.50 # Use npm instead of cargo binstall because the binstall version uses musl which doesn't work
+
+    - name: Install sqlx-cli globally
+      uses: taiki-e/install-action@v2
+      with:
+        tool: sqlx-cli@0.8.6
+
+    - name: Install cross (armv7)
+      if: inputs.host == 'armv7-unknown-linux-gnueabihf'
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
+
+    - name: Make sure we really have the rust target installed
+      if: inputs.target != ''
+      shell: bash
+      run: |
+        rustup target add ${{ inputs.target }}
+
+    - name: Prepare Windows build by building gcc from source
+      if: contains(inputs.target, 'windows')
+      shell: bash
+      run: |
+        just prepare-windows-build

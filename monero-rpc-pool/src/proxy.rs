@@ -17,12 +17,9 @@ use tokio::{
 
 use tokio_rustls::rustls::{
     self,
-    client::{
-        danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
-    },
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
-    Error as TlsError,
-    DigitallySignedStruct, SignatureScheme,
+    DigitallySignedStruct, Error as TlsError, SignatureScheme,
 };
 use tracing::{error, info_span, Instrument};
 

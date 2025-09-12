@@ -27,10 +27,10 @@ test-ffi-address:
 
 # Start the Tauri app
 tauri:
-	cd src-tauri && cargo tauri dev --no-watch --verbose -- -- --testnet
+	cd src-tauri && cargo tauri dev --no-watch -- --verbose -- --testnet
 
 tauri-mainnet:
-	cd src-tauri && cargo tauri dev --no-watch
+	cd src-tauri && cargo tauri dev --no-watch -- -vv
 
 # Start the Tauri app with mobile layout
 tauri-mobile:
@@ -63,6 +63,9 @@ gui-mobile-mainnet:
 # Build the GUI
 gui_build:
         cd src-gui && yarn build
+
+build-gui-windows:
+    cargo tauri build --target x86_64-pc-windows-gnu -- -vv
 
 # Run the Rust tests
 tests:
@@ -102,6 +105,9 @@ bindings:
 fmt:
 	dprint fmt
 
+generate-sqlx-cache:
+	./regenerate_sqlx_cache.sh
+
 # Run eslint for the GUI frontend
 check_gui_eslint:
 	cd src-gui && yarn run eslint
@@ -127,3 +133,6 @@ prepare_mac_os_brew_dependencies:
 # E.g code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
 code2prompt_single_crate crate:
 	cd {{crate}} && code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
+
+prepare-windows-build:
+    cd dev_scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
