@@ -75,6 +75,10 @@ swap:
 asb:
 	cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
+# Run the asb controller connecting to your already running asb
+asb-controller:
+    cargo run -p swap-controller --bin asb-controller -- --url http://127.0.0.1:9944
+
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:
 	cd monero-sys && git submodule update --init --recursive --force
