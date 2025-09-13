@@ -1,5 +1,5 @@
 # This file is used to build the release binaries for the Tauri GUI
-name: "Publish GUI release to GitHub"
+name: "Build eigenwallet release"
 
 on:
   pull_request:
