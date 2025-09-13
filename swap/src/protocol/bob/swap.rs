@@ -814,7 +814,7 @@ async fn next_state(
                         .context("Can't cooperatively redeem Monero")?;
 
                     tracing::info!(
-                        "Alice has accepted our request to cooperatively redeem the XMR"
+                        "Alice has accepted our request to cooperatively redeem the XMR and sent the correct key"
                     );
 
                     return Ok(BobState::BtcRedeemed(state5));
