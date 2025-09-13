@@ -93,24 +93,34 @@ export default function ActionableMonospaceTextBox({
           <Box
             sx={{
               display: "flex",
-              alignItems: "center",
+              alignItems: "space-between",
               cursor: "pointer",
-              filter: spoilerText && !isRevealed ? "blur(8px)" : "none",
-              transition: "filter 0.3s ease",
+              filter: spoilerText && !isRevealed ? "blur(2px)" : "none",
+              transition: "filter 0.1s ease",
             }}
           >
             <Box sx={{ flexGrow: 1 }} onClick={handleCopy}>
               <MonospaceTextBox light={light}>
-                {content}
-                {displayCopyIcon && (
-                  <IconButton
-                    onClick={handleCopy}
-                    size="small"
-                    sx={{ marginLeft: 1 }}
-                  >
-                    <FileCopyOutlined />
-                  </IconButton>
-                )}
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flex: 1,
+                  }}
+                >
+                  {content}
+                  {displayCopyIcon && (
+                    <IconButton
+                      onClick={handleCopy}
+                      size="small"
+                      sx={{ marginLeft: 1 }}
+                    >
+                      <FileCopyOutlined />
+                    </IconButton>
+                  )}
+                </Box>
+
                 {enableQrCode && (
                   <Tooltip title="Show QR Code" arrow>
                     <IconButton
@@ -139,20 +149,12 @@ export default function ActionableMonospaceTextBox({
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
-              bgcolor: "rgba(0, 0, 0, 0.1)",
-              borderRadius: 1,
+              bgcolor: "background.paper",
+              borderRadius: 2,
+              p: 2,
             }}
           >
-            <Box
-              sx={{
-                bgcolor: "background.paper",
-                p: 2,
-                borderRadius: 1,
-                boxShadow: 2,
-              }}
-            >
-              {spoilerText}
-            </Box>
+            {spoilerText}
           </Box>
         )}
       </Box>

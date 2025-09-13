@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -12,47 +13,75 @@ import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
 } from "models/tauriModel";
+import { useEffect, useState } from "react";
+import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
 
 interface SeedPhraseModalProps {
   onClose: () => void;
-  seed: [GetMoneroSeedResponse, GetRestoreHeightResponse] | null;
+  open: boolean;
+}
+
+interface Info {
+  seed: string;
+  restoreHeight: number;
 }
 
 export default function SeedPhraseModal({
   onClose,
-  seed,
+  open,
 }: SeedPhraseModalProps) {
-  if (seed === null) {
-    return null;
-  }
+  const [info, setInfo] = useState<Info | null>(null);
+
+  useEffect(() => {
+    getMoneroSeedAndRestoreHeight().then(([seed, height]) => {
+      setInfo({ seed: seed.seed, restoreHeight: height.height });
+    });
+  }, []);
 
   return (
-    <Dialog open={true} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Wallet Seed Phrase</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Export your Monero wallet's seed</DialogTitle>
       <DialogContent>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Alert severity="info">
+            Never reveal your seed phrase to <i>anyone</i>. The developers will
+            never ask for your seed.
+          </Alert>
+
+          <Typography variant="body1">Seed phrase</Typography>
+
           <ActionableMonospaceTextBox
-            content={seed[0].seed}
+            content={info == null ? "...loading..." : info.seed}
             displayCopyIcon={true}
             enableQrCode={false}
             spoilerText="Press to reveal"
           />
+
+          <Typography variant="caption">
+            The seed phrase of your wallet is equivalent to the secret key.
+          </Typography>
+
+          <Typography variant="body1">Restore Block Height</Typography>
+
           <ActionableMonospaceTextBox
-            content={seed[1].height.toString()}
+            content={
+              info == null ? "...loading..." : info.restoreHeight.toString()
+            }
             displayCopyIcon={true}
             enableQrCode={false}
           />
+
+          <Typography variant="caption">
+            The restore height will help other wallets determine which parts of
+            the blockchain to scan for funds.
+          </Typography>
         </Box>
 
         <Typography
           variant="caption"
           color="text.secondary"
           sx={{ mt: 2, display: "block", fontStyle: "italic" }}
-        >
-          Keep this seed phrase safe and secure. Write it down on paper and
-          store it in a safe place. Keep the restore height in mind when you
-          restore your wallet on another device.
-        </Typography>
+        ></Typography>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} variant="outlined">

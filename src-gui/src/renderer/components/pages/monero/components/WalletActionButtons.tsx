@@ -18,6 +18,7 @@ import {
   SwapHoriz as SwapIcon,
   Restore as RestoreIcon,
   MoreHoriz as MoreHorizIcon,
+  Lock,
 } from "@mui/icons-material";
 import { useState } from "react";
 import { setMoneroRestoreHeight } from "renderer/rpc";
@@ -45,10 +46,8 @@ export default function WalletActionButtons({
   const navigate = useNavigate();
 
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [seedDialogOpen, setSeedDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
-  const [seedPhrase, setSeedPhrase] = useState<
-    [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
-  >(null);
 
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
@@ -66,7 +65,10 @@ export default function WalletActionButtons({
         open={restoreHeightDialogOpen}
         onClose={() => setRestoreHeightDialogOpen(false)}
       />
-      <SeedPhraseModal onClose={() => setSeedPhrase(null)} seed={seedPhrase} />
+      <SeedPhraseModal
+        open={seedDialogOpen}
+        onClose={() => setSeedDialogOpen(false)}
+      />
       <SendTransactionModal
         balance={balance}
         open={sendDialogOpen}
@@ -112,10 +114,17 @@ export default function WalletActionButtons({
             </ListItemIcon>
             <Typography>Restore Height</Typography>
           </MenuItem>
-          <SeedPhraseButton
-            onMenuClose={handleMenuClose}
-            onSeedPhraseSuccess={setSeedPhrase}
-          />
+          <MenuItem
+            onClick={() => {
+              setSeedDialogOpen(true);
+              handleMenuClose();
+            }}
+          >
+            <ListItemIcon>
+              <Lock />
+            </ListItemIcon>
+            <Typography>Export Seed Phrase</Typography>
+          </MenuItem>
         </Menu>
       </Box>
     </>
