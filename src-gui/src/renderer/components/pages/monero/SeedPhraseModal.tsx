@@ -9,10 +9,6 @@ import {
   Typography,
 } from "@mui/material";
 import ActionableMonospaceTextBox from "../../other/ActionableMonospaceTextBox";
-import {
-  GetMoneroSeedResponse,
-  GetRestoreHeightResponse,
-} from "models/tauriModel";
 import { useEffect, useState } from "react";
 import { getMoneroSeedAndRestoreHeight } from "renderer/rpc";
 
@@ -21,7 +17,7 @@ interface SeedPhraseModalProps {
   open: boolean;
 }
 
-interface Info {
+interface SeedInfo {
   seed: string;
   restoreHeight: number;
 }
@@ -30,8 +26,9 @@ export default function SeedPhraseModal({
   onClose,
   open,
 }: SeedPhraseModalProps) {
-  const [info, setInfo] = useState<Info | null>(null);
+  const [info, setInfo] = useState<SeedInfo | null>(null);
 
+  // Fetch seed and restore height on mount
   useEffect(() => {
     getMoneroSeedAndRestoreHeight().then(([seed, height]) => {
       setInfo({ seed: seed.seed, restoreHeight: height.height });
