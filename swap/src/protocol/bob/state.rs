@@ -915,9 +915,10 @@ impl State6 {
         lock_transfer_proof: TransferProof,
     ) -> Result<State5> {
         let alleged_s_a = monero::PrivateKey::from_scalar(s_a);
+        let alleged_S_a = PublicKey::from_private_key(&alleged_s_a);
 
         // Make sure we've got the correct key by checking that it matches the pubkey
-        if PublicKey::from_private_key(&alleged_s_a) != self.S_a_monero {
+        if alleged_S_a != self.S_a_monero {
             bail!("received bogus cooperative redeem key - doesn't match view key")
         }
 

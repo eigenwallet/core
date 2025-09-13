@@ -46,6 +46,8 @@ import {
   GetRestoreHeightResponse,
   MoneroNodeConfig,
   GetMoneroSeedResponse,
+  ManualCooperativeRedeemArgs,
+  ManualCooperativeRedeemResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -255,6 +257,23 @@ export async function buyXmr(
   });
 }
 
+export async function manualCooperativeRedeem(
+  swapId: string,
+  s_a: string,
+  txId: string,
+  txKey: string,
+) {
+  await invoke<ManualCooperativeRedeemArgs, ManualCooperativeRedeemResponse>(
+    "manual_cooperative_redeem",
+    {
+      swap_id: swapId,
+      s_a,
+      lock_tx_id: txId,
+      lock_tx_key: txKey,
+    },
+  );
+}
+
 export async function resumeSwap(swapId: string) {
   await invoke<ResumeSwapArgs, ResumeSwapResponse>("resume_swap", {
     swap_id: swapId,
@@ -354,7 +373,7 @@ export async function initializeContext() {
     enable_monero_tor: useMoneroTor,
   };
 
-  logger.info("Initializing context with settings", tauriSettings);
+  logger.info("Initializing context with settings" + tauriSettings);
 
   try {
     await invokeUnsafe<void>("initialize_context", {
