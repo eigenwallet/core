@@ -181,13 +181,8 @@ jobs:
           set -euo pipefail
           ARCHIVE="${{ steps.create-archive-name.outputs.archive }}"
 
-          # Sign with passphrase if provided; otherwise use agent without passphrase
-          if [[ -n "${GPG_PASSPHRASE:-}" ]]; then
-            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
                 -u "$GPG_FPR" --armor --output "${ARCHIVE}.asc" --detach-sign "$ARCHIVE"
-          else
-            gpg --batch --yes -u "$GPG_FPR" --armor --output "${ARCHIVE}.asc" --detach-sign "$ARCHIVE"
-          fi
 
       - name: Upload archive
         if: github.event_name == 'release'
