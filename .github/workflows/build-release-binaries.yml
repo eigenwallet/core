@@ -129,21 +129,14 @@ jobs:
         if: github.event_name == 'release' && runner.os == 'macOS'
         shell: bash
         run: |
-          set -euo pipefail
-          if ! command -v gpg >/dev/null 2>&1; then
-            brew update
-            brew install gnupg
-          fi
+          brew install gnupg
 
       - name: Install GnuPG (Linux)
         if: github.event_name == 'release' && runner.os == 'Linux'
         shell: bash
         run: |
-          set -euo pipefail
-          if ! command -v gpg >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y gnupg
-          fi
+          sudo apt-get update -y
+          sudo apt-get install -y gnupg
 
       - name: Import GPG private key
         if: github.event_name == 'release'
@@ -152,24 +145,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
             echo "GPG_PRIVATE_KEY secret is not set." >&2
             exit 1
           fi
+
           export GNUPGHOME="$(mktemp -d)"
           chmod 700 "$GNUPGHOME"
+
           # Allow loopback pinentry when passphrase is provided
           echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
           echo "use-agent" >> "$GNUPGHOME/gpg.conf"
           gpgconf --reload gpg-agent || true
+
           # Import ASCII-armored or binary private key material
           printf "%s" "$GPG_PRIVATE_KEY" | gpg --batch --import
+
           # Grab the first secret key fingerprint and expose it to later steps
           FPR="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
           if [[ -z "$FPR" ]]; then
             echo "Failed to import a signing key." >&2
             exit 1
           fi
+
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
           echo "GPG_FPR=$FPR" >> "$GITHUB_ENV"
 
@@ -181,6 +180,7 @@ jobs:
         run: |
           set -euo pipefail
           ARCHIVE="${{ steps.create-archive-name.outputs.archive }}"
+
           # Sign with passphrase if provided; otherwise use agent without passphrase
           if [[ -n "${GPG_PASSPHRASE:-}" ]]; then
             gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
