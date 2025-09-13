@@ -6,6 +6,9 @@ use async_trait::async_trait;
 use bitcoin_harness::{BitcoindRpcApi, Client};
 use futures::Future;
 use get_port::get_port;
+use jsonrpsee::core::middleware::layer::RpcLogger;
+use jsonrpsee::http_client::transport::HttpBackend;
+use jsonrpsee::http_client::HttpClient;
 use libp2p::core::Multiaddr;
 use libp2p::PeerId;
 use monero_harness::{image, Monero};
@@ -13,6 +16,8 @@ use monero_sys::Daemon;
 use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
+use swap::asb::rpc::RpcServer;
+use swap_controller_api::{AsbApiClient, AsbApiServer};
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -94,7 +99,7 @@ where
         .parse()
         .expect("failed to parse Alice's address");
 
-    let (alice_handle, alice_swap_handle) = start_alice(
+    let (alice_handle, alice_swap_handle, rpc_client) = start_alice(
         &alice_seed,
         alice_db_path.clone(),
         alice_listen_address.clone(),
@@ -144,6 +149,7 @@ where
         alice_monero_wallet,
         alice_swap_handle,
         alice_handle,
+        alice_rpc_client: rpc_client,
         bob_params,
         bob_starting_balances,
         bob_bitcoin_wallet,
@@ -238,7 +244,7 @@ async fn start_alice(
     env_config: Config,
     bitcoin_wallet: Arc<bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
-) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
+) -> (AliceApplicationHandle, Receiver<alice::Swap>, HttpClient) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
     }
@@ -272,12 +278,12 @@ async fn start_alice(
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
-    let (event_loop, swap_handle, _service) = asb::EventLoop::new(
+    let (event_loop, swap_handle, event_loop_service) = asb::EventLoop::new(
         swarm,
         env_config,
-        bitcoin_wallet,
-        monero_wallet,
-        db,
+        bitcoin_wallet.clone(),
+        monero_wallet.clone(),
+        db.clone(),
         FixedRate::default(),
         min_buy,
         max_buy,
@@ -285,10 +291,34 @@ async fn start_alice(
     )
     .unwrap();
 
+    let rpc_host = "http://127.0.0.1".to_string();
+    let rpc_port = get_port().expect("port to be available");
+    let rpc_server = RpcServer::start(
+        rpc_host.clone(),
+        rpc_port,
+        bitcoin_wallet.clone(),
+        monero_wallet.clone(),
+        event_loop_service,
+        db,
+    )
+    .await
+    .unwrap();
+
+    std::mem::forget(rpc_server.spawn()); // Avoid drop or else we'll abort the process
+
+    let rpc_url = format!("{rpc_host}:{rpc_port}");
+    let rpc_client = jsonrpsee::http_client::HttpClientBuilder::default()
+        .build(&rpc_url)
+        .expect("rpc client to be built");
+
     let peer_id = event_loop.peer_id();
     let handle = tokio::spawn(event_loop.run());
 
-    (AliceApplicationHandle { handle, peer_id }, swap_handle)
+    (
+        AliceApplicationHandle { handle, peer_id },
+        swap_handle,
+        rpc_client,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -604,6 +634,7 @@ pub struct TestContext {
     alice_monero_wallet: Arc<monero::Wallets>,
     alice_swap_handle: mpsc::Receiver<Swap>,
     alice_handle: AliceApplicationHandle,
+    pub alice_rpc_client: HttpClient,
 
     pub bob_params: BobParams,
     bob_starting_balances: StartingBalances,
@@ -629,7 +660,7 @@ impl TestContext {
     pub async fn restart_alice(&mut self) {
         self.alice_handle.abort();
 
-        let (alice_handle, alice_swap_handle) = start_alice(
+        let (alice_handle, alice_swap_handle, rpc_client) = start_alice(
             &self.alice_seed,
             self.alice_db_path.clone(),
             self.alice_listen_address.clone(),
@@ -639,6 +670,7 @@ impl TestContext {
         )
         .await;
 
+        self.alice_rpc_client = rpc_client;
         self.alice_handle = alice_handle;
         self.alice_swap_handle = alice_swap_handle;
     }
@@ -1123,6 +1155,10 @@ pub mod bob_run_until {
 
     pub fn is_encsig_sent(state: &BobState) -> bool {
         matches!(state, BobState::EncSigSent(..))
+    }
+
+    pub fn is_btc_punished(state: &BobState) -> bool {
+        matches!(state, BobState::BtcPunished { .. })
     }
 }
 
