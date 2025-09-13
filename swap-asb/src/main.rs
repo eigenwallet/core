@@ -192,6 +192,14 @@ pub async fn main() -> Result<()> {
             // Check Monero balance
             let wallet = monero_wallet.main_wallet().await;
 
+            // Before we actually do anything, we sync the Monero wallet completely
+            wallet
+                .wait_until_synced(Some(|sync_progress| {
+                    tracing::debug!(%current_block = sync_progress.current_block, %target_block = sync_progress.target_block, "Waiting for Monero wallet to be fully synced")
+                }))
+                .await
+                .context("Failed to do initial Monero wallet sync")?;
+
             let total = wallet.total_balance().await.as_pico();
             let unlocked = wallet.unlocked_balance().await.as_pico();
 
