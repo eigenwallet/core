@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.12] - 2025-09-14
+
 - GUI + CLI: Fix an issue where it'd take a long time to redeem the Monero. We did not properly skip the block scanning.
 - GUI + CLI: Assume Monero double spend safety after 22 instead of after 12 blocks given the recent large re-org attacks
 - ORCHESTRATOR: Change exposed mainnet port from `9839` to `9939`
@@ -650,6 +652,7 @@ It is possible to migrate critical data from the old db to the sqlite but there 
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
 [unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...HEAD
+[3.0.0-beta.12]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...3.0.0-beta.12
 [3.0.0-beta.12]: https://github.com/eigenwallet/core/compare/3.0.0-beta.11...3.0.0-beta.12
 [3.0.0-beta.11]: https://github.com/eigenwallet/core/compare/3.0.0-beta.10...3.0.0-beta.11
 [3.0.0-beta.10]: https://github.com/eigenwallet/core/compare/3.0.0-beta.9...3.0.0-beta.10
