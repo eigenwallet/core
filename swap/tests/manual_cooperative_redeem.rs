@@ -32,14 +32,14 @@ async fn alice_and_bob_manual_cooperative_redeem_after_punish() {
         // Manually do the cooperative redeem via rpc server
         let manual_cooperative_redeem_info = ctx
             .alice_rpc_client
-            .get_coop_redeem_info(bob_swap_id)
+            .cooperative_redeem_info(bob_swap_id)
             .await?
             .context("swap not found")?;
         let BobState::BtcPunished { state, .. } = bob_state else {
             panic!("bob unexpected state")
         };
         let state5 = state.attempt_cooperative_redeem(
-            manual_cooperative_redeem_info.inner.scalar,
+            manual_cooperative_redeem_info.s_a.scalar,
             TransferProof::new(
                 TxHash(manual_cooperative_redeem_info.lock_tx_id),
                 manual_cooperative_redeem_info.lock_tx_key,

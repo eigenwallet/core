@@ -49,12 +49,11 @@ pub struct MoneroSeedResponse {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CooperativeRedeemResponse {
-    /// Actual secret key
+    /// Actual secret key needed for cooperative redeem by Bob
     #[serde(with = "swap_serde::monero::private_key")]
-    pub inner: PrivateKey,
-    /// Monero lock tx id
+    pub s_a: PrivateKey,
+    // Also include the tx hash and key of the Monero lock tx such that Bob can just import without scanning.
     pub lock_tx_id: String,
-    /// Monero lock tx key -> combined with tx id is the transfer proof
     #[serde(with = "swap_serde::monero::private_key")]
     pub lock_tx_key: PrivateKey,
 }
@@ -79,8 +78,8 @@ pub trait AsbApi {
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
     #[method(name = "get_swaps")]
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
-    #[method(name = "get_coop_redeem_key")]
-    async fn get_coop_redeem_info(
+    #[method(name = "cooperative_redeem_info")]
+    async fn cooperative_redeem_info(
         &self,
         swap_id: Uuid,
     ) -> Result<Option<CooperativeRedeemResponse>, ErrorObjectOwned>;

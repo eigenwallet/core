@@ -3,7 +3,7 @@ use crate::protocol::alice::AliceState;
 use crate::protocol::{Database, State};
 use crate::{bitcoin, monero};
 use ::monero::PrivateKey;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
@@ -163,7 +163,7 @@ impl AsbApiServer for RpcImpl {
         Ok(swaps)
     }
 
-    async fn get_coop_redeem_info(
+    async fn cooperative_redeem_info(
         &self,
         swap_id: Uuid,
     ) -> Result<Option<CooperativeRedeemResponse>, ErrorObjectOwned> {
@@ -171,6 +171,17 @@ impl AsbApiServer for RpcImpl {
 
         if states.is_empty() {
             return Ok(None);
+        }
+
+        // Check if we previously entered BtcPunished (only happens after tx_punish is confirmed)
+        let bob_was_punished: bool = states
+            .iter()
+            .any(|state| matches!(state, State::Alice(AliceState::BtcPunished { .. })));
+        if !bob_was_punished {
+            anyhow!(
+                "Revealing cooperative redeem key would be insecure because we didn't punish yet"
+            )
+            .into_json_rpc_error();
         }
 
         states
@@ -182,7 +193,7 @@ impl AsbApiServer for RpcImpl {
                     state3,
                     ..
                 }) => Some(Some(CooperativeRedeemResponse {
-                    inner: PrivateKey::from_scalar(state3.s_a),
+                    s_a: PrivateKey::from_scalar(state3.s_a),
                     lock_tx_id: transfer_proof.tx_hash().to_string(),
                     lock_tx_key: transfer_proof.tx_key(),
                 })),

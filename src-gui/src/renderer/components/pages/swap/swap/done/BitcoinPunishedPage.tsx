@@ -77,11 +77,14 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
       setTxKey("");
     }
 
-    // Wait 5 seconds before continuing
+    // Wait 5 seconds to give user time to read message
     await new Promise((res) => setTimeout(res, 5000));
-    onClose();
-    // Resume the swap
-    resumeSwap(swapId);
+
+    // Close the modal and continue the swap normally if the cooperative redeem succeded
+    if (success) {
+      onClose();
+      resumeSwap(swapId);
+    }
   };
 
   const resultText = success
