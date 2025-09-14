@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -15,6 +16,7 @@ import { TauriSwapProgressEventExt } from "models/tauriModelExt";
 import { useState } from "react";
 import { manualCooperativeRedeem, resumeSwap } from "renderer/rpc";
 import { useActiveSwapId } from "store/hooks";
+import { useSnackbar } from "notistack";
 
 export default function BitcoinPunishedPage({
   state,
@@ -63,41 +65,46 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
   const [txKey, setTxKey] = useState("");
   const swapId = useActiveSwapId();
 
+  const { enqueueSnackbar } = useSnackbar();
+
   const handleAttempt = async () => {
     setSuccess(null);
+
+    // Try and use the given information to cooperatively redeem
     try {
       await manualCooperativeRedeem(swapId, key, txId, txKey);
       setSuccess(true);
+      // Wait 5 seconds to give user time to read message
+      await new Promise((res) => setTimeout(res, 5000));
+
+      // Close the modal and continue the swap normally
+      onClose();
+      resumeSwap(swapId);
+      setSuccess(null);
     } catch (e) {
-      console.error("Failed to cooperatively redeem: " + e);
+      // If we get an error, throw it to the snackbar
+      enqueueSnackbar<"error">(`Cooperative redeem failed: \`${e}\``);
       setSuccess(false);
     } finally {
       setKey("");
       setTxId("");
       setTxKey("");
     }
-
-    // Wait 5 seconds to give user time to read message
-    await new Promise((res) => setTimeout(res, 5000));
-
-    // Close the modal and continue the swap normally if the cooperative redeem succeded
-    if (success) {
-      onClose();
-      resumeSwap(swapId);
-    }
   };
 
-  const resultText = success
-    ? "Success, resuming swap"
-    : success === false
-      ? "Oops, failed (see console for error)"
-      : "";
+  const alert = success ? (
+    <Alert severity="success">
+      Successfully verified key, attempting swap completion now.
+    </Alert>
+  ) : (
+    <Alert severity="error">Couldn't verify the redeem key.</Alert>
+  );
 
   return (
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>Manual Cooperative Redeem</DialogTitle>
       <DialogContent>
-        {resultText}
+        {success !== null ? alert : null}
 
         <Typography variant="caption">
           As a fallback to the automated cooperative redeem process, you can
@@ -105,15 +112,15 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
         </Typography>
 
         <TextField
-          label={"Secret Redeem Key"}
+          label={"Cooperative Redeem Key"}
           onChange={(e) => setKey(e.target.value)}
         />
         <TextField
-          label={"Lock Transaction ID"}
+          label={"Monero Lock Transaction ID"}
           onChange={(e) => setTxId(e.target.value)}
         />
         <TextField
-          label={"Lock Transaction Key"}
+          label={"Monero Lock Transaction Key"}
           onChange={(e) => setTxKey(e.target.value)}
         />
       </DialogContent>
@@ -122,7 +129,12 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
           <Button variant="outlined" onClick={onClose}>
             Close
           </Button>
-          <Button variant="contained" color="primary" onClick={handleAttempt}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleAttempt}
+            disabled={attempting}
+          >
             Attempt
           </Button>
         </Box>
