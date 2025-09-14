@@ -60,6 +60,7 @@ interface ManualCoopRedeemModalProps {
 
 function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
   const [success, setSuccess] = useState<boolean | null>(null);
+  const [inProgress, setInProgress] = useState(false);
   const [key, setKey] = useState("");
   const [txId, setTxId] = useState("");
   const [txKey, setTxKey] = useState("");
@@ -69,6 +70,7 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
 
   const handleAttempt = async () => {
     setSuccess(null);
+    setInProgress(true);
 
     // Try and use the given information to cooperatively redeem
     try {
@@ -86,6 +88,7 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
       enqueueSnackbar<"error">(`Cooperative redeem failed: \`${e}\``);
       setSuccess(false);
     } finally {
+      setInProgress(false);
       setKey("");
       setTxId("");
       setTxKey("");
@@ -133,7 +136,7 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
             variant="contained"
             color="primary"
             onClick={handleAttempt}
-            disabled={attempting}
+            disabled={inProgress}
           >
             Attempt
           </Button>
