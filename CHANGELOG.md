@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + CLI: Fix an issue where it'd take a long time to redeem the Monero. We did not properly skip the block scanning.
+- GUI + CLI: Assume Monero double spend safety after 22 instead of after 12 blocks given the recent large re-org attacks
 
 ## [3.0.0-beta.11] - 2025-08-20
 
