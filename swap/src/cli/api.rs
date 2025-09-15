@@ -526,14 +526,17 @@ impl ContextBuilder {
         if let Some(addr_str) = self.eigensync_server_multiaddr.as_deref() {
             let multiaddr = Multiaddr::from_str(addr_str)
                 .context("Failed to parse Eigensync server multiaddr")?;
-            let server_peer_id = PeerId::from_str(multiaddr.extract_peer_id().unwrap().to_string().as_str())?;
-
-            let enc_key = seed.derive_eigensync_secret_key();
-            let handle = Arc::new(RwLock::new(
-                EigensyncHandle::new(multiaddr, server_peer_id, seed.derive_eigensync_identity(), enc_key).await?
-            ));
-            background_sync_task = Some(handle.clone().background_sync());
-            eigensync_handle = Some(handle);
+            if let Some(peer_id) = multiaddr.extract_peer_id() {
+                let server_peer_id = PeerId::from_str(peer_id.to_string().as_str())?;
+                let enc_key = seed.derive_eigensync_secret_key();
+                let handle = Arc::new(RwLock::new(
+                    EigensyncHandle::new(multiaddr, server_peer_id, seed.derive_eigensync_identity(), enc_key).await?
+                ));
+                background_sync_task = Some(handle.clone().background_sync());
+                eigensync_handle = Some(handle);
+            } else {
+                tracing::warn!("Eigensync server multiaddr does not contain a peer id");
+            };
         }
 
         let db = open_db(

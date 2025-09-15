@@ -3,7 +3,7 @@ use std::{path::PathBuf, str::FromStr};
 use anyhow::{Result};
 
 use libp2p::PeerId;
-use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool};
 use tracing::info;
 
 use crate::protocol::EncryptedChange;
@@ -21,8 +21,13 @@ impl Database {
         }
 
         let db_path = data_dir.join("changes");
-        let options = SqliteConnectOptions::from_str(&db_path.display().to_string())?;
-        let pool = SqlitePool::connect_with(options).await?;
+        let connect_options = SqliteConnectOptions::new()
+            .filename(&db_path)
+            .create_if_missing(true);
+
+        let pool = SqlitePoolOptions::new()
+            .connect_with(connect_options)
+            .await?;
 
         let db = Self { pool };
         db.migrate().await?;
