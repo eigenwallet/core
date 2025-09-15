@@ -1011,7 +1011,7 @@ pub struct TauriSettings {
     /// Whether to route Monero wallet traffic through Tor
     pub enable_monero_tor: bool,
     /// Eigensync server Multiaddr
-    pub eigensync_server_multiaddr: String,
+    pub eigensync_server_multiaddr: Option<String>,
 }
 
 #[typeshare]

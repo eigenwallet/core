@@ -25,7 +25,7 @@ export interface SettingsState {
   /// Whether to route Monero wallet traffic through Tor
   enableMoneroTor: boolean;
   /// Eigensync server Multiaddr
-  eigensyncServer: string;
+  eigensyncServer: string | false;
   /// Whether to use the Monero RPC pool for load balancing (true) or custom nodes (false)
   useMoneroRpcPool: boolean;
   userHasSeenIntroduction: boolean;
@@ -138,7 +138,7 @@ const initialState: SettingsState = {
   fiatCurrency: FiatCurrency.Usd,
   enableTor: true,
   enableMoneroTor: false, // Default to not routing Monero traffic through Tor
-  eigensyncServer: "/ip4/127.0.0.1/tcp/3333",
+  eigensyncServer: false,
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,

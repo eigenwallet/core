@@ -4,21 +4,20 @@ version = "0.1.0"
 edition = "2021"
 description = "Simple distributed document synchronization using Automerge CRDTs and libp2p"
 license = "MIT"
-repository = "https://github.com/UnstoppableSwap/unstoppableswap-gui"
+repository = "https://github.com/eigenwallet/core"
 
 [dependencies]
 # Core dependencies
 serde = { workspace = true }
 uuid = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
-directories-next = "2"
 clap = { workspace = true }
 chacha20poly1305 = { version = "0.10", features = ["alloc", "std"] }
 blake3 = "1"
 ed25519-dalek = { version = "1", features = ["std"] }
 
 # Automerge for CRDT functionality
-automerge = "0.6"
+automerge = { workspace = true }
 
 # Networking with libp2p
 libp2p = { workspace = true, features = [
@@ -33,8 +32,8 @@ libp2p = { workspace = true, features = [
 ] }
 anyhow = { workspace = true }
 
-tracing = { version = "0.1", features = ["attributes"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 tokio = { workspace = true, features = [
     "rt-multi-thread",
@@ -46,8 +45,7 @@ env_logger = "0.11"
 autosurgeon = { version = "0.8.7", features = ["uuid"] }
 hex = { workspace = true }
 tokio-util = { version = "0.7.16", features = ["rt"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "chrono"] }
-aes = "0.8.4"
+sqlx = { workspace = true }
 
 [lints]
 workspace = true

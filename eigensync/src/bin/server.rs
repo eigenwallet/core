@@ -1,8 +1,7 @@
 use std::{collections::HashMap, fs::{self, File}, io::Write, path::{Path, PathBuf}, str::FromStr, time::Duration};
 
 use anyhow::{Context};
-use directories_next::ProjectDirs;
-use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, SignedEncryptedSerializedChange, ServerRequest};
+use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, EncryptedChange, ServerRequest};
 use libp2p::{
     futures::StreamExt, identity::{self, ed25519}, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
 };

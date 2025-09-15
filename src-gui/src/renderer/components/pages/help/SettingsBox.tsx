@@ -1008,14 +1008,6 @@ function EigensyncServerSetting() {
     dispatch(setEigensyncServer(newServer));
   };
 
-  const isValidMultiaddr = (addr: string) => {
-    // Basic validation for multiaddr format
-    // Should start with /ip4/ or /ip6/ or /dns/ or /dns4/ or /dns6/
-    // and contain /tcp/ followed by a port number
-    const multiaddrPattern = /^\/(ip4|ip6|dns|dns4|dns6)\/[^\/]+\/tcp\/\d+(\/p2p\/[a-zA-Z0-9]+)?$/;
-    return addr === "" || multiaddrPattern.test(addr);
-  };
-
   return (
     <TableRow>
       <TableCell>
@@ -1026,11 +1018,11 @@ function EigensyncServerSetting() {
       </TableCell>
       <TableCell>
         <ValidatedTextField
-          value={eigensyncServer}
+          value={eigensyncServer || ""}
           onValidatedChange={handleServerChange}
           placeholder="/ip4/127.0.0.1/tcp/3333"
           fullWidth
-          isValid={isValidMultiaddr}
+          isValid={isValidMultiAddressWithPeerId}
           variant="outlined"
           noErrorWhenEmpty
         />

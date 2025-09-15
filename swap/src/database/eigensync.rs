@@ -6,7 +6,6 @@ use eigensync::EigensyncHandle;
 use std::collections::HashSet as StdHashSet;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-// serde kept via Cargo features; no direct derives used here
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use rust_decimal::Decimal;
@@ -110,14 +109,10 @@ type PeerAddressesKey = KeyWrapper<InnerPeerAddressesKey>;
 #[derive(Debug, Clone, Reconcile, Hydrate, PartialEq, Default)]
 struct EigensyncWire {
     states: HashMap<StateKey, String>,
-    // encode (peer_id, addr) -> "peer_id|addr", unit value as bool true
     peer_addresses: HashMap<PeerAddressesKey, bool>,
-    // swap_id -> peer_id
     peers: HashMap<String, String>,
-    // encode (swap_id, address?) -> "swap_id|address_or_-"; store (Decimal, String) as (String, String)
     monero_addresses: HashMap<MoneroAddressKey, String>,
-    // buffered_transfer_proofs table
-    buffered_transfer_proofs: HashMap<String, String>, // (swap_id, proof)
+    buffered_transfer_proofs: HashMap<String, String>,
 }
 
 impl From<&EigensyncDocument> for EigensyncWire {
@@ -170,7 +165,7 @@ impl TryFrom<EigensyncWire> for EigensyncDocument {
                 let timestamp = k.0.1;
                 let swap: Swap = serde_json::from_str(&v)?;
                 let state: State = swap.into();
-                // convert to utc date time from string like "2025-07-28 15:23:12.0 +00"
+
                 Ok((InnerStateKey(swap_id, timestamp), state))
             })
             .collect::<anyhow::Result<HashMap<_, _>>>()?;
@@ -230,7 +225,7 @@ impl EigensyncDatabaseAdapter {
     pub async fn run(&mut self) -> anyhow::Result<()> {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
-            tracing::info!("running eigensync sync");
+            tracing::info!("Eigensync sync running");
                         
             if let Err(e) = self.upload_states().await {
                 tracing::error!("Error uploading states: {:?}", e);
@@ -251,7 +246,7 @@ impl EigensyncDatabaseAdapter {
         let mut new_peer_addresses = HashMap::new();
 
         let mut document_lock = self.eigensync_handle.write().await;
-        let document_state = document_lock.get_document_state().expect("Eigensync document should be present");
+        let document_state = document_lock.get_document_state()?;
         let swap_states = document_state.states;
         let db_address_pools = self.db.get_monero_address_pools().await?;
 
@@ -314,7 +309,6 @@ impl EigensyncDatabaseAdapter {
         // States table
         let document_states: HashSet<InnerStateKey> = document.states.keys().cloned().collect();
         let db_states_hlc = self.db.get_all_states_with_hlc().await?;
-        // Note: DB returns logical time in seconds (entered_at)
         let db_hlc_keys: StdHashSet<(Uuid, i64, u32)> = db_states_hlc
             .iter()
             .map(|(id, _state, l_seconds, c)| (*id, *l_seconds, *c))
@@ -381,7 +375,6 @@ impl EigensyncDatabaseAdapter {
         for monero_address_key in document_monero_addresses {
             let (swap_id, address) = (monero_address_key.0.clone(), monero_address_key.1.clone());
 
-            // We need to check the combination of swap_id and address
             if db_monero_addresses.iter().any(|(s, pool)| {
                 s == &swap_id && pool.addresses().iter().any(|addr_opt| {
                     match (&address, addr_opt) {

@@ -243,7 +243,7 @@ pub struct GetSwapInfoResponse {
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     pub timelock: Option<ExpiredTimelocks>,
-    pub monero_receive_pool: Option<MoneroAddressPool>,
+    pub monero_receive_pool: MoneroAddressPool,
 }
 
 impl Request for GetSwapInfoArgs {
@@ -888,11 +888,7 @@ pub async fn get_swap_info(
     let monero_receive_pool = context
         .db
         .get_monero_address_pool(args.swap_id)
-        .await
-        .inspect_err(|err| {
-            tracing::error!(%args.swap_id, %err, "Failed to get monero receive pool");
-        })
-        .ok();
+        .await?;
 
     Ok(GetSwapInfoResponse {
         swap_id: args.swap_id,

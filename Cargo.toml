@@ -52,6 +52,8 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 typeshare = "1.0"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "chrono"] }
+automerge = "0.6.1"
 
 # Tor/Arti crates
 arti-client = { git = "https://github.com/eigenwallet/arti", rev = "18111286b5830cda88af5df1950b5e24ee5a8841", default-features = false }

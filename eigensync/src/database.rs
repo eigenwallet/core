@@ -1,13 +1,12 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{path::PathBuf, str::FromStr};
 
-use anyhow::{Context, Ok, Result};
+use anyhow::{Result};
 
-use automerge::Change;
 use libp2p::PeerId;
-use sqlx::SqlitePool;
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use tracing::info;
 
-use crate::protocol::SignedEncryptedSerializedChange;
+use crate::protocol::EncryptedChange;
 
 #[derive(Clone)]
 pub struct Database {
@@ -18,12 +17,12 @@ impl Database {
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir)?;
-            info!("Created server database directory: {}", data_dir.display());
+            info!(data_dir = %data_dir.display(), "Created server database directory");
         }
 
         let db_path = data_dir.join("changes");
-        let database_url = format!("sqlite:{}?mode=rwc", db_path.display());
-        let pool = SqlitePool::connect(&database_url).await?;
+        let options = SqliteConnectOptions::from_str(&db_path.display().to_string())?;
+        let pool = SqlitePool::connect_with(options).await?;
 
         let db = Self { pool };
         db.migrate().await?;
@@ -33,11 +32,11 @@ impl Database {
 
     async fn migrate(&self) -> Result<()> {
         sqlx::migrate!("./migrations").run(&self.pool).await?;
-        info!("Server changes database migration completed");
+        info!("Server database migration completed");
         Ok(())
     }
 
-    pub async fn get_peer_changes(&self, peer_id: PeerId) -> Result<Vec<SignedEncryptedSerializedChange>> {
+    pub async fn get_peer_changes(&self, peer_id: PeerId) -> Result<Vec<EncryptedChange>> {
         let peer_id = peer_id.to_string();
         
         let rows = sqlx::query!(
@@ -52,17 +51,12 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        let mut changes = Vec::new();
-
-        for row in rows.iter() {
-            changes.push(SignedEncryptedSerializedChange::new(row.change.clone()));
-        }
-        
+        let changes = rows.iter().map(|row| EncryptedChange::new(row.change.clone())).collect();
 
         Ok(changes)
     }
 
-    pub async fn insert_peer_changes(&self, peer_id: PeerId, changes: Vec<SignedEncryptedSerializedChange>) -> Result<()> {
+    pub async fn insert_peer_changes(&self, peer_id: PeerId, changes: Vec<EncryptedChange>) -> Result<()> {
         let peer_id = peer_id.to_string();
     
         for change in changes {

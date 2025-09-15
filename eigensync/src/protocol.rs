@@ -28,20 +28,6 @@ impl AsRef<str> for EigensyncProtocol {
     }
 }
 
-fn key32(key: &[u8]) -> anyhow::Result<[u8; 32]> {
-    key.try_into().map_err(|_| anyhow::anyhow!("encryption key must be 32 bytes"))
-}
-
-fn nonce_from_plaintext(key32: &[u8; 32], pt: &[u8]) -> [u8; 24] {
-    let mut h = blake3::Hasher::new_keyed(key32);
-    h.update(b"eigensync.v1.nonce");
-    h.update(pt);
-    let out = h.finalize();
-    let mut nonce = [0u8; 24];
-    nonce.copy_from_slice(&out.as_bytes()[..24]);
-    nonce
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct SerializedChange(Vec<u8>);
 
@@ -54,7 +40,7 @@ impl SerializedChange {
         self.0.clone()
     }
 
-    pub fn sign_and_encrypt(&self, enc_key: &[u8; 32]) -> anyhow::Result<SignedEncryptedSerializedChange> {
+    pub fn sign_and_encrypt(&self, enc_key: &[u8; 32]) -> anyhow::Result<EncryptedChange> {
         let key32 = key32(enc_key)?;
         let aead = XChaCha20Poly1305::new((&key32).into());
         let pt = self.to_bytes();
@@ -66,7 +52,7 @@ impl SerializedChange {
         let mut out = Vec::with_capacity(24 + ct.len());
         out.extend_from_slice(&nonce);
         out.extend_from_slice(&ct);
-        Ok(SignedEncryptedSerializedChange::new(out))
+        Ok(EncryptedChange::new(out))
     }
 }
 
@@ -83,11 +69,11 @@ impl From<SerializedChange> for Change {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct SignedEncryptedSerializedChange(Vec<u8>);
+pub struct EncryptedChange(Vec<u8>);
 
-impl SignedEncryptedSerializedChange {
+impl EncryptedChange {
     pub fn new(data: Vec<u8>) -> Self {
-        SignedEncryptedSerializedChange(data)
+        EncryptedChange(data)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -110,14 +96,14 @@ impl SignedEncryptedSerializedChange {
 
 #[derive(Debug)]
 pub struct ChannelRequest {
-    pub encrypted_changes: Vec<SignedEncryptedSerializedChange>,
-    pub response_channel: oneshot::Sender<Result<Vec<SignedEncryptedSerializedChange>, String>>
+    pub encrypted_changes: Vec<EncryptedChange>,
+    pub response_channel: oneshot::Sender<anyhow::Result<Vec<EncryptedChange>>>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ServerRequest {
     UploadChangesToServer {
-        encrypted_changes: Vec<SignedEncryptedSerializedChange>
+        encrypted_changes: Vec<EncryptedChange>
     }
 }
 
@@ -125,7 +111,7 @@ pub enum ServerRequest {
 pub enum Response {
     /// When the server has changes the device hasn't yet
     NewChanges {
-        changes: Vec<SignedEncryptedSerializedChange>,
+        changes: Vec<EncryptedChange>,
     },
     Error {
         reason: String,
@@ -174,4 +160,18 @@ impl DerefMut for Behaviour {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.sync
     }
+}
+
+fn key32(key: &[u8]) -> anyhow::Result<[u8; 32]> {
+    key.try_into().map_err(|_| anyhow::anyhow!("encryption key must be 32 bytes"))
+}
+
+fn nonce_from_plaintext(key32: &[u8; 32], pt: &[u8]) -> [u8; 24] {
+    let mut h = blake3::Hasher::new_keyed(key32);
+    h.update(b"eigensync.v1.nonce");
+    h.update(pt);
+    let out = h.finalize();
+    let mut nonce = [0u8; 24];
+    nonce.copy_from_slice(&out.as_bytes()[..24]);
+    nonce
 }

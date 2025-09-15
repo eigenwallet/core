@@ -5,8 +5,9 @@ use crate::cli::api::tauri_bindings::SeedChoice;
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
-use crate::database::eigensync::EigensyncDatabaseAdapter;
+use crate::database::eigensync::{EigensyncDatabaseAdapter, EigensyncDocument};
 use crate::database::{open_db, AccessMode};
+use crate::libp2p_ext::MultiAddrExt;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::{self, Seed};
@@ -213,7 +214,7 @@ pub struct ContextBuilder {
     tor: bool,
     enable_monero_tor: bool,
     tauri_handle: Option<TauriHandle>,
-    eigensync_server_multiaddr: String,
+    eigensync_server_multiaddr: Option<String>,
 }
 
 impl ContextBuilder {
@@ -238,7 +239,7 @@ impl ContextBuilder {
             tor: false,
             enable_monero_tor: false,
             tauri_handle: None,
-            eigensync_server_multiaddr: "/ip4/127.0.0.1/tcp/3333".to_string(),
+            eigensync_server_multiaddr: None,
         }
     }
 
@@ -299,7 +300,7 @@ impl ContextBuilder {
 
     /// Configures the Eigensync server multiaddr
     pub fn with_eigensync_server(mut self, eigensync_server: impl Into<Option<String>>) -> Self {
-        self.eigensync_server_multiaddr = eigensync_server.into().unwrap().to_string();
+        self.eigensync_server_multiaddr = eigensync_server.into();
         self
     }
 
@@ -518,15 +519,22 @@ impl ContextBuilder {
                 (),
             );
 
-        let multiaddr = Multiaddr::from_str(self.eigensync_server_multiaddr.as_ref()).context("Failed to parse Eigensync server multiaddr")?;
-        let server_peer_id = PeerId::from_str("12D3KooWQsAFHUm32ThqfQRJhtcc57qqkYckSu8JkMsbGKkwTS6p")?;
+        // Initialize eigensync only if a server address is provided
+        let mut eigensync_handle: Option<Arc<RwLock<EigensyncHandle<EigensyncDocument>>>> = None;
+        let mut background_sync_task: Option<AbortOnDropHandle<()>> = None;
+        
+        if let Some(addr_str) = self.eigensync_server_multiaddr.as_deref() {
+            let multiaddr = Multiaddr::from_str(addr_str)
+                .context("Failed to parse Eigensync server multiaddr")?;
+            let server_peer_id = PeerId::from_str(multiaddr.extract_peer_id().unwrap().to_string().as_str())?;
 
-        let enc_key = seed.derive_eigensync_secret_key();
-        let mut eigensync_handle = Arc::new(RwLock::new(
-            EigensyncHandle::new(multiaddr, server_peer_id, seed.derive_eigensync_identity(), enc_key).await?
-        ));
-            
-        let background_sync_task = eigensync_handle.background_sync();
+            let enc_key = seed.derive_eigensync_secret_key();
+            let handle = Arc::new(RwLock::new(
+                EigensyncHandle::new(multiaddr, server_peer_id, seed.derive_eigensync_identity(), enc_key).await?
+            ));
+            background_sync_task = Some(handle.clone().background_sync());
+            eigensync_handle = Some(handle);
+        }
 
         let db = open_db(
             data_dir.join("sqlite"),
@@ -535,13 +543,15 @@ impl ContextBuilder {
         )
         .await?;
 
-        let mut db_adapter = EigensyncDatabaseAdapter::new(eigensync_handle.clone(), db.clone());
-
-        tracing::info!("opened db");
-
-        let eigensync = AbortOnDropHandle::new(tokio::task::spawn(async move {
-            db_adapter.run().await.context("Failed to run eigensync").unwrap();
-        }));
+        let eigensync = if let Some(handle) = eigensync_handle.clone() {
+            let mut db_adapter = EigensyncDatabaseAdapter::new(handle, db.clone());
+            Some(AbortOnDropHandle::new(tokio::task::spawn(async move {
+                db_adapter.run().await.context("Failed to run eigensync").unwrap();
+            })))
+        } else {
+            tracing::info!("Eigensync disabled: no server address provided");
+            None
+        };
 
         database_progress_handle.finish();
 
@@ -614,8 +624,8 @@ impl ContextBuilder {
             tauri_handle: self.tauri_handle,
             tor_client: unbootstrapped_tor_client,
             monero_rpc_pool_handle,
-            background_sync_task: Some(background_sync_task),
-            eigensync: Some(eigensync),
+            background_sync_task,
+            eigensync,
         };
 
         tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
