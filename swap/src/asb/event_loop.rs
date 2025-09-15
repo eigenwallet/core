@@ -1018,7 +1018,7 @@ mod tests {
         let balance = monero::Amount::from_monero(5.0).unwrap();
         let reserved_amounts: Vec<MockReservedItem> = vec![];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter().map(|item| item.reserved_monero()));
 
         assert_eq!(result, balance);
     }

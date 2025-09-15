@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT OR IGNORE INTO swap_states (\n                swap_id,\n                entered_at,\n                state,\n                hlc_counter\n            ) VALUES (?, ?, ?, ?);\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "70e12cb1a4bebc4cc2a274d8f954ff2e0fb33525f7b17597eb853367aa1f4c84"
+}

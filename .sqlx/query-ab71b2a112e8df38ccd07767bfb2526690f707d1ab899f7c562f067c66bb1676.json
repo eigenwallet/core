@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT swap_id, state, entered_at as \"entered_at: i64\", hlc_counter as \"hlc_counter: i64\"\n            FROM swap_states\n            ORDER BY entered_at DESC, hlc_counter DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "swap_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "state",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "entered_at: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "hlc_counter: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ab71b2a112e8df38ccd07767bfb2526690f707d1ab899f7c562f067c66bb1676"
+}

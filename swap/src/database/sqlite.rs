@@ -7,25 +7,20 @@ use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use autosurgeon::{Hydrate, Reconcile};
+ 
 use libp2p::{Multiaddr, PeerId};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
 use time::UtcDateTime;
-use tokio::sync::RwLock;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Duration;
 use time::OffsetDateTime;
 use uuid::Uuid;
-use eigensync::EigensyncHandle;
 
 use super::AccessMode;
-use super::eigensync::EigensyncDocument;
 
 pub struct SqliteDatabase {
     pool: Pool<Sqlite>,
@@ -345,20 +340,38 @@ impl Database for SqliteDatabase {
 
     async fn insert_latest_state(&self, swap_id: Uuid, state: State) -> Result<()> {
         let swap = serde_json::to_string(&Swap::from(state))?;
-        let entered_at = OffsetDateTime::now_utc().unix_timestamp();
+        let now_seconds = OffsetDateTime::now_utc().unix_timestamp();
         let swap_id_str = swap_id.to_string();
+        // Compute next counter for this (swap_id, entered_at)
+        let row = sqlx::query!(
+            r#"
+            SELECT COALESCE(MAX(hlc_counter), -1) + 1 as "next_counter: i64"
+            FROM swap_states
+            WHERE swap_id = ? AND entered_at = ?
+            "#,
+            swap_id_str,
+            now_seconds
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let next_counter = row.next_counter;
+
+        let entered_at = now_seconds;
 
         sqlx::query!(
             r#"
-            insert into swap_states (
+            INSERT INTO swap_states (
                 swap_id,
                 entered_at,
-                state
-                ) values (?, ?, ?);
-        "#,
+                state,
+                hlc_counter
+            ) VALUES (?, ?, ?, ?);
+            "#,
             swap_id_str,
             entered_at,
-            swap
+            swap,
+            next_counter
         )
         .execute(&self.pool)
         .await?;
@@ -375,18 +388,32 @@ impl Database for SqliteDatabase {
         let swap_id_str = swap_id.to_string();
 
         let entered_at = entered_at.unix_timestamp();
+        let row = sqlx::query!(
+            r#"
+            SELECT COALESCE(MAX(hlc_counter), -1) + 1 as "next_counter: i64"
+            FROM swap_states
+            WHERE swap_id = ? AND entered_at = ?
+            "#,
+            swap_id_str,
+            entered_at
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        let next_counter = row.next_counter;
         
         sqlx::query!(
             r#"
             insert into swap_states (
                 swap_id,
                 entered_at,
-                state
-                ) values (?, ?, ?);
-        "#,
+                state,
+                hlc_counter
+            ) values (?, ?, ?, ?);
+            "#,
             swap_id_str,
             entered_at,
-            swap
+            swap,
+            next_counter
         )
         .execute(&self.pool)
         .await?;
@@ -447,6 +474,66 @@ impl Database for SqliteDatabase {
             .collect::<Vec<(Uuid, State, UtcDateTime)>>();
 
         Ok(result)
+    }
+
+    async fn get_all_states_with_hlc(&self) -> Result<Vec<(Uuid, State, i64, u32)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT swap_id, state, entered_at as "entered_at: i64", hlc_counter as "hlc_counter: i64"
+            FROM swap_states
+            ORDER BY entered_at DESC, hlc_counter DESC
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                let swap_id = Uuid::from_str(&row.swap_id).ok()?;
+                let state = serde_json::from_str::<Swap>(&row.state).ok()?;
+                let counter_u32: u32 = row.hlc_counter.try_into().ok()?;
+                Some((swap_id, State::from(state), row.entered_at, counter_u32))
+            })
+            .collect::<Vec<(Uuid, State, i64, u32)>>();
+
+        Ok(result)
+    }
+
+    async fn insert_existing_state_with_hlc(
+        &self,
+        swap_id: Uuid,
+        state: State,
+        hlc_l_seconds: i64,
+        hlc_counter: u32,
+    ) -> Result<()> {
+        let swap = serde_json::to_string(&Swap::from(state))?;
+        let swap_id_str = swap_id.to_string();
+        // Store the provided remote event HLC unchanged; local clock will advance implicitly
+        // because we derive it from DB max when generating the next local event.
+
+        sqlx::query!(
+            r#"
+            INSERT OR IGNORE INTO swap_states (
+                swap_id,
+                entered_at,
+                state,
+                hlc_counter
+            ) VALUES (?, ?, ?, ?);
+            "#,
+            swap_id_str,
+            hlc_l_seconds,
+            swap,
+            hlc_counter
+        )
+        .execute(&self.pool)
+        .await?;
+
+
+        tracing::info!("inserted existing state");
+
+
+        Ok(())
     }
 
     async fn all(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>> {
@@ -744,6 +831,64 @@ mod tests {
         assert!(loaded_multiaddr.contains(&multiaddr2));
         assert_eq!(loaded_multiaddr.len(), 2);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_hlc_same_second_sequencing_existing() -> Result<()> {
+        let db = setup_test_db().await?;
+
+        let swap_id = Uuid::new_v4();
+        let entered_at_seconds: i64 = 1_700_000_000;
+        let entered_at = UtcDateTime::from_unix_timestamp(entered_at_seconds)
+            .ok()
+            .expect("valid timestamp");
+
+        let state_a = State::Alice(AliceState::BtcRedeemed);
+        let state_b = State::Alice(AliceState::SafelyAborted);
+
+        db.insert_existing_state(swap_id, state_a, entered_at).await?;
+        db.insert_existing_state(swap_id, state_b, entered_at).await?;
+
+        let all = db.get_all_states_with_hlc().await?;
+        let mut counters: Vec<u32> = all
+            .into_iter()
+            .filter(|(id, _s, l_seconds, _c)| *id == swap_id && *l_seconds == entered_at_seconds)
+            .map(|(_id, _s, _l_seconds, c)| c)
+            .collect();
+        counters.sort_unstable();
+
+        assert_eq!(counters, vec![0, 1]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_hlc_idempotent_replay_existing_state_with_hlc() -> Result<()> {
+        let db = setup_test_db().await?;
+
+        let swap_id = Uuid::new_v4();
+        let l_seconds: i64 = 1_700_000_123;
+        let counter: u32 = 0;
+
+        let first_state = State::Alice(AliceState::BtcRedeemed);
+        let second_state = State::Alice(AliceState::SafelyAborted);
+
+        // First insert should create the row
+        db.insert_existing_state_with_hlc(swap_id, first_state.clone(), l_seconds, counter)
+            .await?;
+        // Second insert with same (swap_id, l_seconds, counter) should be ignored
+        db.insert_existing_state_with_hlc(swap_id, second_state, l_seconds, counter)
+            .await?;
+
+        let all = db.get_all_states_with_hlc().await?;
+        let matching: Vec<(Uuid, State, i64, u32)> = all
+            .into_iter()
+            .filter(|(id, _s, l, c)| *id == swap_id && *l == l_seconds && *c == counter)
+            .collect();
+
+        assert_eq!(matching.len(), 1, "duplicate insert should be ignored");
+        // Ensure the stored state is the first one
+        assert_eq!(matching[0].1, first_state);
         Ok(())
     }
 

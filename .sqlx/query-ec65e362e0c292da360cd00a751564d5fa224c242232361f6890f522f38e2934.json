@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT COALESCE(MAX(hlc_counter), -1) + 1 as \"next_counter: i64\"\n            FROM swap_states\n            WHERE swap_id = ? AND entered_at = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "next_counter: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ec65e362e0c292da360cd00a751564d5fa224c242232361f6890f522f38e2934"
+}

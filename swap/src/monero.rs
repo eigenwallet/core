@@ -666,7 +666,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct MoneroPrivateKey(#[serde(with = "monero_private_key")] crate::monero::PrivateKey);
+    pub struct MoneroPrivateKey(#[serde(with = "swap_serde::monero::private_key")] crate::monero::PrivateKey);
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
     pub struct MoneroAmount(#[serde(with = "monero_amount")] crate::monero::Amount);

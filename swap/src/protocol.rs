@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use sigma_fun::HashTranscript;
-use time::{OffsetDateTime, UtcDateTime};
+use time::UtcDateTime;
 use std::convert::TryInto;
 use uuid::Uuid;
 
@@ -159,6 +159,7 @@ pub trait Database {
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;
     async fn all(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>>;
     async fn get_all_states(&self) -> Result<Vec<(Uuid, State, UtcDateTime)>>;
+    async fn get_all_states_with_hlc(&self) -> Result<Vec<(Uuid, State, i64, u32)>>;
     async fn insert_buffered_transfer_proof(
         &self,
         swap_id: Uuid,
@@ -168,4 +169,12 @@ pub trait Database {
         &self,
         swap_id: Uuid,
     ) -> Result<Option<monero::TransferProof>>;
+
+    async fn insert_existing_state_with_hlc(
+        &self,
+        swap_id: Uuid,
+        state: State,
+        hlc_l_millis: i64,
+        hlc_counter: u32,
+    ) -> Result<()>;
 }

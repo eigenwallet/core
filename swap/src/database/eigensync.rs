@@ -1,9 +1,9 @@
-use std::{collections::{HashMap, HashSet}, str::FromStr, sync::Arc, time::{Duration, Instant}};
+use std::{cmp::Ordering, collections::{HashMap, HashSet}, str::FromStr, sync::Arc, time::Duration};
 
 use autosurgeon::{Hydrate, HydrateError, Reconcile, Reconciler};
 use autosurgeon::reconcile::NoKey;
-use bdk::bitcoin::hashes::hash160::Hash;
 use eigensync::EigensyncHandle;
+use std::collections::HashSet as StdHashSet;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 // serde kept via Cargo features; no direct derives used here
@@ -11,9 +11,47 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use rust_decimal::Decimal;
 use anyhow::anyhow;
-use time::UtcDateTime;
-
+ 
 use crate::{database::Swap, monero::{LabeledMoneroAddress, MoneroAddressPool, TransferProof}, protocol::{Database, State}};
+
+/// Hybrid Logical Clock timestamp
+/// l: logical time in UNIX seconds
+/// c: counter to capture causality when logical times are equal
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct HlcTimestamp {
+    l: i64,
+    c: u32,
+}
+
+impl HlcTimestamp {
+    pub fn new(logical_seconds: i64, counter: u32) -> Self {
+        Self { l: logical_seconds, c: counter }
+    }
+
+    pub fn logical_seconds(&self) -> i64 {
+        self.l
+    }
+
+    pub fn counter(&self) -> u32 {
+        self.c
+    }
+}
+
+impl Ord for HlcTimestamp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.l.cmp(&other.l) {
+            Ordering::Equal => self.c.cmp(&other.c),
+            non_eq => non_eq,
+        }
+    }
+}
+
+impl PartialOrd for HlcTimestamp {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Clone, Eq, Hash, PartialEq, Hydrate, Reconcile, Debug)]
 struct KeyWrapper<T>(T, String);
@@ -60,7 +98,7 @@ struct InnerMoneroAddressKey(Uuid, Option<String>);
 type MoneroAddressKey = KeyWrapper<InnerMoneroAddressKey>;
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
-struct InnerStateKey(Uuid, UtcDateTime);
+struct InnerStateKey(Uuid, HlcTimestamp);
 
 type StateKey = KeyWrapper<InnerStateKey>;
 
@@ -229,15 +267,18 @@ impl EigensyncDatabaseAdapter {
             new_addresses.extend(temp_monero_addresses);
         }
 
-        for (swap_id, state, timestamp) in self.db.get_all_states().await? {
-            if swap_states.contains_key(&InnerStateKey(swap_id, timestamp)) {
+        // Use stored HLCs from DB
+        let db_states_all = self.db.get_all_states_with_hlc().await?;
+        for (swap_id, state, l_seconds, counter) in db_states_all.into_iter() {
+            let hlc = HlcTimestamp::new(l_seconds, counter);
+            if swap_states.contains_key(&InnerStateKey(swap_id, hlc)) {
                 continue;
             }
 
             let peer_id = self.db.get_peer_id(swap_id).await?;
             let proof = self.db.get_buffered_transfer_proof(swap_id).await?;
 
-            new_states.insert(InnerStateKey(swap_id, timestamp), state);
+            new_states.insert(InnerStateKey(swap_id, hlc), state);
             new_peers.insert(swap_id, peer_id);
             if let Some(proof) = proof {
                 new_proof.insert(swap_id, proof);
@@ -272,12 +313,17 @@ impl EigensyncDatabaseAdapter {
 
         // States table
         let document_states: HashSet<InnerStateKey> = document.states.keys().cloned().collect();
-        let db_states = self.db.get_all_states().await?;
+        let db_states_hlc = self.db.get_all_states_with_hlc().await?;
+        // Note: DB returns logical time in seconds (entered_at)
+        let db_hlc_keys: StdHashSet<(Uuid, i64, u32)> = db_states_hlc
+            .iter()
+            .map(|(id, _state, l_seconds, c)| (*id, *l_seconds, *c))
+            .collect();
         let mut document_states = document_states.into_iter().collect::<Vec<_>>();
         document_states.sort_by_key(|state_key| state_key.1);
 
         for state_key in document_states {
-            let (swap_id, timestamp) = (state_key.0, state_key.1);
+            let (swap_id, hlc_ts) = (state_key.0, state_key.1);
 
             let document_state: State = document
                 .states
@@ -285,13 +331,15 @@ impl EigensyncDatabaseAdapter {
                 .ok_or_else(|| anyhow!("State not found for key"))?
                 .clone();
 
-            if db_states.iter().any(|(_, _, db_timestamp)| db_timestamp == &timestamp) {
+            let l_seconds = hlc_ts.logical_seconds();
+            let counter = hlc_ts.counter();
+            if db_hlc_keys.contains(&(swap_id, l_seconds, counter)) {
                 continue;
             }
 
             let swap_uuid = swap_id;
 
-            if let Err(e) = self.db.insert_existing_state(swap_uuid, document_state, timestamp).await {
+            if let Err(e) = self.db.insert_existing_state_with_hlc(swap_uuid, document_state, l_seconds, counter).await {
                 tracing::error!("Error inserting existing state: {:?}", e);
             }
         }
