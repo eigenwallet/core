@@ -9,6 +9,7 @@ Ensure you have [Docker](https://docs.docker.com/engine/install/) and [Docker Co
 If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section or run the commands below if you're on a Linux x86 server. It'll download the latest archive from Github, extract the binary and make it executable.
 
 Download the archive which contains the pre-compiled binary:
+
 ```bash
 wget "$(
   wget -qO- https://api.github.com/repos/eigenwallet/core/releases/latest \
@@ -18,11 +19,13 @@ wget "$(
 ```
 
 Extract the archive to get the `orchestrator` binary
+
 ```bash
 tar -xf orchestrator*.tar
 ```
 
 Make the binary executable
+
 ```bash
 chmod +x orchestrator
 ```
