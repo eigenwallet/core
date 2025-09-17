@@ -257,14 +257,14 @@ export async function buyXmr(
   });
 }
 
-export async function manualCooperativeRedeem(
+export async function resumeWithCooperativeRedeem(
   swapId: string,
   s_a: string,
   txId: string,
   txKey: string,
 ) {
   await invoke<ManualCooperativeRedeemArgs, ManualCooperativeRedeemResponse>(
-    "manual_cooperative_redeem",
+    "resume_with_cooperative_redeem",
     {
       swap_id: swapId,
       s_a,

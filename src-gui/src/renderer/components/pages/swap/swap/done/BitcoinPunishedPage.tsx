@@ -14,7 +14,7 @@ import {
 import FeedbackInfoBox from "renderer/components/pages/help/FeedbackInfoBox";
 import { TauriSwapProgressEventExt } from "models/tauriModelExt";
 import { useState } from "react";
-import { manualCooperativeRedeem, resumeSwap } from "renderer/rpc";
+import { resumeWithCooperativeRedeem, resumeSwap } from "renderer/rpc";
 import { useActiveSwapId } from "store/hooks";
 import { useSnackbar } from "notistack";
 
@@ -74,15 +74,8 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
 
     // Try and use the given information to cooperatively redeem
     try {
-      await manualCooperativeRedeem(swapId, key, txId, txKey);
-      setSuccess(true);
-      // Wait 5 seconds to give user time to read message
-      await new Promise((res) => setTimeout(res, 5000));
-
-      // Close the modal and continue the swap normally
+      await resumeWithCooperativeRedeem(swapId, key, txId, txKey);
       onClose();
-      resumeSwap(swapId);
-      setSuccess(null);
     } catch (e) {
       // If we get an error, throw it to the snackbar
       enqueueSnackbar<"error">(`Cooperative redeem failed: \`${e}\``);

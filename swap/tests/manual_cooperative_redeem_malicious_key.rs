@@ -8,27 +8,34 @@ use swap::protocol::bob::BobState;
 use swap::protocol::{alice, bob, State};
 use swap_controller_api::AsbApiClient;
 
-use crate::harness::bob_run_until::is_btc_punished;
+use crate::harness::bob_run_until::{is_btc_locked, is_btc_punished};
 
 /// Bob locks Btc and Alice locks Xmr. Bob does not act; he fails to send Alice
 /// the encsig and fail to refund or redeem. Alice punishes. Bob then cooperates with Alice and redeems XMR with her key.
 /// But this time, we use the manual export of the cooperative redeem key via the asb-controller.
 /// And also, alice sends a malicious key! So we expect the cooperative redeem check to fail before changing states.
 #[tokio::test]
-async fn alice_and_bob_manual_cooperative_redeem_after_punish() {
+async fn bob_rejects_malicious_cooperative_redeem_key() {
     harness::setup_test(FastPunishConfig, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
-        let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_punished));
+        let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));
 
         let alice_swap = ctx.alice_next_swap().await;
         let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
 
         let bob_state = bob_swap.await??;
-        assert!(matches!(bob_state, BobState::BtcPunished { .. }));
+        assert!(matches!(bob_state, BobState::BtcLocked { .. }));
 
         let alice_state = alice_swap.await??;
         ctx.assert_alice_punished(alice_state).await;
+
+        // Let bob realize he was punished
+        let (bob_swap, bob_join_handle) = ctx
+            .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
+            .await;
+        let bob_state = tokio::spawn(bob::run_until(bob_swap, is_btc_punished)).await??;
+        assert!(matches!(bob_state, BobState::BtcPunished { .. }));
 
         // Manually do the cooperative redeem via rpc server
         let mut manual_cooperative_redeem_info = ctx

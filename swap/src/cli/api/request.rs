@@ -154,7 +154,7 @@ impl Request for ManualCooperativeRedeemArgs {
     type Response = ManualCooperativeRedeemResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        manual_cooperative_redeem(self, ctx).await
+        resume_with_cooperative_redeem(self, ctx).await
     }
 }
 
@@ -1183,8 +1183,8 @@ pub async fn buy_xmr(
     Ok(BuyXmrResponse { swap_id, quote })
 }
 
-#[tracing::instrument(fields(method = "manual_cooperative_redeem"), skip(context))]
-pub async fn manual_cooperative_redeem(
+#[tracing::instrument(fields(method = "resume_with_cooperative_redeem"), skip(context))]
+pub async fn resume_with_cooperative_redeem(
     args: ManualCooperativeRedeemArgs,
     context: Arc<Context>,
 ) -> Result<ManualCooperativeRedeemResponse> {
@@ -1201,7 +1201,15 @@ pub async fn manual_cooperative_redeem(
         bail!("Bitcoin wasn't punished - can't cooperatively redeem");
     };
 
-    // Construct and insert the new state, checking the key we received
+    // Attempt to acquire the swap lock -- the swap shouldn't be running if we are punished
+    // and already tried (and failed) the automated cooperative redeem attempt
+    context
+        .swap_lock
+        .acquire_swap_lock(args.swap_id)
+        .await
+        .context("Couldn't acquire swap lock")?;
+
+    // Checking the key we received for validity, then advance and save the state
     let state5 = state
         .attempt_cooperative_redeem(
             args.s_a.scalar,
@@ -1215,6 +1223,18 @@ pub async fn manual_cooperative_redeem(
         .insert_latest_state(args.swap_id, new_state)
         .await
         .context("couldn't save new state to db")?;
+
+    tracing::info!("Validated cooperative redeem key, resuming swap");
+
+    // Resume the swap (next step: redeem Monero)
+    resume_swap(
+        ResumeSwapArgs {
+            swap_id: args.swap_id,
+        },
+        context,
+    )
+    .await
+    .context("Couldn't resume the swap after manually importing cooperative redeem key")?;
 
     Ok(ManualCooperativeRedeemResponse)
 }

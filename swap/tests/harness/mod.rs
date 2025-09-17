@@ -291,7 +291,7 @@ async fn start_alice(
     )
     .unwrap();
 
-    let rpc_host = "http://127.0.0.1".to_string();
+    let rpc_host = "127.0.0.1".to_string();
     let rpc_port = get_port().expect("port to be available");
     let rpc_server = RpcServer::start(
         rpc_host.clone(),
@@ -304,9 +304,9 @@ async fn start_alice(
     .await
     .unwrap();
 
-    std::mem::forget(rpc_server.spawn()); // Avoid drop or else we'll abort the process
+    std::mem::forget(rpc_server.spawn()); // Dropping would abort the rpc process
 
-    let rpc_url = format!("{rpc_host}:{rpc_port}");
+    let rpc_url = format!("http://{rpc_host}:{rpc_port}");
     let rpc_client = jsonrpsee::http_client::HttpClientBuilder::default()
         .build(&rpc_url)
         .expect("rpc client to be built");
