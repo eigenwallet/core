@@ -755,10 +755,7 @@ impl Wallet {
         Ok(last_tx.tx_node.txid)
     }
 
-    pub async fn status_of_script<T>(&self, tx: &T) -> Result<ScriptStatus>
-    where
-        T: Watchable,
-    {
+    pub async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
         self.electrum_client
             .lock()
             .await
@@ -1638,7 +1635,7 @@ impl Client {
     /// As opposed to [`update_state`] this function does not
     /// check the time since the last update before refreshing
     /// It therefore also does not take a [`force`] parameter
-    pub async fn update_state_single(&mut self, script: &impl Watchable) -> Result<()> {
+    pub async fn update_state_single(&mut self, script: &dyn Watchable) -> Result<()> {
         self.update_script_history(script).await?;
         self.update_block_height().await?;
 
@@ -1732,7 +1729,7 @@ impl Client {
     }
 
     /// Update the script history of a single script.
-    pub async fn update_script_history(&mut self, script: &impl Watchable) -> Result<()> {
+    pub async fn update_script_history(&mut self, script: &dyn Watchable) -> Result<()> {
         let (script_buf, _) = script.script_and_txid();
         let script_clone = script_buf.clone();
 
@@ -1809,7 +1806,7 @@ impl Client {
     /// Get the status of a script.
     pub async fn status_of_script(
         &mut self,
-        script: &impl Watchable,
+        script: &dyn Watchable,
         force: bool,
     ) -> Result<ScriptStatus> {
         let (script_buf, txid) = script.script_and_txid();
@@ -2072,22 +2069,17 @@ impl SyncRequestBuilderFactory {
 }
 
 #[async_trait::async_trait]
-impl<Persister, C> bitcoin_wallet::BitcoinWallet for Wallet<Persister, C>
-where
-    Persister: WalletPersister + Send + Sized,
-    <Persister as WalletPersister>::Error: std::error::Error + Send + Sync + 'static,
-    C: EstimateFeeRate + Sync + Send + 'static,
-{
+impl bitcoin_wallet::BitcoinWallet for Wallet {
     async fn balance(&self) -> Result<Amount> {
-        self.balance().await
+        Wallet::balance(self).await
     }
 
     async fn balance_info(&self) -> Result<Balance> {
-        self.balance_info().await
+        Wallet::balance_info(self).await
     }
 
     async fn new_address(&self) -> Result<Address> {
-        self.new_address().await
+        Wallet::new_address(self).await
     }
 
     async fn send_to_address(
@@ -2097,8 +2089,7 @@ where
         spending_fee: Amount,
         change_override: Option<Address>,
     ) -> Result<bitcoin::psbt::Psbt> {
-        self.send_to_address(address, amount, spending_fee, change_override)
-            .await
+        Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
     }
 
     async fn send_to_address_dynamic_fee(
@@ -2107,19 +2098,18 @@ where
         amount: Amount,
         change_override: Option<Address>,
     ) -> Result<bitcoin::psbt::Psbt> {
-        self.send_to_address_dynamic_fee(address, amount, change_override)
-            .await
+        Wallet::send_to_address_dynamic_fee(self, address, amount, change_override).await
     }
 
     async fn sweep_balance_to_address_dynamic_fee(
         &self,
         address: Address,
     ) -> Result<bitcoin::psbt::Psbt> {
-        self.sweep_balance_to_address_dynamic_fee(address).await
+        Wallet::sweep_balance_to_address_dynamic_fee(self, address).await
     }
 
     async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction> {
-        self.sign_and_finalize(psbt).await
+        Wallet::sign_and_finalize(self, psbt).await
     }
 
     async fn broadcast(
@@ -2127,36 +2117,36 @@ where
         transaction: bitcoin::Transaction,
         kind: &str,
     ) -> Result<(Txid, bitcoin_wallet::Subscription)> {
-        self.broadcast(transaction, kind).await
+        Wallet::broadcast(self, transaction, kind).await
     }
 
     async fn sync(&self) -> Result<()> {
-        self.sync().await
+        Wallet::sync(self).await
     }
 
     async fn subscribe_to(
         &self,
         tx: Box<dyn bitcoin_wallet::Watchable>,
     ) -> bitcoin_wallet::Subscription {
-        self.subscribe_to(tx).await
+        Wallet::subscribe_to(self, tx).await
     }
 
     async fn status_of_script(
         &self,
         tx: &dyn bitcoin_wallet::Watchable,
     ) -> Result<bitcoin_wallet::primitives::ScriptStatus> {
-        self.status_of_script(tx).await
+        Wallet::status_of_script(self, tx).await
     }
 
     async fn get_raw_transaction(
         &self,
         txid: Txid,
     ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
-        self.get_raw_transaction(txid).await
+        Wallet::get_raw_transaction(self, txid).await
     }
 
     async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-        self.max_giveable(locking_script_size).await
+        Wallet::max_giveable(self, locking_script_size).await
     }
 
     async fn estimate_fee(
@@ -2164,7 +2154,7 @@ where
         weight: Weight,
         transfer_amount: Option<Amount>,
     ) -> Result<Amount> {
-        self.estimate_fee(weight, transfer_amount).await
+        Wallet::estimate_fee(self, weight, transfer_amount).await
     }
 
     fn network(&self) -> Network {
@@ -2176,7 +2166,7 @@ where
     }
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
-        self.wallet_export(role).await
+        Wallet::wallet_export(self, role).await
     }
 }
 
