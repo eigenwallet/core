@@ -1,4 +1,6 @@
-use crate::{asb, electrs, images::PINNED_GIT_REPOSITORY};
+use crate::containers;
+use crate::containers::*;
+use crate::images::PINNED_GIT_REPOSITORY;
 use compose_spec::Compose;
 use std::{
     fmt::{self, Display},
@@ -69,13 +71,13 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
 
 impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for asb::Network {
     fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
-        asb::Network::new(val.monero, val.bitcoin)
+        containers::asb::Network::new(val.monero, val.bitcoin)
     }
 }
 
 impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for electrs::Network {
     fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
-        electrs::Network::new(val.bitcoin)
+        containers::electrs::Network::new(val.bitcoin)
     }
 }
 
@@ -175,7 +177,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("-txindex=1"),
     ];
 
-    let electrs_network: electrs::Network = input.networks.clone().into();
+    let electrs_network: containers::electrs::Network = input.networks.clone().into();
 
     let command_electrs = command![
         "electrs",

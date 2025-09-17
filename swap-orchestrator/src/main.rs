@@ -1,14 +1,11 @@
-mod asb;
-mod bitcoind;
 mod compose;
-mod electrs;
+mod containers;
 mod images;
-mod monerod;
 mod prompt;
 
 use crate::compose::{
-    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks, DOCKER_COMPOSE_FILE,
+    DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
+    OrchestratorInput, OrchestratorNetworks,
 };
 use std::path::PathBuf;
 use swap_env::config::{

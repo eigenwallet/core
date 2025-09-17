@@ -1,3 +1,7 @@
+///! This module describes **how to build** the containers
+/// This means either:
+/// 1. Pulling from a registry (pinned to a hash)
+/// 2. Building from source from a specific git hash (pinned to a hash)
 use crate::compose::DockerBuildInput;
 
 /// At compile time, we determine the git repository and commit hash
