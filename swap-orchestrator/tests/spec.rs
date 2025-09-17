@@ -36,4 +36,6 @@ fn test_orchestrator_spec_generation() {
     let spec = input.to_spec();
 
     println!("{}", spec);
+
+    // TODO: Here we should use the docker binary to verify the compose file
 }
