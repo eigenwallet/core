@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ASB: require Monero wallet to be fully synchronized before providing quotes
+- ORCHESTRATOR: Allow re-generating `docker-compose.yml` while preserving the asb config (`config.toml`). If you've ran the `orchestrator` before you can download a newer version, run it and an updated `docker-compose.yml` will be generated (overwriting the previous file). All data and configuration options will be preserved as they are stored inside the Docker volumes and the `config.toml` file.
 
 ## [3.0.0-beta.12] - 2025-09-14
 
