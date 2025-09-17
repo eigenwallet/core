@@ -5,8 +5,8 @@ mod images;
 mod prompt;
 
 use crate::compose::{
-    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks, DOCKER_COMPOSE_FILE,
+    DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
+    OrchestratorInput, OrchestratorNetworks,
 };
 use std::path::PathBuf;
 use swap_env::config::{
@@ -30,9 +30,6 @@ fn main() {
         }
         _ => panic!("Unsupported Bitcoin / Monero network combination"),
     };
-
-    // TOOD: Allow pre-built images here
-    //let build_type = prompt::build_type();
 
     let recipe = OrchestratorInput {
         ports: OrchestratorNetworks {
