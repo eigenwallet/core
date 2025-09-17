@@ -88,6 +88,10 @@ impl OrchestratorDirectories {
         // The config file is in the same directory as the docker-compose.yml file
         "./config.toml"
     }
+
+    pub fn asb_config_path_on_host_as_path_buf(&self) -> PathBuf {
+        PathBuf::from(self.asb_config_path_on_host())
+    }
 }
 
 /// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
