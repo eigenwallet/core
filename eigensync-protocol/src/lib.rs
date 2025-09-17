@@ -7,7 +7,6 @@ use libp2p::{ping, request_response, StreamProtocol};
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
-use tokio::sync::oneshot;
 
 const PROTOCOL: &str = "/eigensync/1.0.0";
 
@@ -92,12 +91,6 @@ impl EncryptedChange {
         )?;
         Ok(SerializedChange::new(pt))
     }
-}
-
-#[derive(Debug)]
-pub struct ChannelRequest {
-    pub encrypted_changes: Vec<EncryptedChange>,
-    pub response_channel: oneshot::Sender<anyhow::Result<Vec<EncryptedChange>>>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

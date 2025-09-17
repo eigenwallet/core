@@ -1,12 +1,93 @@
-use std::{collections::HashMap, fs::{self, File}, io::Write, path::{Path, PathBuf}, str::FromStr, time::Duration};
+use std::{fs::{self, File}, io::Write, path::{Path, PathBuf}, str::FromStr, time::Duration};
 
 use anyhow::{Context};
-use eigensync::protocol::{server, Behaviour, BehaviourEvent, Response, EncryptedChange, ServerRequest};
+use eigensync_protocol::{server, Behaviour, BehaviourEvent, Response, ServerRequest};
 use libp2p::{
-    futures::StreamExt, identity::{self, ed25519}, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder
+    futures::StreamExt, identity::{self, ed25519}, noise, request_response, swarm::SwarmEvent, tcp, yamux, Multiaddr, Swarm, SwarmBuilder
 };
-use autosurgeon::{Hydrate, Reconcile};
 use tracing_subscriber::EnvFilter;
+
+use anyhow::{Result};
+
+use libp2p::PeerId;
+use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool};
+use tracing::info;
+
+use eigensync_protocol::EncryptedChange;
+
+#[derive(Clone)]
+pub struct Database {
+    pub pool: SqlitePool,
+}
+
+impl Database {
+    pub async fn new(data_dir: PathBuf) -> Result<Self> {
+        if !data_dir.exists() {
+            std::fs::create_dir_all(&data_dir)?;
+            info!(data_dir = %data_dir.display(), "Created server database directory");
+        }
+
+        let db_path = data_dir.join("changes");
+        let connect_options = SqliteConnectOptions::new()
+            .filename(&db_path)
+            .create_if_missing(true);
+
+        let pool = SqlitePoolOptions::new()
+            .connect_with(connect_options)
+            .await?;
+
+        let db = Self { pool };
+        db.migrate().await?;
+
+        Ok(db)
+    }
+
+    async fn migrate(&self) -> Result<()> {
+        sqlx::migrate!("./migrations").run(&self.pool).await?;
+        info!("Server database migration completed");
+        Ok(())
+    }
+
+    pub async fn get_peer_changes(&self, peer_id: PeerId) -> Result<Vec<EncryptedChange>> {
+        let peer_id = peer_id.to_string();
+        
+        let rows = sqlx::query!(
+            r#"
+            SELECT change
+            FROM change
+            WHERE peer_id = ?
+            ORDER BY id DESC
+            "#,
+            peer_id
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let changes = rows.iter().map(|row| EncryptedChange::new(row.change.clone())).collect();
+
+        Ok(changes)
+    }
+
+    pub async fn insert_peer_changes(&self, peer_id: PeerId, changes: Vec<EncryptedChange>) -> Result<()> {
+        let peer_id = peer_id.to_string();
+    
+        for change in changes {
+            let serialized = change.to_bytes();
+            sqlx::query!(
+                r#"
+                INSERT or IGNORE INTO change (peer_id, change)
+                VALUES (?, ?)
+                "#,
+                peer_id,
+                serialized
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+    
+        Ok(())
+    }
+}
 
 use clap::Parser;
 
@@ -15,8 +96,6 @@ struct Cli {
     #[arg(long)]
     pub data_dir: PathBuf
 }
-
-use eigensync::database::Database;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -80,7 +159,6 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
         })) => {
             match message {
                 request_response::Message::Request { request, channel, .. } => {
-
                     match request {
                         ServerRequest::UploadChangesToServer { encrypted_changes: changes } => {
                             let saved_changed_of_peer = db.get_peer_changes(peer).await?;
@@ -109,4 +187,5 @@ async fn handle_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourE
             tracing::info!("Received event: {:?}", other);
         },
     };
-    Ok(())}
+    Ok(())
+}

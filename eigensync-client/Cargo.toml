@@ -1,0 +1,32 @@
+[package]
+name = "eigensync-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+libp2p = { workspace = true, features = [
+    "request-response",
+    "tcp",
+    "noise",
+    "yamux",
+    "macros",
+    "cbor",
+    "tokio",
+    "ping",
+] }
+automerge = { workspace = true }
+autosurgeon = { workspace = true }
+eigensync-protocol = { version = "0.1.0", path = "../eigensync-protocol" }
+
+[lints]
+workspace = true

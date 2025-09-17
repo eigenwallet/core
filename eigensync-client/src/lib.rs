@@ -1,6 +1,4 @@
 use std::{collections::HashMap, fmt::Debug, marker::PhantomData, sync::Arc, time::Duration};
-pub mod protocol;
-pub mod database;
 
 use anyhow::{Context};
 use libp2p::{
@@ -13,115 +11,7 @@ use tokio::{sync::{mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}
 use automerge::{ActorId, AutoCommit, Change};
 use autosurgeon::{hydrate, reconcile, Hydrate, Reconcile};
 use tokio_util::task::AbortOnDropHandle;
-use crate::protocol::{client, Behaviour, BehaviourEvent, ChannelRequest, Response, SerializedChange, EncryptedChange, ServerRequest};
-
-pub type SyncBehaviour = request_response::cbor::Behaviour<ServerRequest, Response>;
-
-pub struct SyncLoop {
-    receiver: UnboundedReceiver<ChannelRequest>,
-    response_map: HashMap<OutboundRequestId, oneshot::Sender<anyhow::Result<Vec<EncryptedChange>>>>,
-    swarm: Swarm<Behaviour>,
-    connection_established: Option<oneshot::Sender<()>>,
-}
-
-impl SyncLoop {
-    pub async fn new(receiver: UnboundedReceiver<ChannelRequest>, swarm: Swarm<Behaviour>, connection_established: oneshot::Sender<()>) -> Self {
-        
-        Self { receiver, response_map: HashMap::new(), swarm, connection_established: Some(connection_established)}
-    }
-    
-    pub fn sync_with_server(&mut self, request: ChannelRequest, server_id: PeerId) {
-        let server_request = ServerRequest::UploadChangesToServer { encrypted_changes: request.encrypted_changes };
-        let request_id = self.swarm.behaviour_mut().send_request(&server_id, server_request);
-        self.response_map.insert(request_id, request.response_channel);
-    }
-    
-    pub async fn run(&mut self, server_id: PeerId) -> anyhow::Result<()> {
-        loop {
-            tokio::select! {
-                event = self.swarm.select_next_some() => {
-                    if let Err(e) = handle_event(
-                        event,
-                        server_id,
-                        &mut self.swarm,
-                        &mut self.response_map,
-                        self.connection_established.take()
-                    ).await {
-                        tracing::error!(%e, "Eigensync event handling failed");
-                    }
-                },
-                request_from_handle = self.receiver.recv() => {
-                    if let Some(request) = request_from_handle {
-                        self.sync_with_server(request, server_id);
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub async fn handle_event(
-    event: SwarmEvent<BehaviourEvent>,
-    server_id: PeerId,
-    swarm: &mut Swarm<Behaviour>,
-    response_map: &mut HashMap<OutboundRequestId, oneshot::Sender<anyhow::Result<Vec<EncryptedChange>>>>,
-    mut connection_established: Option<oneshot::Sender<()>>,
-) -> anyhow::Result<()> {
-    Ok(match event {
-        SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::Message {
-            peer,
-            message,
-        })) => match message {
-            request_response::Message::Response {
-                request_id,
-                response,
-            } => match response {
-                Response::NewChanges { changes } => {
-                    let sender = response_map.remove(&request_id).context(format!("No sender for request id {:?}", request_id))?;
-
-                    if let Err(e) = sender.send(Ok(changes)) {
-                        tracing::error!("Failed to send changes to client: {:?}", e);
-                    }
-                },
-                Response::Error { reason } => {
-                    let sender = response_map.remove(&request_id).context(format!("No sender for request id {:?}", request_id))?;
-
-                    if let Err(e) = sender.send(Err(anyhow::anyhow!(reason.clone()))) {
-                        tracing::error!("Failed to send error to client: {:?}", e);
-                    }
-                },
-            },
-            request_response::Message::Request {
-                request,
-                channel,
-                request_id,
-            } => {
-                tracing::error!("Received the request when we're the client");
-            }
-        },
-        SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::OutboundFailure {
-            peer,
-            request_id,
-            error,
-        })) => {
-            let sender = response_map.remove(&request_id).context(format!("No sender for request id {:?}", request_id))?;
-
-            if let Err(e) = sender.send(Err(anyhow::anyhow!(error.to_string()))) {
-                tracing::error!("Failed to send error to client: {:?}", e);
-            }
-        }
-        SwarmEvent::ConnectionEstablished { peer_id: _peer_id, .. } => {
-            // send the connection established signal
-            if let Some(sender) = connection_established.take() {
-                if let Err(e) = sender.send(()) {
-                    tracing::error!("Failed to send connection established signal to client: {:?}", e);
-                }
-            }
-        },
-        other => tracing::debug!("Received event: {:?}", other),
-    })
-}
-
+use eigensync_protocol::{client, Behaviour, BehaviourEvent, Response, SerializedChange, EncryptedChange, ServerRequest};
 
 /// High-level handle for synchronizing a typed application state with an
 /// Eigensync server using Automerge and libp2p.
@@ -188,6 +78,7 @@ pub struct EigensyncHandle<T: Reconcile + Hydrate + Default + Debug> {
     sender: UnboundedSender<ChannelRequest>,
     encryption_key: [u8; 32],
     _marker: PhantomData<T>,
+    connection_ready_rx: Option<oneshot::Receiver<()>>,
 }
 
 impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
@@ -211,7 +102,7 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
         swarm.dial(server_id).context("Failed to dial")?;
         
         let (sender, receiver) = unbounded_channel();
-        let (connection_ready_tx, _) = oneshot::channel();
+        let (connection_ready_tx, connection_ready_rx) = oneshot::channel();
 
         task::spawn(async move {
             SyncLoop::new(receiver, swarm, connection_ready_tx).await.run(server_id).await.unwrap();
@@ -224,6 +115,7 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
             _marker: PhantomData,
             sender,
             encryption_key: encryption_key.clone(),
+            connection_ready_rx: Some(connection_ready_rx),
         };
 
         Ok(handle)
@@ -303,6 +195,119 @@ impl<T: Reconcile + Hydrate + Default + Debug> EigensyncHandle<T> {
     }
 }
 
+#[derive(Debug)]
+pub struct ChannelRequest {
+    pub encrypted_changes: Vec<EncryptedChange>,
+    pub response_channel: oneshot::Sender<anyhow::Result<Vec<EncryptedChange>>>
+}
+
+pub struct SyncLoop {
+    receiver: UnboundedReceiver<ChannelRequest>,
+    response_map: HashMap<OutboundRequestId, oneshot::Sender<anyhow::Result<Vec<EncryptedChange>>>>,
+    swarm: Swarm<Behaviour>,
+    connection_established: Option<oneshot::Sender<()>>,
+}
+
+impl SyncLoop {
+    pub async fn new(receiver: UnboundedReceiver<ChannelRequest>, swarm: Swarm<Behaviour>, connection_established: oneshot::Sender<()>) -> Self {
+        
+        Self { receiver, response_map: HashMap::new(), swarm, connection_established: Some(connection_established)}
+    }
+    
+    pub fn sync_with_server(&mut self, request: ChannelRequest, server_id: PeerId) {
+        let server_request = ServerRequest::UploadChangesToServer { encrypted_changes: request.encrypted_changes };
+        let request_id = self.swarm.behaviour_mut().send_request(&server_id, server_request);
+        self.response_map.insert(request_id, request.response_channel);
+    }
+    
+    pub async fn run(&mut self, server_id: PeerId) -> anyhow::Result<()> {
+        loop {
+            tokio::select! {
+                event = self.swarm.select_next_some() => {
+                    if let Err(e) = handle_event(
+                        event,
+                        server_id,
+                        &mut self.swarm,
+                        &mut self.response_map,
+                        self.connection_established.take()
+                    ).await {
+                        tracing::error!(%e, "Eigensync event handling failed");
+                    }
+                },
+                request_from_handle = self.receiver.recv() => {
+                    if let Some(request) = request_from_handle {
+                        self.sync_with_server(request, server_id);
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub async fn handle_event(
+    event: SwarmEvent<BehaviourEvent>,
+    _server_id: PeerId,
+    _swarm: &mut Swarm<Behaviour>,
+    response_map: &mut HashMap<OutboundRequestId, oneshot::Sender<anyhow::Result<Vec<EncryptedChange>>>>,
+    mut connection_established: Option<oneshot::Sender<()>>,
+) -> anyhow::Result<()> {
+    Ok(match event {
+        SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::Message {
+            peer: _,
+            message,
+        })) => match message {
+            request_response::Message::Response {
+                request_id,
+                response,
+            } => match response {
+                Response::NewChanges { changes } => {
+                    let sender = response_map.remove(&request_id).context(format!("No sender for request id {:?}", request_id))?;
+
+                    if let Err(e) = sender.send(Ok(changes)) {
+                        tracing::error!("Failed to send changes to client: {:?}", e);
+                    }
+                },
+                Response::Error { reason } => {
+                    let sender = response_map.remove(&request_id).context(format!("No sender for request id {:?}", request_id))?;
+
+                    if let Err(e) = sender.send(Err(anyhow::anyhow!(reason.clone()))) {
+                        tracing::error!("Failed to send error to client: {:?}", e);
+                    }
+                },
+            },
+            request_response::Message::Request {
+                request: _,
+                channel: _,
+                request_id: _,
+            } => {
+                tracing::error!("Received the request when we're the client");
+            }
+        },
+        SwarmEvent::Behaviour(BehaviourEvent::Sync(request_response::Event::OutboundFailure {
+            peer: _,
+            request_id,
+            error,
+        })) => {
+            let sender = response_map.remove(&request_id).context(format!("No sender for request id {:?}", request_id))?;
+
+            if let Err(e) = sender.send(Err(anyhow::anyhow!(error.to_string()))) {
+                tracing::error!("Failed to send error to client: {:?}", e);
+            }
+        }
+        SwarmEvent::ConnectionEstablished { peer_id: _peer_id, .. } => {
+            // send the connection established signal
+            if let Some(sender) = connection_established.take() {
+                if let Err(e) = sender.send(()) {
+                    tracing::error!("Failed to send connection established signal to client: {:?}", e);
+                }
+            }
+        },
+        other => tracing::debug!("Received event: {:?}", other),
+    })
+}
+
+
+
 pub trait EigensyncHandleBackgroundSync {
     fn background_sync(&mut self) -> AbortOnDropHandle<()>;
 }
@@ -315,16 +320,30 @@ where
         let handle = self.clone();
         AbortOnDropHandle::new(tokio::task::spawn(async move {
             let mut seeded_default = false;
+            let connection_ready_rx = {
+                let mut guard = handle.write().await;
+                guard.connection_ready_rx.take()
+            };
+            if let Some(rx) = connection_ready_rx {
+                if let Err(e) = rx.await {
+                    tracing::error!(%e, "Background sync failed, continuing, seeded_default: {}", seeded_default);
+                    return;
+                }
+            }
             loop {
+                println!("Background sync loop");
                 // Try sync; if offline, we still proceed to seed default once
                 if let Err(e) = handle.write().await.sync_with_server().await {
-                    tracing::error!(%e, "Background sync failed, continuing");
+                    tracing::error!(%e, "Background sync failed, continuing, seeded_default: {}", seeded_default);
+                    continue;
                 }
 
                 if !seeded_default {
+                    println!("Seeding default eigensync state");
                     let mut guard = handle.write().await;
                     if guard.document.get_changes(&[]).is_empty() {
                         let state = T::default();
+                        println!("Seeding default eigensync state, document is empty");
                         if let Err(e) = reconcile(&mut guard.document, &state) {
                             tracing::error!(error = ?e, "Failed to seed default eigensync state, continuing");
                         }

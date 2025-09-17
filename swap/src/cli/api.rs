@@ -14,7 +14,7 @@ use crate::seed::{self, Seed};
 use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
-use eigensync::{EigensyncHandle, EigensyncHandleBackgroundSync};
+use eigensync_client::{EigensyncHandle, EigensyncHandleBackgroundSync};
 use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
 use tokio_util::task::AbortOnDropHandle;

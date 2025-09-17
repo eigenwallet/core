@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::{HashMap, HashSet}, str::FromStr, sync::Ar
 
 use autosurgeon::{Hydrate, HydrateError, Reconcile, Reconciler};
 use autosurgeon::reconcile::NoKey;
-use eigensync::EigensyncHandle;
+use eigensync_client::EigensyncHandle;
 use std::collections::HashSet as StdHashSet;
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
