@@ -4,8 +4,8 @@ mod images;
 mod prompt;
 
 use crate::compose::{
-    DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
-    OrchestratorInput, OrchestratorNetworks,
+    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
+    OrchestratorNetworks, DOCKER_COMPOSE_FILE,
 };
 use std::path::PathBuf;
 use swap_env::config::{
