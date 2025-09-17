@@ -5,7 +5,7 @@ mod prompt;
 
 use crate::compose::{
     IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks, DOCKER_COMPOSE_FILE,
+    OrchestratorNetworks, ASB_DATA_DIR, DOCKER_COMPOSE_FILE,
 };
 use std::path::PathBuf;
 use swap_env::config::{
@@ -14,8 +14,6 @@ use swap_env::config::{
 use swap_env::prompt as config_prompt;
 use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
 use url::Url;
-
-use crate::compose::ASB_DATA_DIR;
 
 fn main() {
     let (bitcoin_network, monero_network) = prompt::network();
@@ -63,8 +61,6 @@ fn main() {
     //
     // The "asb config" is distinctly different from the [`monero_node_type`] and [`electrum_server_type`]
     // since these are also required to decide on the structure of the `docker-compose.yml` file
-    //
-    //
     enum ConfigExistence {
         PresentAndValid,
         Missing,
