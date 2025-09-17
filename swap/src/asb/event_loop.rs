@@ -917,6 +917,17 @@ mod quote {
         /// This is how long we maximally wait for the wallet operation
         const MONERO_WALLET_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
 
+        /// First check if the wallet is synchronized
+        /// We cannot safely provide a balance if the wallet is not synchronized
+        /// We cannot be sure that the balance is accurate
+        /// It is dangerous to provide a balancer higher than the actual balance
+        if !timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.synchronized())
+            .await
+            .context("Timeout while checking if wallet is synchronized")?
+        {
+            return Err(anyhow::anyhow!("Wallet is not synchronized"));
+        }
+
         let balance = timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.unlocked_balance())
             .await
             .context("Timeout while getting unlocked balance from Monero wallet")?;
