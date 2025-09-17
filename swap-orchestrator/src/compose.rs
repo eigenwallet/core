@@ -43,9 +43,9 @@ pub struct OrchestratorPorts {
     pub asb_rpc_port: u16,
 }
 
-impl Into<OrchestratorPorts> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
-    fn into(self) -> OrchestratorPorts {
-        match (self.monero, self.bitcoin) {
+impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for OrchestratorPorts {
+    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+        match (val.monero, val.bitcoin) {
             (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => OrchestratorPorts {
                 monerod_rpc: 18081,
                 bitcoind_rpc: 8332,
@@ -67,15 +67,15 @@ impl Into<OrchestratorPorts> for OrchestratorNetworks<monero::Network, bitcoin::
     }
 }
 
-impl Into<asb::Network> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
-    fn into(self) -> asb::Network {
-        asb::Network::new(self.monero, self.bitcoin)
+impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for asb::Network {
+    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+        asb::Network::new(val.monero, val.bitcoin)
     }
 }
 
-impl Into<electrs::Network> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
-    fn into(self) -> electrs::Network {
-        electrs::Network::new(self.bitcoin)
+impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for electrs::Network {
+    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+        electrs::Network::new(val.bitcoin)
     }
 }
 
@@ -422,8 +422,10 @@ impl IntoImageAttribute for OrchestratorImage {
 }
 
 fn validate_compose(compose_str: &str) {
-    serde_yaml::from_str::<Compose>(compose_str).expect(&format!(
-        "Generated compose spec to be valid. But it was not. This is the spec: \n\n{}",
-        compose_str
-    ));
+    serde_yaml::from_str::<Compose>(compose_str).unwrap_or_else(|_| {
+        panic!(
+            "Generated compose spec to be valid. But it was not. This is the spec: \n\n{}",
+            compose_str
+        )
+    });
 }
