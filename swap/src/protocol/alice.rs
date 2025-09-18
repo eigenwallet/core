@@ -2,6 +2,7 @@
 //! Alice holds XMR and wishes receive BTC.
 use crate::protocol::Database;
 use crate::{asb, bitcoin, monero};
+use rust_decimal::Decimal;
 use std::sync::Arc;
 use swap_env::env::Config;
 use uuid::Uuid;
@@ -18,6 +19,7 @@ pub struct Swap {
     pub bitcoin_wallet: Arc<bitcoin::Wallet>,
     pub monero_wallet: Arc<monero::Wallets>,
     pub env_config: Config,
+    pub developer_tip: Option<Decimal>,
     pub swap_id: Uuid,
     pub db: Arc<dyn Database + Send + Sync>,
 }

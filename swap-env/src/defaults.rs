@@ -6,6 +6,8 @@ use std::str::FromStr;
 use swap_fs::{system_config_dir, system_data_dir};
 use url::Url;
 
+pub const DEFAULT_DEVELOPER_TIP_ADDRESS: &str = "87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o";
+
 pub const DEFAULT_MIN_BUY_AMOUNT: f64 = 0.002f64;
 pub const DEFAULT_MAX_BUY_AMOUNT: f64 = 0.02f64;
 pub const DEFAULT_SPREAD: f64 = 0.02f64;

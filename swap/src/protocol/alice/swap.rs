@@ -12,6 +12,7 @@ use crate::protocol::alice::{AliceState, Swap};
 use crate::{bitcoin, monero};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
+use rust_decimal::Decimal;
 use swap_env::env::Config;
 use tokio::select;
 use tokio::time::timeout;
@@ -43,6 +44,7 @@ where
             swap.bitcoin_wallet.as_ref(),
             swap.monero_wallet.clone(),
             &swap.env_config,
+            swap.developer_tip,
             rate_service.clone(),
         )
         .await?;
@@ -62,6 +64,7 @@ async fn next_state<LR>(
     bitcoin_wallet: &bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
+    developer_tip: Option<Decimal>,
     mut rate_service: LR,
 ) -> Result<AliceState>
 where
@@ -159,11 +162,39 @@ where
                         .lock_xmr_transfer_request()
                         .address_and_amount(env_config.monero_network);
 
+                    let destinations = match developer_tip {
+                        // If the user configured a developer tip,
+                        // we add both the multi-sig address and the developer tip address to the destinations
+                        Some(tip) => {
+                            use rust_decimal::prelude::ToPrimitive;
+
+                            let tip_address = monero::Address::from_str(
+                                swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS,
+                            )
+                            .context("Failed to parse developer tip address")?;
+
+                            let tip_amount_piconero = tip.saturating_mul(Decimal::from(amount.as_pico()));
+
+                            let tip_amount = monero::Amount::from_piconero(
+                                // We floor the amount (prefer lower tip)
+                                tip_amount_piconero
+                                    .floor()
+                                    .to_u64()
+                                    .context("Developer tip amount overflow")?
+                            );
+
+                            vec![(address, amount), (tip_address, tip_amount.into())]
+                        }
+                        // If the user did not configure a developer tip,
+                        // we will only lock the funds to multi-sig address
+                        None => vec![(address, amount)],
+                    };
+
                     // Lock the Monero
                     let receipt = monero_wallet
                         .main_wallet()
                         .await
-                        .transfer(&address, amount)
+                        .transfer_multi(&destinations)
                         .await
                         .map_err(|e| tracing::error!(err=%e, "Failed to lock Monero"))
                         .ok();

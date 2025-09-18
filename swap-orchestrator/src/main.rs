@@ -180,6 +180,7 @@ fn main() {
                 ask_spread,
                 price_ticker_ws_url: defaults.price_ticker_ws_url,
                 external_bitcoin_redeem_address: None,
+                developer_tip: None,
             },
         };
 

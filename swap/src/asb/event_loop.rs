@@ -19,6 +19,7 @@ use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChann
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::future::Cache;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
@@ -45,6 +46,7 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
+    developer_tip: Option<Decimal>,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -135,6 +137,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
+        developer_tip: Option<Decimal>,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -154,6 +157,7 @@ where
             min_buy,
             max_buy,
             external_redeem_address,
+            developer_tip,
             quote_cache,
             recv_encrypted_signature: Default::default(),
             inflight_encrypted_signatures: Default::default(),
@@ -215,6 +219,7 @@ where
                 db: self.db.clone(),
                 state: state.try_into().expect("Alice state loaded from db"),
                 swap_id,
+                developer_tip: self.developer_tip.clone(),
             };
 
             match self.swap_sender.send(swap).await {
@@ -595,6 +600,7 @@ where
             db: self.db.clone(),
             state: initial_state,
             swap_id,
+            developer_tip: self.developer_tip.clone(),
         };
 
         match self.db.insert_peer_id(swap_id, bob_peer_id).await {
