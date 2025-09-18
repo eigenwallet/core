@@ -285,6 +285,7 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
+                config.maker.developer_tip,
             )
             .unwrap();
 

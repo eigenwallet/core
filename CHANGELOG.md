@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: You can now configure your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set `maker.developer_tip` to a number between 0 and 1. Setting `maker.developer_tip` to `0.02` will donate 2% of each swap to the [donation address](https://github.com/eigenwallet/core?tab=readme-ov-file#donations) of the project. This is defined [here](https://github.com/eigenwallet/core/blob/ce4a85bfdd3b3fd6fbdf6c4c1ab0e1c3188b7fc2/swap-env/src/defaults.rs#L9) in the code. The tip is sent by adding an additional output the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction.
+
 ## [3.0.0-beta.14] - 2025-09-17
 
 - ASB: require Monero wallet to be fully synchronized before providing quotes

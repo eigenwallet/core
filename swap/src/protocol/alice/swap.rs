@@ -162,35 +162,7 @@ where
                         .lock_xmr_transfer_request()
                         .address_and_amount(env_config.monero_network);
 
-                    let destinations = match developer_tip {
-                        // If the user configured a developer tip,
-                        // we add both the multi-sig address and the developer tip address to the destinations
-                        Some(tip) => {
-                            use rust_decimal::prelude::ToPrimitive;
-
-                            let tip_address = monero::Address::from_str(
-                                swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS,
-                            )
-                            .context("Failed to parse developer tip address")?;
-
-                            // tip_amount_piconero = tip * amount
-                            let tip_amount_piconero =
-                                tip.saturating_mul(Decimal::from(amount.as_pico()));
-
-                            let tip_amount = monero::Amount::from_piconero(
-                                // We floor the amount (prefer lower tip)
-                                tip_amount_piconero
-                                    .floor()
-                                    .to_u64()
-                                    .context("Developer tip amount overflow")?,
-                            );
-
-                            vec![(address, amount), (tip_address, tip_amount.into())]
-                        }
-                        // If the user did not configure a developer tip,
-                        // we will only lock the funds to multi-sig address
-                        None => vec![(address, amount)],
-                    };
+                    let destinations = build_transfer_destinations(address, amount, developer_tip)?;
 
                     // Lock the Monero
                     let receipt = monero_wallet
@@ -691,6 +663,42 @@ pub fn is_complete(state: &AliceState) -> bool {
     )
 }
 
+/// Build transfer destinations, optionally including a developer tip.
+fn build_transfer_destinations(
+    lock_address: ::monero::Address,
+    lock_amount: ::monero::Amount,
+    developer_tip: Option<rust_decimal::Decimal>,
+) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
+    match developer_tip {
+        // If the user did not configure a developer tip,
+        // we will only lock the funds to multi-sig address
+        None => Ok(vec![(lock_address, lock_amount)]),
+        Some(tip) if tip == Decimal::ZERO => Ok(vec![(lock_address, lock_amount)]),
+        // If the user configured a developer tip,
+        // we add both the multi-sig address and the developer tip address to the destinations
+        Some(tip) => {
+            use rust_decimal::prelude::ToPrimitive;
+
+            let tip_address =
+                ::monero::Address::from_str(swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS)
+                    .context("Failed to parse developer tip address")?;
+
+            // tip_amount_piconero = tip * amount
+            let tip_amount_piconero =
+                tip.saturating_mul(rust_decimal::Decimal::from(lock_amount.as_pico()));
+
+            let tip_amount_piconero = tip_amount_piconero
+                .floor()
+                .to_u64()
+                .context("Developer tip amount overflow")?;
+
+            let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
+
+            Ok(vec![(lock_address, lock_amount), (tip_address, tip_amount)])
+        }
+    }
+}
+
 /// This function is used to check if Alice is in a state where it is clear that she has already received the encrypted signature from Bob.
 /// This allows us to acknowledge the encrypted signature multiple times
 /// If our acknowledgement does not reach Bob, he might send the encrypted signature again.
@@ -701,4 +709,110 @@ pub(crate) fn has_already_processed_enc_sig(state: &AliceState) -> bool {
             | AliceState::BtcRedeemTransactionPublished { .. }
             | AliceState::BtcRedeemed
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    fn test_address() -> ::monero::Address {
+        ::monero::Address::from_str("4AdUndXHHZ6cfufTMvppY6JwXNouMBzSkbLYfpAV5Usx3skxNgYeYFHSAJCs2pMNxRqsR25QQqCp5Qj7eNnmN6vbRBGBAeU").unwrap()
+    }
+
+    fn test_tip_address() -> ::monero::Address {
+        ::monero::Address::from_str(&swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS).unwrap()
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_without_tip() {
+        let address = test_address();
+        let amount = ::monero::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let developer_tip = None;
+
+        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, address);
+        assert_eq!(result[0].1, amount);
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_tip() {
+        let address = test_address();
+        let amount = ::monero::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip_percentage = Decimal::from_str("0.05").unwrap(); // 5%
+        let developer_tip = Some(tip_percentage);
+
+        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
+
+        assert_eq!(result.len(), 2);
+
+        // First destination should be the original address and amount
+        assert_eq!(result[0].0, address);
+        assert_eq!(result[0].1, amount);
+
+        // Second destination should be the tip address with calculated tip amount
+        assert_eq!(result[1].0, test_tip_address());
+        let expected_tip_amount = ::monero::Amount::from_pico(50_000_000_000); // 5% of 1 XMR
+        assert_eq!(result[1].1, expected_tip_amount);
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_small_tip() {
+        let address = test_address();
+        let amount = ::monero::Amount::from_pico(100_000_000); // 0.0001 XMR
+        let tip_percentage = Decimal::from_str("0.01").unwrap(); // 1%
+        let developer_tip = Some(tip_percentage);
+
+        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, address);
+        assert_eq!(result[0].1, amount);
+        assert_eq!(result[1].0, test_tip_address());
+
+        // Tip should be floored to 1_000_000 piconero (1% of 0.0001 XMR)
+        let expected_tip_amount = ::monero::Amount::from_pico(1_000_000);
+        assert_eq!(result[1].1, expected_tip_amount);
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_zero_tip() {
+        let address = test_address();
+        let amount = ::monero::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip_percentage = Decimal::ZERO;
+        let developer_tip = Some(tip_percentage);
+
+        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, address);
+        assert_eq!(result[0].1, amount);
+        assert_eq!(result[1].0, test_tip_address());
+
+        // Zero tip should result in zero amount
+        let expected_tip_amount = ::monero::Amount::from_pico(0);
+        assert_eq!(result[1].1, expected_tip_amount);
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_fractional_tip() {
+        let address = test_address();
+        let amount = ::monero::Amount::from_pico(999_999_999_999); // Just under 1 XMR
+        let tip_percentage = Decimal::from_str("0.123456").unwrap(); // 12.3456%
+        let developer_tip = Some(tip_percentage);
+
+        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, address);
+        assert_eq!(result[0].1, amount);
+        assert_eq!(result[1].0, test_tip_address());
+
+        // Tip should be floored: floor(999_999_999_999 * 0.123456) = floor(123455876543.11) = 123455876543
+        let expected_tip_amount = ::monero::Amount::from_pico(123_455_876_543);
+        assert_eq!(result[1].1, expected_tip_amount);
+    }
 }
