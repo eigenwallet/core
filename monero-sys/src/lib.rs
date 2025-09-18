@@ -477,6 +477,26 @@ impl WalletHandle {
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e}"))
     }
 
+    /// Transfer funds to multiple addresses in a single transaction without approval.
+    pub async fn transfer_multi(
+        &self,
+        destinations: &[(monero::Address, monero::Amount)],
+    ) -> anyhow::Result<TxReceipt> {
+        let destinations = destinations.to_vec();
+
+        retry_notify(backoff(None, None), || async {
+            let destinations = destinations.clone();
+            
+            self.call(move |wallet| wallet.transfer_multi(&destinations))
+                .await
+                .map_err(backoff::Error::transient)
+        }, |error, duration: Duration| {
+            tracing::error!(error=%error, "Failed to transfer funds to multiple destinations, retrying in {} secs", duration.as_secs());
+        })
+        .await
+        .map_err(|e| anyhow!("Failed to transfer funds to multiple destinations after multiple attempts: {e}"))
+    }
+
     /// Sweep all funds to an address.
     pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<Vec<TxReceipt>> {
         let address = *address;
@@ -1889,6 +1909,19 @@ impl FfiWallet {
         result
     }
 
+    /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
+    /// the transaction id, transaction key and current blockchain height. This can be used later
+    /// to prove the transfer or to wait for confirmations.
+    fn transfer_multi(
+        &mut self,
+        destinations: &[(monero::Address, monero::Amount)],
+    ) -> anyhow::Result<TxReceipt> {
+        let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
+        let result = self.publish_pending_transaction(&mut pending_tx);
+        self.dispose_pending_transaction(pending_tx);
+        result
+    }
+
     /// Create a pending transaction without publishing it.
     /// Returns the pending transaction that can be inspected before publishing.
     fn create_pending_transaction(
@@ -1905,6 +1938,48 @@ impl FfiWallet {
         );
 
         Ok(pending_tx)
+    }
+
+    /// Create a pending transaction that spends to multiple destinations without publishing it.
+    /// Returns the pending transaction that can be inspected before publishing.
+    /// 
+    /// Destinations with zero amount are filtered out.
+    fn create_pending_transaction_multi_dest(
+        &mut self,
+        destinations: &[(monero::Address, monero::Amount)],
+        // If set to true, the fee will be subtracted from output with the highest amount
+        // If set to false, the fee will be paid by the wallet and the exact amounts will be sent to the destinations
+        subtract_fee_from_outputs: bool,
+    ) -> anyhow::Result<PendingTransaction> {
+        // Filter out any destinations with zero amount
+        let destinations = destinations.iter().filter(|(_, amount)| amount.as_pico() > 0).collect::<Vec<_>>();
+
+        // Build a C++ vector of destination addresses
+        let mut cxx_addrs: UniquePtr<CxxVector<CxxString>> = CxxVector::<CxxString>::new();
+
+        // Build a C++ vector of amounts
+        let mut cxx_amounts: UniquePtr<CxxVector<u64>> = CxxVector::<u64>::new();
+
+        for (address, amount) in destinations {
+            let_cxx_string!(s = address.to_string());
+            ffi::vector_string_push_back(cxx_addrs.pin_mut(), &s);
+            cxx_amounts.pin_mut().push(amount.as_pico());
+        }
+
+        // Create the multi-destination pending transaction
+        let raw_tx = ffi::createTransactionMultiDest(
+            self.inner.pinned(),
+            cxx_addrs.as_ref().unwrap(),
+            cxx_amounts.as_ref().unwrap(),
+            subtract_fee_from_outputs,
+        );
+
+        if raw_tx.is_null() {
+            self.check_error()
+                .context("Failed to create multi-destination transaction")?;
+        }
+
+        Ok(PendingTransaction(raw_tx))
     }
 
     /// Create a pending sweep transaction without publishing it.
@@ -2022,8 +2097,6 @@ impl FfiWallet {
         addresses: &[monero::Address],
         ratios: &[f64],
     ) -> anyhow::Result<Vec<TxReceipt>> {
-        tracing::warn!("STARTED MULTI SWEEP");
-
         if addresses.is_empty() {
             bail!("No addresses to sweep to");
         }
@@ -2047,33 +2120,17 @@ impl FfiWallet {
 
         tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
 
-        // Build a C++ vector of destination addresses
-        let mut cxx_addrs: UniquePtr<CxxVector<CxxString>> = CxxVector::<CxxString>::new();
-        for addr in addresses {
-            let_cxx_string!(s = addr.to_string());
-            ffi::vector_string_push_back(cxx_addrs.pin_mut(), &s);
-        }
+        // Build destinations vector for create_pending_transaction_multi_dest
+        let destinations: Vec<(monero::Address, monero::Amount)> = addresses
+            .iter()
+            .zip(amounts.iter())
+            .map(|(addr, &amount)| (addr.clone(), amount))
+            .collect();
 
-        // Build a C++ vector of amounts
-        let mut cxx_amounts: UniquePtr<CxxVector<u64>> = CxxVector::<u64>::new();
-        for &amount in &amounts {
-            cxx_amounts.pin_mut().push(amount.as_pico());
-        }
-
-        // Create the multi-sweep pending transaction
-        let raw_tx = ffi::createTransactionMultiDest(
-            self.inner.pinned(),
-            cxx_addrs.as_ref().unwrap(),
-            cxx_amounts.as_ref().unwrap(),
-        );
-
-        if raw_tx.is_null() {
-            self.check_error()
-                .context("Failed to create multi-sweep transaction")?;
-            anyhow::bail!("Failed to create multi-sweep transaction");
-        }
-
-        let mut pending_tx = PendingTransaction(raw_tx);
+        // Create the multi-sweep pending transaction using the shared function
+        // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
+        let mut pending_tx = self.create_pending_transaction_multi_dest(&destinations, true)
+            .context("Failed to create multi-sweep transaction")?;
 
         // Get the txids from the pending transaction before we publish,
         // otherwise it might be null.

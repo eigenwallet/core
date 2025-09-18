@@ -10,7 +10,7 @@ use swap::protocol::{alice, bob};
 /// Eventually Alice comes back online and refunds as well.
 #[tokio::test]
 async fn alice_refunds_after_restart_if_bob_already_refunded() {
-    harness::setup_test(FastCancelConfig, |mut ctx| async move {
+    harness::setup_test(FastCancelConfig, None, |mut ctx| async move {
         let (bob_swap, _) = ctx.bob_swap().await;
         let bob_swap = tokio::spawn(bob::run(bob_swap));
 

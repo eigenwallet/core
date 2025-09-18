@@ -11,7 +11,7 @@ use swap::{asb, cli};
 
 #[tokio::test]
 async fn given_alice_and_bob_manually_refund_after_funds_locked_both_refund() {
-    harness::setup_test(FastCancelConfig, |mut ctx| async move {
+    harness::setup_test(FastCancelConfig, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));

@@ -12,6 +12,7 @@ use crate::protocol::alice::{AliceState, Swap};
 use crate::{bitcoin, monero};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
+use rust_decimal::Decimal;
 use swap_env::env::Config;
 use tokio::select;
 use tokio::time::timeout;
@@ -43,6 +44,7 @@ where
             swap.bitcoin_wallet.as_ref(),
             swap.monero_wallet.clone(),
             &swap.env_config,
+            swap.developer_tip,
             rate_service.clone(),
         )
         .await?;
@@ -62,6 +64,7 @@ async fn next_state<LR>(
     bitcoin_wallet: &bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
+    developer_tip: Option<(Decimal, ::monero::Address)>,
     mut rate_service: LR,
 ) -> Result<AliceState>
 where
@@ -159,11 +162,13 @@ where
                         .lock_xmr_transfer_request()
                         .address_and_amount(env_config.monero_network);
 
+                    let destinations = build_transfer_destinations(address, amount, developer_tip)?;
+
                     // Lock the Monero
                     let receipt = monero_wallet
                         .main_wallet()
                         .await
-                        .transfer(&address, amount)
+                        .transfer_multi(&destinations)
                         .await
                         .map_err(|e| tracing::error!(err=%e, "Failed to lock Monero"))
                         .ok();
@@ -658,6 +663,40 @@ pub fn is_complete(state: &AliceState) -> bool {
     )
 }
 
+/// Build transfer destinations, optionally including a developer tip.
+fn build_transfer_destinations(
+    lock_address: ::monero::Address,
+    lock_amount: ::monero::Amount,
+    developer_tip: Option<(rust_decimal::Decimal, ::monero::Address)>,
+) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
+    match developer_tip {
+        // If the user did not configure a developer tip,
+        // we will only lock the funds to multi-sig address
+        None => Ok(vec![(lock_address, lock_amount)]),
+        Some((tip_percentage, _)) if tip_percentage == Decimal::ZERO => {
+            Ok(vec![(lock_address, lock_amount)])
+        }
+        // If the user configured a developer tip,
+        // we add both the multi-sig address and the developer tip address to the destinations
+        Some((tip_percentage, tip_address)) => {
+            use rust_decimal::prelude::ToPrimitive;
+
+            // tip_amount_piconero = tip * amount
+            let tip_amount_piconero =
+                tip_percentage.saturating_mul(rust_decimal::Decimal::from(lock_amount.as_pico()));
+
+            let tip_amount_piconero = tip_amount_piconero
+                .floor()
+                .to_u64()
+                .context("Developer tip amount overflow")?;
+
+            let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
+
+            Ok(vec![(lock_address, lock_amount), (tip_address, tip_amount)])
+        }
+    }
+}
+
 /// This function is used to check if Alice is in a state where it is clear that she has already received the encrypted signature from Bob.
 /// This allows us to acknowledge the encrypted signature multiple times
 /// If our acknowledgement does not reach Bob, he might send the encrypted signature again.
@@ -668,4 +707,32 @@ pub(crate) fn has_already_processed_enc_sig(state: &AliceState) -> bool {
             | AliceState::BtcRedeemTransactionPublished { .. }
             | AliceState::BtcRedeemed
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_build_transfer_destinations_without_tip() {
+        todo!()
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_tip() {
+        todo!()
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_small_tip() {
+        todo!()
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_zero_tip() {
+        todo!()
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_fractional_tip() {
+        todo!()
+    }
 }

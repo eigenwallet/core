@@ -60,6 +60,9 @@ tests:
 docker_test_happy_path:
 	cargo test --package swap --test happy_path -- --nocapture
 
+docker_test_happy_path_with_developer_tip:
+	cargo test --package swap --test happy_path_alice_developer_tip -- --nocapture
+
 docker_test_all:
 	cargo test --package swap --test all -- --nocapture
 

@@ -11,7 +11,7 @@ use swap::protocol::{alice, bob};
 /// after learning encsig from Bob
 #[tokio::test]
 async fn alice_manually_redeems_after_enc_sig_learned() {
-    harness::setup_test(SlowCancelConfig, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
         let (bob_swap, _) = ctx.bob_swap().await;
         let bob_swap = tokio::spawn(bob::run(bob_swap));
 

@@ -8,7 +8,7 @@ use tokio::join;
 
 #[tokio::test]
 async fn given_bob_restarts_while_alice_redeems_btc() {
-    harness::setup_test(harness::SlowCancelConfig, |mut ctx| async move {
+    harness::setup_test(harness::SlowCancelConfig, None, |mut ctx| async move {
         let (bob_swap, bob_handle) = ctx.bob_swap().await;
         let swap_id = bob_swap.id;
 

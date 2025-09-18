@@ -20,6 +20,7 @@ use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::convert::TryInto;
 use std::env;
+use std::str::FromStr;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
@@ -170,18 +171,13 @@ pub async fn main() -> Result<()> {
         } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
-            // check and warn for duplicate rendezvous points
-            let mut rendezvous_addrs = config.network.rendezvous_point.clone();
-            let prev_len = rendezvous_addrs.len();
-            rendezvous_addrs.sort();
-            rendezvous_addrs.dedup();
-            let new_len = rendezvous_addrs.len();
-
-            if new_len < prev_len {
-                tracing::warn!(
-                    "`rendezvous_point` config has {} duplicate entries, they are being ignored.",
-                    prev_len - new_len
-                );
+            match config.maker.developer_tip {
+                Some(ratio) => {
+                    tracing::info!(%ratio, "Tipping to the developers is enabled. Thank you for your support!");
+                }
+                None => {
+                    tracing::info!("Not tipping the developers (maker.developer_tip = 0 or not set in config)");
+                }
             }
 
             // Initialize Monero wallet
@@ -241,7 +237,7 @@ pub async fn main() -> Result<()> {
                 resume_only,
                 env_config,
                 namespace,
-                &rendezvous_addrs,
+                &config.network.rendezvous_point,
                 tor_client,
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
@@ -285,6 +281,15 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
+                config.maker.developer_tip.map(|tip| {
+                    (
+                        tip,
+                        monero::Address::from_str(
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS,
+                        )
+                        .expect("Hardcoded developer tip address to be valid"),
+                    )
+                }),
             )
             .unwrap();
 
