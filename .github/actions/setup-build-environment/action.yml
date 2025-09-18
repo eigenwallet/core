@@ -120,7 +120,13 @@ runs:
         set -euxo pipefail
         just prepare-windows-build
 
-        # The script should set MINGW_TOOLCHAIN_DIR to the /bin directory of the toolchain
+    - name: Prepare Windows build by adding gcc to PATH
+      if: contains(inputs.target, 'windows')
+      shell: bash
+      run: |
+        set -euxo pipefail
+
+        # The step above should set MINGW_TOOLCHAIN_DIR to the /bin directory of the toolchain
         if [ -z "${MINGW_TOOLCHAIN_DIR:-}" ]; then
           echo "ERROR: MINGW_TOOLCHAIN_DIR was not set by the build script." >&2
           exit 1
