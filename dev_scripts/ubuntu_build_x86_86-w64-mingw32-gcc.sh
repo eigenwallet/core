@@ -405,4 +405,6 @@ setup_path
 
 verify_installation
 
+export MINGW_TOOLCHAIN_DIR="$PREFIX/bin"
+
 echo "Done"

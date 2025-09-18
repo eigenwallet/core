@@ -43,6 +43,22 @@ runs:
         sudo apt update;
         sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
 
+    - name: Prefer MinGW POSIX threading (Ubuntu cross -> Windows)
+      if: contains(inputs.host, 'ubuntu') && contains(inputs.target, 'windows')
+      shell: bash
+      run: |
+        # Ensure the system MinGW toolchain uses POSIX threads (not win32)
+        # This helps any tools that still come from apt (e.g., windres) and is harmless otherwise.
+        set -euxo pipefail
+        if command -v update-alternatives >/dev/null 2>&1; then
+          if [ -x "/usr/bin/x86_64-w64-mingw32-g++-posix" ]; then
+            sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix || true
+          fi
+          if [ -x "/usr/bin/x86_64-w64-mingw32-gcc-posix" ]; then
+            sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix || true
+          fi
+        fi
+
     - name: Install build dependencies (macos)
       if: contains(inputs.host, 'macos')
       shell: bash
@@ -81,7 +97,8 @@ runs:
 
     - name: Install dprint globally
       shell: bash
-      run: npm install --global dprint@0.50 # Use npm instead of cargo binstall because the binstall version uses musl which doesn't work
+      # Use npm instead of cargo binstall because the binstall version uses musl which doesn't work
+      run: npm install --global dprint@0.50
 
     - name: Install sqlx-cli globally
       uses: taiki-e/install-action@v2
@@ -104,4 +121,27 @@ runs:
       if: contains(inputs.target, 'windows')
       shell: bash
       run: |
+        set -euxo pipefail
         just prepare-windows-build
+
+        # Persist toolchain dir to later steps
+        if [ -z "${MINGW_TOOLCHAIN_DIR:-}" ]; then
+          echo "ERROR: MINGW_TOOLCHAIN_DIR was not set by the build script." >&2
+          exit 1
+        fi
+        
+        echo "MINGW_TOOLCHAIN_DIR=$MINGW_TOOLCHAIN_DIR" >> "$GITHUB_ENV"
+
+        TOOLCHAIN_DIR="$MINGW_TOOLCHAIN_DIR"
+        if [ ! -d "$TOOLCHAIN_DIR" ]; then
+          echo "ERROR: Custom MinGW toolchain not found at $TOOLCHAIN_DIR" >&2
+          echo "The gcc build step should have created it. Check logs for 'prepare-windows-build'." >&2
+          exit 1
+        fi
+
+        echo "$TOOLCHAIN_DIR" >> "$GITHUB_PATH"
+        echo "CC_x86_64_pc_windows_gnu=$TOOLCHAIN_DIR/x86_64-w64-mingw32-gcc" >> "$GITHUB_ENV"
+        echo "CXX_x86_64_pc_windows_gnu=$TOOLCHAIN_DIR/x86_64-w64-mingw32-g++" >> "$GITHUB_ENV"
+        echo "AR_x86_64_pc_windows_gnu=$TOOLCHAIN_DIR/x86_64-w64-mingw32-ar" >> "$GITHUB_ENV"
+        echo "RANLIB_x86_64_pc_windows_gnu=$TOOLCHAIN_DIR/x86_64-w64-mingw32-ranlib" >> "$GITHUB_ENV"
+        echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$TOOLCHAIN_DIR/x86_64-w64-mingw32-g++" >> "$GITHUB_ENV"
