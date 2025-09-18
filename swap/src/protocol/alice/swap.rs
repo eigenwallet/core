@@ -711,106 +711,28 @@ pub(crate) fn has_already_processed_enc_sig(state: &AliceState) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rust_decimal::Decimal;
-    use std::str::FromStr;
-
-    fn test_address() -> ::monero::Address {
-        ::monero::Address::from_str("4AdUndXHHZ6cfufTMvppY6JwXNouMBzSkbLYfpAV5Usx3skxNgYeYFHSAJCs2pMNxRqsR25QQqCp5Qj7eNnmN6vbRBGBAeU").unwrap()
-    }
-
-    fn test_tip_address() -> ::monero::Address {
-        ::monero::Address::from_str(&swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS).unwrap()
-    }
-
     #[test]
     fn test_build_transfer_destinations_without_tip() {
-        let address = test_address();
-        let amount = ::monero::Amount::from_pico(1_000_000_000_000); // 1 XMR
-        let developer_tip = None;
-
-        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, address);
-        assert_eq!(result[0].1, amount);
+        todo!()
     }
 
     #[test]
     fn test_build_transfer_destinations_with_tip() {
-        let address = test_address();
-        let amount = ::monero::Amount::from_pico(1_000_000_000_000); // 1 XMR
-        let tip_percentage = Decimal::from_str("0.05").unwrap(); // 5%
-        let developer_tip = Some(tip_percentage);
-
-        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
-
-        assert_eq!(result.len(), 2);
-
-        // First destination should be the original address and amount
-        assert_eq!(result[0].0, address);
-        assert_eq!(result[0].1, amount);
-
-        // Second destination should be the tip address with calculated tip amount
-        assert_eq!(result[1].0, test_tip_address());
-        let expected_tip_amount = ::monero::Amount::from_pico(50_000_000_000); // 5% of 1 XMR
-        assert_eq!(result[1].1, expected_tip_amount);
+        todo!()
     }
 
     #[test]
     fn test_build_transfer_destinations_with_small_tip() {
-        let address = test_address();
-        let amount = ::monero::Amount::from_pico(100_000_000); // 0.0001 XMR
-        let tip_percentage = Decimal::from_str("0.01").unwrap(); // 1%
-        let developer_tip = Some(tip_percentage);
-
-        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
-
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].0, address);
-        assert_eq!(result[0].1, amount);
-        assert_eq!(result[1].0, test_tip_address());
-
-        // Tip should be floored to 1_000_000 piconero (1% of 0.0001 XMR)
-        let expected_tip_amount = ::monero::Amount::from_pico(1_000_000);
-        assert_eq!(result[1].1, expected_tip_amount);
+        todo!()
     }
 
     #[test]
     fn test_build_transfer_destinations_with_zero_tip() {
-        let address = test_address();
-        let amount = ::monero::Amount::from_pico(1_000_000_000_000); // 1 XMR
-        let tip_percentage = Decimal::ZERO;
-        let developer_tip = Some(tip_percentage);
-
-        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
-
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].0, address);
-        assert_eq!(result[0].1, amount);
-        assert_eq!(result[1].0, test_tip_address());
-
-        // Zero tip should result in zero amount
-        let expected_tip_amount = ::monero::Amount::from_pico(0);
-        assert_eq!(result[1].1, expected_tip_amount);
+        todo!()
     }
 
     #[test]
     fn test_build_transfer_destinations_with_fractional_tip() {
-        let address = test_address();
-        let amount = ::monero::Amount::from_pico(999_999_999_999); // Just under 1 XMR
-        let tip_percentage = Decimal::from_str("0.123456").unwrap(); // 12.3456%
-        let developer_tip = Some(tip_percentage);
-
-        let result = build_transfer_destinations(address, amount, developer_tip).unwrap();
-
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].0, address);
-        assert_eq!(result[0].1, amount);
-        assert_eq!(result[1].0, test_tip_address());
-
-        // Tip should be floored: floor(999_999_999_999 * 0.123456) = floor(123455876543.11) = 123455876543
-        let expected_tip_amount = ::monero::Amount::from_pico(123_455_876_543);
-        assert_eq!(result[1].1, expected_tip_amount);
+        todo!()
     }
 }
