@@ -44,7 +44,7 @@ use tokio::time::{interval, timeout};
 use url::Url;
 use uuid::Uuid;
 
-pub async fn setup_test<T, F, C>(_config: C, testfn: T)
+pub async fn setup_test<T, F, C>(_config: C, developer_tip_ratio: Option<Decimal>, testfn: T)
 where
     T: Fn(TestContext) -> F,
     F: Future<Output = Result<()>>,
@@ -68,12 +68,38 @@ where
 
     let btc_amount = bitcoin::Amount::from_sat(1_000_000);
     let xmr_amount = monero::Amount::from_monero(btc_amount.to_btc() / FixedRate::RATE).unwrap();
+    let electrs_rpc_port = containers.electrs.get_host_port_ipv4(electrs::RPC_PORT);
+
+    let developer_seed = Seed::random().unwrap();
+    let developer_starting_balances =
+        StartingBalances::new(bitcoin::Amount::ZERO, monero::Amount::ZERO, None);
+    let developer_tip_monero_dir = TempDir::new()
+        .unwrap()
+        .path()
+        .join("developer_tip-monero-wallets");
+    let (_, developer_tip_monero_wallet) = init_test_wallets(
+        "developer_tip",
+        containers.bitcoind_url.clone(),
+        &monero,
+        &containers._monerod_container,
+        developer_tip_monero_dir,
+        developer_starting_balances.clone(),
+        electrs_rpc_port,
+        &developer_seed,
+        env_config,
+    )
+    .await;
+    let developer_tip_monero_wallet_address = developer_tip_monero_wallet
+        .main_wallet()
+        .await
+        .main_address()
+        .await
+        .into();
+    let developer_tip =
+        developer_tip_ratio.map(|ratio| (ratio, developer_tip_monero_wallet_address));
 
     let alice_starting_balances =
         StartingBalances::new(bitcoin::Amount::ZERO, xmr_amount, Some(10));
-
-    let electrs_rpc_port = containers.electrs.get_host_port_ipv4(electrs::RPC_PORT);
-
     let alice_seed = Seed::random().unwrap();
     let alice_db_path = NamedTempFile::new().unwrap().path().to_path_buf();
     let alice_monero_dir = TempDir::new().unwrap().path().join("alice-monero-wallets");
@@ -102,7 +128,7 @@ where
         env_config,
         alice_bitcoin_wallet.clone(),
         alice_monero_wallet.clone(),
-        None,
+        developer_tip.clone(),
     )
     .await;
 
@@ -132,26 +158,6 @@ where
         env_config,
     };
 
-    let developer_seed = Seed::random().unwrap();
-    let developer_starting_balances =
-        StartingBalances::new(bitcoin::Amount::ZERO, monero::Amount::ZERO, None);
-    let developer_tip_monero_dir = TempDir::new()
-        .unwrap()
-        .path()
-        .join("developer_tip-monero-wallets");
-    let (_, developer_tip_monero_wallet) = init_test_wallets(
-        "developer_tip",
-        containers.bitcoind_url,
-        &monero,
-        &containers._monerod_container,
-        developer_tip_monero_dir,
-        developer_starting_balances.clone(),
-        electrs_rpc_port,
-        &developer_seed,
-        env_config,
-    )
-    .await;
-
     monero.start_miner().await.unwrap();
 
     let test = TestContext {
@@ -171,6 +177,7 @@ where
         bob_bitcoin_wallet,
         bob_monero_wallet,
         developer_tip_monero_wallet,
+        developer_tip,
         monerod_container_id: containers._monerod_container.id().to_string(),
     };
 
@@ -619,6 +626,7 @@ pub struct TestContext {
 
     btc_amount: bitcoin::Amount,
     xmr_amount: monero::Amount,
+    developer_tip: Option<(Decimal, monero::Address)>,
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
@@ -663,7 +671,7 @@ impl TestContext {
             self.env_config,
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
-            None
+            self.developer_tip.clone(),
         )
         .await;
 
@@ -739,6 +747,16 @@ impl TestContext {
             &*self.alice_monero_wallet.main_wallet().await,
             Ordering::Greater,
             self.alice_refunded_xmr_balance(),
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn assert_alice_developer_tip_received(&self) {
+        assert_eventual_balance(
+            &*self.developer_tip_monero_wallet.main_wallet().await,
+            Ordering::Equal,
+            self.developer_tip_wallet_received_xmr_balance(),
         )
         .await
         .unwrap();
@@ -880,6 +898,20 @@ impl TestContext {
 
     fn alice_refunded_xmr_balance(&self) -> monero::Amount {
         self.alice_starting_balances.xmr - self.xmr_amount
+    }
+
+    fn developer_tip_wallet_received_xmr_balance(&self) -> monero::Amount {
+        use rust_decimal::prelude::ToPrimitive;
+
+        match self.developer_tip {
+            Some((ratio, _)) => monero::Amount::from_piconero(
+                ratio
+                    .saturating_mul(self.xmr_amount.as_piconero_decimal())
+                    .to_u64()
+                    .unwrap(),
+            ),
+            None => monero::Amount::ZERO,
+        }
     }
 
     fn alice_refunded_btc_balance(&self) -> bitcoin::Amount {
