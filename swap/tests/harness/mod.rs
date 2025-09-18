@@ -10,6 +10,7 @@ use libp2p::core::Multiaddr;
 use libp2p::PeerId;
 use monero_harness::{image, Monero};
 use monero_sys::Daemon;
+use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
@@ -101,6 +102,7 @@ where
         env_config,
         alice_bitcoin_wallet.clone(),
         alice_monero_wallet.clone(),
+        None,
     )
     .await;
 
@@ -109,7 +111,7 @@ where
     let bob_monero_dir = TempDir::new().unwrap().path().join("bob-monero-wallets");
     let (bob_bitcoin_wallet, bob_monero_wallet) = init_test_wallets(
         MONERO_WALLET_NAME_BOB,
-        containers.bitcoind_url,
+        containers.bitcoind_url.clone(),
         &monero,
         &containers._monerod_container,
         bob_monero_dir,
@@ -130,6 +132,26 @@ where
         env_config,
     };
 
+    let developer_seed = Seed::random().unwrap();
+    let developer_starting_balances =
+        StartingBalances::new(bitcoin::Amount::ZERO, monero::Amount::ZERO, None);
+    let developer_tip_monero_dir = TempDir::new()
+        .unwrap()
+        .path()
+        .join("developer_tip-monero-wallets");
+    let (_, developer_tip_monero_wallet) = init_test_wallets(
+        "developer_tip",
+        containers.bitcoind_url,
+        &monero,
+        &containers._monerod_container,
+        developer_tip_monero_dir,
+        developer_starting_balances.clone(),
+        electrs_rpc_port,
+        &developer_seed,
+        env_config,
+    )
+    .await;
+
     monero.start_miner().await.unwrap();
 
     let test = TestContext {
@@ -148,6 +170,7 @@ where
         bob_starting_balances,
         bob_bitcoin_wallet,
         bob_monero_wallet,
+        developer_tip_monero_wallet,
         monerod_container_id: containers._monerod_container.id().to_string(),
     };
 
@@ -238,6 +261,7 @@ async fn start_alice(
     env_config: Config,
     bitcoin_wallet: Arc<bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
+    developer_tip: Option<(Decimal, monero::Address)>,
 ) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
@@ -282,7 +306,7 @@ async fn start_alice(
         min_buy,
         max_buy,
         None,
-        None,
+        developer_tip,
     )
     .unwrap();
 
@@ -611,6 +635,8 @@ pub struct TestContext {
     bob_bitcoin_wallet: Arc<bitcoin::Wallet>,
     bob_monero_wallet: Arc<monero::Wallets>,
 
+    developer_tip_monero_wallet: Arc<monero::Wallets>,
+
     // Store the container ID as String instead of reference
     monerod_container_id: String,
 }
@@ -637,6 +663,7 @@ impl TestContext {
             self.env_config,
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
+            None
         )
         .await;
 
