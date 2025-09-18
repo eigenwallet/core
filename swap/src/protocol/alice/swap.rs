@@ -173,14 +173,16 @@ where
                             )
                             .context("Failed to parse developer tip address")?;
 
-                            let tip_amount_piconero = tip.saturating_mul(Decimal::from(amount.as_pico()));
+                            // tip_amount_piconero = tip * amount
+                            let tip_amount_piconero =
+                                tip.saturating_mul(Decimal::from(amount.as_pico()));
 
                             let tip_amount = monero::Amount::from_piconero(
                                 // We floor the amount (prefer lower tip)
                                 tip_amount_piconero
                                     .floor()
                                     .to_u64()
-                                    .context("Developer tip amount overflow")?
+                                    .context("Developer tip amount overflow")?,
                             );
 
                             vec![(address, amount), (tip_address, tip_amount.into())]

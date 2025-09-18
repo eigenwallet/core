@@ -1942,20 +1942,24 @@ impl FfiWallet {
 
     /// Create a pending transaction that spends to multiple destinations without publishing it.
     /// Returns the pending transaction that can be inspected before publishing.
+    /// 
+    /// Destinations with zero amount are filtered out.
     fn create_pending_transaction_multi_dest(
         &mut self,
         destinations: &[(monero::Address, monero::Amount)],
     ) -> anyhow::Result<PendingTransaction> {
+        // Filter out any destinations with zero amount
+        let destinations = destinations.iter().filter(|(_, amount)| amount.as_pico() > 0).collect::<Vec<_>>();
+
         // Build a C++ vector of destination addresses
         let mut cxx_addrs: UniquePtr<CxxVector<CxxString>> = CxxVector::<CxxString>::new();
-        for (address, _) in destinations {
-            let_cxx_string!(s = address.to_string());
-            ffi::vector_string_push_back(cxx_addrs.pin_mut(), &s);
-        }
 
         // Build a C++ vector of amounts
         let mut cxx_amounts: UniquePtr<CxxVector<u64>> = CxxVector::<u64>::new();
-        for (_, amount) in destinations {
+
+        for (address, amount) in destinations {
+            let_cxx_string!(s = address.to_string());
+            ffi::vector_string_push_back(cxx_addrs.pin_mut(), &s);
             cxx_amounts.pin_mut().push(amount.as_pico());
         }
 
