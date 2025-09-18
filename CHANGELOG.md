@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.16] - 2025-09-18
+
+## [3.0.0-beta.15] - 2025-09-18
+
+## [3.0.0-beta.14] - 2025-09-17
+
+- ASB: require Monero wallet to be fully synchronized before providing quotes
+- ORCHESTRATOR: Allow re-generating `docker-compose.yml` while preserving the asb config (`config.toml`). If you've ran the `orchestrator` before you can download a newer version, run it and an updated `docker-compose.yml` will be generated (overwriting the previous file). All data and configuration options will be preserved as they are stored inside the Docker volumes and the `config.toml` file.
 - GUI + CLI: Fix an issue where it'd take a long time to redeem the Monero. We did not properly skip the block scanning.
+- GUI + CLI: Assume Monero double spend safety after 22 instead of after 12 blocks given the recent large re-org attacks
+- ORCHESTRATOR: Change exposed mainnet port from `9839` to `9939`
 
 ## [3.0.0-beta.11] - 2025-08-20
 
@@ -647,7 +657,12 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.16...HEAD
+[3.0.0-beta.16]: https://github.com/eigenwallet/core/compare/3.0.0-beta.15...3.0.0-beta.16
+[3.0.0-beta.15]: https://github.com/eigenwallet/core/compare/3.0.0-beta.14...3.0.0-beta.15
+[3.0.0-beta.14]: https://github.com/eigenwallet/core/compare/3.0.0-beta.13...3.0.0-beta.14
+[3.0.0-beta.13]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...3.0.0-beta.13
+[3.0.0-beta.12]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...3.0.0-beta.12
 [3.0.0-beta.12]: https://github.com/eigenwallet/core/compare/3.0.0-beta.11...3.0.0-beta.12
 [3.0.0-beta.11]: https://github.com/eigenwallet/core/compare/3.0.0-beta.10...3.0.0-beta.11
 [3.0.0-beta.10]: https://github.com/eigenwallet/core/compare/3.0.0-beta.9...3.0.0-beta.10

@@ -24,19 +24,23 @@ jobs:
             host: ubuntu-22.04
             archive_extension: tar
             do_smoke_test: true
+            ext: ""
           - target: aarch64-apple-darwin
             host: macos-latest
             archive_extension: tar
             do_smoke_test: true
+            ext: ""
           - target: x86_64-apple-darwin
             host: macos-13
             archive_extension: tar
             do_smoke_test: true
+            ext: ""
           # Once Windows works again, uncomment
           - target: x86_64-pc-windows-gnu
             host: ubuntu-22.04
             archive_extension: zip
             do_smoke_test: false
+            ext: ".exe"
 
         bin:
           - name: swap
@@ -64,23 +68,17 @@ jobs:
           target: ${{ matrix.target.target }}
 
       - name: Build ${{ matrix.bin.name }} in release mode
+        shell: bash
         run: |
           set -euo pipefail
-          json="$(mktemp)"
 
           cargo build \
             --bin "${{ matrix.bin.name }}" \
             --target "${{ matrix.target.target }}" \
-            --release \
-            --message-format=json > "$json"
+            --release
 
-          BIN_PATH="$(jq -re '
-            select(.reason=="compiler-artifact")
-            | select(.target.kind[]=="bin")
-            | .executable
-          ' "$json" | tail -n1)"
-
-          echo "BIN_PATH=$BIN_PATH" >> "$GITHUB_ENV"
+          BIN_DIR="target/${{ matrix.target.target }}/release"
+          echo "BIN_PATH=$BIN_DIR/${{ matrix.bin.name }}${{ matrix.target.ext }}" >> "$GITHUB_ENV"
 
       - name: Smoke test the binary
         if: ${{ matrix.target.do_smoke_test }}
@@ -127,6 +125,65 @@ jobs:
         run: |
           zip ${{ steps.create-archive-name.outputs.archive }} -j ${{ env.BIN_PATH }}
 
+      - name: Install GnuPG (macOS)
+        if: github.event_name == 'release' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install gnupg
+
+      - name: Install GnuPG (Linux)
+        if: github.event_name == 'release' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gnupg
+
+      - name: Import GPG private key
+        if: github.event_name == 'release'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
+            echo "GPG_PRIVATE_KEY secret is not set." >&2
+            exit 1
+          fi
+
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+
+          # Allow loopback pinentry when passphrase is provided
+          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
+          echo "use-agent" >> "$GNUPGHOME/gpg.conf"
+          gpgconf --reload gpg-agent || true
+
+          # Import ASCII-armored or binary private key material
+          printf "%s" "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          # Grab the first secret key fingerprint and expose it to later steps
+          FPR="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          if [[ -z "$FPR" ]]; then
+            echo "Failed to import a signing key." >&2
+            exit 1
+          fi
+
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "GPG_FPR=$FPR" >> "$GITHUB_ENV"
+
+      - name: Sign archive with GPG
+        if: github.event_name == 'release'
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="${{ steps.create-archive-name.outputs.archive }}"
+
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+                -u "$GPG_FPR" --armor --output "${ARCHIVE}.asc" --detach-sign "$ARCHIVE"
+
       - name: Upload archive
         if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1.0.2
@@ -137,6 +194,17 @@ jobs:
           asset_path: ./${{ steps.create-archive-name.outputs.archive }}
           asset_name: ${{ steps.create-archive-name.outputs.archive }}
           asset_content_type: application/gzip
+
+      - name: Upload archive signature (.asc)
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./${{ steps.create-archive-name.outputs.archive }}.asc
+          asset_name: ${{ steps.create-archive-name.outputs.archive }}.asc
+          asset_content_type: application/pgp-signature
 
   build_and_push_docker:
     name: Build and Push Docker Image
