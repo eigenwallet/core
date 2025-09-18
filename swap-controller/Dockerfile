@@ -12,6 +12,14 @@ RUN cargo build --locked --bin asb-controller --release
 # Latest Debian Bookworm image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM debian:bookworm@sha256:b6507e340c43553136f5078284c8c68d86ec8262b1724dde73c325e8d3dcdeba AS runner
 
+# Install native root certificates
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && \
+    apt-get install -y ca-certificates && \
+    update-ca-certificates
+
 COPY --from=builder /build/target/release/asb-controller /usr/local/bin/asb-controller
 
 ENTRYPOINT ["/usr/local/bin/asb-controller"]

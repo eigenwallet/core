@@ -93,6 +93,14 @@ RUN cargo build --release --locked -vv -p swap-controller --bin=asb-controller
 # Latest Ubuntu 24.04 image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS runner
 
+# Install native root certificates
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && \
+    apt-get install -y ca-certificates && \
+    update-ca-certificates
+
 COPY --from=builder /target/release/asb /bin/asb
 COPY --from=builder /target/release/asb-controller /bin/asb-controller
 
