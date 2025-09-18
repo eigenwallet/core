@@ -64,7 +64,7 @@ async fn next_state<LR>(
     bitcoin_wallet: &bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
-    developer_tip: Option<Decimal>,
+    developer_tip: Option<(Decimal, ::monero::Address)>,
     mut rate_service: LR,
 ) -> Result<AliceState>
 where
@@ -667,25 +667,23 @@ pub fn is_complete(state: &AliceState) -> bool {
 fn build_transfer_destinations(
     lock_address: ::monero::Address,
     lock_amount: ::monero::Amount,
-    developer_tip: Option<rust_decimal::Decimal>,
+    developer_tip: Option<(rust_decimal::Decimal, ::monero::Address)>,
 ) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
     match developer_tip {
         // If the user did not configure a developer tip,
         // we will only lock the funds to multi-sig address
         None => Ok(vec![(lock_address, lock_amount)]),
-        Some(tip) if tip == Decimal::ZERO => Ok(vec![(lock_address, lock_amount)]),
+        Some((tip_percentage, _)) if tip_percentage == Decimal::ZERO => {
+            Ok(vec![(lock_address, lock_amount)])
+        }
         // If the user configured a developer tip,
         // we add both the multi-sig address and the developer tip address to the destinations
-        Some(tip) => {
+        Some((tip_percentage, tip_address)) => {
             use rust_decimal::prelude::ToPrimitive;
-
-            let tip_address =
-                ::monero::Address::from_str(swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS)
-                    .context("Failed to parse developer tip address")?;
 
             // tip_amount_piconero = tip * amount
             let tip_amount_piconero =
-                tip.saturating_mul(rust_decimal::Decimal::from(lock_amount.as_pico()));
+                tip_percentage.saturating_mul(rust_decimal::Decimal::from(lock_amount.as_pico()));
 
             let tip_amount_piconero = tip_amount_piconero
                 .floor()

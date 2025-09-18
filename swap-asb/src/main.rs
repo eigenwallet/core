@@ -20,6 +20,7 @@ use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::convert::TryInto;
 use std::env;
+use std::str::FromStr;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
@@ -285,7 +286,15 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
-                config.maker.developer_tip,
+                config.maker.developer_tip.map(|tip| {
+                    (
+                        tip,
+                        monero::Address::from_str(
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS,
+                        )
+                        .expect("Hardcoded developer tip address to be valid"),
+                    )
+                }),
             )
             .unwrap();
 

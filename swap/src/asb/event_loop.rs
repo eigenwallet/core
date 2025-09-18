@@ -46,7 +46,7 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
-    developer_tip: Option<Decimal>,
+    developer_tip: Option<(Decimal, ::monero::Address)>,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -137,7 +137,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
-        developer_tip: Option<Decimal>,
+        developer_tip: Option<(Decimal, ::monero::Address)>,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
