@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogContentText,
@@ -12,6 +11,8 @@ import {
   Box,
   Link,
 } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
 import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
 import { check, Update, DownloadEvent } from "@tauri-apps/plugin-updater";
 import { useSnackbar } from "notistack";
@@ -118,12 +119,13 @@ export default function UpdaterDialog() {
     : 0;
 
   return (
-    <Dialog
+    <MobileDialog
       fullWidth
       maxWidth="sm"
       open={availableUpdate?.available}
       onClose={hideNotification}
     >
+      <MobileDialogHeader title="Update Available" onClose={hideNotification} />
       <DialogTitle>Update Available</DialogTitle>
       <DialogContent>
         <DialogContentText>
@@ -186,6 +188,6 @@ export default function UpdaterDialog() {
           {isDownloading ? "DOWNLOADING..." : "INSTALL UPDATE"}
         </Button>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }

@@ -11,7 +11,7 @@ import {
   isBobStateNamePossiblyCancellableSwap,
   isBobStateNamePossiblyRefundableSwap,
 } from "models/tauriModelExt";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { resumeSwap, suspendCurrentSwap } from "renderer/rpc";
 import {
   useIsSpecificSwapRunning,

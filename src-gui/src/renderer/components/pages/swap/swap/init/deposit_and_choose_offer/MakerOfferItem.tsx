@@ -5,7 +5,7 @@ import {
   MoneroSatsExchangeRate,
   SatsAmount,
 } from "renderer/components/other/Units";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";

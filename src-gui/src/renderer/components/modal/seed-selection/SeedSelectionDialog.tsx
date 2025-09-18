@@ -1,5 +1,4 @@
 import {
-  Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
@@ -19,11 +18,13 @@ import {
   Card,
   CardContent,
 } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
 import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { open } from "@tauri-apps/plugin-dialog";
 import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
@@ -117,7 +118,7 @@ export default function SeedSelectionDialog() {
         : false;
 
   return (
-    <Dialog
+    <MobileDialog
       open={true}
       maxWidth="sm"
       fullWidth
@@ -129,6 +130,7 @@ export default function SeedSelectionDialog() {
         },
       }}
     >
+      <MobileDialogHeader title="Choose a wallet" onClose={() => {}} />
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
           {/* Open existing wallet option */}
@@ -378,6 +380,6 @@ export default function SeedSelectionDialog() {
           Continue
         </PromiseInvokeButton>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }

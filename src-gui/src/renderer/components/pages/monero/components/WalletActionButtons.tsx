@@ -1,33 +1,25 @@
 import {
   Box,
-  Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   ListItemIcon,
   Menu,
   MenuItem,
-  TextField,
   Typography,
 } from "@mui/material";
 import {
-  Send as SendIcon,
   SwapHoriz as SwapIcon,
   Restore as RestoreIcon,
   MoreHoriz as MoreHorizIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
-import { setMoneroRestoreHeight } from "renderer/rpc";
-import SendTransactionModal from "../SendTransactionModal";
 import { useNavigate } from "react-router-dom";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
 import SeedPhraseButton from "../SeedPhraseButton";
 import SeedPhraseModal from "../SeedPhraseModal";
+import SendTransactionModal from "../SendTransactionModal";
 import DfxButton from "./DFXWidget";
+import SendButton from "./Send/SendButton";
 import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
@@ -81,13 +73,7 @@ export default function WalletActionButtons({
           alignItems: "center",
         }}
       >
-        <Chip
-          icon={<SendIcon />}
-          label="Send"
-          variant="button"
-          clickable
-          onClick={() => setSendDialogOpen(true)}
-        />
+        <SendButton balance={balance}/>
         <Chip
           onClick={() => navigate("/swap")}
           icon={<SwapIcon />}
