@@ -13406,7 +13406,7 @@ dependencies = [
 
 [[package]]
 name = "swap"
-version = "3.0.0-beta.15"
+version = "3.0.0-beta.16"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -16575,7 +16575,7 @@ dependencies = [
 
 [[package]]
 name = "unstoppableswap-gui-rs"
-version = "3.0.0-beta.15"
+version = "3.0.0-beta.16"
 dependencies = [
  "anyhow",
  "dfx-swiss-sdk",
