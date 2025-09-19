@@ -297,16 +297,27 @@ copy_dlls() {
 }
 
 setup_path() {
+    export MINGW_TOOLCHAIN_DIR="$PREFIX/bin"
+
     # Add to PATH only if not already present
     if [[ ":$PATH:" != *":$PREFIX/bin:"* ]]; then
-        export PATH="$PREFIX/bin:$PATH"
+        export PATH="$MINGW_TOOLCHAIN_DIR:$PATH"
     fi
 
-    # add path to bashrc
+    # When running in GitHub Actions, export the toolchain dir for later steps
+    if [ -n "${GITHUB_ENV:-}" ]; then
+        echo "MINGW_TOOLCHAIN_DIR=$MINGW_TOOLCHAIN_DIR" >> "$GITHUB_ENV"
+    fi
+
+    # Also add to GITHUB_PATH for GitHub Actions
+    if [ -n "${GITHUB_PATH:-}" ]; then
+        echo "$PREFIX/bin" >> "$GITHUB_PATH"
+    fi
+
+    # Add path to .bashrc
     if ! grep -q "export PATH=\"$PREFIX/bin:\$PATH\"" ~/.bashrc; then
         echo "export PATH=\"$PREFIX/bin:\$PATH\"" >> ~/.bashrc
     fi
-
 }
 
 verify_installation() {
