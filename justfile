@@ -73,7 +73,7 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:

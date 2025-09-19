@@ -1,5 +1,8 @@
 {
+  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-capability",
+  "description": "Capability for desktop windows",
+  "windows": ["main"],
   "platforms": ["macOS", "windows", "linux"],
-  "permissions": ["cli:default", "cli:allow-cli-matches"]
+  "permissions": ["core:default", "cli:default", "cli:allow-cli-matches"]
 }

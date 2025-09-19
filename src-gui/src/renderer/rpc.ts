@@ -221,6 +221,8 @@ export async function buyXmr(
     providerToConcatenatedMultiAddr(maker),
   );
 
+  console.log(`Starting buyXmr flow with these potential sellers: ${sellers}`);
+
   const address_pool: LabeledMoneroAddress[] = [];
   if (donation_percentage !== false) {
     const donation_address = isTestnet()

@@ -12,6 +12,7 @@ use crate::protocol::alice::{AliceState, State3, Swap};
 use crate::protocol::{Database, State};
 use crate::{bitcoin, monero};
 use anyhow::{anyhow, Context, Result};
+use bdk_chain::rusqlite::ffi::SQLITE_TRACE_CLOSE;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -22,10 +23,12 @@ use moka::future::Cache;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
 use swap_feed::LatestRate;
+use tokio::fs::{write, File};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -362,6 +365,10 @@ where
                             let swap_peer = self.db.get_peer_id(swap_id).await;
                             let swap_state = self.db.get_state(swap_id).await;
 
+                            // Todo: remove after testing
+                            self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::UnknownSwap });
+                            continue;
+
                             // If we do not find the swap in the database, or we do not have a peer-id for it, reject
                             let (swap_peer, swap_state) = match (swap_peer, swap_state) {
                                 (Ok(peer), Ok(state)) => (peer, state),
@@ -472,9 +479,19 @@ where
                         SwarmEvent::ConnectionClosed { peer_id: peer, num_established: 0, endpoint, cause: None, connection_id } => {
                             tracing::trace!(%peer, address = %endpoint.get_remote_address(), %connection_id,  "Successfully closed connection");
                         }
-                        SwarmEvent::NewListenAddr{address, ..} => {
+                        SwarmEvent::NewListenAddr{address, .. } => {
                             let multiaddr = format!("{address}/p2p/{}", self.swarm.local_peer_id());
                             tracing::info!(%address, %multiaddr, "New listen address reported");
+
+                            if let Ok(path) = std::env::var("ASB_DEV_ADDR_OUTPUT_PATH") {
+                                if !multiaddr.contains("/ip4/127.0.0.1/") { continue; }
+                                let Ok(mut file) = std::fs::File::create(&path) else { continue; };
+                                let Ok(_) = writeln!(&mut file, "VITE_TESTNET_STUB_PROVIDER_ADDRESS={multiaddr}") else {
+                                    tracing::error!("Couldn't write multiaddr to `{path}`");
+                                    continue;
+                                };
+                                tracing::info!("Wrote multiaddr to `{path}`");
+                            }
                         }
                         _ => {}
                     }
