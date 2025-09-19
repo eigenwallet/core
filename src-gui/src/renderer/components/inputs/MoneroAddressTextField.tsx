@@ -10,7 +10,7 @@ import {
   TextField,
 } from "@mui/material";
 import { TextFieldProps } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useState, forwardRef } from "react";
 import { getMoneroAddresses } from "renderer/rpc";
 import { isTestnet } from "store/config";
 import { isXmrAddressValid } from "utils/conversionUtils";
@@ -26,75 +26,82 @@ type MoneroAddressTextFieldProps = TextFieldProps & {
   helperText?: string;
 };
 
-export default function MoneroAddressTextField({
-  address,
-  onAddressChange,
-  onAddressValidityChange,
-  helperText,
-  ...props
-}: MoneroAddressTextFieldProps) {
-  const [addresses, setAddresses] = useState<string[]>([]);
-  const [showDialog, setShowDialog] = useState(false);
+const MoneroAddressTextField = forwardRef<
+  HTMLInputElement,
+  MoneroAddressTextFieldProps
+>(
+  (
+    { address, onAddressChange, onAddressValidityChange, helperText, ...props },
+    ref,
+  ) => {
+    const [addresses, setAddresses] = useState<string[]>([]);
+    const [showDialog, setShowDialog] = useState(false);
 
-  // Validation
-  const placeholder = isTestnet() ? "59McWTPGc745..." : "888tNkZrPN6J...";
-  const errorText = isXmrAddressValid(address, isTestnet())
-    ? null
-    : "Not a valid Monero address";
+    // Validation
+    const placeholder = isTestnet() ? "59McWTPGc745..." : "888tNkZrPN6J...";
+    const errorText = isXmrAddressValid(address, isTestnet())
+      ? null
+      : "Not a valid Monero address";
 
-  // Effects
-  useEffect(() => {
-    onAddressValidityChange(!errorText);
-  }, [address, onAddressValidityChange, errorText]);
+    // Effects
+    useEffect(() => {
+      onAddressValidityChange(!errorText);
+    }, [address, onAddressValidityChange, errorText]);
 
-  useEffect(() => {
-    const fetchAddresses = async () => {
-      const response = await getMoneroAddresses();
-      setAddresses(response.addresses);
+    useEffect(() => {
+      const fetchAddresses = async () => {
+        const response = await getMoneroAddresses();
+        setAddresses(response.addresses);
+      };
+      fetchAddresses();
+
+      const interval = setInterval(fetchAddresses, 5000);
+      return () => clearInterval(interval);
+    }, []);
+
+    // Event handlers
+    const handleClose = () => setShowDialog(false);
+    const handleAddressSelect = (selectedAddress: string) => {
+      onAddressChange(selectedAddress);
+      handleClose();
     };
-    fetchAddresses();
 
-    const interval = setInterval(fetchAddresses, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    return (
+      <Box>
+        <TextField
+          ref={ref}
+          value={address}
+          onChange={(e) => onAddressChange(e.target.value)}
+          error={!!errorText && address.length > 0}
+          helperText={address.length > 0 ? errorText || helperText : helperText}
+          placeholder={placeholder}
+          variant="outlined"
+          slotProps={{
+            input: {
+              endAdornment: addresses?.length > 0 && (
+                <IconButton onClick={() => setShowDialog(true)} size="small">
+                  <ImportContactsIcon />
+                </IconButton>
+              ),
+            },
+          }}
+          {...props}
+        />
 
-  // Event handlers
-  const handleClose = () => setShowDialog(false);
-  const handleAddressSelect = (selectedAddress: string) => {
-    onAddressChange(selectedAddress);
-    handleClose();
-  };
+        <RecentlyUsedAddressesDialog
+          open={showDialog}
+          onClose={handleClose}
+          addresses={addresses}
+          onAddressSelect={handleAddressSelect}
+        />
+      </Box>
+    );
+  },
+);
 
-  return (
-    <Box>
-      <TextField
-        value={address}
-        onChange={(e) => onAddressChange(e.target.value)}
-        error={!!errorText && address.length > 0}
-        helperText={address.length > 0 ? errorText || helperText : helperText}
-        placeholder={placeholder}
-        variant="outlined"
-        slotProps={{
-          input: {
-            endAdornment: addresses?.length > 0 && (
-              <IconButton onClick={() => setShowDialog(true)} size="small">
-                <ImportContactsIcon />
-              </IconButton>
-            ),
-          },
-        }}
-        {...props}
-      />
+MoneroAddressTextField.displayName = "MoneroAddressTextField";
 
-      <RecentlyUsedAddressesDialog
-        open={showDialog}
-        onClose={handleClose}
-        addresses={addresses}
-        onAddressSelect={handleAddressSelect}
-      />
-    </Box>
-  );
-}
+export default MoneroAddressTextField;
 
 interface RecentlyUsedAddressesDialogProps {
   open: boolean;
