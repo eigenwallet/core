@@ -26,7 +26,7 @@ export default function SeedPhraseButton({
   };
 
   return (
-    <MenuItem component="div">
+    <MenuItem>
       <PromiseInvokeButton
         onInvoke={getMoneroSeedAndRestoreHeight}
         onSuccess={handleSeedPhraseSuccess}

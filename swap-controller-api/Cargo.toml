@@ -8,6 +8,10 @@ bitcoin = { workspace = true }
 jsonrpsee = { workspace = true, features = ["macros", "server", "client-core", "http-client"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+curve25519-dalek = { workspace = true }
+monero = { workspace = true }
+swap-serde = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

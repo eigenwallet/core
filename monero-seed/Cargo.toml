@@ -24,7 +24,7 @@ curve25519-dalek = { version = "4", default-features = false, features = ["alloc
 
 [dev-dependencies]
 hex = { version = "0.4", default-features = false, features = ["std"] }
-monero-oxide = { git = "https://github.com/monero-oxide/monero-oxide", default-features = false, features = ["std"] }
+monero-oxide = { workspace = true }
 
 [features]
 std = [

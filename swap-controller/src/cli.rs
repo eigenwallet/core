@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(name = "asb-controller")]
@@ -33,4 +34,6 @@ pub enum Cmd {
     ActiveConnections,
     /// Get list of swaps
     GetSwaps,
+    /// Get the secret key needed for manual cooperative redeem
+    CooperativeRedeemKey { swap_id: Uuid },
 }
