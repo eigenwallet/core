@@ -536,7 +536,7 @@ impl WalletHandle {
     }
 
     /// Check if the wallet is synchronized.
-    async fn synchronized(&self) -> bool {
+    pub async fn synchronized(&self) -> bool {
         self.call(move |wallet| wallet.synchronized()).await
     }
 

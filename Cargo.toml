@@ -82,11 +82,19 @@ dialoguer = "0.11"
 
 # Build dependencies
 vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
+vergen-git2 = { version = "1", features = ["build"] }
 
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51
 jsonrpc_client = { git = "https://github.com/delta1/rust-jsonrpc-client.git", rev = "3b6081697cd616c952acb9c2f02d546357d35506" }
 monero = { git = "https://github.com/comit-network/monero-rs", rev = "818f38b" }
 
+# Force up to date version of crunchy that fixes linux->windows cross compilation
+crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6ba89ccfc72ccb24cc4a4ac6d9c6272" }
+
 [workspace.lints]
 rust.unused_crate_dependencies = "warn"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"

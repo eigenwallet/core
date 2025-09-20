@@ -1,13 +1,41 @@
-# Stack size for executables - 12MB
-[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))']
-rustflags = ["-C", "link-arg=-Wl,-z,stack-size=12582912"]
-
-# [target.'cfg(target_os = "macos")']
-# rustflags = ["-C", "link-arg=-Wl,-stack_size,0xbfffff"]
-
-[target.'cfg(target_os = "windows")']
-rustflags = ["-C", "link-args=/STACK:12582912"]
-
 # Cross-compilation support for armv7
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"
+
+# Windows defaults to smaller stack sizes which isn't enough
+# For the MSVC tool-chain
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "link-arg=/STACK:8388608"]
+
+# For the GNU/MinGW tool-chain
+[target.'cfg(all(windows, target_env = "gnu"))']
+linker = "x86_64-w64-mingw32-g++" # Use g++ driver so -lstdc++ gets pulled in automatically
+rustflags = [
+  "-C",
+  "link-arg=-Wl,--stack,8388608",
+  "-C",
+  "link-arg=-ladvapi32",
+  "-C",
+  "link-arg=-lrpcrt4",
+  "-C",
+  "link-arg=-lole32",
+  "-C",
+  "link-arg=-lwinhttp",
+  "-C",
+  "link-arg=-lcrypt32",
+  "-C",
+  "link-arg=-static-libgcc",
+  "-C",
+  "link-arg=-static-libstdc++",
+]
+
+[target.aarch64-linux-android]
+linker = "/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+ar = "/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+
+rustflags = [
+  "-Lnative=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/18/lib/linux",
+  "-lstatic=clang_rt.builtins-aarch64-android",
+  #  "-Lnative=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android",
+  #  "-lstatic=c++abi",
+]

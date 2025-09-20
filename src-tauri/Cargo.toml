@@ -1,6 +1,6 @@
 [package]
 name = "unstoppableswap-gui-rs"
-version = "3.0.0-beta.12"
+version = "3.0.0-beta.16"
 authors = ["binarybaron", "einliterflasche", "unstoppableswap"]
 edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -9,10 +9,10 @@ description = "GUI for XMR<>BTC Atomic Swaps written in Rust"
 
 [lib]
 name = "unstoppableswap_gui_rs_lib"
-crate-type = ["lib", "staticlib"]
+crate-type = ["rlib", "staticlib", "cdylib"]
 
 [build-dependencies]
-tauri-build = { version = "^2.0.0", features = ["config-json5"] }
+tauri-build = { version = "2.*", features = ["config-json5"] }
 
 [dependencies]
 anyhow = { workspace = true }
@@ -21,21 +21,28 @@ rustls = { version = "0.23.26", default-features = false, features = ["ring"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 swap = { path = "../swap", features = ["tauri"] }
-tauri = { version = "^2.0.0", features = ["config-json5"] }
-tauri-plugin-clipboard-manager = "^2.0.0"
-tauri-plugin-dialog = "2.2.2"
-tauri-plugin-opener = "^2.0.0"
-tauri-plugin-process = "^2.0.0"
-tauri-plugin-shell = "^2.0.0"
-tauri-plugin-store = "^2.0.0"
-tauri-plugin-updater = "^2.0.0"
+sysinfo = "=0.32.1"
+tauri = { version = "2.*", features = ["config-json5"] }
+tauri-cli = "2.*"
+tauri-plugin-clipboard-manager = "2.*"
+tauri-plugin-dialog = "2.*"
+tauri-plugin-opener = "2.*"
+tauri-plugin-process = "2.*"
+tauri-plugin-shell = "2.*"
+tauri-plugin-store = "2.*"
+tauri-plugin-updater = "2.*"
 tokio = { workspace = true, features = ["rt"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = { workspace = true }
 uuid = { workspace = true }
-zip = "4.0.0"
+zip = { version = "4.0.0", default-features = false }
 dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs" }
 
+[target.aarch64-linux-android.dependencies]
+openssl = { version = "0.10", features = [
+    "vendored",
+] } # force use of vendored openssl for android
+
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
-tauri-plugin-cli = "^2.0.0"
-tauri-plugin-single-instance = "^2.0.0"
+tauri-plugin-cli = "2.*"
+tauri-plugin-single-instance = "2.*"

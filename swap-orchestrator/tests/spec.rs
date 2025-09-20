@@ -1,9 +1,8 @@
-use std::path::PathBuf;
 use swap_orchestrator::compose::{
-    DockerBuildInput, IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
-    OrchestratorInput, OrchestratorNetworks, OrchestratorPorts, ASB_DATA_DIR,
+    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
+    OrchestratorNetworks, OrchestratorPorts,
 };
-use swap_orchestrator::{asb, electrs, images};
+use swap_orchestrator::images;
 
 #[test]
 fn test_orchestrator_spec_generation() {
@@ -30,11 +29,13 @@ fn test_orchestrator_spec_generation() {
             ),
         },
         directories: OrchestratorDirectories {
-            asb_data_dir: PathBuf::from(ASB_DATA_DIR),
+            asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
         },
     };
 
     let spec = input.to_spec();
 
     println!("{}", spec);
+
+    // TODO: Here we should use the docker binary to verify the compose file
 }

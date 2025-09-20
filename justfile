@@ -7,9 +7,10 @@ help:
 #	just update_submodules
 #	cd monero-sys/monero && make -j8 release
 
-# Clean the Monero C++ Codebase
-clean_monero_cpp:
-	rm -rf monero-sys/monero/
+# Clean the Monero C++ Codebase and build cache
+clean:
+	cargo clean
+	cd monero-sys && rm -rf monero monero_c
 	just update_submodules
 
 # Builds the Rust bindings for Monero
@@ -26,10 +27,10 @@ test-ffi-address:
 
 # Start the Tauri app
 tauri:
-	cd src-tauri && cargo tauri dev --no-watch --verbose -- -- --testnet
+	cd src-tauri && cargo tauri dev --no-watch -- --verbose -- --testnet
 
 tauri-mainnet:
-	cd src-tauri && cargo tauri dev --no-watch
+	cd src-tauri && cargo tauri dev --no-watch -- -vv
 
 # Install the GUI dependencies
 gui_install:
@@ -48,6 +49,9 @@ gui-mainnet:
 # Build the GUI
 gui_build:
         cd src-gui && yarn build
+
+build-gui-windows:
+    cargo tauri build --target x86_64-pc-windows-gnu -- -vv
 
 # Run the Rust tests
 tests:
@@ -115,3 +119,6 @@ prepare_mac_os_brew_dependencies:
 # E.g code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
 code2prompt_single_crate crate:
 	cd {{crate}} && code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
+
+prepare-windows-build:
+    cd dev_scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
