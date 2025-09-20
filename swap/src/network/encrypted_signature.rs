@@ -23,7 +23,7 @@ impl AsRef<str> for EncryptedSignatureProtocol {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Request {
     pub swap_id: Uuid,
-    pub tx_redeem_encsig: crate::bitcoin::EncryptedSignature,
+    pub tx_redeem_encsig: swap_core::bitcoin::EncryptedSignature,
 }
 
 pub fn alice() -> Behaviour {

@@ -16,7 +16,6 @@ use tokio::{
 };
 
 use tokio_rustls::rustls::{
-    self,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
     DigitallySignedStruct, Error as TlsError, SignatureScheme,

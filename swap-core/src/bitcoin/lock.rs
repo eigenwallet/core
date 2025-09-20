@@ -1,16 +1,12 @@
-use crate::bitcoin::wallet::Watchable;
-use crate::bitcoin::{
-    build_shared_output_descriptor, Address, Amount, PublicKey, Transaction, Wallet,
-};
+use crate::bitcoin::{build_shared_output_descriptor, Address, Amount, PublicKey, Transaction};
 use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 use ::bitcoin::{OutPoint, TxIn, TxOut, Txid};
 use anyhow::{bail, Context, Result};
 use bdk_wallet::miniscript::Descriptor;
 use bdk_wallet::psbt::PsbtUtils;
 use bitcoin::{locktime::absolute::LockTime as PackedLockTime, ScriptBuf, Sequence};
+use bitcoin_wallet::primitives::Watchable;
 use serde::{Deserialize, Serialize};
-
-use super::wallet::EstimateFeeRate;
 
 const SCRIPT_SIZE: usize = 34;
 const TX_LOCK_WEIGHT: usize = 485;
@@ -23,10 +19,7 @@ pub struct TxLock {
 
 impl TxLock {
     pub async fn new(
-        wallet: &Wallet<
-            bdk_wallet::rusqlite::Connection,
-            impl EstimateFeeRate + Send + Sync + 'static,
-        >,
+        wallet: &dyn bitcoin_wallet::BitcoinWallet,
         amount: Amount,
         spending_fee: Amount,
         A: PublicKey,
@@ -286,10 +279,7 @@ mod tests {
     async fn bob_make_psbt(
         A: PublicKey,
         B: PublicKey,
-        wallet: &Wallet<
-            bdk_wallet::rusqlite::Connection,
-            impl EstimateFeeRate + Send + Sync + 'static,
-        >,
+        wallet: &dyn bitcoin_wallet::BitcoinWallet,
         amount: Amount,
         spending_fee: Amount,
     ) -> PartiallySignedTransaction {

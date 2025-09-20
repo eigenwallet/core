@@ -13,7 +13,6 @@ clap = { version = "4", features = ["derive"] }
 jsonrpsee = { workspace = true, features = ["client-core", "http-client"] }
 monero = { workspace = true }
 rustyline = "17.0.0"
-serde_json = { workspace = true }
 shell-words = "1.1"
 swap-controller-api = { path = "../swap-controller-api" }
 tokio = { workspace = true }
