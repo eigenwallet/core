@@ -90,6 +90,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set env variables
+        uses: ./.github/actions/set-monero-env
+
       - name: Publish Release
         uses: crabnebula-dev/cloud-release@v0
         with:
