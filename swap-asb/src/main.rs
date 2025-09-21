@@ -287,7 +287,11 @@ pub async fn main() -> Result<()> {
                     (
                         tip,
                         monero::Address::from_str(
-                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS,
+                            match env_config.monero_network {
+                                monero::Network::Mainnet => swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET,
+                                monero::Network::Stagenet => swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET,
+                                monero::Network::Testnet => panic!("Testnet is not supported"),
+                            },
                         )
                         .expect("Hardcoded developer tip address to be valid"),
                     )
