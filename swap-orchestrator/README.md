@@ -6,33 +6,36 @@ The `orchestrator` tool helps you setup a secure, reliable and production enviro
 
 Ensure you have [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) installed on your machine.
 
-If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section or run the commands below if you're on a Linux x86 server. It'll download the latest archive from Github, extract the binary and make it executable.
+If you're not compiling the `orchestrator` from source you can grab the latest [release](https://github.com/eigenwallet/core/releases) from the download section.
 
-Download the archive which contains the pre-compiled binary:
+> [!TIP]
+> **Linux x86_64 quick install**
+> 
+> Run the commands below if you're on a Linux x86 server.
+> It'll download the latest archive from Github, extract the binary and make it executable.
+> You can also run this to update a pre-existing `orchestrator` install.
+> 
+> Download the archive which contains the pre-compiled binary:
+>    ```bash
+>    name="$(
+>      curl -fsSL https://api.github.com/repos/eigenwallet/core/releases/latest \
+>      | grep -oE '"name":\s*"orchestrator_[^"]*_Linux_x86_64\.tar"' \
+>      | head -n1 | cut -d'"' -f4
+>    )"
+>    curl -fL -o "orchestrator_linux.tar" "https://github.com/eigenwallet/core/releases/latest/download/$name"
+>    ```
+>
+> Extract the archive to get the `orchestrator` binary
+>    ```bash
+>    tar -xf ./orchestrator_linux.tar
+>    ```
+>
+> Make the binary executable
+>    ```bash
+>    chmod +x orchestrator
+>    ```
 
-```bash
-wget "$(
-  wget -qO- https://api.github.com/repos/eigenwallet/core/releases/latest \
-  | grep -oE '"browser_download_url":\s*"[^"]*orchestrator_[^"]*_Linux_x86_64\.tar"' \
-  | head -n1 | cut -d'"' -f4
-)"
-```
-
-Extract the archive to get the `orchestrator` binary
-
-```bash
-tar -xf orchestrator*.tar
-```
-
-Make the binary executable
-
-```bash
-chmod +x orchestrator
-```
-
-Run the command below to start the wizard.
-
-It’ll guide you through a bunch of questions to generate the `config.toml` file and the `docker-compose.yml` file based on your needs. You can always modify the `config.toml` later on to modify specific things about your `asb` like the minimum swap amount or the configured markup.
+Run the command below to start the wizard. It’ll guide you through a bunch of questions to generate the `config.toml` file and the `docker-compose.yml` file based on your needs. You can always modify the `config.toml` later on to modify specific things about your `asb` like the minimum swap amount or the configured markup.
 
 ```bash
 ./orchestrator
