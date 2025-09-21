@@ -261,7 +261,9 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy).await {
+                            let developer_tip = self.developer_tip.map(|(tip, _)| tip);
+
+                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, developer_tip).await {
                                 Ok(quote_arc) => {
                                     if self.swarm.behaviour_mut().quote.send_response(channel, *quote_arc).is_err() {
                                         tracing::debug!(%peer, "Failed to respond with quote");
@@ -522,6 +524,7 @@ where
         &mut self,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
+        developer_tip: Option<Decimal>,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>> {
         // We use the min and max buy amounts to create a unique key for the cache
         // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
@@ -564,6 +567,7 @@ where
             rate,
             get_unlocked_balance,
             get_reserved_items,
+            developer_tip,
         )
         .await;
 
@@ -800,6 +804,7 @@ mod service {
 mod quote {
     use crate::monero::Amount;
     use anyhow::{anyhow, Context};
+    use rust_decimal::Decimal;
     use std::{sync::Arc, time::Duration};
     use swap_feed::LatestRate;
     use tokio::time::timeout;
@@ -823,6 +828,7 @@ mod quote {
         mut latest_rate: LR,
         get_unlocked_balance: F,
         get_reserved_items: I,
+        developer_tip: Option<Decimal>,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
         LR: LatestRate,
@@ -853,8 +859,11 @@ mod quote {
             .map(|item| item.reserved_monero())
             .collect();
 
-        let unreserved_xmr_balance =
-            unreserved_monero_balance(unlocked_balance, reserved_amounts.into_iter());
+        let unreserved_xmr_balance = unreserved_monero_balance(
+            unlocked_balance,
+            reserved_amounts.into_iter(),
+            developer_tip,
+        );
 
         let max_bitcoin_for_monero = unreserved_xmr_balance
             .max_bitcoin_for_price(ask_price)
@@ -905,15 +914,42 @@ mod quote {
     pub fn unreserved_monero_balance(
         unlocked_balance: Amount,
         reserved_amounts: impl Iterator<Item = Amount>,
+        developer_tip: Option<Decimal>,
     ) -> Amount {
+        use rust_decimal::prelude::ToPrimitive;
+
+        // If a developer tip is configured, we need to account for the fact that
+        // to lock X XMR for a swap, we actually need X * (1 + tip_percentage) XMR
+        // because the tip is sent as an additional output in the same transaction
+
+        // To find how much we can actually use for swaps, we need to solve:
+        //     swap_amount * multiplier <= available_after_reserved
+        // <=> swap_amount <= available_after_reserved / multiplier
+
+        // Calculate the effective multiplier: 1 + tip_percentage
+        let multiplier = Decimal::ONE + developer_tip.unwrap_or(Decimal::ZERO);
+
+        let unlocked_balance_piconero = unlocked_balance.as_piconero_decimal();
+
+        let lockable_balance_piconero = unlocked_balance_piconero / multiplier;
+
         // Get the sum of all the individual reserved amounts
-        let total_reserved = reserved_amounts.fold(Amount::ZERO, |acc, amount| acc + amount);
+        // This is the amount of Monero that is required for ongoing swaps
+        //
+        // Swaps where the Monero hasn't been locked yet but we know we will lock it soon
+        let total_reserved_piconero =
+            reserved_amounts.fold(Amount::ZERO, |acc, amount| acc + amount);
+        let total_reserved_piconero = Decimal::from(total_reserved_piconero.as_piconero());
 
         // Check how much of our unlocked balance is left when we
         // take into account the reserved amounts
-        unlocked_balance
-            .checked_sub(total_reserved)
-            .unwrap_or(Amount::ZERO)
+        let lockable_piconero_after_reserved = lockable_balance_piconero
+            .checked_sub(total_reserved_piconero)
+            .unwrap_or(Decimal::ZERO)
+            .to_u64()
+            .unwrap_or(0);
+
+        Amount::from_piconero(lockable_piconero_after_reserved)
     }
 
     /// Returns the unlocked Monero balance from the wallet
@@ -973,7 +1009,7 @@ mod tests {
         let balance = Amount::from_monero(10.0).unwrap();
         let reserved_amounts = vec![];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
 
         assert_eq!(result, balance);
     }
@@ -986,7 +1022,7 @@ mod tests {
             monero::Amount::from_monero(3.0).unwrap(),
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
 
         let expected = monero::Amount::from_monero(5.0).unwrap();
         assert_eq!(result, expected);
@@ -1000,7 +1036,7 @@ mod tests {
             monero::Amount::from_monero(4.0).unwrap(), // Total reserved > balance
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
 
         // Should return zero when reserved > balance
         assert_eq!(result, monero::Amount::ZERO);
@@ -1014,7 +1050,7 @@ mod tests {
             monero::Amount::from_monero(6.0).unwrap(), // Exactly equals balance
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
 
         assert_eq!(result, monero::Amount::ZERO);
     }
@@ -1024,7 +1060,7 @@ mod tests {
         let balance = monero::Amount::ZERO;
         let reserved_amounts = vec![monero::Amount::from_monero(1.0).unwrap()];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
 
         assert_eq!(result, monero::Amount::ZERO);
     }
@@ -1034,7 +1070,7 @@ mod tests {
         let balance = monero::Amount::from_monero(5.0).unwrap();
         let reserved_amounts: Vec<MockReservedItem> = vec![];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
 
         assert_eq!(result, balance);
     }
@@ -1044,7 +1080,7 @@ mod tests {
         let balance = monero::Amount::from_piconero(1_000_000_000);
         let reserved_amounts = vec![monero::Amount::from_piconero(300_000_000)];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
 
         let expected = monero::Amount::from_piconero(700_000_000);
         assert_eq!(result, expected);
@@ -1064,6 +1100,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await
         .unwrap();
@@ -1094,6 +1131,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await
         .unwrap();
@@ -1119,6 +1157,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await
         .unwrap();
@@ -1142,6 +1181,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await
         .unwrap();
@@ -1170,6 +1210,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await
         .unwrap();
@@ -1192,6 +1233,7 @@ mod tests {
             rate.clone(),
             || async { Err(anyhow::anyhow!("Failed to get balance")) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await;
 
@@ -1216,6 +1258,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await
         .unwrap();

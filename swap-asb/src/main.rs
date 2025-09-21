@@ -176,7 +176,9 @@ pub async fn main() -> Result<()> {
                     tracing::info!(%ratio, "Tipping to the developers is enabled. Thank you for your support!");
                 }
                 None => {
-                    tracing::info!("Not tipping the developers (maker.developer_tip = 0 or not set in config)");
+                    tracing::info!(
+                        "Not tipping the developers (maker.developer_tip = 0 or not set in config)"
+                    );
                 }
             }
 
