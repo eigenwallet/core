@@ -491,10 +491,10 @@ impl WalletHandle {
                 .await
                 .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
-            tracing::error!(error=%error, "Failed to transfer funds to multiple destinations, retrying in {} secs", duration.as_secs());
+            tracing::error!(error=?error, "Failed to transfer funds to multiple destinations, retrying in {} secs", duration.as_secs());
         })
         .await
-        .map_err(|e| anyhow!("Failed to transfer funds to multiple destinations after multiple attempts: {e}"))
+        .map_err(|e| anyhow!("Failed to transfer funds to multiple destinations after multiple attempts: {e:?}"))
     }
 
     /// Sweep all funds to an address.
@@ -506,10 +506,10 @@ impl WalletHandle {
                 .await
                 .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
-            tracing::error!(error=%error, "Failed to sweep funds, retrying in {} secs", duration.as_secs());
+            tracing::error!(error=?error, "Failed to sweep funds, retrying in {} secs", duration.as_secs());
         })
         .await
-        .map_err(|e| anyhow!("Failed to sweep funds after multiple attempts: {e}"))
+        .map_err(|e| anyhow!("Failed to sweep funds after multiple attempts: {e:?}"))
     }
 
     /// Get the seed of the wallet.
