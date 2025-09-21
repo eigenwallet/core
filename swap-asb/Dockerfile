@@ -11,7 +11,8 @@ FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acd
 # The `--mount` allows us to agressively cache this step.
 ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \    apt-get update && \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
     apt-get install -y --allow-change-held-packages \
     autoconf \
     # Left out as we are not compiling for Windows in this Dockerfile
