@@ -172,12 +172,15 @@ pub async fn main() -> Result<()> {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
             match config.maker.developer_tip {
-                Some(ratio) => {
+                Some(ratio) if ratio > Decimal::ZERO => {
                     tracing::info!(%ratio, "Tipping to the developers is enabled. Thank you for your support!");
+                }
+                Some(_) => {
+                    tracing::info!("Not tipping the developers (maker.developer_tip = 0)");
                 }
                 None => {
                     tracing::info!(
-                        "Not tipping the developers (maker.developer_tip = 0 or not set in config)"
+                        "Not tipping the developers (maker.developer_tip = not set in config)"
                     );
                 }
             }
