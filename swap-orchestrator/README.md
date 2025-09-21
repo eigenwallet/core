@@ -41,14 +41,9 @@ Run the command below to start the wizard. It’ll guide you through a bunch of 
 ./orchestrator
 ```
 
-```bash
-cargo run --bin orchestrator
-```
-
 To start the environment, run a command [such as](https://docs.docker.com/reference/cli/docker/compose/up/):
-
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 To view logs, run commands [such as](https://docs.docker.com/reference/cli/docker/compose/logs/):
