@@ -713,26 +713,26 @@ pub(crate) fn has_already_processed_enc_sig(state: &AliceState) -> bool {
 mod tests {
     #[test]
     fn test_build_transfer_destinations_without_tip() {
-        todo!()
+        todo!("implement once unit tests compile again")
     }
 
     #[test]
     fn test_build_transfer_destinations_with_tip() {
-        todo!()
+        todo!("implement once unit tests compile again")
     }
 
     #[test]
     fn test_build_transfer_destinations_with_small_tip() {
-        todo!()
+        todo!("implement once unit tests compile again")
     }
 
     #[test]
     fn test_build_transfer_destinations_with_zero_tip() {
-        todo!()
+        todo!("implement once unit tests compile again")
     }
 
     #[test]
     fn test_build_transfer_destinations_with_fractional_tip() {
-        todo!()
+        todo!("implement once unit tests compile again")
     }
 }

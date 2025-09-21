@@ -283,20 +283,24 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
-                config.maker.developer_tip.map(|tip| {
-                    (
-                        tip,
-                        monero::Address::from_str(match env_config.monero_network {
-                            monero::Network::Mainnet => {
-                                swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
-                            }
-                            monero::Network::Stagenet => {
-                                swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
-                            }
-                            monero::Network::Testnet => panic!("Testnet is not supported"),
-                        })
-                        .expect("Hardcoded developer tip address to be valid"),
-                    )
+                config.maker.developer_tip.map(|tip_ratio| {
+                    let tip_address = monero::Address::from_str(match env_config.monero_network {
+                        monero::Network::Mainnet => {
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
+                        }
+                        monero::Network::Stagenet => {
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
+                        }
+                        monero::Network::Testnet => panic!("Testnet is not supported"),
+                    })
+                    .expect("Hardcoded developer tip address to be valid");
+
+                    assert_eq!(
+                        tip_address.network, env_config.monero_network,
+                        "Developer tip address must be on the correct Monero network"
+                    );
+
+                    (tip_ratio, tip_address)
                 }),
             )
             .unwrap();
