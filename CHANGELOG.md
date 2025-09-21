@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fix an issue where the released binaries for Windows where incorrect labeled as having been built for Linux
+
 ## [3.0.1] - 2025-09-19
 
 - ASB: require Monero wallet to be fully synchronized before providing quotes
