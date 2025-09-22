@@ -169,7 +169,7 @@ where
                     let receipt = monero_wallet
                         .main_wallet()
                         .await
-                        .transfer_multi(&destinations)
+                        .transfer_multi_destination(&destinations)
                         .await
                         .map_err(|e| tracing::error!(err=%e, "Failed to lock Monero"))
                         .ok();
@@ -664,9 +664,9 @@ pub fn is_complete(state: &AliceState) -> bool {
     )
 }
 
-/// Build transfer destinations, optionally including a developer tip.
+/// Build transfer destinations for the Monero lock transaction, optionally including a developer tip.
 ///
-/// If the developer_tip > 0 and the effective tip rate is >= MIN_USEFUL_TIP_AMOUNT_PICONERO:
+/// If the tip.ratio > 0 and the effective tip is >= MIN_USEFUL_TIP_AMOUNT_PICONERO:
 ///     returns two destinations: one for the lock output, one for the tip output
 ///
 /// Otherwise:

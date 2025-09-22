@@ -459,7 +459,7 @@ impl WalletHandle {
     }
 
     /// Transfer funds to an address without approval.
-    pub async fn transfer(
+    pub async fn transfer_single_destination(
         &self,
         address: &monero::Address,
         amount: monero::Amount,
@@ -467,7 +467,7 @@ impl WalletHandle {
         let address = *address;
 
         retry_notify(backoff(None, None), || async {
-            self.call(move |wallet| wallet.transfer(&address, amount))
+            self.call(move |wallet| wallet.transfer_single_destination(&address, amount))
                 .await
                 .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
@@ -478,7 +478,7 @@ impl WalletHandle {
     }
 
     /// Transfer funds to multiple addresses in a single transaction without approval.
-    pub async fn transfer_multi(
+    pub async fn transfer_multi_destination(
         &self,
         destinations: &[(monero::Address, monero::Amount)],
     ) -> anyhow::Result<TxReceipt> {
@@ -487,7 +487,7 @@ impl WalletHandle {
         retry_notify(backoff(None, None), || async {
             let destinations = destinations.clone();
             
-            self.call(move |wallet| wallet.transfer_multi(&destinations))
+            self.call(move |wallet| wallet.transfer_multi_destination(&destinations))
                 .await
                 .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
@@ -525,7 +525,7 @@ impl WalletHandle {
     /// Sweep all funds to a set of addresses.
     /// If the address is `None`, the address will be set to the primary address of the
     /// wallet
-    pub async fn sweep_multi(
+    pub async fn sweep_multi_destination(
         &self,
         addresses: &[monero::Address],
         percentages: &[f64],
@@ -854,7 +854,7 @@ impl WalletHandle {
         let (uuid, txid, amount, fee) = self
             .call_with_pending_txs(move |wallet, pending_txs| {
                 let pending_tx = match amount {
-                    Some(amount) => wallet.create_pending_transaction(&address, amount)?,
+                    Some(amount) => wallet.create_pending_transaction_single_dest(&address, amount)?,
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
@@ -1898,12 +1898,12 @@ impl FfiWallet {
     /// Transfer a specified amount of monero to a specified address and return a receipt containing
     /// the transaction id, transaction key and current blockchain height. This can be used later
     /// to prove the transfer or to wait for confirmations.
-    fn transfer(
+    fn transfer_single_destination(
         &mut self,
         address: &monero::Address,
         amount: monero::Amount,
     ) -> anyhow::Result<TxReceipt> {
-        let mut pending_tx = self.create_pending_transaction(address, amount)?;
+        let mut pending_tx = self.create_pending_transaction_single_dest(address, amount)?;
         let result = self.publish_pending_transaction(&mut pending_tx);
         self.dispose_pending_transaction(pending_tx);
         result
@@ -1912,7 +1912,7 @@ impl FfiWallet {
     /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
     /// the transaction id, transaction key and current blockchain height. This can be used later
     /// to prove the transfer or to wait for confirmations.
-    fn transfer_multi(
+    fn transfer_multi_destination(
         &mut self,
         destinations: &[(monero::Address, monero::Amount)],
     ) -> anyhow::Result<TxReceipt> {
@@ -1924,7 +1924,7 @@ impl FfiWallet {
 
     /// Create a pending transaction without publishing it.
     /// Returns the pending transaction that can be inspected before publishing.
-    fn create_pending_transaction(
+    fn create_pending_transaction_single_dest(
         &mut self,
         address: &monero::Address,
         amount: monero::Amount,

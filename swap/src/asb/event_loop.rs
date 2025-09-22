@@ -1007,7 +1007,8 @@ mod tests {
         let balance = Amount::from_monero(10.0).unwrap();
         let reserved_amounts = vec![];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         assert_eq!(result, balance);
     }
@@ -1020,7 +1021,8 @@ mod tests {
             monero::Amount::from_monero(3.0).unwrap(),
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         let expected = monero::Amount::from_monero(5.0).unwrap();
         assert_eq!(result, expected);
@@ -1034,7 +1036,8 @@ mod tests {
             monero::Amount::from_monero(4.0).unwrap(), // Total reserved > balance
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         // Should return zero when reserved > balance
         assert_eq!(result, monero::Amount::ZERO);
@@ -1048,7 +1051,8 @@ mod tests {
             monero::Amount::from_monero(6.0).unwrap(), // Exactly equals balance
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         assert_eq!(result, monero::Amount::ZERO);
     }
@@ -1058,7 +1062,8 @@ mod tests {
         let balance = monero::Amount::ZERO;
         let reserved_amounts = vec![monero::Amount::from_monero(1.0).unwrap()];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         assert_eq!(result, monero::Amount::ZERO);
     }
@@ -1068,7 +1073,8 @@ mod tests {
         let balance = monero::Amount::from_monero(5.0).unwrap();
         let reserved_amounts: Vec<MockReservedItem> = vec![];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         assert_eq!(result, balance);
     }
@@ -1078,7 +1084,8 @@ mod tests {
         let balance = monero::Amount::from_piconero(1_000_000_000);
         let reserved_amounts = vec![monero::Amount::from_piconero(300_000_000)];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter(), None);
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         let expected = monero::Amount::from_piconero(700_000_000);
         assert_eq!(result, expected);
