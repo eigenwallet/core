@@ -171,18 +171,13 @@ pub async fn main() -> Result<()> {
         } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
 
-            match config.maker.developer_tip {
-                Some(ratio) if ratio > Decimal::ZERO => {
-                    tracing::info!(%ratio, "Tipping to the developers is enabled. Thank you for your support!");
-                }
-                Some(_) => {
-                    tracing::info!("Not tipping the developers (maker.developer_tip = 0)");
-                }
-                None => {
-                    tracing::info!(
-                        "Not tipping the developers (maker.developer_tip = not set in config)"
-                    );
-                }
+            let developer_tip = config.maker.developer_tip;
+            if developer_tip.is_zero() {
+                tracing::info!(
+                    "Not tipping the developers (maker.developer_tip = 0 or not set in config)"
+                );
+            } else {
+                tracing::info!(%developer_tip, "Tipping to the developers is enabled. Thank you for your support!");
             }
 
             // Initialize Monero wallet
@@ -286,7 +281,7 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
-                config.maker.developer_tip.map(|tip_ratio| {
+                {
                     let tip_address = monero::Address::from_str(match env_config.monero_network {
                         monero::Network::Mainnet => {
                             swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
@@ -303,8 +298,8 @@ pub async fn main() -> Result<()> {
                         "Developer tip address must be on the correct Monero network"
                     );
 
-                    (tip_ratio, tip_address)
-                }),
+                    (config.maker.developer_tip, tip_address)
+                },
             )
             .unwrap();
 

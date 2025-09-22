@@ -1,6 +1,7 @@
 use crate::env::{Mainnet, Testnet};
 use anyhow::{Context, Result};
 use libp2p::Multiaddr;
+use rust_decimal::Decimal;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use swap_fs::{system_config_dir, system_data_dir};
@@ -94,6 +95,7 @@ pub struct Defaults {
     pub price_ticker_ws_url: Url,
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
+    pub developer_tip: Decimal,
 }
 
 impl GetDefaults for Mainnet {
@@ -108,6 +110,7 @@ impl GetDefaults for Mainnet {
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
+            developer_tip: Decimal::ZERO,
         };
 
         Ok(defaults)
@@ -126,6 +129,7 @@ impl GetDefaults for Testnet {
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
+            developer_tip: Decimal::ZERO,
         };
 
         Ok(defaults)

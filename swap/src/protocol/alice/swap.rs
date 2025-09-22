@@ -64,7 +64,7 @@ async fn next_state<LR>(
     bitcoin_wallet: &bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
-    developer_tip: Option<(Decimal, ::monero::Address)>,
+    developer_tip: (Decimal, ::monero::Address),
     mut rate_service: LR,
 ) -> Result<AliceState>
 where
@@ -667,33 +667,28 @@ pub fn is_complete(state: &AliceState) -> bool {
 fn build_transfer_destinations(
     lock_address: ::monero::Address,
     lock_amount: ::monero::Amount,
-    developer_tip: Option<(rust_decimal::Decimal, ::monero::Address)>,
+    developer_tip: (Decimal, ::monero::Address),
 ) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
-    match developer_tip {
-        // If the user did not configure a developer tip,
-        // we will only lock the funds to multi-sig address
-        None => Ok(vec![(lock_address, lock_amount)]),
-        Some((tip_percentage, _)) if tip_percentage == Decimal::ZERO => {
-            Ok(vec![(lock_address, lock_amount)])
-        }
-        // If the user configured a developer tip,
-        // we add both the multi-sig address and the developer tip address to the destinations
-        Some((tip_percentage, tip_address)) => {
-            use rust_decimal::prelude::ToPrimitive;
+    use rust_decimal::prelude::ToPrimitive;
 
-            // tip_amount_piconero = tip * amount
-            let tip_amount_piconero =
-                tip_percentage.saturating_mul(rust_decimal::Decimal::from(lock_amount.as_pico()));
+    // If the effective tip is less than this amount, we do not include the tip output
+    // Any values below `MIN_USEFUL_TIP_AMOUNT_PICONERO` are clamped to zero
+    const MIN_USEFUL_TIP_AMOUNT_PICONERO: u64 = 100_000;
 
-            let tip_amount_piconero = tip_amount_piconero
-                .floor()
-                .to_u64()
-                .context("Developer tip amount overflow")?;
+    // TODO: Move this code into the impl of a custom DeveloperTip type which wraps (Decimal, ::monero::Address)
+    let (tip_ratio, tip_address) = developer_tip;
+    let tip_amount_piconero = tip_ratio
+        .saturating_mul(Decimal::from(lock_amount.as_pico()))
+        .floor()
+        .to_u64()
+        .context("Developer tip amount should not overflow")?;
 
-            let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
+    if tip_amount_piconero < MIN_USEFUL_TIP_AMOUNT_PICONERO {
+        Ok(vec![(lock_address, lock_amount)])
+    } else {
+        let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
 
-            Ok(vec![(lock_address, lock_amount), (tip_address, tip_amount)])
-        }
+        Ok(vec![(lock_address, lock_amount), (tip_address, tip_amount)])
     }
 }
 

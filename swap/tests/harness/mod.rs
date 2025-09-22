@@ -95,8 +95,10 @@ where
         .main_address()
         .await
         .into();
-    let developer_tip =
-        developer_tip_ratio.map(|ratio| (ratio, developer_tip_monero_wallet_address));
+    let developer_tip = (
+        developer_tip_ratio.unwrap_or(Decimal::ZERO),
+        developer_tip_monero_wallet_address,
+    );
 
     let alice_starting_balances =
         StartingBalances::new(bitcoin::Amount::ZERO, xmr_amount, Some(10));
@@ -268,7 +270,7 @@ async fn start_alice(
     env_config: Config,
     bitcoin_wallet: Arc<bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
-    developer_tip: Option<(Decimal, monero::Address)>,
+    developer_tip: (Decimal, monero::Address),
 ) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
@@ -626,7 +628,7 @@ pub struct TestContext {
 
     btc_amount: bitcoin::Amount,
     xmr_amount: monero::Amount,
-    developer_tip: Option<(Decimal, monero::Address)>,
+    developer_tip: (Decimal, monero::Address),
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
@@ -903,15 +905,13 @@ impl TestContext {
     fn developer_tip_wallet_received_xmr_balance(&self) -> monero::Amount {
         use rust_decimal::prelude::ToPrimitive;
 
-        match self.developer_tip {
-            Some((ratio, _)) => monero::Amount::from_piconero(
-                ratio
-                    .saturating_mul(self.xmr_amount.as_piconero_decimal())
-                    .to_u64()
-                    .unwrap(),
-            ),
-            None => monero::Amount::ZERO,
-        }
+        // TODO: We should account for the ´MIN_USEFUL_TIP_AMOUNT_PICONERO` here
+        monero::Amount::from_piconero(
+            self.developer_tip.0
+                .saturating_mul(self.xmr_amount.as_piconero_decimal())
+                .to_u64()
+                .unwrap(),
+        )
     }
 
     fn alice_refunded_btc_balance(&self) -> bitcoin::Amount {

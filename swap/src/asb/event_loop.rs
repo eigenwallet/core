@@ -46,7 +46,7 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
-    developer_tip: Option<(Decimal, ::monero::Address)>,
+    developer_tip: (Decimal, ::monero::Address),
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -137,7 +137,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
-        developer_tip: Option<(Decimal, ::monero::Address)>,
+        developer_tip: (Decimal, ::monero::Address),
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -261,9 +261,7 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            let developer_tip = self.developer_tip.map(|(tip, _)| tip);
-
-                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, developer_tip).await {
+                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.0).await {
                                 Ok(quote_arc) => {
                                     if self.swarm.behaviour_mut().quote.send_response(channel, *quote_arc).is_err() {
                                         tracing::debug!(%peer, "Failed to respond with quote");
@@ -524,7 +522,7 @@ where
         &mut self,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
-        developer_tip: Option<Decimal>,
+        developer_tip: Decimal,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>> {
         // We use the min and max buy amounts to create a unique key for the cache
         // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
@@ -828,7 +826,7 @@ mod quote {
         mut latest_rate: LR,
         get_unlocked_balance: F,
         get_reserved_items: I,
-        developer_tip: Option<Decimal>,
+        developer_tip: Decimal,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
         LR: LatestRate,
@@ -914,7 +912,7 @@ mod quote {
     pub fn unreserved_monero_balance(
         unlocked_balance: Amount,
         reserved_amounts: impl Iterator<Item = Amount>,
-        developer_tip: Option<Decimal>,
+        developer_tip: Decimal,
     ) -> Amount {
         use rust_decimal::prelude::ToPrimitive;
 
@@ -927,7 +925,7 @@ mod quote {
         // <=> swap_amount <= available_after_reserved / multiplier
 
         // Calculate the effective multiplier: 1 + tip_percentage
-        let multiplier = Decimal::ONE + developer_tip.unwrap_or(Decimal::ZERO);
+        let multiplier = Decimal::ONE + developer_tip;
 
         let unlocked_balance_piconero = unlocked_balance.as_piconero_decimal();
 

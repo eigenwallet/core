@@ -19,7 +19,7 @@ pub struct Swap {
     pub bitcoin_wallet: Arc<bitcoin::Wallet>,
     pub monero_wallet: Arc<monero::Wallets>,
     pub env_config: Config,
-    pub developer_tip: Option<(Decimal, ::monero::Address)>,
+    pub developer_tip: (Decimal, ::monero::Address),
     pub swap_id: Uuid,
     pub db: Arc<dyn Database + Send + Sync>,
 }

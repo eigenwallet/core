@@ -103,7 +103,13 @@ pub struct Maker {
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
     /// Percentage (between 0.0 and 1.0) of the swap amount
     // that will be donated to the project as part of the Monero lock transaction
-    pub developer_tip: Option<Decimal>,
+    #[serde(default = "default_developer_tip")]
+    pub developer_tip: Decimal,
+}
+
+fn default_developer_tip() -> Decimal {
+    // By default, we do not tip
+    Decimal::ZERO
 }
 
 impl Config {
@@ -219,7 +225,7 @@ pub fn query_user_for_initial_config_with_network(
             ask_spread,
             price_ticker_ws_url: defaults.price_ticker_ws_url,
             external_bitcoin_redeem_address: None,
-            developer_tip: None,
+            developer_tip: defaults.developer_tip,
         },
     })
 }
