@@ -8,7 +8,7 @@ use crate::asb::{EventLoopHandle, LatestRate};
 use crate::bitcoin::ExpiredTimelocks;
 use crate::common::retry;
 use crate::monero::TransferProof;
-use crate::protocol::alice::{AliceState, Swap};
+use crate::protocol::alice::{AliceState, Swap, TipConfig};
 use crate::{bitcoin, monero};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
@@ -44,7 +44,7 @@ where
             swap.bitcoin_wallet.as_ref(),
             swap.monero_wallet.clone(),
             &swap.env_config,
-            swap.developer_tip,
+            swap.developer_tip.clone(),
             rate_service.clone(),
         )
         .await?;
@@ -64,7 +64,7 @@ async fn next_state<LR>(
     bitcoin_wallet: &bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
-    developer_tip: (Decimal, ::monero::Address),
+    developer_tip: TipConfig,
     mut rate_service: LR,
 ) -> Result<AliceState>
 where
@@ -162,7 +162,8 @@ where
                         .lock_xmr_transfer_request()
                         .address_and_amount(env_config.monero_network);
 
-                    let destinations = build_transfer_destinations(address, amount, developer_tip)?;
+                    let destinations =
+                        build_transfer_destinations(address, amount, developer_tip.clone())?;
 
                     // Lock the Monero
                     let receipt = monero_wallet
@@ -664,10 +665,16 @@ pub fn is_complete(state: &AliceState) -> bool {
 }
 
 /// Build transfer destinations, optionally including a developer tip.
+///
+/// If the developer_tip > 0 and the effective tip rate is >= MIN_USEFUL_TIP_AMOUNT_PICONERO:
+///     returns two destinations: one for the lock output, one for the tip output
+///
+/// Otherwise:
+///     returns one destination: for the lock output
 fn build_transfer_destinations(
     lock_address: ::monero::Address,
     lock_amount: ::monero::Amount,
-    developer_tip: (Decimal, ::monero::Address),
+    tip: TipConfig,
 ) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
     use rust_decimal::prelude::ToPrimitive;
 
@@ -675,9 +682,9 @@ fn build_transfer_destinations(
     // Any values below `MIN_USEFUL_TIP_AMOUNT_PICONERO` are clamped to zero
     const MIN_USEFUL_TIP_AMOUNT_PICONERO: u64 = 100_000;
 
-    // TODO: Move this code into the impl of a custom DeveloperTip type which wraps (Decimal, ::monero::Address)
-    let (tip_ratio, tip_address) = developer_tip;
-    let tip_amount_piconero = tip_ratio
+    // TODO: Move this code into the impl of TipConfig
+    let tip_amount_piconero = tip
+        .ratio
         .saturating_mul(Decimal::from(lock_amount.as_pico()))
         .floor()
         .to_u64()
@@ -688,7 +695,7 @@ fn build_transfer_destinations(
     } else {
         let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
 
-        Ok(vec![(lock_address, lock_amount), (tip_address, tip_amount)])
+        Ok(vec![(lock_address, lock_amount), (tip.address, tip_amount)])
     }
 }
 

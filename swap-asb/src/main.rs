@@ -35,7 +35,7 @@ use swap::database::{open_db, AccessMode};
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
 use swap::protocol::alice::swap::is_complete;
-use swap::protocol::alice::{run, AliceState};
+use swap::protocol::alice::{run, AliceState, TipConfig};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap::{bitcoin, monero};
@@ -298,7 +298,10 @@ pub async fn main() -> Result<()> {
                         "Developer tip address must be on the correct Monero network"
                     );
 
-                    (config.maker.developer_tip, tip_address)
+                    TipConfig {
+                        ratio: config.maker.developer_tip,
+                        address: tip_address,
+                    }
                 },
             )
             .unwrap();

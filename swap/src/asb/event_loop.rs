@@ -8,7 +8,7 @@ use crate::network::quote::BidQuote;
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
-use crate::protocol::alice::{AliceState, State3, Swap};
+use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use crate::{bitcoin, monero};
 use anyhow::{anyhow, Context, Result};
@@ -46,7 +46,7 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
-    developer_tip: (Decimal, ::monero::Address),
+    developer_tip: TipConfig,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -137,7 +137,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
-        developer_tip: (Decimal, ::monero::Address),
+        developer_tip: TipConfig,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -261,7 +261,7 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.0).await {
+                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio).await {
                                 Ok(quote_arc) => {
                                     if self.swarm.behaviour_mut().quote.send_response(channel, *quote_arc).is_err() {
                                         tracing::debug!(%peer, "Failed to respond with quote");

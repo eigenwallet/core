@@ -26,7 +26,7 @@ use swap::monero::wallet::no_listener;
 use swap::monero::Wallets;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::{AliceState, Swap};
+use swap::protocol::alice::{AliceState, Swap, TipConfig};
 use swap::protocol::bob::BobState;
 use swap::protocol::{alice, bob, Database};
 use swap::seed::Seed;
@@ -95,10 +95,10 @@ where
         .main_address()
         .await
         .into();
-    let developer_tip = (
-        developer_tip_ratio.unwrap_or(Decimal::ZERO),
-        developer_tip_monero_wallet_address,
-    );
+    let developer_tip = TipConfig {
+        ratio: developer_tip_ratio.unwrap_or(Decimal::ZERO),
+        address: developer_tip_monero_wallet_address,
+    };
 
     let alice_starting_balances =
         StartingBalances::new(bitcoin::Amount::ZERO, xmr_amount, Some(10));
@@ -270,7 +270,7 @@ async fn start_alice(
     env_config: Config,
     bitcoin_wallet: Arc<bitcoin::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
-    developer_tip: (Decimal, monero::Address),
+    developer_tip: TipConfig,
 ) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
@@ -628,7 +628,7 @@ pub struct TestContext {
 
     btc_amount: bitcoin::Amount,
     xmr_amount: monero::Amount,
-    developer_tip: (Decimal, monero::Address),
+    developer_tip: TipConfig,
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
@@ -907,7 +907,8 @@ impl TestContext {
 
         // TODO: We should account for the ´MIN_USEFUL_TIP_AMOUNT_PICONERO` here
         monero::Amount::from_piconero(
-            self.developer_tip.0
+            self.developer_tip
+                .ratio
                 .saturating_mul(self.xmr_amount.as_piconero_decimal())
                 .to_u64()
                 .unwrap(),
