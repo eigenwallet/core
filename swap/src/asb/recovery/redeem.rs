@@ -1,9 +1,10 @@
-use crate::bitcoin::{Txid, Wallet};
+use crate::bitcoin::Wallet;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
 use std::convert::TryInto;
 use std::sync::Arc;
+use swap_core::bitcoin::Txid;
 use uuid::Uuid;
 
 pub enum Finality {
@@ -60,7 +61,9 @@ pub async fn redeem(
             Ok((txid, state))
         }
         AliceState::BtcRedeemTransactionPublished { state3, .. } => {
-            let subscription = bitcoin_wallet.subscribe_to(state3.tx_redeem()).await;
+            let subscription = bitcoin_wallet
+                .subscribe_to(Box::new(state3.tx_redeem()))
+                .await;
 
             if let Finality::Await = finality {
                 subscription.wait_until_final().await?;

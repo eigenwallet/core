@@ -5,7 +5,7 @@ pub trait ScalarExt {
     fn to_secpfun_scalar(&self) -> ecdsa_fun::fun::Scalar;
 }
 
-impl ScalarExt for crate::monero::Scalar {
+impl ScalarExt for curve25519_dalek::scalar::Scalar {
     fn to_secpfun_scalar(&self) -> Scalar<Secret, NonZero> {
         let mut little_endian_bytes = self.to_bytes();
 

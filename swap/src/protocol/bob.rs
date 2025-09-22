@@ -1,26 +1,27 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use std::convert::TryInto;
 use uuid::Uuid;
 
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::monero::MoneroAddressPool;
 use crate::protocol::Database;
-use crate::{bitcoin, cli, monero};
+use crate::{cli, monero};
+
+use swap_core::bitcoin;
 use swap_env::env;
 
-pub use self::state::*;
-pub use self::swap::{run, run_until};
-use std::convert::TryInto;
+pub use crate::protocol::bob::swap::*;
+pub use swap_machine::bob::*;
 
-pub mod state;
 pub mod swap;
 
 pub struct Swap {
     pub state: BobState,
     pub event_loop_handle: cli::EventLoopHandle,
     pub db: Arc<dyn Database + Send + Sync>,
-    pub bitcoin_wallet: Arc<bitcoin::Wallet>,
+    pub bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
     pub monero_wallet: Arc<monero::Wallets>,
     pub env_config: env::Config,
     pub id: Uuid,
@@ -33,7 +34,7 @@ impl Swap {
     pub fn new(
         db: Arc<dyn Database + Send + Sync>,
         id: Uuid,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
         monero_wallet: Arc<monero::Wallets>,
         env_config: env::Config,
         event_loop_handle: cli::EventLoopHandle,
@@ -63,7 +64,7 @@ impl Swap {
     pub async fn from_db(
         db: Arc<dyn Database + Send + Sync>,
         id: Uuid,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
         monero_wallet: Arc<monero::Wallets>,
         env_config: env::Config,
         event_loop_handle: cli::EventLoopHandle,

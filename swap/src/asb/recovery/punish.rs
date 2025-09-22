@@ -1,9 +1,9 @@
-use crate::bitcoin::{self, Txid};
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
 use std::convert::TryInto;
 use std::sync::Arc;
+use swap_core::bitcoin::Txid;
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -14,7 +14,7 @@ pub enum Error {
 
 pub async fn punish(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
     db: Arc<dyn Database>,
 ) -> Result<(Txid, AliceState)> {
     let state = db.get_state(swap_id).await?.try_into()?;
@@ -47,7 +47,7 @@ pub async fn punish(
 
     tracing::info!(%swap_id, "Trying to manually punish swap");
 
-    let txid = state3.punish_btc(&bitcoin_wallet).await?;
+    let txid = state3.punish_btc(bitcoin_wallet.as_ref()).await?;
 
     let state = AliceState::BtcPunished {
         state3: state3.clone(),
