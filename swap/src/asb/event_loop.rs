@@ -1197,7 +1197,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1226,7 +1226,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1249,7 +1249,7 @@ mod tests {
             rate.clone(),
             || async { Err(anyhow::anyhow!("Failed to get balance")) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await;
 
@@ -1274,7 +1274,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();
