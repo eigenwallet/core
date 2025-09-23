@@ -916,6 +916,8 @@ mod quote {
     ) -> Amount {
         use rust_decimal::prelude::ToPrimitive;
 
+        let unlocked_balance_piconero = unlocked_balance.as_piconero_decimal();
+
         // If a developer tip is configured, we need to account for the fact that
         // to lock X XMR for a swap, we actually need X * (1 + tip_percentage) XMR
         // because the tip is sent as an additional output in the same transaction
@@ -927,27 +929,36 @@ mod quote {
         // Calculate the effective multiplier: 1 + tip_percentage
         let multiplier = Decimal::ONE + developer_tip;
 
-        let unlocked_balance_piconero = unlocked_balance.as_piconero_decimal();
-
-        let lockable_balance_piconero = unlocked_balance_piconero / multiplier;
+        // The amount of Monero we can send somewhere if for every transaction we send,
+        // we send a tip within the same transaction as an additional output
+        //
+        // This does not take the fee into account.
+        //
+        // When we call `max_bitcoin_for_price`, it uses the `CONSERVATIVE_MONERO_FEE` constantdefined in `swap/src/monero.rs`
+        // to take into account the fee.
+        let unlocked_balance_piconero_after_accounting_for_tip =
+            unlocked_balance_piconero / multiplier;
 
         // Get the sum of all the individual reserved amounts
         // This is the amount of Monero that is required for ongoing swaps
         //
         // Swaps where the Monero hasn't been locked yet but we know we will lock it soon
-        let total_reserved_piconero =
-            reserved_amounts.fold(Amount::ZERO, |acc, amount| acc + amount);
-        let total_reserved_piconero = Decimal::from(total_reserved_piconero.as_piconero());
+        //
+        // Note: It is important that we subtract this AFTER accounting for the tip
+        // as these other swaps will also require a tip output
+        let total_reserved_piconero = reserved_amounts
+            .fold(Amount::ZERO, |acc, amount| acc + amount)
+            .as_piconero_decimal();
 
-        // Check how much of our unlocked balance is left when we
-        // take into account the reserved amounts
-        let lockable_piconero_after_reserved = lockable_balance_piconero
-            .checked_sub(total_reserved_piconero)
-            .unwrap_or(Decimal::ZERO)
-            .to_u64()
-            .unwrap_or(0);
+        // Unlocked balance after accounting for the tip and the reserved amounts
+        let unreserved_unlocked_piconero_after_accounting_for_tip =
+            unlocked_balance_piconero_after_accounting_for_tip
+                .checked_sub(total_reserved_piconero)
+                .unwrap_or(Decimal::ZERO)
+                .to_u64()
+                .unwrap_or(0);
 
-        Amount::from_piconero(lockable_piconero_after_reserved)
+        Amount::from_piconero(unreserved_unlocked_piconero_after_accounting_for_tip)
     }
 
     /// Returns the unlocked Monero balance from the wallet
