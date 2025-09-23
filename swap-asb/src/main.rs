@@ -270,6 +270,29 @@ pub async fn main() -> Result<()> {
                 swarm.add_external_address(external_address.clone());
             }
 
+            let tip_config = {
+                let tip_address = monero::Address::from_str(match env_config.monero_network {
+                    monero::Network::Mainnet => {
+                        swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
+                    }
+                    monero::Network::Stagenet => {
+                        swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
+                    }
+                    monero::Network::Testnet => panic!("Testnet is not supported"),
+                })
+                .expect("Hardcoded developer tip address to be valid");
+
+                assert_eq!(
+                    tip_address.network, env_config.monero_network,
+                    "Developer tip address must be on the correct Monero network"
+                );
+
+                TipConfig {
+                    ratio: config.maker.developer_tip,
+                    address: tip_address,
+                }
+            }
+
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
                 swarm,
@@ -281,28 +304,7 @@ pub async fn main() -> Result<()> {
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
-                {
-                    let tip_address = monero::Address::from_str(match env_config.monero_network {
-                        monero::Network::Mainnet => {
-                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
-                        }
-                        monero::Network::Stagenet => {
-                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
-                        }
-                        monero::Network::Testnet => panic!("Testnet is not supported"),
-                    })
-                    .expect("Hardcoded developer tip address to be valid");
-
-                    assert_eq!(
-                        tip_address.network, env_config.monero_network,
-                        "Developer tip address must be on the correct Monero network"
-                    );
-
-                    TipConfig {
-                        ratio: config.maker.developer_tip,
-                        address: tip_address,
-                    }
-                },
+                tip_config,
             )
             .unwrap();
 
