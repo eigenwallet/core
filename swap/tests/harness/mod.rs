@@ -905,14 +905,20 @@ impl TestContext {
     fn developer_tip_wallet_received_xmr_balance(&self) -> monero::Amount {
         use rust_decimal::prelude::ToPrimitive;
 
-        // TODO: We should account for the ´MIN_USEFUL_TIP_AMOUNT_PICONERO` here
-        monero::Amount::from_piconero(
+        let effective_tip_amount = monero::Amount::from_piconero(
             self.developer_tip
                 .ratio
                 .saturating_mul(self.xmr_amount.as_piconero_decimal())
                 .to_u64()
                 .unwrap(),
-        )
+        );
+
+        // This is defined in `swap/src/protocol/alice/swap.rs` in `build_transfer_destinations`
+        if effective_tip_amount.as_piconero() < 30_000_000 {
+            return monero::Amount::ZERO;
+        }
+
+        effective_tip_amount
     }
 
     fn alice_refunded_btc_balance(&self) -> bitcoin::Amount {

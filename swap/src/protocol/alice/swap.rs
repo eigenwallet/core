@@ -680,7 +680,9 @@ fn build_transfer_destinations(
 
     // If the effective tip is less than this amount, we do not include the tip output
     // Any values below `MIN_USEFUL_TIP_AMOUNT_PICONERO` are clamped to zero
-    const MIN_USEFUL_TIP_AMOUNT_PICONERO: u64 = 100_000;
+    //
+    // At $300/XMR, this is around one cent
+    const MIN_USEFUL_TIP_AMOUNT_PICONERO: u64 = 30_000_000;
 
     // TODO: Move this code into the impl of TipConfig
     let tip_amount_piconero = tip

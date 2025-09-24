@@ -1085,7 +1085,7 @@ mod tests {
         let reserved_amounts: Vec<MockReservedItem> = vec![];
 
         let result =
-            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
+            unreserved_monero_balance(balance, reserved_amounts.into_iter().map(|item| item.reserved), Decimal::ZERO);
 
         assert_eq!(result, balance);
     }
@@ -1116,7 +1116,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1147,7 +1147,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();
