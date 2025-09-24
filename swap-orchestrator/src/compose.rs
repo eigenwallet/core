@@ -34,6 +34,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub bitcoind: T,
     pub asb: T,
     pub asb_controller: T,
+    pub asb_tracing_logger: T,
 }
 
 pub struct OrchestratorPorts {
@@ -195,6 +196,12 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--url=http://asb:{}", input.ports.asb_rpc_port),
     ];
 
+    let command_asb_tracing_logger = command![
+        "sh",
+        flag!("-c"),
+        flag!("tail -f /asb-data/logs/tracing*.log"),
+    ];
+
     let date = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
@@ -280,6 +287,16 @@ services:
       - asb
     entrypoint: ''
     command: {command_asb_controller}
+  asb-tracing-logger:
+    container_name: asb-tracing-logger
+    {image_asb_tracing_logger}
+    restart: unless-stopped
+    depends_on:
+      - asb
+    volumes:
+      - 'asb-data:/asb-data:ro'
+    entrypoint: ''
+    command: {command_asb_tracing_logger}
 volumes:
   monerod-data:
   bitcoind-data:
@@ -296,6 +313,7 @@ volumes:
         image_bitcoind = input.images.bitcoind.to_image_attribute(),
         image_asb = input.images.asb.to_image_attribute(),
         image_asb_controller = input.images.asb_controller.to_image_attribute(),
+        image_asb_tracing_logger = input.images.asb_tracing_logger.to_image_attribute(),
         asb_data_dir = input.directories.asb_data_dir.display(),
         asb_config_path_on_host = input.directories.asb_config_path_on_host(),
         asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),

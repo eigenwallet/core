@@ -50,6 +50,9 @@ fn main() {
             asb_controller: OrchestratorImage::Build(
                 images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone(),
             ),
+            asb_tracing_logger: OrchestratorImage::Registry(
+                images::ASB_TRACING_LOGGER_IMAGE.to_string(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
