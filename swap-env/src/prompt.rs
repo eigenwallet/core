@@ -23,6 +23,7 @@ pub fn data_directory(default_data_dir: &Path) -> Result<PathBuf> {
                 .to_string(),
         )
         .interact_text()?;
+    
     Ok(data_dir.as_str().parse()?)
 }
 
