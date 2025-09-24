@@ -854,7 +854,9 @@ impl WalletHandle {
         let (uuid, txid, amount, fee) = self
             .call_with_pending_txs(move |wallet, pending_txs| {
                 let pending_tx = match amount {
-                    Some(amount) => wallet.create_pending_transaction_single_dest(&address, amount)?,
+                    Some(amount) => {
+                        wallet.create_pending_transaction_single_dest(&address, amount)?
+                    }
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
@@ -1942,7 +1944,7 @@ impl FfiWallet {
 
     /// Create a pending transaction that spends to multiple destinations without publishing it.
     /// Returns the pending transaction that can be inspected before publishing.
-    /// 
+    ///
     /// Destinations with zero amount are filtered out.
     fn create_pending_transaction_multi_dest(
         &mut self,
@@ -1952,7 +1954,10 @@ impl FfiWallet {
         subtract_fee_from_outputs: bool,
     ) -> anyhow::Result<PendingTransaction> {
         // Filter out any destinations with zero amount
-        let destinations = destinations.iter().filter(|(_, amount)| amount.as_pico() > 0).collect::<Vec<_>>();
+        let destinations = destinations
+            .iter()
+            .filter(|(_, amount)| amount.as_pico() > 0)
+            .collect::<Vec<_>>();
 
         // Build a C++ vector of destination addresses
         let mut cxx_addrs: UniquePtr<CxxVector<CxxString>> = CxxVector::<CxxString>::new();
@@ -1966,8 +1971,12 @@ impl FfiWallet {
             cxx_amounts.pin_mut().push(amount.as_pico());
         }
 
-        let cxx_addrs = cxx_addrs.as_ref().context("cxx_addrs was just created, should not be null")?;
-        let cxx_amounts = cxx_amounts.as_ref().context("cxx_amounts was just created, should not be null")?;
+        let cxx_addrs = cxx_addrs
+            .as_ref()
+            .context("cxx_addrs was just created, should not be null")?;
+        let cxx_amounts = cxx_amounts
+            .as_ref()
+            .context("cxx_amounts was just created, should not be null")?;
 
         // Create the multi-destination pending transaction
         let raw_tx = ffi::createTransactionMultiDest(
@@ -2132,7 +2141,8 @@ impl FfiWallet {
 
         // Create the multi-sweep pending transaction using the shared function
         // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
-        let mut pending_tx = self.create_pending_transaction_multi_dest(&destinations, true)
+        let mut pending_tx = self
+            .create_pending_transaction_multi_dest(&destinations, true)
             .context("Failed to create multi-sweep transaction")?;
 
         // Get the txids from the pending transaction before we publish,

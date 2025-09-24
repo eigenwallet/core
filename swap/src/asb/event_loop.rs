@@ -575,7 +575,7 @@ where
 
         // If the quote failed, we log the error
         if let Err(err) = result.clone() {
-            tracing::warn!(%err, "Failed to make quote. We will retry again later.");
+            tracing::warn!(?err, "Failed to make quote. We will retry again later.");
         }
 
         // Return the computed quote

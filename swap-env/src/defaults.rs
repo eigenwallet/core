@@ -7,6 +7,23 @@ use std::str::FromStr;
 use swap_fs::{system_config_dir, system_data_dir};
 use url::Url;
 
+/*
+Here's the GPG signature of the donation address.
+
+Signed by the public key present in `utils/gpg_keys/binarybaron.asc`
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o is our donation address for Github (signed by binarybaron)
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWlQAKCRCZt10+FHai
+bhasAQDGrAkZu+FFwDZDUEZzrIVS42he+GeMiS+ykpXyL5I7RQD/dXCR3f39zFsK
+1A7y45B3a8ZJYTzC7bbppg6cEnCoWQE=
+=j+Vz
+-----END PGP SIGNATURE-----
+*/
 pub const DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET: &str = "87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o";
 pub const DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET: &str = "54ZYC5tgGRoKMJDLviAcJF2aHittSZGGkFZE6wCLkuAdUyHaaiQrjTxeSyfvxycn3yiexL4YNqdUmHuaReAk6JD4DQssQcF";
 
