@@ -193,6 +193,7 @@ pub fn query_user_for_initial_config_with_network(
     let max_buy = prompt::max_buy_amount()?;
     let ask_spread = prompt::ask_spread()?;
     let rendezvous_points = prompt::rendezvous_points()?;
+    let developer_tip = prompt::developer_tip()?;
 
     println!();
 
@@ -225,7 +226,7 @@ pub fn query_user_for_initial_config_with_network(
             ask_spread,
             price_ticker_ws_url: defaults.price_ticker_ws_url,
             external_bitcoin_redeem_address: None,
-            developer_tip: defaults.developer_tip,
+            developer_tip,
         },
     })
 }
