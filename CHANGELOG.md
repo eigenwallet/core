@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: A warning will be display for makers running `<3.0.0`. Versions `2.*.*` are deprecated and do not support some essential protocols such as the new cooperative Monero redeem protocol. If you are a maker and are having issues with upgrading, please contact the developer on Matrix.
+
 ## [3.0.3] - 2025-09-24
 
 - ORCHESTRATOR: Introduce a new `asb-tracing-logger` container within the `docker-compose.yml`. The `asb-tracing-logger` gives you access to the tracing (high verbosity) logs of your asb. Download the new `orchestrator` and run it. Then run `docker compose up -d`. The new `asb-tracing-logger` container will be created. Then run `docker compose logs -f --tail 100 asb-tracing-logger` to view detailed logging and see what is going on behind the scenes. The `asb` will continue printing less-verbose logs like before.
