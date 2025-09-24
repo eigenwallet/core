@@ -10,30 +10,33 @@ If you're not compiling the `orchestrator` from source you can grab the latest [
 
 > [!TIP]
 > **Linux x86_64 quick install**
-> 
+>
 > Run the commands below if you're on a Linux x86 server.
 > It'll download the latest archive from Github, extract the binary and make it executable.
 > You can also run this to update a pre-existing `orchestrator` install.
-> 
+>
 > Download the archive which contains the pre-compiled binary:
->    ```bash
->    name="$(
->      curl -fsSL https://api.github.com/repos/eigenwallet/core/releases/latest \
->      | grep -oE '"name":\s*"orchestrator_[^"]*_Linux_x86_64\.tar"' \
->      | head -n1 | cut -d'"' -f4
->    )"
->    curl -fL -o "orchestrator_linux.tar" "https://github.com/eigenwallet/core/releases/latest/download/$name"
->    ```
+>
+> ```bash
+> name="$(
+>   curl -fsSL https://api.github.com/repos/eigenwallet/core/releases/latest \
+>   | grep -oE '"name":\s*"orchestrator_[^"]*_Linux_x86_64\.tar"' \
+>   | head -n1 | cut -d'"' -f4
+> )"
+> curl -fL -o "orchestrator_linux.tar" "https://github.com/eigenwallet/core/releases/latest/download/$name"
+> ```
 >
 > Extract the archive to get the `orchestrator` binary
->    ```bash
->    tar -xf ./orchestrator_linux.tar
->    ```
+>
+> ```bash
+> tar -xf ./orchestrator_linux.tar
+> ```
 >
 > Make the binary executable
->    ```bash
->    chmod +x orchestrator
->    ```
+>
+> ```bash
+> chmod +x orchestrator
+> ```
 
 Run the command below to start the wizard. It’ll guide you through a bunch of questions to generate the `config.toml` file and the `docker-compose.yml` file based on your needs. You can always modify the `config.toml` later on to modify specific things about your `asb` like the minimum swap amount or the configured markup.
 
@@ -42,6 +45,7 @@ Run the command below to start the wizard. It’ll guide you through a bunch of 
 ```
 
 To start the environment, run a command [such as](https://docs.docker.com/reference/cli/docker/compose/up/):
+
 ```bash
 docker compose up -d --build
 ```
@@ -52,6 +56,13 @@ To view logs, run commands [such as](https://docs.docker.com/reference/cli/docke
 docker compose logs -f --tail 100
 docker compose logs -f --tail 100 asb
 docker compose logs -f --tail 100 bitcoind
+docker compose logs -f --tail 100 electrs
+```
+
+To view high-verbosity logs of the asb, peek inside the `asb-tracing-logger` container by running commands [such as](https://docs.docker.com/reference/cli/docker/compose/logs/):
+
+```bash
+docker compose logs -f --tail 100 asb-tracing-logger
 ```
 
 Once the `asb` is running properly you can get a shell
