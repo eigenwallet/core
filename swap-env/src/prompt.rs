@@ -23,7 +23,7 @@ pub fn data_directory(default_data_dir: &Path) -> Result<PathBuf> {
                 .to_string(),
         )
         .interact_text()?;
-    
+
     Ok(data_dir.as_str().parse()?)
 }
 
@@ -256,12 +256,12 @@ pub fn developer_tip() -> Result<Decimal> {
     // If not, we return 0
     // If yes, we ask for the percentage and default to 1% (0.01)
     let lines = [
-        "This project is developed by a small team of volunteers since 2022",
+        "This project has been developed by a small team of volunteers since 2022",
         "We rely on donations and the Monero CCS to continue our efforts.",
         "",
         "You can choose to donate a small part of each swap toward development.",
         "",
-        "Donations are used for Github bounties and for paying for infrastructure costs.",
+        "Donations will be used for Github bounties among other things.",
         "",
         "The tip is sent as an additional output of the Monero lock transaction.",
         "It does not require an extra transaction and you remain fully private.",

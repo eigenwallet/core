@@ -692,12 +692,12 @@ fn build_transfer_destinations(
         .to_u64()
         .context("Developer tip amount should not overflow")?;
 
-    if tip_amount_piconero < MIN_USEFUL_TIP_AMOUNT_PICONERO {
-        Ok(vec![(lock_address, lock_amount)])
-    } else {
+    if tip_amount_piconero >= MIN_USEFUL_TIP_AMOUNT_PICONERO {
         let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
 
         Ok(vec![(lock_address, lock_amount), (tip.address, tip_amount)])
+    } else {
+        Ok(vec![(lock_address, lock_amount)])
     }
 }
 

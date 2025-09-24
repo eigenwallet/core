@@ -95,6 +95,7 @@ where
         .main_address()
         .await
         .into();
+
     let developer_tip = TipConfig {
         ratio: developer_tip_ratio.unwrap_or(Decimal::ZERO),
         address: developer_tip_monero_wallet_address,

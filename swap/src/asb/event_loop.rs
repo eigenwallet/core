@@ -1288,6 +1288,11 @@ mod tests {
         assert_eq!(result.max_quantity, max_buy);
     }
 
+    #[tokio::test]
+    async fn test_make_quote_with_developer_tip() {
+        todo!("implement once unit tests compile again")
+    }
+
     // Mock struct for testing
     #[derive(Debug, Clone)]
     struct MockReservedItem {
