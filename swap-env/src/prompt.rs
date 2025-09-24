@@ -12,43 +12,6 @@ use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use url::Url;
 
-/// Print a boxed info message using console styling to match dialoguer output
-pub fn print_info_box<L, S>(lines: L)
-where
-    L: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let terminal_width = terminal_size::terminal_size().map_or(200, |(width, _)| width.0 as usize);
-
-    let border = Style::new().cyan();
-    let content = Style::new().bold();
-
-    let mut collected: Vec<String> = lines.into_iter().map(|s| s.as_ref().to_string()).collect();
-
-    if collected.is_empty() {
-        collected.push(String::new());
-    }
-
-    let content_width = collected
-        .iter()
-        .map(|s| s.len())
-        .max()
-        .expect("Failed to get line width");
-    let line_width = (content_width + 2).min(terminal_width);
-
-    let top = format!("┌{}", "─".repeat(line_width.saturating_sub(1)));
-    let bottom = format!("└{}", "─".repeat(line_width.saturating_sub(1)));
-    println!("");
-    println!("{}", border.apply_to(&top));
-    for l in collected {
-        println!("{} {}", border.apply_to("│"), content.apply_to(l));
-    }
-    println!("{}", border.apply_to(&bottom));
-}
-
-/// Print a single-line note with a subtle, consistent style
-// Removed print_note: prefer using print_info_box exclusively for consistent styling
-
 /// Prompt user for data directory
 pub fn data_directory(default_data_dir: &Path) -> Result<PathBuf> {
     let data_dir = Input::with_theme(&ColorfulTheme::default())
@@ -95,9 +58,12 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
             .to_string(),
         String::new(),
     ];
-    for (i, url) in default_electrum_urls.iter().enumerate() {
-        info_lines.push(format!("{}: {}", i + 1, url));
-    }
+    info_lines.extend(
+        default_electrum_urls
+            .iter()
+            .enumerate()
+            .map(|(i, url)| format!("{}: {}", i + 1, url)),
+    );
     print_info_box(info_lines);
 
     // Ask if the user wants to use the default Electrum RPC URLs
@@ -129,7 +95,7 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
             .iter()
             .any(|url| url.to_string() == electrum_url)
         {
-            print_info_box(["That Electrum URL is already in the list."]);
+            println!("That Electrum URL is already in the list.");
         } else {
             let electrum_url = Url::parse(&electrum_url).context("Invalid Electrum URL")?;
             electrum_rpc_urls.push(electrum_url);
@@ -198,6 +164,7 @@ pub fn max_buy_amount() -> Result<bitcoin::Amount> {
         .with_prompt("Enter maximum Bitcoin amount you are willing to accept per swap or hit enter to use default.")
         .default(DEFAULT_MAX_BUY_AMOUNT)
         .interact_text()?;
+
     bitcoin::Amount::from_btc(max_buy).map_err(Into::into)
 }
 
@@ -230,9 +197,12 @@ pub fn rendezvous_points() -> Result<Vec<Multiaddr>> {
             .to_string(),
         String::new(),
     ];
-    for (i, point) in default_rendezvous_points.iter().enumerate() {
-        info_lines.push(format!("{}: {}", i + 1, point));
-    }
+    info_lines.extend(
+        default_rendezvous_points
+            .iter()
+            .enumerate()
+            .map(|(i, point)| format!("{}: {}", i + 1, point)),
+    );
     print_info_box(info_lines);
 
     // Ask if the user wants to use the default rendezvous points
@@ -268,7 +238,7 @@ pub fn rendezvous_points() -> Result<Vec<Multiaddr>> {
         if rendezvous_addr.is_empty() {
             done = true;
         } else if rendezvous_points.contains(&rendezvous_addr) {
-            print_info_box(["That rendezvous address is already in the list."]);
+            println!("That rendezvous address is already in the list.");
         } else {
             rendezvous_points.push(rendezvous_addr);
             number += 1;
@@ -312,12 +282,54 @@ pub fn developer_tip() -> Result<Decimal> {
         .default(Decimal::from_f64(0.01).unwrap())
         .interact_text()?;
 
+    if !(Decimal::ZERO..=Decimal::ONE).contains(&developer_tip) {
+        bail!(format!(
+            "Invalid developer tip {}. For the developer tip value floating point number in interval [0..1] are allowed.",
+            developer_tip
+        ))
+    }
+
     let developer_tip_percentage =
         developer_tip.saturating_mul(Decimal::from_u64(100).expect("100 to fit in u64"));
+
     print_info_box([&format!(
         "You will tip {}% of each swap to the developers. Thank you for your support!",
         developer_tip_percentage
     )]);
 
     Ok(developer_tip)
+}
+
+/// Print a boxed info message using console styling to match dialoguer output
+pub fn print_info_box<L, S>(lines: L)
+where
+    L: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let terminal_width = terminal_size::terminal_size().map_or(200, |(width, _)| width.0 as usize);
+
+    let border = Style::new().cyan();
+    let content = Style::new().bold();
+
+    let mut collected: Vec<String> = lines.into_iter().map(|s| s.as_ref().to_string()).collect();
+
+    if collected.is_empty() {
+        collected.push(String::new());
+    }
+
+    let content_width = collected
+        .iter()
+        .map(|s| s.len())
+        .max()
+        .expect("Failed to get line width");
+    let line_width = (content_width + 2).min(terminal_width);
+
+    let top = format!("┌{}", "─".repeat(line_width.saturating_sub(1)));
+    let bottom = format!("└{}", "─".repeat(line_width.saturating_sub(1)));
+    println!("");
+    println!("{}", border.apply_to(&top));
+    for l in collected {
+        println!("{} {}", border.apply_to("│"), content.apply_to(l));
+    }
+    println!("{}", border.apply_to(&bottom));
 }
