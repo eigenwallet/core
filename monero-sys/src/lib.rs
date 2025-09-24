@@ -1966,11 +1966,14 @@ impl FfiWallet {
             cxx_amounts.pin_mut().push(amount.as_pico());
         }
 
+        let cxx_addrs = cxx_addrs.as_ref().context("cxx_addrs was just created, should not be null")?;
+        let cxx_amounts = cxx_amounts.as_ref().context("cxx_amounts was just created, should not be null")?;
+
         // Create the multi-destination pending transaction
         let raw_tx = ffi::createTransactionMultiDest(
             self.inner.pinned(),
-            cxx_addrs.as_ref().unwrap(),
-            cxx_amounts.as_ref().unwrap(),
+            cxx_addrs,
+            cxx_amounts,
             subtract_fee_from_outputs,
         );
 

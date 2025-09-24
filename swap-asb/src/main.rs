@@ -291,7 +291,7 @@ pub async fn main() -> Result<()> {
                     ratio: config.maker.developer_tip,
                     address: tip_address,
                 }
-            }
+            };
 
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
