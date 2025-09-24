@@ -120,12 +120,15 @@ max_buy_btc = 0.0001
 ask_spread = 0.02
 price_ticker_ws_url = "wss://ws.kraken.com"
 external_bitcoin_address = "bc1..."
+developer_tip = 0.02
 ```
 
 The minimum and maximum amount as well as a spread, that is added on top of the price fetched from a central exchange, can be configured.
 
 `external_bitcoin_address` allows to specify the Bitcoin address that the ASB will use to redeem or punish swaps.
 If the option is not set, a new address from the internal wallet is used for every swap.
+
+`developer_tip` allows configuring your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set it to a number between 0 and 1. Setting it to 0.02 will donate 2% of each swap to the donation address of the project. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction.
 
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.

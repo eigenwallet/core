@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ORCHESTRATOR: Introduce a new `asb-tracing-logger` container within the `docker-compose.yml`. The `asb-tracing-logger` gives you access to the tracing (high verbosity) logs of your asb. Download the new `orchestrator` and run it. Then run `docker compose up -d`. The new `asb-tracing-logger` container will be created. Then run `docker compose logs -f --tail 100 asb-tracing-logger` to view detailed logging and see what is going on behind the scenes. The `asb` will continue printing less-verbose logs like before.
+- ASB: You can now configure your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set `maker.developer_tip` to a number between 0 and 1. Setting `maker.developer_tip` to `0.02` will donate 2% of each swap to the [donation address](https://github.com/eigenwallet/core?tab=readme-ov-file#donations) of the project. This is defined [here](https://github.com/eigenwallet/core/blob/ce4a85bfdd3b3fd6fbdf6c4c1ab0e1c3188b7fc2/swap-env/src/defaults.rs#L9) in the code. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction. Because tips are only ever sent in Monero you maintain full privacy.
+- ASB + CLI + GUI (Testnet only): Bitcoin timelocks have been tripled. This has no affect for mainnet swaps. Blocktimes are too low on testnet to be able to test reliably.
 
 ## [3.0.2] - 2025-09-21
 

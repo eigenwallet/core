@@ -110,6 +110,8 @@ jobs:
           - package: swap
             test_name: happy_path
           - package: swap
+            test_name: happy_path_alice_developer_tip
+          - package: swap
             test_name: happy_path_restart_bob_after_xmr_locked
           - package: swap
             test_name: happy_path_restart_bob_before_xmr_locked

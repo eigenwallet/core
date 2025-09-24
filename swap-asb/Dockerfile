@@ -30,7 +30,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl \
     lbzip2 \
     gperf \
-    g++- \
     libglib2.0-dev \
     # Left out as we are not compiling for Windows in this Dockerfile
     # mingw-w64-x86-64 \

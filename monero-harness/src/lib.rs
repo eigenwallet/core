@@ -490,7 +490,7 @@ impl MoneroWallet {
         );
         let amount = Amount::from_pico(amount_pico);
         self.wallet
-            .transfer(address, amount)
+            .transfer_single_destination(address, amount)
             .await
             .context("Failed to perform transfer")
     }
@@ -515,7 +515,7 @@ impl MoneroWallet {
         self.balance().await?;
 
         self.wallet
-            .sweep_multi(addresses, ratios)
+            .sweep_multi_destination(addresses, ratios)
             .await
             .context("Failed to perform sweep")?
             .into_iter()
