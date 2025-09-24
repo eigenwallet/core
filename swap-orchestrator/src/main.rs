@@ -4,8 +4,8 @@ mod images;
 mod prompt;
 
 use crate::compose::{
-    ASB_DATA_DIR, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage,
-    OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
+    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
+    OrchestratorNetworks, ASB_DATA_DIR, DOCKER_COMPOSE_FILE,
 };
 use std::path::PathBuf;
 use swap_env::config::{
@@ -132,7 +132,8 @@ fn main() {
             .expect("Failed to prompt for listen addresses");
         let monero_node_type = prompt::monero_node_type();
         let electrum_server_type = prompt::electrum_server_type(&defaults.electrum_rpc_urls);
-        let developer_tip = config_prompt::developer_tip().expect("Failed to prompt for developer tip");
+        let developer_tip =
+            config_prompt::developer_tip().expect("Failed to prompt for developer tip");
 
         let electrs_url = Url::parse(&format!("tcp://electrs:{}", recipe.ports.electrs))
             .expect("electrs url to be convertible to a valid url");

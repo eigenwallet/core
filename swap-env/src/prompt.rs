@@ -1,16 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use crate::defaults::{
-    DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD, default_rendezvous_points,
+    default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
+use console::Style;
 use dialoguer::Confirm;
-use dialoguer::{Input, Select, theme::ColorfulTheme};
+use dialoguer::{theme::ColorfulTheme, Input, Select};
 use libp2p::Multiaddr;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use url::Url;
-use console::{Style};
 
 /// Print a boxed info message using console styling to match dialoguer output
 pub fn print_info_box<L, S>(lines: L)
@@ -23,16 +23,17 @@ where
     let border = Style::new().cyan();
     let content = Style::new().bold();
 
-    let mut collected: Vec<String> = lines
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect();
+    let mut collected: Vec<String> = lines.into_iter().map(|s| s.as_ref().to_string()).collect();
 
     if collected.is_empty() {
         collected.push(String::new());
     }
 
-    let content_width = collected.iter().map(|s| s.len()).max().expect("Failed to get line width");
+    let content_width = collected
+        .iter()
+        .map(|s| s.len())
+        .max()
+        .expect("Failed to get line width");
     let line_width = (content_width + 2).min(terminal_width);
 
     let top = format!("┌{}", "─".repeat(line_width.saturating_sub(1)));
@@ -88,8 +89,10 @@ pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multia
 /// Prompt user for electrum RPC URLs
 pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
     let mut info_lines = vec![
-        "You can configure multiple Electrum servers for redundancy. At least one is required.".to_string(),
-        "The following default Electrum RPC URLs are available. We recommend using them.".to_string(),
+        "You can configure multiple Electrum servers for redundancy. At least one is required."
+            .to_string(),
+        "The following default Electrum RPC URLs are available. We recommend using them."
+            .to_string(),
         String::new(),
     ];
     for (i, url) in default_electrum_urls.iter().enumerate() {
@@ -220,9 +223,11 @@ pub fn rendezvous_points() -> Result<Vec<Multiaddr>> {
     let default_rendezvous_points = default_rendezvous_points();
     let mut info_lines = vec![
         "Your ASB can register with multiple rendezvous nodes for discoverability.".to_string(),
-        "They act as sort of bootstrap nodes for peer discovery within the peer-to-peer network.".to_string(),
+        "They act as sort of bootstrap nodes for peer discovery within the peer-to-peer network."
+            .to_string(),
         String::new(),
-        "The following rendezvous points are ran by community members. We recommend using them.".to_string(),
+        "The following rendezvous points are ran by community members. We recommend using them."
+            .to_string(),
         String::new(),
     ];
     for (i, point) in default_rendezvous_points.iter().enumerate() {
@@ -307,7 +312,8 @@ pub fn developer_tip() -> Result<Decimal> {
         .default(Decimal::from_f64(0.01).unwrap())
         .interact_text()?;
 
-    let developer_tip_percentage = developer_tip.saturating_mul(Decimal::from_u64(100).expect("100 to fit in u64"));
+    let developer_tip_percentage =
+        developer_tip.saturating_mul(Decimal::from_u64(100).expect("100 to fit in u64"));
     print_info_box([&format!(
         "You will tip {}% of each swap to the developers. Thank you for your support!",
         developer_tip_percentage
