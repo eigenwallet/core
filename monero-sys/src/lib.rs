@@ -486,10 +486,10 @@ impl WalletHandle {
 
         retry_notify(backoff(None, None), || async {
             let destinations = destinations.clone();
-            
+
             self.call(move |wallet| wallet.transfer_multi_destination(&destinations))
-                .await
-                .map_err(backoff::Error::transient)
+            .await
+            .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
             tracing::error!(error=?error, "Failed to transfer funds to multiple destinations, retrying in {} secs", duration.as_secs());
         })
