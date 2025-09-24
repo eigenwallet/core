@@ -290,6 +290,7 @@ services:
   asb-tracing-logger:
     container_name: asb-tracing-logger
     {image_asb_tracing_logger}
+    restart: unless-stopped
     depends_on:
       - asb
     volumes:
