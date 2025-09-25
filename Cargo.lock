@@ -995,45 +995,14 @@ dependencies = [
 
 [[package]]
 name = "bdk_chain"
-version = "0.20.0"
+version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bee1fe68ec0015bce2e4c1754ebbf18d70750a1f0103e3785d34e8959fe8fd7"
+checksum = "5b5d691fd092aacec7e05046b7d04897d58d6d65ed3152cb6cf65dababcfabed"
 dependencies = [
- "bdk_core 0.3.0",
- "bitcoin 0.32.7",
- "miniscript 12.3.5",
-]
-
-[[package]]
-name = "bdk_chain"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4955734f97b2baed3f36d16ae7c203fdde31ae85391ac44ee3cbcaf0886db5ce"
-dependencies = [
- "bdk_core 0.4.1",
+ "bdk_core",
  "bitcoin 0.32.7",
  "miniscript 12.3.5",
  "rusqlite",
- "serde",
-]
-
-[[package]]
-name = "bdk_core"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be5e187ee33d5f99f1997a700cc1dfa0524fd1de31e6414c612c9e89ccdaa133"
-dependencies = [
- "bitcoin 0.32.7",
-]
-
-[[package]]
-name = "bdk_core"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b545aea1efc090e4f71f1dd5468090d9f54c3de48002064c04895ef811fbe0b2"
-dependencies = [
- "bitcoin 0.32.7",
- "hashbrown 0.14.5",
  "serde",
 ]
 
@@ -1044,16 +1013,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0dbbe4aad0c898bfeb5253c222be3ea3dccfb380a07e72c87e3e4ed6664a6753"
 dependencies = [
  "bitcoin 0.32.7",
-]
-
-[[package]]
-name = "bdk_electrum"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fee5560d6758855e5e0778bc3bc25648658684afac667321ddc0cba08aef933a"
-dependencies = [
- "bdk_core 0.3.0",
- "electrum-client 0.21.0",
+ "hashbrown 0.14.5",
+ "serde",
 ]
 
 [[package]]
@@ -1062,17 +1023,17 @@ version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b59a3f7fbe678874fa34354097644a171276e02a49934c13b3d61c54610ddf39"
 dependencies = [
- "bdk_core 0.6.2",
+ "bdk_core",
  "electrum-client 0.24.0",
 ]
 
 [[package]]
 name = "bdk_wallet"
-version = "1.2.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "461b92c4e47b688a92740b204f4580e0a51775df16b67dde1d2db6ede1f0ba09"
+checksum = "d30b5dba770184863b5d966ccbc6a11d12c145450be3b6a4435308297e6a12dc"
 dependencies = [
- "bdk_chain 0.21.1",
+ "bdk_chain",
  "bitcoin 0.32.7",
  "miniscript 12.3.5",
  "rand_core 0.6.4",
@@ -1203,7 +1164,7 @@ dependencies = [
 [[package]]
 name = "bitcoin-harness"
 version = "0.3.0"
-source = "git+https://github.com/UnstoppableSwap/bitcoin-harness-rs?branch=master#7a110c9f5e586a33cafe0015b9df0d94f2af9ddc"
+source = "git+https://github.com/eigenwallet/bitcoin-harness-rs?branch=master#7a110c9f5e586a33cafe0015b9df0d94f2af9ddc"
 dependencies = [
  "base64 0.12.3",
  "bitcoin 0.32.7",
@@ -2993,6 +2954,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "dfx-swiss-sdk"
+version = "1.0.0"
+source = "git+https://github.com/eigenwallet/dfx-swiss-rs#0b7d5dc88e7c6481c527fb8fb246e863b415e45f"
+dependencies = [
+ "dfx-swiss-sdk-raw",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "dfx-swiss-sdk-raw"
+version = "1.0.0"
+source = "git+https://github.com/eigenwallet/dfx-swiss-rs#0b7d5dc88e7c6481c527fb8fb246e863b415e45f"
+dependencies = [
+ "reqwest 0.11.27",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "dialoguer"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3033,6 +3020,19 @@ dependencies = [
  "const-oid",
  "crypto-common",
  "subtle",
+]
+
+[[package]]
+name = "digest_auth"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3054f4e81d395e50822796c5e99ca522e6ba7be98947d6d4b0e5e61640bdb894"
+dependencies = [
+ "digest 0.10.7",
+ "hex",
+ "md-5",
+ "rand 0.8.5",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -3326,23 +3326,6 @@ dependencies = [
 
 [[package]]
 name = "electrum-client"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a0bd443023f9f5c4b7153053721939accc7113cbdf810a024434eed454b3db1"
-dependencies = [
- "bitcoin 0.32.7",
- "byteorder",
- "libc",
- "log",
- "rustls 0.23.32",
- "serde",
- "serde_json",
- "webpki-roots 0.25.4",
- "winapi",
-]
-
-[[package]]
-name = "electrum-client"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ede7b07e2578a6df0093b101915c79dca0119d7f7810099ad9eef11341d2ae57"
@@ -3363,7 +3346,7 @@ name = "electrum-pool"
 version = "0.1.0"
 dependencies = [
  "backoff",
- "bdk_electrum 0.23.2",
+ "bdk_electrum",
  "bitcoin 0.32.7",
  "futures",
  "once_cell",
@@ -3734,6 +3717,15 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "spin 0.9.8",
+]
+
+[[package]]
+name = "fns"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9d318f82a68feac152dab48e8a6f1eb665a915ea6a0c76e4ad5ed137f80c368"
+dependencies = [
+ "log",
 ]
 
 [[package]]
@@ -6196,6 +6188,7 @@ dependencies = [
  "data-encoding",
  "futures",
  "libp2p",
+ "safelog",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
@@ -6628,6 +6621,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "monero-address"
+version = "0.1.0"
+source = "git+https://github.com/monero-oxide/monero-oxide#020820470820dda2aba07a2d0b369631b01f9f9c"
+dependencies = [
+ "curve25519-dalek 4.1.3",
+ "monero-base58",
+ "monero-io",
+ "thiserror 2.0.16",
+ "zeroize",
+]
+
+[[package]]
+name = "monero-base58"
+version = "0.1.0"
+source = "git+https://github.com/monero-oxide/monero-oxide#020820470820dda2aba07a2d0b369631b01f9f9c"
+dependencies = [
+ "monero-primitives",
+ "std-shims 0.1.5",
+]
+
+[[package]]
 name = "monero-borromean"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide#020820470820dda2aba07a2d0b369631b01f9f9c"
@@ -6705,7 +6719,7 @@ dependencies = [
  "anyhow",
  "futures",
  "monero",
- "monero-rpc",
+ "monero-rpc 0.1.0",
  "monero-sys",
  "rand 0.8.5",
  "reqwest 0.12.23",
@@ -6791,6 +6805,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "monero-rpc"
+version = "0.1.0"
+source = "git+https://github.com/monero-oxide/monero-oxide#020820470820dda2aba07a2d0b369631b01f9f9c"
+dependencies = [
+ "curve25519-dalek 4.1.3",
+ "hex",
+ "monero-address",
+ "monero-oxide",
+ "serde",
+ "serde_json",
+ "std-shims 0.1.5",
+ "thiserror 2.0.16",
+ "zeroize",
+]
+
+[[package]]
 name = "monero-rpc-pool"
 version = "0.1.0"
 dependencies = [
@@ -6806,7 +6836,7 @@ dependencies = [
  "hyper 1.7.0",
  "hyper-util",
  "monero",
- "monero-rpc",
+ "monero-rpc 0.1.0",
  "rand 0.8.5",
  "regex",
  "reqwest 0.11.27",
@@ -6839,6 +6869,19 @@ dependencies = [
  "rand_core 0.6.4",
  "std-shims 0.1.4",
  "thiserror 1.0.69",
+ "zeroize",
+]
+
+[[package]]
+name = "monero-simple-request-rpc"
+version = "0.1.0"
+source = "git+https://github.com/monero-oxide/monero-oxide#020820470820dda2aba07a2d0b369631b01f9f9c"
+dependencies = [
+ "digest_auth",
+ "hex",
+ "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide)",
+ "simple-request",
+ "tokio",
  "zeroize",
 ]
 
@@ -8524,15 +8567,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "qrcode"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
-dependencies = [
- "image",
-]
-
-[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9026,6 +9060,7 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
+ "mime_guess",
  "native-tls",
  "once_cell",
  "percent-encoding",
@@ -10357,6 +10392,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
+name = "simple-request"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c2b7792ed2409a25b01606121e65579dcacbc574e90f275a8cb6a4d78006986"
+dependencies = [
+ "futures-util",
+ "http-body-util",
+ "hyper 1.7.0",
+ "hyper-rustls",
+ "hyper-util",
+ "tokio",
+ "tower-service",
+]
+
+[[package]]
 name = "siphasher"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10984,8 +11034,9 @@ dependencies = [
  "backoff",
  "base64 0.22.1",
  "bdk",
- "bdk_chain 0.20.0",
- "bdk_electrum 0.19.0",
+ "bdk_chain",
+ "bdk_core",
+ "bdk_electrum",
  "bdk_wallet",
  "big-bytes",
  "bitcoin 0.32.7",
@@ -10997,26 +11048,31 @@ dependencies = [
  "curve25519-dalek-ng",
  "data-encoding",
  "derive_builder",
+ "dfx-swiss-sdk",
  "dialoguer",
- "directories-next",
  "ecdsa_fun",
  "ed25519-dalek 1.0.1",
  "electrum-pool",
+ "fns",
  "futures",
  "get-port",
  "hex",
+ "jsonrpsee",
  "libp2p",
+ "libp2p-tor",
  "mockito",
  "moka",
  "monero",
  "monero-harness",
- "monero-rpc",
+ "monero-rpc 0.1.0",
+ "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide)",
  "monero-rpc-pool",
+ "monero-seed",
+ "monero-simple-request-rpc",
  "monero-sys",
  "once_cell",
  "pem",
  "proptest",
- "qrcode",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "regex",
@@ -11035,16 +11091,21 @@ dependencies = [
  "sqlx",
  "structopt",
  "strum 0.26.3",
+ "swap-controller-api",
+ "swap-env",
+ "swap-feed",
+ "swap-fs",
+ "swap-serde",
  "tauri",
  "tempfile",
  "testcontainers",
  "thiserror 1.0.69",
+ "throttle",
  "time 0.3.44",
  "tokio",
  "tokio-tar",
  "tokio-tungstenite",
  "tokio-util",
- "toml 0.8.2",
  "tor-rtcompat",
  "tower 0.4.13",
  "tower-http 0.3.5",
@@ -11055,8 +11116,9 @@ dependencies = [
  "unsigned-varint 0.8.0",
  "url",
  "uuid",
- "vergen",
+ "vergen-git2",
  "void",
+ "zeroize",
  "zip 0.5.13",
 ]
 
@@ -11085,7 +11147,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "vergen",
+ "vergen 8.3.2",
 ]
 
 [[package]]
@@ -11180,7 +11242,7 @@ dependencies = [
  "swap-env",
  "toml 0.9.7",
  "url",
- "vergen",
+ "vergen 8.3.2",
 ]
 
 [[package]]
@@ -11267,20 +11329,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "sysinfo"
-version = "0.32.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c33cd241af0f2e9e3b5c32163b873b29956890b5342e6745b917ce9d490f4af"
-dependencies = [
- "core-foundation-sys",
- "libc",
- "memchr",
- "ntapi",
- "rayon",
- "windows 0.57.0",
 ]
 
 [[package]]
@@ -12208,6 +12256,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
@@ -12986,7 +13035,7 @@ dependencies = [
  "serde",
  "slotmap-careful",
  "static_assertions",
- "sysinfo 0.36.1",
+ "sysinfo",
  "thiserror 2.0.16",
  "tor-async-utils",
  "tor-basic-utils",
@@ -13779,12 +13828,12 @@ name = "unstoppableswap-gui-rs"
 version = "3.0.3"
 dependencies = [
  "anyhow",
+ "dfx-swiss-sdk",
  "monero-rpc-pool",
  "rustls 0.23.32",
  "serde",
  "serde_json",
  "swap",
- "sysinfo 0.32.1",
  "tauri",
  "tauri-build",
  "tauri-plugin-cli",
@@ -13796,6 +13845,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tauri-plugin-updater",
+ "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
  "zip 4.6.1",
@@ -13902,6 +13953,45 @@ dependencies = [
  "git2",
  "rustversion",
  "time 0.3.44",
+]
+
+[[package]]
+name = "vergen"
+version = "9.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b2bf58be11fc9414104c6d3a2e464163db5ef74b12296bda593cac37b6e4777"
+dependencies = [
+ "anyhow",
+ "derive_builder",
+ "rustversion",
+ "time 0.3.44",
+ "vergen-lib",
+]
+
+[[package]]
+name = "vergen-git2"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e63e069d8749fead1e3bab7a9d79e8fb90516b2ec66fc2243a798ecdc1a31d7"
+dependencies = [
+ "anyhow",
+ "derive_builder",
+ "git2",
+ "rustversion",
+ "time 0.3.44",
+ "vergen 9.0.6",
+ "vergen-lib",
+]
+
+[[package]]
+name = "vergen-lib"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b07e6010c0f3e59fcb164e0163834597da68d1f864e2b8ca49f74de01e9c166"
+dependencies = [
+ "anyhow",
+ "derive_builder",
+ "rustversion",
 ]
 
 [[package]]
@@ -14347,8 +14437,8 @@ dependencies = [
  "webview2-com-sys",
  "windows 0.61.3",
  "windows-core 0.61.2",
- "windows-implement 0.60.1",
- "windows-interface 0.59.2",
+ "windows-implement",
+ "windows-interface",
 ]
 
 [[package]]
@@ -14453,16 +14543,6 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
-dependencies = [
- "windows-core 0.57.0",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows"
 version = "0.61.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
@@ -14495,24 +14575,12 @@ dependencies = [
 
 [[package]]
 name = "windows-core"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2ed2439a290666cd67ecce2b0ffaad89c2a56b976b736e6ece670297897832d"
-dependencies = [
- "windows-implement 0.57.0",
- "windows-interface 0.57.0",
- "windows-result 0.1.2",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
 dependencies = [
- "windows-implement 0.60.1",
- "windows-interface 0.59.2",
+ "windows-implement",
+ "windows-interface",
  "windows-link 0.1.3",
  "windows-result 0.3.4",
  "windows-strings 0.4.2",
@@ -14524,8 +14592,8 @@ version = "0.62.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6844ee5416b285084d3d3fffd743b925a6c9385455f64f6d4fa3031c4c2749a9"
 dependencies = [
- "windows-implement 0.60.1",
- "windows-interface 0.59.2",
+ "windows-implement",
+ "windows-interface",
  "windows-link 0.2.0",
  "windows-result 0.4.0",
  "windows-strings 0.5.0",
@@ -14544,31 +14612,9 @@ dependencies = [
 
 [[package]]
 name = "windows-implement"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9107ddc059d5b6fbfbffdfa7a7fe3e22a226def0b2608f72e9d552763d3e1ad7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
-]
-
-[[package]]
-name = "windows-implement"
 version = "0.60.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edb307e42a74fb6de9bf3a02d9712678b22399c87e6fa869d6dfcd8c1b7754e0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.106",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29bee4b38ea3cde66011baa44dba677c432a78593e202392d1e9070cf2a7fca7"
 dependencies = [
  "proc-macro2",
  "quote",

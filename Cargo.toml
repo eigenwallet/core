@@ -45,7 +45,7 @@ rust_decimal_macros = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+
 toml = "0.9.5"
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
@@ -53,15 +53,23 @@ typeshare = "1.0"
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 
+# Tokio
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
+
 # Tor/Arti crates
 arti-client = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088", default-features = false }
 tor-cell = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 tor-hsservice = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 tor-proto = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
+safelog = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 
 # Terminal Utilities
 dialoguer = "0.11"
+
+# Our dependencies in other git repositories
+dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs" }
 
 # Build dependencies
 vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }

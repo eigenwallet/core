@@ -23,6 +23,7 @@ tor-hsservice = { workspace = true, optional = true }
 tor-proto = { workspace = true, optional = true }
 tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
 tracing = { workspace = true }
+safelog = { workspace = true }
 
 [dev-dependencies]
 libp2p = { workspace = true, features = ["tokio", "noise", "yamux", "ping", "macros", "tcp", "tls"] }
