@@ -1,16 +1,14 @@
-name: "Build swap, asb, asb-controller, and orchestrator release binaries"
+name: "Build swap and asb release binaries"
 
 on:
-  pull_request:
   release:
     types: [created]
 
 env:
-  DOCKER_ASB_IMAGE_NAME: ghcr.io/eigenwallet/asb
-  DOCKER_ASB_CONTROLLER_IMAGE_NAME: ghcr.io/eigenwallet/asb-controller
+  DOCKER_IMAGE_NAME: ghcr.io/eigenwallet/asb
 
 concurrency:
-  group: build-release-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.release.tag_name }}
+  group: build-release-${{ github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
@@ -19,116 +17,170 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - target: x86_64-unknown-linux-gnu
-            host: ubuntu-22.04
-            archive_extension: tar
-            do_smoke_test: true
-          - target: aarch64-apple-darwin
-            host: macos-latest
-            archive_extension: tar
-            do_smoke_test: true
-          - target: x86_64-apple-darwin
-            host: macos-13
-            archive_extension: tar
-            do_smoke_test: true
-          # Once Windows works again, uncomment
-          # - target: x86_64-pc-windows-gnu
-          #   host: ubuntu-22.04
-          #   archive_extension: zip
-          #   do_smoke_test: false
-
-        bin:
-          - name: swap
-            smoke_test_args: "--help"
-            smoke_test_fake_interactive: false
-          - name: asb
-            smoke_test_args: "--help"
-            smoke_test_fake_interactive: false
-          - name: asb-controller
-            smoke_test_args: ""
-            smoke_test_fake_interactive: false
-          - name: orchestrator
-            smoke_test_args: ""
-            smoke_test_fake_interactive: true
-
-    runs-on: ${{ matrix.target.host }}
-
+        include:
+          - bin: swap
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_ext: tar
+          # Temporarily disabled armv7 Linux builds
+          # - bin: swap
+          #   target: armv7-unknown-linux-gnueabihf
+          #   os: ubuntu-latest
+          #   archive_ext: tar
+          - bin: swap
+            target: x86_64-apple-darwin
+            os: macos-13
+            archive_ext: tar
+          - bin: swap
+            target: aarch64-apple-darwin
+            os: macos-latest
+            archive_ext: tar
+          # Temporarily disabled Windows builds
+          # - bin: swap
+          #   target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          #   archive_ext: zip
+          - bin: asb
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_ext: tar
+          # Temporarily disabled armv7 Linux builds
+          # - bin: asb
+          #   target: armv7-unknown-linux-gnueabihf
+          #   os: ubuntu-latest
+          #   archive_ext: tar
+          - bin: asb
+            target: x86_64-apple-darwin
+            os: macos-13
+            archive_ext: tar
+          - bin: asb
+            target: aarch64-apple-darwin
+            os: macos-latest
+            archive_ext: tar
+          # Temporarily disabled Windows builds
+          # - bin: asb
+          #   target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          #   archive_ext: zip
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4.1.7
         with:
-          host: ${{ matrix.target.host }}
-          target: ${{ matrix.target.target }}
+          ref: ${{ github.event.release.target_commitish }}
+          token: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+          submodules: recursive
 
-      - name: Build ${{ matrix.bin.name }} in release mode
+      - name: Set up environment variables
+        uses: ./.github/actions/set-monero-env
+
+      - uses: actionhippie/swap-space@v1
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          size: 15G
+
+      - name: Restore Rust/Cargo cache from S3
+        uses: whywaita/actions-cache-s3@v2
+        with:
+          path: |
+            ~/.rustup
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
+          aws-region: eu-central-1
+          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
+          aws-s3-force-path-style: true
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+
+      - name: Install Rust toolchain (no internal cache)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+          cache-directories: ""
+
+      - name: Configure apt for retries
+        if: matrix.os == 'ubuntu-latest'
+        run: ${{ env.APT_SET_CONF_COMMAND }}
+
+      - name: Install dependencies (ubuntu-latest)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          set -euo pipefail
-          json="$(mktemp)"
+          sudo apt update
+          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }} git
 
-          cargo build \
-            --bin "${{ matrix.bin.name }}" \
-            --target "${{ matrix.target.target }}" \
-            --release \
-            --message-format=json > "$json"
+      - name: Clone submodules
+        run: git submodule update --init --recursive
 
-          BIN_PATH="$(jq -re '
-            select(.reason=="compiler-artifact")
-            | select(.target.kind[]=="bin")
-            | .executable
-          ' "$json" | tail -n1)"
+      - name: Install Monero build dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew update
+          brew install ${{ env.DEPS_MONERO_MACOS }} git
+          brew reinstall --build-from-source unbound expat 
+          brew install protobuf@21
 
-          echo "BIN_PATH=$BIN_PATH" >> "$GITHUB_ENV"
+      - name: Install Monero build dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: ${{ env.DEPS_MONERO_WINDOWS_MSYS2 }} git
+
+      - name: Clone submodules
+        run: git submodule update --init --recursive
+        
+      - name: Cross Build ${{ matrix.target }} ${{ matrix.bin }} binary
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
+        run: |
+          curl -L "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz" | tar xzv
+          sudo mv cross /usr/bin
+          sudo mv cross-util /usr/bin
+          cross build --target=${{ matrix.target }} --release --package swap --bin ${{ matrix.bin }}
+
+      - name: Build ${{ matrix.target }} ${{ matrix.bin }} release binary
+        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
+        run: cargo build --target=${{ matrix.target }} --release --package swap --bin ${{ matrix.bin }}
 
       - name: Smoke test the binary
-        if: ${{ matrix.target.do_smoke_test }}
-        shell: bash
-        run: |
-          if [[ "${{ matrix.bin.smoke_test_fake_interactive }}" == "true" ]]; then
-            # Use script to provide pseudo-terminal for interactive binaries
-            timeout 3s bash -c '0<&- script -qefc "${{ env.BIN_PATH }}" /dev/null | cat' || true
-          elif [[ -n "${{ matrix.bin.smoke_test_args }}" ]]; then
-            # Run with arguments
-            ${{ env.BIN_PATH }} ${{ matrix.bin.smoke_test_args }}
-          else
-            # Run without arguments with timeout for binaries that don't support --help
-            timeout 3s ${{ env.BIN_PATH }} || true
-          fi
+        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
+        run: target/${{ matrix.target }}/release/${{ matrix.bin }} --help
 
       - id: create-archive-name
         shell: python
         run: |
           import platform
-          import os
-
           os_info = platform.uname()
 
           arch = os_info.machine
 
-          triple = "${{ matrix.target.target }}".split("-")
+          triple = "${{ matrix.target }}".split("-")
           arch = triple[0]
 
-          archive_name=f'${{ matrix.bin.name }}_${{ github.event.release.tag_name || format('pull_request_{0}', github.event.pull_request.number) }}_{os_info.system}_{arch}.${{ matrix.target.archive_extension }}'
+          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name }}_{os_info.system}_{arch}.${{ matrix.archive_ext }}'
 
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
-              output_file.write(f'archive={archive_name}\n')
+          print(f'::set-output name=archive::{archive_name}')
 
-      - name: Pack Linux/Mac binary (tar)
-        if: ${{ matrix.target.archive_extension == 'tar' }}
+      - name: Pack macos archive
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: gtar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
+
+      - name: Pack linux archive
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: tar -C ./target/${{ matrix.target }}/release --create --file=${{ steps.create-archive-name.outputs.archive }} ${{ matrix.bin }}
+
+      - name: Pack windows archive
+        if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          tar -cf ${{ steps.create-archive-name.outputs.archive }} -C $(dirname ${{ env.BIN_PATH }}) $(basename ${{ env.BIN_PATH }})
-
-      - name: Pack Windows binary (zip)
-        if: ${{ matrix.target.archive_extension == 'zip' }}
-        shell: bash
-        run: |
-          zip ${{ steps.create-archive-name.outputs.archive }} -j ${{ env.BIN_PATH }}
+          cp target/${{ matrix.target }}/release/${{ matrix.bin }}.exe ./${{ matrix.bin }}.exe
+          7z a -tzip ${{ steps.create-archive-name.outputs.archive }} ./${{ matrix.bin }}.exe
 
       - name: Upload archive
-        if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
@@ -138,21 +190,51 @@ jobs:
           asset_name: ${{ steps.create-archive-name.outputs.archive }}
           asset_content_type: application/gzip
 
+      - name: Save Rust/Cargo cache to S3
+        if: ${{ always() }}
+        uses: whywaita/actions-cache-s3@v2
+        with:
+          path: |
+            ~/.rustup
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
+          aws-region: eu-central-1
+          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
+          aws-s3-force-path-style: true
+          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+
   build_and_push_docker:
     name: Build and Push Docker Image
-    if: github.event_name == 'release'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     needs: build_binaries
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup build environment (cli tools, dependencies)
-        uses: ./.github/actions/setup-build-environment
+      - name: Checkout code
+        uses: actions/checkout@v4.1.7
         with:
-          host: ubuntu-22.04
+          ref: ${{ github.event.release.target_commitish }}
+          submodules: recursive
+          
+      - name: Set up environment variables
+        uses: ./.github/actions/set-monero-env
+
+      - uses: actionhippie/swap-space@v1
+        with:
+          size: 15G
+
+      - name: Configure apt for retries
+        run: ${{ env.APT_SET_CONF_COMMAND }}
+
+      - name: Install dependencies (ubuntu-latest)
+        run: |
+          sudo apt update
+          sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -173,42 +255,22 @@ jobs:
             echo "preview=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and push Docker image (asb)
+      - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./swap-asb/Dockerfile
+          file: ./Dockerfile
           push: true
           tags: |
-            ${{ env.DOCKER_ASB_IMAGE_NAME }}:${{ github.event.release.tag_name }}
-            ${{ env.DOCKER_ASB_IMAGE_NAME }}:latest
+            ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
+            ${{ env.DOCKER_IMAGE_NAME }}:latest
         if: steps.docker_tags.outputs.preview == 'false'
 
-      - name: Build and push Docker image without latest tag (preview release) (asb)
+      - name: Build and push Docker image without latest tag (preview release)
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./swap-asb/Dockerfile
+          file: ./Dockerfile
           push: true
-          tags: ${{ env.DOCKER_ASB_IMAGE_NAME }}:${{ github.event.release.tag_name }}
-        if: steps.docker_tags.outputs.preview == 'true'
-
-      - name: Build and push Docker image (asb-controller)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./swap-controller/Dockerfile
-          push: true
-          tags: |
-            ${{ env.DOCKER_ASB_CONTROLLER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
-            ${{ env.DOCKER_ASB_CONTROLLER_IMAGE_NAME }}:latest
-        if: steps.docker_tags.outputs.preview == 'false'
-
-      - name: Build and push Docker image without latest tag (preview release) (asb-controller)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./swap-controller/Dockerfile
-          push: true
-          tags: ${{ env.DOCKER_ASB_CONTROLLER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
+          tags: ${{ env.DOCKER_IMAGE_NAME }}:${{ github.event.release.tag_name }}
         if: steps.docker_tags.outputs.preview == 'true'

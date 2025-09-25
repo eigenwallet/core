@@ -7,93 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- GUI + CLI: Fix an issue where it'd take a long time to redeem the Monero. We did not properly skip the block scanning.
+## [2.4.2] - 2025-07-06
 
-## [3.0.0-beta.11] - 2025-08-20
+## [2.4.1] - 2025-07-06
 
-- ORCHESTRATOR: We incorrectly passed the `--mainnet` flag to the `asb` binary but it is the default for the asb.
-- CONTROLLER: Add a `bitcoin-seed` command to the controller. You can use it to export the descriptor of the internal Bitcoin wallet.
-- CLI + GUI + ASB: Accept self-signed TLS certificates and TLS certificates with older protocol versions.
-
-## [3.0.0-beta.10] - 2025-08-14
-
-- GUI + CLI + ASB: Fix an issue where the Monero RPC pool would fail to build TLS handshakes over Tor
-
-## [3.0.0-beta.9] - 2025-08-12
-
-- ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
-- GUI: You can now change the Monero Node without having to restart.
-- GUI: You can now export the seed phrase of the Monero wallet.
-- GUI + CLI: Temporarily require a minimum of 12 confirmations for Monero transactions. Just a pre-caution given the Qubic shenanigans.
-- GUI + CLI + ASB: Add `/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X`, `/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk` to the default list of rendezvous points
-
-## [3.0.0-beta.8] - 2025-08-10
-
-- GUI: Speedup startup by concurrently bootstrapping Tor and requesting the user to select a wallet
-- GUI: Add white background to QR code modal to make it better scannable
-- GUI + CLI + ASB: Add `/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa` to the default list of rendezvous points
-- GUI + CLI + ASB: Monero RPC pool now prioritizes nodes with pre-established TCP connections
-- ASB + CONTROLLER: Add a `monero_seed` command to the controller shell. You can use it to export the seed and restore height of the internal Monero wallet. You can use those to import the wallet into a wallet software of your own choosing.
-
-## [3.0.0-beta.6] - 2025-08-07
-
-- GUI + CLI + ASB: The Monero RPC pool now caches TCP and Tor streams
-- ASB: The default configuration has been adjusted to accept Bitcoin transactions as finalized after one block (one confirmation). Bitcoin double spends are essentially impossible for practical purposes. If one is swapping extremely large amounts, they can consider dialing `bitcoin.finality_confirmations` to `2` or `3`. This will however force the swap to take much longer to complete, and also increase the risk of a refund being made.
-- ASB: The `monero.monero_node_pool` flag has been removed from the config. If you want to use the Monero Node Pool, you can now do so simply by omitting `monero.daemon_url` from the config.
-- ASB: The `asb` now exposes a JSON-RPC endpoint at which it can receive commands. The `asb-controller` binary implements the client side of the JSON-RPC protocol. The JSON-RPC protocol is currently entirely read-only. This means it cannot be used to withdraw funds or change configurations. The JSON-RPC endpoint is disabled by default. It can be enabled by passing the `--rpc-bind-port 127.0.0.1:9944` and `--rpc-bind-host 127.0.0.1` flags to the `asb` binary.
-- CONTROLLER: A new experimental `asb-controller` binary is now shipped. It is a CLI and REPL tool to interact with an ASB over JSON-RPC. It still has limited functionality, but will be extended in the future. Currently, it can be used to:
-  - Get the primary address of th Monero wallet
-  - Get the balance of the Monero wallet
-  - Get the balance of the Bitcoin wallet
-  - Get the list of external multiaddresses that the ASB is listening on
-  - Query the currently active peer-to-peer connections
-  - Get a basic list of swaps from the database
-- ORCHESTRATOR: A new experiemental `orchestrator` binary is now shipped.
-  - The `orchestrator` is a lightweight tool to generate a production grade environement for running ASBs.
-  - It guides the user through a wizard and generates a custom [Docker compose](https://docs.docker.com/compose/) file which specifies a secure Docker environment for running ASBs.
-  - This will continue to evolve over time, and we will document this thoroughly once it is more stable.
-- CLI + ASB + GUI: Fixed an issue where the Monero RPC pool would not handle timeouts correctly.
-
-## [3.0.0-beta.5] - 2025-08-04
-
-- GUI + CLI: Fixed a potential race condition where if the user closed the app while the Bitcoin was in the process of being published, manual recovery would be required to get to a recoverable state.
-- GUI + CLI + ASB: Fixed an issue where the Monero block height could not be fetched due to a bug in the Monero codebase
-
-## [3.0.0-beta.4] - 2025-08-03
-
-- GUI: The following rendezvous points have been added to the default list of rendezvous points. If you're running a maker, please add them to your config file (under `network.rendezvous_point`). They are operated by members of the community that have shown to be reliable. These rendezvous points act as bootstrapping nodes for peer discovery: `/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT`, `/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp`, `/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU`
-- GUI + ASB + CLI: When using the "Monero RPC Pool" feature, we now accept self-signed TLS certificates. A lot of prominent community ran nodes use self-signed certificates. This'll be revisited once RPC-over-Tor is turned on by default. When specifying a custom node (without the RPC pool feature) we still require a valid certificate.
-
-## [3.0.0-beta.3] - 2025-08-01
-
-## [3.0.0-beta.2] - 2025-07-27
-
-- GUI: Fix issue where the Monero wallet cache would be corrupted when the wallet was stored while it was refreshing.
-
-## [3.0.0-beta] - 2025-07-18
-
-- GUI: The GUI can now be used as a Monero wallet. You can open existing Monero wallet files that were created with `monero-wallet-cli` / `monero-wallet-rpc` / `monero-wallet-gui` / Feather Wallet. You can also generate new wallets or recover existing ones from a seed phrase. To change the restore height of a wallet, go to the "Wallet" tab and click on the "..." -> "Restore height" button. You can view your previous transactions, sync your wallet with the Blockchain and send Monero.
-- GUI: The internal Bitcoin wallet and the p2p identitiy is now tied directly to the Monero wallet. The Bitcoin wallet and p2p identity is derived from the entropy of the Monero seed. The `seed.pem` file has no purpose for the GUI anymore and is only used for the CLI / ASB or when using the legacy mode of the GUI.
-- GUI: The data directory has been split into multiple subdirectories. Each Monero wallet has its own data directory in `identities/<wallet-primary-address>`. That directory is used to store the swap history, the wallet cache for the Bitcoin wallet and the Tor client cache. When opening the GUI you can either select a Monero wallet to open or you can click the "No Wallet (Legacy)" button to view swaps that were started with older versions of the GUI or to get access to the Bitcoin wallet that was used in previous versions of the GUI.
-
-## [2.5.6] - 2025-07-18
-
-- ASB: Docker image has moved to <https://github.com/eigenwallet/core/pkgs/container/asb>
-- ASB + GUI + CLI: We have renamed from _UnstoppableSwap_ to _eigenwallet_ ([why?](https://eigenwallet.org/rename.html)). We will slowly migrate the entire infrastructure to the new name.
-
-## [2.4.5] - 2025-07-17
-
-_Some of these CHANGELOG entires have beeb merged from 2.0.3 - 2.4.3 into this release because those releases were missing Github releases._
+## [2.3.4] - 2025-06-30
 
 - ASB: Lowered the Monero lock retry timeout to 10minutes. Aftet that timeout we will start an early refund.
 
+## [2.3.1] - 2025-06-25
+
 - GUI: Users can donate a small percentage of their swap to the projects donation address. Donations will be used to fund development. This is completely optional and **disabled** by default. Monero is used exclusively for donations, ensuring full anonymity for users. Donations are only ever send for successful swaps (not refunded ones). We clearly and transparently state where how much Monero is going before the user approves a swap.
+
+## [2.3.0-beta.2] - 2025-06-24
 
 - ASB + GUI + CLI: We now cache fee estimates for the Bitcoin wallet for up to 2 minutes. This improves the speed of fee estimation and reduces the number of requests to the Electrum servers.
 
-- ASB + CLI + GUI: Introduce a load-balancing proxy for Monero RPC nodes that automatically discovers healthy nodes and routes requests to improve connection reliability.
+## [2.3.0-beta.1] - 2025-06-19
 
+- ASB + CLI + GUI: Introduce a load-balancing proxy for Monero RPC nodes that automatically discovers healthy nodes and routes requests to improve connection reliability.
 - ASB: Added `monero_node_pool` boolean option to ASB config. When enabled, the ASB uses the internal Monero RPC pool instead of connecting directly to a single daemon URL, providing improved reliability and automatic failover across multiple Monero nodes.
+
+## [2.2.0-beta.2] - 2025-06-17
 
 - We now call Monero function directly (via FFI bindings) instead of using `monero-wallet-rpc`.
 
@@ -647,23 +582,10 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...HEAD
-[3.0.0-beta.12]: https://github.com/eigenwallet/core/compare/3.0.0-beta.11...3.0.0-beta.12
-[3.0.0-beta.11]: https://github.com/eigenwallet/core/compare/3.0.0-beta.10...3.0.0-beta.11
-[3.0.0-beta.10]: https://github.com/eigenwallet/core/compare/3.0.0-beta.9...3.0.0-beta.10
-[3.0.0-beta.9]: https://github.com/eigenwallet/core/compare/3.0.0-beta.8...3.0.0-beta.9
-[3.0.0-beta.8]: https://github.com/eigenwallet/core/compare/3.0.0-beta.7...3.0.0-beta.8
-[3.0.0-beta.7]: https://github.com/eigenwallet/core/compare/3.0.0-beta.7...3.0.0-beta.7
-[3.0.0-beta.7]: https://github.com/eigenwallet/core/compare/3.0.0-beta.6...3.0.0-beta.7
-[3.0.0-beta.6]: https://github.com/eigenwallet/core/compare/3.0.0-beta.5...3.0.0-beta.6
-[3.0.0-beta.5]: https://github.com/eigenwallet/core/compare/3.0.0-beta.4...3.0.0-beta.5
-[3.0.0-beta.4]: https://github.com/eigenwallet/core/compare/3.0.0-beta.3...3.0.0-beta.4
-[3.0.0-beta.3]: https://github.com/eigenwallet/core/compare/3.0.0-beta.2...3.0.0-beta.3
-[3.0.0-beta.2]: https://github.com/eigenwallet/core/compare/3.0.0-beta...3.0.0-beta.2
-[3.0.0-beta]: https://github.com/eigenwallet/core/compare/2.5.6...3.0.0-beta
-[2.5.6]: https://github.com/eigenwallet/core/compare/2.4.5...2.5.6
-[2.4.5]: https://github.com/eigenwallet/core/compare/2.4.3...2.4.5
-[2.4.3]: https://github.com/eigenwallet/core/compare/2.0.3...2.4.3
+[unreleased]: https://github.com/eigenwallet/wallet/compare/2.4.2...HEAD
+[2.4.2]: https://github.com/eigenwallet/wallet/compare/2.4.1...2.4.2
+[2.4.1]: https://github.com/eigenwallet/wallet/compare/2.3.4...2.4.1
+[2.3.4]: https://github.com/GeckoWallet/wallet/compare/2.0.3...2.3.4
 [2.0.3]: https://github.com/UnstoppableSwap/core/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/UnstoppableSwap/core/compare/2.0.0...2.0.2
 [2.0.0]: https://github.com/UnstoppableSwap/core/compare/2.0.0-beta.2...2.0.0
