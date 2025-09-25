@@ -1,14 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use crate::defaults::{
-    default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
+    DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD, default_rendezvous_points,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use dialoguer::Confirm;
-use dialoguer::{theme::ColorfulTheme, Input, Select};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use libp2p::Multiaddr;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use url::Url;
 
 /// Prompt user for data directory
@@ -49,7 +49,7 @@ pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multia
 }
 
 /// Prompt user for electrum RPC URLs
-pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
+pub fn electrum_rpc_urls(default_electrum_urls: &[Url]) -> Result<Vec<Url>> {
     println!(
         "You can configure multiple Electrum servers for redundancy. At least one is required."
     );
@@ -64,7 +64,7 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
         .default(true)
         .interact()?
     {
-        true => default_electrum_urls.clone(),
+        true => default_electrum_urls.to_vec(),
         false => Vec::new(),
     };
 
@@ -127,7 +127,9 @@ pub fn tor_hidden_service() -> Result<bool> {
         "Your ASB can run a hidden service for itself. It'll be reachable at an .onion address."
     );
     println!("You do not have to run a Tor daemon yourself. You do not have to manage anything.");
-    println!("This will hide your IP address and allow you to run from behind a firewall without opening ports.");
+    println!(
+        "This will hide your IP address and allow you to run from behind a firewall without opening ports."
+    );
     println!();
 
     let selection = Select::with_theme(&ColorfulTheme::default())
@@ -168,7 +170,10 @@ pub fn ask_spread() -> Result<Decimal> {
         .interact_text()?;
 
     if !(0.0..=1.0).contains(&ask_spread) {
-        bail!(format!("Invalid spread {}. For the spread value floating point number in interval [0..1] are allowed.", ask_spread))
+        bail!(format!(
+            "Invalid spread {}. For the spread value floating point number in interval [0..1] are allowed.",
+            ask_spread
+        ))
     }
 
     Decimal::from_f64(ask_spread).context("Unable to parse spread")
