@@ -8,7 +8,7 @@ use crate::network::quote::BidQuote;
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
-use crate::protocol::alice::{AliceState, State3, Swap};
+use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use crate::{bitcoin, monero};
 use anyhow::{anyhow, Context, Result};
@@ -20,6 +20,7 @@ use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChann
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::future::Cache;
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
@@ -48,6 +49,7 @@ where
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
+    developer_tip: TipConfig,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -138,6 +140,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
+        developer_tip: TipConfig,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -157,6 +160,7 @@ where
             min_buy,
             max_buy,
             external_redeem_address,
+            developer_tip,
             quote_cache,
             recv_encrypted_signature: Default::default(),
             inflight_encrypted_signatures: Default::default(),
@@ -218,6 +222,7 @@ where
                 db: self.db.clone(),
                 state: state.try_into().expect("Alice state loaded from db"),
                 swap_id,
+                developer_tip: self.developer_tip.clone(),
             };
 
             match self.swap_sender.send(swap).await {
@@ -259,7 +264,7 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy).await {
+                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio).await {
                                 Ok(quote_arc) => {
                                     if self.swarm.behaviour_mut().quote.send_response(channel, *quote_arc).is_err() {
                                         tracing::debug!(%peer, "Failed to respond with quote");
@@ -534,6 +539,7 @@ where
         &mut self,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
+        developer_tip: Decimal,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>> {
         // We use the min and max buy amounts to create a unique key for the cache
         // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
@@ -576,6 +582,7 @@ where
             rate,
             get_unlocked_balance,
             get_reserved_items,
+            developer_tip,
         )
         .await;
 
@@ -585,7 +592,7 @@ where
 
         // If the quote failed, we log the error
         if let Err(err) = result.clone() {
-            tracing::warn!(%err, "Failed to make quote. We will retry again later.");
+            tracing::warn!(?err, "Failed to make quote. We will retry again later.");
         }
 
         // Return the computed quote
@@ -612,6 +619,7 @@ where
             db: self.db.clone(),
             state: initial_state,
             swap_id,
+            developer_tip: self.developer_tip.clone(),
         };
 
         match self.db.insert_peer_id(swap_id, bob_peer_id).await {
@@ -811,6 +819,7 @@ mod service {
 mod quote {
     use crate::monero::Amount;
     use anyhow::{anyhow, Context};
+    use rust_decimal::Decimal;
     use std::{sync::Arc, time::Duration};
     use swap_feed::LatestRate;
     use tokio::time::timeout;
@@ -834,6 +843,7 @@ mod quote {
         mut latest_rate: LR,
         get_unlocked_balance: F,
         get_reserved_items: I,
+        developer_tip: Decimal,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
         LR: LatestRate,
@@ -864,8 +874,11 @@ mod quote {
             .map(|item| item.reserved_monero())
             .collect();
 
-        let unreserved_xmr_balance =
-            unreserved_monero_balance(unlocked_balance, reserved_amounts.into_iter());
+        let unreserved_xmr_balance = unreserved_monero_balance(
+            unlocked_balance,
+            reserved_amounts.into_iter(),
+            developer_tip,
+        );
 
         let max_bitcoin_for_monero = unreserved_xmr_balance
             .max_bitcoin_for_price(ask_price)
@@ -916,15 +929,53 @@ mod quote {
     pub fn unreserved_monero_balance(
         unlocked_balance: Amount,
         reserved_amounts: impl Iterator<Item = Amount>,
+        developer_tip: Decimal,
     ) -> Amount {
-        // Get the sum of all the individual reserved amounts
-        let total_reserved = reserved_amounts.fold(Amount::ZERO, |acc, amount| acc + amount);
+        use rust_decimal::prelude::ToPrimitive;
 
-        // Check how much of our unlocked balance is left when we
-        // take into account the reserved amounts
-        unlocked_balance
-            .checked_sub(total_reserved)
-            .unwrap_or(Amount::ZERO)
+        let unlocked_balance_piconero = unlocked_balance.as_piconero_decimal();
+
+        // If a developer tip is configured, we need to account for the fact that
+        // to lock X XMR for a swap, we actually need X * (1 + tip_percentage) XMR
+        // because the tip is sent as an additional output in the same transaction
+
+        // To find how much we can actually use for swaps, we need to solve:
+        //     swap_amount * multiplier <= available_after_reserved
+        // <=> swap_amount <= available_after_reserved / multiplier
+
+        // Calculate the effective multiplier: 1 + tip_percentage
+        let multiplier = Decimal::ONE + developer_tip;
+
+        // The amount of Monero we can send somewhere if for every transaction we send,
+        // we send a tip within the same transaction as an additional output
+        //
+        // This does not take the fee into account.
+        //
+        // When we call `max_bitcoin_for_price`, it uses the `CONSERVATIVE_MONERO_FEE` constantdefined in `swap/src/monero.rs`
+        // to take into account the fee.
+        let unlocked_balance_piconero_after_accounting_for_tip =
+            unlocked_balance_piconero / multiplier;
+
+        // Get the sum of all the individual reserved amounts
+        // This is the amount of Monero that is required for ongoing swaps
+        //
+        // Swaps where the Monero hasn't been locked yet but we know we will lock it soon
+        //
+        // Note: It is important that we subtract this AFTER accounting for the tip
+        // as these other swaps will also require a tip output
+        let total_reserved_piconero = reserved_amounts
+            .fold(Amount::ZERO, |acc, amount| acc + amount)
+            .as_piconero_decimal();
+
+        // Unlocked balance after accounting for the tip and the reserved amounts
+        let unreserved_unlocked_piconero_after_accounting_for_tip =
+            unlocked_balance_piconero_after_accounting_for_tip
+                .checked_sub(total_reserved_piconero)
+                .unwrap_or(Decimal::ZERO)
+                .to_u64()
+                .unwrap_or(0);
+
+        Amount::from_piconero(unreserved_unlocked_piconero_after_accounting_for_tip)
     }
 
     /// Returns the unlocked Monero balance from the wallet
@@ -984,7 +1035,8 @@ mod tests {
         let balance = Amount::from_monero(10.0).unwrap();
         let reserved_amounts = vec![];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         assert_eq!(result, balance);
     }
@@ -997,7 +1049,8 @@ mod tests {
             monero::Amount::from_monero(3.0).unwrap(),
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         let expected = monero::Amount::from_monero(5.0).unwrap();
         assert_eq!(result, expected);
@@ -1011,7 +1064,8 @@ mod tests {
             monero::Amount::from_monero(4.0).unwrap(), // Total reserved > balance
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         // Should return zero when reserved > balance
         assert_eq!(result, monero::Amount::ZERO);
@@ -1025,7 +1079,8 @@ mod tests {
             monero::Amount::from_monero(6.0).unwrap(), // Exactly equals balance
         ];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         assert_eq!(result, monero::Amount::ZERO);
     }
@@ -1035,7 +1090,8 @@ mod tests {
         let balance = monero::Amount::ZERO;
         let reserved_amounts = vec![monero::Amount::from_monero(1.0).unwrap()];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         assert_eq!(result, monero::Amount::ZERO);
     }
@@ -1045,7 +1101,11 @@ mod tests {
         let balance = monero::Amount::from_monero(5.0).unwrap();
         let reserved_amounts: Vec<MockReservedItem> = vec![];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result = unreserved_monero_balance(
+            balance,
+            reserved_amounts.into_iter().map(|item| item.reserved),
+            Decimal::ZERO,
+        );
 
         assert_eq!(result, balance);
     }
@@ -1055,7 +1115,8 @@ mod tests {
         let balance = monero::Amount::from_piconero(1_000_000_000);
         let reserved_amounts = vec![monero::Amount::from_piconero(300_000_000)];
 
-        let result = unreserved_monero_balance(balance, reserved_amounts.into_iter());
+        let result =
+            unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
         let expected = monero::Amount::from_piconero(700_000_000);
         assert_eq!(result, expected);
@@ -1075,6 +1136,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1105,6 +1167,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1130,6 +1193,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            None,
         )
         .await
         .unwrap();
@@ -1153,6 +1217,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1181,6 +1246,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1203,6 +1269,7 @@ mod tests {
             rate.clone(),
             || async { Err(anyhow::anyhow!("Failed to get balance")) },
             || async { Ok(reserved_items) },
+            Decimal::ZERO,
         )
         .await;
 
@@ -1227,6 +1294,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            Decimal::ZERO,
         )
         .await
         .unwrap();
@@ -1235,6 +1303,11 @@ mod tests {
         assert_eq!(result.price, rate.value().ask().unwrap());
         assert_eq!(result.min_quantity, min_buy);
         assert_eq!(result.max_quantity, max_buy);
+    }
+
+    #[tokio::test]
+    async fn test_make_quote_with_developer_tip() {
+        todo!("implement once unit tests compile again")
     }
 
     // Mock struct for testing

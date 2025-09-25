@@ -8,10 +8,11 @@ use crate::asb::{EventLoopHandle, LatestRate};
 use crate::bitcoin::ExpiredTimelocks;
 use crate::common::retry;
 use crate::monero::TransferProof;
-use crate::protocol::alice::{AliceState, Swap};
+use crate::protocol::alice::{AliceState, Swap, TipConfig};
 use crate::{bitcoin, monero};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
+use rust_decimal::Decimal;
 use swap_env::env::Config;
 use tokio::select;
 use tokio::time::timeout;
@@ -43,6 +44,7 @@ where
             swap.bitcoin_wallet.as_ref(),
             swap.monero_wallet.clone(),
             &swap.env_config,
+            swap.developer_tip.clone(),
             rate_service.clone(),
         )
         .await?;
@@ -62,6 +64,7 @@ async fn next_state<LR>(
     bitcoin_wallet: &bitcoin::Wallet,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
+    developer_tip: TipConfig,
     mut rate_service: LR,
 ) -> Result<AliceState>
 where
@@ -159,11 +162,14 @@ where
                         .lock_xmr_transfer_request()
                         .address_and_amount(env_config.monero_network);
 
+                    let destinations =
+                        build_transfer_destinations(address, amount, developer_tip.clone())?;
+
                     // Lock the Monero
                     let receipt = monero_wallet
                         .main_wallet()
                         .await
-                        .transfer(&address, amount)
+                        .transfer_multi_destination(&destinations)
                         .await
                         .map_err(|e| tracing::error!(err=%e, "Failed to lock Monero"))
                         .ok();
@@ -658,6 +664,43 @@ pub fn is_complete(state: &AliceState) -> bool {
     )
 }
 
+/// Build transfer destinations for the Monero lock transaction, optionally including a developer tip.
+///
+/// If the tip.ratio > 0 and the effective tip is >= MIN_USEFUL_TIP_AMOUNT_PICONERO:
+///     returns two destinations: one for the lock output, one for the tip output
+///
+/// Otherwise:
+///     returns one destination: for the lock output
+fn build_transfer_destinations(
+    lock_address: ::monero::Address,
+    lock_amount: ::monero::Amount,
+    tip: TipConfig,
+) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
+    use rust_decimal::prelude::ToPrimitive;
+
+    // If the effective tip is less than this amount, we do not include the tip output
+    // Any values below `MIN_USEFUL_TIP_AMOUNT_PICONERO` are clamped to zero
+    //
+    // At $300/XMR, this is around one cent
+    const MIN_USEFUL_TIP_AMOUNT_PICONERO: u64 = 30_000_000;
+
+    // TODO: Move this code into the impl of TipConfig
+    let tip_amount_piconero = tip
+        .ratio
+        .saturating_mul(Decimal::from(lock_amount.as_pico()))
+        .floor()
+        .to_u64()
+        .context("Developer tip amount should not overflow")?;
+
+    if tip_amount_piconero >= MIN_USEFUL_TIP_AMOUNT_PICONERO {
+        let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
+
+        Ok(vec![(lock_address, lock_amount), (tip.address, tip_amount)])
+    } else {
+        Ok(vec![(lock_address, lock_amount)])
+    }
+}
+
 /// This function is used to check if Alice is in a state where it is clear that she has already received the encrypted signature from Bob.
 /// This allows us to acknowledge the encrypted signature multiple times
 /// If our acknowledgement does not reach Bob, he might send the encrypted signature again.
@@ -668,4 +711,32 @@ pub(crate) fn has_already_processed_enc_sig(state: &AliceState) -> bool {
             | AliceState::BtcRedeemTransactionPublished { .. }
             | AliceState::BtcRedeemed
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_build_transfer_destinations_without_tip() {
+        todo!("implement once unit tests compile again")
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_tip() {
+        todo!("implement once unit tests compile again")
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_small_tip() {
+        todo!("implement once unit tests compile again")
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_zero_tip() {
+        todo!("implement once unit tests compile again")
+    }
+
+    #[test]
+    fn test_build_transfer_destinations_with_fractional_tip() {
+        todo!("implement once unit tests compile again")
+    }
 }

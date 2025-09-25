@@ -10,8 +10,8 @@ FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acd
 # See .github/actions/set-monero-env/action.yml for required dependencies
 # The `--mount` allows us to agressively cache this step.
 ENV DEBIAN_FRONTEND=noninteractive
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --allow-change-held-packages \
     autoconf \
@@ -30,7 +30,6 @@ RUN --mount=type=cache,target=/var/cache/apt \
     curl \
     lbzip2 \
     gperf \
-    g++- \
     libglib2.0-dev \
     # Left out as we are not compiling for Windows in this Dockerfile
     # mingw-w64-x86-64 \
@@ -95,8 +94,8 @@ FROM ubuntu:24.04@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acd
 
 # Install native root certificates
 ENV DEBIAN_FRONTEND=noninteractive
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get install -y ca-certificates && \
     update-ca-certificates

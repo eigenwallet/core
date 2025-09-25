@@ -4,6 +4,7 @@ use crate::defaults::{
     default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
 };
 use anyhow::{bail, Context, Result};
+use console::Style;
 use dialoguer::Confirm;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use libp2p::Multiaddr;
@@ -22,6 +23,7 @@ pub fn data_directory(default_data_dir: &Path) -> Result<PathBuf> {
                 .to_string(),
         )
         .interact_text()?;
+
     Ok(data_dir.as_str().parse()?)
 }
 
@@ -50,13 +52,20 @@ pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multia
 
 /// Prompt user for electrum RPC URLs
 pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
-    println!(
+    let mut info_lines = vec![
         "You can configure multiple Electrum servers for redundancy. At least one is required."
+            .to_string(),
+        "The following default Electrum RPC URLs are available. We recommend using them."
+            .to_string(),
+        String::new(),
+    ];
+    info_lines.extend(
+        default_electrum_urls
+            .iter()
+            .enumerate()
+            .map(|(i, url)| format!("{}: {}", i + 1, url)),
     );
-    println!("The following default Electrum RPC URLs are available. We recommend using them.");
-    for (i, url) in default_electrum_urls.iter().enumerate() {
-        println!("{}: {}", i + 1, url);
-    }
+    print_info_box(info_lines);
 
     // Ask if the user wants to use the default Electrum RPC URLs
     let mut electrum_rpc_urls = match Confirm::with_theme(&ColorfulTheme::default())
@@ -122,13 +131,12 @@ pub fn monero_daemon_url() -> Result<Option<Url>> {
 
 /// Prompt user for Tor hidden service registration
 pub fn tor_hidden_service() -> Result<bool> {
-    println!("Your ASB needs to be reachable from the outside world to provide quotes to takers.");
-    println!(
-        "Your ASB can run a hidden service for itself. It'll be reachable at an .onion address."
-    );
-    println!("You do not have to run a Tor daemon yourself. You do not have to manage anything.");
-    println!("This will hide your IP address and allow you to run from behind a firewall without opening ports.");
-    println!();
+    print_info_box([
+        "Your ASB needs to be reachable from the outside world to provide quotes to takers.",
+        "Your ASB can run a hidden service for itself. It'll be reachable at an .onion address.",
+        "You do not have to run a Tor daemon yourself. You do not have to manage anything.",
+        "This will hide your IP address and allow you to run from behind a firewall without opening ports.",
+    ]);
 
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Do you want a Tor hidden service to be created?")
@@ -157,6 +165,7 @@ pub fn max_buy_amount() -> Result<bitcoin::Amount> {
         .with_prompt("Enter maximum Bitcoin amount you are willing to accept per swap or hit enter to use default.")
         .default(DEFAULT_MAX_BUY_AMOUNT)
         .interact_text()?;
+
     bitcoin::Amount::from_btc(max_buy).map_err(Into::into)
 }
 
@@ -168,7 +177,10 @@ pub fn ask_spread() -> Result<Decimal> {
         .interact_text()?;
 
     if !(0.0..=1.0).contains(&ask_spread) {
-        bail!(format!("Invalid spread {}. For the spread value floating point number in interval [0..1] are allowed.", ask_spread))
+        bail!(format!(
+            "Invalid spread {}. For the spread value floating point number in interval [0..1] are allowed.",
+            ask_spread
+        ))
     }
 
     Decimal::from_f64(ask_spread).context("Unable to parse spread")
@@ -176,20 +188,23 @@ pub fn ask_spread() -> Result<Decimal> {
 
 /// Prompt user for rendezvous points
 pub fn rendezvous_points() -> Result<Vec<Multiaddr>> {
-    println!("Your ASB can register with multiple rendezvous nodes for discoverability.");
-    println!(
-        "They act as sort of bootstrap nodes for peer discovery within the peer-to-peer network."
-    );
-    println!();
-    println!(
-        "The following rendezvous points are ran by community members. We recommend using them."
-    );
-    println!();
-
     let default_rendezvous_points = default_rendezvous_points();
-    for (i, point) in default_rendezvous_points.iter().enumerate() {
-        println!("{}: {}", i + 1, point);
-    }
+    let mut info_lines = vec![
+        "Your ASB can register with multiple rendezvous nodes for discoverability.".to_string(),
+        "They act as sort of bootstrap nodes for peer discovery within the peer-to-peer network."
+            .to_string(),
+        String::new(),
+        "The following rendezvous points are ran by community members. We recommend using them."
+            .to_string(),
+        String::new(),
+    ];
+    info_lines.extend(
+        default_rendezvous_points
+            .iter()
+            .enumerate()
+            .map(|(i, point)| format!("{}: {}", i + 1, point)),
+    );
+    print_info_box(info_lines);
 
     // Ask if the user wants to use the default rendezvous points
     let use_default_rendezvous_points = Select::with_theme(&ColorfulTheme::default())
@@ -203,7 +218,7 @@ pub fn rendezvous_points() -> Result<Vec<Multiaddr>> {
 
     let mut rendezvous_points = match use_default_rendezvous_points {
         0 => {
-            println!("You can now configure additional rendezvous points.");
+            print_info_box(["You can now configure additional rendezvous points."]);
             default_rendezvous_points
         }
         _ => Vec::new(),
@@ -232,4 +247,90 @@ pub fn rendezvous_points() -> Result<Vec<Multiaddr>> {
     }
 
     Ok(rendezvous_points)
+}
+
+pub fn developer_tip() -> Result<Decimal> {
+    // We first ask if the user wants to enable developer tipping at all
+    // We do not select a default here as to not bias the user
+    //
+    // If not, we return 0
+    // If yes, we ask for the percentage and default to 1% (0.01)
+    let lines = [
+        "This project has been developed by a small team of volunteers since 2022",
+        "We rely on donations and the Monero CCS to continue our efforts.",
+        "",
+        "You can choose to donate a small part of each swap toward development.",
+        "",
+        "Donations will be used for Github bounties among other things.",
+        "",
+        "The tip is sent as an additional output of the Monero lock transaction.",
+        "It does not require an extra transaction and you remain fully private.",
+        "",
+        "If enabled, you'll enter the percentage in the next step.",
+    ];
+    print_info_box(lines);
+
+    let enable_developer_tip = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Do you want to enable developer tipping?")
+        .interact()?;
+
+    if !enable_developer_tip {
+        return Ok(Decimal::ZERO);
+    }
+
+    let developer_tip = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Enter developer tip percentage (in percent; value between 0.x and 1.0; 0.01 means 1% of the swap amount is donated)")
+        .default(Decimal::from_f64(0.01).unwrap())
+        .interact_text()?;
+
+    if !(Decimal::ZERO..=Decimal::ONE).contains(&developer_tip) {
+        bail!(format!(
+            "Invalid developer tip {}. For the developer tip value floating point number in interval [0..1] are allowed.",
+            developer_tip
+        ))
+    }
+
+    let developer_tip_percentage =
+        developer_tip.saturating_mul(Decimal::from_u64(100).expect("100 to fit in u64"));
+
+    print_info_box([&format!(
+        "You will tip {}% of each swap to the developers. Thank you for your support!",
+        developer_tip_percentage
+    )]);
+
+    Ok(developer_tip)
+}
+
+/// Print a boxed info message using console styling to match dialoguer output
+pub fn print_info_box<L, S>(lines: L)
+where
+    L: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let terminal_width = terminal_size::terminal_size().map_or(200, |(width, _)| width.0 as usize);
+
+    let border = Style::new().cyan();
+    let content = Style::new().bold();
+
+    let mut collected: Vec<String> = lines.into_iter().map(|s| s.as_ref().to_string()).collect();
+
+    if collected.is_empty() {
+        collected.push(String::new());
+    }
+
+    let content_width = collected
+        .iter()
+        .map(|s| s.len())
+        .max()
+        .expect("Failed to get line width");
+    let line_width = (content_width + 2).min(terminal_width);
+
+    let top = format!("┌{}", "─".repeat(line_width.saturating_sub(1)));
+    let bottom = format!("└{}", "─".repeat(line_width.saturating_sub(1)));
+    println!("");
+    println!("{}", border.apply_to(&top));
+    for l in collected {
+        println!("{} {}", border.apply_to("│"), content.apply_to(l));
+    }
+    println!("{}", border.apply_to(&bottom));
 }
