@@ -1,4 +1,6 @@
-use crate::{asb, electrs, images::PINNED_GIT_REPOSITORY};
+use crate::containers;
+use crate::containers::*;
+use crate::images::PINNED_GIT_REPOSITORY;
 use compose_spec::Compose;
 use std::{
     fmt::{self, Display},
@@ -32,6 +34,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub bitcoind: T,
     pub asb: T,
     pub asb_controller: T,
+    pub asb_tracing_logger: T,
 }
 
 pub struct OrchestratorPorts {
@@ -43,15 +46,15 @@ pub struct OrchestratorPorts {
     pub asb_rpc_port: u16,
 }
 
-impl Into<OrchestratorPorts> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
-    fn into(self) -> OrchestratorPorts {
-        match (self.monero, self.bitcoin) {
+impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for OrchestratorPorts {
+    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+        match (val.monero, val.bitcoin) {
             (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => OrchestratorPorts {
                 monerod_rpc: 18081,
                 bitcoind_rpc: 8332,
                 bitcoind_p2p: 8333,
                 electrs: 50001,
-                asb_libp2p: 9839,
+                asb_libp2p: 9939,
                 asb_rpc_port: 9944,
             },
             (monero::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
@@ -67,15 +70,15 @@ impl Into<OrchestratorPorts> for OrchestratorNetworks<monero::Network, bitcoin::
     }
 }
 
-impl Into<asb::Network> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
-    fn into(self) -> asb::Network {
-        asb::Network::new(self.monero, self.bitcoin)
+impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for asb::Network {
+    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+        containers::asb::Network::new(val.monero, val.bitcoin)
     }
 }
 
-impl Into<electrs::Network> for OrchestratorNetworks<monero::Network, bitcoin::Network> {
-    fn into(self) -> electrs::Network {
-        electrs::Network::new(self.bitcoin)
+impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for electrs::Network {
+    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+        containers::electrs::Network::new(val.bitcoin)
     }
 }
 
@@ -87,6 +90,10 @@ impl OrchestratorDirectories {
     pub fn asb_config_path_on_host(&self) -> &'static str {
         // The config file is in the same directory as the docker-compose.yml file
         "./config.toml"
+    }
+
+    pub fn asb_config_path_on_host_as_path_buf(&self) -> PathBuf {
+        PathBuf::from(self.asb_config_path_on_host())
     }
 }
 
@@ -171,7 +178,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("-txindex=1"),
     ];
 
-    let electrs_network: electrs::Network = input.networks.clone().into();
+    let electrs_network: containers::electrs::Network = input.networks.clone().into();
 
     let command_electrs = command![
         "electrs",
@@ -187,6 +194,12 @@ fn build(input: OrchestratorInput) -> String {
     let command_asb_controller = command![
         "asb-controller",
         flag!("--url=http://asb:{}", input.ports.asb_rpc_port),
+    ];
+
+    let command_asb_tracing_logger = command![
+        "sh",
+        flag!("-c"),
+        flag!("tail -f /asb-data/logs/tracing*.log"),
     ];
 
     let date = chrono::Utc::now()
@@ -274,6 +287,16 @@ services:
       - asb
     entrypoint: ''
     command: {command_asb_controller}
+  asb-tracing-logger:
+    container_name: asb-tracing-logger
+    {image_asb_tracing_logger}
+    restart: unless-stopped
+    depends_on:
+      - asb
+    volumes:
+      - 'asb-data:/asb-data:ro'
+    entrypoint: ''
+    command: {command_asb_tracing_logger}
 volumes:
   monerod-data:
   bitcoind-data:
@@ -290,6 +313,7 @@ volumes:
         image_bitcoind = input.images.bitcoind.to_image_attribute(),
         image_asb = input.images.asb.to_image_attribute(),
         image_asb_controller = input.images.asb_controller.to_image_attribute(),
+        image_asb_tracing_logger = input.images.asb_tracing_logger.to_image_attribute(),
         asb_data_dir = input.directories.asb_data_dir.display(),
         asb_config_path_on_host = input.directories.asb_config_path_on_host(),
         asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),
@@ -348,46 +372,6 @@ pub trait IntoFlag {
     fn to_display(self) -> &'static str;
 }
 
-impl IntoFlag for monero::Network {
-    /// This is documented here:
-    /// https://docs.getmonero.org/interacting/monerod-reference/#pick-monero-network-blockchain
-    fn to_flag(self) -> Flag {
-        Flag(match self {
-            monero::Network::Mainnet => None,
-            monero::Network::Stagenet => Some("--stagenet".to_string()),
-            monero::Network::Testnet => Some("--testnet".to_string()),
-        })
-    }
-
-    fn to_display(self) -> &'static str {
-        match self {
-            monero::Network::Mainnet => "mainnet",
-            monero::Network::Stagenet => "stagenet",
-            monero::Network::Testnet => "testnet",
-        }
-    }
-}
-
-impl IntoFlag for bitcoin::Network {
-    /// This is documented here:
-    /// https://www.mankier.com/1/bitcoind
-    fn to_flag(self) -> Flag {
-        Flag(Some(match self {
-            bitcoin::Network::Bitcoin => "-chain=main".to_string(),
-            bitcoin::Network::Testnet => "-chain=test".to_string(),
-            _ => panic!("Only Mainnet and Testnet are supported"),
-        }))
-    }
-
-    fn to_display(self) -> &'static str {
-        match self {
-            bitcoin::Network::Bitcoin => "mainnet",
-            bitcoin::Network::Testnet => "testnet",
-            _ => panic!("Only Mainnet and Testnet are supported"),
-        }
-    }
-}
-
 pub trait IntoSpec {
     fn to_spec(self) -> String;
 }
@@ -418,8 +402,10 @@ impl IntoImageAttribute for OrchestratorImage {
 }
 
 fn validate_compose(compose_str: &str) {
-    serde_yaml::from_str::<Compose>(compose_str).expect(&format!(
-        "Generated compose spec to be valid. But it was not. This is the spec: \n\n{}",
-        compose_str
-    ));
+    serde_yaml::from_str::<Compose>(compose_str).unwrap_or_else(|_| {
+        panic!(
+            "Expected generated compose spec to be valid. But it was not. This is the spec: \n\n{}",
+            compose_str
+        )
+    });
 }

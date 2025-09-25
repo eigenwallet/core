@@ -17,52 +17,45 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - bin: swap
-            target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive_ext: tar
-          # Temporarily disabled armv7 Linux builds
-          # - bin: swap
-          #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
-          #   archive_ext: tar
-          - bin: swap
-            target: x86_64-apple-darwin
-            os: macos-13
-            archive_ext: tar
-          - bin: swap
-            target: aarch64-apple-darwin
-            os: macos-latest
-            archive_ext: tar
-          # Temporarily disabled Windows builds
-          # - bin: swap
-          #   target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          #   archive_ext: zip
-          - bin: asb
-            target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive_ext: tar
-          # Temporarily disabled armv7 Linux builds
-          # - bin: asb
-          #   target: armv7-unknown-linux-gnueabihf
-          #   os: ubuntu-latest
-          #   archive_ext: tar
-          - bin: asb
-            target: x86_64-apple-darwin
-            os: macos-13
-            archive_ext: tar
-          - bin: asb
-            target: aarch64-apple-darwin
-            os: macos-latest
-            archive_ext: tar
-          # Temporarily disabled Windows builds
-          # - bin: asb
-          #   target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          #   archive_ext: zip
-    runs-on: ${{ matrix.os }}
+        target:
+          - target: x86_64-unknown-linux-gnu
+            host: ubuntu-22.04
+            archive_extension: tar
+            do_smoke_test: true
+            ext: ""
+          - target: aarch64-apple-darwin
+            host: macos-latest
+            archive_extension: tar
+            do_smoke_test: true
+            ext: ""
+          - target: x86_64-apple-darwin
+            host: macos-13
+            archive_extension: tar
+            do_smoke_test: true
+            ext: ""
+          # Once Windows works again, uncomment
+          - target: x86_64-pc-windows-gnu
+            host: ubuntu-22.04
+            archive_extension: zip
+            do_smoke_test: false
+            ext: ".exe"
+
+        bin:
+          - name: swap
+            smoke_test_args: "--help"
+            smoke_test_fake_interactive: false
+          - name: asb
+            smoke_test_args: "--help"
+            smoke_test_fake_interactive: false
+          - name: asb-controller
+            smoke_test_args: ""
+            smoke_test_fake_interactive: false
+          - name: orchestrator
+            smoke_test_args: ""
+            smoke_test_fake_interactive: true
+
+    runs-on: ${{ matrix.target.host }}
+
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v4.1.7
@@ -111,39 +104,6 @@ jobs:
           sudo apt update
           sudo apt install -y ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_MONERO_LINUX }} git
 
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-
-      - name: Install Monero build dependencies (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: |
-          brew update
-          brew install ${{ env.DEPS_MONERO_MACOS }} git
-          brew reinstall --build-from-source unbound expat 
-          brew install protobuf@21
-
-      - name: Install Monero build dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: ${{ env.DEPS_MONERO_WINDOWS_MSYS2 }} git
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-        
-      - name: Cross Build ${{ matrix.target }} ${{ matrix.bin }} binary
-        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
-        run: |
-          curl -L "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz" | tar xzv
-          sudo mv cross /usr/bin
-          sudo mv cross-util /usr/bin
-          cross build --target=${{ matrix.target }} --release --package swap --bin ${{ matrix.bin }}
-
-      - name: Build ${{ matrix.target }} ${{ matrix.bin }} release binary
-        if: matrix.target != 'armv7-unknown-linux-gnueabihf'
-        run: cargo build --target=${{ matrix.target }} --release --package swap --bin ${{ matrix.bin }}
-
       - name: Smoke test the binary
         if: matrix.target != 'armv7-unknown-linux-gnueabihf'
         run: target/${{ matrix.target }}/release/${{ matrix.bin }} --help
@@ -151,17 +111,23 @@ jobs:
       - id: create-archive-name
         shell: python
         run: |
-          import platform
-          os_info = platform.uname()
+          import os
 
-          arch = os_info.machine
-
-          triple = "${{ matrix.target }}".split("-")
+          target = "${{ matrix.target.target }}"
+          triple = target.split("-")
           arch = triple[0]
+          target_os = triple[2].lower()
 
-          archive_name=f'${{ matrix.bin }}_${{ github.event.release.tag_name }}_{os_info.system}_{arch}.${{ matrix.archive_ext }}'
+          os_mapping = {"linux": "Linux", "windows": "Windows", "darwin": "Darwin"}
+          
+          if target_os not in os_mapping:
+              raise ValueError(f"Unknown target OS: {target_os}")
 
-          print(f'::set-output name=archive::{archive_name}')
+          system = os_mapping[target_os]
+
+          archive_name=f'${{ matrix.bin.name }}_${{ github.event.release.tag_name || format('pull_request_{0}', github.event.pull_request.number) }}_{system}_{arch}.${{ matrix.target.archive_extension }}'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
+              output_file.write(f'archive={archive_name}\n')
 
       - name: Pack macos archive
         if: startsWith(matrix.os, 'macos')
@@ -180,6 +146,65 @@ jobs:
           cp target/${{ matrix.target }}/release/${{ matrix.bin }}.exe ./${{ matrix.bin }}.exe
           7z a -tzip ${{ steps.create-archive-name.outputs.archive }} ./${{ matrix.bin }}.exe
 
+      - name: Install GnuPG (macOS)
+        if: github.event_name == 'release' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install gnupg
+
+      - name: Install GnuPG (Linux)
+        if: github.event_name == 'release' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gnupg
+
+      - name: Import GPG private key
+        if: github.event_name == 'release'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
+            echo "GPG_PRIVATE_KEY secret is not set." >&2
+            exit 1
+          fi
+
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+
+          # Allow loopback pinentry when passphrase is provided
+          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
+          echo "use-agent" >> "$GNUPGHOME/gpg.conf"
+          gpgconf --reload gpg-agent || true
+
+          # Import ASCII-armored or binary private key material
+          printf "%s" "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          # Grab the first secret key fingerprint and expose it to later steps
+          FPR="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          if [[ -z "$FPR" ]]; then
+            echo "Failed to import a signing key." >&2
+            exit 1
+          fi
+
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "GPG_FPR=$FPR" >> "$GITHUB_ENV"
+
+      - name: Sign archive with GPG
+        if: github.event_name == 'release'
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="${{ steps.create-archive-name.outputs.archive }}"
+
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+                -u "$GPG_FPR" --armor --output "${ARCHIVE}.asc" --detach-sign "$ARCHIVE"
+
       - name: Upload archive
         uses: actions/upload-release-asset@v1.0.2
         env:
@@ -190,22 +215,16 @@ jobs:
           asset_name: ${{ steps.create-archive-name.outputs.archive }}
           asset_content_type: application/gzip
 
-      - name: Save Rust/Cargo cache to S3
-        if: ${{ always() }}
-        uses: whywaita/actions-cache-s3@v2
+      - name: Upload archive signature (.asc)
+        if: github.event_name == 'release'
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
         with:
-          path: |
-            ~/.rustup
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ matrix.target }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          aws-s3-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          aws-region: eu-central-1
-          aws-endpoint: ${{ secrets.S3_ENDPOINT_URL }}
-          aws-s3-force-path-style: true
-          aws-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./${{ steps.create-archive-name.outputs.archive }}.asc
+          asset_name: ${{ steps.create-archive-name.outputs.archive }}.asc
+          asset_content_type: application/pgp-signature
 
   build_and_push_docker:
     name: Build and Push Docker Image

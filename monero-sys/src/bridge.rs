@@ -276,6 +276,7 @@ pub mod ffi {
             wallet: Pin<&mut Wallet>,
             dest_addresses: &CxxVector<CxxString>,
             amounts: &CxxVector<u64>,
+            subtract_fee_from_outputs: bool,
         ) -> *mut PendingTransaction;
 
         fn vector_string_push_back(v: Pin<&mut CxxVector<CxxString>>, s: &CxxString);

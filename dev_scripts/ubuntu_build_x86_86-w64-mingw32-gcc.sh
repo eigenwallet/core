@@ -238,7 +238,8 @@ prepare_gcc_build() {
       --prefix=$PREFIX \
       --with-sysroot=$PREFIX \
       --disable-multilib \
-      --enable-languages=c,c++
+      --enable-languages=c,c++ \
+      --enable-threads=posix
     make all-gcc -j$(nproc)
     make install-gcc
 
@@ -292,24 +293,36 @@ build_winpthreads() {
 copy_dlls() {
     echo "Copying dll's to src-tauri/"
     cp -f $PREFIX/x86_64-w64-mingw32/lib/{libstdc++-6,libgcc_s_seh-1}.dll $SRC_TAURI_DIR/
+    cp -f $PREFIX/x86_64-w64-mingw32/bin/libwinpthread-1.dll $SRC_TAURI_DIR/
 }
 
 setup_path() {
+    export MINGW_TOOLCHAIN_DIR="$PREFIX/bin"
+
     # Add to PATH only if not already present
     if [[ ":$PATH:" != *":$PREFIX/bin:"* ]]; then
-        export PATH="$PREFIX/bin:$PATH"
+        export PATH="$MINGW_TOOLCHAIN_DIR:$PATH"
     fi
 
-    # add path to bashrc
+    # When running in GitHub Actions, export the toolchain dir for later steps
+    if [ -n "${GITHUB_ENV:-}" ]; then
+        echo "MINGW_TOOLCHAIN_DIR=$MINGW_TOOLCHAIN_DIR" >> "$GITHUB_ENV"
+    fi
+
+    # Also add to GITHUB_PATH for GitHub Actions
+    if [ -n "${GITHUB_PATH:-}" ]; then
+        echo "$PREFIX/bin" >> "$GITHUB_PATH"
+    fi
+
+    # Add path to .bashrc
     if ! grep -q "export PATH=\"$PREFIX/bin:\$PATH\"" ~/.bashrc; then
         echo "export PATH=\"$PREFIX/bin:\$PATH\"" >> ~/.bashrc
     fi
-
 }
 
 verify_installation() {
-    # 1. check that ~/opt/gcc-mingw-14.3/ exists 
-    # 2. check that `x86_64-w64-mingw32-g++ --version` works and the output contains 14.3 
+    # 1. check that ~/opt/gcc-mingw-14.3/ exists
+    # 2. check that `x86_64-w64-mingw32-g++ --version` works and the output contains 14.3
     # 3. make sure the dll's are in the src-tauri directory
 
 	echo "Verifying cross-compiler installation"
@@ -348,7 +361,7 @@ verify_installation() {
 
 	# Check DLLs in src-tauri directory
 	local missing_dlls=()
-	for dll in libstdc++-6.dll libgcc_s_seh-1.dll; do
+	for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
 		if [ ! -f "$SRC_TAURI_DIR/$dll" ]; then
 			missing_dlls+=("$dll")
 		fi
@@ -396,8 +409,8 @@ build_binutils
 build_mingw_headers
 prepare_gcc_build
 build_mingw_crt
-finish_gcc
 build_winpthreads
+finish_gcc
 copy_dlls
 
 setup_path

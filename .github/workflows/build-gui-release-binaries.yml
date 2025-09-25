@@ -1,5 +1,5 @@
 # This file is used to build the release binaries for the Tauri GUI
-name: "Publish GUI release to GitHub"
+name: "Build eigenwallet release"
 
 on:
   release:
@@ -10,10 +10,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publish-tauri:
-    # Do not publish preview releases to Github.
-    # Building takes too long for preview releases.
-    # if: ${{ !contains(github.ref_name, 'preview') }} Temporarily disabled
+  draft-cb-release:
+    # don't do it for PR's
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set env variables
+        uses: ./.github/actions/set-monero-env
+
+      - name: Create Draft Release
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release draft ${{ env.CN_APPLICATION }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}
     permissions:
       contents: write
     strategy:
@@ -129,5 +140,30 @@ jobs:
         with:
           releaseId: ${{ github.event.release.id }}
           projectPath: src-tauri
-          args: ${{ matrix.args }}
-          tauriScript: cargo tauri
+          tauriScript: yarn tauri
+          args: --target ${{ matrix.target }}
+
+      - name: upload to crabnebula release (not for previews)
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release upload ${{ env.CN_APPLICATION }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}
+          args: --target ${{ matrix.target }}
+
+  publish:
+    # don't publish previews to crabnebula
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+    needs: [draft-cb-release, build_gui]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set env variables
+        uses: ./.github/actions/set-monero-env
+
+      - name: Publish Release
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release publish ${{ env.CN_APPLICATION }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}

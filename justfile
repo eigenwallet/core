@@ -78,6 +78,9 @@ tests:
 docker_test_happy_path:
 	cargo test --package swap --test happy_path -- --nocapture
 
+docker_test_happy_path_with_developer_tip:
+	cargo test --package swap --test happy_path_alice_developer_tip -- --nocapture
+
 docker_test_all:
 	cargo test --package swap --test all -- --nocapture
 
@@ -91,7 +94,7 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:

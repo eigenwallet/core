@@ -26,7 +26,7 @@ jobs:
           version = branch_name.split("/")[1]
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
-              output_file.write(f'archive={archive_name}\n')
+              output_file.write(f'version={version}\n')
 
       - name: Extract changelog section for release
         id: changelog
