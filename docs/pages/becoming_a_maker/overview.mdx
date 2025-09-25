@@ -10,85 +10,93 @@ For this, it uses direct FFI wallet access via `monero-sys` for Monero and `elec
 
 It's also strongly recommended to run your own Monero and Bitcoin nodes.
 
-## Docker Compose setup
+## Orchestrator setup
 
-We maintain a Docker Compose configuration ([link](https://github.com/eigenwallet/asb-docker-compose)) that automatically starts and manages these services:
+We ship an `orchestrator` binary that builds a production ready Docker Compose environment for the ASB.
+The orchestrator walks you through a wizard, creates the ASB configuration and pins a Docker Compose file with all required services:
 
 - `asb` (the maker service, with built-in wallet functionality connecting directly to `monerod` and `electrs`)
-- `electrs` (a Bitcoin blockchain indexer, connecting to `bitcoind`)
-- `monerod` (a Monero node, connecting to the Monero blockchain)
-- `bitcoind` (a Bitcoin node, connecting to the Bitcoin blockchain)
+- `asb-controller` (a REPL for issuing JSON-RPC commands to the ASB)
+- `asb-tracing-logger` (high verbosity ASB logs)
+- `electrs` (Bitcoin blockchain indexer, connecting to `bitcoind`)
+- `monerod` (Monero node)
+- `bitcoind` (Bitcoin node)
 
 To run this setup you'll need Docker and Docker Compose installed.
 
 ### Getting started
 
-Now you can clone the configuration repo and `cd` into it.
-We're going to setup an asb on mainnet.
-If you want to setup for testnet, go into the `testnet` directory instead.
-All other steps remain the same.
+Download the latest [orchestrator release](https://github.com/eigenwallet/core/releases) for your platform (or build it from source) and make it executable.
+If you're on Linux x86_64 you can use the quick install snippet documented in the [orchestrator README](https://github.com/eigenwallet/core/blob/main/swap-orchestrator/README.md#quick-install) to fetch the newest binary.
+
+Place the binary in an empty directory and run the wizard:
 
 ```bash
-git clone https://github.com/eigenwallet/asb-docker-compose.git
-cd asb-docker-compose/mainnet
+./orchestrator
 ```
 
-The directory contains three files: the docker compose file, the enviroment variables file and the asb configuration file.
-The directory structure looks like this:
-
-```bash
-asb-docker-compose/mainnet/
-├─ config_mainnet.toml  # asb configuration
-├─ docker-compose.yml   # docker compose configuration
-├─ .env                 # port configuration for docker compose
-```
-
-The `docker-compose.yml` and `.env` files are part of the docker compose setup.
-We will prioritize the asb configuration file in this guide, because you probably don't want to change the docker compose setup.
+Answer the prompts to configure the Bitcoin/Monero networks, exposed ports and ASB options.
+When the wizard finishes you'll have a `docker-compose.yml`, a matching `config.toml`, and Docker volumes ready to store blockchain data and ASB state.
+The README also covers the generated directory layout and additional management commands if you want to dive deeper into the tool's capabilities.
 
 ### Usage and commands
 
-_This list is also available in the [repository](https://github.com/eigenwallet/asb-docker-compose/), including variations for testnet._
-
-First, make sure you're in the directory with the `docker-compose.yml` file:
+All Docker commands below are executed from the directory that contains the generated `docker-compose.yml` file:
 
 ```bash copy
-cd asb-docker-compose/mainnet
+cd /path/to/orchestrator-output
 ```
 
 If you aren't familiar with docker compose, here are the most important commands:
 
 | Command | Description |
 | --- | --- |
-| `docker compose up -d` | Start all services. |
+| `docker compose up -d --build` | Build images (if requested) and start all services. |
+| `docker compose up -d` | Start all services using the existing images. |
 | `docker compose down` | Stop all services. |
 | `docker compose ps` | List all currently running services. |
 | `docker compose pull` | Pull the latest images for all services. You need to run `docker compose up -d` after this to actually update the services. |
-| `docker compose logs -f` | Access the logs of all services. To only get the logs of a specific service, use `docker compose logs -f <service_name>`. To only see the last e.g. 100 lines, use `docker compose logs -f --tail 100`. |
+| `docker compose logs -f --tail 100` | Follow logs for all services. Append a service name (for example `asb` or `asb-tracing-logger`) to scope the output. |
 
-You can also execute `asb` commands, to get the history of swaps for example:
+Once `docker compose up` reports the containers as healthy you can attach to the ASB controller shell:
 
 ```bash copy
-docker compose exec mainnet_asb asb --config=/asb-data/config_mainnet.toml history
+docker compose attach asb-controller
 ```
 
-Below is a list of asb commands you can use.
-Some of them require access to some resources, in which case you'll need to stop the asb first and then resume afterwards:
+The controller exposes commands such as `bitcoin-balance`, `monero-balance`, `monero-address`, `multiaddresses`, and `get-swaps`.
+Type `help` inside the shell to see the full list. Use `quit` to exit the REPL when you're done.
+
+For more verbose ASB logs, stream the `asb-tracing-logger` output:
+
+```bash copy
+docker compose logs -f --tail 100 asb-tracing-logger
+```
+
+### Running `asb` commands directly
+
+Some maintenance tasks still require invoking the `asb` binary instead of going through the JSON-RPC controller. The orchestrator mounts your configuration file at `/asb-data/config.toml` inside the container, so you can execute commands like `history` or `export-bitcoin-wallet` straight from the host:
+
+```bash copy
+docker compose exec asb asb --config=/asb-data/config.toml history
+```
+
+If you generated a testnet/stagenet environment, include the `--testnet` flag right after the binary name:
+
+```bash copy
+docker compose exec asb asb --testnet --config=/asb-data/config.toml history
+```
+
+Commands that modify internal wallets (for example `withdraw-btc` or `export-bitcoin-wallet`) work the same way—just replace `history` with the subcommand you need.
+
+If you need to stop the environment temporarily:
 
 ```bash copy
 docker compose down
-docker compose exec mainnet_asb asb --config=/asb-data/config_mainnet.toml <command>
 docker compose up -d
 ```
 
-| Command | Description |
-| --- | --- |
-| `help` | Prints a list of available options and commands (under _subcommands_). |
-| `history` | Prints a list of all previous and current swaps. |
-| `start` | Starts the asb. This is automatically done when you run `docker compose up -d`. |
-| `config` | Prints the current configuration. |
-| `export-bitcoin-wallet` | Prints the internal bitcoin wallet descriptor which can be used to access the asb's bitcoin wallet. |
-| `withdraw-btc --address <YOUR_ADDRESS>` | Withdraws Bitcoin from the internal wallet into a specified address. |
+The ASB configuration lives in `config.toml` next to the compose file. You can edit it between runs and reapply the changes by restarting the ASB container (`docker compose restart asb`).
 
 ### Asb Configuration
 
