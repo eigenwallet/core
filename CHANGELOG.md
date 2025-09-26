@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.4] - 2025-09-26
+
 - GUI: A warning will be display for makers running `<3.0.0`. Versions `2.*.*` are deprecated and do not support some essential protocols such as the new cooperative Monero redeem protocol. If you are a maker and are having issues with upgrading, please contact the developer on Matrix.
 - GUI: Clearly mark makers that have no available funds as having no available funds.
 
@@ -663,7 +665,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.3...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.4...HEAD
+[3.0.4]: https://github.com/eigenwallet/core/compare/3.0.3...3.0.4
 [3.0.3]: https://github.com/eigenwallet/core/compare/3.0.2...3.0.3
 [3.0.2]: https://github.com/eigenwallet/core/compare/3.0.1...3.0.2
 [3.0.1]: https://github.com/eigenwallet/core/compare/3.0.0-beta.16...3.0.1
