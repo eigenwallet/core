@@ -1,5 +1,4 @@
 import {
-  Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
@@ -8,11 +7,13 @@ import {
   IconButton,
   InputAdornment,
 } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
 import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useState } from "react";
 import { usePendingPasswordApproval } from "store/hooks";
 import { rejectApproval, resolveApproval } from "renderer/rpc";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 
 export default function PasswordEntryDialog() {
   const pendingApprovals = usePendingPasswordApproval();
@@ -61,7 +62,7 @@ export default function PasswordEntryDialog() {
   }
 
   return (
-    <Dialog
+    <MobileDialog
       open={true}
       maxWidth="sm"
       fullWidth
@@ -72,6 +73,7 @@ export default function PasswordEntryDialog() {
         },
       }}
     >
+      <MobileDialogHeader title="Enter Wallet Password" onClose={reject} />
       <DialogTitle>Enter Wallet Password</DialogTitle>
 
       <DialogContent>
@@ -121,6 +123,6 @@ export default function PasswordEntryDialog() {
           Unlock
         </PromiseInvokeButton>
       </DialogActions>
-    </Dialog>
+    </MobileDialog>
   );
 }

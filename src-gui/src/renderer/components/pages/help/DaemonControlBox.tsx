@@ -1,7 +1,7 @@
 import { Box } from "@mui/material";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { useAppSelector } from "store/hooks";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import CliLogsBox from "renderer/components/other/RenderedCliLog";

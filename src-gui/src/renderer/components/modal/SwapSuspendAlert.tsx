@@ -13,7 +13,7 @@ import {
 } from "@mui/material";
 import CircleIcon from "@mui/icons-material/Circle";
 import { suspendCurrentSwap } from "renderer/rpc";
-import PromiseInvokeButton from "../PromiseInvokeButton";
+import PromiseInvokeButton from "../buttons/PromiseInvokeButton";
 
 type SwapCancelAlertProps = {
   open: boolean;

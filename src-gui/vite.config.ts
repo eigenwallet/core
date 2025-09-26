@@ -16,6 +16,7 @@ export default defineConfig(async () => ({
     topLevelAwait(),
     // Automatically regenerate the typescript bindings when there's a change to the rust code
     watch({
+      // TODO: Here we need to watch all crates in the workspace
       pattern: ["../swap/src/**/*"],
       command: "yarn run gen-bindings",
       silent: true,
@@ -36,7 +37,7 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: mobile ? "0.0.0.0" : false,
+    host: "0.0.0.0",
     hmr: mobile
       ? {
           protocol: "ws",

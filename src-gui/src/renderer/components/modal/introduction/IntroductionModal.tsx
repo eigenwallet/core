@@ -1,4 +1,7 @@
 import { Modal } from "@mui/material";
+import MobileDialog from "../MobileDialog";
+import MobileDialogHeader from "../MobileDialogHeader";
+import { useIsMobile } from "../../../../utils/useIsMobile";
 import { useState } from "react";
 import Slide01_GettingStarted from "./slides/Slide01_GettingStarted";
 import Slide02_ChooseAMaker from "./slides/Slide02_ChooseAMaker";
@@ -15,6 +18,7 @@ import { useAppDispatch, useSettings } from "store/hooks";
 
 export default function IntroductionModal() {
   const userHasSeenIntroduction = useSettings((s) => s.userHasSeenIntroduction);
+  const isMobile = useIsMobile();
 
   const dispatch = useAppDispatch();
 
@@ -89,6 +93,15 @@ export default function IntroductionModal() {
       key="slide-07"
     />,
   ];
+
+  if (isMobile) {
+    return (
+      <MobileDialog open={open} onClose={handleClose}>
+        <MobileDialogHeader title="Getting Started" onClose={handleClose} />
+        {slideComponents[currentSlideIndex]}
+      </MobileDialog>
+    );
+  }
 
   return (
     <Modal

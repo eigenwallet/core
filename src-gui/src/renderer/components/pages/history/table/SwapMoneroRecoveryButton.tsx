@@ -10,7 +10,7 @@ import {
 import { ButtonProps } from "@mui/material/Button";
 import { BobStateName, GetSwapInfoResponseExt } from "models/tauriModelExt";
 import TruncatedText from "renderer/components/other/TruncatedText";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import PromiseInvokeButton from "renderer/components/buttons/PromiseInvokeButton";
 import { getMoneroRecoveryKeys } from "renderer/rpc";
 import { store } from "renderer/store/storeRenderer";
 import {

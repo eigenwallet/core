@@ -78,7 +78,7 @@ export default function PromiseInvokeButton<T>({
 
   return (
     <Tooltip title={actualTooltipTitle}>
-      <span>
+      <>
         {isIconButton ? (
           <IconButton
             onClick={handleClick}
@@ -99,7 +99,7 @@ export default function PromiseInvokeButton<T>({
             {...rest}
           />
         )}
-      </span>
+      </>
     </Tooltip>
   );
 }

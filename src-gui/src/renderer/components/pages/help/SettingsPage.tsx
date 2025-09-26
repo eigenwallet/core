@@ -1,5 +1,4 @@
 import { Box } from "@mui/material";
-import ContactInfoBox from "./ContactInfoBox";
 import DonateInfoBox from "./DonateInfoBox";
 import DaemonControlBox from "./DaemonControlBox";
 import SettingsBox from "./SettingsBox";
@@ -8,9 +7,11 @@ import DiscoveryBox from "./DiscoveryBox";
 import MoneroPoolHealthBox from "./MoneroPoolHealthBox";
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
+import { useIsMobile } from "../../../../utils/useIsMobile";
 
 export default function SettingsPage() {
   const location = useLocation();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (location.hash) {
@@ -23,9 +24,10 @@ export default function SettingsPage() {
     <Box
       sx={{
         display: "flex",
-        gap: 2,
+        gap: isMobile ? 1.5 : 2,
         flexDirection: "column",
-        paddingBottom: 2,
+        paddingBottom: isMobile ? 1 : 2,
+        maxWidth: isMobile ? "100%" : "none",
       }}
     >
       <SettingsBox />

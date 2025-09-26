@@ -1,6 +1,5 @@
 import {
   Box,
-  Chip,
   IconButton,
   Menu,
   MenuItem,
@@ -23,16 +22,13 @@ import { open } from "@tauri-apps/plugin-shell";
 import dayjs from "dayjs";
 import { useState } from "react";
 
-interface TransactionItemProps {
+interface TransactionItemDesktopProps {
   transaction: TransactionInfo;
 }
 
-export default function TransactionItem({ transaction }: TransactionItemProps) {
+export default function TransactionItemDesktop({ transaction }: TransactionItemDesktopProps) {
   const isIncoming = transaction.direction === TransactionDirection.In;
-  const displayDate = dayjs(transaction.timestamp * 1000).format(
-    "MMM DD YYYY, HH:mm",
-  );
-
+  const displayDate = dayjs(transaction.timestamp * 1000).format("MMM DD YYYY, HH:mm");
   const amountStyles = isIncoming
     ? { color: "success.tint" }
     : { color: "error.tint" };
@@ -99,9 +95,18 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
               disableTooltip
             />
           </Typography>
-          <Typography variant="caption" sx={{ gridArea: "2 / 2" }}>
-            <FiatPiconeroAmount amount={transaction.amount} />
-          </Typography>
+          <Box
+            sx={{
+              gridArea: "2 / 2",
+              display: "flex",
+              flexDirection: "row",
+              gap: 1,
+            }}
+          >
+            <Typography variant="caption">
+              <FiatPiconeroAmount amount={transaction.amount} />
+            </Typography>
+          </Box>
         </Box>
       </Box>
       <Box
