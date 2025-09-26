@@ -1,6 +1,8 @@
 import {
   Button,
   ButtonProps,
+  Chip,
+  ChipProps,
   IconButton,
   IconButtonProps,
   Tooltip,
@@ -16,6 +18,7 @@ interface PromiseInvokeButtonProps<T> {
   onPendingChange?: (isPending: boolean) => void | null;
   isLoadingOverride?: boolean;
   isIconButton?: boolean;
+  isChipButton?: boolean;
   loadIcon?: ReactNode;
   disabled?: boolean;
   displayErrorSnackbar?: boolean;
@@ -27,10 +30,13 @@ export default function PromiseInvokeButton<T>({
   disabled = false,
   onSuccess = null,
   onInvoke,
+  children,
+  startIcon,
   endIcon,
   loadIcon = null,
   isLoadingOverride = false,
   isIconButton = false,
+  isChipButton = false,
   displayErrorSnackbar = false,
   onPendingChange = null,
   requiresContext = true,
@@ -43,9 +49,6 @@ export default function PromiseInvokeButton<T>({
   const [isPending, setIsPending] = useState(false);
 
   const isLoading = isPending || isLoadingOverride;
-  const actualEndIcon = isLoading
-    ? loadIcon || <CircularProgress size={24} />
-    : endIcon;
 
   async function handleClick() {
     if (!isPending) {
@@ -54,9 +57,11 @@ export default function PromiseInvokeButton<T>({
         setIsPending(true);
         const result = await onInvoke();
         onSuccess?.(result);
-      } catch (e: unknown) {
+      } catch (err: unknown) {
+        console.error(err);
+
         if (displayErrorSnackbar) {
-          enqueueSnackbar(e as string, {
+          enqueueSnackbar(err as string, {
             autoHideDuration: 60 * 1000,
             variant: "error",
           });
@@ -76,10 +81,34 @@ export default function PromiseInvokeButton<T>({
       ? "Wait for the application to load all required components"
       : tooltipTitle) ?? "";
 
-  return (
-    <Tooltip title={actualTooltipTitle}>
-      <span>
-        {isIconButton ? (
+  const resolvedLoadingIcon = loadIcon || (
+    <CircularProgress size={isChipButton ? 18 : 24} color="inherit" />
+  );
+
+  if (isChipButton) {
+    return (
+      <Tooltip title={actualTooltipTitle}>
+        <span>
+          <Chip
+            {...(rest as unknown as ChipProps)}
+            onClick={handleClick}
+            disabled={isDisabled}
+            clickable={!isDisabled}
+            variant="button"
+            icon={
+              <>{isLoading ? resolvedLoadingIcon : (endIcon ?? startIcon)}</>
+            }
+            label={children}
+          />
+        </span>
+      </Tooltip>
+    );
+  }
+
+  if (isIconButton) {
+    return (
+      <Tooltip title={actualTooltipTitle}>
+        <span>
           <IconButton
             onClick={handleClick}
             disabled={isDisabled}
@@ -89,16 +118,27 @@ export default function PromiseInvokeButton<T>({
               padding: "0.25rem",
             }}
           >
-            {actualEndIcon}
+            {isLoading
+              ? resolvedLoadingIcon
+              : (children ?? endIcon ?? startIcon)}
           </IconButton>
-        ) : (
-          <Button
-            onClick={handleClick}
-            disabled={isDisabled}
-            endIcon={actualEndIcon}
-            {...rest}
-          />
-        )}
+        </span>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip title={actualTooltipTitle}>
+      <span>
+        <Button
+          onClick={handleClick}
+          disabled={isDisabled}
+          startIcon={startIcon}
+          endIcon={isLoading ? resolvedLoadingIcon : endIcon}
+          {...rest}
+        >
+          {children}
+        </Button>
       </span>
     </Tooltip>
   );

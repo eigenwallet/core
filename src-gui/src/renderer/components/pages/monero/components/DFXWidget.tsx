@@ -6,11 +6,13 @@ import {
   DialogContent,
   Chip,
   Tooltip,
+  CircularProgress,
 } from "@mui/material";
 import { EuroSymbol as EuroIcon } from "@mui/icons-material";
 import DFXSwissLogo from "assets/dfx-logo.svg";
 import { useState } from "react";
 import { dfxAuthenticate } from "renderer/rpc";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 
 function DFXLogo({ height = 24 }: { height?: number }) {
   return (
@@ -37,34 +39,23 @@ function DFXLogo({ height = 24 }: { height?: number }) {
 export default function DfxButton() {
   const [dfxUrl, setDfxUrl] = useState<string | null>(null);
 
-  const handleOpenDfx = async () => {
-    try {
-      // Get authentication token and URL (this will initialize DFX if needed)
-      const response = await dfxAuthenticate();
-      setDfxUrl(response.kyc_url);
-      return response;
-    } catch (error) {
-      console.error("DFX authentication failed:", error);
-      // TODO: Show error snackbar if needed
-      throw error;
-    }
-  };
-
   const handleCloseModal = () => {
     setDfxUrl(null);
   };
 
   return (
     <>
-      <Tooltip title="Buy Monero with fiat using DFX" enterDelay={500}>
-        <Chip
-          variant="button"
-          icon={<EuroIcon />}
-          label="Buy Monero"
-          clickable
-          onClick={handleOpenDfx}
-        />
-      </Tooltip>
+      <PromiseInvokeButton
+        onInvoke={dfxAuthenticate}
+        onSuccess={(response) => setDfxUrl(response.kyc_url)}
+        startIcon={<EuroIcon />}
+        variant="outlined"
+        tooltipTitle="Buy Monero with fiat using DFX"
+        displayErrorSnackbar
+        isChipButton
+      >
+        Buy Monero
+      </PromiseInvokeButton>
 
       <Dialog
         open={dfxUrl != null}
