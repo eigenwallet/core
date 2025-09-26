@@ -370,10 +370,6 @@ where
                             let swap_peer = self.db.get_peer_id(swap_id).await;
                             let swap_state = self.db.get_state(swap_id).await;
 
-                            // Todo: remove after testing
-                            self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::UnknownSwap });
-                            continue;
-
                             // If we do not find the swap in the database, or we do not have a peer-id for it, reject
                             let (swap_peer, swap_state) = match (swap_peer, swap_state) {
                                 (Ok(peer), Ok(state)) => (peer, state),
