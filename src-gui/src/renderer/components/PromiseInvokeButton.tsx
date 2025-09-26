@@ -81,8 +81,9 @@ export default function PromiseInvokeButton<T>({
       ? "Wait for the application to load all required components"
       : tooltipTitle) ?? "";
 
-  const resolvedLoadingIcon =
-    loadIcon || <CircularProgress size={isChipButton ? 18 : 24} color="inherit" />;
+  const resolvedLoadingIcon = loadIcon || (
+    <CircularProgress size={isChipButton ? 18 : 24} color="inherit" />
+  );
 
   if (isChipButton) {
     return (
@@ -94,7 +95,9 @@ export default function PromiseInvokeButton<T>({
             disabled={isDisabled}
             clickable={!isDisabled}
             variant="button"
-            icon={isLoading ? <>{resolvedLoadingIcon}</> : startIcon}
+            icon={
+              <>{isLoading ? resolvedLoadingIcon : (endIcon ?? startIcon)}</>
+            }
             label={children}
           />
         </span>
@@ -111,6 +114,9 @@ export default function PromiseInvokeButton<T>({
             disabled={isDisabled}
             {...(rest as IconButtonProps)}
             size="large"
+            sx={{
+              padding: "0.25rem",
+            }}
           >
             {isLoading
               ? resolvedLoadingIcon
