@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4939F521ABA845E0DCB692CB"
-               BuildableName = "UnstoppableSwap.app"
+               BuildableName = "eigenwallet.app"
                BlueprintName = "unstoppableswap-gui-rs_iOS"
                ReferencedContainer = "container:unstoppableswap-gui-rs.xcodeproj">
             </BuildableReference>
@@ -31,7 +31,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4939F521ABA845E0DCB692CB"
-            BuildableName = "UnstoppableSwap.app"
+            BuildableName = "eigenwallet.app"
             BlueprintName = "unstoppableswap-gui-rs_iOS"
             ReferencedContainer = "container:unstoppableswap-gui-rs.xcodeproj">
          </BuildableReference>
@@ -66,7 +66,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4939F521ABA845E0DCB692CB"
-            BuildableName = "UnstoppableSwap.app"
+            BuildableName = "eigenwallet.app"
             BlueprintName = "unstoppableswap-gui-rs_iOS"
             ReferencedContainer = "container:unstoppableswap-gui-rs.xcodeproj">
          </BuildableReference>
@@ -95,7 +95,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4939F521ABA845E0DCB692CB"
-            BuildableName = "UnstoppableSwap.app"
+            BuildableName = "eigenwallet.app"
             BlueprintName = "unstoppableswap-gui-rs_iOS"
             ReferencedContainer = "container:unstoppableswap-gui-rs.xcodeproj">
          </BuildableReference>
