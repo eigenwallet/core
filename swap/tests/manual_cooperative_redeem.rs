@@ -9,13 +9,14 @@ use swap::protocol::{alice, bob, State};
 use swap_controller_api::AsbApiClient;
 
 use crate::harness::bob_run_until::{is_btc_locked, is_btc_punished};
+use crate::harness::TestContext;
 
 /// Bob locks Btc and Alice locks Xmr. Bob does not act; he fails to send Alice
 /// the encsig and fail to refund or redeem. Alice punishes. Bob then cooperates with Alice and redeems XMR with her key.
 /// But this time, we use the manual export of the cooperative redeem key via the asb-controller.
 #[tokio::test]
 async fn alice_and_bob_manual_cooperative_redeem_after_punish() {
-    harness::setup_test(FastPunishConfig, |mut ctx| async move {
+    harness::setup_test(FastPunishConfig, |mut ctx: TestContext| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));

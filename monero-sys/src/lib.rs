@@ -152,10 +152,10 @@ pub struct Daemon {
     pub ssl: bool,
 }
 
-impl TryFrom<String> for Daemon {
+impl<'a> TryFrom<&'a str> for Daemon {
     type Error = anyhow::Error;
 
-    fn try_from(address: String) -> Result<Self, Self::Error> {
+    fn try_from(address: &'a str) -> Result<Self, Self::Error> {
         let url = Url::parse(&address).context("Failed to parse daemon URL")?;
 
         let hostname = url
@@ -174,6 +174,14 @@ impl TryFrom<String> for Daemon {
             port,
             ssl,
         })
+    }
+}
+
+impl<'a> TryFrom<&'a String> for Daemon {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &'a String) -> std::result::Result<Self, Self::Error> {
+        Daemon::try_from(value.as_str())
     }
 }
 

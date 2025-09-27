@@ -441,7 +441,7 @@ impl ContextBuilder {
         };
 
         // Create a daemon struct for the monero wallet based on the node address
-        let daemon = monero_sys::Daemon::try_from(monero_node_address)?;
+        let daemon = monero_sys::Daemon::try_from(&monero_node_address)?;
 
         // Prompt the user to open/create a Monero wallet
         let (wallet, seed) = open_monero_wallet(
@@ -662,12 +662,12 @@ impl Context {
                 let pool_url: String = server_info.clone().into();
                 tracing::info!("Switching to Monero RPC pool: {}", pool_url);
 
-                monero_sys::Daemon::try_from(pool_url)?
+                monero_sys::Daemon::try_from(&pool_url)?
             }
             MoneroNodeConfig::SingleNode { url } => {
                 tracing::info!("Switching to single Monero node: {}", url);
 
-                monero_sys::Daemon::try_from(url.clone())?
+                monero_sys::Daemon::try_from(&url)?
             }
         };
 
