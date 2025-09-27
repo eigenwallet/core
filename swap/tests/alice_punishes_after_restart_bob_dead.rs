@@ -1,8 +1,8 @@
 pub mod harness;
 
+use harness::FastPunishConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_locked;
-use harness::FastPunishConfig;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
 use swap::protocol::bob::BobState;
@@ -35,7 +35,7 @@ async fn alice_punishes_after_restart_if_bob_dead() {
         // cancel transaction is not published at this point)
         if let AliceState::XmrLockTransactionSent { state3, .. } = alice_state {
             alice_bitcoin_wallet
-                .subscribe_to(state3.tx_lock)
+                .subscribe_to(Box::new(state3.tx_lock))
                 .await
                 .wait_until_confirmed_with(state3.cancel_timelock)
                 .await?;
