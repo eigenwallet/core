@@ -17,7 +17,7 @@ use crate::harness::TestContext;
 /// And also, alice sends a malicious key! So we expect the cooperative redeem check to fail before changing states.
 #[tokio::test]
 async fn bob_rejects_malicious_cooperative_redeem_key() {
-    harness::setup_test(FastPunishConfig, |mut ctx: TestContext| async move {
+    harness::setup_test(FastPunishConfig, None, |mut ctx: TestContext| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));

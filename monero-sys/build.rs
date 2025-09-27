@@ -110,7 +110,7 @@ fn main() {
         .display()
         .to_string();
     config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
-    println!("cargo:warning=Using toolchain file: {}", toolchain_file);
+    println!("cargo:debug=Using toolchain file: {}", toolchain_file);
 
     let depends_lib_dir = contrib_depends_dir.join(format!("{}/lib", target));
 
@@ -414,7 +414,7 @@ fn compile_dependencies(
         "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
         _ => target,
     };
-    println!("cargo:warning=Building for target: {}", target);
+    println!("cargo:debug=Building for target: {}", target);
 
     match target.as_str() {
         "x86_64-apple-darwin"
@@ -431,7 +431,7 @@ fn compile_dependencies(
     }
 
     println!(
-        "cargo:warning=Running make HOST={} in contrib/depends",
+        "cargo:debug=Running make HOST={} in contrib/depends",
         target
     );
 
@@ -528,7 +528,7 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
 
     for embedded in EMBEDDED_PATCHES {
         println!(
-            "cargo:warning=Processing embedded patch: {} ({})",
+            "cargo:debug=Processing embedded patch: {} ({})",
             embedded.name, embedded.description
         );
 
@@ -541,14 +541,14 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!(
-            "cargo:warning=Found {} file(s) in patch {}",
+            "cargo:debug=Found {} file(s) in patch {}",
             file_patches.len(),
             embedded.name
         );
 
         // Apply each file patch individually
         for (file_path, patch_content) in file_patches {
-            println!("cargo:warning=Applying patch to file: {}", file_path);
+            println!("cargo:debug=Applying patch to file: {}", file_path);
 
             // Parse the individual file patch
             let patch = diffy::Patch::from_str(&patch_content)
@@ -566,7 +566,7 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
             // Check if patch is already applied by trying to reverse it
             if diffy::apply(&current, &patch.reverse()).is_ok() {
                 println!(
-                    "cargo:warning=Patch for {} already applied – skipping",
+                    "cargo:debug=Patch for {} already applied – skipping",
                     file_path
                 );
                 continue;
@@ -578,11 +578,11 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
             fs::write(&target_path, patched)
                 .map_err(|e| format!("Failed to write {}: {}", file_path, e))?;
 
-            println!("cargo:warning=Successfully applied patch to: {}", file_path);
+            println!("cargo:debug=Successfully applied patch to: {}", file_path);
         }
 
         println!(
-            "cargo:warning=Successfully applied all file patches for: {} ({})",
+            "cargo:debug=Successfully applied all file patches for: {} ({})",
             embedded.name, embedded.description
         );
     }
