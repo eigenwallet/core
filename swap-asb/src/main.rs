@@ -24,6 +24,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
+use swap::libp2p_ext::MultiAddrExt;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
@@ -270,6 +271,13 @@ pub async fn main() -> Result<()> {
                 swarm.add_external_address(external_address.clone());
             }
 
+            for rendezvous_point in &rendezvous_addrs {
+                let Some(peer_id) = rendezvous_point.extract_peer_id() else {
+                    continue;
+                };
+
+                swarm.add_peer_address(peer_id, rendezvous_point.clone());
+            }
             let tip_config = {
                 let tip_address = monero::Address::from_str(match env_config.monero_network {
                     monero::Network::Mainnet => {

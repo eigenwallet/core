@@ -27,6 +27,7 @@ export default function MonospaceTextBox({ children, light = false }: Props) {
           lineHeight: 1.5,
           display: "flex",
           alignItems: "center",
+          flex: 1,
         }}
       >
         {children}

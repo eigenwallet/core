@@ -4,10 +4,11 @@ use crate::bitcoin::{
     TxLock, Txid, Wallet,
 };
 use crate::monero::wallet::WatchRequest;
-use crate::monero::TransferProof;
 use crate::monero::{self, MoneroAddressPool, TxHash};
+use crate::monero::{PrivateViewKey, TransferProof};
 use crate::monero_ext::ScalarExt;
 use crate::protocol::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
+use ::monero::{PrivateKey, PublicKey};
 use anyhow::{anyhow, bail, Context, Result};
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::nonce::Deterministic;
@@ -87,6 +88,7 @@ impl fmt::Display for BobState {
             BobState::BtcRefunded(..) => write!(f, "btc is refunded"),
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),
             BobState::BtcPunished { .. } => write!(f, "btc is punished"),
+
             BobState::BtcEarlyRefunded { .. } => write!(f, "btc is early refunded"),
             BobState::SafelyAborted => write!(f, "safely aborted"),
         }
@@ -483,6 +485,7 @@ impl State3 {
             b: self.b,
             s_b: self.s_b,
             S_a_bitcoin: self.S_a_bitcoin,
+            S_a_monero: self.S_a_monero,
             v: self.v,
             xmr: self.xmr,
             cancel_timelock: self.cancel_timelock,
@@ -505,6 +508,7 @@ impl State3 {
             A: self.A,
             b: self.b.clone(),
             s_b: self.s_b,
+            S_a_monero: self.S_a_monero,
             v: self.v,
             monero_wallet_restore_blockheight,
             cancel_timelock: self.cancel_timelock,
@@ -570,6 +574,7 @@ pub struct State4 {
     b: bitcoin::SecretKey,
     s_b: monero::Scalar,
     S_a_bitcoin: bitcoin::PublicKey,
+    S_a_monero: monero::PublicKey,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
     pub cancel_timelock: CancelTimelock,
@@ -672,6 +677,7 @@ impl State4 {
         State6 {
             A: self.A,
             b: self.b,
+            S_a_monero: self.S_a_monero,
             s_b: self.s_b,
             v: self.v,
             monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
@@ -781,6 +787,7 @@ pub struct State6 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
     s_b: monero::Scalar,
+    S_a_monero: monero::PublicKey,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
     pub monero_wallet_restore_blockheight: BlockHeight,
@@ -906,18 +913,24 @@ impl State6 {
         &self,
         s_a: monero::Scalar,
         lock_transfer_proof: TransferProof,
-    ) -> State5 {
-        let s_a = monero::PrivateKey::from_scalar(s_a);
+    ) -> Result<State5> {
+        let alleged_s_a = monero::PrivateKey::from_scalar(s_a);
+        let alleged_S_a = PublicKey::from_private_key(&alleged_s_a);
 
-        State5 {
-            s_a,
+        // Make sure we've got the correct key by checking that it matches the pubkey
+        if alleged_S_a != self.S_a_monero {
+            bail!("received bogus cooperative redeem key - doesn't match view key")
+        }
+
+        Ok(State5 {
+            s_a: alleged_s_a,
             s_b: self.s_b,
             v: self.v,
             xmr: self.xmr,
             tx_lock: self.tx_lock.clone(),
             monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
             lock_transfer_proof,
-        }
+        })
     }
 
     pub async fn check_for_tx_early_refund(

@@ -13,9 +13,10 @@ use swap::cli::{
             GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSyncProgressArgs,
             GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
-            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
-            RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
-            SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, ManualCooperativeRedeemArgs, MoneroRecoveryArgs,
+            RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
+            ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
+            WithdrawBtcArgs,
         },
         tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
         Context, ContextBuilder,
@@ -185,6 +186,7 @@ pub fn run() {
             withdraw_btc,
             buy_xmr,
             resume_swap,
+            manual_cooperative_redeem,
             get_history,
             monero_recovery,
             get_logs,
@@ -248,6 +250,7 @@ pub fn run() {
 tauri_command!(get_balance, BalanceArgs);
 tauri_command!(buy_xmr, BuyXmrArgs);
 tauri_command!(resume_swap, ResumeSwapArgs);
+tauri_command!(manual_cooperative_redeem, ManualCooperativeRedeemArgs);
 tauri_command!(withdraw_btc, WithdrawBtcArgs);
 tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);

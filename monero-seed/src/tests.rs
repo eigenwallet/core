@@ -3,7 +3,7 @@ use zeroize::Zeroizing;
 
 use curve25519_dalek::scalar::Scalar;
 
-use monero_primitives::keccak256;
+use monero_oxide::primitives::keccak256;
 
 use crate::*;
 
