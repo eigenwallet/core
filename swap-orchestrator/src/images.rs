@@ -26,6 +26,10 @@ pub static ELECTRS_IMAGE: &str =
 pub static BITCOIND_IMAGE: &str =
     "getumbrel/bitcoind@sha256:c565266ea302c9ab2fc490f04ff14e584210cde3d0d991b8309157e5dfae9e8d";
 
+/// alpine 3.22.1 (https://hub.docker.com/layers/library/alpine/3.22.1/images/sha256-0a88b42ba69d6b900848f9cb9151587bb82827d0aecfa222e51981fad97b5b9a)
+pub static ASB_TRACING_LOGGER_IMAGE: &str =
+    "alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1";
+
 pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace
     context: PINNED_GIT_REPOSITORY,

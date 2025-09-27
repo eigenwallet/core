@@ -43,6 +43,18 @@ runs:
         sudo apt update;
         sudo apt install -y ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} ${{ env.DEPS_TAURI_LINUX }} ${{ env.DEPS_BUILD_LINUX }} git
 
+    - name: Prefer MinGW POSIX threading (Ubuntu cross -> Windows)
+      if: contains(inputs.host, 'ubuntu') && contains(inputs.target, 'windows')
+      shell: bash
+      run: |
+        set -euxo pipefail
+
+        # Ensure the system MinGW toolchain uses POSIX threads (not win32)
+        # This shouldn't necessarily be needed, because we compile our own gcc with POSIX threads
+        # but we will still keep it here
+        sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+        sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+
     - name: Install build dependencies (macos)
       if: contains(inputs.host, 'macos')
       shell: bash
@@ -81,7 +93,8 @@ runs:
 
     - name: Install dprint globally
       shell: bash
-      run: npm install --global dprint@0.50 # Use npm instead of cargo binstall because the binstall version uses musl which doesn't work
+      # Use npm instead of cargo binstall because the binstall version uses musl which doesn't work
+      run: npm install --global dprint@0.50
 
     - name: Install sqlx-cli globally
       uses: taiki-e/install-action@v2
@@ -104,4 +117,27 @@ runs:
       if: contains(inputs.target, 'windows')
       shell: bash
       run: |
+        set -euxo pipefail
         just prepare-windows-build
+
+    - name: Prepare Windows build by adding gcc to PATH
+      if: contains(inputs.target, 'windows')
+      shell: bash
+      run: |
+        set -euxo pipefail
+
+        # The step above should set MINGW_TOOLCHAIN_DIR to the /bin directory of the toolchain
+        if [ -z "${MINGW_TOOLCHAIN_DIR:-}" ]; then
+          echo "ERROR: MINGW_TOOLCHAIN_DIR was not set by the build script." >&2
+          exit 1
+        fi
+
+        # Add the compiler to PATH
+        echo "$MINGW_TOOLCHAIN_DIR" >> "$GITHUB_PATH"
+
+        # Set the compiler environment variables to make cargo use the custom compiler
+        echo "CC_x86_64_pc_windows_gnu=$MINGW_TOOLCHAIN_DIR/x86_64-w64-mingw32-gcc" >> "$GITHUB_ENV"
+        echo "CXX_x86_64_pc_windows_gnu=$MINGW_TOOLCHAIN_DIR/x86_64-w64-mingw32-g++" >> "$GITHUB_ENV"
+        echo "AR_x86_64_pc_windows_gnu=$MINGW_TOOLCHAIN_DIR/x86_64-w64-mingw32-ar" >> "$GITHUB_ENV"
+        echo "RANLIB_x86_64_pc_windows_gnu=$MINGW_TOOLCHAIN_DIR/x86_64-w64-mingw32-ranlib" >> "$GITHUB_ENV"
+        echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$MINGW_TOOLCHAIN_DIR/x86_64-w64-mingw32-g++" >> "$GITHUB_ENV"

@@ -104,7 +104,9 @@ pub mod address {
     use std::str::FromStr;
 
     #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq)]
-    #[error("Invalid monero address provided, expected address on network {expected:?} but address provided is on {actual:?}")]
+    #[error(
+        "Invalid monero address provided, expected address on network {expected:?} but address provided is on {actual:?}"
+    )]
     pub struct MoneroAddressNetworkMismatch {
         pub expected: monero::Network,
         pub actual: monero::Network,
