@@ -59,11 +59,11 @@ tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 
 # Tor/Arti crates
 arti-client = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088", default-features = false }
+safelog = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 tor-cell = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 tor-hsservice = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 tor-proto = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
-safelog = { git = "https://github.com/eigenwallet/arti", rev = "d909ada56d6b2b7ed7b4d0edd4c14e048f72a088" }
 
 # Terminal Utilities
 dialoguer = "0.11"

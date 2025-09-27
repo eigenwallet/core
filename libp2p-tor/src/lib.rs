@@ -65,11 +65,11 @@ use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 // We only need these imports if the `listen-onion-service` feature is enabled
 #[cfg(feature = "listen-onion-service")]
+use safelog::DisplayRedacted;
+#[cfg(feature = "listen-onion-service")]
 use std::collections::HashMap;
 #[cfg(feature = "listen-onion-service")]
 use std::str::FromStr;
-#[cfg(feature = "listen-onion-service")]
-use safelog::DisplayRedacted;
 #[cfg(feature = "listen-onion-service")]
 use tor_cell::relaycell::msg::{Connected, End, EndReason};
 #[cfg(feature = "listen-onion-service")]
@@ -273,7 +273,7 @@ trait HsIdExt {
 #[cfg(feature = "listen-onion-service")]
 impl HsIdExt for HsId {
     /// Convert an `HsId` to a `Multiaddr`
-    fn to_multiaddr(&self, port: u16) -> Multiaddr {        
+    fn to_multiaddr(&self, port: u16) -> Multiaddr {
         let onion_domain = self.display_unredacted().to_string();
         let onion_without_dot_onion = onion_domain
             .split('.')
