@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + SWAP + ASB: Upgrade arti (tor library) to 1.5.0. This might improve connectivity reliability.
+
 ## [3.0.4] - 2025-09-26
 
 - GUI: A warning will be display for makers running `<3.0.0`. Versions `2.*.*` are deprecated and do not support some essential protocols such as the new cooperative Monero redeem protocol. If you are a maker and are having issues with upgrading, please contact the developer on Matrix.
