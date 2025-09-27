@@ -109,7 +109,7 @@ pub struct Confirmed {
     /// The depth of this transaction within the blockchain.
     ///
     /// Zero if the transaction is included in the latest block.
-    depth: u32,
+    pub depth: u32,
 }
 
 impl Confirmed {

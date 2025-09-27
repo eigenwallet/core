@@ -1461,7 +1461,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bdk_wallet",
- "bitcoin 0.32.6",
+ "bitcoin 0.32.7",
  "tokio",
  "tracing",
 ]
@@ -7911,7 +7911,7 @@ dependencies = [
 [[package]]
 name = "monero-address"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "monero-base58",
@@ -7923,7 +7923,7 @@ dependencies = [
 [[package]]
 name = "monero-base58"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "monero-primitives",
 ]
@@ -7931,7 +7931,7 @@ dependencies = [
 [[package]]
 name = "monero-borromean"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "monero-generators",
@@ -7944,7 +7944,7 @@ dependencies = [
 [[package]]
 name = "monero-bulletproofs"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "monero-generators",
@@ -7959,7 +7959,7 @@ dependencies = [
 [[package]]
 name = "monero-clsag"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "group",
@@ -7987,7 +7987,7 @@ dependencies = [
 [[package]]
 name = "monero-generators"
 version = "0.4.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "crypto-bigint",
  "curve25519-dalek 4.1.3",
@@ -8019,7 +8019,7 @@ dependencies = [
 [[package]]
 name = "monero-io"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "std-shims 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8028,7 +8028,7 @@ dependencies = [
 [[package]]
 name = "monero-mlsag"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "monero-generators",
@@ -8042,7 +8042,7 @@ dependencies = [
 [[package]]
 name = "monero-oxide"
 version = "0.1.4-alpha"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "hex-literal 1.0.0",
@@ -8060,7 +8060,7 @@ dependencies = [
 [[package]]
 name = "monero-primitives"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "monero-generators",
@@ -8093,7 +8093,7 @@ dependencies = [
 [[package]]
 name = "monero-rpc"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "hex",
@@ -8161,11 +8161,11 @@ dependencies = [
 [[package]]
 name = "monero-simple-request-rpc"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-oxide#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
+source = "git+https://github.com/monero-oxide/monero-oxide.git#32e6b5fe5ba9e1ea3e68da882550005122a11d22"
 dependencies = [
  "digest_auth",
  "hex",
- "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide)",
+ "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide.git)",
  "simple-request",
  "tokio",
  "zeroize",
@@ -13461,7 +13461,7 @@ dependencies = [
  "monero",
  "monero-harness",
  "monero-rpc 0.1.0",
- "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide)",
+ "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide.git)",
  "monero-rpc-pool",
  "monero-seed",
  "monero-simple-request-rpc",
@@ -13578,7 +13578,7 @@ dependencies = [
  "anyhow",
  "bdk_electrum",
  "bdk_wallet",
- "bitcoin 0.32.6",
+ "bitcoin 0.32.7",
  "bitcoin-wallet",
  "curve25519-dalek-ng",
  "ecdsa_fun",
@@ -13656,7 +13656,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bitcoin 0.32.6",
+ "bitcoin 0.32.7",
  "bitcoin-wallet",
  "conquer-once",
  "curve25519-dalek-ng",

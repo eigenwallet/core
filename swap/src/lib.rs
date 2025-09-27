@@ -27,6 +27,3 @@ pub mod network;
 pub mod protocol;
 pub mod seed;
 pub mod tracing_ext;
-
-#[cfg(test)]
-mod proptest;

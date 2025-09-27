@@ -1153,7 +1153,6 @@ where
                     electrum_rate_sat_vb = electrum_rate.to_sat_per_vb_ceil(),
                     mempool_space_rate_sat_vb = mempool_space_rate.to_sat_per_vb_ceil(),
                     "Successfully fetched fee rates from both Electrum and mempool.space. We will use the higher one"
-
                 );
                 Ok(std::cmp::max(electrum_rate, mempool_space_rate))
             }
@@ -2893,10 +2892,113 @@ mod tests {
     use super::*;
     use crate::bitcoin::{PublicKey, TxLock};
     use crate::tracing_ext::capture_logs;
+    use async_trait::async_trait;
+    use bdk::bitcoin::psbt::Psbt;
     use bitcoin::address::NetworkUnchecked;
     use bitcoin::hashes::Hash;
+    use bitcoin_wallet::BitcoinWallet;
     use proptest::prelude::*;
     use tracing::level_filters::LevelFilter;
+
+    // Implement BitcoinWallet trait for a stub wallet and panic when the function is not implemented
+    #[async_trait]
+    impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
+        async fn balance(&self) -> Result<Amount> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn balance_info(&self) -> Result<Balance> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn new_address(&self) -> Result<Address> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn send_to_address(
+            &self,
+            address: Address,
+            amount: Amount,
+            spending_fee: Amount,
+            change_override: Option<Address>,
+        ) -> Result<Psbt> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn send_to_address_dynamic_fee(
+            &self,
+            address: Address,
+            amount: Amount,
+            change_override: Option<Address>,
+        ) -> Result<bitcoin::psbt::Psbt> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn sweep_balance_to_address_dynamic_fee(
+            &self,
+            address: Address,
+        ) -> Result<bitcoin::psbt::Psbt> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn sign_and_finalize(
+            &self,
+            psbt: bitcoin::psbt::Psbt,
+        ) -> Result<bitcoin::Transaction> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn broadcast(
+            &self,
+            transaction: bitcoin::Transaction,
+            kind: &str,
+        ) -> Result<(Txid, Subscription)> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn sync(&self) -> Result<()> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn get_raw_transaction(
+            &self,
+            txid: Txid,
+        ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn estimate_fee(
+            &self,
+            weight: Weight,
+            transfer_amount: Option<Amount>,
+        ) -> Result<Amount> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        fn network(&self) -> Network {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        fn finality_confirmations(&self) -> u32 {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
+            unimplemented!("stub method called erroniosly")
+        }
+    }
 
     #[test]
     fn given_depth_0_should_meet_confirmation_target_one() {
