@@ -1,4 +1,4 @@
-use dialoguer::{theme::ColorfulTheme, Select};
+use dialoguer::{Select, theme::ColorfulTheme};
 use swap_env::prompt as config_prompt;
 use url::Url;
 
@@ -18,24 +18,6 @@ pub enum MoneroNodeType {
 pub enum ElectrumServerType {
     Included,         // Run a Bitcoin node and Electrum server
     Remote(Vec<Url>), // Use a specific remote Electrum server
-}
-
-pub fn network() -> (bitcoin::Network, monero::Network) {
-    let network = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Which network do you want to run on?")
-        .items(&[
-            "Mainnet Bitcoin & Mainnet Monero",
-            "Testnet Bitcoin & Stagenet Monero",
-        ])
-        .default(0)
-        .interact()
-        .expect("Failed to select network");
-
-    match network {
-        0 => (bitcoin::Network::Bitcoin, monero::Network::Mainnet),
-        1 => (bitcoin::Network::Testnet, monero::Network::Stagenet),
-        _ => unreachable!(),
-    }
 }
 
 #[allow(dead_code)] // will be used in the future

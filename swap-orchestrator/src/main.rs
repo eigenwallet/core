@@ -4,8 +4,8 @@ mod images;
 mod prompt;
 
 use crate::compose::{
-    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks, ASB_DATA_DIR, DOCKER_COMPOSE_FILE,
+    ASB_DATA_DIR, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage,
+    OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
 };
 use std::path::PathBuf;
 use swap_env::config::{
@@ -13,10 +13,64 @@ use swap_env::config::{
 };
 use swap_env::prompt as config_prompt;
 use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
+use swap_orchestrator::compose2::{Command, ComposeConfig, Flag, ImageSource, Mount, Service};
 use url::Url;
 
 fn main() {
-    let (bitcoin_network, monero_network) = prompt::network();
+    {
+        let mut config = ComposeConfig::default();
+
+        let monerod_data = config.add_volume("monero-data");
+        let monerod = Service::new(
+            "monerod",
+            ImageSource::PullFromRegistry {
+                image_url: "ghcr.io/sethforprivacy/simple-monerod@sha256:f30e5706a335c384e4cf420215cbffd1196f0b3a11d4dd4e819fe3e0bca41ec5".to_string(),
+            },
+        ).with_mount(Mount::volume(monerod_data.clone()))
+        .with_command(Command::new(vec![Flag("monerod".into())]))
+        .with_exposed_port(18081);
+
+        let monerod = config.add_service(monerod);
+
+        let asb_data = config.add_volume("asb_data");
+        let asb = Service::new("asb", ImageSource::BuildFromSource { git_url: "https://github.com/eigenwallet/core.git#8b817d5efc32f380b4ec0102a5bad86f9c98a499".parse().unwrap(), dockerfile_path: "./swap-asb/Dockerfile".into() })
+            .with_dependency(monerod.clone())
+            .with_mount(Mount::volume(asb_data.clone()))
+            .with_mount(Mount::path("./config.toml", asb_data.as_root_dir().join("config.toml")))
+            .with_exposed_port(9939);
+
+        let asb = config.add_service(asb);
+
+        // ... configure other services etc
+
+        let yml_config = config.build();
+
+        // done
+    }
+
+    return;
+
+    let (mut bitcoin_network, mut monero_network) =
+        (bitcoin::Network::Bitcoin, monero::Network::Mainnet);
+
+    for arg in std::env::args() {
+        match arg.as_str() {
+            "--help" => {
+                println!(
+                    "Look at our documentation: https://github.com/eigenwallet/core/blob/master/swap-orchestrator/README.md"
+                );
+                return;
+            }
+            "--testnet" => {
+                println!(
+                    "Detected `--testnet` flag, switching to Bitcoin Testnet3 and Monero Stagenet"
+                );
+                bitcoin_network = bitcoin::Network::Testnet;
+                monero_network = monero::Network::Stagenet;
+            }
+            _ => (),
+        }
+    }
 
     let defaults = match (bitcoin_network, monero_network) {
         (bitcoin::Network::Bitcoin, monero::Network::Mainnet) => {
