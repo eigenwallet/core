@@ -112,21 +112,23 @@ export default function MakerOfferItem({
           </Box>
         </Box>
       </Box>
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        <PromiseInvokeButton
-          variant="contained"
-          onInvoke={() => resolveApproval(requestId, true)}
-          displayErrorSnackbar
-          disabled={!requestId}
-          tooltipTitle={
-            requestId == null
-              ? "You don't have enough Bitcoin to swap with this maker"
-              : null
-          }
-        >
-          Select
-        </PromiseInvokeButton>
-      </Box>
+      {!noButton && (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <PromiseInvokeButton
+            variant="contained"
+            onInvoke={() => resolveApproval(requestId, true)}
+            displayErrorSnackbar
+            disabled={!requestId}
+            tooltipTitle={
+              requestId == null
+                ? "You don't have enough Bitcoin to swap with this maker"
+                : null
+            }
+          >
+            Select
+          </PromiseInvokeButton>
+        </Box>
+      )}
 
       {isOutOfLiquidity && (
         <Box
