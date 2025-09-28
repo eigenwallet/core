@@ -123,24 +123,24 @@ impl State {
 /// Initializes the Tauri state
 /// Sets the window title
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    // Set the window title to include the window title and version
-    let config = app.config();
-    let title = format!(
-        "{} (v{})",
-        config
-            .app
-            .windows
-            .first()
-            .expect("Window object to be set in config")
-            .title
-            .as_str(),
-        config.version.as_ref().expect("Version to be set")
-    );
+    // Set the window title to include the product name and version
+    #[cfg(desktop)]
+    {
+        let config = app.config();
+        let title = format!(
+            "{} (v{})",
+            config
+                .product_name
+                .as_ref()
+                .expect("Product name to be set"),
+            config.version.as_ref().expect("Version to be set")
+        );
 
-    let _ = app
-        .get_webview_window("main")
-        .expect("main window to exist")
-        .set_title(&title);
+        let _ = app
+            .get_webview_window("main")
+            .expect("main window to exist")
+            .set_title(&title);
+    }
 
     let app_handle = app.app_handle().to_owned();
 

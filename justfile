@@ -7,9 +7,10 @@ help:
 #	just update_submodules
 #	cd monero-sys/monero && make -j8 release
 
-# Clean the Monero C++ Codebase
-clean_monero_cpp:
-	rm -rf monero-sys/monero/
+# Clean the Monero C++ Codebase and build cache
+clean:
+	cargo clean
+	cd monero-sys && rm -rf monero monero_c
 	just update_submodules
 
 # Builds the Rust bindings for Monero
@@ -26,10 +27,10 @@ test-ffi-address:
 
 # Start the Tauri app
 tauri:
-	cd src-tauri && cargo tauri dev --no-watch --verbose -- -- --testnet
+	cd src-tauri && cargo tauri dev --no-watch -- --verbose -- --testnet
 
 tauri-mainnet:
-	cd src-tauri && cargo tauri dev --no-watch
+	cd src-tauri && cargo tauri dev --no-watch -- -vv
 
 # Install the GUI dependencies
 gui_install:
@@ -49,12 +50,18 @@ gui-mainnet:
 gui_build:
         cd src-gui && yarn build
 
+build-gui-windows:
+    cargo tauri build --target x86_64-pc-windows-gnu -- -vv
+
 # Run the Rust tests
 tests:
         cargo nextest run
 
 docker_test_happy_path:
 	cargo test --package swap --test happy_path -- --nocapture
+
+docker_test_happy_path_with_developer_tip:
+	cargo test --package swap --test happy_path_alice_developer_tip -- --nocapture
 
 docker_test_all:
 	cargo test --package swap --test all -- --nocapture
@@ -69,7 +76,7 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:
@@ -115,3 +122,6 @@ prepare_mac_os_brew_dependencies:
 # E.g code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
 code2prompt_single_crate crate:
 	cd {{crate}} && code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
+
+prepare-windows-build:
+    cd dev_scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh

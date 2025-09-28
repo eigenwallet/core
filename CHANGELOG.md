@@ -7,10 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + SWAP + ASB: Upgrade arti (tor library) to 1.5.0. This might improve connectivity reliability.
+
+## [3.0.4] - 2025-09-26
+
+- GUI: A warning will be display for makers running `<3.0.0`. Versions `2.*.*` are deprecated and do not support some essential protocols such as the new cooperative Monero redeem protocol. If you are a maker and are having issues with upgrading, please contact the developer on Matrix.
+- GUI: Clearly mark makers that have no available funds as having no available funds.
+
+## [3.0.3] - 2025-09-24
+
+- ORCHESTRATOR: Introduce a new `asb-tracing-logger` container within the `docker-compose.yml`. The `asb-tracing-logger` gives you access to the tracing (high verbosity) logs of your asb. Download the new `orchestrator` and run it. Then run `docker compose up -d`. The new `asb-tracing-logger` container will be created. Then run `docker compose logs -f --tail 100 asb-tracing-logger` to view detailed logging and see what is going on behind the scenes. The `asb` will continue printing less-verbose logs like before.
+- ASB: You can now configure your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set `maker.developer_tip` to a number between 0 and 1. Setting `maker.developer_tip` to `0.02` will donate 2% of each swap to the [donation address](https://github.com/eigenwallet/core?tab=readme-ov-file#donations) of the project. This is defined [here](https://github.com/eigenwallet/core/blob/ce4a85bfdd3b3fd6fbdf6c4c1ab0e1c3188b7fc2/swap-env/src/defaults.rs#L9) in the code. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction. Because tips are only ever sent in Monero you maintain full privacy.
+- ASB + CLI + GUI (Testnet only): Bitcoin timelocks have been tripled. This has no affect for mainnet swaps. Blocktimes are too low on testnet to be able to test reliably.
+
+## [3.0.2] - 2025-09-21
+
+- Fix an issue where the released binaries for Windows where incorrect labeled as having been built for Linux
+
+## [3.0.1] - 2025-09-19
+
+- ASB: require Monero wallet to be fully synchronized before providing quotes
+- ORCHESTRATOR: Allow re-generating `docker-compose.yml` while preserving the asb config (`config.toml`). If you've ran the `orchestrator` before you can download a newer version, run it and an updated `docker-compose.yml` will be generated (overwriting the previous file). All data and configuration options will be preserved as they are stored inside the Docker volumes and the `config.toml` file.
 - GUI + CLI: Fix an issue where it'd take a long time to redeem the Monero. We did not properly skip the block scanning.
-
-## [3.0.0-beta.11] - 2025-08-20
-
+- GUI + CLI: Assume Monero double spend safety after 22 instead of after 12 blocks given the recent large re-org attacks
+- ORCHESTRATOR: Change exposed mainnet port from `9839` to `9939`
 - ORCHESTRATOR: We incorrectly passed the `--mainnet` flag to the `asb` binary but it is the default for the asb.
 - CONTROLLER: Add a `bitcoin-seed` command to the controller. You can use it to export the descriptor of the internal Bitcoin wallet.
 - CLI + GUI + ASB: Accept self-signed TLS certificates and TLS certificates with older protocol versions.
@@ -647,7 +667,16 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.4...HEAD
+[3.0.4]: https://github.com/eigenwallet/core/compare/3.0.3...3.0.4
+[3.0.3]: https://github.com/eigenwallet/core/compare/3.0.2...3.0.3
+[3.0.2]: https://github.com/eigenwallet/core/compare/3.0.1...3.0.2
+[3.0.1]: https://github.com/eigenwallet/core/compare/3.0.0-beta.16...3.0.1
+[3.0.0-beta.16]: https://github.com/eigenwallet/core/compare/3.0.0-beta.15...3.0.0-beta.16
+[3.0.0-beta.15]: https://github.com/eigenwallet/core/compare/3.0.0-beta.14...3.0.0-beta.15
+[3.0.0-beta.14]: https://github.com/eigenwallet/core/compare/3.0.0-beta.13...3.0.0-beta.14
+[3.0.0-beta.13]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...3.0.0-beta.13
+[3.0.0-beta.12]: https://github.com/eigenwallet/core/compare/3.0.0-beta.12...3.0.0-beta.12
 [3.0.0-beta.12]: https://github.com/eigenwallet/core/compare/3.0.0-beta.11...3.0.0-beta.12
 [3.0.0-beta.11]: https://github.com/eigenwallet/core/compare/3.0.0-beta.10...3.0.0-beta.11
 [3.0.0-beta.10]: https://github.com/eigenwallet/core/compare/3.0.0-beta.9...3.0.0-beta.10

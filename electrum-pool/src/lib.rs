@@ -357,7 +357,7 @@ where
                             Ok(client) => tokio::task::spawn_blocking(move || f(&client))
                                 .await
                                 .map_err(|e| {
-                                    Error::IOError(std::io::Error::other(e.to_string()))
+                                    Error::IOError(std::io::Error::other(format!("{:?}", e)))
                                 })?,
                             Err(e) => Err(e),
                         }

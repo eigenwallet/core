@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, IsTerminal};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -132,7 +132,7 @@ pub fn init(
     // Layer for writing to the terminal
     // Crates: swap, asb
     // Level: Passed in
-    let is_terminal = atty::is(atty::Stream::Stderr);
+    let is_terminal = std::io::stderr().is_terminal();
     let terminal_layer = fmt::layer()
         .with_writer(std::io::stderr)
         .with_ansi(is_terminal)

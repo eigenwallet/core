@@ -1,123 +1,60 @@
 # This file is used to build the release binaries for the Tauri GUI
-name: "Publish GUI release to GitHub"
+name: "Build eigenwallet release"
 
 on:
+  pull_request:
   release:
     types: [created]
 
 concurrency:
-  group: build-gui-release-${{ github.event.release.tag_name }}
+  group: build-gui-release-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event.release.tag_name }}
   cancel-in-progress: true
 
 jobs:
-  publish-tauri:
-    # Do not publish preview releases to Github.
-    # Building takes too long for preview releases.
-    # if: ${{ !contains(github.ref_name, 'preview') }} Temporarily disabled
+  draft-cb-release:
+    # don't do it for PR's
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set env variables
+        uses: ./.github/actions/set-monero-env
+
+      - name: Create Draft Release
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release draft ${{ env.CN_APPLICATION }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}
+
+  build_gui:
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest" # for Arm based macs (M1 and above).
-            args: "--target aarch64-apple-darwin"
-          - platform: "macos-13" # for Intel based macs.
-            args: "--target x86_64-apple-darwin"
-          - platform: "ubuntu-24.04" # We build on an older version to support older glib versions
-            args: "--bundles deb,appimage"
-          # Temporarily disabled Windows builds
-          # - platform: "windows-latest"
-          #   args: ""
+          - host: "macos-latest" # for Arm based macs (M1 and above).
+            target: "aarch64-apple-darwin"
+          - host: "macos-13" # for Intel based macs.
+            target: "x86_64-apple-darwin"
+          - host: "ubuntu-22.04" # We build on an older version to support older glib versions
+            target: "x86_64-unknown-linux-gnu"
+          - host: "ubuntu-22.04" # cross build windows from ubuntu
+            target: "x86_64-pc-windows-gnu"
 
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.host }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
         with:
-          submodules: recursive
-      
-      - name: Set up environment variables
-        uses: ./.github/actions/set-monero-env
+          host: ${{ matrix.host }}
+          target: ${{ matrix.target }}
 
-      - uses: actionhippie/swap-space@v1
-        if: matrix.platform == env.UBUNTU_PLATFORM_ID
-        with:
-          size: 15G
-
-      - name: setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-
-      - name: install Rust stable
-        uses: dtolnay/rust-toolchain@1.80
-        with:
-          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Configure apt for retries (ubuntu only)
-        if: matrix.platform == env.UBUNTU_PLATFORM_ID
-        run: ${{ env.APT_SET_CONF_COMMAND }}
-
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == env.UBUNTU_PLATFORM_ID # This must match the platform value defined above.
-        run: |
-          sudo apt update;
-          sudo apt install -y ${{ env.DEPS_MONERO_LINUX }} ${{ env.DEPS_GUI_UBUNTU_SPECIFIC }} git
-          
-      - name: Get OpenSSL location
-        if: matrix.platform == env.UBUNTU_PLATFORM_ID
-        run: |
-          which openssl
-          openssl version
-          echo "OPENSSL_PATH=$(which openssl)" >> $GITHUB_ENV
-
-      - name: Install Monero build dependencies (macOS)
-        if: startsWith(matrix.platform, 'macos')
-        run: |
-          brew update
-          brew install python@3.13 || true
-          brew link --overwrite python@3.13
-          brew install ${{ env.DEPS_MONERO_MACOS }} git
-          brew reinstall --build-from-source unbound expat  
-          brew install protobuf@21
-
-      - name: Install Monero build dependencies (Windows)
-        if: matrix.platform == env.WINDOWS_PLATFORM_ID
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: ${{ env.DEPS_MONERO_WINDOWS_MSYS2 }} git
-
-      - name: Clone submodules
-        run: git submodule update --init --recursive
-
-      - name: work around spurious network errors in curl 8.0
-        shell: bash
-        run: |
-          echo "CARGO_HTTP_MULTIPLEXING=false" >> $GITHUB_ENV
-
-      - name: install frontend dependencies
-        working-directory: src-gui
-        # Set the yarn network timeout to a high value to avoid spurious network errors
-        run: yarn install --network-timeout 600000
-
-      - name: install tauri-cli globally
-        uses: taiki-e/cache-cargo-install-action@v2
-        with:
-          tool: tauri-cli@2.1.0
-          
-      - name: install typeshare-cli globally
-        uses: taiki-e/cache-cargo-install-action@v2
-        with:
-          tool: typeshare-cli
-
-      - name: install dprint globally
-        uses: taiki-e/cache-cargo-install-action@v2
-        with:
-          tool: dprint@0.50.0
-
-      - uses: tauri-apps/tauri-action@v0
+      - name: build tauri app and upload to github releases page
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -127,9 +64,37 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD:  ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          releaseId: ${{ github.event.release.id }}
+          # Empty releaseId for PRs prevents uploading to GitHub releases
+          # Empty strings are treated as an omitted argument: https://github.com/actions/runner/issues/924
+          # When releaseId is omitted, no release is published: https://github.com/tauri-apps/tauri-action?tab=readme-ov-file#tips-and-caveats
+          releaseId: ${{ github.event.release.id || '' }}
           projectPath: src-tauri
-          args: ${{ matrix.args }}
-          tauriScript: cargo tauri
+          tauriScript: yarn tauri
+          args: --target ${{ matrix.target }}
+
+      - name: upload to crabnebula release (not for previews)
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release upload ${{ env.CN_APPLICATION }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}
+          args: --target ${{ matrix.target }}
+
+  publish:
+    # don't publish previews to crabnebula
+    if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
+    needs: [draft-cb-release, build_gui]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set env variables
+        uses: ./.github/actions/set-monero-env
+
+      - name: Publish Release
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release publish ${{ env.CN_APPLICATION }} --framework tauri
+          api-key: ${{ secrets.CN_API_KEY }}

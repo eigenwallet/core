@@ -60,8 +60,8 @@ impl GetConfig for Mainnet {
             // If Alice cannot lock her Monero within this timeout,
             // she will initiate an early refund of Bobs Bitcoin
             monero_lock_retry_timeout: 10.std_minutes(),
-            monero_finality_confirmations: 12,
-            monero_double_spend_safe_confirmations: 12,
+            monero_finality_confirmations: 22,
+            monero_double_spend_safe_confirmations: 22,
             monero_network: monero::Network::Mainnet,
         }
     }
@@ -74,13 +74,13 @@ impl GetConfig for Testnet {
             bitcoin_lock_confirmed_timeout: 1.std_hours(),
             bitcoin_finality_confirmations: 1,
             bitcoin_avg_block_time: 10.std_minutes(),
-            bitcoin_cancel_timelock: 12,
-            bitcoin_punish_timelock: 24,
+            bitcoin_cancel_timelock: 12 * 3,
+            bitcoin_punish_timelock: 24 * 3,
             bitcoin_network: bitcoin::Network::Testnet,
             monero_avg_block_time: 2.std_minutes(),
             monero_lock_retry_timeout: 10.std_minutes(),
-            monero_finality_confirmations: 12,
-            monero_double_spend_safe_confirmations: 12,
+            monero_finality_confirmations: 22,
+            monero_double_spend_safe_confirmations: 22,
             monero_network: monero::Network::Stagenet,
         }
     }

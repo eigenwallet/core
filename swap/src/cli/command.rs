@@ -94,8 +94,8 @@ where
             BuyXmrArgs {
                 rendezvous_points: vec![],
                 sellers: vec![seller],
-                bitcoin_change_address,
-                monero_receive_pool,
+                // bitcoin_change_address, // TODO: Allow passing this in to prevent interactivity
+                // monero_receive_pool,
             }
             .request(context.clone())
             .await?;

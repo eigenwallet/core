@@ -213,7 +213,7 @@ export async function buyXmr() {
     ...state.makers.rendezvous.makers,
   ];
 
-  // Convert all makers to multiaddr format
+  // Convert all makers to multiaddresses with peer ids
   const sellers = allMakers.map((maker) =>
     providerToConcatenatedMultiAddr(maker),
   );
@@ -302,7 +302,6 @@ export async function initializeContext() {
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
 
   // Check the state of the Monero node
-
   const moneroNodeConfig =
     useMoneroRpcPool ||
     moneroNodeUrl == null ||
@@ -323,7 +322,7 @@ export async function initializeContext() {
     enable_monero_tor: useMoneroTor,
   };
 
-  logger.info("Initializing context with settings", tauriSettings);
+  logger.info(`Initializing context with settings: ${JSON.stringify(tauriSettings)}`);
 
   try {
     await invokeUnsafe<void>("initialize_context", {

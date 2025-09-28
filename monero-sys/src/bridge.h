@@ -156,12 +156,15 @@ namespace Monero
 
     /**
      * Creates a transaction that spends the unlocked balance to multiple destinations with given ratios.
-     * Ratiosn must sum to 1.
      */
     inline PendingTransaction *createTransactionMultiDest(
         Wallet &wallet,
         const std::vector<std::string> &dest_addresses,
-        const std::vector<uint64_t> &amounts)
+        const std::vector<uint64_t> &amounts,
+        // If set to true, the fee will be subtracted from output with the highest amount
+        // If set to false, the fee will be paid by the wallet and the exact amounts will be sent to the destinations
+        bool subtract_fee_from_outputs
+    )
     {
         size_t n = dest_addresses.size();
 
@@ -185,9 +188,15 @@ namespace Monero
         
         // Find the highest output and choose it for subtract_fee_indices
         std::set<uint32_t> subtract_fee_indices;
-        auto max_it = std::max_element(amounts.begin(), amounts.end());
-        size_t max_index = std::distance(amounts.begin(), max_it);
-        subtract_fee_indices.insert(static_cast<uint32_t>(max_index));
+
+        // If subtract_fee_from_outputs = false, this will not be executed and
+        // subtract_fee_indices will remain empty which symbolizes that the fee will be paid by the wallet
+        // and the exact amounts will be sent to the destinations
+        if (subtract_fee_from_outputs) {
+            auto max_it = std::max_element(amounts.begin(), amounts.end());
+            size_t max_index = std::distance(amounts.begin(), max_it);
+            subtract_fee_indices.insert(static_cast<uint32_t>(max_index));    
+        }
         
         return wallet.createTransactionMultDest(
             dest_addresses,

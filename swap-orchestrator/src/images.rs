@@ -1,3 +1,7 @@
+///! This module describes **how to build** the containers
+/// This means either:
+/// 1. Pulling from a registry (pinned to a hash)
+/// 2. Building from source from a specific git hash (pinned to a hash)
 use crate::compose::DockerBuildInput;
 
 /// At compile time, we determine the git repository and commit hash
@@ -22,14 +26,10 @@ pub static ELECTRS_IMAGE: &str =
 pub static BITCOIND_IMAGE: &str =
     "getumbrel/bitcoind@sha256:c565266ea302c9ab2fc490f04ff14e584210cde3d0d991b8309157e5dfae9e8d";
 
-/// eigenwallet asb v3.0.0-beta.5 (https://github.com/eigenwallet/core/pkgs/container/asb/477796831?tag=3.0.0-beta.5)
-pub static ASB_IMAGE: &str = "ghcr.io/eigenwallet/asb@sha256:ad0daf2ee68d05f6cb08df3d4ec856a07b0fb00df62dd5412298ecc2380f4ca6";
+/// alpine 3.22.1 (https://hub.docker.com/layers/library/alpine/3.22.1/images/sha256-0a88b42ba69d6b900848f9cb9151587bb82827d0aecfa222e51981fad97b5b9a)
+pub static ASB_TRACING_LOGGER_IMAGE: &str =
+    "alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1";
 
-// TOOD: Add pre-built images here
-/// eigenwallet asb v3.0.0-beta.5 (https://github.com/eigenwallet/core/commit/886dbcbef2dda534d1a0763750f1e6c5e1f57564)
-// pub static ASB_IMAGE_FROM_SOURCE: &str = "https://github.com/eigenwallet/core.git#886dbcbef2dda534d1a0763750f1e6c5e1f57564";
-
-// TODO: Allowing using a local git repository here
 pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace
     context: PINNED_GIT_REPOSITORY,

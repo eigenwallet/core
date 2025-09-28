@@ -65,10 +65,10 @@ export function sortMakerApprovals(list: SortableQuoteWithAddress[]) {
           // Prefer makers that have a 'version' attribute
           // If we don't have a version, we cannot clarify if it's outdated or not
           (m) => (m.version ? 0 : 1),
-          // Prefer makers that are not outdated
-          (m) => (isMakerVersionOutdated(m.version) ? 1 : 0),
           // Prefer makers with a minimum quantity > 0
           (m) => ((m.quote.min_quantity ?? 0) > 0 ? 0 : 1),
+          // Prefer makers that are not outdated
+          (m) => (isMakerVersionOutdated(m.version) ? 1 : 0),
           // Prefer approvals over actual quotes
           (m) => (m.request_id ? 0 : 1),
           // Prefer makers with a lower price
