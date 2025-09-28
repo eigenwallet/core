@@ -204,13 +204,22 @@ export async function withdrawBtc(address: string): Promise<string> {
   return response.txid;
 }
 
-export async function buyXmr(
-  bitcoin_change_address: string | null,
-  monero_receive_address: string,
-  donation_percentage: DonateToDevelopmentTip,
-) {
-  // Get all available makers from the Redux store
+export async function buyXmr() {
   const state = store.getState();
+
+  // Determine based on redeem and refund policy which addresses to pass in (null means internal wallet)
+  const bitcoinChangeAddress =
+    state.settings.bitcoinRefundPolicy === "external"
+      ? state.settings.externalBitcoinRefundAddress
+      : null;
+  const moneroReceiveAddress =
+    state.settings.moneroRedeemPolicy === "external"
+      ? state.settings.externalMoneroRedeemAddress
+      : null;
+
+  const donationPercentage = state.settings.donateToDevelopment;
+
+  // Get all available makers from the Redux store
   const allMakers = [
     ...(state.makers.registry.makers || []),
     ...state.makers.rendezvous.makers,
@@ -221,29 +230,27 @@ export async function buyXmr(
     providerToConcatenatedMultiAddr(maker),
   );
 
-  console.log(`Starting buyXmr flow with these potential sellers: ${sellers}`);
-
   const address_pool: LabeledMoneroAddress[] = [];
-  if (donation_percentage !== false) {
+  if (donationPercentage !== false && donationPercentage > 0) {
     const donation_address = isTestnet()
       ? DONATION_ADDRESS_STAGENET
       : DONATION_ADDRESS_MAINNET;
 
     address_pool.push(
       {
-        address: monero_receive_address,
-        percentage: 1 - donation_percentage,
+        address: moneroReceiveAddress,
+        percentage: 1 - donationPercentage,
         label: "Your wallet",
       },
       {
         address: donation_address,
-        percentage: donation_percentage,
+        percentage: donationPercentage,
         label: "Tip to the developers",
       },
     );
   } else {
     address_pool.push({
-      address: monero_receive_address,
+      address: moneroReceiveAddress,
       percentage: 1,
       label: "Your wallet",
     });
@@ -253,7 +260,7 @@ export async function buyXmr(
     rendezvous_points: PRESET_RENDEZVOUS_POINTS,
     sellers,
     monero_receive_pool: address_pool,
-    bitcoin_change_address,
+    bitcoin_change_address: bitcoinChangeAddress,
   });
 }
 

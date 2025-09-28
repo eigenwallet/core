@@ -22,7 +22,7 @@ import ListItemButton from "@mui/material/ListItemButton";
 type MoneroAddressTextFieldProps = TextFieldProps & {
   address: string;
   onAddressChange: (address: string) => void;
-  onAddressValidityChange: (valid: boolean) => void;
+  onAddressValidityChange?: (valid: boolean) => void;
   helperText?: string;
 };
 
@@ -44,7 +44,9 @@ export default function MoneroAddressTextField({
 
   // Effects
   useEffect(() => {
-    onAddressValidityChange(!errorText);
+    if (onAddressValidityChange) {
+      onAddressValidityChange(!errorText);
+    }
   }, [address, onAddressValidityChange, errorText]);
 
   useEffect(() => {
