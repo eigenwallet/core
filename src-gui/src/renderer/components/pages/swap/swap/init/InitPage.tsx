@@ -1,7 +1,5 @@
-import { Box } from "@mui/material";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { buyXmr, getCurrentSwapId, isThereASwapRunning } from "renderer/rpc";
+import { Box, Skeleton } from "@mui/material";
+import { buyXmr, isThereASwapRunning } from "renderer/rpc";
 import { useEffect } from "react";
 import { useSnackbar } from "notistack";
 
@@ -31,18 +29,9 @@ export default function InitPage() {
   }, []);
 
   return (
-    <Box style={{ display: "flex", justifyContent: "center" }}>
-      <PromiseInvokeButton
-        variant="contained"
-        color="primary"
-        size="large"
-        sx={{ marginTop: 1 }}
-        endIcon={<PlayArrowIcon />}
-        onInvoke={buyXmr}
-        displayErrorSnackbar
-      >
-        Continue
-      </PromiseInvokeButton>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <Skeleton variant="rectangular" height={"15vh"} />
+      <Box sx={{ height: "25vh" }}></Box>
     </Box>
   );
 }
