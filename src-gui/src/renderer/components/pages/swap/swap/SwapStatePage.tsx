@@ -33,8 +33,6 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
   const type: TauriSwapProgressEventType = state.curr.type;
 
   switch (type) {
-    case "RequestingQuote":
-      return <CircularProgressWithSubtitle description="Requesting quote..." />;
     case "Resuming":
       return <CircularProgressWithSubtitle description="Resuming swap..." />;
     case "ReceivedQuote":
