@@ -22,14 +22,6 @@ export default function MakerOfferItem({
   noButton?: boolean;
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
-
-  const marketExchangeRate = useAppSelector((s) => s.rates?.xmrBtcRate);
-
-  // Calculate markup if market rate is available
-  const markup = marketExchangeRate
-    ? getMarkup(satsToBtc(quote.price), marketExchangeRate)
-    : null;
-
   const isOutOfLiquidity = quote.max_quantity == 0;
 
   return (
@@ -45,109 +37,64 @@ export default function MakerOfferItem({
         width: "100%",
         justifyContent: "space-between",
         alignItems: { xs: "stretch", sm: "center" },
-        minWidth: 0, // Allow shrinking
       }}
     >
       <Box
         sx={{
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
           gap: 2,
-          flex: 1,
-          minWidth: 0, // Allow shrinking
-          overflow: "hidden", // Prevent overflow
         }}
       >
-        {/* Avatar and Chips */}
+        <Avatar
+          size={40}
+          name={peer_id}
+          variant="marble"
+          colors={["#92A1C6", "#146A7C", "#F0AB3D", "#C271B4", "#C20D90"]}
+        />
         <Box
           sx={{
             display: "flex",
-            flexDirection: "row",
-            gap: 2,
-            alignItems: "center",
-            minWidth: 0, // Allow shrinking
+            flexDirection: "column",
+            gap: 1,
           }}
         >
-          <Avatar
-            size={40}
-            name={peer_id}
-            variant="marble"
-            colors={["#92A1C6", "#146A7C", "#F0AB3D", "#C271B4", "#C20D90"]}
-            style={{ flexShrink: 0 }} // Don't shrink avatar
-          />
-
-          {/* Chips Container */}
+          <Typography variant="body1" sx={{ maxWidth: "200px" }} noWrap>
+            {multiaddr}
+          </Typography>
+          <Typography variant="body1" sx={{ maxWidth: "200px" }} noWrap>
+            {peer_id}
+          </Typography>
           <Box
             sx={{
               display: "flex",
-              flexDirection: "row",
-              gap: 0.5,
+              flexDirection: { xs: "column", sm: "row" },
+              gap: 1,
               flexWrap: "wrap",
-              alignItems: "flex-start",
-              minWidth: 0, // Allow shrinking
-              flex: 1, // Take remaining space
             }}
           >
-            {markup !== null && (
-              <Chip
-                label={
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                    <Typography variant="body2" component="span">
-                      Markup
-                    </Typography>
-                    <Box
-                      sx={{ borderLeft: 1, borderColor: "divider", height: 14 }}
-                    />
-                    <Typography
-                      variant="body2"
-                      component="span"
-                    >{`${markup.toFixed(1)}%`}</Typography>
-                  </Box>
-                }
-                variant="outlined"
-                sx={{
-                  color: markup > 20 ? "error.main" : "inherit",
-                  borderColor: "divider",
-                }}
-              />
-            )}
             <Chip
               label={
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                  <Typography variant="body2" component="span">
-                    Min
-                  </Typography>
-                  <Box
-                    sx={{ borderLeft: 1, borderColor: "divider", height: 14 }}
-                  />
-                  <SatsAmount amount={quote.min_quantity} />
-                </Box>
+                <MoneroSatsExchangeRate
+                  rate={quote.price}
+                  displayMarkup={true}
+                />
               }
-              variant="outlined"
+              size="small"
             />
             <Chip
               label={
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                  <Typography variant="body2" component="span">
-                    Max
-                  </Typography>
-                  <Box
-                    sx={{ borderLeft: 1, borderColor: "divider", height: 14 }}
-                  />
+                <>
+                  <SatsAmount amount={quote.min_quantity} /> -{" "}
                   <SatsAmount amount={quote.max_quantity} />
-                </Box>
+                </>
               }
-              variant="outlined"
-            />
-            <Chip
-              label={<MoneroSatsExchangeRate rate={quote.price} />}
-              variant="outlined"
-              sx={{ color: "text.secondary", borderColor: "divider" }}
+              size="small"
             />
             {isMakerVersionOutdated(version) ? (
               <Tooltip title="Outdated maker version. This may cause issues with the swap.">
                 <Chip
-                  variant="outlined"
+                  color="warning"
                   label={
                     <Box
                       sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
@@ -156,64 +103,30 @@ export default function MakerOfferItem({
                       <Typography variant="body2">{version}</Typography>
                     </Box>
                   }
-                  sx={{
-                    color: "warning.main",
-                    borderColor: "warning.main",
-                  }}
+                  size="small"
                 />
               </Tooltip>
             ) : (
-              <Chip
-                label={`v${version}`}
-                variant="outlined"
-                sx={{ color: "text.secondary", borderColor: "divider" }}
-              />
+              <Chip label={version} size="small" />
             )}
           </Box>
         </Box>
-
-        {/* Address and Peer ID at bottom */}
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 0.5,
-            minWidth: 0, // Allow shrinking
-            width: "100%",
-          }}
-        >
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              minWidth: 0,
-            }}
-            title={multiaddr} // Show full address on hover
-          >
-            {multiaddr}
-          </Typography>
-        </Box>
       </Box>
-      {!noButton && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          <PromiseInvokeButton
-            variant="contained"
-            onInvoke={() => resolveApproval(requestId, true)}
-            displayErrorSnackbar
-            disabled={!requestId}
-            tooltipTitle={
-              requestId == null
-                ? "You don't have enough Bitcoin to swap with this maker"
-                : null
-            }
-          >
-            Select
-          </PromiseInvokeButton>
-        </Box>
-      )}
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <PromiseInvokeButton
+          variant="contained"
+          onInvoke={() => resolveApproval(requestId, true)}
+          displayErrorSnackbar
+          disabled={!requestId}
+          tooltipTitle={
+            requestId == null
+              ? "You don't have enough Bitcoin to swap with this maker"
+              : null
+          }
+        >
+          Select
+        </PromiseInvokeButton>
+      </Box>
 
       {isOutOfLiquidity && (
         <Box

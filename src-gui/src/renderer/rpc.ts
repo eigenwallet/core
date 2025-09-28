@@ -322,7 +322,9 @@ export async function initializeContext() {
     enable_monero_tor: useMoneroTor,
   };
 
-  logger.info(`Initializing context with settings: ${JSON.stringify(tauriSettings)}`);
+  logger.info(
+    `Initializing context with settings: ${JSON.stringify(tauriSettings)}`,
+  );
 
   try {
     await invokeUnsafe<void>("initialize_context", {
