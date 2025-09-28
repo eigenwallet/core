@@ -278,6 +278,11 @@ export async function getCurrentSwapId() {
   return await invokeNoArgs<GetCurrentSwapResponse>("get_current_swap");
 }
 
+export async function isThereASwapRunning() {
+  const currentSwapId = await getCurrentSwapId();
+  return currentSwapId.swap_id !== null;
+}
+
 export async function getMoneroRecoveryKeys(
   swapId: string,
 ): Promise<MoneroRecoveryResponse> {
@@ -363,7 +368,9 @@ export async function initializeContext() {
     enable_monero_tor: useMoneroTor,
   };
 
-  logger.info("Initializing context with settings", tauriSettings);
+  logger.info(
+    `Initializing context with settings: ${JSON.stringify(tauriSettings)}`,
+  );
 
   try {
     await invokeUnsafe<void>("initialize_context", {
@@ -562,20 +569,6 @@ export async function sendMoneroTransaction(
   } catch (err) {
     console.error("Failed to send Monero:", err);
     throw err;
-  }
-}
-
-async function refreshWalletDataAfterTransaction() {
-  try {
-    const [newBalance, newHistory] = await Promise.all([
-      getMoneroBalance(),
-      getMoneroHistory(),
-    ]);
-    store.dispatch(setBalance(newBalance));
-    store.dispatch(setHistory(newHistory));
-  } catch (err) {
-    console.error("Failed to refresh wallet data after transaction:", err);
-    // Maybe show a non-blocking notification to user
   }
 }
 
