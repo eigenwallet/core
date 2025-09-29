@@ -4,7 +4,7 @@ import { useIsMobile } from "../../../utils/useIsMobile";
 
 interface MobileDialogHeaderProps {
   title: string;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 export default function MobileDialogHeader({
@@ -23,14 +23,16 @@ export default function MobileDialogHeader({
         <Typography sx={{ ml: 2, flex: 1 }} variant="h6" component="div">
           {title}
         </Typography>
-        <IconButton
-          edge="end"
-          color="inherit"
-          onClick={onClose}
-          aria-label="close"
-        >
-          <CloseIcon />
-        </IconButton>
+        {onClose && (
+          <IconButton
+            edge="end"
+            color="inherit"
+            onClick={onClose}
+            aria-label="close"
+          >
+            <CloseIcon />
+          </IconButton>
+        )}
       </Toolbar>
     </AppBar>
   );
