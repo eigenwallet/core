@@ -22,6 +22,10 @@ import {
   SelectChangeEvent,
   ToggleButton,
   ToggleButtonGroup,
+  List,
+  ListItem,
+  ListItemText,
+  Divider,
 } from "@mui/material";
 import {
   addNode,
@@ -86,31 +90,21 @@ export default function SettingsBox() {
         </Typography>
       }
       additionalContent={
-        <>
-          {/* Table containing the settings */}
-          <TableContainer>
-            <Table>
-              <TableBody>
-                <TorSettings />
-                <MoneroTorSettings />
-                <DonationTipSetting />
-                <ElectrumRpcUrlSetting />
-                <MoneroRpcPoolSetting />
-                <MoneroNodeUrlSetting />
-                <FetchFiatPricesSetting />
-                <ThemeSetting />
-                <RendezvousPointsSetting />
-              </TableBody>
-            </Table>
-          </TableContainer>
-          {/* Reset button with a bit of spacing */}
-          <Box
-            sx={(theme) => ({
-              mt: theme.spacing(2),
-            })}
-          />
+        <List sx={{ bgcolor: "transparent" }}>
+          <Divider component="li" />
+          <TorSettings />
+          <MoneroTorSettings />
+          <DonationTipSetting />
+          <ElectrumRpcUrlSetting />
+          <MoneroRpcPoolSetting />
+          <MoneroNodeUrlSetting />
+          <FetchFiatPricesSetting />
+          <FiatCurrencySetting />
+          <ThemeSetting />
+          <RendezvousPointsSetting />
+          <Box sx={(theme) => ({ mt: theme.spacing(2) })} />
           <ResetButton />
-        </>
+        </List>
       }
       icon={null}
       loading={false}
@@ -160,26 +154,19 @@ function FetchFiatPricesSetting() {
   const dispatch = useAppDispatch();
 
   return (
-    <>
-      <TableRow>
-        <TableCell>
-          <SettingLabel
-            label="Query fiat prices"
-            tooltip="Whether to fetch fiat prices via the clearnet. This is required for the price display to work. If you require total anonymity and don't use a VPN, you should disable this."
-          />
-        </TableCell>
-        <TableCell>
-          <Switch
-            color="primary"
-            checked={fetchFiatPrices}
-            onChange={(event) =>
-              dispatch(setFetchFiatPrices(event.currentTarget.checked))
-            }
-          />
-        </TableCell>
-      </TableRow>
-      {fetchFiatPrices ? <FiatCurrencySetting /> : <></>}
-    </>
+    <SettingItem
+      label="Query fiat prices"
+      description="Whether to fetch fiat prices via the clearnet. This is required for the price display to work. If you require total anonymity and don't use a VPN, you should disable this."
+      control={
+        <Switch
+          color="primary"
+          checked={fetchFiatPrices}
+          onChange={(event) =>
+            dispatch(setFetchFiatPrices(event.currentTarget.checked))
+          }
+        />
+      }
+    />
   );
 }
 
@@ -189,23 +176,18 @@ function FetchFiatPricesSetting() {
 function FiatCurrencySetting() {
   const fiatCurrency = useSettings((s) => s.fiatCurrency);
   const dispatch = useAppDispatch();
-  const onChange = (e: SelectChangeEvent<FiatCurrency>) =>
-    dispatch(setFiatCurrency(e.target.value as FiatCurrency));
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Fiat currency"
-          tooltip="This is the currency that the price display will show prices in."
-        />
-      </TableCell>
-      <TableCell>
+    <SettingItem
+      label="Fiat currency"
+      description="This is the currency that the price display will show prices in."
+      control={
         <Select
           value={fiatCurrency}
-          onChange={onChange}
+          onChange={(e) => dispatch(setFiatCurrency(e.target.value as FiatCurrency))}
           variant="outlined"
           fullWidth
+          sx={{ minWidth: 100 }}
         >
           {Object.values(FiatCurrency).map((currency) => (
             <MenuItem key={currency} value={currency}>
@@ -222,8 +204,8 @@ function FiatCurrencySetting() {
             </MenuItem>
           ))}
         </Select>
-      </TableCell>
-    </TableRow>
+      }
+    />
   );
 }
 
@@ -247,31 +229,27 @@ function ElectrumRpcUrlSetting() {
   const isValid = (url: string) => isValidUrl(url, ["ssl", "tcp"]);
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Custom Electrum RPC URL"
-          tooltip="This is the URL of the Electrum server that the GUI will connect to. It is used to sync Bitcoin transactions. If you leave this field empty, the GUI will choose from a list of known servers at random."
+    <>
+      <SettingItem
+        label="Custom Electrum RPC URL"
+        description="This is the URL of the Electrum server that the GUI will connect to. It is used to sync Bitcoin transactions. If you leave this field empty, the GUI will choose from a list of known servers at random."
+        control={
+          <IconButton onClick={() => setTableVisible(true)} size="large">
+            {<Edit />}
+          </IconButton>
+        }
+      />
+      {tableVisible ? (
+        <NodeTableModal
+          open={tableVisible}
+          onClose={() => setTableVisible(false)}
+          network={network}
+          blockchain={Blockchain.Bitcoin}
+          isValid={isValid}
+          placeholder={PLACEHOLDER_ELECTRUM_RPC_URL}
         />
-      </TableCell>
-      <TableCell>
-        <IconButton onClick={() => setTableVisible(true)} size="large">
-          {<Edit />}
-        </IconButton>
-        {tableVisible ? (
-          <NodeTableModal
-            open={tableVisible}
-            onClose={() => setTableVisible(false)}
-            network={network}
-            blockchain={Blockchain.Bitcoin}
-            isValid={isValid}
-            placeholder={PLACEHOLDER_ELECTRUM_RPC_URL}
-          />
-        ) : (
-          <></>
-        )}
-      </TableCell>
-    </TableRow>
+      ) : null}
+    </>
   );
 }
 
@@ -280,25 +258,23 @@ function ElectrumRpcUrlSetting() {
  */
 function SettingLabel({
   label,
-  tooltip,
+  description,
   disabled = false,
 }: {
   label: ReactNode;
-  tooltip: string | null;
+  description: string | null;
   disabled?: boolean;
 }) {
   const opacity = disabled ? 0.5 : 1;
 
   return (
     <Box
-      style={{ display: "flex", alignItems: "center", gap: "0.5rem", opacity }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "0.5rem", opacity }}
     >
       <Box>{label}</Box>
-      <Tooltip title={tooltip}>
-        <IconButton size="small" disabled={disabled}>
-          <HelpIcon />
-        </IconButton>
-      </Tooltip>
+      <Box>
+        {description}
+      </Box>
     </Box>
   );
 }
@@ -320,14 +296,10 @@ function MoneroRpcPoolSetting() {
   };
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Monero Node Selection"
-          tooltip="Choose between using a load-balanced pool of Monero nodes for better reliability, or configure custom Monero nodes."
-        />
-      </TableCell>
-      <TableCell>
+    <SettingItem
+      label="Monero Node Selection"
+      description="Choose between using a load-balanced pool of Monero nodes for better reliability, or configure custom Monero nodes."
+      control={
         <ToggleButtonGroup
           color="primary"
           value={useMoneroRpcPool ? "pool" : "custom"}
@@ -339,8 +311,9 @@ function MoneroRpcPoolSetting() {
           <ToggleButton value="pool">Pool (Recommended)</ToggleButton>
           <ToggleButton value="custom">Manual</ToggleButton>
         </ToggleButtonGroup>
-      </TableCell>
-    </TableRow>
+      }
+      controlPlacement="bottom"
+    />
   );
 }
 
@@ -406,19 +379,14 @@ function MoneroNodeUrlSetting() {
     : null;
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Custom Monero Node URL"
-          tooltip={
-            useMoneroRpcPool
-              ? "This setting is disabled because Monero RPC pool is enabled. Disable the RPC pool to configure a custom node."
-              : "This is the URL of the Monero node that the GUI will connect to. It is used to sync Monero transactions. If you leave this field empty, the GUI will choose from a list of known servers at random."
-          }
-          disabled={useMoneroRpcPool}
-        />
-      </TableCell>
-      <TableCell>
+    <SettingItem
+      label="Custom Monero Node URL"
+      description={
+        useMoneroRpcPool
+          ? "This setting is disabled because Monero RPC pool is enabled. Disable the RPC pool to configure a custom node."
+          : "This is the URL of the Monero node that the GUI will connect to. It is used to sync Monero transactions. If you leave this field empty, the GUI will choose from a list of known servers at random."
+      }
+      control={
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <ValidatedTextField
             value={moneroNodeUrl}
@@ -471,8 +439,9 @@ function MoneroNodeUrlSetting() {
             </Tooltip>
           </>
         </Box>
-      </TableCell>
-    </TableRow>
+      }
+      controlPlacement="bottom"
+    />
   );
 }
 
@@ -484,11 +453,10 @@ function ThemeSetting() {
   const dispatch = useAppDispatch();
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel label="Theme" tooltip="This is the theme of the GUI." />
-      </TableCell>
-      <TableCell>
+    <SettingItem
+      label="Theme"
+      description="This is the theme of the GUI."
+      control={
         <Select
           value={theme}
           onChange={(e) => dispatch(setTheme(e.target.value as Theme))}
@@ -502,8 +470,8 @@ function ThemeSetting() {
             </MenuItem>
           ))}
         </Select>
-      </TableCell>
-    </TableRow>
+      }
+    />
   );
 }
 
@@ -694,26 +662,105 @@ function NodeTable({
   );
 }
 
-export function TorSettings() {
-  const dispatch = useAppDispatch();
-  const torEnabled = useSettings((settings) => settings.enableTor);
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
-    dispatch(setTorEnabled(event.target.checked));
-  const status = (state: boolean) => (state === true ? "enabled" : "disabled");
+function SettingItem({
+  label,
+  description,
+  control,
+  disabled = false,
+  controlPlacement = "right",
+}: {
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  control: React.ReactNode;
+  disabled?: boolean;
+  controlPlacement?: "right" | "bottom";
+}) {
+  if (controlPlacement === "bottom") {
+    return (
+      <>
+        <ListItem
+          disableGutters
+          sx={{
+            flexDirection: "column",
+            alignItems: "stretch",
+            opacity: disabled ? 0.5 : 1,
+            py: 1.25,
+          }}
+        >
+          <ListItemText
+            primary={
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                {label}
+              </Typography>
+            }
+            secondary={
+              description ? (
+                <Typography variant="body2" color="text.secondary">
+                  {description}
+                </Typography>
+              ) : null
+            }
+          />
+          <Box sx={{ mt: 1, mb: 1}}>{control}</Box>
+        </ListItem>
+        <Divider component="li" />
+      </>
+    );
+  }
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Use Tor"
-          tooltip="Route network traffic through Tor to hide your IP address from the maker."
-        />
-      </TableCell>
+    <>
+      <ListItem
+        disableGutters
+        sx={{
+          alignItems: "center",
+          opacity: disabled ? 0.5 : 1,
+          py: 1.25,
+          display: "flex",
+          gap: 2,
+        }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <ListItemText
+            primary={
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                {label}
+              </Typography>
+            }
+            secondary={
+              description ? (
+                <Typography variant="body2" color="text.secondary">
+                  {description}
+                </Typography>
+              ) : null
+            }
+          />
+        </Box>
+        <Box sx={{ ml: 2, minWidth: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+          {control}
+        </Box>
+      </ListItem>
+      <Divider component="li" />
+    </>
+  );
+}
 
-      <TableCell>
-        <Switch checked={torEnabled} onChange={handleChange} color="primary" />
-      </TableCell>
-    </TableRow>
+export function TorSettings() {
+  const dispatch = useAppDispatch();
+  const torEnabled = useSettings((s) => s.enableTor);
+
+  return (
+    <SettingItem
+      label="Use Tor"
+      description="Route network traffic through Tor to hide your IP address from the maker."
+      control={
+        <Switch
+          color="primary"
+          checked={torEnabled}
+          onChange={(e) => dispatch(setTorEnabled(e.target.checked))}
+        />
+      }
+    />
   );
 }
 
@@ -735,21 +782,17 @@ function MoneroTorSettings() {
   }
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Route Monero traffic through Tor"
-          tooltip="When enabled, Monero wallet traffic will be routed through Tor for additional privacy. Requires main Tor setting to be enabled."
-        />
-      </TableCell>
-      <TableCell>
+    <SettingItem
+      label="Route Monero traffic through Tor"
+      description="When enabled, Monero wallet traffic will be routed through Tor for additional privacy. Requires main Tor setting to be enabled."
+      control={
         <Switch
           checked={enableMoneroTor}
           onChange={handleChange}
           color="primary"
         />
-      </TableCell>
-    </TableRow>
+      }
+    />
   );
 }
 
@@ -772,102 +815,100 @@ function RendezvousPointsSetting() {
   };
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Rendezvous Points"
-          tooltip="These are the points where makers can be discovered. Add custom rendezvous points here to expand your maker discovery options."
-        />
-      </TableCell>
-      <TableCell>
-        <IconButton onClick={() => setTableVisible(true)}>
-          <Edit />
-        </IconButton>
-        {tableVisible && (
-          <Dialog
-            open={true}
-            onClose={() => setTableVisible(false)}
-            maxWidth="md"
-            fullWidth
-          >
-            <DialogTitle>Rendezvous Points</DialogTitle>
-            <DialogContent>
-              <Typography variant="subtitle2">
-                Add or remove rendezvous points where makers can be discovered.
-                These points help you find trading partners in a decentralized
-                way.
-              </Typography>
-              <TableContainer
-                component={Paper}
-                style={{ marginTop: "1rem" }}
-                elevation={0}
-              >
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell style={{ width: "85%" }}>
-                        Rendezvous Point
-                      </TableCell>
-                      <TableCell style={{ width: "15%" }} align="right">
-                        Actions
-                      </TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {rendezvousPoints.map((point, index) => (
-                      <TableRow key={index}>
-                        <TableCell style={{ wordBreak: "break-all" }}>
-                          <Typography variant="overline">{point}</Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Tooltip title="Remove this rendezvous point">
-                            <IconButton onClick={() => onRemovePoint(point)}>
-                              <Delete />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow>
-                      <TableCell>
-                        <ValidatedTextField
-                          label="Add new rendezvous point"
-                          value={newPoint}
-                          onValidatedChange={setNewPoint}
-                          placeholder="/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
-                          fullWidth
-                          isValid={isValidMultiAddressWithPeerId}
-                          variant="outlined"
-                          noErrorWhenEmpty
-                        />
+    <>
+      <SettingItem
+        label="Rendezvous Points"
+        description="These are the points where makers can be discovered. Add custom rendezvous points here to expand your maker discovery options."
+        control={
+          <IconButton onClick={() => setTableVisible(true)}>
+            <Edit />
+          </IconButton>
+        }
+      />
+      {tableVisible && (
+        <Dialog
+          open={true}
+          onClose={() => setTableVisible(false)}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>Rendezvous Points</DialogTitle>
+          <DialogContent>
+            <Typography variant="subtitle2">
+              Add or remove rendezvous points where makers can be discovered.
+              These points help you find trading partners in a decentralized
+              way.
+            </Typography>
+            <TableContainer
+              component={Paper}
+              style={{ marginTop: "1rem" }}
+              elevation={0}
+            >
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell style={{ width: "85%" }}>
+                      Rendezvous Point
+                    </TableCell>
+                    <TableCell style={{ width: "15%" }} align="right">
+                      Actions
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {rendezvousPoints.map((point, index) => (
+                    <TableRow key={index}>
+                      <TableCell style={{ wordBreak: "break-all" }}>
+                        <Typography variant="overline">{point}</Typography>
                       </TableCell>
                       <TableCell align="right">
-                        <Tooltip title="Add this rendezvous point">
-                          <IconButton
-                            onClick={onAddNewPoint}
-                            disabled={
-                              !isValidMultiAddressWithPeerId(newPoint) ||
-                              newPoint.length === 0
-                            }
-                          >
-                            <Add />
+                        <Tooltip title="Remove this rendezvous point">
+                          <IconButton onClick={() => onRemovePoint(point)}>
+                            <Delete />
                           </IconButton>
                         </Tooltip>
                       </TableCell>
                     </TableRow>
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setTableVisible(false)} size="large">
-                Close
-              </Button>
-            </DialogActions>
-          </Dialog>
-        )}
-      </TableCell>
-    </TableRow>
+                  ))}
+                  <TableRow>
+                    <TableCell>
+                      <ValidatedTextField
+                        label="Add new rendezvous point"
+                        value={newPoint}
+                        onValidatedChange={setNewPoint}
+                        placeholder="/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
+                        fullWidth
+                        isValid={isValidMultiAddressWithPeerId}
+                        variant="outlined"
+                        noErrorWhenEmpty
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Tooltip title="Add this rendezvous point">
+                        <IconButton
+                          onClick={onAddNewPoint}
+                          disabled={
+                            !isValidMultiAddressWithPeerId(newPoint) ||
+                            newPoint.length === 0
+                          }
+                        >
+                          <Add />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setTableVisible(false)} size="large">
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+    </>
   );
 }
 
@@ -904,14 +945,11 @@ function DonationTipSetting() {
   };
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Tip to the developers"
-          tooltip="Support the development of eigenwallet by donating a small percentage of your swaps. Donations go directly to paying for infrastructure costs and developers"
-        />
-      </TableCell>
-      <TableCell>
+    <SettingItem
+      label="Tip to the developers"
+      description="Support the development of eigenwallet by donating a small percentage of your swaps. Donations go directly to paying for infrastructure costs and developers"
+      controlPlacement="bottom"
+      control={
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
           <ToggleButtonGroup
             value={donateToDevelopment}
@@ -977,7 +1015,7 @@ function DonationTipSetting() {
             ))}
           </ToggleButtonGroup>
           <Typography variant="subtitle2">
-            <ul style={{ margin: 0, padding: "0 1.5rem" }}>
+            <ul style={{ margin: 0, padding: "0.5rem 1.5rem" }}>
               <li>
                 Tips go <strong>directly</strong> towards paying for
                 infrastructure costs and developers
@@ -990,7 +1028,7 @@ function DonationTipSetting() {
             </ul>
           </Typography>
         </Box>
-      </TableCell>
-    </TableRow>
+      }
+    />
   );
 }
