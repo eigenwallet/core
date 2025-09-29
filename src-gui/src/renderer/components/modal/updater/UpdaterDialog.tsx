@@ -64,6 +64,15 @@ export default function UpdaterDialog() {
   const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
+    // Check if we're running on iOS and skip update check
+    const isIOS = window.navigator.userAgent.includes('iPhone') || 
+                  window.navigator.userAgent.includes('iPad');
+    
+    if (isIOS) {
+      console.log("Skipping update check on iOS platform");
+      return;
+    }
+
     // Check for updates when component mounts
     check()
       .then((updateResponse) => {

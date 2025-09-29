@@ -41,8 +41,8 @@
   },
   "plugins": {
     "updater": {
-      "active": true,
-      "dialog": true,
+      "active": false,
+      "dialog": false,
       "endpoints": [
         "https://cdn.crabnebula.app/update/unstoppableswap/unstoppableswap-gui-rs/{{target}}-{{arch}}/{{current_version}}"
       ],
