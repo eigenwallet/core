@@ -95,12 +95,7 @@ export default function IntroductionModal() {
   ];
 
   if (isMobile) {
-    return (
-      <MobileDialog open={open} onClose={handleClose}>
-        <MobileDialogHeader title="Getting Started" onClose={handleClose} />
-        {slideComponents[currentSlideIndex]}
-      </MobileDialog>
-    );
+    return null;
   }
 
   return (
