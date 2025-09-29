@@ -1,17 +1,17 @@
 import {
     IconButton,
-    Typography,
     DialogTitle,
     DialogContent,
     Button,
     Dialog,
     Fade,
     Drawer,
+    useTheme,
 } from '@mui/material'
 import { Stack } from '@mui/material'
 import AvatarWithProgress from 'renderer/components/other/AvatarWithProgress'
 import { useNavigate } from 'react-router-dom'
-
+import EigenwalletIcon from 'renderer/components/icons/EigenwalletIcon'
 import SettingsIcon from '@mui/icons-material/Settings'
 import ShimmerTypography from 'renderer/components/other/ShimmerTypography'
 import { useState } from 'react'
@@ -24,6 +24,7 @@ import UnfinishedSwapsAlert from 'renderer/components/alert/UnfinishedSwapsAlert
 
 export default function Header() {
     const navigate = useNavigate()
+    const theme = useTheme()
 
     const { progress, stateLabel, isLoading, isError } = useDisplayWalletState()
     const [avatarDialogOpen, setAvatarDialogOpen] = useState(false)
@@ -39,9 +40,15 @@ export default function Header() {
                     onClick={() => setAvatarDialogOpen(true)}
                 />
                 <Stack spacing={0} sx={{ flexGrow: 1, lineHeight: 1 }}>
-                    <Typography variant="h5" fontWeight={600}>
-                        eigenwallet
-                    </Typography>
+                <EigenwalletIcon
+                    sx={{
+                        fontSize: 64,
+                        color:
+                            theme.palette.mode === 'dark'
+                                ? 'white'
+                                : 'black',
+                    }}
+                />
                     {isLoading && (
                         <ShimmerTypography
                             variant="caption"
