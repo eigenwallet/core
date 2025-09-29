@@ -58,7 +58,7 @@ export default function HomePage() {
 
   const isContextAvailable = useIsContextAvailable();
 
-  const isLoading = true;
+  const isLoading = false;
   const hasTransactions =
     history && history.transactions && history.transactions.length > 0;
 
