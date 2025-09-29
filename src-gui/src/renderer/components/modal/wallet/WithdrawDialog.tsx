@@ -34,7 +34,6 @@ export default function WithdrawDialog({
   return (
     <MobileDialog open={open} onClose={onCancel} maxWidth="sm" fullWidth>
       <MobileDialogHeader title="Withdraw Bitcoin" onClose={onCancel} />
-      <DialogHeader title="Withdraw Bitcoin" />
       <WithdrawDialogContent isPending={pending} withdrawTxId={withdrawTxId}>
         {haveFundsBeenWithdrawn ? (
           <BtcTxInMempoolPageContent withdrawTxId={withdrawTxId} />
