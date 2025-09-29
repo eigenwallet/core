@@ -68,10 +68,14 @@ impl IndentedWriter {
 
 impl Write for IndentedWriter {
     fn write_str(&mut self, value: &str) -> std::fmt::Result {
-        // Todo: only prefix indentation if previous char was a newline?
+        let is_new_line = match self.buffer.chars().last() {
+            Some('\n') => true,
+            Some(_) => false,
+            None => true,
+        };
         let indentation = Self::WHITESPACE
             .to_string()
-            .repeat(Self::SPACES_PER_INDENTATION * self.current_indentation);
+            .repeat(Self::SPACES_PER_INDENTATION * self.current_indentation * is_new_line as usize);
 
         write!(&mut self.buffer, "{indentation}{value}")
     }

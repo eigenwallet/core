@@ -140,7 +140,7 @@ impl WriteConfig for ComposeConfig {
             }
         });
 
-        writeln!(writer, "volumnes:").unwrap();
+        writeln!(writer, "volumes:").unwrap();
 
         writer.indented(|writer| {
             for volume in &self.volumes {
@@ -244,7 +244,7 @@ impl WriteConfig for Service {
 
             // depends_on (if specified)
             if !self.depends_on.is_empty() {
-                writeln!(writer, "depends_on").unwrap();
+                writeln!(writer, "depends_on:").unwrap();
                 // write every individual dependency service
                 writer.indented(|writer| {
                     for dependency in &self.depends_on {
@@ -311,7 +311,7 @@ impl WriteConfig for ImageSource {
                 .unwrap();
             }
             ImageSource::PullFromRegistry { image_url } => {
-                writeln!(writer, "image: {image_url}").unwrap()
+                writeln!(writer, "image: \"{image_url}\"").unwrap()
             }
         }
     }

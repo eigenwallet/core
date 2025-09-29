@@ -7,6 +7,8 @@ use crate::compose::{
     ASB_DATA_DIR, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage,
     OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
 };
+use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 use swap_env::config::{
     Bitcoin, Config, ConfigNotInitialized, Data, Maker, Monero, Network, TorConf,
@@ -44,6 +46,11 @@ fn main() {
         // ... configure other services etc
 
         let yml_config = config.build();
+
+        File::create("docker-compose.yml")
+            .unwrap()
+            .write_all(yml_config.as_bytes())
+            .unwrap();
 
         // done
     }
