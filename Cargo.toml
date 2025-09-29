@@ -30,6 +30,14 @@ bdk_electrum = { version = "0.23.0", default-features = false }
 bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
+# Crypto
+curve25519-dalek = { package = "curve25519-dalek-ng", version = "4" }
+
+# Monero
+monero-oxide = { git = "https://github.com/monero-oxide/monero-oxide", default-features = false, features = ["std"] }
+
+swap-serde = { path = "./swap-serde" }
+
 anyhow = "1"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }

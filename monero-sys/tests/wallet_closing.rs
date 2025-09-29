@@ -10,10 +10,7 @@ async fn main() {
         .init();
 
     let temp_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon {
-        address: STAGENET_REMOTE_NODE.into(),
-        ssl: true,
-    };
+    let daemon = Daemon::try_from(STAGENET_REMOTE_NODE).unwrap();
 
     {
         let wallet = WalletHandle::open_or_create(

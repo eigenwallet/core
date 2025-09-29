@@ -15,10 +15,7 @@ async fn main() {
         .init();
 
     let temp_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon {
-        address: STAGENET_REMOTE_NODE.into(),
-        ssl: true,
-    };
+    let daemon = Daemon::try_from(STAGENET_REMOTE_NODE).unwrap();
 
     let wallet_name = "recovered_wallet";
     let wallet_path = temp_dir.path().join(wallet_name).display().to_string();

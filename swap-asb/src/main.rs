@@ -24,6 +24,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
+use swap::libp2p_ext::MultiAddrExt;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;

@@ -1189,7 +1189,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();

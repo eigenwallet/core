@@ -1,15 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use crate::defaults::{
-    default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
+    DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD, default_rendezvous_points,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use console::Style;
 use dialoguer::Confirm;
-use dialoguer::{theme::ColorfulTheme, Input, Select};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use libp2p::Multiaddr;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use url::Url;
 
 /// Prompt user for data directory
@@ -73,7 +73,7 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
         .default(true)
         .interact()?
     {
-        true => default_electrum_urls.clone(),
+        true => default_electrum_urls.to_vec(),
         false => Vec::new(),
     };
 

@@ -10,7 +10,7 @@ use crate::cli::{list_sellers as list_sellers_impl, EventLoop, SellerStatus};
 use crate::common::{get_logs, redact};
 use crate::libp2p_ext::MultiAddrExt;
 use crate::monero::wallet_rpc::MoneroDaemon;
-use crate::monero::MoneroAddressPool;
+use crate::monero::{MoneroAddressPool, TransferProof, TxHash};
 use crate::network::quote::BidQuote;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swarm;
@@ -132,6 +132,29 @@ impl Request for CancelAndRefundArgs {
         let swap_span = get_swap_tracing_span(self.swap_id);
 
         cancel_and_refund(self, ctx).instrument(swap_span).await
+    }
+}
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ManualCooperativeRedeemArgs {
+    pub swap_id: Uuid,
+    #[serde(with = "swap_serde::monero::private_key")]
+    pub s_a: monero::PrivateKey,
+    pub lock_tx_id: String,
+    #[serde(with = "swap_serde::monero::private_key")]
+    pub lock_tx_key: monero::PrivateKey,
+}
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ManualCooperativeRedeemResponse;
+
+impl Request for ManualCooperativeRedeemArgs {
+    type Response = ManualCooperativeRedeemResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        resume_with_cooperative_redeem(self, ctx).await
     }
 }
 
@@ -1158,6 +1181,62 @@ pub async fn buy_xmr(
     }.in_current_span()).await;
 
     Ok(BuyXmrResponse { swap_id, quote })
+}
+
+#[tracing::instrument(fields(method = "resume_with_cooperative_redeem"), skip(context))]
+pub async fn resume_with_cooperative_redeem(
+    args: ManualCooperativeRedeemArgs,
+    context: Arc<Context>,
+) -> Result<ManualCooperativeRedeemResponse> {
+    // Get the current swap state
+    let swap_state = context
+        .db
+        .get_state(args.swap_id)
+        .await
+        .context("no swap with this id found")?;
+
+    // Abort if not in BtcPunished
+    let State::Bob(BobState::BtcPunished { state, .. }) = swap_state else {
+        // Todo: maybe allow outside BtcPunished
+        bail!("Bitcoin wasn't punished - can't cooperatively redeem");
+    };
+
+    // Attempt to acquire the swap lock -- the swap shouldn't be running if we are punished
+    // and already tried (and failed) the automated cooperative redeem attempt
+    context
+        .swap_lock
+        .acquire_swap_lock(args.swap_id)
+        .await
+        .context("Couldn't acquire swap lock")?;
+
+    // Checking the key we received for validity, then advance and save the state
+    let state5 = state
+        .attempt_cooperative_redeem(
+            args.s_a.scalar,
+            TransferProof::new(TxHash(args.lock_tx_id), args.lock_tx_key),
+        )
+        .context("couldn't cooperatively redeem monero")?;
+    let new_state = State::Bob(BobState::BtcRedeemed(state5));
+
+    context
+        .db
+        .insert_latest_state(args.swap_id, new_state)
+        .await
+        .context("couldn't save new state to db")?;
+
+    tracing::info!("Validated cooperative redeem key, resuming swap");
+
+    // Resume the swap (next step: redeem Monero)
+    resume_swap(
+        ResumeSwapArgs {
+            swap_id: args.swap_id,
+        },
+        context,
+    )
+    .await
+    .context("Couldn't resume the swap after manually importing cooperative redeem key")?;
+
+    Ok(ManualCooperativeRedeemResponse)
 }
 
 #[tracing::instrument(fields(method = "resume_swap"), skip(context))]

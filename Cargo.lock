@@ -8406,12 +8406,13 @@ dependencies = [
 
 [[package]]
 name = "priority-queue"
-version = "2.6.0"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e7f4ffd8645efad783fc2844ac842367aa2e912d484950192564d57dc039a3a"
+checksum = "93980406f12d9f8140ed5abe7155acb10bb1e69ea55c88960b9c2f117445ef96"
 dependencies = [
  "equivalent",
  "indexmap 2.11.4",
+ "serde",
 ]
 
 [[package]]
@@ -9913,9 +9914,9 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.227"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80ece43fc6fbed4eb5392ab50c07334d3e577cbf40997ee896fe7af40bba4245"
+checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
@@ -9974,18 +9975,18 @@ dependencies = [
 
 [[package]]
 name = "serde_core"
-version = "1.0.227"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a576275b607a2c86ea29e410193df32bc680303c82f31e275bbfcafe8b33be5"
+checksum = "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.227"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e694923b8824cf0e9b382adf0f60d4e05f348f357b38833a3fa5ed7c2ede04"
+checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11030,7 +11031,6 @@ dependencies = [
  "async-compression 0.3.15",
  "async-trait",
  "asynchronous-codec 0.7.0",
- "atty",
  "backoff",
  "base64 0.22.1",
  "bdk",
@@ -11064,6 +11064,7 @@ dependencies = [
  "moka",
  "monero",
  "monero-harness",
+ "monero-oxide",
  "monero-rpc 0.1.0",
  "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide)",
  "monero-rpc-pool",
@@ -11163,6 +11164,7 @@ dependencies = [
  "shell-words",
  "swap-controller-api",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -11171,9 +11173,10 @@ version = "0.1.0"
 dependencies = [
  "bitcoin 0.32.7",
  "jsonrpsee",
+ "monero",
  "serde",
- "serde_json",
- "tokio",
+ "swap-serde",
+ "uuid",
 ]
 
 [[package]]

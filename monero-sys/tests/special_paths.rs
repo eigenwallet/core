@@ -13,10 +13,7 @@ async fn test_wallet_with_special_paths() {
         "path-with-hyphen",
     ];
 
-    let daemon = Daemon {
-        address: "https://moneronode.org:18081".into(),
-        ssl: true,
-    };
+    let daemon = Daemon::try_from("https://moneronode.org:18081").unwrap();
 
     let futures = special_paths
         .into_iter()

@@ -222,8 +222,15 @@ pub mod behaviour {
             let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
             let behaviour = if rendezvous_nodes.is_empty() {
+                tracing::warn!(
+                    "No rendezvous nodes specified. ASB might not be discoverable for takers."
+                );
                 None
             } else {
+                tracing::info!(
+                    "Registering with the following rendezvouse nodes: {:?}",
+                    &rendezvous_nodes
+                );
                 Some(rendezvous::Behaviour::new(identity, rendezvous_nodes))
             };
 
@@ -278,13 +285,14 @@ pub mod rendezvous {
     use std::pin::Pin;
     use std::task::Context;
 
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     enum ConnectionStatus {
         Disconnected,
         Dialling,
         Connected,
     }
 
+    #[derive(Debug)]
     enum RegistrationStatus {
         RegisterOnNextConnection,
         Pending,
@@ -300,6 +308,7 @@ pub mod rendezvous {
     }
 
     /// A node running the rendezvous server protocol.
+    #[derive(Debug)]
     pub struct RendezvousNode {
         pub address: Multiaddr,
         connection_status: ConnectionStatus,
@@ -351,6 +360,7 @@ pub mod rendezvous {
             node.set_registration(RegistrationStatus::Pending);
             let (namespace, peer_id, ttl) =
                 (node.namespace.into(), node.peer_id, node.registration_ttl);
+            tracing::info!("Sending rendezvous register request");
             self.inner.register(namespace, peer_id, ttl)
         }
     }
@@ -441,9 +451,9 @@ pub mod rendezvous {
                         node.set_connection(ConnectionStatus::Disconnected);
                     }
                 }
-                FromSwarm::DialFailure(peer) => {
+                FromSwarm::DialFailure(failure) => {
                     // Update the connection status of the rendezvous node that failed to connect.
-                    if let Some(peer_id) = peer.peer_id {
+                    if let Some(peer_id) = failure.peer_id {
                         if let Some(node) = self
                             .rendezvous_nodes
                             .iter_mut()
@@ -451,6 +461,11 @@ pub mod rendezvous {
                         {
                             node.set_connection(ConnectionStatus::Disconnected);
                         }
+                        tracing::error!(
+                            "Rendezvous dial failure towards `{}`: {}",
+                            peer_id,
+                            failure.error
+                        );
                     }
                 }
                 _ => {}
@@ -473,14 +488,18 @@ pub mod rendezvous {
             cx: &mut Context<'_>,
         ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
             if let Some(peer_id) = self.to_dial.pop_front() {
+                let addr = self
+                    .rendezvous_nodes
+                    .iter()
+                    .find(|node| node.peer_id == peer_id)
+                    .map(|node| node.address.clone())
+                    .expect("We should have a rendezvous node for the peer id");
+
+                tracing::info!("Attempting to dial rendezvous peer `{peer_id}` @ `{addr}`");
+
                 return Poll::Ready(ToSwarm::Dial {
                     opts: DialOpts::peer_id(peer_id)
-                        .addresses(vec![self
-                            .rendezvous_nodes
-                            .iter()
-                            .find(|node| node.peer_id == peer_id)
-                            .map(|node| node.address.clone())
-                            .expect("We should have a rendezvous node for the peer id")])
+                        .addresses(vec![addr])
                         .condition(PeerCondition::Disconnected)
                         // TODO: this makes the behaviour call `NetworkBehaviour::handle_pending_outbound_connection`
                         // but we don't implement it
