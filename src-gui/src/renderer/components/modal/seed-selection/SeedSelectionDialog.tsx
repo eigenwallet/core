@@ -70,6 +70,20 @@ export default function SeedSelectionDialog() {
     }
   }, [recentWallets.length]);
 
+  // Auto-open wallet if there's one available
+  useEffect(() => {
+    if (recentWallets.length > 0 && approval) {
+      const autoAccept = async () => {
+        const seedChoice: SeedChoice = {
+          type: "FromWalletPath",
+          content: { wallet_path: recentWallets[0] }
+        };
+        await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
+      };
+      autoAccept().catch(console.error);
+    }
+  }, [recentWallets.length, approval, recentWallets]);
+
   const selectWalletFile = async () => {
     const selected = await open({
       multiple: false,
@@ -108,6 +122,11 @@ export default function SeedSelectionDialog() {
     return null;
   }
 
+  // Don't show dialog if there's one or more wallets available
+  if (recentWallets.length > 0) {
+    return null;
+  }
+
   // Disable the button if the user is restoring from a seed and the seed is invalid
   // or if selecting wallet path and no path is selected
   const isDisabled =
@@ -130,43 +149,9 @@ export default function SeedSelectionDialog() {
         },
       }}
     >
-      <MobileDialogHeader title="Choose a wallet" onClose={() => {}} />
+      <MobileDialogHeader title="Create or restore a wallet" />
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
-          {/* Open existing wallet option */}
-          <Card
-            sx={{
-              cursor: "pointer",
-              border: selectedOption === "FromWalletPath" ? 2 : 1,
-              borderColor:
-                selectedOption === "FromWalletPath"
-                  ? "primary.main"
-                  : "divider",
-              "&:hover": { borderColor: "primary.main" },
-              flex: 1,
-            }}
-            onClick={() => setSelectedOption("FromWalletPath")}
-          >
-            <CardContent
-              sx={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 1,
-              }}
-            >
-              <FolderOpenIcon sx={{ fontSize: 32, color: "text.secondary" }} />
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ textAlign: "center" }}
-              >
-                Open wallet file
-              </Typography>
-            </CardContent>
-          </Card>
-
           {/* Create new wallet option */}
           <Card
             sx={{
