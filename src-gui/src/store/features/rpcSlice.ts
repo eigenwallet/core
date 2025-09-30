@@ -2,7 +2,7 @@ import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { ExtendedMakerStatus, MakerStatus } from "models/apiModel";
 import {
   GetSwapInfoResponse,
-  TauriContextStatusEvent,
+  ContextStatus,
   TauriTimelockChangeEvent,
   BackgroundRefundState,
   ApprovalRequest,
@@ -38,7 +38,7 @@ interface State {
 }
 
 export interface RPCSlice {
-  status: TauriContextStatusEvent | null;
+  status: ContextStatus | null;
   state: State;
 }
 
@@ -60,10 +60,7 @@ export const rpcSlice = createSlice({
   name: "rpc",
   initialState,
   reducers: {
-    contextStatusEventReceived(
-      slice,
-      action: PayloadAction<TauriContextStatusEvent>,
-    ) {
+    contextStatusEventReceived(slice, action: PayloadAction<ContextStatus>) {
       slice.status = action.payload;
     },
     timelockChangeEventReceived(

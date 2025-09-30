@@ -17,13 +17,16 @@ use swap::cli::{
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
             SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
-        tauri_bindings::{TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings},
+        tauri_bindings::{
+            ContextStatus, TauriContextStatusEvent, TauriEmitter, TauriHandle, TauriSettings,
+        },
         Context, ContextBuilder,
     },
     command::Bitcoin,
 };
-use tauri::{async_runtime::RwLock, Manager, RunEvent};
+use tauri::{Manager, RunEvent};
 use tauri_plugin_dialog::DialogExt;
+use tokio::sync::Mutex;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
 /// Trait to convert Result<T, E> to Result<T, String>
@@ -70,10 +73,7 @@ macro_rules! tauri_command {
             state: tauri::State<'_, State>,
             args: $request_name,
         ) -> Result<<$request_name as swap::cli::api::request::Request>::Response, String> {
-            // Throw error if context is not available
-            let context = state.try_get_context()?;
-
-            <$request_name as swap::cli::api::request::Request>::request(args, context)
+            <$request_name as swap::cli::api::request::Request>::request(args, state.context())
                 .await
                 .to_string_result()
         }
@@ -83,39 +83,46 @@ macro_rules! tauri_command {
         async fn $fn_name(
             state: tauri::State<'_, State>,
         ) -> Result<<$request_name as swap::cli::api::request::Request>::Response, String> {
-            // Throw error if context is not available
-            let context = state.try_get_context()?;
-
-            <$request_name as swap::cli::api::request::Request>::request($request_name {}, context)
-                .await
-                .to_string_result()
+            <$request_name as swap::cli::api::request::Request>::request(
+                $request_name {},
+                state.context(),
+            )
+            .await
+            .to_string_result()
         }
     };
 }
 
 /// Represents the shared Tauri state. It is accessed by Tauri commands
 struct State {
-    pub context: RwLock<Option<Arc<Context>>>,
+    pub context: Arc<Context>,
+    /// Whenever someone wants to modify the context, they should acquire this lock
+    ///
+    /// [`Context`] uses RwLock internally which means we do not need write access to the context
+    /// to modify its internal state.
+    ///
+    /// However, we want to avoid multiple processes intializing the context at the same time.
+    pub context_lock: Mutex<()>,
     pub handle: TauriHandle,
 }
 
 impl State {
     /// Creates a new State instance with no Context
     fn new(handle: TauriHandle) -> Self {
+        let context = Arc::new(Context::new_with_tauri_handle(handle.clone()));
+        let context_lock = Mutex::new(());
+
         Self {
-            context: RwLock::new(None),
+            context,
+            context_lock,
             handle,
         }
     }
 
     /// Attempts to retrieve the context
     /// Returns an error if the context is not available
-    fn try_get_context(&self) -> Result<Arc<Context>, String> {
-        self.context
-            .try_read()
-            .map_err(|_| "Context is being modified".to_string())?
-            .clone()
-            .ok_or("Context not available".to_string())
+    fn context(&self) -> Arc<Context> {
+        self.context.clone()
     }
 }
 
@@ -191,7 +198,6 @@ pub fn run() {
             list_sellers,
             suspend_current_swap,
             cancel_and_refund,
-            is_context_available,
             initialize_context,
             check_monero_node,
             check_electrum_node,
@@ -214,6 +220,7 @@ pub fn run() {
             get_restore_height,
             dfx_authenticate,
             change_monero_node,
+            get_context_status
         ])
         .setup(setup)
         .build(tauri::generate_context!())
@@ -225,16 +232,10 @@ pub fn run() {
                 // If the application is forcibly closed, this may not be called.
                 // TODO: fix that
                 let state = app.state::<State>();
-                let context_to_cleanup = if let Ok(context_lock) = state.context.try_read() {
-                    context_lock.clone()
-                } else {
-                    println!("Failed to acquire lock on context");
-                    None
-                };
-
-                if let Some(context) = context_to_cleanup {
-                    if let Err(err) = context.cleanup() {
-                        println!("Cleanup failed {}", err);
+                let lock = state.context_lock.try_lock();
+                if let Ok(_) = lock {
+                    if let Err(e) = state.context().cleanup() {
+                        println!("Failed to cleanup context: {}", e);
                     }
                 }
             }
@@ -273,11 +274,9 @@ tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
 
-/// Here we define Tauri commands whose implementation is not delegated to the Request trait
 #[tauri::command]
-async fn is_context_available(state: tauri::State<'_, State>) -> Result<bool, String> {
-    // TODO: Here we should return more information about status of the context (e.g. initializing, failed)
-    Ok(state.try_get_context().is_ok())
+async fn get_context_status(state: tauri::State<'_, State>) -> Result<ContextStatus, String> {
+    Ok(state.context().status().await)
 }
 
 #[tauri::command]
@@ -418,23 +417,22 @@ async fn initialize_context(
     testnet: bool,
     state: tauri::State<'_, State>,
 ) -> Result<(), String> {
-    // Lock at the beginning - fail immediately if already locked
-    let mut context_lock = state
-        .context
-        .try_write()
+    // We want to prevent multiple initalizations at the same time
+    let _context_lock = state
+        .context_lock
+        .try_lock()
         .map_err(|_| "Context is already being initialized".to_string())?;
 
     // Fail if the context is already initialized
-    if context_lock.is_some() {
-        return Err("Context is already initialized".to_string());
-    }
+    // TODO: Maybe skip the stuff below if one of the context fields is already initialized?
+    // if context_lock.is_some() {
+    //     return Err("Context is already initialized".to_string());
+    // }
 
     // Get tauri handle from the state
     let tauri_handle = state.handle.clone();
 
-    // Notify frontend that the context is being initialized
-    tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Initializing);
-
+    // Now populate the context in the background
     let context_result = ContextBuilder::new(testnet)
         .with_bitcoin(Bitcoin {
             bitcoin_electrum_rpc_urls: settings.electrum_rpc_urls.clone(),
@@ -446,17 +444,12 @@ async fn initialize_context(
         .with_tor(settings.use_tor)
         .with_enable_monero_tor(settings.enable_monero_tor)
         .with_tauri(tauri_handle.clone())
-        .build()
+        .build(state.context())
         .await;
 
     match context_result {
-        Ok(context_instance) => {
-            *context_lock = Some(Arc::new(context_instance));
-
+        Ok(()) => {
             tracing::info!("Context initialized");
-
-            // Emit event to frontend
-            tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
             Ok(())
         }
         Err(e) => {
@@ -477,13 +470,13 @@ async fn dfx_authenticate(
     use tokio::sync::{mpsc, oneshot};
     use tokio_util::task::AbortOnDropHandle;
 
-    let context = state.try_get_context()?;
+    let context = state.context();
 
     // Get the monero wallet manager
     let monero_manager = context
-        .monero_manager
-        .as_ref()
-        .ok_or("Monero wallet manager not available for DFX authentication")?;
+        .try_get_monero_manager()
+        .await
+        .map_err(|_| "Monero wallet manager not available for DFX authentication".to_string())?;
 
     let wallet = monero_manager.main_wallet().await;
     let address = wallet.main_address().await.to_string();

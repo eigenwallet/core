@@ -182,41 +182,6 @@ function PartialInitStatus({
   }
 }
 
-export default function DaemonStatusAlert() {
-  const contextStatus = useAppSelector((s) => s.rpc.status);
-  const navigate = useNavigate();
-
-  switch (contextStatus) {
-    case null:
-      return null;
-    case TauriContextStatusEvent.NotInitialized:
-      return null;
-    case TauriContextStatusEvent.Initializing:
-      return null;
-    case TauriContextStatusEvent.Available:
-      return <Alert severity="success">The daemon is running</Alert>;
-    case TauriContextStatusEvent.Failed:
-      return (
-        <Alert
-          severity="error"
-          action={
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => navigate("/settings#daemon-control-box")}
-            >
-              View Logs
-            </Button>
-          }
-        >
-          The daemon has stopped unexpectedly
-        </Alert>
-      );
-    default:
-      return exhaustiveGuard(contextStatus);
-  }
-}
-
 export function BackgroundProgressAlerts() {
   const backgroundProgress = usePendingBackgroundProcesses();
 

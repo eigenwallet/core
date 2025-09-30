@@ -46,6 +46,7 @@ import {
   GetRestoreHeightResponse,
   MoneroNodeConfig,
   GetMoneroSeedResponse,
+  ContextStatus,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -282,9 +283,8 @@ export async function getMoneroRecoveryKeys(
   );
 }
 
-export async function checkContextAvailability(): Promise<boolean> {
-  const available = await invokeNoArgs<boolean>("is_context_available");
-  return available;
+export async function checkContextStatus(): Promise<ContextStatus> {
+  return await invokeNoArgs<ContextStatus>("get_context_status");
 }
 
 export async function getLogsOfSwap(

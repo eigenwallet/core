@@ -1,7 +1,7 @@
 pub mod request;
 pub mod tauri_bindings;
 
-use crate::cli::api::tauri_bindings::SeedChoice;
+use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice};
 use crate::cli::command::{Bitcoin, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
@@ -19,9 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
-use tauri_bindings::{
-    MoneroNodeConfig, TauriBackgroundProgress, TauriContextStatusEvent, TauriEmitter, TauriHandle,
-};
+use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
 use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::task::AbortOnDropHandle;
@@ -180,19 +178,19 @@ impl Default for SwapLock {
 /// Some components are optional, allowing initialization of only necessary parts.
 /// For example, the `history` command doesn't require wallet initialization.
 ///
-/// Many fields are wrapped in `Arc` for thread-safe sharing.
+/// Components are wrapped in Arc<RwLock> to allow independent initialization and cloning.
 #[derive(Clone)]
 pub struct Context {
-    pub db: Arc<dyn Database + Send + Sync>,
+    pub db: Arc<RwLock<Option<Arc<dyn Database + Send + Sync>>>>,
     pub swap_lock: Arc<SwapLock>,
-    pub config: Config,
+    pub config: Arc<RwLock<Option<Config>>>,
     pub tasks: Arc<PendingTaskList>,
-    tauri_handle: Option<TauriHandle>,
-    bitcoin_wallet: Option<Arc<bitcoin::Wallet>>,
-    pub monero_manager: Option<Arc<monero::Wallets>>,
-    tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    pub tauri_handle: Option<TauriHandle>,
+    bitcoin_wallet: Arc<RwLock<Option<Arc<bitcoin::Wallet>>>>,
+    pub monero_manager: Arc<RwLock<Option<Arc<monero::Wallets>>>>,
+    tor_client: Arc<RwLock<Option<Arc<TorClient<TokioRustlsRuntime>>>>>,
     #[allow(dead_code)]
-    monero_rpc_pool_handle: Option<Arc<monero_rpc_pool::PoolHandle>>,
+    monero_rpc_pool_handle: Arc<RwLock<Option<Arc<monero_rpc_pool::PoolHandle>>>>,
 }
 
 /// A conveniant builder struct for [`Context`].
@@ -289,8 +287,8 @@ impl ContextBuilder {
         self
     }
 
-    /// Takes the builder, initializes the context by initializing the wallets and other components and returns the Context.
-    pub async fn build(self) -> Result<Context> {
+    /// Takes the builder, initializes the context by populating the provided Context with initialized components.
+    pub async fn build(self, context: Arc<Context>) -> Result<()> {
         // This is the data directory for the eigenwallet (wallet files)
         let eigenwallet_data_dir = &eigenwallet_data::new(self.is_testnet)?;
 
@@ -489,10 +487,6 @@ impl ContextBuilder {
             .context("Failed to initialize Monero wallets with existing wallet")?,
         ));
 
-        // Create the data structure we use to manage the swap lock
-        let swap_lock = Arc::new(SwapLock::new());
-        let tasks = PendingTaskList::default().into();
-
         // Initialize the database
         let database_progress_handle = self
             .tauri_handle
@@ -552,7 +546,7 @@ impl ContextBuilder {
                     wallet,
                     db.clone(),
                     self.tauri_handle.clone(),
-                    swap_lock.clone(),
+                    context.swap_lock.clone(),
                 );
                 tokio::spawn(watcher.run());
             }
@@ -560,38 +554,103 @@ impl ContextBuilder {
 
         bootstrap_tor_client_task.await?;
 
-        let context = Context {
-            db,
-            bitcoin_wallet,
-            monero_manager,
-            config: Config {
-                namespace: XmrBtcNamespace::from_is_testnet(self.is_testnet),
-                env_config,
-                seed: seed.clone().into(),
-                debug: self.debug,
-                json: self.json,
-                is_testnet: self.is_testnet,
-                data_dir: data_dir.clone(),
-                log_dir: log_dir.clone(),
-            },
-            swap_lock,
-            tasks,
-            tauri_handle: self.tauri_handle,
-            tor_client: unbootstrapped_tor_client,
-            monero_rpc_pool_handle,
-        };
+        // Populate the context fields
+        *context.db.write().await = Some(db);
+        *context.bitcoin_wallet.write().await = bitcoin_wallet;
+        *context.monero_manager.write().await = monero_manager;
+        *context.config.write().await = Some(Config {
+            namespace: XmrBtcNamespace::from_is_testnet(self.is_testnet),
+            env_config,
+            seed: seed.clone().into(),
+            debug: self.debug,
+            json: self.json,
+            is_testnet: self.is_testnet,
+            data_dir: data_dir.clone(),
+            log_dir: log_dir.clone(),
+        });
+        *context.tor_client.write().await = unbootstrapped_tor_client;
+        *context.monero_rpc_pool_handle.write().await = monero_rpc_pool_handle;
 
-        tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Available);
-
-        Ok(context)
+        Ok(())
     }
 }
 
 impl Context {
-    pub fn with_tauri_handle(mut self, tauri_handle: impl Into<Option<TauriHandle>>) -> Self {
-        self.tauri_handle = tauri_handle.into();
+    pub fn new_with_tauri_handle(tauri_handle: TauriHandle) -> Self {
+        Self::new(Some(tauri_handle))
+    }
 
-        self
+    pub fn new_without_tauri_handle() -> Self {
+        Self::new(None)
+    }
+
+    /// Creates an empty Context with only the swap_lock and tasks initialized
+    fn new(tauri_handle: Option<TauriHandle>) -> Self {
+        Self {
+            db: Arc::new(RwLock::new(None)),
+            swap_lock: Arc::new(SwapLock::new()),
+            config: Arc::new(RwLock::new(None)),
+            tasks: Arc::new(PendingTaskList::default()),
+            tauri_handle,
+            bitcoin_wallet: Arc::new(RwLock::new(None)),
+            monero_manager: Arc::new(RwLock::new(None)),
+            tor_client: Arc::new(RwLock::new(None)),
+            monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    pub async fn status(&self) -> ContextStatus {
+        ContextStatus {
+            bitcoin_wallet_available: self.try_get_bitcoin_wallet().await.is_ok(),
+            monero_wallet_available: self.try_get_monero_manager().await.is_ok(),
+            database_available: self.try_get_db().await.is_ok(),
+            tor_available: self.try_get_tor_client().await.is_ok(),
+        }
+    }
+
+    /// Get the Bitcoin wallet, returning an error if not initialized
+    pub async fn try_get_bitcoin_wallet(&self) -> Result<Arc<bitcoin::Wallet>> {
+        self.bitcoin_wallet
+            .read()
+            .await
+            .clone()
+            .context("Bitcoin wallet not initialized")
+    }
+
+    /// Get the Monero manager, returning an error if not initialized
+    pub async fn try_get_monero_manager(&self) -> Result<Arc<monero::Wallets>> {
+        self.monero_manager
+            .read()
+            .await
+            .clone()
+            .context("Monero wallet manager not initialized")
+    }
+
+    /// Get the database, returning an error if not initialized
+    pub async fn try_get_db(&self) -> Result<Arc<dyn Database + Send + Sync>> {
+        self.db
+            .read()
+            .await
+            .clone()
+            .context("Database not initialized")
+    }
+
+    /// Get the config, returning an error if not initialized
+    pub async fn try_get_config(&self) -> Result<Config> {
+        self.config
+            .read()
+            .await
+            .clone()
+            .context("Config not initialized")
+    }
+
+    /// Get the Tor client, returning an error if not initialized
+    pub async fn try_get_tor_client(&self) -> Result<Arc<TorClient<TokioRustlsRuntime>>> {
+        self.tor_client
+            .read()
+            .await
+            .clone()
+            .context("Tor client not initialized")
     }
 
     pub async fn for_harness(
@@ -602,19 +661,20 @@ impl Context {
         bob_monero_wallet: Arc<monero::Wallets>,
     ) -> Self {
         let config = Config::for_harness(seed, env_config);
+        let db = open_db(db_path, AccessMode::ReadWrite, None)
+            .await
+            .expect("Could not open sqlite database");
 
         Self {
-            bitcoin_wallet: Some(bob_bitcoin_wallet),
-            monero_manager: Some(bob_monero_wallet),
-            config,
-            db: open_db(db_path, AccessMode::ReadWrite, None)
-                .await
-                .expect("Could not open sqlite database"),
+            bitcoin_wallet: Arc::new(RwLock::new(Some(bob_bitcoin_wallet))),
+            monero_manager: Arc::new(RwLock::new(Some(bob_monero_wallet))),
+            config: Arc::new(RwLock::new(Some(config))),
+            db: Arc::new(RwLock::new(Some(db))),
             swap_lock: SwapLock::new().into(),
             tasks: PendingTaskList::default().into(),
             tauri_handle: None,
-            tor_client: None,
-            monero_rpc_pool_handle: None,
+            tor_client: Arc::new(RwLock::new(None)),
+            monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -634,20 +694,13 @@ impl Context {
         Ok(())
     }
 
-    pub fn bitcoin_wallet(&self) -> Option<Arc<bitcoin::Wallet>> {
-        self.bitcoin_wallet.clone()
-    }
-
-    pub fn tauri_handle(&self) -> Option<TauriHandle> {
-        self.tauri_handle.clone()
+    pub async fn bitcoin_wallet(&self) -> Option<Arc<bitcoin::Wallet>> {
+        self.bitcoin_wallet.read().await.clone()
     }
 
     /// Change the Monero node configuration for all wallets
     pub async fn change_monero_node(&self, node_config: MoneroNodeConfig) -> Result<()> {
-        let monero_manager = self
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
+        let monero_manager = self.try_get_monero_manager().await?;
 
         // Determine the daemon configuration based on the node config
         let daemon = match node_config {
@@ -655,7 +708,9 @@ impl Context {
                 // Use the pool handle to get server info
                 let pool_handle = self
                     .monero_rpc_pool_handle
-                    .as_ref()
+                    .read()
+                    .await
+                    .clone()
                     .context("Pool handle not available")?;
 
                 let server_info = pool_handle.server_info();

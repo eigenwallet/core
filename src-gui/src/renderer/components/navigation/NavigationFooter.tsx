@@ -1,8 +1,6 @@
 import { Box, Tooltip } from "@mui/material";
 import GitHubIcon from "@mui/icons-material/GitHub";
-import DaemonStatusAlert, {
-  BackgroundProgressAlerts,
-} from "../alert/DaemonStatusAlert";
+import { BackgroundProgressAlerts } from "../alert/DaemonStatusAlert";
 import FundsLeftInWalletAlert from "../alert/FundsLeftInWalletAlert";
 import UnfinishedSwapsAlert from "../alert/UnfinishedSwapsAlert";
 import LinkIconButton from "../icons/LinkIconButton";
@@ -23,7 +21,6 @@ export default function NavigationFooter() {
       <FundsLeftInWalletAlert />
       <UnfinishedSwapsAlert />
       <BackgroundRefundAlert />
-      <DaemonStatusAlert />
       <BackgroundProgressAlerts />
       <Box
         sx={{

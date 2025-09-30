@@ -79,17 +79,16 @@ where
                 .transpose()?
                 .map(|address| address.into_unchecked());
 
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_tor(tor.enable_tor)
-                    .with_bitcoin(bitcoin)
-                    .with_monero(monero)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_tor(tor.enable_tor)
+                .with_bitcoin(bitcoin)
+                .with_monero(monero)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             BuyXmrArgs {
                 rendezvous_points: vec![],
@@ -103,14 +102,13 @@ where
             Ok(context)
         }
         CliCommand::History => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             GetHistoryArgs {}.request(context.clone()).await?;
 
@@ -121,14 +119,13 @@ where
             redact,
             swap_id,
         } => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             GetLogsArgs {
                 logs_dir,
@@ -141,29 +138,27 @@ where
             Ok(context)
         }
         CliCommand::Config => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             GetConfigArgs {}.request(context.clone()).await?;
 
             Ok(context)
         }
         CliCommand::Balance { bitcoin } => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_bitcoin(bitcoin)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_bitcoin(bitcoin)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             BalanceArgs {
                 force_refresh: true,
@@ -180,15 +175,14 @@ where
         } => {
             let address = bitcoin_address::validate(address, is_testnet)?;
 
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_bitcoin(bitcoin)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_bitcoin(bitcoin)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             WithdrawBtcArgs { amount, address }
                 .request(context.clone())
@@ -202,17 +196,16 @@ where
             monero,
             tor,
         } => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_tor(tor.enable_tor)
-                    .with_bitcoin(bitcoin)
-                    .with_monero(monero)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_tor(tor.enable_tor)
+                .with_bitcoin(bitcoin)
+                .with_monero(monero)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             ResumeSwapArgs { swap_id }.request(context.clone()).await?;
 
@@ -222,15 +215,14 @@ where
             swap_id: SwapId { swap_id },
             bitcoin,
         } => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_bitcoin(bitcoin)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_bitcoin(bitcoin)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             CancelAndRefundArgs { swap_id }
                 .request(context.clone())
@@ -242,15 +234,14 @@ where
             rendezvous_point,
             tor,
         } => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_tor(tor.enable_tor)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_tor(tor.enable_tor)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             ListSellersArgs {
                 rendezvous_points: vec![rendezvous_point],
@@ -261,15 +252,14 @@ where
             Ok(context)
         }
         CliCommand::ExportBitcoinWallet { bitcoin } => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_bitcoin(bitcoin)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_bitcoin(bitcoin)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             ExportBitcoinWalletArgs {}.request(context.clone()).await?;
 
@@ -278,14 +268,13 @@ where
         CliCommand::MoneroRecovery {
             swap_id: SwapId { swap_id },
         } => {
-            let context = Arc::new(
-                ContextBuilder::new(is_testnet)
-                    .with_data_dir(data)
-                    .with_debug(debug)
-                    .with_json(json)
-                    .build()
-                    .await?,
-            );
+            let context = Arc::new(Context::new_without_tauri_handle());
+            ContextBuilder::new(is_testnet)
+                .with_data_dir(data)
+                .with_debug(debug)
+                .with_json(json)
+                .build(context.clone())
+                .await?;
 
             MoneroRecoveryArgs { swap_id }
                 .request(context.clone())
