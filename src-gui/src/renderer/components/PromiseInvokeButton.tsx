@@ -44,7 +44,7 @@ export default function PromiseInvokeButton<T>({
   isChipButton = false,
   displayErrorSnackbar = false,
   onPendingChange = null,
-  contextRequirement: contextRequirement = true,
+  contextRequirement = true,
   tooltipTitle = null,
   ...rest
 }: PromiseInvokeButtonProps<T> & ButtonProps) {
@@ -83,7 +83,7 @@ export default function PromiseInvokeButton<T>({
       return false;
     }
 
-    if (contextRequirement === true) {
+    if (contextRequirement === true || contextRequirement == null) {
       return !isContextFullyInitialized(status);
     }
 
