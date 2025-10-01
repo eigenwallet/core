@@ -28,8 +28,8 @@ use crate::{commands::util::ToStringResult, State};
 
 /// This macro returns the list of all command handlers
 /// You can call this and insert the output into [`tauri::app::Builder::invoke_handler`]
-/// 
-/// Note: When you add a new command, add it here
+///
+/// Note: When you add a new command, add it here.
 #[macro_export]
 macro_rules! generate_command_handlers {
     () => {
