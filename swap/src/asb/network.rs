@@ -8,7 +8,6 @@ use crate::network::{
 };
 use crate::protocol::alice::State3;
 use anyhow::{anyhow, Error, Result};
-use futures::FutureExt;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::Boxed;
 use libp2p::request_response::ResponseChannel;
@@ -267,6 +266,11 @@ pub mod behaviour {
 
 pub mod rendezvous {
     use super::*;
+    use backoff::backoff::Backoff;
+    use backoff::ExponentialBackoff;
+    use futures::future::BoxFuture;
+    use futures::stream::FuturesUnordered;
+    use futures::{FutureExt, StreamExt};
     use libp2p::identity;
     use libp2p::rendezvous::client::RegisterError;
     use libp2p::swarm::dial_opts::DialOpts;
@@ -274,7 +278,7 @@ pub mod rendezvous {
         ConnectionDenied, ConnectionId, FromSwarm, THandler, THandlerInEvent, THandlerOutEvent,
         ToSwarm,
     };
-    use std::collections::VecDeque;
+    use std::collections::HashMap;
     use std::pin::Pin;
     use std::task::Context;
 
@@ -296,7 +300,8 @@ pub mod rendezvous {
     pub struct Behaviour {
         inner: libp2p::rendezvous::client::Behaviour,
         rendezvous_nodes: Vec<RendezvousNode>,
-        to_dial: VecDeque<PeerId>,
+        to_dial: FuturesUnordered<BoxFuture<'static, PeerId>>,
+        backoffs: HashMap<PeerId, ExponentialBackoff>,
     }
 
     /// A node running the rendezvous server protocol.
@@ -337,10 +342,27 @@ pub mod rendezvous {
 
     impl Behaviour {
         pub fn new(identity: identity::Keypair, rendezvous_nodes: Vec<RendezvousNode>) -> Self {
+            let mut backoffs = HashMap::new();
+            
+            // Initialize backoff for each rendezvous node
+            for node in &rendezvous_nodes {
+                backoffs.insert(
+                    node.peer_id,
+                    ExponentialBackoff {
+                        // 5 minutes max interval
+                        max_interval: Duration::from_secs(5 * 60),
+                        // Never give up
+                        max_elapsed_time: None,
+                        ..ExponentialBackoff::default()
+                    },
+                );
+            }
+            
             Self {
                 inner: libp2p::rendezvous::client::Behaviour::new(identity),
                 rendezvous_nodes,
-                to_dial: VecDeque::new(),
+                to_dial: FuturesUnordered::new(),
+                backoffs,
             }
         }
 
@@ -352,6 +374,26 @@ pub mod rendezvous {
             let (namespace, peer_id, ttl) =
                 (node.namespace.into(), node.peer_id, node.registration_ttl);
             self.inner.register(namespace, peer_id, ttl)
+        }
+
+        /// Schedules a dial to a peer with exponential backoff delay.
+        fn schedule_dial(&mut self, peer_id: PeerId) {
+            let backoff = self.backoffs.get_mut(&peer_id).expect("Backoff should exist for all rendezvous nodes");
+            let delay = backoff.next_backoff().expect("Backoff should never run out");
+            
+            tracing::debug!(
+                %peer_id,
+                delay_secs = delay.as_secs(),
+                "Scheduling dial with backoff"
+            );
+            
+            // Create a future that sleeps and then returns the peer_id
+            let future = async move {
+                tokio::time::sleep(delay).await;
+                peer_id
+            };
+            
+            self.to_dial.push(future.boxed());
         }
     }
 
@@ -419,6 +461,12 @@ pub mod rendezvous {
                         let rendezvous_node = &mut self.rendezvous_nodes[index];
                         rendezvous_node.set_connection(ConnectionStatus::Connected);
 
+                        // Reset backoff on successful connection
+                        if let Some(backoff) = self.backoffs.get_mut(&peer_id) {
+                            backoff.reset();
+                            tracing::debug!(%peer_id, "Connection established, backoff reset");
+                        }
+
                         if let RegistrationStatus::RegisterOnNextConnection =
                             rendezvous_node.registration_status
                         {
@@ -432,13 +480,16 @@ pub mod rendezvous {
                     }
                 }
                 FromSwarm::ConnectionClosed(peer) => {
+                    let peer_id = peer.peer_id;
                     // Update the connection status of the rendezvous node that disconnected.
                     if let Some(node) = self
                         .rendezvous_nodes
                         .iter_mut()
-                        .find(|node| node.peer_id == peer.peer_id)
+                        .find(|node| node.peer_id == peer_id)
                     {
                         node.set_connection(ConnectionStatus::Disconnected);
+                        // Schedule reconnection with backoff
+                        self.schedule_dial(peer_id);
                     }
                 }
                 FromSwarm::DialFailure(peer) => {
@@ -450,6 +501,8 @@ pub mod rendezvous {
                             .find(|node| node.peer_id == peer_id)
                         {
                             node.set_connection(ConnectionStatus::Disconnected);
+                            // Schedule retry with exponential backoff
+                            self.schedule_dial(peer_id);
                         }
                     }
                 }
@@ -472,7 +525,16 @@ pub mod rendezvous {
             &mut self,
             cx: &mut Context<'_>,
         ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-            if let Some(peer_id) = self.to_dial.pop_front() {
+            // Check if we need to dial a peer
+            if let Poll::Ready(Some(peer_id)) = self.to_dial.poll_next_unpin(cx) {                
+                if let Some(node) = self
+                    .rendezvous_nodes
+                    .iter_mut()
+                    .find(|node| node.peer_id == peer_id)
+                {
+                    node.set_connection(ConnectionStatus::Dialling);
+                }
+                
                 return Poll::Ready(ToSwarm::Dial {
                     opts: DialOpts::peer_id(peer_id)
                         .addresses(vec![self
@@ -488,14 +550,15 @@ pub mod rendezvous {
                         .build(),
                 });
             }
+            
             // Check the status of each rendezvous node
             for i in 0..self.rendezvous_nodes.len() {
                 let connection_status = self.rendezvous_nodes[i].connection_status.clone();
                 match &mut self.rendezvous_nodes[i].registration_status {
                     RegistrationStatus::RegisterOnNextConnection => match connection_status {
                         ConnectionStatus::Disconnected => {
-                            self.rendezvous_nodes[i].set_connection(ConnectionStatus::Dialling);
-                            self.to_dial.push_back(self.rendezvous_nodes[i].peer_id);
+                            let peer_id = self.rendezvous_nodes[i].peer_id;
+                            self.schedule_dial(peer_id);
                         }
                         ConnectionStatus::Dialling => {}
                         ConnectionStatus::Connected => {
@@ -514,10 +577,11 @@ pub mod rendezvous {
                                     });
                                 }
                                 ConnectionStatus::Disconnected => {
+                                    let peer_id = self.rendezvous_nodes[i].peer_id;
+                                    self.schedule_dial(peer_id);
                                     self.rendezvous_nodes[i].set_registration(
                                         RegistrationStatus::RegisterOnNextConnection,
                                     );
-                                    self.to_dial.push_back(self.rendezvous_nodes[i].peer_id);
                                 }
                                 ConnectionStatus::Dialling => {}
                             }
