@@ -26,6 +26,54 @@ use zip::{write::SimpleFileOptions, ZipWriter};
 
 use crate::{commands::util::ToStringResult, State};
 
+/// This macro returns the list of all command handlers
+/// You can call this and insert the output into [`tauri::app::Builder::invoke_handler`]
+/// 
+/// Note: When you add a new command, add it here
+#[macro_export]
+macro_rules! generate_command_handlers {
+    () => {
+        tauri::generate_handler![
+            get_balance,
+            get_monero_addresses,
+            get_swap_info,
+            get_swap_infos_all,
+            withdraw_btc,
+            buy_xmr,
+            resume_swap,
+            get_history,
+            monero_recovery,
+            get_logs,
+            list_sellers,
+            suspend_current_swap,
+            cancel_and_refund,
+            initialize_context,
+            check_monero_node,
+            check_electrum_node,
+            get_wallet_descriptor,
+            get_current_swap,
+            get_data_dir,
+            resolve_approval_request,
+            redact,
+            save_txt_files,
+            get_monero_history,
+            get_monero_main_address,
+            get_monero_balance,
+            send_monero,
+            get_monero_sync_progress,
+            get_monero_seed,
+            check_seed,
+            get_pending_approvals,
+            set_monero_restore_height,
+            reject_approval_request,
+            get_restore_height,
+            dfx_authenticate,
+            change_monero_node,
+            get_context_status
+        ]
+    };
+}
+
 #[macro_use]
 mod util {
     use std::result::Result;

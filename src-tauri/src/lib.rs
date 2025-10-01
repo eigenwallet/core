@@ -99,44 +99,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
-            get_balance,
-            get_monero_addresses,
-            get_swap_info,
-            get_swap_infos_all,
-            withdraw_btc,
-            buy_xmr,
-            resume_swap,
-            get_history,
-            monero_recovery,
-            get_logs,
-            list_sellers,
-            suspend_current_swap,
-            cancel_and_refund,
-            initialize_context,
-            check_monero_node,
-            check_electrum_node,
-            get_wallet_descriptor,
-            get_current_swap,
-            get_data_dir,
-            resolve_approval_request,
-            redact,
-            save_txt_files,
-            get_monero_history,
-            get_monero_main_address,
-            get_monero_balance,
-            send_monero,
-            get_monero_sync_progress,
-            get_monero_seed,
-            check_seed,
-            get_pending_approvals,
-            set_monero_restore_height,
-            reject_approval_request,
-            get_restore_height,
-            dfx_authenticate,
-            change_monero_node,
-            get_context_status
-        ])
+        .invoke_handler(generate_command_handlers!())
         .setup(setup)
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
