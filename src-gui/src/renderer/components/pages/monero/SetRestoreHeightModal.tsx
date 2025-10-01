@@ -17,6 +17,7 @@ import { getRestoreHeight, setMoneroRestoreHeight } from "renderer/rpc";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { Dayjs } from "dayjs";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import { isContextWithMoneroWallet } from "models/tauriModelExt";
 
 enum RestoreOption {
   BlockHeight = "blockHeight",
@@ -133,6 +134,7 @@ export default function SetRestoreHeightModal({
           onSuccess={onClose}
           displayErrorSnackbar={true}
           onPendingChange={setIsPending}
+          contextRequirement={isContextWithMoneroWallet}
         >
           Confirm
         </PromiseInvokeButton>

@@ -398,3 +398,15 @@ export function isContextFullyInitialized(
     status.tor_available
   );
 }
+
+export function isContextWithBitcoinWallet(
+  status: ContextStatus | null,
+): boolean {
+  return status?.bitcoin_wallet_available ?? false;
+}
+
+export function isContextWithMoneroWallet(
+  status: ContextStatus | null,
+): boolean {
+  return status?.monero_wallet_available ?? false;
+}

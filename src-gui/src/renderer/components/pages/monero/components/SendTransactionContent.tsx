@@ -14,6 +14,7 @@ import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { sendMoneroTransaction } from "renderer/rpc";
 import { useAppSelector } from "store/hooks";
 import { SendMoneroResponse } from "models/tauriModel";
+import { isContextWithMoneroWallet } from "models/tauriModelExt";
 
 interface SendTransactionContentProps {
   balance: {
@@ -168,6 +169,7 @@ export default function SendTransactionContent({
           disabled={isSendDisabled}
           onSuccess={handleSendSuccess}
           onPendingChange={setIsSending}
+          contextRequirement={isContextWithMoneroWallet}
         >
           Send
         </PromiseInvokeButton>
