@@ -116,7 +116,7 @@ export default function PasswordEntryDialog() {
         <PromiseInvokeButton
           onInvoke={accept}
           variant="contained"
-          requiresContext={false}
+          contextRequirement={false}
         >
           Unlock
         </PromiseInvokeButton>

@@ -9,6 +9,7 @@ import {
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
   SendMoneroDetails,
+  ContextStatus,
 } from "./tauriModel";
 
 export type TauriSwapProgressEventType = TauriSwapProgressEvent["type"];
@@ -381,4 +382,19 @@ export function haveFundsBeenLocked(
   }
 
   return true;
+}
+
+export function isContextFullyInitialized(
+  status: ContextStatus | null,
+): boolean {
+  if (status == null) {
+    return false;
+  }
+
+  return (
+    status.bitcoin_wallet_available &&
+    status.monero_wallet_available &&
+    status.database_available &&
+    status.tor_available
+  );
 }

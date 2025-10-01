@@ -27,8 +27,6 @@ import {
   addFeedbackId,
   setConversation,
 } from "store/features/conversationsSlice";
-import { TauriContextStatusEvent, MoneroNodeConfig } from "models/tauriModel";
-import { getNetwork } from "store/config";
 
 // Create a Map to store throttled functions per swap_id
 const throttledGetSwapInfoFunctions = new Map<

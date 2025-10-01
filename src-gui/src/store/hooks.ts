@@ -16,6 +16,7 @@ import {
   isPendingSendMoneroApprovalEvent,
   PendingPasswordApprovalRequest,
   isPendingPasswordApprovalEvent,
+  isContextFullyInitialized,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -111,9 +112,7 @@ export function useIsSpecificSwapRunning(swapId: string | null) {
 }
 
 export function useIsContextAvailable() {
-  return useAppSelector(
-    (state) => state.rpc.status === TauriContextStatusEvent.Available,
-  );
+  return useAppSelector((state) => isContextFullyInitialized(state.rpc.status));
 }
 
 /// We do not use a sanity check here, as opposed to the other useSwapInfo hooks,

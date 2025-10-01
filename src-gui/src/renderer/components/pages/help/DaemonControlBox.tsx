@@ -40,7 +40,7 @@ export default function DaemonControlBox() {
             variant="contained"
             endIcon={<PlayArrowIcon />}
             onInvoke={initializeContext}
-            requiresContext={false}
+            contextRequirement={false}
             disabled={!canContextBeManuallyStarted}
             isLoadingOverride={isContextInitializing}
             displayErrorSnackbar
@@ -51,7 +51,7 @@ export default function DaemonControlBox() {
             variant="contained"
             endIcon={<RotateLeftIcon />}
             onInvoke={relaunch}
-            requiresContext={false}
+            contextRequirement={false}
             displayErrorSnackbar
           >
             Restart GUI
@@ -59,7 +59,7 @@ export default function DaemonControlBox() {
           <PromiseInvokeButton
             endIcon={<FolderOpenIcon />}
             isIconButton
-            requiresContext={false}
+            contextRequirement={false}
             size="small"
             tooltipTitle="Open the data directory in your file explorer"
             onInvoke={async () => {
