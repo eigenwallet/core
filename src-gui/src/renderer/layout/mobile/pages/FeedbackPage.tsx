@@ -10,7 +10,7 @@ export default function FeedbackPage() {
   return (
     <Box>
       <Box sx={{ px: 2, pt: 3, display: "flex", alignItems: "center", gap: 1, position: "sticky", top: 0, backgroundColor: "background.paper", zIndex: 1 }}>
-        <IconButton onClick={() => navigate("/", { viewTransition: true })}>
+        <IconButton onClick={() => navigate("/settings", { viewTransition: true })}>
           <ChevronLeft />
         </IconButton>
         <Typography variant="h5">Feedback</Typography>

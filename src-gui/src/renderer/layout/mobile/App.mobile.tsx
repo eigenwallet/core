@@ -5,6 +5,7 @@ import {
     MemoryRouter as Router,
     Routes,
     useNavigate,
+    useLocation,
 } from 'react-router-dom'
 import IntroductionModal from 'renderer/components/modal/introduction/IntroductionModal'
 import PasswordEntryDialog from 'renderer/components/modal/password-entry/PasswordEntryDialog'
@@ -34,6 +35,7 @@ export default function App() {
 function InnerContent() {
     const theme = useTheme()
     const navigate = useNavigate()
+    const location = useLocation()
     return (
         <Box
             sx={{
@@ -46,26 +48,28 @@ function InnerContent() {
                 <Route path="/feedback" element={<FeedbackPage />} />
                 <Route path="/transactions" element={<TransactionsPage />} />
             </Routes>
-            {/* Floating help button */}
-            <IconButton
-                sx={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    width: 48,
-                    height: 48,
-                    borderRadius: '50%',
-                    backgroundColor:
-                        theme.palette.mode === 'dark'
-                            ? 'rgba(255,255,255,0.08)'
-                            : theme.palette.grey[200],
-                    backdropFilter: 'blur(10px)',
-                    zIndex: theme.zIndex.fab,
-                }}
-                onClick={() => navigate('/feedback', { viewTransition: true })}
-            >
-                <HelpOutline />
-            </IconButton>
+            {/* Floating help button (only on settings page) */}
+            {location.pathname.startsWith('/settings') && (
+                <IconButton
+                    sx={{
+                        position: 'fixed',
+                        bottom: 24,
+                        right: 24,
+                        width: 48,
+                        height: 48,
+                        borderRadius: '50%',
+                        backgroundColor:
+                            theme.palette.mode === 'dark'
+                                ? 'rgba(255,255,255,0.08)'
+                                : theme.palette.grey[200],
+                        backdropFilter: 'blur(10px)',
+                        zIndex: theme.zIndex.fab,
+                    }}
+                    onClick={() => navigate('/feedback', { viewTransition: true })}
+                >
+                    <HelpOutline />
+                </IconButton>
+            )}
         </Box>
     )
 }
