@@ -39,7 +39,7 @@ export default function Header() {
                     gradientSeed="to be replaced with wallet keyy"
                     onClick={() => setAvatarDialogOpen(true)}
                 />
-                <Stack spacing={0} sx={{ flexGrow: 1, lineHeight: 1 }}>
+                <Stack spacing={-2} sx={{ transform: "translateY(-4px) translateX(-4px)", flexGrow: 1, lineHeight: 1 }}>
                 <EigenwalletIcon
                     sx={{
                         fontSize: 64,
@@ -49,7 +49,7 @@ export default function Header() {
                                 : 'black',
                     }}
                 />
-                    {isLoading && (
+                    {(
                         <ShimmerTypography
                             variant="caption"
                             sx={{ opacity: 0.85 }}
