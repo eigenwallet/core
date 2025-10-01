@@ -92,7 +92,8 @@ fn main() {
 /// The complete config, whether to create a full bitcoin/electrum node and whether to create a full monero node
 fn setup_wizard(
     existing_config: Option<Result<Config>>,
-    defaults: Defaults,
+    bitcoin_network: bitcoin::Network,
+    monero_network: monero::Network,
 ) -> Result<(Config, bool, bool)> {
     // If we already have a valid config, just use it and deduce the monero/bitcoin settings
     if let Some(Ok(config)) = existing_config {
@@ -129,9 +130,11 @@ fn setup_wizard(
             .item("Abort and leave my `config.toml` alone")
             .interact()?;
 
-        if choice != 0 {
+
+        if choice == 1 {
+            // user chose to abort
             println!("Stopping wizard. Goodbye!");
-            bail!("User doesn't want to procede.")
+            return Err(anyhow!("User doesn't want to procede."))
         }
 
         std::fs::rename(CONFIG_PATH, &proposed_filename)?;
@@ -152,8 +155,14 @@ fn setup_wizard(
     //  - listen addresses
     //  - tip
 
-    let min_buy = config_prompt::min_buy_amount()?;
-    let max_buy = config_prompt::max_buy_amount()?;
+    let defaults = match (bitcoin_network, monero_network) {
+        (bitcoin::Network::Bitcoin, monero::Network::Mainnet) => Mainnet::get_config_file_defaults()?,
+        (bitcoin::Network::Testnet, monero::Network::Stagenet) => Testnet::get_config_file_defaults()?,
+        (a, b) => bail!("unsupported network combo: Bitcoin::{a} and Monero::{:?}", b)
+    };
+
+    let min_buy_btc = config_prompt::min_buy_amount()?;
+    let max_buy_btc = config_prompt::max_buy_amount()?;
     let markup = config_prompt::ask_spread()?;
     let rendezvous_points = config_prompt::rendezvous_points()?;
     let hidden_service = config_prompt::tor_hidden_service()?;
@@ -162,7 +171,32 @@ fn setup_wizard(
     let monero_node_type = prompt::monero_node_type();
     let electrum_node_type = prompt::electrum_server_type(&defaults.electrum_rpc_urls);
 
+    let electrum_rpc_urls = match electrum_node_type {
+        prompt::ElectrumServerType::Included => vec![],
+    }
+
     let tip = config_prompt::developer_tip()?;
+
+
+    let config = Config {
+        data: Data {
+            dir: PathBuf::from("/").join(containers::ASB_DATA),
+        },
+        network: Network {
+            listen: listen_addresses,
+            rendezvous_point: rendezvous_points,
+            external_addresses: Vec::new(),
+        },
+        maker: Maker {
+            max_buy_btc,
+            min_buy_btc,
+            ask_spread: markup,
+            price_ticker_ws_url: defaults.price_ticker_ws_url,
+            external_bitcoin_redeem_address: None,
+            developer_tip: tip,
+        },
+        bitcoin: Bitcoin { electrum_rpc_urls: , target_block: defaults.bitcoin_confirmation_target, finality_confirmations: None, network: defaults., use_mempool_space_fee_estimation: () }
+    };
 
     bail!("unimplemented")
 }

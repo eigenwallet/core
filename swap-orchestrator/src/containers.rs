@@ -12,10 +12,10 @@ use crate::{
 
 // Important: don't add slashes or anything here
 // Todo: find better way to do that
-const MONEROD_DATA: &str = "monerod-data";
-const BITCOIN_DATA: &str = "bitcoin-data";
-const ELECTRS_DATA: &str = "electrs-data";
-const ASB_DATA: &str = "asb-data";
+pub const MONEROD_DATA: &str = "monerod-data";
+pub const BITCOIN_DATA: &str = "bitcoin-data";
+pub const ELECTRS_DATA: &str = "electrs-data";
+pub const ASB_DATA: &str = "asb-data";
 
 /// Add all the services/volumes to the compose config
 #[allow(unused_variables)]
@@ -91,19 +91,28 @@ pub fn monerod(
     (monerod_data, monerod_service, monerod_rpc_port)
 }
 
+pub struct BitcoindConfig {
+    enabled: bool,
+    container_name: String,
+    volume_name: String,
+    network: bitcoin::Network,
+    p2p_port: u16,
+    rpc_port: u16,
+}
+
 /// Adds the volume/service to the compose config and returns them + the rpc bind port and p2p bind port
 pub fn bitcoind(
     compose: &mut ComposeConfig,
-    network: bitcoin::Network,
-    enabled: bool,
+    config: BitcoindConfig,
 ) -> (Arc<Volume>, Arc<Service>, u16, u16) {
-    let (rpc_port, p2p_port, chain): (u16, u16, &str) = match network {
-        bitcoin::Network::Bitcoin => (8332, 8333, "main"),
-        bitcoin::Network::Testnet => (18332, 18333, "test"),
+    let chain = match config.network {
+        bitcoin::Network::Bitcoin => "main",
+        bitcoin::Network::Testnet => "test",
         _ => panic!("unsupported bitcoin network"),
     };
+    let (rpc_port, p2p_port) = (config.rpc_port, config.p2p_port);
 
-    let bitcoind_data = compose.add_volume(BITCOIN_DATA);
+    let bitcoind_data = compose.add_volume(config.volume_name);
 
     let bitcoind_command = command!(
         "bitcoind",
@@ -119,30 +128,37 @@ pub fn bitcoind(
     );
 
     let bitcoind = Service::new(
-        "bitcoind",
+        config.container_name,
         ImageSource::from_registry(images::BITCOIND_IMAGE),
     )
     .with_mount(Mount::volume(&bitcoind_data))
     .with_exposed_port(rpc_port)
     .with_exposed_port(p2p_port)
     .with_command(bitcoind_command)
-    .with_enabled(enabled);
+    .with_enabled(config.enabled);
 
     let bitcoind = compose.add_service(bitcoind);
 
     (bitcoind_data, bitcoind, rpc_port, p2p_port)
 }
 
+pub struct ElectrsConfig {
+    enabled: bool,
+    container_name: String,
+    volume_name: String,
+    network: bitcoin::Network,
+    port: u16,
+}
+
 pub fn electrs(
     compose: &mut ComposeConfig,
-    network: bitcoin::Network,
-    enabled: bool,
     bitcoind_rpc_port: u16,
     bitcoind_p2p_port: u16,
     bitcoind: Arc<Service>,
     bitcoind_data: Arc<Volume>,
+    config: ElectrsConfig,
 ) -> (Arc<Volume>, Arc<Service>, u16) {
-    let (port, chain): (u16, &str) = match network {
+    let (port, chain): (u16, &str) = match config.network {
         bitcoin::Network::Bitcoin => (50001, "bitcoin"),
         bitcoin::Network::Testnet => (50001, "testnet"),
         _ => panic!("unsupported bitcoin network"),
@@ -150,7 +166,7 @@ pub fn electrs(
 
     let bitcoind_name = bitcoind.name();
 
-    let electrs_data = compose.add_volume(ELECTRS_DATA);
+    let electrs_data = compose.add_volume(config.volume_name);
     let command = command!(
         "electrs",
         flag!("--network={chain}"),
@@ -164,12 +180,15 @@ pub fn electrs(
         flag!("--electrum-rpc-addr=0.0.0.0:{port}"),
         flag!("--log-filters=INFO"),
     );
-    let service = Service::new("electrs", ImageSource::from_registry(images::ELECTRS_IMAGE))
-        .with_dependency(bitcoind.clone())
-        .with_exposed_port(port)
-        .with_command(command)
-        .with_mount(Mount::volume(&electrs_data))
-        .with_enabled(enabled);
+    let service = Service::new(
+        config.container_name,
+        ImageSource::from_registry(images::ELECTRS_IMAGE),
+    )
+    .with_dependency(bitcoind.clone())
+    .with_exposed_port(port)
+    .with_command(command)
+    .with_mount(Mount::volume(&electrs_data))
+    .with_enabled(config.enabled);
 
     let service = compose.add_service(service);
 
