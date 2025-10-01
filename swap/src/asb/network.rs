@@ -381,12 +381,6 @@ pub mod rendezvous {
             let backoff = self.backoffs.get_mut(&peer_id).expect("Backoff should exist for all rendezvous nodes");
             let delay = backoff.next_backoff().expect("Backoff should never run out");
             
-            tracing::debug!(
-                %peer_id,
-                delay_secs = delay.as_secs(),
-                "Scheduling dial with backoff"
-            );
-            
             // Create a future that sleeps and then returns the peer_id
             let future = async move {
                 tokio::time::sleep(delay).await;
@@ -464,7 +458,6 @@ pub mod rendezvous {
                         // Reset backoff on successful connection
                         if let Some(backoff) = self.backoffs.get_mut(&peer_id) {
                             backoff.reset();
-                            tracing::debug!(%peer_id, "Connection established, backoff reset");
                         }
 
                         if let RegistrationStatus::RegisterOnNextConnection =
@@ -488,7 +481,6 @@ pub mod rendezvous {
                         .find(|node| node.peer_id == peer_id)
                     {
                         node.set_connection(ConnectionStatus::Disconnected);
-                        // Schedule reconnection with backoff
                         self.schedule_dial(peer_id);
                     }
                 }
@@ -501,7 +493,6 @@ pub mod rendezvous {
                             .find(|node| node.peer_id == peer_id)
                         {
                             node.set_connection(ConnectionStatus::Disconnected);
-                            // Schedule retry with exponential backoff
                             self.schedule_dial(peer_id);
                         }
                     }
