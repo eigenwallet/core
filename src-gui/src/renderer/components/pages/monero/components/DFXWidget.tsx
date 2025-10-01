@@ -129,7 +129,7 @@ function DFXWidgetMobile({
   return (
     <>
       <TextIconButton label="Buy" onClick={onOpen} disabled={disabled} isMainActionButton>
-        <EuroIcon />
+        <EuroIcon sx={{ transform: "translateX(-1px)" }} />
       </TextIconButton>
       <MobileDialog open={open} onClose={onClose}>
         {children}
