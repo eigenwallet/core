@@ -1,411 +1,525 @@
-use crate::containers;
-use crate::containers::*;
-use crate::images::PINNED_GIT_REPOSITORY;
-use compose_spec::Compose;
 use std::{
-    fmt::{self, Display},
+    fmt::{Display, Write},
     path::PathBuf,
+    sync::Arc,
 };
 
-pub const ASB_DATA_DIR: &str = "/asb-data";
-pub const ASB_CONFIG_FILE: &str = "config.toml";
-pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
+use url::Url;
 
-pub struct OrchestratorInput {
-    pub ports: OrchestratorPorts,
-    pub networks: OrchestratorNetworks<monero::Network, bitcoin::Network>,
-    pub images: OrchestratorImages<OrchestratorImage>,
-    pub directories: OrchestratorDirectories,
+use crate::writer::IndentedWriter;
+
+/// Trait implemented by every part of a [`ComposeConfig`]
+/// which writes that part of the config to an output.
+trait WriteConfig {
+    fn write_to(&self, writer: &mut IndentedWriter);
 }
 
-pub struct OrchestratorDirectories {
-    pub asb_data_dir: PathBuf,
+/// A Docker Compose config that can be written to a `docker-compose.yml` file.
+///
+/// Create with [`ComposeConfig::new`] and add volumes and services
+/// using [`ComposeConfig::add_volume`] and [`ComposeConfig::add_service`].
+#[derive(Debug, Clone)]
+pub struct ComposeConfig {
+    services: Vec<Arc<Service>>,
+    volumes: Vec<Arc<Volume>>,
 }
 
-#[derive(Clone)]
-pub struct OrchestratorNetworks<MN: IntoFlag + Clone, BN: IntoFlag + Clone> {
-    pub monero: MN,
-    pub bitcoin: BN,
+/// A service which may be added to a [`ComposeConfig`].
+#[derive(Debug, Clone)]
+pub struct Service {
+    name: String,
+    depends_on: Vec<Arc<Service>>,
+    image_source: ImageSource,
+    exposed_ports: Vec<u16>,
+    volumes: Vec<Mount>,
+    restart_type: RestartType,
+    entrypoint: Option<String>,
+    command: Option<Command>,
+    stdin_open: Option<bool>,
+    tty: Option<bool>,
+    enabled: bool,
 }
 
-pub struct OrchestratorImages<T: IntoImageAttribute> {
-    pub monerod: T,
-    pub electrs: T,
-    pub bitcoind: T,
-    pub asb: T,
-    pub asb_controller: T,
-    pub asb_tracing_logger: T,
+/// Specify how to mount a specific path or volume of the host system to the container.
+#[derive(Debug, Clone)]
+pub struct Mount {
+    host_path: VolumeOrPath,
+    container_path: PathBuf,
 }
 
-pub struct OrchestratorPorts {
-    pub monerod_rpc: u16,
-    pub bitcoind_rpc: u16,
-    pub bitcoind_p2p: u16,
-    pub electrs: u16,
-    pub asb_libp2p: u16,
-    pub asb_rpc_port: u16,
+/// Host side of a mount expression.
+/// Either a volume or a path to some directory/file.
+#[derive(Debug, Clone)]
+enum VolumeOrPath {
+    Volume(Arc<Volume>),
+    Path(PathBuf),
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for OrchestratorPorts {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
-        match (val.monero, val.bitcoin) {
-            (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => OrchestratorPorts {
-                monerod_rpc: 18081,
-                bitcoind_rpc: 8332,
-                bitcoind_p2p: 8333,
-                electrs: 50001,
-                asb_libp2p: 9939,
-                asb_rpc_port: 9944,
-            },
-            (monero::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
-                monerod_rpc: 38081,
-                bitcoind_rpc: 18332,
-                bitcoind_p2p: 18333,
-                electrs: 50001,
-                asb_libp2p: 9839,
-                asb_rpc_port: 9944,
-            },
-            _ => panic!("Unsupported Bitcoin / Monero network combination"),
+/// A volume that's part of a Docker Compose config.
+/// Can only be obtained as `Arc<Volume>` via [`ComposeConfig::add_volume`].
+#[derive(Debug, Clone)]
+pub struct Volume {
+    name: String,
+}
+
+/// Configure how to obtain the container image.
+#[derive(Debug, Clone)]
+pub enum ImageSource {
+    BuildFromSource {
+        /// Url to the git repo (may contain commit hash).
+        git_url: Url,
+        /// Relative path to Dockerfile from repo root.
+        dockerfile_path: String,
+    },
+    PullFromRegistry {
+        /// Standard docker registry url.
+        image_url: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct Command {
+    flags: Vec<Flag>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Flag(String);
+
+/// Configure when to restart the service.
+#[derive(Debug, Clone, Copy)]
+pub enum RestartType {
+    UnlessStopped,
+}
+
+impl ComposeConfig {
+    /// Add a volume to the config.
+    /// Returns a handle which can be used to reference this volume later.
+    pub fn add_volume(&mut self, name: impl Into<String>) -> Arc<Volume> {
+        let volume = Arc::new(Volume::new(name.into()));
+        self.volumes.push(volume.clone());
+
+        volume
+    }
+
+    /// Add a service to the config.
+    /// Returns a handle which can be used to reference this service later.
+    ///
+    /// Create services using [`Service::new`].
+    pub fn add_service(&mut self, service: Service) -> Arc<Service> {
+        let service = Arc::new(service);
+        self.services.push(service.clone());
+
+        service
+    }
+
+    /// Finish this config and make it into a docker-compose.yml compatible string.
+    pub fn build(self) -> String {
+        let mut writer = IndentedWriter::new();
+        self.write_to(&mut writer);
+
+        let result = writer.finish();
+
+        let _: compose_spec::Compose =
+            serde_yaml::from_str(&result).expect("valid docker-compose.yml syntax");
+
+        result
+    }
+}
+
+impl Default for ComposeConfig {
+    fn default() -> ComposeConfig {
+        ComposeConfig {
+            services: Vec::new(),
+            volumes: Vec::new(),
         }
     }
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for asb::Network {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
-        containers::asb::Network::new(val.monero, val.bitcoin)
+impl WriteConfig for ComposeConfig {
+    fn write_to(&self, writer: &mut IndentedWriter) {
+        writeln!(writer, "# This file is automatically @generated by the eigenwallet orchestrator.\n# It is not intended for manual editing.").unwrap();
+        writeln!(writer, "name: eigenwallet-maker").unwrap();
+        writeln!(writer, "services:").unwrap();
+
+        writer.indented(|writer| {
+            for service in &self.services {
+                service.write_to(writer);
+            }
+        });
+
+        writeln!(writer, "volumes:").unwrap();
+
+        writer.indented(|writer| {
+            for volume in &self.volumes {
+                writeln!(writer, "{}:", volume.name()).unwrap();
+            }
+        });
     }
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for electrs::Network {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
-        containers::electrs::Network::new(val.bitcoin)
+impl Service {
+    /// Create a new Docker Compose service. Use the `with_*` methods to configure
+    /// it, before adding it to the config with [`ComposeConfig::add_service`].
+    pub fn new(name: impl Into<String>, image_source: ImageSource) -> Service {
+        let name: String = name.into();
+
+        Service {
+            name,
+            depends_on: Vec::new(),
+            exposed_ports: Vec::new(),
+            image_source,
+            command: None,
+            restart_type: RestartType::UnlessStopped,
+            volumes: Vec::new(),
+            entrypoint: None,
+            stdin_open: None,
+            tty: None,
+            enabled: true,
+        }
+    }
+
+    /// Expose a specific port of this service.
+    /// Can be called multiple times.
+    ///
+    /// Expands to the following:
+    /// ```docker ignore
+    ///     expose:
+    ///       - 0.0.0.0:{port}:{port}
+    /// ```
+    ///
+    /// TODO: support mapping to other port
+    /// TODO: support exposing only on localhost
+    pub fn with_exposed_port(mut self, port: u16) -> Service {
+        self.exposed_ports.push(port);
+
+        self
+    }
+
+    /// Add a volume or other path to this service's container by
+    /// mounting it from the host system.
+    pub fn with_mount(mut self, mount: Mount) -> Service {
+        self.volumes.push(mount);
+
+        self
+    }
+
+    /// Add a dependency on another service. The other service will be listed
+    /// in the `depends_on` section of this service.
+    pub fn with_dependency(mut self, service: Arc<Service>) -> Service {
+        self.depends_on.push(service);
+
+        self
+    }
+
+    /// Set this service's `command` field. Further calls will override earlier values.
+    pub fn with_command(mut self, command: Command) -> Service {
+        self.command = Some(command);
+
+        self
+    }
+
+    /// Set `stdin_open` to an explicit value.
+    ///
+    /// Todo: find out default value + actual meaning.
+    pub fn with_stdin_open(mut self, stdin_open: bool) -> Service {
+        self.stdin_open = Some(stdin_open);
+
+        self
+    }
+
+    /// Set `tty` to an explicit value.
+    ///
+    /// Todo: find out default value + actual meaning.
+    pub fn with_tty(mut self, tty: bool) -> Service {
+        self.tty = Some(tty);
+
+        self
+    }
+
+    /// Set whether this service should be enabled.
+    ///
+    /// Is represented in the `docker-compose.yml` as
+    /// `profiles: ['disabled']`, if set to false.
+    pub fn with_enabled(mut self, enabled: bool) -> Service {
+        self.enabled = enabled;
+
+        self
+    }
+
+    /// Get the name of the service.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Check whether the service is currently enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
     }
 }
 
-impl OrchestratorDirectories {
-    pub fn asb_config_path_inside_container(&self) -> PathBuf {
-        self.asb_data_dir.join(ASB_CONFIG_FILE)
-    }
+impl WriteConfig for Service {
+    fn write_to(&self, writer: &mut IndentedWriter) {
+        // {service_name}:
+        writeln!(writer, "{}:", &self.name).unwrap();
 
-    pub fn asb_config_path_on_host(&self) -> &'static str {
-        // The config file is in the same directory as the docker-compose.yml file
-        "./config.toml"
-    }
+        writer.indented(|writer| {
+            // container_name
+            writeln!(writer, "container_name: {}", &self.name).unwrap();
+            // image/build
+            self.image_source.write_to(writer);
+            // restart
+            self.restart_type.write_to(writer);
 
-    pub fn asb_config_path_on_host_as_path_buf(&self) -> PathBuf {
-        PathBuf::from(self.asb_config_path_on_host())
+            // depends_on (if specified)
+            if !self.depends_on.is_empty() {
+                writeln!(writer, "depends_on:").unwrap();
+                // write every individual dependency service
+                writer.indented(|writer| {
+                    for dependency in &self.depends_on {
+                        writeln!(writer, "- {}", &dependency.name).unwrap();
+                    }
+                });
+            }
+
+            // stdin_open (if specified)
+            if let Some(stdin_open) = self.stdin_open {
+                writeln!(writer, "stdin_open: {stdin_open}").unwrap();
+            }
+            // tty (if specified)
+            if let Some(tty) = self.tty {
+                writeln!(writer, "tty: {tty}").unwrap();
+            }
+
+            // entrypoint (if specified)
+            if let Some(entrypoint) = &self.entrypoint {
+                writeln!(writer, "entrypoint: \"{}\"", entrypoint).unwrap();
+            }
+
+            // command (if specified)
+            if let Some(command) = &self.command {
+                command.write_to(writer);
+            }
+
+            // volumes (if specified)
+            if !self.volumes.is_empty() {
+                writeln!(writer, "volumes:").unwrap();
+                // write every individual mount
+                writer.indented(|writer| {
+                    for mount in &self.volumes {
+                        mount.write_to(writer);
+                    }
+                });
+            }
+
+            // exposed ports (if specified)
+            if !self.exposed_ports.is_empty() {
+                writeln!(writer, "expose:").unwrap();
+
+                writer.indented(|writer| {
+                    for port in &self.exposed_ports {
+                        writeln!(writer, "- {port}").unwrap();
+                    }
+                })
+            }
+
+            // Add the "disabled" profile if the service was disabled
+            // -> service isn't started unless specifically specified
+            if !self.enabled {
+                writeln!(writer, "profiles: [\"disabled\"]").unwrap();
+            }
+        });
     }
 }
 
-/// See: https://docs.docker.com/reference/compose-file/build/#illustrative-example
-#[derive(Debug, Clone)]
-pub struct DockerBuildInput {
-    // Usually this is the root of the Cargo workspace
-    pub context: &'static str,
-    // Usually this is the path to the Dockerfile
-    pub dockerfile: &'static str,
+impl ImageSource {
+    pub fn from_registry(image_url: impl Into<String>) -> ImageSource {
+        ImageSource::PullFromRegistry {
+            image_url: image_url.into(),
+        }
+    }
+
+    pub fn from_source(git_url: Url, dockerfile_path: impl Into<String>) -> ImageSource {
+        ImageSource::BuildFromSource {
+            git_url,
+            dockerfile_path: dockerfile_path.into(),
+        }
+    }
 }
 
-/// Specified a docker image to use
-/// The image can either be pulled from a registry or built from source
-pub enum OrchestratorImage {
-    Registry(String),
-    Build(DockerBuildInput),
+impl WriteConfig for ImageSource {
+    fn write_to(&self, writer: &mut IndentedWriter) {
+        match self {
+            ImageSource::BuildFromSource {
+                git_url,
+                dockerfile_path,
+            } => {
+                writeln!(
+                    writer,
+                    "build: {{ context: \"{git_url}\", dockerfile: \"{dockerfile_path}\" }}"
+                )
+                .unwrap();
+            }
+            ImageSource::PullFromRegistry { image_url } => {
+                writeln!(writer, "image: \"{image_url}\"").unwrap()
+            }
+        }
+    }
+}
+
+impl Mount {
+    /// Mount a specific path from the host system to a specific path on the container system.
+    /// `container_path` must be an absolute path.
+    pub fn path(host_path: impl Into<PathBuf>, container_path: impl Into<PathBuf>) -> Mount {
+        Mount {
+            host_path: VolumeOrPath::Path(host_path.into()),
+            container_path: container_path.into(),
+        }
+    }
+
+    /// Mount a volume as a root dir in the container.
+    /// For example, the volume `foo` will be mounted to `/foo/` in
+    /// the container.
+    pub fn volume(volume: &Arc<Volume>) -> Mount {
+        Mount {
+            host_path: VolumeOrPath::Volume(volume.clone()),
+            container_path: volume.as_root_dir(),
+        }
+    }
+
+    /// Mount a volume to a specific path in the container system.
+    /// `container_path` must be an absolute path.
+    pub fn volume_to(volume: &Arc<Volume>, container_path: impl Into<PathBuf>) -> Mount {
+        Mount {
+            host_path: VolumeOrPath::Volume(volume.clone()),
+            container_path: container_path.into(),
+        }
+    }
+}
+
+impl WriteConfig for Mount {
+    fn write_to(&self, writer: &mut IndentedWriter) {
+        let host = match &self.host_path {
+            VolumeOrPath::Volume(volume) => volume.name.to_string(),
+            VolumeOrPath::Path(path) => path.to_string_lossy().to_string(),
+        };
+
+        let container = self.container_path.to_string_lossy().to_string();
+
+        writeln!(writer, "- {host}:{container}").expect("writing to a string doesn't fail")
+    }
+}
+
+impl Volume {
+    /// Private: callers can only obtain an `Arc<Volume>`, via
+    /// [`ComposeConfig::add_volume`].
+    fn new(name: String) -> Self {
+        Self { name }
+    }
+
+    /// Get the name of the volume.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the path corresponding to a root directory named after the volume.
+    ///
+    /// ```
+    /// use swap_orchestrator::compose2::*;
+    /// use std::path::PathBuf;
+    ///
+    /// let mut config = ComposeConfig::default();
+    /// let my_volume = config.add_volume("foo");
+    /// assert_eq!(my_volume.as_root_dir(), PathBuf::from("/foo/"));
+    /// ```
+    pub fn as_root_dir(&self) -> PathBuf {
+        let mut path = PathBuf::from("/");
+        path.push(&self.name);
+
+        path
+    }
+}
+
+impl WriteConfig for Volume {
+    fn write_to(&self, writer: &mut IndentedWriter) {
+        writeln!(writer, "{}:", &self.name).unwrap()
+    }
+}
+
+impl WriteConfig for RestartType {
+    fn write_to(&self, writer: &mut IndentedWriter) {
+        let text = match self {
+            RestartType::UnlessStopped => "unless-stopped",
+        };
+        writeln!(writer, "restart: {text}").unwrap();
+    }
+}
+
+impl Command {
+    /// Create a new command by combining flags.
+    pub fn new(flags: impl IntoIterator<Item = Flag>) -> Command {
+        Command {
+            flags: flags.into_iter().collect(),
+        }
+    }
+
+    /// Add a flag dynamically.
+    pub fn add_flag(&mut self, flag: impl Into<Flag>) {
+        self.flags.push(flag.into());
+    }
+}
+
+impl WriteConfig for Command {
+    fn write_to(&self, writer: &mut IndentedWriter) {
+        let flags = self
+            .flags
+            .iter()
+            .map(|flag| format!("{flag}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(writer, "command: [ {flags} ]").unwrap();
+    }
 }
 
 #[macro_export]
 macro_rules! flag {
     ($flag:expr) => {
-        Flag(Some($flag.to_string()))
+        crate::compose::Flag::new(format!($flag))
     };
     ($flag:expr, $($args:expr),*) => {
-        flag!(format!($flag, $($args),*))
+        crate::compose::Flag::new(format!($flag, $($args),*))
     };
 }
 
+#[macro_export]
 macro_rules! command {
     ($command:expr $(, $flag:expr)* $(,)?) => {
-        Flags(vec![flag!($command) $(, $flag)*])
+        crate::compose::Command::new(vec![flag!($command) $(, $flag)*])
     };
 }
 
-fn build(input: OrchestratorInput) -> String {
-    // Every docker compose project has a name
-    // The name is prefixed to the container names
-    // See: https://docs.docker.com/compose/how-tos/project-name/#set-a-project-name
-    let project_name = format!(
-        "{}_monero_{}_bitcoin",
-        input.networks.monero.to_display(),
-        input.networks.bitcoin.to_display()
-    );
-
-    let asb_config_path = PathBuf::from(ASB_DATA_DIR).join(ASB_CONFIG_FILE);
-    let asb_network: asb::Network = input.networks.clone().into();
-
-    let command_asb = command![
-        "asb",
-        asb_network.to_flag(),
-        flag!("--config={}", asb_config_path.display()),
-        flag!("start"),
-        flag!("--rpc-bind-port={}", input.ports.asb_rpc_port),
-        flag!("--rpc-bind-host=0.0.0.0"),
-    ];
-
-    let command_monerod = command![
-        "monerod",
-        input.networks.monero.to_flag(),
-        flag!("--rpc-bind-ip=0.0.0.0"),
-        flag!("--rpc-bind-port={}", input.ports.monerod_rpc),
-        flag!("--data-dir=/monerod-data/"),
-        flag!("--confirm-external-bind"),
-        flag!("--restricted-rpc"),
-        flag!("--non-interactive"),
-        flag!("--enable-dns-blocklist"),
-    ];
-
-    let command_bitcoind = command![
-        "bitcoind",
-        input.networks.bitcoin.to_flag(),
-        flag!("-rpcallowip=0.0.0.0/0"),
-        flag!("-rpcbind=0.0.0.0:{}", input.ports.bitcoind_rpc),
-        flag!("-bind=0.0.0.0:{}", input.ports.bitcoind_p2p),
-        flag!("-datadir=/bitcoind-data/"),
-        flag!("-dbcache=16384"),
-        // These are required for electrs
-        // See: See: https://github.com/romanz/electrs/blob/master/doc/config.md#bitcoind-configuration
-        flag!("-server=1"),
-        flag!("-prune=0"),
-        flag!("-txindex=1"),
-    ];
-
-    let electrs_network: containers::electrs::Network = input.networks.clone().into();
-
-    let command_electrs = command![
-        "electrs",
-        electrs_network.to_flag(),
-        flag!("--daemon-dir=/bitcoind-data/"),
-        flag!("--db-dir=/electrs-data/db"),
-        flag!("--daemon-rpc-addr=bitcoind:{}", input.ports.bitcoind_rpc),
-        flag!("--daemon-p2p-addr=bitcoind:{}", input.ports.bitcoind_p2p),
-        flag!("--electrum-rpc-addr=0.0.0.0:{}", input.ports.electrs),
-        flag!("--log-filters=INFO"),
-    ];
-
-    let command_asb_controller = command![
-        "asb-controller",
-        flag!("--url=http://asb:{}", input.ports.asb_rpc_port),
-    ];
-
-    let command_asb_tracing_logger = command![
-        "sh",
-        flag!("-c"),
-        flag!("tail -f /asb-data/logs/tracing*.log"),
-    ];
-
-    let date = chrono::Utc::now()
-        .format("%Y-%m-%d %H:%M:%S UTC")
-        .to_string();
-
-    let compose_str = format!(
-        "\
-# This file was auto-generated by `orchestrator` on {date}
-#
-# It is pinned to build the `asb` and `asb-controller` images from this commit:
-# {PINNED_GIT_REPOSITORY}
-#
-# If the code does not match the hash, the build will fail. This ensures that the code cannot be altered by Github.
-# The compiled `orchestrator` has this hash burned into the binary.
-#
-# To update the `asb` and `asb-controller` images, you need to either:
-# - re-compile the `orchestrator` binary from a commit from Github
-# - download a newer pre-compiled version of the `orchestrator` binary from Github.
-#
-# After updating the `orchestrator` binary, re-generate the compose file by running `orchestrator` again.
-#
-# The used images for `bitcoind`, `monerod`, `electrs` are pinned to specific hashes which prevents them from being altered by the Docker registry.
-#
-# Please check for new releases regularly. Breaking network changes are rare, but they do happen from time to time.
-name: {project_name}
-services:
-  monerod:
-    container_name: monerod
-    {image_monerod}
-    restart: unless-stopped
-    user: root
-    volumes:
-      - 'monerod-data:/monerod-data/'
-    expose:
-      - {port_monerod_rpc}
-    entrypoint: ''
-    command: {command_monerod}
-  bitcoind:
-    container_name: bitcoind
-    {image_bitcoind}
-    restart: unless-stopped
-    volumes:
-      - 'bitcoind-data:/bitcoind-data/'
-    expose:
-      - {port_bitcoind_rpc}
-      - {port_bitcoind_p2p}
-    user: root
-    entrypoint: ''
-    command: {command_bitcoind}
-  electrs:
-    container_name: electrs
-    {image_electrs}
-    restart: unless-stopped
-    user: root
-    depends_on:
-      - bitcoind
-    volumes:
-      - 'bitcoind-data:/bitcoind-data'
-      - 'electrs-data:/electrs-data'
-    expose:
-      - {electrs_port}
-    entrypoint: ''
-    command: {command_electrs}
-  asb:
-    container_name: asb
-    {image_asb}
-    restart: unless-stopped
-    depends_on:
-      - electrs
-    volumes:
-      - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
-      - 'asb-data:{asb_data_dir}'
-    ports:
-      - '0.0.0.0:{asb_port}:{asb_port}'
-    entrypoint: ''
-    command: {command_asb}
-  asb-controller:
-    container_name: asb-controller
-    {image_asb_controller}
-    stdin_open: true
-    tty: true
-    restart: unless-stopped
-    depends_on:
-      - asb
-    entrypoint: ''
-    command: {command_asb_controller}
-  asb-tracing-logger:
-    container_name: asb-tracing-logger
-    {image_asb_tracing_logger}
-    restart: unless-stopped
-    depends_on:
-      - asb
-    volumes:
-      - 'asb-data:/asb-data:ro'
-    entrypoint: ''
-    command: {command_asb_tracing_logger}
-volumes:
-  monerod-data:
-  bitcoind-data:
-  electrs-data:
-  asb-data:
-",
-        port_monerod_rpc = input.ports.monerod_rpc,
-        port_bitcoind_rpc = input.ports.bitcoind_rpc,
-        port_bitcoind_p2p = input.ports.bitcoind_p2p,
-        electrs_port = input.ports.electrs,
-        asb_port = input.ports.asb_libp2p,
-        image_monerod = input.images.monerod.to_image_attribute(),
-        image_electrs = input.images.electrs.to_image_attribute(),
-        image_bitcoind = input.images.bitcoind.to_image_attribute(),
-        image_asb = input.images.asb.to_image_attribute(),
-        image_asb_controller = input.images.asb_controller.to_image_attribute(),
-        image_asb_tracing_logger = input.images.asb_tracing_logger.to_image_attribute(),
-        asb_data_dir = input.directories.asb_data_dir.display(),
-        asb_config_path_on_host = input.directories.asb_config_path_on_host(),
-        asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),
-    );
-
-    validate_compose(&compose_str);
-
-    compose_str
-}
-
-pub struct Flags(Vec<Flag>);
-
-/// Displays a list of flags into the "Exec form" supported by Docker
-/// This is documented here:
-/// https://docs.docker.com/reference/dockerfile/#exec-form
-///
-/// E.g ["/bin/bash", "-c", "echo hello"]
-impl Display for Flags {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Collect all non-none flags
-        let flags = self
-            .0
-            .iter()
-            .filter_map(|f| f.0.as_ref())
-            .collect::<Vec<_>>();
-
-        // Put the " around each flag, join with a comma, put the whole thing in []
-        write!(
-            f,
-            "[{}]",
-            flags
-                .into_iter()
-                .map(|f| format!("\"{}\"", f))
-                .collect::<Vec<_>>()
-                .join(",")
-        )
+impl Flag {
+    pub fn new(value: impl Into<String>) -> Flag {
+        Flag(value.into())
     }
 }
-
-pub struct Flag(pub Option<String>);
 
 impl Display for Flag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(s) = &self.0 {
-            return write!(f, "{}", s);
-        }
-
-        Ok(())
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\"{}\"", self.0)
     }
 }
 
-pub trait IntoFlag {
-    /// Converts into a flag that can be used in a docker compose file
-    fn to_flag(self) -> Flag;
-    /// Converts into a string that can be used for display purposes
-    fn to_display(self) -> &'static str;
-}
-
-pub trait IntoSpec {
-    fn to_spec(self) -> String;
-}
-
-impl IntoSpec for OrchestratorInput {
-    fn to_spec(self) -> String {
-        build(self)
+impl From<String> for Flag {
+    fn from(value: String) -> Self {
+        Flag::new(value)
     }
 }
 
-/// Converts something into either a:
-/// - image: <image>
-/// - build: <url to git repo>
-pub trait IntoImageAttribute {
-    fn to_image_attribute(self) -> String;
-}
+impl IntoIterator for Flag {
+    type Item = Flag;
+    type IntoIter = <Vec<Flag> as IntoIterator>::IntoIter;
 
-impl IntoImageAttribute for OrchestratorImage {
-    fn to_image_attribute(self) -> String {
-        match self {
-            OrchestratorImage::Registry(image) => format!("image: {}", image),
-            OrchestratorImage::Build(input) => format!(
-                r#"build: {{ context: "{}", dockerfile: "{}" }}"#,
-                input.context, input.dockerfile
-            ),
-        }
+    fn into_iter(self) -> Self::IntoIter {
+        vec![self].into_iter()
     }
-}
-
-fn validate_compose(compose_str: &str) {
-    serde_yaml::from_str::<Compose>(compose_str).unwrap_or_else(|_| {
-        panic!(
-            "Expected generated compose spec to be valid. But it was not. This is the spec: \n\n{}",
-            compose_str
-        )
-    });
 }

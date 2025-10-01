@@ -1,5 +1,9 @@
-use dialoguer::{Select, theme::ColorfulTheme};
-use swap_env::prompt as config_prompt;
+use anyhow::bail;
+use dialoguer::{Input, Select, theme::ColorfulTheme};
+use swap_env::{
+    config::Monero,
+    prompt::{self as config_prompt, print_info_box},
+};
 use url::Url;
 
 #[derive(Debug)]
@@ -23,10 +27,10 @@ pub enum ElectrumServerType {
 #[allow(dead_code)] // will be used in the future
 pub fn build_type() -> BuildType {
     let build_type = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("How do you want to build the Docker image for the ASB?")
+        .with_prompt("How do you want to obtain the maker Docker image?")
         .items(&[
-            "Build Docker image from source (can take >1h)",
-            "Prebuild Docker image (pinned to a specific commit with SHA256 hash)",
+            "Build from source (can take >1h depending on your machine)",
+            "Use a prebuilt Docker image (pinned to a specific version using a SHA256 hash)",
         ])
         .default(0)
         .interact()
@@ -41,50 +45,111 @@ pub fn build_type() -> BuildType {
 
 pub fn monero_node_type() -> MoneroNodeType {
     let node_choice = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Do you want to include a Monero node or use an existing node/remote node?")
+        .with_prompt("How do you want to connect to the Monero blockchain?")
         .items(&[
-            "Include a full Monero node",
-            "Use an existing node or remote node",
+            "Use a mix of default remote nodes (instant)",
+            "Create a full Monero node (most private - but requires 1-2 days to sync and ~500GB of disk space)",
+            "I already have a node (instant)",
         ])
         .default(0)
         .interact()
         .expect("Failed to select node choice");
 
     match node_choice {
-        0 => MoneroNodeType::Included,
-        1 => {
-            match config_prompt::monero_daemon_url()
-                .expect("Failed to prompt for Monero daemon URL")
-            {
-                Some(url) => MoneroNodeType::Remote(url),
-                None => MoneroNodeType::Pool,
-            }
+        0 => MoneroNodeType::Pool,
+        1 => MoneroNodeType::Included,
+        2 => {
+            let node: Url = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Enter the address of your node")
+                .interact_text()
+                .expect("user to enter url");
+
+            MoneroNodeType::Remote(node)
         }
         _ => unreachable!(),
     }
 }
 
 pub fn electrum_server_type(default_electrum_urls: &Vec<Url>) -> ElectrumServerType {
-    let electrum_server_type = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("How do you want to connect to the Bitcoin network?")
+    let theme = ColorfulTheme::default();
+    let select = Select::with_theme(&theme)
+        .with_prompt("How do you want to connect to the Bitcoin blockchain?")
         .items(&[
-            "Run a full Bitcoin node & Electrum server",
-            "List of remote Electrum servers",
+            "Create a full Bitcoin node and Electrum server (most private - but requires 1-2 days to sync and ~500GB of disk space)",
+            "Use a mix of default Electrum servers (instant)",
+            "Specify my own Electrum server (instant)",
+            "Specify my own Electrum server in addition to the mix of default Electrum servers (instant)",
+            "Print the list of the default Electrum servers"
         ])
-        .default(0)
+        .default(0);
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Choice {
+        ElectrumPool,
+        RunFullNode,
+        CustomElectrumNode,
+        CustomElectrumNodeAndPool,
+        PrintPoolUrls,
+    }
+
+    impl TryFrom<usize> for Choice {
+        type Error = anyhow::Error;
+
+        fn try_from(value: usize) -> Result<Self, Self::Error> {
+            Ok(match value {
+                0 => Choice::RunFullNode,
+                1 => Choice::ElectrumPool,
+                2 => Choice::CustomElectrumNode,
+                3 => Choice::CustomElectrumNodeAndPool,
+                4 => Choice::PrintPoolUrls,
+                5.. => bail!("invalid choice"),
+            })
+        }
+    }
+
+    let mut electrum_servers: Vec<Url> = Vec::new();
+
+    let mut choice: Choice = select
+        .clone()
         .interact()
-        .expect("Failed to select electrum server type");
+        .expect("valid choice")
+        .try_into()
+        .expect("valid choice");
 
-    match electrum_server_type {
-        0 => ElectrumServerType::Included,
-        1 => {
-            println!("Okay, let's use remote Electrum servers!");
+    // Keep printing the list until the user makes and actual choice
+    while choice == Choice::PrintPoolUrls {
+        print_info_box(default_electrum_urls.iter().map(Url::to_string));
+        choice = select
+            .clone()
+            .interact()
+            .expect("valid choice")
+            .try_into()
+            .expect("valid choice");
+    }
 
-            let electrum_servers = config_prompt::electrum_rpc_urls(default_electrum_urls)
-                .expect("Failed to prompt for electrum servers");
+    if matches!(
+        choice,
+        Choice::ElectrumPool | Choice::CustomElectrumNodeAndPool
+    ) {
+        electrum_servers.extend_from_slice(&default_electrum_urls);
+    }
 
+    if matches!(
+        choice,
+        Choice::CustomElectrumNode | Choice::CustomElectrumNodeAndPool
+    ) {
+        let url: Url = Input::with_theme(&theme)
+            .with_prompt("Please enter the url of your own Electrum server")
+            .interact_text()
+            .expect("invalid input");
+        electrum_servers.push(url);
+    }
+
+    match choice {
+        Choice::RunFullNode => ElectrumServerType::Included,
+        Choice::CustomElectrumNode | Choice::CustomElectrumNodeAndPool | Choice::ElectrumPool => {
             ElectrumServerType::Remote(electrum_servers)
         }
-        _ => unreachable!(),
+        Choice::PrintPoolUrls => unimplemented!(),
     }
 }
