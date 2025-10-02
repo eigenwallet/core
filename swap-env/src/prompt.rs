@@ -1,15 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use crate::defaults::{
-    default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
+    DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD, default_rendezvous_points,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use console::Style;
 use dialoguer::Confirm;
-use dialoguer::{theme::ColorfulTheme, Input, Select};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use libp2p::Multiaddr;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use url::Url;
 
 /// Prompt user for data directory
@@ -38,16 +38,27 @@ pub fn bitcoin_confirmation_target(default_target: u16) -> Result<u16> {
 
 /// Prompt user for listen addresses
 pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multiaddr>> {
-    let listen_addresses = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter multiaddresses (comma separated) on which asb should list for peer-to-peer communications or hit return to use default")
-        .default(format!("{}", default_listen_address))
-        .interact_text()?;
+    print_info_box(&[
+        "If you also want your maker to be reachable over other addresses (or domains)",
+        "you can configure them now.",
+    ]);
 
-    listen_addresses
-        .split(',')
-        .map(|str| str.parse())
-        .collect::<Result<Vec<Multiaddr>, _>>()
-        .map_err(Into::into)
+    let mut addresses = vec![default_listen_address.clone()];
+
+    loop {
+        let listen_address: Multiaddr = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Enter additional multiaddress (enter to continue)")
+            .allow_empty(true)
+            .interact_text()?;
+
+        if listen_address.is_empty() {
+            break;
+        }
+
+        addresses.push(listen_address);
+    }
+
+    Ok(addresses)
 }
 
 /// Prompt user for electrum RPC URLs
@@ -112,7 +123,7 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
 pub fn monero_daemon_url() -> Result<Option<Url>> {
     let type_choice = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Do you want to use the Monero RPC pool or a remote node?")
-        .items(&["Use the Monero RPC pool", "Use a remote node"])
+        .items(&["Use the Monero RPC pool", "Use a specific remote node"])
         .default(0)
         .interact()?;
 
@@ -132,16 +143,15 @@ pub fn monero_daemon_url() -> Result<Option<Url>> {
 /// Prompt user for Tor hidden service registration
 pub fn tor_hidden_service() -> Result<bool> {
     print_info_box([
-        "Your ASB needs to be reachable from the outside world to provide quotes to takers.",
-        "Your ASB can run a hidden service for itself. It'll be reachable at an .onion address.",
-        "You do not have to run a Tor daemon yourself. You do not have to manage anything.",
-        "This will hide your IP address and allow you to run from behind a firewall without opening ports.",
+        "After registering with rendezvous points, your maker needs to be reachable by takers.",
+        "Running a hidden service means you'll be reachable via a .onion address",
+        "- without leaking your ip address or requiring an open port.",
     ]);
 
     let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Do you want a Tor hidden service to be created?")
+        .with_prompt("Do you want a Tor hidden service to be created? It requires no additional setup on your end.")
         .items(&[
-            "Yes, run a hidden service",
+            "Yes, run a hidden service (recommended)",
             "No, do not run a hidden service",
         ])
         .default(0)
@@ -153,7 +163,9 @@ pub fn tor_hidden_service() -> Result<bool> {
 /// Prompt user for minimum Bitcoin buy amount
 pub fn min_buy_amount() -> Result<bitcoin::Amount> {
     let min_buy = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter minimum Bitcoin amount you are willing to accept per swap or hit enter to use default.")
+        .with_prompt(
+            "What's the minimum amount of Bitcoin you are willing to trade? (enter to use default)",
+        )
         .default(DEFAULT_MIN_BUY_AMOUNT)
         .interact_text()?;
     bitcoin::Amount::from_btc(min_buy).map_err(Into::into)
@@ -162,7 +174,9 @@ pub fn min_buy_amount() -> Result<bitcoin::Amount> {
 /// Prompt user for maximum Bitcoin buy amount
 pub fn max_buy_amount() -> Result<bitcoin::Amount> {
     let max_buy = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter maximum Bitcoin amount you are willing to accept per swap or hit enter to use default.")
+        .with_prompt(
+            "What's the maximum amount of Bitcoin you are willing to trade? (enter to use default)",
+        )
         .default(DEFAULT_MAX_BUY_AMOUNT)
         .interact_text()?;
 
@@ -172,7 +186,7 @@ pub fn max_buy_amount() -> Result<bitcoin::Amount> {
 /// Prompt user for ask spread
 pub fn ask_spread() -> Result<Decimal> {
     let ask_spread = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter spread (in percent; value between 0.x and 1.0) to be used on top of the market rate or hit enter to use default.")
+        .with_prompt("What markup do you want to charge? 0.02 = 2% markup (enter to use default)")
         .default(DEFAULT_SPREAD)
         .interact_text()?;
 
@@ -189,61 +203,82 @@ pub fn ask_spread() -> Result<Decimal> {
 /// Prompt user for rendezvous points
 pub fn rendezvous_points() -> Result<Vec<Multiaddr>> {
     let default_rendezvous_points = default_rendezvous_points();
-    let mut info_lines = vec![
-        "Your ASB can register with multiple rendezvous nodes for discoverability.".to_string(),
-        "They act as sort of bootstrap nodes for peer discovery within the peer-to-peer network."
-            .to_string(),
-        String::new(),
-        "The following rendezvous points are ran by community members. We recommend using them."
-            .to_string(),
-        String::new(),
-    ];
-    info_lines.extend(
-        default_rendezvous_points
-            .iter()
-            .enumerate()
-            .map(|(i, point)| format!("{}: {}", i + 1, point)),
-    );
-    print_info_box(info_lines);
 
-    // Ask if the user wants to use the default rendezvous points
-    let use_default_rendezvous_points = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Do you want to use the default rendezvous points? (y/n)")
-        .items(&[
-            "Use default rendezvous points",
-            "Do not use default rendezvous points",
-        ])
-        .default(0)
-        .interact()?;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Choice {
+        ContinueWithDefaultNodes,
+        AddMyOwnNodes,
+        UseOnlyMyOwnNodes,
+        SeeDefaultNodes,
+    }
 
-    let mut rendezvous_points = match use_default_rendezvous_points {
-        0 => {
-            print_info_box(["You can now configure additional rendezvous points."]);
-            default_rendezvous_points
+    impl TryFrom<usize> for Choice {
+        type Error = anyhow::Error;
+
+        fn try_from(value: usize) -> std::result::Result<Self, Self::Error> {
+            Ok(match value {
+                0 => Choice::ContinueWithDefaultNodes,
+                1 => Choice::AddMyOwnNodes,
+                2 => Choice::UseOnlyMyOwnNodes,
+                3 => Choice::SeeDefaultNodes,
+                _ => bail!("unknown choice"),
+            })
         }
+    }
+
+    let theme = ColorfulTheme::default();
+    print_info_box(&[
+        "For takers to trade with your maker, it needs to be discovered first.",
+        "This happens at 'rendezvous points', which are community run.",
+        "You can now choose with which of those nodes to connect.",
+    ]);
+    let input = Select::with_theme(&theme)
+        .with_prompt("How do you want to procede?")
+        .items(&[
+            "Connect to default rendezvous points (recommended)",
+            "Connect to default rendezvous points and also specify my own",
+            "Connect only to my own rendezvous point(s) (not recommended)",
+            "Print a list of the default rendezvous points",
+        ])
+        .default(0);
+
+    let mut choice: Choice = input.clone().interact()?.try_into()?;
+
+    while choice == Choice::SeeDefaultNodes {
+        print_info_box(default_rendezvous_points.iter().map(|i| format!("{i}")));
+        choice = input.clone().interact()?.try_into()?;
+    }
+
+    let mut rendezvous_points = match choice {
+        Choice::AddMyOwnNodes | Choice::ContinueWithDefaultNodes => default_rendezvous_points,
         _ => Vec::new(),
     };
 
-    let mut number = 1 + rendezvous_points.len();
-    let mut done = false;
-
-    while !done {
-        let prompt = format!(
-            "Enter the address for rendezvous node ({number}). Or just hit Enter to continue."
-        );
-        let rendezvous_addr = Input::<Multiaddr>::with_theme(&ColorfulTheme::default())
-            .with_prompt(prompt)
+    while matches!(choice, Choice::AddMyOwnNodes | Choice::UseOnlyMyOwnNodes) {
+        let address: Multiaddr = Input::with_theme(&theme)
+            .with_prompt("Enter an address of your rendezvous point (enter to continue)")
             .allow_empty(true)
             .interact_text()?;
 
-        if rendezvous_addr.is_empty() {
-            done = true;
-        } else if rendezvous_points.contains(&rendezvous_addr) {
-            println!("That rendezvous address is already in the list.");
-        } else {
-            rendezvous_points.push(rendezvous_addr);
-            number += 1;
+        if address.is_empty() {
+            if rendezvous_points.is_empty() {
+                print_info_box(&[
+                    "You currently have zero rendezvous points configured.",
+                    "Your maker will not be reachable and not make any swaps if you continue.",
+                ]);
+                let choice = Confirm::with_theme(&theme)
+                    .with_prompt("Do you wish to continue, even with your maker unreachable?")
+                    .default(false)
+                    .interact()?;
+                if !choice {
+                    println!("Good choice. Aborting now, so you can restart");
+                    bail!("No rendezvous points configured");
+                }
+            }
+            break;
         }
+
+        rendezvous_points.push(address);
     }
 
     Ok(rendezvous_points)
@@ -279,7 +314,7 @@ pub fn developer_tip() -> Result<Decimal> {
     }
 
     let developer_tip = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Enter developer tip percentage (in percent; value between 0.x and 1.0; 0.01 means 1% of the swap amount is donated)")
+        .with_prompt("Enter developer tip percentage (value between 0.00 and 1.00; 0.01 means 1% of the swap amount is donated)")
         .default(Decimal::from_f64(0.01).unwrap())
         .interact_text()?;
 

@@ -2,7 +2,6 @@
 /// This means either:
 /// 1. Pulling from a registry (pinned to a hash)
 /// 2. Building from source from a specific git hash (pinned to a hash)
-use crate::compose::DockerBuildInput;
 
 /// At compile time, we determine the git repository and commit hash
 /// This is then burned into the binary as a static string
@@ -29,17 +28,3 @@ pub static BITCOIND_IMAGE: &str =
 /// alpine 3.22.1 (https://hub.docker.com/layers/library/alpine/3.22.1/images/sha256-0a88b42ba69d6b900848f9cb9151587bb82827d0aecfa222e51981fad97b5b9a)
 pub static ASB_TRACING_LOGGER_IMAGE: &str =
     "alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1";
-
-pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb is in the swap-asb crate
-    dockerfile: "./swap-asb/Dockerfile",
-};
-
-pub static ASB_CONTROLLER_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
-    // The context is the root of the Cargo workspace
-    context: PINNED_GIT_REPOSITORY,
-    // The Dockerfile of the asb-controller is in the swap-controller crate
-    dockerfile: "./swap-controller/Dockerfile",
-};
