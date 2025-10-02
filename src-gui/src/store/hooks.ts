@@ -137,10 +137,13 @@ export function useActiveSwapLogs() {
   const swapId = useActiveSwapId();
   const logs = useAppSelector((s) => s.logs.state.logs);
 
-  return useMemo(
-    () => logs.filter((log) => isCliLogRelatedToSwap(log.log, swapId)),
-    [logs, swapId],
-  );
+  return useMemo(() => {
+    if (swapId == null) {
+      return [];
+    }
+
+    return logs.filter((log) => isCliLogRelatedToSwap(log.log, swapId));
+  }, [logs, swapId]);
 }
 
 export function useAllMakers() {
