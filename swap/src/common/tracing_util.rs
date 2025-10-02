@@ -196,9 +196,9 @@ pub fn init(
     // Otherwise, we only log the bare minimum
     let terminal_layer_env_filter = match trace_stdout {
         true => env_filter_with_all_crates(vec![
-            (OUR_CRATES.clone(), LevelFilter::TRACE),
+            (OUR_CRATES.clone(), level_filter),
+            (TOR_CRATES.clone(), level_filter),
             (LIBP2P_CRATES.clone(), LevelFilter::INFO),
-            (TOR_CRATES.clone(), LevelFilter::TRACE),
         ])?,
         false => env_filter_with_all_crates(vec![(OUR_CRATES.clone(), level_filter)])?,
     };
