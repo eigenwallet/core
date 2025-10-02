@@ -29,7 +29,6 @@ import { RatesState } from "./features/ratesSlice";
 import {
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
-  TauriContextStatusEvent,
 } from "models/tauriModel";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
@@ -139,7 +138,7 @@ export function useActiveSwapLogs() {
   const logs = useAppSelector((s) => s.logs.state.logs);
 
   return useMemo(
-    () => logs.filter((log) => isCliLogRelatedToSwap(log, swapId)),
+    () => logs.filter((log) => isCliLogRelatedToSwap(log.log, swapId)),
     [logs, swapId],
   );
 }

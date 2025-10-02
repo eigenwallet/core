@@ -27,7 +27,6 @@ export default function LogViewer({
   setIsRedacted,
   isRedacted,
 }: LogViewerProps) {
-
   return (
     <Dialog open={open} onClose={() => setOpen(false)} fullWidth>
       <DialogContent>
