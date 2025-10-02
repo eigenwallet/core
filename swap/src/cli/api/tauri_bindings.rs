@@ -21,12 +21,13 @@ use tokio::sync::oneshot;
 use typeshare::typeshare;
 use uuid::Uuid;
 
+const TAURI_UNIFIED_EVENT_NAME: &str = "tauri-unified-event";
+
 #[typeshare]
 #[derive(Clone, Serialize)]
 #[serde(tag = "channelName", content = "event")]
 pub enum TauriEvent {
     SwapProgress(TauriSwapProgressEventWrapper),
-    ContextInitProgress(TauriContextStatusEvent),
     CliLog(TauriLogEvent),
     BalanceChange(BalanceResponse),
     SwapDatabaseStateUpdate(TauriDatabaseStateEvent),
@@ -46,7 +47,14 @@ pub enum MoneroWalletUpdate {
     HistoryUpdate(GetMoneroHistoryResponse),
 }
 
-const TAURI_UNIFIED_EVENT_NAME: &str = "tauri-unified-event";
+#[typeshare]
+#[derive(Clone, Debug, Serialize)]
+pub struct ContextStatus {
+    pub bitcoin_wallet_available: bool,
+    pub monero_wallet_available: bool,
+    pub database_available: bool,
+    pub tor_available: bool,
+}
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -454,10 +462,6 @@ pub trait TauriEmitter {
             swap_id,
             event,
         }));
-    }
-
-    fn emit_context_init_progress_event(&self, event: TauriContextStatusEvent) {
-        self.emit_unified_event(TauriEvent::ContextInitProgress(event));
     }
 
     fn emit_cli_log_event(&self, event: TauriLogEvent) {

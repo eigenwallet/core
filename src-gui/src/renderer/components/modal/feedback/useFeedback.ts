@@ -3,12 +3,13 @@ import { store } from "renderer/store/storeRenderer";
 import { useActiveSwapInfo } from "store/hooks";
 import { logsToRawString } from "utils/parseUtils";
 import { getLogsOfSwap, redactLogs } from "renderer/rpc";
-import { CliLog, parseCliLogString } from "models/cliModel";
+import { parseCliLogString } from "models/cliModel";
 import logger from "utils/logger";
 import { submitFeedbackViaHttp } from "renderer/api";
 import { addFeedbackId } from "store/features/conversationsSlice";
 import { AttachmentInput } from "models/apiModel";
 import { useSnackbar } from "notistack";
+import { HashedLog, hashLogs } from "store/features/logsSlice";
 
 export const MAX_FEEDBACK_LENGTH = 4000;
 
@@ -21,8 +22,8 @@ interface FeedbackInputState {
 }
 
 interface FeedbackLogsState {
-  swapLogs: (string | CliLog)[] | null;
-  daemonLogs: (string | CliLog)[] | null;
+  swapLogs: HashedLog[];
+  daemonLogs: HashedLog[];
 }
 
 const initialInputState: FeedbackInputState = {
@@ -34,8 +35,8 @@ const initialInputState: FeedbackInputState = {
 };
 
 const initialLogsState: FeedbackLogsState = {
-  swapLogs: null,
-  daemonLogs: null,
+  swapLogs: [],
+  daemonLogs: [],
 };
 
 export function useFeedback() {
@@ -55,56 +56,60 @@ export function useFeedback() {
 
   useEffect(() => {
     if (inputState.selectedSwap === null) {
-      setLogsState((prev) => ({ ...prev, swapLogs: null }));
+      setLogsState((prev) => ({ ...prev, swapLogs: [] }));
       return;
     }
 
     getLogsOfSwap(inputState.selectedSwap, inputState.isSwapLogsRedacted)
       .then((response) => {
+        const parsedLogs = response.logs.map(parseCliLogString);
         setLogsState((prev) => ({
           ...prev,
-          swapLogs: response.logs.map(parseCliLogString),
+          swapLogs: hashLogs(parsedLogs),
         }));
         setError(null);
       })
       .catch((e) => {
         logger.error(`Failed to fetch swap logs: ${e}`);
-        setLogsState((prev) => ({ ...prev, swapLogs: null }));
+        setLogsState((prev) => ({ ...prev, swapLogs: [] }));
         setError(`Failed to fetch swap logs: ${e}`);
       });
   }, [inputState.selectedSwap, inputState.isSwapLogsRedacted]);
 
   useEffect(() => {
     if (!inputState.attachDaemonLogs) {
-      setLogsState((prev) => ({ ...prev, daemonLogs: null }));
+      setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
       return;
     }
 
     try {
+      const hashedLogs = store.getState().logs?.state.logs ?? [];
+
       if (inputState.isDaemonLogsRedacted) {
-        redactLogs(store.getState().logs?.state.logs)
+        const logs = hashedLogs.map((h) => h.log);
+        redactLogs(logs)
           .then((redactedLogs) => {
             setLogsState((prev) => ({
               ...prev,
-              daemonLogs: redactedLogs,
+              daemonLogs: hashLogs(redactedLogs),
             }));
             setError(null);
           })
           .catch((e) => {
             logger.error(`Failed to redact daemon logs: ${e}`);
-            setLogsState((prev) => ({ ...prev, daemonLogs: null }));
+            setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
             setError(`Failed to redact daemon logs: ${e}`);
           });
       } else {
         setLogsState((prev) => ({
           ...prev,
-          daemonLogs: store.getState().logs?.state.logs,
+          daemonLogs: hashedLogs,
         }));
         setError(null);
       }
     } catch (e) {
       logger.error(`Failed to fetch daemon logs: ${e}`);
-      setLogsState((prev) => ({ ...prev, daemonLogs: null }));
+      setLogsState((prev) => ({ ...prev, daemonLogs: [] }));
       setError(`Failed to fetch daemon logs: ${e}`);
     }
   }, [inputState.attachDaemonLogs, inputState.isDaemonLogsRedacted]);
@@ -123,18 +128,18 @@ export function useFeedback() {
 
     const attachments: AttachmentInput[] = [];
     // Add swap logs as an attachment
-    if (logsState.swapLogs) {
+    if (logsState.swapLogs.length > 0) {
       attachments.push({
         key: `swap_logs_${inputState.selectedSwap}.txt`,
-        content: logsToRawString(logsState.swapLogs),
+        content: logsToRawString(logsState.swapLogs.map((h) => h.log)),
       });
     }
 
     // Handle daemon logs
-    if (logsState.daemonLogs) {
+    if (logsState.daemonLogs.length > 0) {
       attachments.push({
         key: "daemon_logs.txt",
-        content: logsToRawString(logsState.daemonLogs),
+        content: logsToRawString(logsState.daemonLogs.map((h) => h.log)),
       });
     }
 

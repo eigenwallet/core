@@ -15,6 +15,7 @@ import { getWalletDescriptor } from "renderer/rpc";
 import { ExportBitcoinWalletResponse } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
+import { isContextWithBitcoinWallet } from "models/tauriModelExt";
 
 export default function ExportDataBox() {
   const [walletDescriptor, setWalletDescriptor] =
@@ -52,6 +53,7 @@ export default function ExportDataBox() {
             onInvoke={getWalletDescriptor}
             onSuccess={setWalletDescriptor}
             displayErrorSnackbar={true}
+            contextRequirement={isContextWithBitcoinWallet}
           >
             Reveal Bitcoin Wallet Private Key
           </PromiseInvokeButton>

@@ -11,7 +11,10 @@ import {
   getCurrentMoneroNodeConfig,
 } from "renderer/rpc";
 import logger from "utils/logger";
-import { contextStatusEventReceived } from "store/features/rpcSlice";
+import {
+  contextStatusEventReceived,
+  ContextStatusType,
+} from "store/features/rpcSlice";
 import {
   addNode,
   setFetchFiatPrices,
@@ -21,14 +24,12 @@ import {
   Network,
 } from "store/features/settingsSlice";
 import { fetchFeedbackMessagesViaHttp, updateRates } from "renderer/api";
-import { store } from "renderer/store/storeRenderer";
+import { RootState, store } from "renderer/store/storeRenderer";
 import { swapProgressEventReceived } from "store/features/swapSlice";
 import {
   addFeedbackId,
   setConversation,
 } from "store/features/conversationsSlice";
-import { TauriContextStatusEvent, MoneroNodeConfig } from "models/tauriModel";
-import { getNetwork } from "store/config";
 
 // Create a Map to store throttled functions per swap_id
 const throttledGetSwapInfoFunctions = new Map<
@@ -60,29 +61,79 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
 export function createMainListeners() {
   const listener = createListenerMiddleware();
 
-  // Listener for when the Context becomes available
+  // Listener for when the Context status state changes
   // When the context becomes available, we check the bitcoin balance, fetch all swap infos and connect to the rendezvous point
   listener.startListening({
-    actionCreator: contextStatusEventReceived,
-    effect: async (action) => {
-      const status = action.payload;
+    predicate: (action, currentState, previousState) => {
+      const currentStatus = (currentState as RootState).rpc.status;
+      const previousStatus = (previousState as RootState).rpc.status;
 
-      // If the context is available, check the Bitcoin balance and fetch all swap infos
-      if (status === TauriContextStatusEvent.Available) {
-        logger.debug(
-          "Context is available, checking Bitcoin balance and history",
+      // Only trigger if the status actually changed
+      return currentStatus !== previousStatus;
+    },
+    effect: async (action, api) => {
+      const currentStatus = (api.getState() as RootState).rpc.status;
+      const previousStatus = (api.getOriginalState() as RootState).rpc.status;
+
+      const status =
+        currentStatus?.type === ContextStatusType.Status
+          ? currentStatus.status
+          : null;
+      const previousContextStatus =
+        previousStatus?.type === ContextStatusType.Status
+          ? previousStatus.status
+          : null;
+
+      if (!status) return;
+
+      // If the Bitcoin wallet just came available, check the Bitcoin balance
+      if (
+        status.bitcoin_wallet_available &&
+        !previousContextStatus?.bitcoin_wallet_available
+      ) {
+        logger.info(
+          "Bitcoin wallet just became available, checking balance...",
         );
-        await Promise.allSettled([
-          checkBitcoinBalance(),
-          getAllSwapInfos(),
-          fetchSellersAtPresetRendezvousPoints(),
-          initializeMoneroWallet(),
-        ]);
+        await checkBitcoinBalance();
+      }
+
+      // If the Monero wallet just came available, initialize the Monero wallet
+      if (
+        status.monero_wallet_available &&
+        !previousContextStatus?.monero_wallet_available
+      ) {
+        logger.info("Monero wallet just became available, initializing...");
+        await initializeMoneroWallet();
 
         // Also set the Monero node to the current one
-        // In case the user changed this WHILE the context was unavailable
         const nodeConfig = await getCurrentMoneroNodeConfig();
         await changeMoneroNode(nodeConfig);
+      }
+
+      // If the database and Bitcoin wallet just came available, fetch all swap infos
+      if (
+        status.database_available &&
+        status.bitcoin_wallet_available &&
+        !(
+          previousContextStatus?.database_available &&
+          previousContextStatus?.bitcoin_wallet_available
+        )
+      ) {
+        logger.info(
+          "Database & Bitcoin wallet just became available, fetching swap infos...",
+        );
+        await getAllSwapInfos();
+      }
+
+      // If the database just became availiable, fetch sellers at preset rendezvous points
+      if (
+        status.database_available &&
+        !previousContextStatus?.database_available
+      ) {
+        logger.info(
+          "Database just became available, fetching sellers at preset rendezvous points...",
+        );
+        await fetchSellersAtPresetRendezvousPoints();
       }
     },
   });
@@ -151,9 +202,9 @@ export function createMainListeners() {
       try {
         const nodeConfig = await getCurrentMoneroNodeConfig();
         await changeMoneroNode(nodeConfig);
-        logger.info("Changed Monero node configuration to: ", nodeConfig);
+        logger.info({ nodeConfig }, "Changed Monero node configuration to: ");
       } catch (error) {
-        logger.error("Failed to change Monero node configuration:", error);
+        logger.error({ error }, "Failed to change Monero node configuration:");
       }
     },
   });

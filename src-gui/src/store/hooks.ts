@@ -16,6 +16,7 @@ import {
   isPendingSendMoneroApprovalEvent,
   PendingPasswordApprovalRequest,
   isPendingPasswordApprovalEvent,
+  isContextFullyInitialized,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -28,7 +29,6 @@ import { RatesState } from "./features/ratesSlice";
 import {
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
-  TauriContextStatusEvent,
 } from "models/tauriModel";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
@@ -111,9 +111,7 @@ export function useIsSpecificSwapRunning(swapId: string | null) {
 }
 
 export function useIsContextAvailable() {
-  return useAppSelector(
-    (state) => state.rpc.status === TauriContextStatusEvent.Available,
-  );
+  return useAppSelector((state) => isContextFullyInitialized(state.rpc.status));
 }
 
 /// We do not use a sanity check here, as opposed to the other useSwapInfo hooks,
@@ -139,10 +137,13 @@ export function useActiveSwapLogs() {
   const swapId = useActiveSwapId();
   const logs = useAppSelector((s) => s.logs.state.logs);
 
-  return useMemo(
-    () => logs.filter((log) => isCliLogRelatedToSwap(log, swapId)),
-    [logs, swapId],
-  );
+  return useMemo(() => {
+    if (swapId == null) {
+      return [];
+    }
+
+    return logs.filter((log) => isCliLogRelatedToSwap(log.log, swapId));
+  }, [logs, swapId]);
 }
 
 export function useAllMakers() {

@@ -293,7 +293,7 @@ function ConversationModal({
       // Fetch updated conversations
       fetchAllConversations();
     } catch (error) {
-      logger.error("Error sending message:", error);
+      logger.error(`Error sending message: ${error}`);
       enqueueSnackbar("Failed to send message. Please try again.", {
         variant: "error",
       });

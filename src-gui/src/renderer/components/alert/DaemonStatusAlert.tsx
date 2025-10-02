@@ -5,10 +5,7 @@ import { useAppSelector, usePendingBackgroundProcesses } from "store/hooks";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import { LoadingSpinnerAlert } from "./LoadingSpinnerAlert";
 import { bytesToMb } from "utils/conversionUtils";
-import {
-  TauriBackgroundProgress,
-  TauriContextStatusEvent,
-} from "models/tauriModel";
+import { TauriBackgroundProgress } from "models/tauriModel";
 import { useEffect, useState } from "react";
 import TruncatedText from "../other/TruncatedText";
 import BitcoinIcon from "../icons/BitcoinIcon";
@@ -179,41 +176,6 @@ function PartialInitStatus({
     }
     default:
       return exhaustiveGuard(status);
-  }
-}
-
-export default function DaemonStatusAlert() {
-  const contextStatus = useAppSelector((s) => s.rpc.status);
-  const navigate = useNavigate();
-
-  switch (contextStatus) {
-    case null:
-      return null;
-    case TauriContextStatusEvent.NotInitialized:
-      return null;
-    case TauriContextStatusEvent.Initializing:
-      return null;
-    case TauriContextStatusEvent.Available:
-      return <Alert severity="success">The daemon is running</Alert>;
-    case TauriContextStatusEvent.Failed:
-      return (
-        <Alert
-          severity="error"
-          action={
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => navigate("/settings#daemon-control-box")}
-            >
-              View Logs
-            </Button>
-          }
-        >
-          The daemon has stopped unexpectedly
-        </Alert>
-      );
-    default:
-      return exhaustiveGuard(contextStatus);
   }
 }
 

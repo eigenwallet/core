@@ -31,9 +31,13 @@ function isCliLog(log: unknown): log is CliLog {
 }
 
 export function isCliLogRelatedToSwap(
-  log: CliLog | string,
+  log: CliLog | string | null | undefined,
   swapId: string,
 ): boolean {
+  if (log === null || log === undefined) {
+    return false;
+  }
+
   // If we only have a string, simply check if the string contains the swap id
   // This provides reasonable backwards compatability
   if (typeof log === "string") {
@@ -44,7 +48,7 @@ export function isCliLogRelatedToSwap(
   //  - the log has the swap id as an attribute
   //  - there exists a span which has the swap id as an attribute
   return (
-    log.fields["swap_id"] === swapId ||
+    ("fields" in log && log.fields["swap_id"] === swapId) ||
     (log.spans?.some((span) => span["swap_id"] === swapId) ?? false)
   );
 }

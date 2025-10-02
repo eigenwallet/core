@@ -6,6 +6,7 @@ import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
 } from "models/tauriModel";
+import { isContextWithMoneroWallet } from "models/tauriModelExt";
 
 interface SeedPhraseButtonProps {
   onMenuClose: () => void;
@@ -32,6 +33,7 @@ export default function SeedPhraseButton({
         onSuccess={handleSeedPhraseSuccess}
         displayErrorSnackbar={true}
         variant="text"
+        contextRequirement={isContextWithMoneroWallet}
         sx={{
           justifyContent: "flex-start",
           textTransform: "none",

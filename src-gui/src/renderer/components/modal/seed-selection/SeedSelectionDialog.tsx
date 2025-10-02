@@ -364,7 +364,7 @@ export default function SeedSelectionDialog() {
         <PromiseInvokeButton
           variant="text"
           onInvoke={Legacy}
-          requiresContext={false}
+          contextRequirement={false}
           color="inherit"
         >
           No wallet (Legacy)
@@ -373,7 +373,7 @@ export default function SeedSelectionDialog() {
           onInvoke={accept}
           variant="contained"
           disabled={isDisabled}
-          requiresContext={false}
+          contextRequirement={false}
         >
           Continue
         </PromiseInvokeButton>

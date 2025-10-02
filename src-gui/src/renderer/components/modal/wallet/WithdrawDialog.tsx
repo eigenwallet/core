@@ -6,6 +6,7 @@ import DialogHeader from "../DialogHeader";
 import AddressInputPage from "./pages/AddressInputPage";
 import BtcTxInMempoolPageContent from "./pages/BitcoinWithdrawTxInMempoolPage";
 import WithdrawDialogContent from "./WithdrawDialogContent";
+import { isContextWithBitcoinWallet } from "models/tauriModelExt";
 
 export default function WithdrawDialog({
   open,
@@ -61,6 +62,7 @@ export default function WithdrawDialog({
             onInvoke={() => withdrawBtc(withdrawAddress)}
             onPendingChange={setPending}
             onSuccess={setWithdrawTxId}
+            contextRequirement={isContextWithBitcoinWallet}
           >
             Withdraw
           </PromiseInvokeButton>

@@ -1,7 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
-import { TauriContextStatusEvent, TauriEvent } from "models/tauriModel";
+import { TauriEvent } from "models/tauriModel";
 import {
   contextStatusEventReceived,
+  contextInitializationFailed,
   rpcSetBalance,
   timelockChangeEventReceived,
   approvalEventReceived,
@@ -18,7 +19,7 @@ import {
   updateRates,
 } from "./api";
 import {
-  checkContextAvailability,
+  checkContextStatus,
   getSwapInfo,
   initializeContext,
   listSellersAtRendezvousPoint,
@@ -53,6 +54,9 @@ const FETCH_CONVERSATIONS_INTERVAL = 10 * 60 * 1_000;
 // Fetch pending approvals every 2 seconds
 const FETCH_PENDING_APPROVALS_INTERVAL = 2 * 1_000;
 
+// Check context status every 2 seconds
+const CHECK_CONTEXT_STATUS_INTERVAL = 2 * 1_000;
+
 function setIntervalImmediate(callback: () => void, interval: number): void {
   callback();
   setInterval(callback, interval);
@@ -76,87 +80,86 @@ export async function setupBackgroundTasks(): Promise<void> {
 
   // Setup Tauri event listeners
   // Check if the context is already available. This is to prevent unnecessary re-initialization
-  if (await checkContextAvailability()) {
-    store.dispatch(
-      contextStatusEventReceived(TauriContextStatusEvent.Available),
-    );
-  } else {
+  setIntervalImmediate(async () => {
+    const contextStatus = await checkContextStatus();
+    store.dispatch(contextStatusEventReceived(contextStatus));
+  }, CHECK_CONTEXT_STATUS_INTERVAL);
+
+  const contextStatus = await checkContextStatus();
+
+  // If all components are unavailable, we need to initialize the context
+  if (
+    !contextStatus.bitcoin_wallet_available &&
+    !contextStatus.monero_wallet_available &&
+    !contextStatus.database_available &&
+    !contextStatus.tor_available
+  )
     // Warning: If we reload the page while the Context is being initialized, this function will throw an error
     initializeContext().catch((e) => {
       logger.error(
         e,
         "Failed to initialize context on page load. This might be because we reloaded the page while the context was being initialized",
       );
-      // Wait a short time before retrying
-      setTimeout(() => {
-        initializeContext().catch((e) => {
-          logger.error(e, "Failed to initialize context even after retry");
-        });
-      }, 2000);
+      store.dispatch(contextInitializationFailed(String(e)));
     });
-  }
-
-  // Listen for the unified event
-  listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
-    const { channelName, event: eventData } = event.payload;
-
-    switch (channelName) {
-      case "SwapProgress":
-        store.dispatch(swapProgressEventReceived(eventData));
-        break;
-
-      case "ContextInitProgress":
-        store.dispatch(contextStatusEventReceived(eventData));
-        break;
-
-      case "CliLog":
-        store.dispatch(receivedCliLog(eventData));
-        break;
-
-      case "BalanceChange":
-        store.dispatch(rpcSetBalance(eventData.balance));
-        break;
-
-      case "SwapDatabaseStateUpdate":
-        getSwapInfo(eventData.swap_id);
-
-        // This is ugly but it's the best we can do for now
-        // Sometimes we are too quick to fetch the swap info and the new state is not yet reflected
-        // in the database. So we wait a bit before fetching the new state
-        setTimeout(() => getSwapInfo(eventData.swap_id), 3000);
-        break;
-
-      case "TimelockChange":
-        store.dispatch(timelockChangeEventReceived(eventData));
-        break;
-
-      case "Approval":
-        store.dispatch(approvalEventReceived(eventData));
-        break;
-
-      case "BackgroundProgress":
-        store.dispatch(backgroundProgressEventReceived(eventData));
-        break;
-
-      case "PoolStatusUpdate":
-        store.dispatch(poolStatusReceived(eventData));
-        break;
-
-      case "MoneroWalletUpdate":
-        console.log("MoneroWalletUpdate", eventData);
-        if (eventData.type === "BalanceChange") {
-          store.dispatch(setBalance(eventData.content));
-        }
-        if (eventData.type === "HistoryUpdate") {
-          store.dispatch(setHistory(eventData.content));
-        }
-        if (eventData.type === "SyncProgress") {
-          store.dispatch(setSyncProgress(eventData.content));
-        }
-        break;
-
-      default:
-        exhaustiveGuard(channelName);
-    }
-  });
 }
+
+// Listen for the unified event
+listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
+  const { channelName, event: eventData } = event.payload;
+
+  switch (channelName) {
+    case "SwapProgress":
+      store.dispatch(swapProgressEventReceived(eventData));
+      break;
+
+    case "CliLog":
+      store.dispatch(receivedCliLog(eventData));
+      break;
+
+    case "BalanceChange":
+      store.dispatch(rpcSetBalance(eventData.balance));
+      break;
+
+    case "SwapDatabaseStateUpdate":
+      getSwapInfo(eventData.swap_id);
+
+      // This is ugly but it's the best we can do for now
+      // Sometimes we are too quick to fetch the swap info and the new state is not yet reflected
+      // in the database. So we wait a bit before fetching the new state
+      setTimeout(() => getSwapInfo(eventData.swap_id), 3000);
+      break;
+
+    case "TimelockChange":
+      store.dispatch(timelockChangeEventReceived(eventData));
+      break;
+
+    case "Approval":
+      store.dispatch(approvalEventReceived(eventData));
+      break;
+
+    case "BackgroundProgress":
+      store.dispatch(backgroundProgressEventReceived(eventData));
+      break;
+
+    case "PoolStatusUpdate":
+      store.dispatch(poolStatusReceived(eventData));
+      break;
+
+    case "MoneroWalletUpdate":
+      console.log("MoneroWalletUpdate", eventData);
+      if (eventData.type === "BalanceChange") {
+        store.dispatch(setBalance(eventData.content));
+      }
+      if (eventData.type === "HistoryUpdate") {
+        store.dispatch(setHistory(eventData.content));
+      }
+      if (eventData.type === "SyncProgress") {
+        store.dispatch(setSyncProgress(eventData.content));
+      }
+      break;
+
+    default:
+      exhaustiveGuard(channelName);
+  }
+});
