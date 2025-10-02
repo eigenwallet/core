@@ -12,7 +12,6 @@ use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use crate::{bitcoin, monero};
 use anyhow::{anyhow, Context, Result};
-use bdk_chain::rusqlite::ffi::SQLITE_TRACE_CLOSE;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};

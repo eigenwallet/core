@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + SWAP + ASB: Upgrade arti (tor library) to 1.5.0. This might improve connectivity reliability.
+- ASB: Fix an issue where we would not wait between re-dials of rendezvous nodes.
 
 ## [3.0.4] - 2025-09-26
 
