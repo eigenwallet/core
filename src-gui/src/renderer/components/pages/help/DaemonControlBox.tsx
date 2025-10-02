@@ -8,6 +8,7 @@ import { getDataDir } from "renderer/rpc";
 import { relaunch } from "@tauri-apps/plugin-process";
 import RotateLeftIcon from "@mui/icons-material/RotateLeft";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { ContextStatusType } from "store/features/rpcSlice";
 
 export default function DaemonControlBox() {
   const logs = useAppSelector((s) => s.logs.state.logs);
@@ -16,7 +17,7 @@ export default function DaemonControlBox() {
     if (s.rpc.status === null) {
       return "not started";
     }
-    if (s.rpc.status.type === "error") {
+    if (s.rpc.status.type === ContextStatusType.Error) {
       return "failed";
     }
     return "running";

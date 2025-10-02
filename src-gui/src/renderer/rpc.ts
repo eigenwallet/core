@@ -365,10 +365,7 @@ export async function initializeContext() {
     });
     logger.info("Initialized context");
   } catch (error) {
-    const errorMessage = `Couldn't initialize context: ${error}`;
-    logger.error(error, "Failed to initialize context");
-    store.dispatch(contextInitializationFailed(errorMessage));
-    throw new Error(errorMessage);
+    throw new Error(error);
   }
 }
 

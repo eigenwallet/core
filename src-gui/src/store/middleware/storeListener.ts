@@ -11,7 +11,10 @@ import {
   getCurrentMoneroNodeConfig,
 } from "renderer/rpc";
 import logger from "utils/logger";
-import { contextStatusEventReceived } from "store/features/rpcSlice";
+import {
+  contextStatusEventReceived,
+  ContextStatusType,
+} from "store/features/rpcSlice";
 import {
   addNode,
   setFetchFiatPrices,
@@ -73,9 +76,13 @@ export function createMainListeners() {
       const previousStatus = (api.getOriginalState() as RootState).rpc.status;
 
       const status =
-        currentStatus?.type === "status" ? currentStatus.status : null;
+        currentStatus?.type === ContextStatusType.Status
+          ? currentStatus.status
+          : null;
       const previousContextStatus =
-        previousStatus?.type === "status" ? previousStatus.status : null;
+        previousStatus?.type === ContextStatusType.Status
+          ? previousStatus.status
+          : null;
 
       if (!status) return;
 

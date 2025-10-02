@@ -13,11 +13,14 @@ import { useAppSelector } from "store/hooks";
 import CliLogsBox from "renderer/components/other/RenderedCliLog";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import ContactInfoBox from "renderer/components/other/ContactInfoBox";
+import { ContextStatusType } from "store/features/rpcSlice";
 
 export default function ContextErrorDialog() {
   const logs = useAppSelector((state) => state.logs.state.logs);
   const errorMessage = useAppSelector((state) =>
-    state.rpc.status?.type === "error" ? state.rpc.status.error : null,
+    state.rpc.status?.type === ContextStatusType.Error
+      ? state.rpc.status.error
+      : null,
   );
 
   if (errorMessage === null) {

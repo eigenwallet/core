@@ -9,7 +9,11 @@ import {
   SendMoneroDetails,
   ContextStatus,
 } from "./tauriModel";
-import { ResultContextStatus, RPCSlice } from "store/features/rpcSlice";
+import {
+  ContextStatusType,
+  ResultContextStatus,
+  RPCSlice,
+} from "store/features/rpcSlice";
 
 export type TauriSwapProgressEventType = TauriSwapProgressEvent["type"];
 
@@ -386,7 +390,7 @@ export function haveFundsBeenLocked(
 export function isContextFullyInitialized(
   status: ResultContextStatus,
 ): boolean {
-  if (status == null || status.type === "error") {
+  if (status == null || status.type === ContextStatusType.Error) {
     return false;
   }
 

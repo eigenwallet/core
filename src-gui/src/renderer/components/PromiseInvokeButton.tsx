@@ -12,6 +12,7 @@ import { ContextStatus } from "models/tauriModel";
 import { isContextFullyInitialized } from "models/tauriModelExt";
 import { useSnackbar } from "notistack";
 import { ReactNode, useState } from "react";
+import { ContextStatusType } from "store/features/rpcSlice";
 import { useAppSelector, useIsContextAvailable } from "store/hooks";
 
 interface PromiseInvokeButtonProps<T> {
@@ -87,7 +88,7 @@ export default function PromiseInvokeButton<T>({
       return !isContextFullyInitialized(status);
     }
 
-    if (status == null || status.type === "error") {
+    if (status == null || status.type === ContextStatusType.Error) {
       return true;
     }
 

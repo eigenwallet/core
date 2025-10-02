@@ -37,9 +37,14 @@ interface State {
   };
 }
 
+export enum ContextStatusType {
+  Status = "status",
+  Error = "error",
+}
+
 export type ResultContextStatus =
-  | { type: "status"; status: ContextStatus }
-  | { type: "error"; error: string };
+  | { type: ContextStatusType.Status; status: ContextStatus }
+  | { type: ContextStatusType.Error; error: string };
 
 export interface RPCSlice {
   status: ResultContextStatus | null;
@@ -68,14 +73,14 @@ export const rpcSlice = createSlice({
       // Don't overwrite error state
       //
       // Once we're in an error state, stay there
-      if (slice.status?.type === "error") {
+      if (slice.status?.type === ContextStatusType.Error) {
         return;
       }
 
-      slice.status = { type: "status", status: action.payload };
+      slice.status = { type: ContextStatusType.Status, status: action.payload };
     },
     contextInitializationFailed(slice, action: PayloadAction<string>) {
-      slice.status = { type: "error", error: action.payload };
+      slice.status = { type: ContextStatusType.Error, error: action.payload };
     },
     timelockChangeEventReceived(
       slice: RPCSlice,
