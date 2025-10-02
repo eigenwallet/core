@@ -52,6 +52,7 @@ import {
   rpcSetBalance,
   rpcSetSwapInfo,
   approvalRequestsReplaced,
+  contextInitializationFailed,
 } from "store/features/rpcSlice";
 import {
   setMainAddress,
@@ -335,7 +336,6 @@ export async function initializeContext() {
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
 
   // Check the state of the Monero node
-
   const moneroNodeConfig =
     useMoneroRpcPool ||
     moneroNodeUrl == null ||
@@ -356,18 +356,20 @@ export async function initializeContext() {
     enable_monero_tor: useMoneroTor,
   };
 
-  logger.info("Initializing context with settings", tauriSettings);
+  logger.info({ tauriSettings }, "Initializing context with settings");
 
   try {
     await invokeUnsafe<void>("initialize_context", {
       settings: tauriSettings,
       testnet,
     });
+    logger.info("Initialized context");
   } catch (error) {
-    throw new Error("Couldn't initialize context: " + error);
+    const errorMessage = `Couldn't initialize context: ${error}`;
+    logger.error(error, "Failed to initialize context");
+    store.dispatch(contextInitializationFailed(errorMessage));
+    throw new Error(errorMessage);
   }
-
-  logger.info("Initialized context");
 }
 
 export async function getWalletDescriptor() {

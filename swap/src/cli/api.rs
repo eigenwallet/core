@@ -771,9 +771,12 @@ mod builder {
                         )
                         .await?;
 
-                        bitcoin_progress_handle.finish();
+                        // TODO: remove this mock fail
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        bail!("mock fail");
 
-                        Some(Arc::new(wallet))
+                        // bitcoin_progress_handle.finish();
+                        // Some(Arc::new(wallet))
                     }
                     None => None,
                 };

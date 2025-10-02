@@ -58,18 +58,31 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
 export function createMainListeners() {
   const listener = createListenerMiddleware();
 
-  // Listener for when the Context becomes available
+  // Listener for when the Context status state changes
   // When the context becomes available, we check the bitcoin balance, fetch all swap infos and connect to the rendezvous point
   listener.startListening({
-    actionCreator: contextStatusEventReceived,
+    predicate: (action, currentState, previousState) => {
+      const currentStatus = (currentState as RootState).rpc.status;
+      const previousStatus = (previousState as RootState).rpc.status;
+
+      // Only trigger if the status actually changed
+      return currentStatus !== previousStatus;
+    },
     effect: async (action, api) => {
-      const status = action.payload;
+      const currentStatus = (api.getState() as RootState).rpc.status;
       const previousStatus = (api.getOriginalState() as RootState).rpc.status;
+
+      const status =
+        currentStatus?.type === "status" ? currentStatus.status : null;
+      const previousContextStatus =
+        previousStatus?.type === "status" ? previousStatus.status : null;
+
+      if (!status) return;
 
       // If the Bitcoin wallet just came available, check the Bitcoin balance
       if (
         status.bitcoin_wallet_available &&
-        !previousStatus?.bitcoin_wallet_available
+        !previousContextStatus?.bitcoin_wallet_available
       ) {
         logger.info(
           "Bitcoin wallet just became available, checking balance...",
@@ -80,7 +93,7 @@ export function createMainListeners() {
       // If the Monero wallet just came available, initialize the Monero wallet
       if (
         status.monero_wallet_available &&
-        !previousStatus?.monero_wallet_available
+        !previousContextStatus?.monero_wallet_available
       ) {
         logger.info("Monero wallet just became available, initializing...");
         await initializeMoneroWallet();
@@ -95,8 +108,8 @@ export function createMainListeners() {
         status.database_available &&
         status.bitcoin_wallet_available &&
         !(
-          previousStatus?.database_available &&
-          previousStatus?.bitcoin_wallet_available
+          previousContextStatus?.database_available &&
+          previousContextStatus?.bitcoin_wallet_available
         )
       ) {
         logger.info(
@@ -106,7 +119,10 @@ export function createMainListeners() {
       }
 
       // If the database just became availiable, fetch sellers at preset rendezvous points
-      if (status.database_available && !previousStatus?.database_available) {
+      if (
+        status.database_available &&
+        !previousContextStatus?.database_available
+      ) {
         logger.info(
           "Database just became available, fetching sellers at preset rendezvous points...",
         );

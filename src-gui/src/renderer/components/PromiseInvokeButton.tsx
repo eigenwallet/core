@@ -87,11 +87,11 @@ export default function PromiseInvokeButton<T>({
       return !isContextFullyInitialized(status);
     }
 
-    if (status == null) {
+    if (status == null || status.type === "error") {
       return true;
     }
 
-    return !contextRequirement(status);
+    return !contextRequirement(status.status);
   });
   const isDisabled = disabled || isLoading || requiresContextButNotAvailable;
 

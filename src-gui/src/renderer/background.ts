@@ -1,7 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
-import { TauriContextStatusEvent, TauriEvent } from "models/tauriModel";
+import { TauriEvent } from "models/tauriModel";
 import {
   contextStatusEventReceived,
+  contextInitializationFailed,
   rpcSetBalance,
   timelockChangeEventReceived,
   approvalEventReceived,
@@ -85,6 +86,7 @@ export async function setupBackgroundTasks(): Promise<void> {
   }, CHECK_CONTEXT_STATUS_INTERVAL);
 
   const contextStatus = await checkContextStatus();
+
   // If all components are unavailable, we need to initialize the context
   if (
     !contextStatus.bitcoin_wallet_available &&
@@ -98,12 +100,7 @@ export async function setupBackgroundTasks(): Promise<void> {
         e,
         "Failed to initialize context on page load. This might be because we reloaded the page while the context was being initialized",
       );
-      // Wait a short time before retrying
-      setTimeout(() => {
-        initializeContext().catch((e) => {
-          logger.error(e, "Failed to initialize context even after retry");
-        });
-      }, 2000);
+      store.dispatch(contextInitializationFailed(String(e)));
     });
 }
 

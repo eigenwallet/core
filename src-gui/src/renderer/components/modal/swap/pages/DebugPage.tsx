@@ -1,15 +1,9 @@
 import { Box, DialogContentText } from "@mui/material";
-import {
-  useActiveSwapInfo,
-  useActiveSwapLogs,
-  useAppSelector,
-} from "store/hooks";
-import JsonTreeView from "../../../other/JSONViewTree";
+import { useActiveSwapLogs } from "store/hooks";
 import CliLogsBox from "../../../other/RenderedCliLog";
 
 export default function DebugPage() {
   const logs = useActiveSwapLogs();
-  const cliState = useActiveSwapInfo();
 
   return (
     <Box sx={{ padding: 2, display: "flex", flexDirection: "column", gap: 2 }}>

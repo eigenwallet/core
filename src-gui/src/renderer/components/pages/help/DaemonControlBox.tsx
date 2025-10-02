@@ -1,31 +1,26 @@
 import { Box } from "@mui/material";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { useAppSelector } from "store/hooks";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import CliLogsBox from "renderer/components/other/RenderedCliLog";
-import { getDataDir, initializeContext } from "renderer/rpc";
+import { getDataDir } from "renderer/rpc";
 import { relaunch } from "@tauri-apps/plugin-process";
 import RotateLeftIcon from "@mui/icons-material/RotateLeft";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { TauriContextStatusEvent } from "models/tauriModel";
 
 export default function DaemonControlBox() {
   const logs = useAppSelector((s) => s.logs.state.logs);
 
-  // The daemon can be manually started if it has failed or if it has not been started yet
-  const canContextBeManuallyStarted = useAppSelector(
-    (s) =>
-      s.rpc.status === TauriContextStatusEvent.Failed || s.rpc.status === null,
-  );
-  const isContextInitializing = useAppSelector(
-    (s) => s.rpc.status === TauriContextStatusEvent.Initializing,
-  );
-
-  const stringifiedDaemonStatus = useAppSelector(
-    (s) => s.rpc.status ?? "not started",
-  );
+  const stringifiedDaemonStatus = useAppSelector((s) => {
+    if (s.rpc.status === null) {
+      return "not started";
+    }
+    if (s.rpc.status.type === "error") {
+      return "failed";
+    }
+    return "running";
+  });
 
   return (
     <InfoBox
@@ -36,17 +31,6 @@ export default function DaemonControlBox() {
       }
       additionalContent={
         <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-          <PromiseInvokeButton
-            variant="contained"
-            endIcon={<PlayArrowIcon />}
-            onInvoke={initializeContext}
-            contextRequirement={false}
-            disabled={!canContextBeManuallyStarted}
-            isLoadingOverride={isContextInitializing}
-            displayErrorSnackbar
-          >
-            Start Daemon
-          </PromiseInvokeButton>
           <PromiseInvokeButton
             variant="contained"
             endIcon={<RotateLeftIcon />}

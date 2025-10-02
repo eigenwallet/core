@@ -28,7 +28,6 @@ const TAURI_UNIFIED_EVENT_NAME: &str = "tauri-unified-event";
 #[serde(tag = "channelName", content = "event")]
 pub enum TauriEvent {
     SwapProgress(TauriSwapProgressEventWrapper),
-    ContextInitProgress(TauriContextStatusEvent),
     CliLog(TauriLogEvent),
     BalanceChange(BalanceResponse),
     SwapDatabaseStateUpdate(TauriDatabaseStateEvent),
@@ -463,10 +462,6 @@ pub trait TauriEmitter {
             swap_id,
             event,
         }));
-    }
-
-    fn emit_context_init_progress_event(&self, event: TauriContextStatusEvent) {
-        self.emit_unified_event(TauriEvent::ContextInitProgress(event));
     }
 
     fn emit_cli_log_event(&self, event: TauriLogEvent) {

@@ -5,10 +5,7 @@ import { useAppSelector, usePendingBackgroundProcesses } from "store/hooks";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import { LoadingSpinnerAlert } from "./LoadingSpinnerAlert";
 import { bytesToMb } from "utils/conversionUtils";
-import {
-  TauriBackgroundProgress,
-  TauriContextStatusEvent,
-} from "models/tauriModel";
+import { TauriBackgroundProgress } from "models/tauriModel";
 import { useEffect, useState } from "react";
 import TruncatedText from "../other/TruncatedText";
 import BitcoinIcon from "../icons/BitcoinIcon";

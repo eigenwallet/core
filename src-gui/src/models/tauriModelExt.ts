@@ -3,14 +3,13 @@ import {
   ApprovalRequest,
   ExpiredTimelocks,
   GetSwapInfoResponse,
-  PendingCompleted,
-  QuoteWithAddress,
   SelectMakerDetails,
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
   SendMoneroDetails,
   ContextStatus,
 } from "./tauriModel";
+import { ResultContextStatus, RPCSlice } from "store/features/rpcSlice";
 
 export type TauriSwapProgressEventType = TauriSwapProgressEvent["type"];
 
@@ -385,17 +384,17 @@ export function haveFundsBeenLocked(
 }
 
 export function isContextFullyInitialized(
-  status: ContextStatus | null,
+  status: ResultContextStatus,
 ): boolean {
-  if (status == null) {
+  if (status == null || status.type === "error") {
     return false;
   }
 
   return (
-    status.bitcoin_wallet_available &&
-    status.monero_wallet_available &&
-    status.database_available &&
-    status.tor_available
+    status.status.bitcoin_wallet_available &&
+    status.status.monero_wallet_available &&
+    status.status.database_available &&
+    status.status.tor_available
   );
 }
 

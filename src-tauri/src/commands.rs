@@ -16,7 +16,7 @@ use swap::cli::{
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
             SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
-        tauri_bindings::{ContextStatus, TauriContextStatusEvent, TauriEmitter, TauriSettings},
+        tauri_bindings::{ContextStatus, TauriSettings},
         ContextBuilder,
     },
     command::Bitcoin,
@@ -187,9 +187,6 @@ pub async fn initialize_context(
         }
         Err(e) => {
             tracing::error!(error = ?e, "Failed to initialize context");
-
-            // Emit event to frontend
-            tauri_handle.emit_context_init_progress_event(TauriContextStatusEvent::Failed);
             Err(e.to_string())
         }
     }
