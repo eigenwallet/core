@@ -227,9 +227,8 @@ export async function fetchAllConversations(): Promise<void> {
       store.dispatch(setConversation({ feedbackId, messages }));
     } catch (error) {
       logger.error(
-        error,
-        "Error fetching messages for feedback id",
-        feedbackId,
+        { error, feedbackId },
+        "Error fetching messages for feedback",
       );
     }
   }
