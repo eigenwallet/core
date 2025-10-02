@@ -13,7 +13,7 @@ use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriLogEvent};
 
-const TOR_CRATES: Vec<&str> = vec![
+const TOR_CRATES: &[&str] = &[
     "arti",
     "arti-client",
     "arti-fork",
@@ -55,7 +55,7 @@ const TOR_CRATES: Vec<&str> = vec![
     "tor-units",
 ];
 
-const LIBP2P_CRATES: Vec<&str> = vec![
+const LIBP2P_CRATES: &[&str] = &[
     "libp2p",
     "libp2p_swarm",
     "libp2p_core",
@@ -86,7 +86,7 @@ const LIBP2P_CRATES: Vec<&str> = vec![
     "monero_cpp",
 ];
 
-const OUR_CRATES: Vec<&str> = vec![
+const OUR_CRATES: &[&str] = &[
     "swap",
     "asb",
     "monero_sys",
@@ -142,7 +142,7 @@ pub fn init(
         .with_line_number(true)
         .json()
         .with_filter(env_filter_with_all_crates(vec![(
-            OUR_CRATES.clone(),
+            OUR_CRATES.to_vec(),
             level_filter,
         )])?);
 
@@ -158,9 +158,9 @@ pub fn init(
         .with_line_number(true)
         .json()
         .with_filter(env_filter_with_all_crates(vec![
-            (OUR_CRATES.clone(), LevelFilter::TRACE),
-            (LIBP2P_CRATES.clone(), LevelFilter::TRACE),
-            (TOR_CRATES.clone(), LevelFilter::TRACE),
+            (OUR_CRATES.to_vec(), LevelFilter::TRACE),
+            (LIBP2P_CRATES.to_vec(), LevelFilter::TRACE),
+            (TOR_CRATES.to_vec(), LevelFilter::TRACE),
         ])?);
 
     // Layer for writing to the terminal
@@ -187,20 +187,20 @@ pub fn init(
         .with_line_number(true)
         .json()
         .with_filter(env_filter_with_all_crates(vec![
-            (OUR_CRATES.clone(), LevelFilter::DEBUG),
-            (LIBP2P_CRATES.clone(), LevelFilter::INFO),
-            (TOR_CRATES.clone(), LevelFilter::INFO),
+            (OUR_CRATES.to_vec(), LevelFilter::DEBUG),
+            (LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
+            (TOR_CRATES.to_vec(), LevelFilter::INFO),
         ])?);
 
     // If trace_stdout is true, we log all messages to the terminal
     // Otherwise, we only log the bare minimum
     let terminal_layer_env_filter = match trace_stdout {
         true => env_filter_with_all_crates(vec![
-            (OUR_CRATES.clone(), level_filter),
-            (TOR_CRATES.clone(), level_filter),
-            (LIBP2P_CRATES.clone(), LevelFilter::INFO),
+            (OUR_CRATES.to_vec(), level_filter),
+            (TOR_CRATES.to_vec(), level_filter),
+            (LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
         ])?,
-        false => env_filter_with_all_crates(vec![(OUR_CRATES.clone(), level_filter)])?,
+        false => env_filter_with_all_crates(vec![(OUR_CRATES.to_vec(), level_filter)])?,
     };
 
     let final_terminal_layer = match format {
