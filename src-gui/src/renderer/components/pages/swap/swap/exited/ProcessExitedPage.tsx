@@ -3,7 +3,6 @@ import { TauriSwapProgressEvent } from "models/tauriModel";
 import CliLogsBox from "renderer/components/other/RenderedCliLog";
 import { useActiveSwapInfo, useActiveSwapLogs } from "store/hooks";
 import SwapStatePage from "renderer/components/pages/swap/swap/SwapStatePage";
-import { logsToRawString } from "utils/parseUtils";
 
 export default function ProcessExitedPage({
   prevState,
@@ -15,6 +14,9 @@ export default function ProcessExitedPage({
   const swap = useActiveSwapInfo();
   const logs = useActiveSwapLogs();
 
+
+  // If we have a previous state, we can show the user the last state of the swap
+  // We only show the last state if its a final state (XmrRedeemInMempool, BtcRefunded, BtcPunished, CooperativeRedeemRejected)
   if (
     prevState != null &&
     (prevState.type === "XmrRedeemInMempool" ||
@@ -32,8 +34,6 @@ export default function ProcessExitedPage({
       />
     );
   }
-
-  const logEntries = logs.map(({ log }) => log);
 
   return (
     <>
