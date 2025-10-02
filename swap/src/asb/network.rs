@@ -356,7 +356,7 @@ pub mod rendezvous {
                         // Never give up
                         max_elapsed_time: None,
                         // We retry aggressively. We begin with 50ms and increase by 10% per retry.
-                        multiplier: 0.1f64,
+                        multiplier: 1.1f64,
                         initial_interval: Duration::from_millis(50),
                         current_interval: Duration::from_millis(50),
                         ..ExponentialBackoff::default()
