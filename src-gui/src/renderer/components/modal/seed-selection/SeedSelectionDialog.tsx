@@ -156,8 +156,7 @@ export default function SeedSelectionDialog() {
       <MobileDialogHeader title="Create or restore a wallet" />
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
-          !isMobile && (
-          {/* Open existing wallet option */}
+          {!isMobile && (
           <Card
             sx={{
               cursor: "pointer",
@@ -190,7 +189,7 @@ export default function SeedSelectionDialog() {
               </Typography>
             </CardContent>
           </Card>
-          )
+          )}
 
           {/* Create new wallet option */}
           <Card

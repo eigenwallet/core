@@ -319,8 +319,7 @@ export async function listSellersAtRendezvousPoint(
 
 export async function initializeContext() {
   const network = getNetwork();
-  const isMobile = useIsMobile();
-  const testnet = isMobile ? true : isTestnet();
+  const testnet = isTestnet();
   const useTor = store.getState().settings.enableTor;
 
   // Get all Bitcoin nodes without checking availability
