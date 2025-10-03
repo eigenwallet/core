@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ASB: Fix an issue where we would not wait between re-dials of rendezvous nodes.
 - GUI: Faster startup time by allowing parts of the application be used while other components are still initializing.
 - GUI: We now default to redeeming swaps into the internal Monero wallet, and sending Bitcoin refund into the internal Bitcoin wallet. If you want to change this behaviour go to Settings -> "Redeem Policy" and "Refund Policy".
+- GUI(Linux): Fixed an issue where the screen would be blank when launching the GUI.
+- GUI(Linux): The Linux builds are not built on Ubuntu 24.04. This mean it'll require glibc 2.39 which might not be present on some systems. If this is the case for you, please use the flatpak builds. We continue to look for a better way solution.
 
 ## [3.0.4] - 2025-09-26
 
