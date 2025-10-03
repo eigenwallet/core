@@ -3,24 +3,39 @@ import { useEffect } from "react";
 import { isTestnet } from "store/config";
 import { isBtcAddressValid } from "utils/conversionUtils";
 
+type BitcoinAddressTextFieldProps = {
+  address: string;
+  onAddressChange: (address: string) => void;
+  onAddressValidityChange: (valid: boolean) => void;
+  helperText: string;
+  allowEmpty?: boolean;
+};
+
 export default function BitcoinAddressTextField({
   address,
   onAddressChange,
   onAddressValidityChange,
   helperText,
+  allowEmpty = true,
   ...props
-}: {
-  address: string;
-  onAddressChange: (address: string) => void;
-  onAddressValidityChange: (valid: boolean) => void;
-  helperText: string;
-} & TextFieldProps) {
+}: BitcoinAddressTextFieldProps & TextFieldProps) {
   const placeholder = isTestnet() ? "tb1q4aelwalu..." : "bc18ociqZ9mZ...";
-  const errorText = isBtcAddressValid(address, isTestnet())
-    ? null
-    : `Only bech32 addresses are supported. They begin with "${
-        isTestnet() ? "tb1" : "bc1"
-      }"`;
+
+  function errorText() {
+    if (address.length === 0) {
+      if (allowEmpty) {
+        return null;
+      }
+
+      return "Cannot be empty";
+    }
+
+    if (isBtcAddressValid(address, isTestnet())) {
+      return null;
+    }
+
+    return "Not a valid Bitcoin address";
+  }
 
   useEffect(() => {
     onAddressValidityChange(!errorText);
@@ -30,8 +45,8 @@ export default function BitcoinAddressTextField({
     <TextField
       value={address}
       onChange={(e) => onAddressChange(e.target.value)}
-      error={!!errorText && address.length > 0}
-      helperText={address.length > 0 ? errorText || helperText : helperText}
+      error={errorText() !== null}
+      helperText={errorText() || helperText}
       placeholder={placeholder}
       variant="outlined"
       {...props}

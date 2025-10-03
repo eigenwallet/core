@@ -45,6 +45,8 @@ import {
   setMoneroRedeemAddress,
   setBitcoinRefundAddress,
   setBitcoinRefundPolicy,
+  RedeemPolicy,
+  RefundPolicy,
 } from "store/features/settingsSlice";
 import { useAppDispatch, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
@@ -1026,7 +1028,10 @@ function RedeemPolicySetting() {
             color="primary"
             value={moneroRedeemPolicy}
             onChange={(_, newPolicy) => {
-              if (newPolicy == "internal" || newPolicy == "external") {
+              if (
+                newPolicy == RedeemPolicy.Internal ||
+                newPolicy == RedeemPolicy.External
+              ) {
                 dispatch(setMoneroRedeemPolicy(newPolicy));
               }
             }}
@@ -1034,12 +1039,14 @@ function RedeemPolicySetting() {
             size="small"
           >
             <Tooltip title="The Monero will be sent to the currently opened Monero wallet.">
-              <ToggleButton value="internal">
+              <ToggleButton value={RedeemPolicy.Internal}>
                 Internal (Recommended)
               </ToggleButton>
             </Tooltip>
             <Tooltip title="The Monero will be sent to an external Monero address.">
-              <ToggleButton value="external">External</ToggleButton>
+              <ToggleButton value={RedeemPolicy.External}>
+                External
+              </ToggleButton>
             </Tooltip>
           </ToggleButtonGroup>
         </TableCell>
@@ -1048,7 +1055,7 @@ function RedeemPolicySetting() {
         <TableCell>External Monero redeem address</TableCell>
         <TableCell>
           <MoneroAddressTextField
-            disabled={moneroRedeemPolicy !== "external"}
+            disabled={moneroRedeemPolicy !== RedeemPolicy.External}
             label="External Monero redeem address"
             address={moneroRedeemAddress}
             onAddressChange={(address) => {
@@ -1057,6 +1064,7 @@ function RedeemPolicySetting() {
             onAddressValidityChange={() => {}}
             fullWidth
             variant="outlined"
+            allowEmpty={moneroRedeemPolicy === RedeemPolicy.Internal}
           />
         </TableCell>
       </TableRow>
@@ -1087,7 +1095,10 @@ function RefundPolicySetting() {
             color="primary"
             value={bitcoinRefundPolicy}
             onChange={(_, newPolicy) => {
-              if (newPolicy == "internal" || newPolicy == "external") {
+              if (
+                newPolicy == RefundPolicy.Internal ||
+                newPolicy == RefundPolicy.External
+              ) {
                 dispatch(setBitcoinRefundPolicy(newPolicy));
               }
             }}
@@ -1095,12 +1106,14 @@ function RefundPolicySetting() {
             size="small"
           >
             <Tooltip title="The Bitcoin will be sent to the internal Bitcoin wallet.">
-              <ToggleButton value="internal">
+              <ToggleButton value={RefundPolicy.Internal}>
                 Internal (Recommended)
               </ToggleButton>
             </Tooltip>
             <Tooltip title="The Bitcoin will be sent to an external Bitcoin address.">
-              <ToggleButton value="external">External</ToggleButton>
+              <ToggleButton value={RefundPolicy.External}>
+                External
+              </ToggleButton>
             </Tooltip>
           </ToggleButtonGroup>
         </TableCell>
@@ -1109,6 +1122,7 @@ function RefundPolicySetting() {
         <TableCell>External Bitcoin refund address</TableCell>
         <TableCell>
           <BitcoinAddressTextField
+            allowEmpty={bitcoinRefundPolicy === RefundPolicy.Internal}
             label="External Bitcoin refund address"
             address={bitcoinRefundAddress}
             onAddressChange={(address) => {
@@ -1117,7 +1131,7 @@ function RefundPolicySetting() {
             onAddressValidityChange={() => {}}
             fullWidth
             variant="outlined"
-            disabled={bitcoinRefundPolicy !== "external"}
+            disabled={bitcoinRefundPolicy !== RefundPolicy.External}
             helperText=""
           />
         </TableCell>
