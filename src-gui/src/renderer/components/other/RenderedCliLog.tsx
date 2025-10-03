@@ -1,5 +1,6 @@
 import { Box, Chip, Typography } from "@mui/material";
 import { CliLog } from "models/cliModel";
+import { HashedLog } from "store/features/logsSlice";
 import { ReactNode, useMemo, useState } from "react";
 import { logsToRawString } from "utils/parseUtils";
 import ScrollablePaperTextBox from "./ScrollablePaperTextBox";
@@ -62,44 +63,54 @@ export default function CliLogsBox({
   label,
   logs,
   topRightButton = null,
-  autoScroll = false,
+  autoScroll = true,
   minHeight,
 }: {
   label: string;
-  logs: (CliLog | string)[];
+  logs: HashedLog[];
   topRightButton?: ReactNode;
   autoScroll?: boolean;
   minHeight?: string;
 }) {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const memoizedLogs = useMemo(() => {
+  const filteredLogs = useMemo(() => {
     if (searchQuery.length === 0) {
       return logs;
     }
-    return logs.filter((log) =>
+
+    return logs.filter(({ log }) =>
       JSON.stringify(log).toLowerCase().includes(searchQuery.toLowerCase()),
     );
   }, [logs, searchQuery]);
+
+  const rows = useMemo(() => {
+    return filteredLogs.map(({ log, hash }) =>
+      typeof log === "string" ? (
+        <Typography key={hash} component="pre">
+          {log}
+        </Typography>
+      ) : (
+        <RenderedCliLog log={log} key={hash} />
+      ),
+    );
+  }, [filteredLogs]);
+
+  const rawStrings = useMemo(
+    () => filteredLogs.map(({ log }) => log),
+    [filteredLogs],
+  );
 
   return (
     <ScrollablePaperTextBox
       minHeight={minHeight}
       title={label}
-      copyValue={logsToRawString(logs)}
+      copyValue={logsToRawString(rawStrings)}
       searchQuery={searchQuery}
       setSearchQuery={setSearchQuery}
       topRightButton={topRightButton}
       autoScroll={autoScroll}
-      rows={memoizedLogs.map((log) =>
-        typeof log === "string" ? (
-          <Typography key={log} component="pre">
-            {log}
-          </Typography>
-        ) : (
-          <RenderedCliLog log={log} key={JSON.stringify(log)} />
-        ),
-      )}
+      rows={rows}
     />
   );
 }

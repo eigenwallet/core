@@ -25,6 +25,7 @@ import SeedSelectionDialog from "./modal/seed-selection/SeedSelectionDialog";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import PasswordEntryDialog from "./modal/password-entry/PasswordEntryDialog";
+import ContextErrorDialog from "./modal/context-error/ContextErrorDialog";
 
 declare module "@mui/material/styles" {
   interface Theme {
@@ -54,6 +55,7 @@ export default function App() {
             <IntroductionModal />
             <SeedSelectionDialog />
             <PasswordEntryDialog />
+            <ContextErrorDialog />
             <Router>
               <Navigation />
               <InnerContent />

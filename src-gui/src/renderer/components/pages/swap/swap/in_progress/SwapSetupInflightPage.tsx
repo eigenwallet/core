@@ -145,7 +145,6 @@ export default function SwapSetupInflightPage({
               resolveApproval(request.request_id, false as unknown as object)
             }
             displayErrorSnackbar
-            requiresContext
           >
             Deny
           </PromiseInvokeButton>
@@ -158,7 +157,6 @@ export default function SwapSetupInflightPage({
               resolveApproval(request.request_id, true as unknown as object)
             }
             displayErrorSnackbar
-            requiresContext
             endIcon={<CheckIcon />}
           >
             {`Confirm`}

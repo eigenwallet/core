@@ -46,11 +46,13 @@ import {
   GetRestoreHeightResponse,
   MoneroNodeConfig,
   GetMoneroSeedResponse,
+  ContextStatus,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
   rpcSetSwapInfo,
   approvalRequestsReplaced,
+  contextInitializationFailed,
 } from "store/features/rpcSlice";
 import {
   setMainAddress,
@@ -294,9 +296,8 @@ export async function getMoneroRecoveryKeys(
   );
 }
 
-export async function checkContextAvailability(): Promise<boolean> {
-  const available = await invokeNoArgs<boolean>("is_context_available");
-  return available;
+export async function checkContextStatus(): Promise<ContextStatus> {
+  return await invokeNoArgs<ContextStatus>("get_context_status");
 }
 
 export async function getLogsOfSwap(
@@ -347,7 +348,6 @@ export async function initializeContext() {
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
 
   // Check the state of the Monero node
-
   const moneroNodeConfig =
     useMoneroRpcPool ||
     moneroNodeUrl == null ||
@@ -368,20 +368,17 @@ export async function initializeContext() {
     enable_monero_tor: useMoneroTor,
   };
 
-  logger.info(
-    `Initializing context with settings: ${JSON.stringify(tauriSettings)}`,
-  );
+  logger.info({ tauriSettings }, "Initializing context with settings");
 
   try {
     await invokeUnsafe<void>("initialize_context", {
       settings: tauriSettings,
       testnet,
     });
+    logger.info("Initialized context");
   } catch (error) {
-    throw new Error("Couldn't initialize context: " + error);
+    throw new Error(error);
   }
-
-  logger.info("Initialized context");
 }
 
 export async function getWalletDescriptor() {

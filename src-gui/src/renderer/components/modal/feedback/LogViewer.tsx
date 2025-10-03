@@ -9,13 +9,13 @@ import {
   Switch,
   Typography,
 } from "@mui/material";
-import { CliLog } from "models/cliModel";
 import CliLogsBox from "renderer/components/other/RenderedCliLog";
+import { HashedLog } from "store/features/logsSlice";
 
 interface LogViewerProps {
   open: boolean;
   setOpen: (_: boolean) => void;
-  logs: (string | CliLog)[] | null;
+  logs: HashedLog[];
   setIsRedacted: (_: boolean) => void;
   isRedacted: boolean;
 }

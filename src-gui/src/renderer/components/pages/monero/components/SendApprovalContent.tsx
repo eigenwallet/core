@@ -130,7 +130,7 @@ export default function SendApprovalContent({
           color="error"
           startIcon={<CloseIcon />}
           displayErrorSnackbar={true}
-          requiresContext={false}
+          contextRequirement={false}
         >
           Reject
         </PromiseInvokeButton>
@@ -141,7 +141,7 @@ export default function SendApprovalContent({
           color="primary"
           startIcon={<CheckIcon />}
           displayErrorSnackbar={true}
-          requiresContext={false}
+          contextRequirement={false}
         >
           Send
         </PromiseInvokeButton>
