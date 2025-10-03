@@ -38,7 +38,6 @@ export default function MoneroAddressTextField({
   const [addresses, setAddresses] = useState<string[]>([]);
   const [showDialog, setShowDialog] = useState(false);
 
-  // Validation
   const placeholder = isTestnet() ? "59McWTPGc745..." : "888tNkZrPN6J...";
 
   function errorText() {
@@ -57,12 +56,11 @@ export default function MoneroAddressTextField({
     return "Not a valid Monero address";
   }
 
-  // Effects
   useEffect(() => {
     if (onAddressValidityChange) {
-      onAddressValidityChange(!errorText);
+      onAddressValidityChange(!errorText());
     }
-  }, [address, onAddressValidityChange, errorText]);
+  }, [address, onAddressValidityChange]);
 
   useEffect(() => {
     const fetchAddresses = async () => {
@@ -75,7 +73,6 @@ export default function MoneroAddressTextField({
     return () => clearInterval(interval);
   }, []);
 
-  // Event handlers
   const handleClose = () => setShowDialog(false);
   const handleAddressSelect = (selectedAddress: string) => {
     onAddressChange(selectedAddress);

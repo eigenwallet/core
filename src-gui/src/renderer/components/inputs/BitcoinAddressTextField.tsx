@@ -41,7 +41,7 @@ export default function BitcoinAddressTextField({
     if (onAddressValidityChange) {
       onAddressValidityChange(!errorText());
     }
-  }, [address, errorText, onAddressValidityChange]);
+  }, [address, onAddressValidityChange]);
 
   return (
     <TextField
