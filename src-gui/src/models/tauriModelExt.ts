@@ -376,7 +376,6 @@ export function haveFundsBeenLocked(
   }
 
   switch (event.type) {
-    case "RequestingQuote":
     case "Resuming":
     case "ReceivedQuote":
     case "WaitingForBtcDeposit":

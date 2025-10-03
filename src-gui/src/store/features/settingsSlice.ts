@@ -32,6 +32,26 @@ export interface SettingsState {
   /// Does the user want to donate parts of his swaps to funding the development
   /// of the project?
   donateToDevelopment: DonateToDevelopmentTip;
+  /// Does the user want to withdraw Monero from Atomic Swaps to an external address?
+  /// If set to 'internal', the funds will be sent to the internal wallet.
+  moneroRedeemPolicy: RedeemPolicy;
+  /// Does the user want to send Bitcoin refund from Atomic Swaps to an external address?
+  /// If set to 'internal', the funds will be sent to the internal wallet.
+  bitcoinRefundPolicy: RefundPolicy;
+  /// The external Monero redeem address
+  externalMoneroRedeemAddress: string;
+  /// The external Bitcoin refund address
+  externalBitcoinRefundAddress: string;
+}
+
+export enum RedeemPolicy {
+  Internal = "internal",
+  External = "external",
+}
+
+export enum RefundPolicy {
+  Internal = "internal",
+  External = "external",
 }
 
 export enum FiatCurrency {
@@ -140,6 +160,10 @@ const initialState: SettingsState = {
   userHasSeenIntroduction: false,
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
   donateToDevelopment: false, // Default to no donation
+  moneroRedeemPolicy: RedeemPolicy.Internal,
+  bitcoinRefundPolicy: RefundPolicy.Internal,
+  externalMoneroRedeemAddress: "",
+  externalBitcoinRefundAddress: "",
 };
 
 const alertsSlice = createSlice({
@@ -237,6 +261,18 @@ const alertsSlice = createSlice({
     ) {
       slice.donateToDevelopment = action.payload;
     },
+    setMoneroRedeemPolicy(slice, action: PayloadAction<RedeemPolicy>) {
+      slice.moneroRedeemPolicy = action.payload;
+    },
+    setBitcoinRefundPolicy(slice, action: PayloadAction<RefundPolicy>) {
+      slice.bitcoinRefundPolicy = action.payload;
+    },
+    setMoneroRedeemAddress(slice, action: PayloadAction<string>) {
+      slice.externalMoneroRedeemAddress = action.payload;
+    },
+    setBitcoinRefundAddress(slice, action: PayloadAction<string>) {
+      slice.externalBitcoinRefundAddress = action.payload;
+    },
   },
 });
 
@@ -255,6 +291,10 @@ export const {
   addRendezvousPoint,
   removeRendezvousPoint,
   setDonateToDevelopment,
+  setMoneroRedeemPolicy,
+  setBitcoinRefundPolicy,
+  setMoneroRedeemAddress,
+  setBitcoinRefundAddress,
 } = alertsSlice.actions;
 
 export default alertsSlice.reducer;
