@@ -1,10 +1,11 @@
-import { Box, Button, IconButton, Tooltip } from "@mui/material";
+import { Box, Button, IconButton, Tooltip, Snackbar } from "@mui/material";
 import { FileCopyOutlined, QrCode as QrCodeIcon } from "@mui/icons-material";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useState } from "react";
 import MonospaceTextBox from "./MonospaceTextBox";
 import { Modal } from "@mui/material";
 import QRCode from "react-qr-code";
+import { useIsMobile } from "../../../utils/useIsMobile";
 
 type ModalProps = {
   open: boolean;
@@ -70,6 +71,7 @@ export default function ActionableMonospaceTextBox({
   const [qrCodeOpen, setQrCodeOpen] = useState(false);
   const [isQrCodeButtonHovered, setIsQrCodeButtonHovered] = useState(false);
   const [isRevealed, setIsRevealed] = useState(!spoilerText);
+  const isMobile = useIsMobile();
 
   const handleCopy = async () => {
     await writeText(content);
@@ -80,16 +82,7 @@ export default function ActionableMonospaceTextBox({
   return (
     <>
       <Box sx={{ position: "relative" }}>
-        <Tooltip
-          title={
-            isQrCodeButtonHovered
-              ? ""
-              : copied
-                ? "Copied to clipboard"
-                : "Click to copy"
-          }
-          arrow
-        >
+        {isMobile ? (
           <Box
             sx={{
               display: "flex",
@@ -112,22 +105,67 @@ export default function ActionableMonospaceTextBox({
                   </IconButton>
                 )}
                 {enableQrCode && (
-                  <Tooltip title="Show QR Code" arrow>
-                    <IconButton
-                      onClick={() => setQrCodeOpen(true)}
-                      onMouseEnter={() => setIsQrCodeButtonHovered(true)}
-                      onMouseLeave={() => setIsQrCodeButtonHovered(false)}
-                      size="small"
-                      sx={{ marginLeft: 1 }}
-                    >
-                      <QrCodeIcon />
-                    </IconButton>
-                  </Tooltip>
+                  <IconButton
+                    onClick={() => setQrCodeOpen(true)}
+                    size="small"
+                    sx={{ marginLeft: 1 }}
+                  >
+                    <QrCodeIcon />
+                  </IconButton>
                 )}
               </MonospaceTextBox>
             </Box>
           </Box>
-        </Tooltip>
+        ) : (
+          <Tooltip
+            title={
+              isQrCodeButtonHovered
+                ? ""
+                : copied
+                  ? "Copied to clipboard"
+                  : "Click to copy"
+            }
+            arrow
+          >
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                cursor: "pointer",
+                filter: spoilerText && !isRevealed ? "blur(8px)" : "none",
+                transition: "filter 0.3s ease",
+              }}
+            >
+              <Box sx={{ flexGrow: 1 }} onClick={handleCopy}>
+                <MonospaceTextBox light={light}>
+                  {content}
+                  {displayCopyIcon && (
+                    <IconButton
+                      onClick={handleCopy}
+                      size="small"
+                      sx={{ marginLeft: 1 }}
+                    >
+                      <FileCopyOutlined />
+                    </IconButton>
+                  )}
+                  {enableQrCode && (
+                    <Tooltip title="Show QR Code" arrow>
+                      <IconButton
+                        onClick={() => setQrCodeOpen(true)}
+                        onMouseEnter={() => setIsQrCodeButtonHovered(true)}
+                        onMouseLeave={() => setIsQrCodeButtonHovered(false)}
+                        size="small"
+                        sx={{ marginLeft: 1 }}
+                      >
+                        <QrCodeIcon />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </MonospaceTextBox>
+              </Box>
+            </Box>
+          </Tooltip>
+        )}
 
         {spoilerText && !isRevealed && (
           <Box
@@ -162,6 +200,15 @@ export default function ActionableMonospaceTextBox({
           open={qrCodeOpen}
           onClose={() => setQrCodeOpen(false)}
           content={content}
+        />
+      )}
+      {isMobile && (
+        <Snackbar
+          open={copied}
+          autoHideDuration={2000}
+          onClose={() => setCopied(false)}
+          message="Copied to clipboard"
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         />
       )}
     </>

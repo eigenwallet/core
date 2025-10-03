@@ -74,6 +74,7 @@ import { setStatus } from "store/features/nodesSlice";
 import { discoveredMakersByRendezvous } from "store/features/makersSlice";
 import { CliLog } from "models/cliModel";
 import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
+import { useIsMobile } from "utils/useIsMobile";
 
 /// These are the official donation address for the eigenwallet/core project
 const DONATION_ADDRESS_MAINNET =
@@ -318,7 +319,8 @@ export async function listSellersAtRendezvousPoint(
 
 export async function initializeContext() {
   const network = getNetwork();
-  const testnet = isTestnet();
+  const isMobile = useIsMobile();
+  const testnet = isMobile ? true : isTestnet();
   const useTor = store.getState().settings.enableTor;
 
   // Get all Bitcoin nodes without checking availability

@@ -2,6 +2,7 @@ import { ExtendedMakerStatus } from "models/apiModel";
 import { splitPeerIdFromMultiAddress } from "utils/parseUtils";
 import { CliMatches, getMatches } from "@tauri-apps/plugin-cli";
 import { Network } from "./features/settingsSlice";
+import { useIsMobile } from "../utils/useIsMobile";
 
 let matches: CliMatches;
 try {
@@ -13,10 +14,16 @@ try {
 }
 
 export function getNetwork(): Network {
-  if (isTestnet()) {
+  // TODO: Remove this once we have a proper network selector
+  const isMobile = useIsMobile();
+  if (isMobile) {
     return Network.Testnet;
   } else {
-    return Network.Mainnet;
+    if (isTestnet()) {
+      return Network.Testnet;
+    } else {
+      return Network.Mainnet;
+    }
   }
 }
 
