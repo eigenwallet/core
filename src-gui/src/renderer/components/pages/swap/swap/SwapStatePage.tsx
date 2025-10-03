@@ -23,7 +23,6 @@ import XmrLockTxInMempoolPage from "./in_progress/XmrLockInMempoolPage";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
 import InitPage from "./init/InitPage";
-import { Box } from "@mui/material";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
   if (state === null) {

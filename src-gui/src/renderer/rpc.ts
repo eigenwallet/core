@@ -280,11 +280,6 @@ export async function getCurrentSwapId() {
   return await invokeNoArgs<GetCurrentSwapResponse>("get_current_swap");
 }
 
-export async function isThereASwapRunning() {
-  const currentSwapId = await getCurrentSwapId();
-  return currentSwapId.swap_id !== null;
-}
-
 export async function getMoneroRecoveryKeys(
   swapId: string,
 ): Promise<MoneroRecoveryResponse> {

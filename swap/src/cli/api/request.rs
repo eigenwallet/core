@@ -1730,7 +1730,7 @@ where
             });
         }
 
-        tracing::info!(
+        tracing::trace!(
             swap_id = ?swap_id,
             pending_approvals = ?pending_approvals.len(),
             balance = ?balance,
