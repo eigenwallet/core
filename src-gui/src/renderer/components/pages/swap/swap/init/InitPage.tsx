@@ -1,6 +1,7 @@
 import { Box, Button, Skeleton } from "@mui/material";
 import { buyXmr } from "renderer/rpc";
 import { useSnackbar } from "notistack";
+import SearchIcon from "@mui/icons-material/Search";
 
 export default function InitPage() {
   const { enqueueSnackbar } = useSnackbar();
@@ -72,9 +73,9 @@ export default function InitPage() {
       >
         <Button
           variant="contained"
-          onClick={init}
           size="large"
           sx={{ pointerEvents: "auto" }}
+          endIcon={<SearchIcon />}
         >
           Click to view offers
         </Button>
