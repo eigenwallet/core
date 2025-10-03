@@ -57,7 +57,7 @@ export default function MoneroAddressTextField({
   }
 
   useEffect(() => {
-    if (onAddressValidityChange) {
+    if (onAddressValidityChange != null) {
       onAddressValidityChange(!errorText());
     }
   }, [address, onAddressValidityChange]);

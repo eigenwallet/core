@@ -209,8 +209,8 @@ export async function withdrawBtc(address: string): Promise<string> {
 export async function buyXmr() {
   const state = store.getState();
 
-  // Determine based on redeem and refund policy which addresses to pass in 
-  // 
+  // Determine based on redeem and refund policy which addresses to pass in
+  //
   // null means internal wallet
   const bitcoinChangeAddress =
     state.settings.bitcoinRefundPolicy === "external"

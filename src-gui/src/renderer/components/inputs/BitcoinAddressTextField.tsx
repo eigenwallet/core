@@ -16,7 +16,7 @@ export default function BitcoinAddressTextField({
   onAddressChange,
   helperText,
   allowEmpty = true,
-  onAddressValidityChange = () => {},
+  onAddressValidityChange,
   ...props
 }: BitcoinAddressTextFieldProps & TextFieldProps) {
   const placeholder = isTestnet() ? "tb1q4aelwalu..." : "bc18ociqZ9mZ...";
@@ -38,7 +38,7 @@ export default function BitcoinAddressTextField({
   }
 
   useEffect(() => {
-    if (onAddressValidityChange) {
+    if (onAddressValidityChange != null) {
       onAddressValidityChange(!errorText());
     }
   }, [address, onAddressValidityChange]);
