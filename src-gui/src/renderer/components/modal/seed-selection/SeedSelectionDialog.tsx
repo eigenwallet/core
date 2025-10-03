@@ -30,6 +30,7 @@ import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import SearchIcon from "@mui/icons-material/Search";
+import { useIsMobile } from "utils/useIsMobile";
 
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
@@ -70,19 +71,22 @@ export default function SeedSelectionDialog() {
     }
   }, [recentWallets.length]);
 
-  // Auto-open wallet if there's one available
-  useEffect(() => {
-    if (recentWallets.length > 0 && approval) {
-      const autoAccept = async () => {
-        const seedChoice: SeedChoice = {
-          type: "FromWalletPath",
-          content: { wallet_path: recentWallets[0] }
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    // Auto-open wallet if there's one available
+    useEffect(() => {
+      if (recentWallets.length > 0 && approval) {
+        const autoAccept = async () => {
+          const seedChoice: SeedChoice = {
+            type: "FromWalletPath",
+            content: { wallet_path: recentWallets[0] }
+          };
+          await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
         };
-        await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
-      };
-      autoAccept().catch(console.error);
-    }
-  }, [recentWallets.length, approval, recentWallets]);
+        autoAccept().catch(console.error);
+      }
+    }, [recentWallets.length, approval, recentWallets]);
+  }
 
   const selectWalletFile = async () => {
     const selected = await open({
@@ -123,7 +127,7 @@ export default function SeedSelectionDialog() {
   }
 
   // Don't show dialog if there's one or more wallets available
-  if (recentWallets.length > 0) {
+  if (isMobile && recentWallets.length > 0) {
     return null;
   }
 
@@ -152,6 +156,42 @@ export default function SeedSelectionDialog() {
       <MobileDialogHeader title="Create or restore a wallet" />
       <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <Box sx={{ display: "flex", flexDirection: "row", gap: 2 }}>
+          !isMobile && (
+          {/* Open existing wallet option */}
+          <Card
+            sx={{
+              cursor: "pointer",
+              border: selectedOption === "FromWalletPath" ? 2 : 1,
+              borderColor:
+                selectedOption === "FromWalletPath"
+                  ? "primary.main"
+                  : "divider",
+              "&:hover": { borderColor: "primary.main" },
+              flex: 1,
+            }}
+            onClick={() => setSelectedOption("FromWalletPath")}
+          >
+            <CardContent
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+              }}
+            >
+              <FolderOpenIcon sx={{ fontSize: 32, color: "text.secondary" }} />
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ textAlign: "center" }}
+              >
+                Open wallet file
+              </Typography>
+            </CardContent>
+          </Card>
+          )
+
           {/* Create new wallet option */}
           <Card
             sx={{
