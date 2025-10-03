@@ -1061,7 +1061,6 @@ function RedeemPolicySetting() {
             onAddressChange={(address) => {
               dispatch(setMoneroRedeemAddress(address));
             }}
-            onAddressValidityChange={() => {}}
             fullWidth
             variant="outlined"
             allowEmpty={moneroRedeemPolicy === RedeemPolicy.Internal}
@@ -1128,7 +1127,6 @@ function RefundPolicySetting() {
             onAddressChange={(address) => {
               dispatch(setBitcoinRefundAddress(address));
             }}
-            onAddressValidityChange={() => {}}
             fullWidth
             variant="outlined"
             disabled={bitcoinRefundPolicy !== RefundPolicy.External}

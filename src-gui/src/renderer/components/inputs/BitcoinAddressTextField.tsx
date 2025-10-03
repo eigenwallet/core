@@ -6,17 +6,17 @@ import { isBtcAddressValid } from "utils/conversionUtils";
 type BitcoinAddressTextFieldProps = {
   address: string;
   onAddressChange: (address: string) => void;
-  onAddressValidityChange: (valid: boolean) => void;
   helperText: string;
+  onAddressValidityChange?: (valid: boolean) => void;
   allowEmpty?: boolean;
 };
 
 export default function BitcoinAddressTextField({
   address,
   onAddressChange,
-  onAddressValidityChange,
   helperText,
   allowEmpty = true,
+  onAddressValidityChange = () => {},
   ...props
 }: BitcoinAddressTextFieldProps & TextFieldProps) {
   const placeholder = isTestnet() ? "tb1q4aelwalu..." : "bc18ociqZ9mZ...";
@@ -38,7 +38,9 @@ export default function BitcoinAddressTextField({
   }
 
   useEffect(() => {
-    onAddressValidityChange(!errorText);
+    if (onAddressValidityChange) {
+      onAddressValidityChange(!errorText());
+    }
   }, [address, errorText, onAddressValidityChange]);
 
   return (
