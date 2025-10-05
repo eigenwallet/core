@@ -30,6 +30,8 @@ import {
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
 } from "models/tauriModel";
+import { Alert } from "models/apiModel";
+import { fnv1a } from "utils/hash";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
@@ -326,4 +328,18 @@ export function useTotalUnreadMessagesCount(): number {
   }
 
   return totalUnreadCount;
+}
+
+/// Returns all the alerts that have not been acknowledged
+export function useAlerts(): Alert[] {
+  return useAppSelector((state) =>
+    state.alerts.alerts.filter(
+      (alert) =>
+        // Check if there is an acknowledgement with
+        // the same id and the same title hash
+        !state.alerts.acknowledgedAlerts.some(
+          (ack) => ack.id === alert.id && ack.titleHash === fnv1a(alert.title),
+        ),
+    ),
+  );
 }

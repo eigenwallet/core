@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Remember acknowledged alerts and do not show them again.
+
 ## [3.0.7] - 2025-10-04
 
 ## [3.0.6] - 2025-10-02
