@@ -1,5 +1,7 @@
 import { Box, Button, Typography } from "@mui/material";
-import { open } from "@tauri-apps/plugin-shell";
+import { open as openDesktop } from "@tauri-apps/plugin-shell";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useIsMobile } from "utils/useIsMobile";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 
 const GITHUB_ISSUE_URL =
@@ -8,6 +10,8 @@ const MATRIX_ROOM_URL = "https://matrix.to/#/#unstoppableswap:matrix.org";
 export const DISCORD_URL = "https://discord.gg/aqSyyJ35UW";
 
 export default function ContactInfoBox() {
+  const isMobile = useIsMobile();
+  const openLink = isMobile ? openUrl : openDesktop;
   return (
     <InfoBox
       title="Get in touch"
@@ -19,13 +23,13 @@ export default function ContactInfoBox() {
       }
       additionalContent={
         <Box sx={{ display: "flex", gap: 1 }}>
-          <Button variant="outlined" onClick={() => open(GITHUB_ISSUE_URL)}>
+          <Button variant="outlined" onClick={() => openLink(GITHUB_ISSUE_URL)}>
             Open GitHub issue
           </Button>
-          <Button variant="outlined" onClick={() => open(MATRIX_ROOM_URL)}>
+          <Button variant="outlined" onClick={() => openLink(MATRIX_ROOM_URL)}>
             Join Matrix room
           </Button>
-          <Button variant="outlined" onClick={() => open(DISCORD_URL)}>
+          <Button variant="outlined" onClick={() => openLink(DISCORD_URL)}>
             Join Discord
           </Button>
         </Box>
