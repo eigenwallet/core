@@ -21,7 +21,7 @@ export function getNetwork(): Network {
 }
 
 export function isTestnet() {
-  return matches.args.testnet?.value === true;
+  return true;
 }
 
 export const isDevelopment = true;
