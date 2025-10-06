@@ -8,6 +8,7 @@ import {
     Chip,
     useTheme,
     Skeleton,
+    Button,
 } from '@mui/material'
 import {
     Close as CloseIcon,
@@ -20,6 +21,9 @@ import {
 import dayjs from 'dayjs'
 import ActionableMonospaceTextBox from 'renderer/components/other/ActionableMonospaceTextBox'
 import ConfirmationsBadge from 'renderer/components/pages/monero/components/Transactions/ConfirmationsBadge'
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { getMoneroTxExplorerUrl } from 'utils/conversionUtils'
+import { isTestnet } from 'store/config'
 
 interface TransactionDetailsBottomSheetProps {
     open: boolean
@@ -176,168 +180,118 @@ export default function TransactionDetailsBottomSheet({
                 },
             }}
         >
-            <Box sx={{ p: 3, pb: 4 }}>
-                {/* Header */}
-                <Box
-                    sx={{
-                        position: "relative",
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 2,
-                        mb: 3,
-                    }}
-                >
-                    <IconButton onClick={onClose} size="small" sx={{position: "absolute", left: 0}}>
-                        <CloseIcon />
-                    </IconButton>
-                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        Details
-                    </Typography>
-                </Box>
-
-                {/* Transaction Summary Section */}
-                <Box
-                    sx={{
-                        textAlign: 'center',
-                        mb: 4,
-                        py: 3,
-                    }}
-                >
-                    {/* Transaction type */}
-                    <Typography
-                        variant="h5"
-                        sx={{
-                            fontWeight: 600,
-                            mb: 1,
-                            color: 'text.primary',
-                        }}
-                    >
-                        {transactionType}
-                    </Typography>
-
-                    {/* Date */}
-                    <Typography
-                        variant="body2"
-                        sx={{
-                            color: 'text.secondary',
-                            mb: 3,
-                        }}
-                    >
-                        {displayDate}
-                    </Typography>
-
-                    {/* Amount in XMR */}
+            <Box sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+            }}>
+                <Box sx={{ p: 3, pb: 4 }}>
+                    {/* Header */}
                     <Box
                         sx={{
+                            position: "relative",
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: 0.5,
-                            mb: 1,
+                            gap: 2,
+                            mb: 3,
                         }}
                     >
-                        <Typography
-                            variant="h4"
-                            sx={{
-                                fontWeight: 'bold',
-                                color: isIncoming
-                                    ? 'success.main'
-                                    : 'error.main',
-                                opacity: !isIncoming ? 1 : 0,
-                            }}
-                        >
-                            {!isIncoming ? '−' : ''}
-                        </Typography>
-                        <Typography
-                            variant="h4"
-                            sx={{
-                                fontWeight: 'bold',
-                                color: isIncoming
-                                    ? 'success.main'
-                                    : 'error.main',
-                            }}
-                        >
-                            <PiconeroAmount
-                                amount={transaction.amount}
-                                labelStyles={{ fontSize: 24, ml: -0.5 }}
-                                disableTooltip
-                            />
+                        <IconButton onClick={onClose} size="small" sx={{position: "absolute", left: 0}}>
+                            <CloseIcon />
+                        </IconButton>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                            Details
                         </Typography>
                     </Box>
 
-                    {/* Fiat equivalent */}
-                    <Typography
-                        variant="body1"
+                    {/* Transaction Summary Section */}
+                    <Box
                         sx={{
-                            color: 'text.secondary',
+                            textAlign: 'center',
+                            mb: 4,
+                            py: 3,
                         }}
                     >
-                        <FiatPiconeroAmount amount={transaction.amount} />
-                    </Typography>
-                </Box>
-
-                {/* Transaction Details Section */}
-                <Stack spacing={3}>
-                    {/* Transaction ID field */}
-                    <Box>
+                        {/* Transaction type */}
                         <Typography
-                            variant="caption"
+                            variant="h5"
+                            sx={{
+                                fontWeight: 600,
+                                mb: 1,
+                                color: 'text.primary',
+                            }}
+                        >
+                            {transactionType}
+                        </Typography>
+
+                        {/* Date */}
+                        <Typography
+                            variant="body2"
                             sx={{
                                 color: 'text.secondary',
-                                textTransform: 'uppercase',
-                                fontWeight: 600,
-                                letterSpacing: 1,
-                                mb: 1,
-                                display: 'block',
+                                mb: 3,
                             }}
                         >
-                            Transaction ID
+                            {displayDate}
                         </Typography>
-                        <ActionableMonospaceTextBox
-                            content={transaction.tx_hash}
-                            enableQrCode={false}
-                        />
-                    </Box>
 
-                    {/* Fees field */}
-                    <Box sx={{display: "flex", flexDirection: "row", gap: 2}}>
-                        <Box sx={{flex: 1}}>
+                        {/* Amount in XMR */}
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 0.5,
+                                mb: 1,
+                            }}
+                        >
                             <Typography
-                                variant="caption"
+                                variant="h4"
                                 sx={{
-                                    color: 'text.secondary',
-                                    textTransform: 'uppercase',
-                                    fontWeight: 600,
-                                    letterSpacing: 1,
-                                    mb: 1,
-                                    display: 'block',
+                                    fontWeight: 'bold',
+                                    color: isIncoming
+                                        ? 'success.main'
+                                        : 'error.main',
+                                    opacity: !isIncoming ? 1 : 0,
                                 }}
                             >
-                                Fees
+                                {!isIncoming ? '−' : ''}
                             </Typography>
-                            <Box
+                            <Typography
+                                variant="h4"
                                 sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 0.5,
-                                    fontFamily: 'monospace',
-                                    backgroundColor: theme.palette.grey[900],
-                                    p: 1,
-                                    borderRadius: 2,
-                                    width: "max-content",
+                                    fontWeight: 'bold',
+                                    color: isIncoming
+                                        ? 'success.main'
+                                        : 'error.main',
                                 }}
                             >
                                 <PiconeroAmount
-                                    amount={transaction.fee}
-                                    fixedPrecision={12}
-                                    labelStyles={{ fontSize: 14 }}
+                                    amount={transaction.amount}
+                                    labelStyles={{ fontSize: 24, ml: -0.5 }}
+                                    disableTooltip
                                 />
-                            </Box>
+                            </Typography>
                         </Box>
 
-                        {/* Confirmations field */}
-                        <Box sx={{flex: 0.5}}>
+                        {/* Fiat equivalent */}
+                        <Typography
+                            variant="body1"
+                            sx={{
+                                color: 'text.secondary',
+                            }}
+                        >
+                            <FiatPiconeroAmount amount={transaction.amount} />
+                        </Typography>
+                    </Box>
+
+                    {/* Transaction Details Section */}
+                    <Stack spacing={3}>
+                        {/* Transaction ID field */}
+                        <Box>
                             <Typography
                                 variant="caption"
                                 sx={{
@@ -349,25 +303,97 @@ export default function TransactionDetailsBottomSheet({
                                     display: 'block',
                                 }}
                             >
-                                Confirmations
+                                Transaction ID
                             </Typography>
-                            <Box sx={{p: 1, display: "flex", justifyContent: "flex-end"}}>
-                              {transaction.confirmations < 10 ? (
-                                <ConfirmationsBadge confirmations={transaction.confirmations} />
-                              ) : (
-                                <Typography
-                                    variant="body2"
-                                    sx={{
-                                      color: 'text.secondary',
-                                    }}
-                                    >
-                                    {transaction.confirmations}
-                                </Typography>
-                              )}
-                              </Box>
+                            <ActionableMonospaceTextBox
+                                content={transaction.tx_hash}
+                                enableQrCode={false}
+                            />
                         </Box>
-                    </Box>
-                </Stack>
+
+                        {/* Fees field */}
+                        <Box sx={{display: "flex", flexDirection: "row", gap: 2}}>
+                            <Box sx={{flex: 1}}>
+                                <Typography
+                                    variant="caption"
+                                    sx={{
+                                        color: 'text.secondary',
+                                        textTransform: 'uppercase',
+                                        fontWeight: 600,
+                                        letterSpacing: 1,
+                                        mb: 1,
+                                        display: 'block',
+                                    }}
+                                >
+                                    Fees
+                                </Typography>
+                                <Box
+                                    sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0.5,
+                                        fontFamily: 'monospace',
+                                        backgroundColor: theme.palette.grey[900],
+                                        p: 1,
+                                        borderRadius: 2,
+                                        width: "max-content",
+                                    }}
+                                >
+                                    <PiconeroAmount
+                                        amount={transaction.fee}
+                                        fixedPrecision={12}
+                                        labelStyles={{ fontSize: 14 }}
+                                    />
+                                </Box>
+                            </Box>
+
+                            {/* Confirmations field */}
+                            <Box sx={{flex: 0.5}}>
+                                <Typography
+                                    variant="caption"
+                                    sx={{
+                                        color: 'text.secondary',
+                                        textTransform: 'uppercase',
+                                        fontWeight: 600,
+                                        letterSpacing: 1,
+                                        mb: 1,
+                                        display: 'block',
+                                    }}
+                                >
+                                    Confirmations
+                                </Typography>
+                                <Box sx={{p: 1, display: "flex", justifyContent: "flex-end"}}>
+                                {transaction.confirmations < 10 ? (
+                                    <ConfirmationsBadge confirmations={transaction.confirmations} />
+                                ) : (
+                                    <Typography
+                                        variant="body2"
+                                        sx={{
+                                        color: 'text.secondary',
+                                        }}
+                                        >
+                                        {transaction.confirmations}
+                                    </Typography>
+                                )}
+                                </Box>
+                            </Box>
+                        </Box>
+                    </Stack>
+                </Box>
+                <Box sx={{ pb: 2, width: '90%' }}>
+                    <Button 
+                        variant="outlined" 
+                        sx={{
+                            width: '100%',
+                            p: 1,
+                            fontSize: 16,
+                            borderRadius: 3,
+                        }}
+                        onClick={() => openUrl(getMoneroTxExplorerUrl(transaction.tx_hash, isTestnet()).trim())}
+                    >
+                        View on Explorer
+                    </Button>
+                </Box>
             </Box>
         </Drawer>
     )
