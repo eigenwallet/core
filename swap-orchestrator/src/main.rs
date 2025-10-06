@@ -1,4 +1,5 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use clap::Parser;
 use dialoguer::Select;
 use dialoguer::theme::ColorfulTheme;
 use std::fs::File;
@@ -17,53 +18,77 @@ use swap_orchestrator::prompt::{self, ElectrumServerType, MoneroNodeType};
 const CONFIG_PATH: &str = "config.toml";
 const DOCKER_COMPOSE_PATH: &str = "docker-compose.yml";
 
-fn main() {
+#[derive(clap::Parser)]
+struct Args {
+    #[arg(
+        long,
+        default_value = "false",
+        long_help = "Specify this flag when you want to run on Bitcoin Testnet and Monero Stagenet. Mainly used for development."
+    )]
+    testnet: bool,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(clap::Subcommand)]
+enum Commands {
+    Init,
+    Start,
+}
+
+#[tokio::main]
+async fn main() {
+    let args = Args::parse();
+
     // Default to mainnet, switch to testnet when `--testnet` flag is provided
-    let (mut bitcoin_network, mut monero_network) =
-        (bitcoin::Network::Bitcoin, monero::Network::Mainnet);
+    let (bitcoin_network, monero_network) = if args.testnet {
+        (bitcoin::Network::Bitcoin, monero::Network::Mainnet)
+    } else {
+        (bitcoin::Network::Testnet, monero::Network::Stagenet)
+    };
 
-    for arg in std::env::args() {
-        match arg.as_str() {
-            "--help" => {
-                println!(
-                    "Look at our documentation: https://github.com/eigenwallet/core/blob/master/swap-orchestrator/README.md"
-                );
-                return;
-            }
-            "--testnet" => {
-                println!(
-                    "Detected `--testnet` flag, switching to Bitcoin Testnet3 and Monero Stagenet"
-                );
-                bitcoin_network = bitcoin::Network::Testnet;
-                monero_network = monero::Network::Stagenet;
-            }
-            _ => (),
-        }
+    let result = match args.command {
+        None | Some(Commands::Init) => handle_init_command(bitcoin_network, monero_network).await,
+        Some(Commands::Start) => handle_start_command().await,
+    };
+
+    if let Err(err) = result {
+        println!(
+            "The orchestrator command you executed just failed: \n\n{:?}\n\nThis is unexpected, please open a GitHub issue on our official repo: \nhttps://www.github.com/eigenwallet/core/issues/new",
+            err
+        );
     }
+}
 
-    let existing_config: Option<anyhow::Result<Config>> =
-        match swap_env::config::read_config(PathBuf::from(CONFIG_PATH)) {
-            Ok(Ok(config)) => Some(Ok(config)),
-            Ok(Err(ConfigNotInitialized)) => None,
-            Err(err) => Some(Err(anyhow!(err))),
-        };
+async fn handle_start_command() -> anyhow::Result<()> {
+    let docker_client = bollard::Docker::connect_with_local_defaults();
 
-    let (config, compose) = setup_wizard(existing_config, bitcoin_network, monero_network).unwrap();
+    Ok(())
+}
 
-    // Write output to files
-    let config_stringified = toml::to_string(&config).unwrap();
-    File::create(CONFIG_PATH)
-        .unwrap()
-        .write_all(config_stringified.as_bytes())
-        .unwrap();
+async fn handle_init_command(
+    bitcoin_network: bitcoin::Network,
+    monero_network: monero::Network,
+) -> anyhow::Result<()> {
+    // Read the already existing config, if it's there
+    let existing_config: Option<Result<Config>> =
+        swap_env::config::read_config(PathBuf::from(CONFIG_PATH))
+            .ok()
+            .map(|res| res.context("Couldn't parse config.toml"));
 
-    let compose_stringified = compose.build();
-    File::create(DOCKER_COMPOSE_PATH)
-        .unwrap()
-        .write_all(compose_stringified.as_bytes())
-        .unwrap();
+    // Run the wizard and generate the configs, if necessary.
+    // If the maker config already exists, it will be returned as-is and only the docker config re-generated.
+    let (maker_config, compose_config) =
+        setup_wizard(existing_config, bitcoin_network, monero_network)
+            .context("Couldn't execute swap wizard")?;
 
-    println!("Ok. run `docker compose up -d`.");
+    // Write the configs to their files.
+    let maker_config_stringified = toml::to_string(&maker_config)?;
+    File::create(CONFIG_PATH)?.write_all(maker_config_stringified.as_bytes())?;
+    let compose_config_stringified = compose_config.build();
+    File::create(DOCKER_COMPOSE_PATH)?.write_all(compose_config_stringified.as_bytes())?;
+
+    Ok(())
 }
 
 /// Take a possibly already existing config.toml and (if necessary) go through the wizard steps necessary to
