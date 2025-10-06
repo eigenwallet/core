@@ -1,5 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
+use url::Url;
+
 ///! This meta module describes **how to run** containers
 ///
 /// Currently this only includes which flags we need to pass to the binaries
@@ -17,7 +19,8 @@ const BITCOIN_DATA: &str = "bitcoin-data";
 const ELECTRS_DATA: &str = "electrs-data";
 const ASB_DATA: &str = "asb-data";
 
-/// Add all the services/volumes to the compose config
+/// Add all the services/volumes to the compose config.
+/// Returns urls for the electrum rpc and monero rpc endpoints.
 #[allow(unused_variables)]
 pub fn add_maker_services(
     compose: &mut ComposeConfig,
@@ -25,7 +28,7 @@ pub fn add_maker_services(
     monero_network: monero::Network,
     create_full_bitcoin_node: bool,
     create_full_monero_node: bool,
-) {
+) -> (Arc<Volume>, Url, Url) {
     let (monerod_data, monerod, monerod_rpc_port) =
         monerod(compose, monero_network, create_full_monero_node);
     let (bitcoind_data, bitcoind, bitcoind_rpc_port, bitcoind_p2p_port) =
@@ -43,13 +46,28 @@ pub fn add_maker_services(
         compose,
         bitcoin_network,
         monero_network,
-        electrs,
-        monerod,
+        electrs.clone(),
+        monerod.clone(),
         true,
         PathBuf::from("./config.toml"),
     );
     let asb_controller = asb_controller(compose, asb_rpc_port, asb.clone());
-    let asb_tracing_logger = asb_tracing_logger(compose, asb, asb_data);
+    let asb_tracing_logger = asb_tracing_logger(compose, asb, asb_data.clone());
+
+    let electrum_rpc_url: Url = format!(
+        "tcp://{electrs_name}:{electrs_port}",
+        electrs_name = electrs.name()
+    )
+    .parse()
+    .expect("valid url");
+    let monerod_rpc_url: Url = format!(
+        "http://{monerod_name}:{monerod_rpc_port}",
+        monerod_name = monerod.name()
+    )
+    .parse()
+    .expect("valid url");
+
+    (asb_data, electrum_rpc_url, monerod_rpc_url)
 }
 
 /// Add the servie/volume to the compose config + return them + the rpc port

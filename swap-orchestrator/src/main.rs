@@ -1,8 +1,3 @@
-mod compose;
-mod containers;
-mod images;
-mod prompt;
-
 use anyhow::{Result, anyhow, bail};
 use dialoguer::Select;
 use dialoguer::theme::ColorfulTheme;
@@ -12,15 +7,15 @@ use std::path::PathBuf;
 use swap_env::config::{
     Bitcoin, Config, ConfigNotInitialized, Data, Maker, Monero, Network, TorConf,
 };
-use swap_env::defaults::{
-    Defaults, default_electrum_servers_mainnet, default_electrum_servers_testnet,
-};
-use swap_env::prompt::{self as config_prompt, print_info_box};
+use swap_env::prompt::{self as config_prompt};
 use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
-use swap_orchestrator::compose::{Command, ComposeConfig, Flag, ImageSource, Mount, Service};
-use url::Url;
+use swap_orchestrator::compose::ComposeConfig;
+use swap_orchestrator::containers::add_maker_services;
+
+use swap_orchestrator::prompt::{self, ElectrumServerType, MoneroNodeType};
 
 const CONFIG_PATH: &str = "config.toml";
+const DOCKER_COMPOSE_PATH: &str = "docker-compose.yml";
 
 fn main() {
     // Default to mainnet, switch to testnet when `--testnet` flag is provided
@@ -46,16 +41,6 @@ fn main() {
         }
     }
 
-    let defaults = match (bitcoin_network, monero_network) {
-        (bitcoin::Network::Bitcoin, monero::Network::Mainnet) => {
-            Mainnet::get_config_file_defaults().expect("defaults to be available")
-        }
-        (bitcoin::Network::Testnet, monero::Network::Stagenet) => {
-            Testnet::get_config_file_defaults().expect("defaults to be available")
-        }
-        _ => panic!("Unsupported Bitcoin / Monero network combination"),
-    };
-
     let existing_config: Option<anyhow::Result<Config>> =
         match swap_env::config::read_config(PathBuf::from(CONFIG_PATH)) {
             Ok(Ok(config)) => Some(Ok(config)),
@@ -63,37 +48,34 @@ fn main() {
             Err(err) => Some(Err(anyhow!(err))),
         };
 
-    let (config, create_full_bitcoin_node, create_full_monero_node) =
-        setup_wizard(existing_config, defaults).unwrap();
-    {
-        let mut compose = ComposeConfig::default();
+    let (config, compose) = setup_wizard(existing_config, bitcoin_network, monero_network).unwrap();
 
-        containers::add_maker_services(
-            &mut compose,
-            bitcoin_network,
-            monero_network,
-            create_full_bitcoin_node,
-            create_full_monero_node,
-        );
+    // Write output to files
+    let config_stringified = toml::to_string(&config).unwrap();
+    File::create(CONFIG_PATH)
+        .unwrap()
+        .write_all(config_stringified.as_bytes())
+        .unwrap();
 
-        let yml_config = compose.build();
+    let compose_stringified = compose.build();
+    File::create(DOCKER_COMPOSE_PATH)
+        .unwrap()
+        .write_all(compose_stringified.as_bytes())
+        .unwrap();
 
-        File::create("docker-compose.yml")
-            .unwrap()
-            .write_all(yml_config.as_bytes())
-            .unwrap();
-    }
+    println!("Ok. run `docker compose up -d`.");
 }
 
 /// Take a possibly already existing config.toml and (if necessary) go through the wizard steps necessary to
 /// (if necessary) generate it and the docker-compose.yml
 ///
 /// # Returns
-/// The complete config, whether to create a full bitcoin/electrum node and whether to create a full monero node
+/// The complete maker config.toml and docker compose config.
 fn setup_wizard(
     existing_config: Option<Result<Config>>,
-    defaults: Defaults,
-) -> Result<(Config, bool, bool)> {
+    bitcoin_network: bitcoin::Network,
+    monero_network: monero::Network,
+) -> Result<(Config, ComposeConfig)> {
     // If we already have a valid config, just use it and deduce the monero/bitcoin settings
     if let Some(Ok(config)) = existing_config {
         // If the config points to our local electrs node, we must have previously created it
@@ -109,7 +91,16 @@ fn setup_wizard(
             .as_ref()
             .is_some_and(|url| url.as_str().contains("http://monerod:"));
 
-        return Ok((config, create_full_bitcoin_node, create_full_monero_node));
+        let mut compose = ComposeConfig::default();
+        add_maker_services(
+            &mut compose,
+            config.bitcoin.network,
+            config.monero.network,
+            create_full_bitcoin_node,
+            create_full_monero_node,
+        );
+
+        return Ok((config, compose));
     }
 
     // If we have an invalid config we offer to procede as if there was no config and rename the old one
@@ -138,33 +129,95 @@ fn setup_wizard(
         println!("Renamed your old config to `{proposed_filename}`.")
     }
 
+    let defaults = match (bitcoin_network, monero_network) {
+        (bitcoin::Network::Bitcoin, monero::Network::Mainnet) => {
+            Mainnet::get_config_file_defaults()?
+        }
+        (bitcoin::Network::Testnet, monero::Network::Stagenet) => {
+            Testnet::get_config_file_defaults()?
+        }
+        (a, b) => bail!("unsupported network combo (bitocoin={a}, monero={b:?}"),
+    };
+
     // At this point we either have no or an invalid config, so we do the whole wizard.
     println!("Starting the wizard.");
 
-    // we need
-    //  - monero node type
-    //  - electrum node type
-    //  - min buy
-    //  - max buy
-    //  - markup
-    //  - rendezvous points
-    //  - hidden service
-    //  - listen addresses
-    //  - tip
-
+    // Maker questions (spread, max, min etc)
     let min_buy = config_prompt::min_buy_amount()?;
     let max_buy = config_prompt::max_buy_amount()?;
     let markup = config_prompt::ask_spread()?;
+    // Networking: rendezvous points, hidden service, etc.
     let rendezvous_points = config_prompt::rendezvous_points()?;
     let hidden_service = config_prompt::tor_hidden_service()?;
     let listen_addresses = config_prompt::listen_addresses(&defaults.listen_address_tcp)?;
-
+    // Monero and Electrum node types (local vs remote)
     let monero_node_type = prompt::monero_node_type();
     let electrum_node_type = prompt::electrum_server_type(&defaults.electrum_rpc_urls);
-
+    // Whether to tip the devs
     let tip = config_prompt::developer_tip()?;
 
-    bail!("unimplemented")
+    // Derive docker compose config from
+    let create_full_bitcoin_node = matches!(electrum_node_type, ElectrumServerType::Included);
+    let create_full_monero_node = matches!(monero_node_type, MoneroNodeType::Included);
+
+    let mut compose = ComposeConfig::default();
+    let (asb_data, compose_electrs_url, compose_monerd_rpc_url) = add_maker_services(
+        &mut compose,
+        bitcoin_network,
+        monero_network,
+        create_full_bitcoin_node,
+        create_full_monero_node,
+    );
+
+    let actual_electrum_rpc_urls = match electrum_node_type {
+        ElectrumServerType::Included => vec![compose_electrs_url],
+        ElectrumServerType::Remote(remote_nodes) => remote_nodes,
+    };
+    // None means Monero RPC pool
+    let actual_monerod_url = match monero_node_type {
+        MoneroNodeType::Included => Some(compose_monerd_rpc_url),
+        MoneroNodeType::Remote(remote_node) => Some(remote_node),
+        MoneroNodeType::Pool => None,
+    };
+
+    let config = Config {
+        data: Data {
+            dir: asb_data.as_root_dir(),
+        },
+        maker: Maker {
+            max_buy_btc: max_buy,
+            min_buy_btc: min_buy,
+            ask_spread: markup,
+            external_bitcoin_redeem_address: None,
+            price_ticker_ws_url: defaults.price_ticker_ws_url,
+            developer_tip: tip,
+        },
+        bitcoin: Bitcoin {
+            electrum_rpc_urls: actual_electrum_rpc_urls,
+            target_block: defaults.bitcoin_confirmation_target,
+            // None means use default from env.rs
+            finality_confirmations: None,
+            network: bitcoin_network,
+            use_mempool_space_fee_estimation: defaults.use_mempool_space_fee_estimation,
+        },
+        monero: Monero {
+            daemon_url: actual_monerod_url,
+            // None means use default from env.rs
+            finality_confirmations: None,
+            network: monero_network,
+        },
+        network: Network {
+            listen: listen_addresses,
+            rendezvous_point: rendezvous_points,
+            external_addresses: vec![],
+        },
+        tor: TorConf {
+            register_hidden_service: hidden_service,
+            ..Default::default()
+        },
+    };
+
+    Ok((config, compose))
 }
 
 fn unix_epoch_secs() -> u64 {
