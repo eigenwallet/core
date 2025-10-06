@@ -317,6 +317,7 @@ pub async fn main() -> Result<()> {
                     monero_wallet.clone(),
                     event_loop_service,
                     db,
+                    Arc::new(kraken_rate.clone()),
                 )
                 .await?;
 

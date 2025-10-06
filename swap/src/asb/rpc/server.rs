@@ -1,6 +1,7 @@
 use crate::asb::event_loop::EventLoopService;
 use crate::protocol::Database;
 use crate::{bitcoin, monero};
+use swap_feed::KrakenRate;
 use anyhow::{Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
@@ -8,7 +9,8 @@ use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
-    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse, Swap,
+    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, 
+    MultiaddressesResponse, SetSpreadRequest, SpreadResponse, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -24,6 +26,7 @@ impl RpcServer {
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
+        kraken_rate: Arc<KrakenRate>,
     ) -> Result<Self> {
         let server = ServerBuilder::default()
             .build((host, port))
@@ -37,6 +40,7 @@ impl RpcServer {
             monero_wallet,
             event_loop_service,
             db,
+            kraken_rate,
         };
         let handle = server.start(rpc_impl.into_rpc());
 
@@ -58,6 +62,7 @@ pub struct RpcImpl {
     monero_wallet: Arc<monero::Wallets>,
     event_loop_service: EventLoopService,
     db: Arc<dyn Database + Send + Sync>,
+    kraken_rate: Arc<KrakenRate>,
 }
 
 #[async_trait::async_trait]
@@ -158,6 +163,88 @@ impl AsbApiServer for RpcImpl {
 
         Ok(swaps)
     }
+
+    async fn get_spread(&self) -> Result<SpreadResponse, ErrorObjectOwned> {
+        let current_spread = self.kraken_rate.get_spread().await
+            .map_err(|e| ErrorObjectOwned::owned(
+                ErrorCode::InternalError.code(),
+                format!("Failed to get current spread: {}", e),
+                None::<()>,
+            ))?;
+        
+        Ok(SpreadResponse { 
+            current_spread,
+        })
+    }
+
+    async fn set_spread(&self, request: SetSpreadRequest) -> Result<(), ErrorObjectOwned> {
+        // Validate spread is between 0 and 1
+        if request.spread < rust_decimal::Decimal::ZERO || request.spread > rust_decimal::Decimal::ONE {
+            return Err(ErrorObjectOwned::owned(
+                ErrorCode::InvalidParams.code(),
+                "Spread must be between 0 and 1",
+                None::<()>,
+            ));
+        }
+
+        // Decimal doesn't support NaN or infinity, so this validation is not needed
+
+        // Validate spread is not negative zero (edge case)
+        if request.spread.is_zero() && request.spread.is_sign_negative() {
+            return Err(ErrorObjectOwned::owned(
+                ErrorCode::InvalidParams.code(),
+                "Spread cannot be negative zero",
+                None::<()>,
+            ));
+        }
+
+        // Get current spread for potential rollback
+        let old_spread = self.kraken_rate.get_spread().await
+            .map_err(|e| ErrorObjectOwned::owned(
+                ErrorCode::InternalError.code(),
+                format!("Failed to get current spread: {}", e),
+                None::<()>,
+            ))?;
+
+        // Log the spread change for audit purposes
+        tracing::info!(
+            "Spread updated from {} to {} ({}% to {}%)",
+            old_spread,
+            request.spread,
+            old_spread * rust_decimal::Decimal::from(100),
+            request.spread * rust_decimal::Decimal::from(100)
+        );
+
+        // Update spread
+        self.kraken_rate.update_spread(request.spread).await
+            .map_err(|e| ErrorObjectOwned::owned(
+                ErrorCode::InternalError.code(),
+                format!("Failed to update spread: {}", e),
+                None::<()>,
+            ))?;
+
+        // Clear the quote cache to ensure new quotes use the updated spread
+        if let Err(e) = self.event_loop_service.clear_quote_cache().await {
+            tracing::error!("Failed to clear quote cache after spread update: {}", e);
+            // Rollback spread to previous value
+            if let Err(rollback_err) = self.kraken_rate.update_spread(old_spread).await {
+                tracing::error!("CRITICAL: Failed to rollback spread after cache invalidation failure: {}", rollback_err);
+                return Err(ErrorObjectOwned::owned(
+                    ErrorCode::InternalError.code(),
+                    "Failed to update spread and rollback failed - system may be in inconsistent state",
+                    None::<()>,
+                ));
+            }
+            return Err(ErrorObjectOwned::owned(
+                ErrorCode::InternalError.code(),
+                "Failed to clear quote cache after spread update - spread has been rolled back",
+                None::<()>,
+            ));
+        }
+
+        Ok(())
+    }
+
 }
 
 trait IntoJsonRpcResult<T> {

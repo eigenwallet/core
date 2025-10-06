@@ -11158,6 +11158,7 @@ dependencies = [
  "clap 4.5.48",
  "jsonrpsee",
  "monero",
+ "rust_decimal",
  "rustyline",
  "serde_json",
  "shell-words",
@@ -11171,6 +11172,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin 0.32.7",
  "jsonrpsee",
+ "rust_decimal",
  "serde",
  "serde_json",
  "tokio",

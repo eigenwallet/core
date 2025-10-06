@@ -522,6 +522,10 @@ where
                             let count = self.swarm.connected_peers().count();
                             let _ = respond_to.send(count);
                         }
+                        EventLoopRequest::ClearQuoteCache { respond_to } => {
+                            self.quote_cache.invalidate_all();
+                            let _ = respond_to.send(());
+                        }
                     }
                 }
             }
@@ -776,6 +780,9 @@ mod service {
         GetActiveConnections {
             respond_to: oneshot::Sender<usize>,
         },
+        ClearQuoteCache {
+            respond_to: oneshot::Sender<()>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -804,6 +811,16 @@ mod service {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GetActiveConnections { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Clear the quote cache to force regeneration with new spread
+        pub async fn clear_quote_cache(&self) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::ClearQuoteCache { respond_to: tx })
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))

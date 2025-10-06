@@ -84,6 +84,32 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             let response = client.bitcoin_seed().await?;
             println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}", response.descriptor);
         }
+                Cmd::GetSpread => {
+                    let response = client.get_spread().await?;
+                    let spread_percentage = response.current_spread * rust_decimal::Decimal::from(100);
+                    println!("Current spread: {:.4}%", spread_percentage);
+                }
+        Cmd::SetSpread { spread } => {
+            // Parse spread as Decimal to avoid f64 precision loss
+            let spread_decimal = spread.parse::<rust_decimal::Decimal>()
+                .map_err(|e| anyhow::anyhow!("Invalid spread format: {}. Use decimal format like '0.05' for 5%", e))?;
+
+            // Validate spread bounds
+            if spread_decimal < rust_decimal::Decimal::ZERO || spread_decimal > rust_decimal::Decimal::ONE {
+                return Err(anyhow::anyhow!("Spread must be between 0.0 and 1.0 (0% to 100%)"));
+            }
+
+            // Validate spread is not NaN or infinity (Decimal doesn't have these methods, but we can check for special values)
+            // Decimal doesn't support NaN or infinity, so this validation is not needed for Decimal
+
+            let request = swap_controller_api::SetSpreadRequest {
+                spread: spread_decimal,
+            };
+
+            client.set_spread(request).await?;
+            let spread_percentage = spread_decimal * rust_decimal::Decimal::from(100);
+            println!("Spread set to {:.4}%", spread_percentage);
+        }
     }
     Ok(())
 }

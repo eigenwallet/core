@@ -3,6 +3,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
+use std::sync::{Arc, RwLock};
 
 /// Represents the rate at which we are willing to trade 1 XMR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +25,7 @@ impl Rate {
     pub fn new(ask: bitcoin::Amount, ask_spread: Decimal) -> Self {
         Self { ask, ask_spread }
     }
+
 
     /// Computes the asking price at which we are willing to sell 1 XMR.
     ///
@@ -111,17 +113,31 @@ impl crate::traits::LatestRate for FixedRate {
 /// spread.
 #[derive(Debug, Clone)]
 pub struct KrakenRate {
-    ask_spread: Decimal,
+    ask_spread: Arc<RwLock<Decimal>>,
     price_updates: crate::kraken::PriceUpdates,
 }
 
 impl KrakenRate {
     pub fn new(ask_spread: Decimal, price_updates: crate::kraken::PriceUpdates) -> Self {
         Self {
-            ask_spread,
+            ask_spread: Arc::new(RwLock::new(ask_spread)),
             price_updates,
         }
     }
+
+    /// Update the ask spread dynamically
+    pub async fn update_spread(&self, new_spread: Decimal) -> Result<(), String> {
+        let mut spread = self.ask_spread.write().map_err(|_| "Failed to acquire write lock - lock is poisoned")?;
+        *spread = new_spread;
+        Ok(())
+    }
+
+    /// Get the current ask spread
+    pub async fn get_spread(&self) -> Result<Decimal, String> {
+        let spread = self.ask_spread.read().map_err(|_| "Failed to acquire read lock - lock is poisoned")?;
+        Ok(*spread)
+    }
+
 }
 
 impl crate::traits::LatestRate for KrakenRate {
@@ -129,7 +145,9 @@ impl crate::traits::LatestRate for KrakenRate {
 
     fn latest_rate(&mut self) -> Result<Rate, Self::Error> {
         let update = self.price_updates.latest_update()?;
-        let rate = Rate::new(update.ask, self.ask_spread);
+        let current_spread = *self.ask_spread.read()
+            .map_err(|_| crate::kraken::Error::PermanentFailure)?;
+        let rate = Rate::new(update.ask, current_spread);
 
         Ok(rate)
     }
@@ -177,8 +195,8 @@ mod tests {
             .sell_quote(bitcoin::Amount::ONE_BTC)
             .unwrap();
 
-        let xmr_factor = xmr_no_spread.into().as_piconero_decimal()
-            / xmr_with_spread.into().as_piconero_decimal()
+        let xmr_factor: Decimal = Decimal::from(xmr_no_spread.as_pico())
+            / Decimal::from(xmr_with_spread.as_pico())
             - ONE;
 
         assert!(xmr_with_spread < xmr_no_spread);
