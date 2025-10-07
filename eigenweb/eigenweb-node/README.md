@@ -1,6 +1,6 @@
-# Standalone Rendezvous Server
+# eigenweb-node
 
-A standalone libp2p [rendezvous server](https://github.com/libp2p/specs/tree/master/rendezvous) binary.
+A standalone libp2p [eigenweb-node](https://github.com/libp2p/specs/tree/master/rendezvous) binary.
 
 ## Usage
 
@@ -10,15 +10,15 @@ Build the binary:
 cargo build --release
 ```
 
-Run the `libp2p-rendezvous-server`:
+Run the `eigenweb-node`:
 
 ```
 cargo run --release
 ```
 
-The server will use default values:
+The eigenweb-node will use default values:
 
-- Secret file: `rendezvous-server-secret.key` (created automatically if it doesn't exist)
+- Secret file: `eigenweb-node-secret.key` (created automatically if it doesn't exist)
 - Listen port: `8888`
 
 You can customize these with:
@@ -29,7 +29,7 @@ cargo run --release -- --secret-file <PATH-TO-SECRET-FILE> --listen-tcp <PORT>
 
 ## Tor Onion Service Support
 
-By default, the rendezvous server listens on both TCP and a Tor onion service for enhanced privacy. This will:
+By default, the eigenweb-node listens on both TCP and a Tor onion service for enhanced privacy. This will:
 
 - Bootstrap a connection to the Tor network
 - Create a new onion service

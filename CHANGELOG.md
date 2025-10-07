@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: Remember acknowledged alerts and do not show them again.
-- RENDEZVOUS-SERVER: Fix an issue where connections would timeout immediately.
-- RENDEZVOUS-SERVER: Release a standalone rendezvous server binary.
+- eigenweb-node: Fix an issue where connections would timeout immediately.
+- eigenweb-node: Release a standalone eigenweb-node binary.
 
 ## [3.0.7] - 2025-10-04
 
@@ -417,8 +417,8 @@ _Some of these CHANGELOG entires have beeb merged from 2.0.3 - 2.4.3 into this r
 
 ### Changed
 
-- The ASB to no longer work as a rendezvous server.
-  The ASB can still register with rendezvous server as usual.
+- The ASB to no longer work as an eigenweb-node.
+  The ASB can still register with eigenweb-node as usual.
 
 ### Fixed
 
