@@ -1,21 +1,37 @@
-# GPG Keys
+# GPG Signature Verification
 
-Maintainer GPG Public Keys go in this directory, for verifying signed binary hashes.
+This directory contains public GPG keys for verifying release binary signatures.
 
-- Export your public key with:
+## Verifying Release Binaries
+
+Each release includes `.asc` signature files alongside the binaries.
+
+### 1. Import the signing key
 
 ```bash
-# get your key id (16 hex chars)
-$ gpg --list-secret-keys --keyid-format=long
+# Download the key from GitHub
+wget https://raw.githubusercontent.com/eigenwallet/core/master/utils/gpg_keys/binarybaron_and_einliterflasche.asc
 
-# export your public key
-$ gpg --armor --export your_key_id > your_github_handle.asc
-
-# example
-# gpg --armor --export DE8F6EA20A661697 > delta1.asc
+# Import it
+gpg --import binarybaron_and_einliterflasche.asc
 ```
 
-- Copy that file to this directory.
-- Create a new PR to add your key to the repo.
+### 2. Download and verify the signature
 
-- See also "Generating a new GPG key": https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key
+```bash
+# Download both the binary archive and its signature
+wget https://github.com/eigenwallet/core/releases/download/3.0.7/asb_3.0.7_Linux_x86_64.tar
+wget https://github.com/eigenwallet/core/releases/download/3.0.7/asb_3.0.7_Linux_x86_64.tar.asc
+
+# Verify the signature
+gpg --verify asb_3.0.7_Linux_x86_64.tar.asc asb_3.0.7_Linux_x86_64.tar
+```
+
+Successful verification shows:
+
+```
+gpg: Signature made [date]
+gpg: Good signature from "..."
+```
+
+The warning `This key is not certified with a trusted signature` is expected unless you've explicitly trusted the key.
