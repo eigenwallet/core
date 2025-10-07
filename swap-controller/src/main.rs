@@ -106,9 +106,10 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 spread: spread_decimal,
             };
 
-            client.set_spread(request).await?;
+            let response = client.set_spread(request).await?;
             let spread_percentage = spread_decimal * rust_decimal::Decimal::from(100);
             println!("Spread set to {:.4}%", spread_percentage);
+            println!("{}", response.message);
         }
     }
     Ok(())
