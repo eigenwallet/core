@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2025-10-07
+
 - GUI: Remember acknowledged alerts and do not show them again.
 - RENDEZVOUS-SERVER: Fix an issue where connections would timeout immediately.
 - RENDEZVOUS-SERVER: Release a standalone rendezvous server binary.
@@ -680,7 +682,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.0.7...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.1.0...HEAD
+[3.1.0]: https://github.com/eigenwallet/core/compare/3.0.7...3.1.0
 [3.0.7]: https://github.com/eigenwallet/core/compare/3.0.6...3.0.7
 [3.0.6]: https://github.com/eigenwallet/core/compare/3.0.5...3.0.6
 [3.0.5]: https://github.com/eigenwallet/core/compare/3.0.4...3.0.5
