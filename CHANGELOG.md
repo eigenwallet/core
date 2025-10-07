@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: Remember acknowledged alerts and do not show them again.
+- RENDEZVOUS-SERVER: Fix an issue where connections would timeout immediately.
+- RENDEZVOUS-SERVER: Release a standalone rendezvous server binary.
 
 ## [3.0.7] - 2025-10-04
 

@@ -29,23 +29,23 @@ cargo run --release -- --secret-file <PATH-TO-SECRET-FILE> --listen-tcp <PORT>
 
 ## Tor Onion Service Support
 
-The rendezvous server can also listen on a Tor onion service for enhanced privacy:
-
-```
-cargo run --release -- --onion
-```
-
-This will:
+By default, the rendezvous server listens on both TCP and a Tor onion service for enhanced privacy. This will:
 
 - Bootstrap a connection to the Tor network
 - Create a new onion service
 - Listen on both TCP (port 8888) and the onion address
 - Print the onion address in the logs
 
+To disable the onion service and use only TCP:
+
+```
+cargo run --release -- --no-onion
+```
+
 You can specify a custom port for the onion service:
 
 ```
-cargo run --release -- --onion --onion-port 9999
+cargo run --release -- --onion-port 9999
 ```
 
 ## Options
@@ -56,7 +56,7 @@ Run `cargo run --release -- --help` for all available options:
 
 - `--secret-file`: Path to the secret key file
 - `--listen-tcp`: TCP port to listen on (default: 8888)
-- `--onion`: Enable Tor onion service
+- `--no-onion`: Disable Tor onion service (enabled by default)
 - `--onion-port`: Port for the onion service (default: 8888)
 - `--json`: Format logs as JSON
 - `--no-timestamp`: Don't include timestamp in logs
