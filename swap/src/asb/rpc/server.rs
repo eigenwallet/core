@@ -6,11 +6,13 @@ use anyhow::{Context, Result};
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
+use swap_env::config::Config;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, 
-    MultiaddressesResponse, SetSpreadRequest, SpreadResponse, Swap,
+    MultiaddressesResponse, SetSpreadRequest, SetSpreadResponse, SpreadResponse, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -26,6 +28,8 @@ impl RpcServer {
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
+        config_path: PathBuf,
+        config: Arc<RwLock<Config>>,
         kraken_rate: Arc<KrakenRate>,
     ) -> Result<Self> {
         let server = ServerBuilder::default()
@@ -40,6 +44,8 @@ impl RpcServer {
             monero_wallet,
             event_loop_service,
             db,
+            config_path,
+            config,
             kraken_rate,
         };
         let handle = server.start(rpc_impl.into_rpc());
@@ -62,6 +68,11 @@ pub struct RpcImpl {
     monero_wallet: Arc<monero::Wallets>,
     event_loop_service: EventLoopService,
     db: Arc<dyn Database + Send + Sync>,
+    /// Path to the config file for persisting spread changes
+    config_path: PathBuf,
+    /// Thread-safe access to the current configuration
+    config: Arc<RwLock<Config>>,
+    /// Kraken rate service for managing spread updates
     kraken_rate: Arc<KrakenRate>,
 }
 
@@ -177,17 +188,15 @@ impl AsbApiServer for RpcImpl {
         })
     }
 
-    async fn set_spread(&self, request: SetSpreadRequest) -> Result<(), ErrorObjectOwned> {
-        // Validate spread is between 0 and 1
+    async fn set_spread(&self, request: SetSpreadRequest) -> Result<SetSpreadResponse, ErrorObjectOwned> {
+        // Validate spread is between 0 and 1 (inclusive)
         if request.spread < rust_decimal::Decimal::ZERO || request.spread > rust_decimal::Decimal::ONE {
             return Err(ErrorObjectOwned::owned(
                 ErrorCode::InvalidParams.code(),
-                "Spread must be between 0 and 1",
+                "Spread must be between 0 and 1 (inclusive)",
                 None::<()>,
             ));
         }
-
-        // Decimal doesn't support NaN or infinity, so this validation is not needed
 
         // Validate spread is not negative zero (edge case)
         if request.spread.is_zero() && request.spread.is_sign_negative() {
@@ -208,41 +217,66 @@ impl AsbApiServer for RpcImpl {
 
         // Log the spread change for audit purposes
         tracing::info!(
-            "Spread updated from {} to {} ({}% to {}%)",
-            old_spread,
-            request.spread,
-            old_spread * rust_decimal::Decimal::from(100),
-            request.spread * rust_decimal::Decimal::from(100)
+            old_spread = %old_spread,
+            new_spread = %request.spread,
+            old_spread_percent = %(old_spread * rust_decimal::Decimal::from(100)),
+            new_spread_percent = %(request.spread * rust_decimal::Decimal::from(100)),
+            "Updating spread"
         );
 
-        // Update spread
+        // Step 1: Update spread in memory
         self.kraken_rate.update_spread(request.spread).await
             .map_err(|e| ErrorObjectOwned::owned(
                 ErrorCode::InternalError.code(),
-                format!("Failed to update spread: {}", e),
+                format!("Failed to update spread in memory: {}", e),
                 None::<()>,
             ))?;
 
-        // Clear the quote cache to ensure new quotes use the updated spread
-        if let Err(e) = self.event_loop_service.clear_quote_cache().await {
-            tracing::error!("Failed to clear quote cache after spread update: {}", e);
-            // Rollback spread to previous value
-            if let Err(rollback_err) = self.kraken_rate.update_spread(old_spread).await {
-                tracing::error!("CRITICAL: Failed to rollback spread after cache invalidation failure: {}", rollback_err);
-                return Err(ErrorObjectOwned::owned(
-                    ErrorCode::InternalError.code(),
-                    "Failed to update spread and rollback failed - system may be in inconsistent state",
-                    None::<()>,
-                ));
-            }
+        // Step 2: Update config struct and prepare for file write
+        let updated_config = {
+            let mut config = self.config.write().map_err(|_| ErrorObjectOwned::owned(
+                ErrorCode::InternalError.code(),
+                "Failed to acquire write lock on config",
+                None::<()>,
+            ))?;
+            config.maker.ask_spread = request.spread;
+            config.clone()
+        };
+        
+        // Step 3: Persist changes to config file
+        if let Err(e) = swap_env::config::update_config(
+            self.config_path.clone(), 
+            &updated_config
+        ) {
+            // Rollback in-memory changes if file write fails
+            let _ = self.kraken_rate.update_spread(old_spread).await;
             return Err(ErrorObjectOwned::owned(
                 ErrorCode::InternalError.code(),
-                "Failed to clear quote cache after spread update - spread has been rolled back",
+                format!("Failed to persist spread to config file: {}", e),
                 None::<()>,
             ));
         }
 
-        Ok(())
+        // Step 4: Clear quote cache to ensure new quotes use updated spread
+        if let Err(e) = self.event_loop_service.clear_quote_cache().await {
+            tracing::warn!(
+                error = %e,
+                "Failed to clear quote cache after spread update (config already persisted)"
+            );
+            // Note: Config file is already written successfully, so we don't rollback
+        }
+
+        tracing::info!(
+            old_spread = %old_spread,
+            new_spread = %request.spread,
+            "Spread successfully updated and persisted"
+        );
+
+        Ok(SetSpreadResponse {
+            message: "Spread successfully updated and persisted to config file".to_string(),
+            old_spread,
+            new_spread: request.spread,
+        })
     }
 
 }

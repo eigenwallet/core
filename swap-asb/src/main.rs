@@ -21,7 +21,7 @@ use rust_decimal::Decimal;
 use std::convert::TryInto;
 use std::env;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
@@ -294,6 +294,10 @@ pub async fn main() -> Result<()> {
             };
 
             let bitcoin_wallet = Arc::new(bitcoin_wallet);
+            
+            // Clone config before it gets moved to avoid borrow checker issues
+            let config_for_rpc_server = config.clone();
+            
             let (event_loop, mut swap_receiver, event_loop_service) = EventLoop::new(
                 swarm,
                 env_config,
@@ -317,6 +321,8 @@ pub async fn main() -> Result<()> {
                     monero_wallet.clone(),
                     event_loop_service,
                     db,
+                    config_path.clone(),
+                    Arc::new(RwLock::new(config_for_rpc_server)),
                     Arc::new(kraken_rate.clone()),
                 )
                 .await?;

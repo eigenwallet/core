@@ -55,6 +55,13 @@ pub struct SetSpreadRequest {
     pub spread: rust_decimal::Decimal,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SetSpreadResponse {
+    pub message: String,
+    pub old_spread: rust_decimal::Decimal,
+    pub new_spread: rust_decimal::Decimal,
+}
+
 
 #[rpc(client, server)]
 pub trait AsbApi {
@@ -81,5 +88,5 @@ pub trait AsbApi {
     async fn get_spread(&self) -> Result<SpreadResponse, ErrorObjectOwned>;
     
     #[method(name = "set_spread")]
-    async fn set_spread(&self, request: SetSpreadRequest) -> Result<(), ErrorObjectOwned>;
+    async fn set_spread(&self, request: SetSpreadRequest) -> Result<SetSpreadResponse, ErrorObjectOwned>;
 }
