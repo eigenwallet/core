@@ -21,6 +21,7 @@ async fn main() {
             daemon.clone(),
             monero::Network::Stagenet,
             true,
+            10,
         )
         .await
         .expect("Failed to create wallet");
@@ -41,6 +42,7 @@ async fn main() {
             daemon.clone(),
             monero::Network::Stagenet,
             true,
+            10,
         )
         .await
         .expect("Failed to create wallet");

@@ -13,9 +13,13 @@
 mod bridge;
 pub mod database;
 
+use backoff::exponential::ExponentialBackoffBuilder;
+use backoff::future::retry;
+use backoff::SystemClock;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
+use tokio::time::timeout;
 
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -902,30 +906,55 @@ impl WalletHandle {
                 .await
             }
             None => {
-                self.wait_until_funds_confirmed(
-                    destination_address,
-                    expected_amount,
-                    confirmations,
-                    listener,
-                    scan_timeout,
-                )
-                .await
+                self.wait_until_funds_confirmed(expected_amount, scan_timeout)
+                    .await
             }
         }
     }
 
     /// Specialized version of `wait_until_confirmed` that syncs the wallet from the
     /// restore height and tries to find the funds by hand.
-    /// If possible, use `wait_until_tx_confirmed` instead
+    /// If possible, use `wait_until_tx_confirmed` instead.
+    /// Times out after scan_timeout of 3 hours and at least on attempt to scan.
     async fn wait_until_funds_confirmed(
         &self,
-        destination_address: &monero::Address,
         expected_amount: monero::Amount,
-        confirmations: u64,
-        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
         scan_timeout: impl Into<Option<Duration>>,
     ) -> anyhow::Result<()> {
-        bail!("todo")
+        // 3 hours
+        const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 3);
+        let timeout_duration: Duration = scan_timeout.into().unwrap_or(DEFAULT_TIMEOUT);
+
+        let loop_future = || async {
+            match self
+                .wait_until_synced(no_listener())
+                .await
+                .map_err(backoff::Error::transient)
+            {
+                Err(error) => return Err(error),
+                Ok(_) => {}
+            };
+
+            if self.unlocked_balance().await >= expected_amount {
+                return Err(backoff::Error::transient(anyhow!(
+                    "Confirmed balance insufficent"
+                )));
+            }
+
+            Ok(())
+        };
+
+        retry(
+            ExponentialBackoffBuilder::<SystemClock>::new()
+                .with_max_elapsed_time(Some(timeout_duration))
+                .with_max_interval(Duration::from_secs(60))
+                .build(),
+            loop_future,
+        )
+        .await
+        .context("Couldn't find the specified amount of Monero within the specified timeout")?;
+
+        Ok(())
     }
 
     /// Specialized version of `wait_until_confirmed` that expects a transfer proof

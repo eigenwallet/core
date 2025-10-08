@@ -18,6 +18,8 @@ use std::ops::{Add, Deref, Mul, Sub};
 use std::str::FromStr;
 use typeshare::typeshare;
 
+pub use monero_sys::{TransferProof, TxHash};
+
 pub const PICONERO_OFFSET: u64 = 1_000_000_000_000;
 
 /// A Monero block height.
@@ -625,7 +627,9 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct MoneroPrivateKey(#[serde(with = "monero_private_key")] crate::monero::PrivateKey);
+    pub struct MoneroPrivateKey(
+        #[serde(with = "swap_serde::monero::private_key")] crate::monero::PrivateKey,
+    );
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
     pub struct MoneroAmount(#[serde(with = "monero_amount")] crate::monero::Amount);

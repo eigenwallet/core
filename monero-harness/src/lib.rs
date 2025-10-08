@@ -422,6 +422,7 @@ impl MoneroWallet {
             daemon,
             monero::Network::Mainnet,
             true,
+            10,
         )
         .await
         .context("Failed to create or open wallet")?;

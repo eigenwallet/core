@@ -24,6 +24,7 @@ async fn test_sign_message() {
         daemon,
         monero::Network::Stagenet,
         false, // No background sync
+        10,
     )
     .await
     .expect("Failed to create wallet");

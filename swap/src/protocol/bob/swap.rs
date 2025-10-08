@@ -830,7 +830,10 @@ async fn next_state(
                                     xmr_lock_tx_target_confirmations,
                                 )| {
                                     let event_emitter = event_emitter_clone.clone();
-                                    let tx_hash = state5_clone.lock_transfer_proof.tx_hash();
+                                    let tx_hash = state5_clone
+                                        .lock_transfer_proof
+                                        .as_ref()
+                                        .map(TransferProof::tx_hash);
 
                                     event_emitter.emit_swap_progress_event(
                                 swap_id,

@@ -30,6 +30,7 @@ async fn test_wallet_with_special_paths() {
                     daemon,
                     Network::Mainnet,
                     true,
+                    10,
                 )
                 .await;
 

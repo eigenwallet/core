@@ -31,6 +31,7 @@ async fn main() {
         STAGENET_WALLET_RESTORE_HEIGHT,
         true,
         daemon,
+        10,
     )
     .await
     .expect("Failed to recover wallet");

@@ -13,6 +13,7 @@ use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::nonce::Deterministic;
 use ecdsa_fun::Signature;
 use monero::BlockHeight;
+use monero_sys::ScanType;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -745,13 +746,19 @@ impl State5 {
 
         tracing::debug!(%swap_id, "Opening temporary Monero wallet");
 
+        // If we have the transfer proof - quickly import that.
+        // Else do a full scan
+        let scan_type = match &self.lock_transfer_proof {
+            Some(proof) => ScanType::ScanTransaction {
+                txid: proof.tx_hash().to_string(),
+            },
+            None => ScanType::ScanFromHeight {
+                restore_height: self.monero_wallet_restore_blockheight.height,
+            },
+        };
+
         let wallet = monero_wallet
-            .swap_wallet(
-                swap_id,
-                spend_key,
-                view_key,
-                self.lock_transfer_proof.tx_hash(),
-            )
+            .swap_wallet(swap_id, spend_key, view_key, scan_type)
             .await
             .context("Failed to open Monero wallet")?;
 

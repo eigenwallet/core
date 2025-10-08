@@ -854,6 +854,7 @@ mod wallet {
             daemon.clone(),
             env_config.monero_network,
             true,
+            env_config.monero_finality_confirmations,
         )
         .await
         .context("Failed to create wallet")?;
@@ -938,6 +939,7 @@ mod wallet {
                                 daemon.clone(),
                                 env_config.monero_network,
                                 true,
+                                env_config.monero_finality_confirmations,
                             )
                             .await
                             .context("Failed to create wallet from random seed")?
@@ -954,6 +956,7 @@ mod wallet {
                                 0,
                                 true,
                                 daemon.clone(),
+                                env_config.monero_finality_confirmations,
                             )
                             .await
                             .context("Failed to create wallet from provided seed")?
@@ -1039,6 +1042,7 @@ mod wallet {
                                 daemon.clone(),
                                 env_config.monero_network,
                                 true,
+                                env_config.monero_finality_confirmations,
                             )
                             .await
                             .context("Failed to open wallet from provided path")?

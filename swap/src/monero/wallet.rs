@@ -498,12 +498,12 @@ impl Wallets {
 
         wallet
             .wait_until_confirmed(
-                watch_request.transfer_proof.tx_hash.0.clone(),
-                watch_request.transfer_proof.tx_key,
+                watch_request.transfer_proof,
                 &address,
                 watch_request.expected_amount,
                 watch_request.confirmation_target,
                 listener,
+                None,
             )
             .await?;
 

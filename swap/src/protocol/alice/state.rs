@@ -487,7 +487,7 @@ impl State3 {
         WatchRequest {
             public_spend_key,
             public_view_key,
-            transfer_proof,
+            transfer_proof: Some(transfer_proof),
             confirmation_target: conf_target,
             expected_amount: self.xmr.into(),
         }
@@ -590,8 +590,16 @@ impl State3 {
         tracing::info!("Refunding Monero");
 
         tracing::debug!(%swap_id, "Opening temporary Monero wallet from keys");
+
         let swap_wallet = monero_wallet
-            .swap_wallet(swap_id, spend_key, view_key, transfer_proof.tx_hash())
+            .swap_wallet(
+                swap_id,
+                spend_key,
+                view_key,
+                monero_sys::ScanType::ScanTransaction {
+                    txid: transfer_proof.tx_hash().to_string(),
+                },
+            )
             .await
             .context(format!("Failed to open/create swap wallet `{}`", swap_id))?;
 
