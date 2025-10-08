@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make the `TransferProof` field of the cooperative redeem protocol optional.
+  This retroactively makes the introduction of this field backwards compatible with older versions.
+  If the transfer proof is not sent, we fall back to scanning the wallet for funds manually.
+- Update the `monero_sys::Wallet::unlocked_balance` method to only show funds meeting our Monero confirmation requirement (currently 22 blocks).
+  This helps protects against blockchain reorganization attacks by malicious actors.
+
 ## [3.1.1] - 2025-10-08
 
 - GUI: Fix an issue where it would always say "Wait for the application to load all required components" if Tor was disabled.
