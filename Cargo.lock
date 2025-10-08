@@ -3305,6 +3305,7 @@ name = "eigenweb-pinning"
 version = "0.1.0"
 dependencies = [
  "atty",
+ "backoff",
  "bytes",
  "libp2p",
  "libp2p-core 0.42.0",

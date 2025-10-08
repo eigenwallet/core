@@ -10,16 +10,18 @@ const PROTOCOL: &str = "/eigenwallet/pinning/pin/1.0.0";
 pub type Behaviour = request_response::cbor::Behaviour<Request, Response>;
 pub type ToSwarm = <Behaviour as NetworkBehaviour>::ToSwarm;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
     Pin(PinRequest),
     Pull(PullRequest),
+    Fetch(FetchRequest),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
     Pin(PinResponse),
     Pull(PullResponse),
+    Fetch(FetchResponse),
 }
 
 pub fn client(timeout: Duration) -> Behaviour {

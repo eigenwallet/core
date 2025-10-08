@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 pub mod client;
 pub mod codec;
+pub mod futures_utils;
 pub mod server;
 pub mod signature;
 pub mod storage;
@@ -27,7 +28,7 @@ pub type SignedPinnedMessage = SignedMessage<UnsignedPinnedMessage>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PinRequest {
-    pub signed_msg: SignedPinnedMessage,
+    pub message: SignedPinnedMessage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -44,7 +45,20 @@ pub enum PinRejectReason {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PullRequest {}
+pub struct FetchRequest {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchResponse {
+    /// Hashes of all messages where:
+    ///    `hash.receiver == requester.peer_id`
+    pub messages: Vec<[u8; 32]>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequest {
+    /// Hashes of all messages we want to download
+    pub hashes: Vec<[u8; 32]>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullResponse {

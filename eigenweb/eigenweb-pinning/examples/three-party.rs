@@ -6,6 +6,7 @@ use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, Multiaddr, PeerId, SwarmBuilder};
 use std::error::Error;
 use std::time::Duration;
+use tokio::io::AsyncBufReadExt;
 use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
@@ -95,9 +96,7 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
             libp2p::yamux::Config::default,
         )?
         .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| {
-            cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10))
-        })
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10)))
         .build();
 
     // Listen on a fixed port for easier connection
@@ -110,7 +109,10 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!("✓ Listening on {}", address);
-                info!("Clients can connect using: /ip4/127.0.0.1/tcp/9000/p2p/{}", peer_id);
+                info!(
+                    "Clients can connect using: /ip4/127.0.0.1/tcp/9000/p2p/{}",
+                    peer_id
+                );
             }
             SwarmEvent::Behaviour(event) => {
                 info!("📨 Behaviour event: {:?}", event);
@@ -145,7 +147,10 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
                 error,
                 ..
             } => {
-                error!("❌ Incoming connection error from {}: {}", send_back_addr, error);
+                error!(
+                    "❌ Incoming connection error from {}: {}",
+                    send_back_addr, error
+                );
             }
             event => {
                 info!("Other swarm event: {:?}", event);
@@ -162,33 +167,16 @@ async fn run_client_alice(party: Party) -> Result<(), Box<dyn Error>> {
 
     // Create the pinning client behaviour
     let storage = MemoryStorage::new();
-    let mut behaviour = eigenweb_pinning::client::Behaviour::new(
+    let carol_peer_id = Party::Carol.peer_id();
+    let behaviour = eigenweb_pinning::client::Behaviour::new(
         peer_id,
+        vec![carol_peer_id],
         storage,
         Duration::from_secs(10),
     );
 
-    // Create a message for Bob
-    let bob_peer_id = Party::Bob.peer_id();
-    let message = UnsignedPinnedMessage {
-        id: Uuid::new_v4(),
-        sender: peer_id,
-        receiver: bob_peer_id,
-        ttl: 3600, // 1 hour
-        priority: 1,
-        encrypted_content: Bytes::from("Hello Bob! This is Alice sending you a secret message."),
-    };
-
-    // Sign the message
-    let signed_message = SignedMessage::new(&keypair, message)?;
-    let hash = signed_message.content_hash();
-    info!("📝 Created message for Bob with hash: {:02x?}", hash);
-
-    // Pin the message (stores it locally)
-    behaviour.pin_message(signed_message);
-
     // Build the swarm
-    let mut swarm = SwarmBuilder::with_existing_identity(keypair)
+    let mut swarm = SwarmBuilder::with_existing_identity(keypair.clone())
         .with_tokio()
         .with_tcp(
             libp2p::tcp::Config::default(),
@@ -196,9 +184,7 @@ async fn run_client_alice(party: Party) -> Result<(), Box<dyn Error>> {
             libp2p::yamux::Config::default,
         )?
         .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| {
-            cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10))
-        })
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10)))
         .build();
 
     // Listen on a random port
@@ -206,61 +192,129 @@ async fn run_client_alice(party: Party) -> Result<(), Box<dyn Error>> {
     swarm.listen_on(listen_addr)?;
 
     // Connect to Carol's server
-    let carol_peer_id = Party::Carol.peer_id();
-    let server_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", carol_peer_id)
-        .parse()?;
-    
+    let server_addr: Multiaddr =
+        format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", carol_peer_id).parse()?;
+
     info!("🔌 Dialing Carol's server at {}", server_addr);
     swarm.dial(server_addr)?;
 
+    // Set up stdin reader for interactive input
+    let stdin = tokio::io::stdin();
+    let mut stdin_lines = tokio::io::BufReader::new(stdin).lines();
+    let bob_peer_id = Party::Bob.peer_id();
+
+    let mut connected_to_server = false;
+
     // Event loop
     loop {
-        match swarm.select_next_some().await {
-            SwarmEvent::NewListenAddr { address, .. } => {
-                info!("✓ Listening on {}", address);
-            }
-            SwarmEvent::Behaviour(event) => {
-                info!("📨 Behaviour event: {:?}", event);
-            }
-            SwarmEvent::ConnectionEstablished {
-                peer_id,
-                endpoint,
-                num_established,
-                ..
-            } => {
-                info!(
-                    "🔗 Connection established with {} at {:?} (total: {})",
-                    peer_id, endpoint, num_established
-                );
-                if peer_id == carol_peer_id {
-                    info!("✨ Connected to Carol's server! Message will be pinned via heartbeat.");
+        tokio::select! {
+            // Handle user input
+            line = stdin_lines.next_line() => {
+                match line {
+                    Ok(Some(input)) => {
+                        if input.trim().is_empty() {
+                            continue;
+                        }
+
+                        if !connected_to_server {
+                            info!("⚠️  Not yet connected to Carol's server. Please wait...");
+                            continue;
+                        }
+
+                        // Create a new message for Bob
+                        let message = UnsignedPinnedMessage {
+                            id: Uuid::new_v4(),
+                            sender: peer_id,
+                            receiver: bob_peer_id,
+                            ttl: 3600, // 1 hour
+                            priority: 1,
+                            encrypted_content: Bytes::from(input.trim().to_string()),
+                        };
+
+                        // Sign the message
+                        match SignedMessage::new(&keypair, message) {
+                            Ok(signed_message) => {
+                                let hash = signed_message.content_hash();
+                                info!("📝 Created message for Bob with hash: {:02x?}", hash);
+
+                                // Pin the message (stores it locally and will be sent via heartbeat)
+                                swarm.behaviour_mut().insert_pinned_message(signed_message);
+                                info!("✅ Message queued for Bob. It will be sent to Carol's server.");
+                            }
+                            Err(e) => {
+                                error!("❌ Failed to sign message: {}", e);
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        info!("EOF on stdin, exiting");
+                        break;
+                    }
+                    Err(e) => {
+                        error!("Error reading from stdin: {}", e);
+                    }
                 }
             }
-            SwarmEvent::ConnectionClosed {
-                peer_id,
-                cause,
-                num_established,
-                ..
-            } => {
-                info!(
-                    "🔌 Connection closed with {} (remaining: {}) - cause: {:?}",
-                    peer_id, num_established, cause
-                );
-            }
-            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                error!("❌ Outgoing connection error to {:?}: {}", peer_id, error);
-            }
-            SwarmEvent::Dialing {
-                peer_id,
-                connection_id,
-            } => {
-                info!("📞 Dialing {:?} (connection: {:?})", peer_id, connection_id);
-            }
-            event => {
-                info!("Other swarm event: {:?}", event);
+
+            // Handle swarm events
+            event = swarm.select_next_some() => {
+                match event {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        info!("✓ Listening on {}", address);
+                    }
+                    SwarmEvent::Behaviour(event) => {
+                        info!("📨 Behaviour event: {:?}", event);
+                    }
+                    SwarmEvent::ConnectionEstablished {
+                        peer_id: connected_peer,
+                        endpoint,
+                        num_established,
+                        ..
+                    } => {
+                        info!(
+                            "🔗 Connection established with {} at {:?} (total: {})",
+                            connected_peer, endpoint, num_established
+                        );
+                        if connected_peer == carol_peer_id {
+                            connected_to_server = true;
+                            info!("✨ Connected to Carol's server!");
+                            info!("💬 You can now type messages for Bob and press Enter.");
+                            info!("   Messages will be automatically pinned to Carol's server.");
+                        }
+                    }
+                    SwarmEvent::ConnectionClosed {
+                        peer_id: closed_peer,
+                        cause,
+                        num_established,
+                        ..
+                    } => {
+                        info!(
+                            "🔌 Connect ion closed with {} (remaining: {}) - cause: {:?}",
+                            closed_peer, num_established, cause
+                        );
+                        if closed_peer == carol_peer_id {
+                            connected_to_server = false;
+                            info!("⚠️  Lost connection to Carol's server");
+                        }
+                    }
+                    SwarmEvent::OutgoingConnectionError { peer_id: failed_peer, error, .. } => {
+                        error!("❌ Outgoing connection error to {:?}: {}", failed_peer, error);
+                    }
+                    SwarmEvent::Dialing {
+                        peer_id: dialing_peer,
+                        connection_id,
+                    } => {
+                        info!("📞 Dialing {:?} (connection: {:?})", dialing_peer, connection_id);
+                    }
+                    event => {
+                        info!("Other swarm event: {:?}", event);
+                    }
+                }
             }
         }
     }
+
+    Ok(())
 }
 
 async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
@@ -271,8 +325,10 @@ async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
 
     // Create the pinning client behaviour
     let storage = MemoryStorage::new();
+    let carol_peer_id = Party::Carol.peer_id();
     let behaviour = eigenweb_pinning::client::Behaviour::new(
         peer_id,
+        vec![carol_peer_id],
         storage,
         Duration::from_secs(10),
     );
@@ -286,9 +342,7 @@ async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
             libp2p::yamux::Config::default,
         )?
         .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| {
-            cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10))
-        })
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10)))
         .build();
 
     // Listen on a random port
@@ -296,58 +350,88 @@ async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
     swarm.listen_on(listen_addr)?;
 
     // Connect to Carol's server
-    let carol_peer_id = Party::Carol.peer_id();
-    let server_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", carol_peer_id)
-        .parse()?;
-    
+    let server_addr: Multiaddr =
+        format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", carol_peer_id).parse()?;
+
     info!("🔌 Dialing Carol's server at {}", server_addr);
     swarm.dial(server_addr)?;
 
+    let mut connected_to_server = false;
+    let mut all_messages = Vec::new();
+
     // Event loop
     loop {
-        match swarm.select_next_some().await {
-            SwarmEvent::NewListenAddr { address, .. } => {
-                info!("✓ Listening on {}", address);
-            }
-            SwarmEvent::Behaviour(event) => {
-                info!("📨 Behaviour event: {:?}", event);
-            }
-            SwarmEvent::ConnectionEstablished {
-                peer_id,
-                endpoint,
-                num_established,
-                ..
-            } => {
-                info!(
-                    "🔗 Connection established with {} at {:?} (total: {})",
-                    peer_id, endpoint, num_established
-                );
-                if peer_id == carol_peer_id {
-                    info!("✨ Connected to Carol's server! Will check for messages.");
+        tokio::select! {
+            // Handle swarm events
+            event = swarm.select_next_some() => {
+                match event {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        info!("✓ Listening on {}", address);
+                    }
+                    SwarmEvent::Behaviour(event) => {
+                        match event {
+                            eigenweb_pinning::client::Event::IncomingPinnedMessagesReceived { peer, outgoing_request_id, messages } => {
+                                if messages.is_empty() {
+                                    info!("📭 No new messages (request {:?})", outgoing_request_id);
+                                }
+
+                                all_messages.extend(messages.into_iter());
+
+                                info!("📬 Received {} message(s) from {} (request {:?})", all_messages.len(), peer, outgoing_request_id);
+                                for msg in &all_messages {
+                                    let content = String::from_utf8_lossy(&msg.message().encrypted_content);
+                                    info!("  💌 From Alice: {}", content);
+                                }
+                            }
+                            _ => {
+                                info!("📨 Behaviour event: {:?}", event);
+                            }
+                        }
+                    }
+                    SwarmEvent::ConnectionEstablished {
+                        peer_id: connected_peer,
+                        endpoint,
+                        num_established,
+                        ..
+                    } => {
+                        info!(
+                            "🔗 Connection established with {} at {:?} (total: {})",
+                            connected_peer, endpoint, num_established
+                        );
+                        if connected_peer == carol_peer_id {
+                            connected_to_server = true;
+                            info!("✨ Connected to Carol's server!");
+                            info!("📡 The client will automatically fetch and pull messages in the background.");
+                        }
+                    }
+                    SwarmEvent::ConnectionClosed {
+                        peer_id: closed_peer,
+                        cause,
+                        num_established,
+                        ..
+                    } => {
+                        info!(
+                            "🔌 Connection closed with {} (remaining: {}) - cause: {:?}",
+                            closed_peer, num_established, cause
+                        );
+                        if closed_peer == carol_peer_id {
+                            connected_to_server = false;
+                            info!("⚠️  Lost connection to Carol's server");
+                        }
+                    }
+                    SwarmEvent::OutgoingConnectionError { peer_id: failed_peer, error, .. } => {
+                        error!("❌ Outgoing connection error to {:?}: {}", failed_peer, error);
+                    }
+                    SwarmEvent::Dialing {
+                        peer_id: dialing_peer,
+                        connection_id,
+                    } => {
+                        info!("📞 Dialing {:?} (connection: {:?})", dialing_peer, connection_id);
+                    }
+                    event => {
+                        info!("Other swarm event: {:?}", event);
+                    }
                 }
-            }
-            SwarmEvent::ConnectionClosed {
-                peer_id,
-                cause,
-                num_established,
-                ..
-            } => {
-                info!(
-                    "🔌 Connection closed with {} (remaining: {}) - cause: {:?}",
-                    peer_id, num_established, cause
-                );
-            }
-            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                error!("❌ Outgoing connection error to {:?}: {}", peer_id, error);
-            }
-            SwarmEvent::Dialing {
-                peer_id,
-                connection_id,
-            } => {
-                info!("📞 Dialing {:?} (connection: {:?})", peer_id, connection_id);
-            }
-            event => {
-                info!("Other swarm event: {:?}", event);
             }
         }
     }
@@ -363,6 +447,7 @@ fn init_tracing(level: LevelFilter) {
     let builder = FmtSubscriber::builder()
         .with_env_filter(build_event_filter_str(&[
             (&["eigenweb_pinning"], level),
+            (&[env!("CARGO_CRATE_NAME")], level),
             (LIBP2P_CRATES, level),
         ]))
         .with_writer(std::io::stderr)
@@ -391,11 +476,10 @@ const LIBP2P_CRATES: &[&str] = &[
     "libp2p_core",
     "libp2p_dns",
     "libp2p_identity",
-    "libp2p_noise",
+    // "libp2p_noise",
     "libp2p_ping",
     "libp2p_request_response",
     "libp2p_swarm",
     "libp2p_tcp",
-    "libp2p_yamux",
+    // "libp2p_yamux",
 ];
-

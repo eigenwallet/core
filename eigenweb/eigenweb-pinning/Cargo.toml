@@ -17,13 +17,14 @@ serde_cbor = "0.11"
 # Crypo
 sha2 = "0.10"
 
-uuid = { workspace = true }
+backoff = { workspace = true }
 tokio = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 atty = "0.2"
 libp2p = { workspace = true, features = ["cbor", "request-response", "macros", "tcp", "noise", "yamux", "tokio"] }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["io-std", "io-util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

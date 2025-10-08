@@ -7,9 +7,14 @@ pub trait Storage: Send {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn store(&mut self, msg: SignedPinnedMessage) -> Result<(), Self::Error>;
-    fn retrieve(&self, receiver: PeerId) -> Vec<SignedPinnedMessage>;
     fn hashes_by_sender(&self, sender: PeerId) -> Vec<[u8; 32]>;
-    fn get_by_hash(&self, hash: [u8; 32]) -> Option<SignedPinnedMessage>;
+    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<[u8; 32]>;
+    fn get_by_hashes(&self, hashes: Vec<[u8; 32]>) -> Vec<SignedPinnedMessage>;
+    fn get_by_receiver_and_hash(
+        &self,
+        receiver: PeerId,
+        hashes: Vec<[u8; 32]>,
+    ) -> Vec<SignedPinnedMessage>;
 }
 
 #[derive(Debug, Default)]
@@ -32,14 +37,6 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn retrieve(&self, receiver: PeerId) -> Vec<SignedPinnedMessage> {
-        self.messages
-            .values()
-            .filter(|msg| msg.message().receiver == receiver)
-            .cloned()
-            .collect()
-    }
-
     fn hashes_by_sender(&self, sender: PeerId) -> Vec<[u8; 32]> {
         self.messages
             .iter()
@@ -48,7 +45,37 @@ impl Storage for MemoryStorage {
             .collect()
     }
 
-    fn get_by_hash(&self, hash: [u8; 32]) -> Option<SignedPinnedMessage> {
-        self.messages.get(&hash).cloned()
+    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<[u8; 32]> {
+        self.messages
+            .iter()
+            .filter(|(_, msg)| msg.message().receiver == receiver)
+            .map(|(hash, _)| *hash)
+            .collect()
+    }
+
+    fn get_by_hashes(&self, hashes: Vec<[u8; 32]>) -> Vec<SignedPinnedMessage> {
+        hashes
+            .iter()
+            .filter_map(|hash| self.messages.get(hash).cloned())
+            .collect()
+    }
+
+    fn get_by_receiver_and_hash(
+        &self,
+        receiver: PeerId,
+        hashes: Vec<[u8; 32]>,
+    ) -> Vec<SignedPinnedMessage> {
+        hashes
+            .iter()
+            .filter_map(|hash| {
+                self.messages.get(hash).and_then(|msg| {
+                    if msg.message().receiver == receiver {
+                        Some(msg.clone())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect()
     }
 }

@@ -3,13 +3,17 @@ use libp2p::{
     swarm::{FromSwarm, NetworkBehaviour},
 };
 use libp2p_identity::PeerId;
-use std::{task::Poll, time::Duration};
+use std::{collections::VecDeque, task::Poll, time::Duration};
 
 use crate::{codec, storage, PinRejectReason, PinRequest, PinResponse};
 
+pub type ToSwarm = libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<codec::Behaviour>>;
+
 pub struct Behaviour<S> {
     /// The inner request-response behaviour
-    inner: crate::codec::Behaviour,
+    inner: codec::Behaviour,
+
+    to_swarm: VecDeque<ToSwarm>,
 
     /// We use this to persist data
     storage: S,
@@ -21,8 +25,9 @@ pub struct Event {}
 impl<S: storage::Storage + 'static> Behaviour<S> {
     pub fn new(storage: S, timeout: Duration) -> Self {
         Self {
-            inner: crate::codec::server(timeout),
+            inner: codec::server(timeout),
             storage,
+            to_swarm: VecDeque::new(),
         }
     }
 
@@ -32,24 +37,23 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let unverified_signed_pinned_message = request.signed_msg;
+        let unverified_msg = request.message;
 
-        if !unverified_signed_pinned_message.verify_with_peer(peer) {
+        if !unverified_msg.verify_with_peer(peer) {
             // If the signature is invalid, reject immediately
-            // TOOD: Ban the peer as he should not be relaying invalid signatures
+            // TODO: Ban the peer as he should not be relaying invalid signatures
             let _ = self.inner.send_response(
                 channel,
                 codec::Response::Pin(PinResponse::Rejected(PinRejectReason::MalformedMessage)),
             );
-
             return;
         }
 
         // Rename to make it clear that this has been verified
-        let verified_signed_pinned_message = unverified_signed_pinned_message;
+        let verified_msg = unverified_msg;
 
         // TODO: Use an async storage trait here; this will require more logic
-        match self.storage.store(verified_signed_pinned_message) {
+        match self.storage.store(verified_msg) {
             Ok(_) => {
                 let _ = self
                     .inner
@@ -67,18 +71,31 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
 
     fn handle_pull_request(
         &mut self,
-        _request: crate::PullRequest,
+        request: crate::PullRequest,
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let messages = self.storage.retrieve(peer);
+        let messages = self.storage.get_by_receiver_and_hash(peer, request.hashes);
         let _ = self.inner.send_response(
             channel,
             codec::Response::Pull(crate::PullResponse { messages }),
         );
     }
 
-    pub fn handle_event(&mut self, event: crate::codec::ToSwarm) {
+    fn handle_fetch_request(
+        &mut self,
+        _request: crate::FetchRequest,
+        peer: PeerId,
+        channel: ResponseChannel<codec::Response>,
+    ) {
+        let hashes = self.storage.hashes_by_receiver(peer);
+        let _ = self.inner.send_response(
+            channel,
+            codec::Response::Fetch(crate::FetchResponse { messages: hashes }),
+        );
+    }
+
+    pub fn handle_event(&mut self, event: codec::ToSwarm) {
         match event {
             libp2p::request_response::Event::Message { peer, message } => match message {
                 libp2p::request_response::Message::Request {
@@ -86,11 +103,14 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                     request,
                     channel,
                 } => match request {
-                    crate::codec::Request::Pin(request) => {
+                    codec::Request::Pin(request) => {
                         self.handle_pin_request(request, peer, channel);
                     }
-                    crate::codec::Request::Pull(request) => {
+                    codec::Request::Pull(request) => {
                         self.handle_pull_request(request, peer, channel);
+                    }
+                    codec::Request::Fetch(request) => {
+                        self.handle_fetch_request(request, peer, channel);
                     }
                 },
                 _ => {}
@@ -101,7 +121,7 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
 }
 
 impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
-    type ConnectionHandler = <crate::codec::Behaviour as NetworkBehaviour>::ConnectionHandler;
+    type ConnectionHandler = <codec::Behaviour as NetworkBehaviour>::ConnectionHandler;
 
     type ToSwarm = Event;
 
@@ -109,26 +129,19 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
-        // Is this the correct way to handle events?
-        // Do we need an unreachable!() here?
-        match self.inner.poll(cx) {
-            Poll::Ready(libp2p::swarm::ToSwarm::GenerateEvent(event)) => {
-                if matches!(
-                    event,
-                    libp2p::request_response::Event::Message {
-                        message: libp2p::request_response::Message::Request { .. },
-                        ..
-                    }
-                ) {
+        // TODO: Is this the correct way to handle events?
+        // TODO: Will this always us up again ?
+        while let Poll::Ready(event) = self.inner.poll(cx) {
+            match event {
+                libp2p::swarm::ToSwarm::GenerateEvent(event) => {
                     self.handle_event(event);
-                    Poll::Pending
-                } else {
-                    Poll::Ready(libp2p::swarm::ToSwarm::GenerateEvent(Event {}))
                 }
+                // Do we need an unreachable!() here?
+                event => self.to_swarm.push_back(event.map_out(|_| unreachable!())),
             }
-            Poll::Ready(other) => Poll::Ready(other.map_out(|_| unreachable!())),
-            _ => Poll::Pending,
         }
+
+        Poll::Pending
     }
 
     fn handle_established_inbound_connection(
