@@ -71,10 +71,6 @@ pub struct Behaviour<S> {
 
 #[derive(Debug)]
 pub enum Event {
-    PinRequestAcknowledged {
-        peer: PeerId,
-        hash: [u8; 32],
-    },
     IncomingPinnedMessagesReceived {
         peer: PeerId,
         outgoing_request_id: OutboundRequestId,
@@ -187,12 +183,6 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                             {
                                 self.mark_do_not_want(peer_id, hash);
                                 self.backoff(peer_id).reset();
-
-                                self.to_swarm_events
-                                    .push_back(Event::PinRequestAcknowledged {
-                                        peer: peer_id,
-                                        hash,
-                                    });
                             }
                         }
                         codec::Response::Fetch(fetch_response) => {
