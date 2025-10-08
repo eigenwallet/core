@@ -131,7 +131,7 @@ jobs:
           set -euo pipefail
 
           # Find all release artifacts (excluding .sig files from Tauri updater)
-          find src-tauri/target/${{ matrix.target }}/release/bundle -type f \
+          find target/${{ matrix.target }}/release/bundle -type f \
             ! -name "*.sig" \
             ! -name "*.asc" \
             -print0 | while IFS= read -r -d '' file; do
@@ -149,11 +149,11 @@ jobs:
           set -euo pipefail
 
           # Find all .asc signature files we just created
-          find src-tauri/target/${{ matrix.target }}/release/bundle -type f -name "*.asc" -print0 | while IFS= read -r -d '' sig_file; do
+          find target/${{ matrix.target }}/release/bundle -type f -name "*.asc" -print0 | while IFS= read -r -d '' sig_file; do
             echo "Uploading signature: $sig_file"
             # Get just the filename for the asset name
             asset_name=$(basename "$sig_file")
-            
+
             gh release upload "${{ github.event.release.tag_name }}" \
               "$sig_file" \
               --clobber
