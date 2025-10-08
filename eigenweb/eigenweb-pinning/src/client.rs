@@ -239,11 +239,17 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                 _ => {}
             },
             libp2p::request_response::Event::OutboundFailure {
-                request_id: _,
-                peer: _,
-                error: _,
+                request_id,
+                error,
+                peer,
             } => {
-                todo!("handle network errors")
+                println!(
+                    "outbound failure for request id: {:?} with error: {:?}",
+                    request_id, error
+                );
+                let _ = self.inflight_pin_request.remove(&request_id);
+                let _ = self.inflight_pull_request.remove(&request_id);
+                let _ = self.inflight_fetch_request.remove(&request_id);
             }
             _ => {}
         }
@@ -327,12 +333,12 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
                 let hashes_to_send_non_inflight = hashes_to_send.difference(&inflight_hashes);
 
                 for hash in hashes_to_send_non_inflight {
-                    if let Some(msg) = self.storage.get_by_hashes(vec![*hash]).into_iter().next() {
-                        let request = codec::Request::Pin(PinRequest { message: msg });
-                        let request_id = self.inner.send_request(&server, request);
-                        self.inflight_pin_request
-                            .insert(request_id, (*server, *hash));
-                    }
+                    let backoff_time = self.backoff(*server).next_backoff().unwrap();
+                    let future = async move {
+                        tokio::time::sleep(backoff_time).await;
+                    };
+                    self.queued_outgoing_pin_requests
+                        .insert((*server, *hash), Box::pin(future));
                 }
             }
 
@@ -363,9 +369,7 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
                 Poll::Ready(libp2p::swarm::ToSwarm::GenerateEvent(event)) => {
                     println!("received event from inner behaviour: {:?}", event);
 
-                    if matches!(event, libp2p::request_response::Event::Message { .. }) {
-                        self.handle_event(event);
-                    }
+                    self.handle_event(event);
 
                     continue;
                 }

@@ -4,6 +4,7 @@ use bytes::Bytes;
 use eigenweb_pinning::storage::MemoryStorage;
 use eigenweb_pinning::UnsignedPinnedMessage;
 use libp2p::futures::StreamExt;
+use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, Multiaddr, SwarmBuilder};
 use std::time::Duration;
@@ -24,9 +25,9 @@ async fn pin_and_fetch_message() {
         .try_init();
 
     // Create keypairs
-    let carol_keypair = create_keypair(3);
     let alice_keypair = create_keypair(1);
     let bob_keypair = create_keypair(2);
+    let carol_keypair = create_keypair(3);
 
     let carol_peer_id = carol_keypair.public().to_peer_id();
     let alice_peer_id = alice_keypair.public().to_peer_id();
@@ -72,7 +73,7 @@ async fn pin_and_fetch_message() {
         alice_keypair.clone(),
         vec![carol_peer_id],
         alice_storage,
-        Duration::from_secs(10),
+        TIMEOUT,
     );
 
     let mut alice = SwarmBuilder::with_existing_identity(alice_keypair)
@@ -110,39 +111,27 @@ async fn pin_and_fetch_message() {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(TIMEOUT))
         .build();
 
+    alice.add_peer_address(carol_peer_id, server_addr.clone());
+    bob.add_peer_address(carol_peer_id, server_addr.clone());
+
     // Connect Alice to Carol
-    alice.dial(server_addr.clone()).unwrap();
-    bob.dial(server_addr.clone()).unwrap();
-
-    // Wait for connections to establish
-    let mut alice_connected = false;
-    let mut bob_connected = false;
-
-    while !alice_connected || !bob_connected {
-        tokio::select! {
-            event = server.select_next_some() => {
-                if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
-                    tracing::info!("Server: connection established with {}", peer_id);
-                }
-            }
-            event = alice.select_next_some() => {
-                if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
-                    if peer_id == carol_peer_id {
-                        tracing::info!("Alice: connected to server");
-                        alice_connected = true;
-                    }
-                }
-            }
-            event = bob.select_next_some() => {
-                if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
-                    if peer_id == carol_peer_id {
-                        tracing::info!("Bob: connected to server");
-                        bob_connected = true;
-                    }
-                }
-            }
-        }
-    }
+    alice
+        .dial(
+            DialOpts::peer_id(carol_peer_id)
+                .condition(PeerCondition::Disconnected)
+                .addresses(vec![server_addr.clone()])
+                .extend_addresses_through_behaviour()
+                .build(),
+        )
+        .unwrap();
+    bob.dial(
+        DialOpts::peer_id(carol_peer_id)
+            .condition(PeerCondition::Disconnected)
+            .addresses(vec![server_addr])
+            .extend_addresses_through_behaviour()
+            .build(),
+    )
+    .unwrap();
 
     // Alice creates and sends a message for Bob
     let message = UnsignedPinnedMessage {
@@ -215,6 +204,4 @@ async fn pin_and_fetch_message() {
         received.verify_with_peer(alice_peer_id),
         "Message signature verification failed"
     );
-
-    tracing::info!("Test completed successfully!");
 }
