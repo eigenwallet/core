@@ -173,6 +173,29 @@ pub fn initial_setup(config_path: PathBuf, config: Config) -> Result<()> {
     Ok(())
 }
 
+/// Updates the config file with the provided configuration.
+/// 
+/// This function serializes the config to TOML format and writes it to the specified path.
+/// It reuses the same pattern as `initial_setup()` for consistency.
+/// 
+/// # Arguments
+/// * `config_path` - Path where the config file should be written
+/// * `config` - The configuration to serialize and write
+/// 
+/// # Returns
+/// * `Ok(())` if the config file was successfully updated
+/// * `Err` if serialization or file writing failed
+pub fn update_config(config_path: PathBuf, config: &Config) -> Result<()> {
+    let toml = toml::to_string(config)?;
+    fs::write(&config_path, toml)?;
+    
+    tracing::info!(
+        path = %config_path.display(),
+        "Config file updated successfully",
+    );
+    Ok(())
+}
+
 pub fn query_user_for_initial_config_with_network(
     bitcoin_network: bitcoin::Network,
     monero_network: monero::Network,

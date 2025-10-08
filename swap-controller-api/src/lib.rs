@@ -45,6 +45,24 @@ pub struct MoneroSeedResponse {
     pub restore_height: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SpreadResponse {
+    pub current_spread: rust_decimal::Decimal,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SetSpreadRequest {
+    pub spread: rust_decimal::Decimal,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SetSpreadResponse {
+    pub message: String,
+    pub old_spread: rust_decimal::Decimal,
+    pub new_spread: rust_decimal::Decimal,
+}
+
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -65,4 +83,10 @@ pub trait AsbApi {
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
     #[method(name = "get_swaps")]
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
+    
+    #[method(name = "get_spread")]
+    async fn get_spread(&self) -> Result<SpreadResponse, ErrorObjectOwned>;
+    
+    #[method(name = "set_spread")]
+    async fn set_spread(&self, request: SetSpreadRequest) -> Result<SetSpreadResponse, ErrorObjectOwned>;
 }

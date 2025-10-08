@@ -33,4 +33,8 @@ pub enum Cmd {
     ActiveConnections,
     /// Get list of swaps
     GetSwaps,
+    /// Get current spread percentage
+    GetSpread,
+    /// Set spread percentage (0.0 to 1.0)
+    SetSpread { spread: String },
 }
