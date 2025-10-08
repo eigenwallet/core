@@ -356,6 +356,7 @@ async fn init_test_wallets(
         true,
         None,
         None,
+        env_config.monero_finality_confirmations,
     )
     .await
     .unwrap();

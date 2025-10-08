@@ -106,6 +106,10 @@ struct RawWalletManager {
 pub struct FfiWallet {
     inner: RawWallet,
     listeners: Arc<Mutex<Vec<Box<dyn WalletEventListener>>>>,
+    // For how many blocks must transactions be included to be considered confirmed?
+    // We use this to enforce a higher than default requirement due to possible reorgs by
+    // malicious actors.
+    confirmation_requirement: u64,
 }
 
 /// This is our own wrapper around a raw C++ wallet pointer.
@@ -604,8 +608,13 @@ impl WalletHandle {
     }
 
     /// Get the unlocked balance of the wallet.
+    /// Only funds meeting the `confirmation_requirement` are considered unlocked.
     pub async fn unlocked_balance(&self) -> monero::Amount {
-        self.call(move |wallet| wallet.unlocked_balance()).await
+        let confirmation_requirement = self.call(|wallet| wallet.confirmation_requirement).await;
+
+        self.history();
+
+        Amount::ZERO
     }
 
     /// Get the total balance of the wallet.
@@ -828,10 +837,50 @@ impl WalletHandle {
     }
 
     /// Wait until a transaction is confirmed.
+    /// If no transfer proof is provided we scan until the funds have been found + confirmed
+    /// or we timeout.
     pub async fn wait_until_confirmed(
         &self,
+        transfer_proof: Option<TransferProof>,
+        destination_address: &monero::Address,
+        expected_amount: monero::Amount,
+        confirmations: u64,
+        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
+        scan_timeout: impl Into<Option<Duration>>,
+    ) -> anyhow::Result<()> {
+        match transfer_proof {
+            Some(transer_proof) => {
+                self.wait_until_tx_confirmed(
+                    transer_proof.tx_hash().to_string(),
+                    transer_proof.tx_key(),
+                    destination_address,
+                    expected_amount,
+                    confirmations,
+                    listener,
+                )
+                .await
+            }
+            None => {}
+        }
+    }
+
+    async fn wait_until_funds_confirmed(
+        &self,
+        destination_address: &monero::Address,
+        expected_amount: monero::Amount,
+        confirmations: u64,
+        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
+        scan_timeout: impl Into<Option<Duration>>,
+    ) -> anyhow::Result<()> {
+    }
+
+    /// Specialized version of `wait_until_confirmed` that expects a transfer proof
+    /// and only scan/checks the specific transactions.
+    /// Use this is possible, because it's much faster (O(1)) than doing a sync.
+    async fn wait_until_tx_confirmed(
+        &self,
         txid: String,
-        tx_key: monero::PrivateKey,
+        tx_key: PrivateKey,
         destination_address: &monero::Address,
         expected_amount: monero::Amount,
         confirmations: u64,
@@ -1482,7 +1531,12 @@ impl FfiWallet {
     const MAIN_ACCOUNT_INDEX: u32 = 0;
 
     /// Create and initialize new wallet from a raw C++ wallet pointer.
-    fn new(inner: RawWallet, background_sync: bool, daemon: Daemon) -> anyhow::Result<Self> {
+    fn new(
+        inner: RawWallet,
+        background_sync: bool,
+        daemon: Daemon,
+        confirmation_requirement: u64,
+    ) -> anyhow::Result<Self> {
         if inner.inner.is_null() {
             anyhow::bail!("Failed to create wallet: got null pointer");
         }
@@ -1490,6 +1544,7 @@ impl FfiWallet {
         let mut wallet = Self {
             inner,
             listeners: Arc::new(Mutex::new(vec![])),
+            confirmation_requirement,
         };
 
         wallet
@@ -1643,11 +1698,17 @@ impl FfiWallet {
             .blockChainHeight()
             .context("Failed to get current block height: FFI call failed with exception")
             .expect("Shouldn't panic");
-        let target_block = self.daemon_blockchain_height().unwrap_or(0);
-
-        if target_block == 0 {
-            return SyncProgress::zero();
-        }
+        let target_block = match self.daemon_blockchain_height() {
+            Err(error) => {
+                tracing::error!(%error, "Couldn't fetch block height, assuming 0% sync progress");
+                return SyncProgress::zero();
+            }
+            Ok(height) if height == 0 => {
+                tracing::error!("Daemon returned block height zero, assuming 0% sync progress");
+                return SyncProgress::zero();
+            }
+            Ok(height) => height,
+        };
 
         let progress = SyncProgress::new(current_block, target_block);
 

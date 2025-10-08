@@ -7,12 +7,15 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use crate::common::throttle::{throttle, Throttle};
+use crate::common::{
+    retry,
+    throttle::{throttle, Throttle},
+};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_simple_request_rpc::SimpleRequestRpc;
-use monero_sys::WalletEventListener;
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
+use monero_sys::{ScanType, WalletEventListener};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -253,6 +256,7 @@ impl Wallets {
         regtest: bool,
         tauri_handle: Option<TauriHandle>,
         wallet_database: Option<Arc<monero_sys::Database>>,
+        confirmation_requirement: u64,
     ) -> Result<Self> {
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
@@ -294,6 +298,7 @@ impl Wallets {
             regtest,
             tauri_handle,
             wallet_database,
+            confirmation_requirement,
         };
 
         // Record wallet access in database
@@ -313,6 +318,7 @@ impl Wallets {
         tauri_handle: Option<TauriHandle>,
         existing_wallet: Wallet,
         wallet_database: Option<Arc<monero_sys::Database>>,
+        confirmation_requirement: u64,
     ) -> Result<Self> {
         if regtest {
             existing_wallet.unsafe_prepare_for_regtest().await;
@@ -345,6 +351,7 @@ impl Wallets {
             regtest,
             tauri_handle,
             wallet_database,
+            confirmation_requirement,
         };
 
         // Record wallet access in database

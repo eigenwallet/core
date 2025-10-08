@@ -700,6 +700,7 @@ mod builder {
                         self.tauri_handle.clone(),
                         wallet,
                         wallet_database,
+                        env_config.monero_finality_confirmations,
                     )
                     .await
                     .context("Failed to initialize Monero wallets with existing wallet")?,

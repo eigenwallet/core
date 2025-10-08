@@ -595,6 +595,7 @@ async fn init_monero_wallet(
         false,
         None,
         None,
+        env_config.monero_finality_confirmations,
     )
     .await
     .context("Failed to initialize Monero wallets")?;

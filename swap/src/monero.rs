@@ -14,7 +14,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Deref, Mul, Sub};
 use std::str::FromStr;
 use typeshare::typeshare;
 
