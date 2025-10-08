@@ -17,6 +17,7 @@ pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
 
+use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
@@ -26,7 +27,7 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
 use cxx::{let_cxx_string, CxxString, CxxVector, Exception, UniquePtr};
-use monero::Amount;
+use monero::{Amount, PrivateKey};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -87,6 +88,7 @@ struct Call {
     sender: oneshot::Sender<AnyBox>,
 }
 
+/// A heap allocated value of any type and variable size.
 type AnyBox = Box<dyn Any + Send>;
 
 /// A singleton responsible for managing (creating, opening, ...) wallets.
@@ -142,6 +144,62 @@ pub struct TxReceipt {
     pub tx_key: String,
     /// The blockchain height at the time of publication.
     pub height: u64,
+}
+
+// TODO: add constructor/ change String to fixed length byte array
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TxHash(pub String);
+
+impl From<TxHash> for String {
+    fn from(from: TxHash) -> Self {
+        from.0
+    }
+}
+
+impl fmt::Debug for TxHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for TxHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Deref for TxHash {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransferProof {
+    tx_hash: TxHash,
+    #[serde(with = "swap_serde::monero::private_key")]
+    tx_key: PrivateKey,
+}
+
+impl TransferProof {
+    pub fn new(tx_hash: TxHash, tx_key: PrivateKey) -> Self {
+        Self { tx_hash, tx_key }
+    }
+    pub fn tx_hash(&self) -> TxHash {
+        self.tx_hash.clone()
+    }
+    pub fn tx_key(&self) -> PrivateKey {
+        self.tx_key
+    }
+}
+
+/// Specify how to look for funds - either manuall scan all blocks from
+/// a specified restore height or just look for a single transaction.
+pub enum ScanType {
+    ScanFromHeight { restore_height: u64 },
+    ScanTransaction { txid: String },
 }
 
 /// A remote node to connect to.
@@ -832,7 +890,6 @@ impl WalletHandle {
             tracing::trace!("Transaction not confirmed yet, polling again later");
         }
 
-        // Signal success
         Ok(())
     }
 
@@ -2270,7 +2327,11 @@ impl FfiWallet {
                     .expect("history pointer to not be null after we just checked"),
             )
         };
-        // Ignore result, we'll proceed anyway
+
+        // TransactionHistory::refresh here loads the transactions of the wallet into the history object.
+        // It does not (afaict) make any network requests or call refresh on the wallet.
+        // Relevant lines: `transaction_history.cpp:106-286`.
+        // We'll ignore the result.
         let _ = history
             .refresh()
             .context("Failed to refresh transaction history: FFI call failed with exception")

@@ -441,47 +441,6 @@ impl fmt::Display for Amount {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TransferProof {
-    tx_hash: TxHash,
-    #[serde(with = "swap_serde::monero::private_key")]
-    tx_key: PrivateKey,
-}
-
-impl TransferProof {
-    pub fn new(tx_hash: TxHash, tx_key: PrivateKey) -> Self {
-        Self { tx_hash, tx_key }
-    }
-    pub fn tx_hash(&self) -> TxHash {
-        self.tx_hash.clone()
-    }
-    pub fn tx_key(&self) -> PrivateKey {
-        self.tx_key
-    }
-}
-
-// TODO: add constructor/ change String to fixed length byte array
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TxHash(pub String);
-
-impl From<TxHash> for String {
-    fn from(from: TxHash) -> Self {
-        from.0
-    }
-}
-
-impl fmt::Debug for TxHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl fmt::Display for TxHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 #[error("expected {expected}, got {actual}")]
 pub struct InsufficientFunds {
