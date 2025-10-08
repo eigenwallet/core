@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix an issue where it would always say "Wait for the application to load all required components" if Tor was disabled.
+
 ## [3.1.0] - 2025-10-07
 
 - GUI: Remember acknowledged alerts and do not show them again.
