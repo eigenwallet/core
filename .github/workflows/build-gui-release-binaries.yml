@@ -130,8 +130,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Find all release artifacts (excluding .sig files from Tauri updater)
-          find target/${{ matrix.target }}/release/bundle -type f \
+          # Find release artifacts at the top level of each bundle subdirectory
+          # Using maxdepth=2 avoids descending into .app bundles and other internal structures
+          find src-tauri/target/${{ matrix.target }}/release/bundle -maxdepth 2 -type f \
             ! -name "*.sig" \
             ! -name "*.asc" \
             -print0 | while IFS= read -r -d '' file; do
