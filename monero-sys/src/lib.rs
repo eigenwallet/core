@@ -95,6 +95,8 @@ type AnyBox = Box<dyn Any + Send>;
 struct WalletManager {
     /// A wrapper around the raw C++ wallet manager pointer.
     inner: RawWalletManager,
+    /// How many confirmations funds need to be considered final.
+    confirmation_requirement: u64,
 }
 
 /// This is our own wrapper around a raw C++ wallet manager pointer.
@@ -288,14 +290,28 @@ impl WalletHandle {
         daemon: Daemon,
         network: monero::Network,
         background_sync: bool,
+        confirmation_requirement: u64,
     ) -> anyhow::Result<Self> {
-        Self::open_or_create_with_password(path, None, daemon, network, background_sync).await
+        Self::open_or_create_with_password(
+            path,
+            None,
+            daemon,
+            network,
+            background_sync,
+            confirmation_requirement,
+        )
+        .await
     }
 
     /// Common implementation used by all `open_*` helpers.
     /// Spawns a dedicated wallet thread. Gets the WalletManager. Calls the wallet_op closure with the WalletManager.
     /// The wallet_op closure determines which specific WalletManager method is called to create the wallet.
-    async fn open_with<F>(path: String, daemon: Daemon, wallet_op: F) -> anyhow::Result<Self>
+    async fn open_with<F>(
+        path: String,
+        daemon: Daemon,
+        confirmation_requirement: u64,
+        wallet_op: F,
+    ) -> anyhow::Result<Self>
     where
         F: FnOnce(&mut WalletManager) -> anyhow::Result<FfiWallet> + Send + 'static,
     {
@@ -313,7 +329,11 @@ impl WalletHandle {
 
                 // Get the WalletManager
                 // If we fail, send the error through the oneshot channel
-                let mut manager = match WalletManager::new(daemon.clone(), &wallet_name) {
+                let mut manager = match WalletManager::new(
+                    daemon.clone(),
+                    &wallet_name,
+                    confirmation_requirement,
+                ) {
                     Ok(m) => m,
                     Err(e) => {
                         let _ = tx.send(Err(e.context("failed to create wallet manager")));
@@ -362,18 +382,24 @@ impl WalletHandle {
         daemon: Daemon,
         network: monero::Network,
         background_sync: bool,
+        confirmation_requirement: u64,
     ) -> anyhow::Result<Self> {
         let password = password.into();
 
-        Self::open_with(path.clone(), daemon.clone(), move |manager| {
-            manager.open_or_create_wallet(
-                &path,
-                password.as_ref(),
-                network,
-                background_sync,
-                daemon.clone(),
-            )
-        })
+        Self::open_with(
+            path.clone(),
+            daemon.clone(),
+            confirmation_requirement,
+            move |manager| {
+                manager.open_or_create_wallet(
+                    &path,
+                    password.as_ref(),
+                    network,
+                    background_sync,
+                    daemon.clone(),
+                )
+            },
+        )
         .await
     }
 
@@ -387,22 +413,34 @@ impl WalletHandle {
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
+        confirmation_requirement: u64,
     ) -> anyhow::Result<Self> {
-        Self::open_with(path.clone(), daemon.clone(), move |manager| {
-            if manager.wallet_exists(&path) {
-                manager.open_or_create_wallet(&path, None, network, background_sync, daemon.clone())
-            } else {
-                manager.recover_wallet(
-                    &path,
-                    None,
-                    &mnemonic,
-                    network,
-                    restore_height,
-                    background_sync,
-                    daemon.clone(),
-                )
-            }
-        })
+        Self::open_with(
+            path.clone(),
+            daemon.clone(),
+            confirmation_requirement,
+            move |manager| {
+                if manager.wallet_exists(&path) {
+                    manager.open_or_create_wallet(
+                        &path,
+                        None,
+                        network,
+                        background_sync,
+                        daemon.clone(),
+                    )
+                } else {
+                    manager.recover_wallet(
+                        &path,
+                        None,
+                        &mnemonic,
+                        network,
+                        restore_height,
+                        background_sync,
+                        daemon.clone(),
+                    )
+                }
+            },
+        )
         .await
     }
 
@@ -420,20 +458,26 @@ impl WalletHandle {
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
+        confirmation_requirement: u64,
     ) -> anyhow::Result<Self> {
-        Self::open_with(path.clone(), daemon.clone(), move |manager| {
-            manager.open_or_create_wallet_from_keys(
-                &path,
-                password.as_deref(),
-                network,
-                &address,
-                view_key,
-                spend_key,
-                restore_height,
-                background_sync,
-                daemon.clone(),
-            )
-        })
+        Self::open_with(
+            path.clone(),
+            daemon.clone(),
+            confirmation_requirement,
+            move |manager| {
+                manager.open_or_create_wallet_from_keys(
+                    &path,
+                    password.as_deref(),
+                    network,
+                    &address,
+                    view_key,
+                    spend_key,
+                    restore_height,
+                    background_sync,
+                    daemon.clone(),
+                )
+            },
+        )
         .await
     }
 
@@ -610,11 +654,7 @@ impl WalletHandle {
     /// Get the unlocked balance of the wallet.
     /// Only funds meeting the `confirmation_requirement` are considered unlocked.
     pub async fn unlocked_balance(&self) -> monero::Amount {
-        let confirmation_requirement = self.call(|wallet| wallet.confirmation_requirement).await;
-
-        self.history();
-
-        Amount::ZERO
+        self.call(|wallet| wallet.unlocked_balance()).await
     }
 
     /// Get the total balance of the wallet.
@@ -839,6 +879,7 @@ impl WalletHandle {
     /// Wait until a transaction is confirmed.
     /// If no transfer proof is provided we scan until the funds have been found + confirmed
     /// or we timeout.
+    /// Prefer passing a transfer proof if possible, as it is _much_ faster (O(1) vs syncing the wallet)
     pub async fn wait_until_confirmed(
         &self,
         transfer_proof: Option<TransferProof>,
@@ -860,10 +901,22 @@ impl WalletHandle {
                 )
                 .await
             }
-            None => {}
+            None => {
+                self.wait_until_funds_confirmed(
+                    destination_address,
+                    expected_amount,
+                    confirmations,
+                    listener,
+                    scan_timeout,
+                )
+                .await
+            }
         }
     }
 
+    /// Specialized version of `wait_until_confirmed` that syncs the wallet from the
+    /// restore height and tries to find the funds by hand.
+    /// If possible, use `wait_until_tx_confirmed` instead
     async fn wait_until_funds_confirmed(
         &self,
         destination_address: &monero::Address,
@@ -872,6 +925,7 @@ impl WalletHandle {
         listener: Option<impl Fn((u64, u64)) + Send + 'static>,
         scan_timeout: impl Into<Option<Duration>>,
     ) -> anyhow::Result<()> {
+        bail!("todo")
     }
 
     /// Specialized version of `wait_until_confirmed` that expects a transfer proof
@@ -1052,6 +1106,7 @@ impl WalletHandle {
                         ssl: false,
                     },
                     &wallet_name,
+                    0,
                 )?;
 
                 manager.verify_wallet_password(&keys_file_path, &password)
@@ -1145,7 +1200,11 @@ impl WalletManager {
     /// Get the wallet manager instance.
     /// You can optionally pass a daemon with which the wallet manager and
     /// all wallets opened by the manager will connect.
-    pub fn new(daemon: Daemon, span_name: &str) -> anyhow::Result<Self> {
+    pub fn new(
+        daemon: Daemon,
+        span_name: &str,
+        confirmation_requirement: u64,
+    ) -> anyhow::Result<Self> {
         // Install the log callback to route c++ logs to tracing.
         let_cxx_string!(span_name = span_name);
         bridge::log::install_log_callback(&span_name)
@@ -1156,6 +1215,7 @@ impl WalletManager {
 
         let mut manager = Self {
             inner: RawWalletManager::new(manager),
+            confirmation_requirement,
         };
 
         manager.set_daemon_address(&daemon);
@@ -1217,8 +1277,13 @@ impl WalletManager {
         }
 
         let raw_wallet = RawWallet::new(wallet_pointer);
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
-            .context(format!("Failed to initialize wallet `{}`", &path))?;
+        let wallet = FfiWallet::new(
+            raw_wallet,
+            background_sync,
+            daemon,
+            self.confirmation_requirement,
+        )
+        .context(format!("Failed to initialize wallet `{}`", &path))?;
 
         Ok(wallet)
     }
@@ -1301,8 +1366,13 @@ impl WalletManager {
 
         let raw_wallet = RawWallet::new(wallet_pointer);
         tracing::debug!(path=%path, "Created wallet from keys, initializing");
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
-            .context(format!("Failed to initialize wallet `{}` from keys", &path))?;
+        let wallet = FfiWallet::new(
+            raw_wallet,
+            background_sync,
+            daemon,
+            self.confirmation_requirement,
+        )
+        .context(format!("Failed to initialize wallet `{}` from keys", &path))?;
 
         Ok(wallet)
     }
@@ -1342,8 +1412,13 @@ impl WalletManager {
             .context("Failed to recover wallet from seed: FFI call failed with exception")?;
 
         let raw_wallet = RawWallet::new(wallet_pointer);
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
-            .context(format!("Failed to initialize wallet `{}` from seed", &path))?;
+        let wallet = FfiWallet::new(
+            raw_wallet,
+            background_sync,
+            daemon,
+            self.confirmation_requirement,
+        )
+        .context(format!("Failed to initialize wallet `{}` from seed", &path))?;
 
         Ok(wallet)
     }
@@ -1399,8 +1474,13 @@ impl WalletManager {
 
         let raw_wallet = RawWallet::new(wallet_pointer);
 
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
-            .context("Failed to initialize re-opened wallet")?;
+        let wallet = FfiWallet::new(
+            raw_wallet,
+            background_sync,
+            daemon,
+            self.confirmation_requirement,
+        )
+        .context("Failed to initialize re-opened wallet")?;
 
         wallet.add_listener(listener);
 
@@ -1925,12 +2005,21 @@ impl FfiWallet {
 
     /// Get the total unlocked balance across all accounts in atomic units.
     fn unlocked_balance(&mut self) -> monero::Amount {
-        let balance = self
-            .inner
-            .unlockedBalanceAll()
-            .context("Failed to get unlocked balance: FFI call failed with exception")
-            .expect("Shouldn't panic");
-        monero::Amount::from_pico(balance)
+        // Sum all incoming transaction that have at least `confirmation_requirement` confirmations.
+        monero::Amount::from_pico(
+            self.history()
+                .iter()
+                .filter_map(|tx| {
+                    if matches!(tx.direction, TransactionDirection::In)
+                        && tx.confirmations >= self.confirmation_requirement
+                    {
+                        Some(tx.amount.as_pico())
+                    } else {
+                        None
+                    }
+                })
+                .sum(),
+        )
     }
 
     /// Check if the wallet is synced with the daemon.

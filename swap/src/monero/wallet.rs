@@ -263,6 +263,7 @@ impl Wallets {
             daemon.clone(),
             network,
             true,
+            confirmation_requirement,
         )
         .await
         .context("Failed to open main wallet")?;
@@ -416,6 +417,7 @@ impl Wallets {
             restore_height,
             false, // We don't sync the swap wallet, just import the transaction
             daemon,
+            self.confirmation_requirement,
         )
         .await
         .context(format!(
