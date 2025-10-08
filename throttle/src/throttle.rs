@@ -2,7 +2,7 @@
 // MIT License
 
 use std::pin::Pin;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{self, /* SystemTime, UNIX_EPOCH, */ Duration};
 
 pub fn throttle<F, T>(closure: F, delay: Duration) -> Throttle<T>

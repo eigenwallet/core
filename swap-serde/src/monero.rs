@@ -12,11 +12,11 @@ pub enum network {
 
 pub mod private_key {
     use hex;
-    use monero::consensus::{Decodable, Encodable};
     use monero::PrivateKey;
+    use monero::consensus::{Decodable, Encodable};
     use serde::de::Visitor;
     use serde::ser::Error;
-    use serde::{de, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer, de};
     use std::fmt;
     use std::io::Cursor;
 
@@ -100,7 +100,7 @@ pub mod amount {
 }
 
 pub mod address {
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result, bail};
     use std::str::FromStr;
 
     #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq)]
