@@ -3,7 +3,7 @@ use libp2p::{
     request_response::OutboundRequestId,
     swarm::{FromSwarm, NetworkBehaviour, ToSwarm},
 };
-use libp2p_identity::PeerId;
+use libp2p_identity::{Keypair, PeerId};
 use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -12,13 +12,13 @@ use std::{
 };
 
 use crate::{
-    codec, futures_utils::FuturesHashSet, storage, PinRequest, PinResponse, PullRequest,
-    SignedPinnedMessage,
+    codec, futures_utils::FuturesHashSet, signature::SignedMessage, storage, PinRequest,
+    PinResponse, PullRequest, SignedPinnedMessage, UnsignedPinnedMessage,
 };
 
 pub struct Behaviour<S> {
     /// The peer ID of the local node
-    peer_id: PeerId,
+    keypair: Keypair,
 
     /// The peer IDs of the servers
     servers: Vec<PeerId>,
@@ -86,13 +86,14 @@ pub enum Event {
 }
 
 impl<S: storage::Storage + 'static> Behaviour<S> {
-    pub fn new(peer_id: PeerId, servers: Vec<PeerId>, storage: S, timeout: Duration) -> Self {
+    pub fn new(keypair: Keypair, servers: Vec<PeerId>, storage: S, timeout: Duration) -> Self {
+        let peer_id = keypair.public().to_peer_id();
         let outgoing_messages_hashes: HashSet<_> =
             storage.hashes_by_sender(peer_id).into_iter().collect();
 
         Self {
             inner: codec::client(timeout),
-            peer_id,
+            keypair,
             servers,
             storage,
 
@@ -114,10 +115,20 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         }
     }
 
+    fn peer_id(&self) -> PeerId {
+        self.keypair.public().to_peer_id()
+    }
+
     fn backoff(&mut self, peer_id: PeerId) -> &mut ExponentialBackoff {
         self.backoff
             .entry(peer_id)
-            .or_insert_with(|| ExponentialBackoff::default())
+            .or_insert_with(|| ExponentialBackoff {
+                initial_interval: Duration::from_millis(50),
+                current_interval: Duration::from_millis(50),
+                max_interval: Duration::from_secs(5 * 60),
+                max_elapsed_time: None,
+                ..ExponentialBackoff::default()
+            })
     }
 
     fn mark_do_not_want(&mut self, peer_id: PeerId, hash: [u8; 32]) {
@@ -137,12 +148,17 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
 
     /// Inserts a message into the internal system
     /// such that it will be contineously broadcasted
-    pub fn insert_pinned_message(&mut self, message: SignedPinnedMessage) {
-        self.outgoing_messages.insert(message.content_hash());
-        self.mark_do_not_want(self.peer_id, message.content_hash());
+    pub fn insert_pinned_message(&mut self, message: UnsignedPinnedMessage) {
+        // Sign the message
+        let signed_message = SignedMessage::new(&self.keypair, message).unwrap();
+        let message_hash = signed_message.content_hash();
+
+        // Store in internal state
+        self.outgoing_messages.insert(message_hash);
+        self.mark_do_not_want(self.peer_id(), message_hash);
 
         // Save the message in storage
-        self.storage.store(message).unwrap();
+        self.storage.store(signed_message).unwrap();
     }
 
     /// Schedules a pin request for a server after backoff
@@ -160,23 +176,12 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                     request_id,
                     response,
                 } => {
-                    println!("received response from {} with data {:?}", peer, response);
-
                     match response {
                         codec::Response::Pin(PinResponse::Stored) => {
                             if let Some((peer_id, hash)) =
                                 self.inflight_pin_request.remove(&request_id)
                             {
-                                // Mark this message as stored on the server
-                                let mut set = self
-                                    .dont_want
-                                    .entry(peer_id)
-                                    .or_insert_with(|| Arc::new(HashSet::new()))
-                                    .as_ref()
-                                    .clone();
-                                set.insert(hash);
-                                self.dont_want.insert(peer_id, Arc::new(set));
-
+                                self.mark_do_not_want(peer_id, hash);
                                 self.backoff(peer_id).reset();
 
                                 self.to_swarm_events
@@ -198,6 +203,8 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                                     fetch_response.messages.into_iter().collect();
 
                                 // Mark this server as having these hashes
+                                // TODO: We replace here because fetch always returns all hashes
+                                //       but we may want to extend here instead if logic changes
                                 self.dont_want.insert(peer, Arc::new(server_hashes.clone()));
 
                                 // Now we extend our [`incoming_messages`] set with the server's messages
@@ -205,17 +212,12 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                             }
                         }
                         codec::Response::Pull(pull_response) => {
-                            println!(
-                                "received pull response from {} with data {:?}",
-                                peer, pull_response
-                            );
-
                             if let Some(_) = self.inflight_pull_request.remove(&request_id) {
                                 let messages = pull_response
                                     .messages
                                     .into_iter()
                                     // Ensure the message is intended for us
-                                    .filter(|message| message.message().receiver == self.peer_id)
+                                    .filter(|message| message.message().receiver == self.peer_id())
                                     // Ensure the message is signed by the supposed sender
                                     .filter(|message| {
                                         message.verify_with_peer(message.message.sender)
@@ -335,7 +337,7 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
             }
 
             // For every `incoming_messages` check if we have them, otherwise pull them
-            let our_hashes = self.dont_want_read_only(self.peer_id);
+            let our_hashes = self.dont_want_read_only(self.peer_id());
             let interesting_hashes: Vec<_> = self
                 .incoming_messages
                 .difference(&our_hashes)
@@ -379,6 +381,7 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
             }
         }
 
+        // TODO: Will be always be woken up here ? We might return while to_swarm_events is not empty
         if let Some(event) = self.inner_events.pop_front() {
             return Poll::Ready(event);
         }

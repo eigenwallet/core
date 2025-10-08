@@ -130,7 +130,7 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
         cx: &mut std::task::Context<'_>,
     ) -> Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
         // TODO: Is this the correct way to handle events?
-        // TODO: Will this always us up again ?
+        // TODO: Will this always wake us up again ?
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
                 libp2p::swarm::ToSwarm::GenerateEvent(event) => {

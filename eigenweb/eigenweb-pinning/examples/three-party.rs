@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use eigenweb_pinning::storage::MemoryStorage;
-use eigenweb_pinning::{signature::SignedMessage, UnsignedPinnedMessage};
+use eigenweb_pinning::UnsignedPinnedMessage;
 use libp2p::futures::StreamExt;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, Multiaddr, PeerId, SwarmBuilder};
@@ -108,14 +108,14 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
     loop {
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
-                info!("✓ Listening on {}", address);
+                info!("Listening on {}", address);
                 info!(
                     "Clients can connect using: /ip4/127.0.0.1/tcp/9000/p2p/{}",
                     peer_id
                 );
             }
             SwarmEvent::Behaviour(event) => {
-                info!("📨 Behaviour event: {:?}", event);
+                info!("Behaviour event: {:?}", event);
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id,
@@ -124,7 +124,7 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 info!(
-                    "🔗 Connection established with {} at {:?} (total: {})",
+                    "Connection established with {} at {:?} (total: {})",
                     peer_id, endpoint, num_established
                 );
             }
@@ -135,12 +135,12 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 info!(
-                    "🔌 Connection closed with {} (remaining: {}) - cause: {:?}",
+                    "Connection closed with {} (remaining: {}) - cause: {:?}",
                     peer_id, num_established, cause
                 );
             }
             SwarmEvent::IncomingConnection { send_back_addr, .. } => {
-                info!("📞 Incoming connection from {}", send_back_addr);
+                info!("Incoming connection from {}", send_back_addr);
             }
             SwarmEvent::IncomingConnectionError {
                 send_back_addr,
@@ -148,7 +148,7 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 error!(
-                    "❌ Incoming connection error from {}: {}",
+                    "Incoming connection error from {}: {}",
                     send_back_addr, error
                 );
             }
@@ -159,175 +159,17 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
     }
 }
 
-async fn run_client_alice(party: Party) -> Result<(), Box<dyn Error>> {
+async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Error>> {
     let keypair = party.keypair();
     let peer_id = party.peer_id();
 
-    info!("Starting as Alice (sender)");
+    info!("Starting as {}", party.name());
 
     // Create the pinning client behaviour
     let storage = MemoryStorage::new();
     let carol_peer_id = Party::Carol.peer_id();
     let behaviour = eigenweb_pinning::client::Behaviour::new(
-        peer_id,
-        vec![carol_peer_id],
-        storage,
-        Duration::from_secs(10),
-    );
-
-    // Build the swarm
-    let mut swarm = SwarmBuilder::with_existing_identity(keypair.clone())
-        .with_tokio()
-        .with_tcp(
-            libp2p::tcp::Config::default(),
-            libp2p::noise::Config::new,
-            libp2p::yamux::Config::default,
-        )?
-        .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10)))
-        .build();
-
-    // Listen on a random port
-    let listen_addr: Multiaddr = "/ip4/0.0.0.0/tcp/0".parse()?;
-    swarm.listen_on(listen_addr)?;
-
-    // Connect to Carol's server
-    let server_addr: Multiaddr =
-        format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", carol_peer_id).parse()?;
-
-    info!("🔌 Dialing Carol's server at {}", server_addr);
-    swarm.dial(server_addr)?;
-
-    // Set up stdin reader for interactive input
-    let stdin = tokio::io::stdin();
-    let mut stdin_lines = tokio::io::BufReader::new(stdin).lines();
-    let bob_peer_id = Party::Bob.peer_id();
-
-    let mut connected_to_server = false;
-
-    // Event loop
-    loop {
-        tokio::select! {
-            // Handle user input
-            line = stdin_lines.next_line() => {
-                match line {
-                    Ok(Some(input)) => {
-                        if input.trim().is_empty() {
-                            continue;
-                        }
-
-                        if !connected_to_server {
-                            info!("⚠️  Not yet connected to Carol's server. Please wait...");
-                            continue;
-                        }
-
-                        // Create a new message for Bob
-                        let message = UnsignedPinnedMessage {
-                            id: Uuid::new_v4(),
-                            sender: peer_id,
-                            receiver: bob_peer_id,
-                            ttl: 3600, // 1 hour
-                            priority: 1,
-                            encrypted_content: Bytes::from(input.trim().to_string()),
-                        };
-
-                        // Sign the message
-                        match SignedMessage::new(&keypair, message) {
-                            Ok(signed_message) => {
-                                let hash = signed_message.content_hash();
-                                info!("📝 Created message for Bob with hash: {:02x?}", hash);
-
-                                // Pin the message (stores it locally and will be sent via heartbeat)
-                                swarm.behaviour_mut().insert_pinned_message(signed_message);
-                                info!("✅ Message queued for Bob. It will be sent to Carol's server.");
-                            }
-                            Err(e) => {
-                                error!("❌ Failed to sign message: {}", e);
-                            }
-                        }
-                    }
-                    Ok(None) => {
-                        info!("EOF on stdin, exiting");
-                        break;
-                    }
-                    Err(e) => {
-                        error!("Error reading from stdin: {}", e);
-                    }
-                }
-            }
-
-            // Handle swarm events
-            event = swarm.select_next_some() => {
-                match event {
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        info!("✓ Listening on {}", address);
-                    }
-                    SwarmEvent::Behaviour(event) => {
-                        info!("📨 Behaviour event: {:?}", event);
-                    }
-                    SwarmEvent::ConnectionEstablished {
-                        peer_id: connected_peer,
-                        endpoint,
-                        num_established,
-                        ..
-                    } => {
-                        info!(
-                            "🔗 Connection established with {} at {:?} (total: {})",
-                            connected_peer, endpoint, num_established
-                        );
-                        if connected_peer == carol_peer_id {
-                            connected_to_server = true;
-                            info!("✨ Connected to Carol's server!");
-                            info!("💬 You can now type messages for Bob and press Enter.");
-                            info!("   Messages will be automatically pinned to Carol's server.");
-                        }
-                    }
-                    SwarmEvent::ConnectionClosed {
-                        peer_id: closed_peer,
-                        cause,
-                        num_established,
-                        ..
-                    } => {
-                        info!(
-                            "🔌 Connect ion closed with {} (remaining: {}) - cause: {:?}",
-                            closed_peer, num_established, cause
-                        );
-                        if closed_peer == carol_peer_id {
-                            connected_to_server = false;
-                            info!("⚠️  Lost connection to Carol's server");
-                        }
-                    }
-                    SwarmEvent::OutgoingConnectionError { peer_id: failed_peer, error, .. } => {
-                        error!("❌ Outgoing connection error to {:?}: {}", failed_peer, error);
-                    }
-                    SwarmEvent::Dialing {
-                        peer_id: dialing_peer,
-                        connection_id,
-                    } => {
-                        info!("📞 Dialing {:?} (connection: {:?})", dialing_peer, connection_id);
-                    }
-                    event => {
-                        info!("Other swarm event: {:?}", event);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
-    let keypair = party.keypair();
-    let peer_id = party.peer_id();
-
-    info!("Starting as Bob (receiver)");
-
-    // Create the pinning client behaviour
-    let storage = MemoryStorage::new();
-    let carol_peer_id = Party::Carol.peer_id();
-    let behaviour = eigenweb_pinning::client::Behaviour::new(
-        peer_id,
+        keypair.clone(),
         vec![carol_peer_id],
         storage,
         Duration::from_secs(10),
@@ -353,38 +195,72 @@ async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
     let server_addr: Multiaddr =
         format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", carol_peer_id).parse()?;
 
-    info!("🔌 Dialing Carol's server at {}", server_addr);
+    info!("Dialing Carol's server at {}", server_addr);
     swarm.dial(server_addr)?;
 
-    let mut connected_to_server = false;
+    // Set up stdin reader for interactive input
+    let stdin = tokio::io::stdin();
+    let mut stdin_lines = tokio::io::BufReader::new(stdin).lines();
+    let other_peer_id = other_party.peer_id();
+    let other_name = other_party.name();
+
     let mut all_messages = Vec::new();
 
     // Event loop
     loop {
         tokio::select! {
+            // Handle user input
+            line = stdin_lines.next_line() => {
+                match line {
+                    Ok(Some(input)) => {
+                        if input.trim().is_empty() {
+                            continue;
+                        }
+
+                        let message = UnsignedPinnedMessage {
+                            id: Uuid::new_v4(),
+                            sender: peer_id,
+                            receiver: other_peer_id,
+                            ttl: 3600, // 1 hour
+                            priority: 1,
+                            encrypted_content: Bytes::from(input.trim().to_string()),
+                        };
+
+                        swarm.behaviour_mut().insert_pinned_message(message);
+                        info!("Message queued for {}", other_name);
+                    }
+                    Ok(None) => {
+                        info!("EOF on stdin, exiting");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        error!("Error reading from stdin: {}", e);
+                    }
+                }
+            }
+
             // Handle swarm events
             event = swarm.select_next_some() => {
                 match event {
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        info!("✓ Listening on {}", address);
+                        info!("Listening on {}", address);
                     }
                     SwarmEvent::Behaviour(event) => {
                         match event {
                             eigenweb_pinning::client::Event::IncomingPinnedMessagesReceived { peer, outgoing_request_id, messages } => {
                                 if messages.is_empty() {
-                                    info!("📭 No new messages (request {:?})", outgoing_request_id);
-                                }
-
-                                all_messages.extend(messages.into_iter());
-
-                                info!("📬 Received {} message(s) from {} (request {:?})", all_messages.len(), peer, outgoing_request_id);
-                                for msg in &all_messages {
-                                    let content = String::from_utf8_lossy(&msg.message().encrypted_content);
-                                    info!("  💌 From Alice: {}", content);
+                                    info!("No new messages (request {:?})", outgoing_request_id);
+                                } else {
+                                    all_messages.extend(messages.into_iter());
+                                    info!("Received {} total message(s) from {} (request {:?})", all_messages.len(), peer, outgoing_request_id);
+                                    for msg in &all_messages {
+                                        let content = String::from_utf8_lossy(&msg.message().encrypted_content);
+                                        info!("  From {}: {}", other_name, content);
+                                    }
                                 }
                             }
                             _ => {
-                                info!("📨 Behaviour event: {:?}", event);
+                                info!("Behaviour event: {:?}", event);
                             }
                         }
                     }
@@ -395,13 +271,12 @@ async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
                         ..
                     } => {
                         info!(
-                            "🔗 Connection established with {} at {:?} (total: {})",
+                            "Connection established with {} at {:?} (total: {})",
                             connected_peer, endpoint, num_established
                         );
                         if connected_peer == carol_peer_id {
-                            connected_to_server = true;
-                            info!("✨ Connected to Carol's server!");
-                            info!("📡 The client will automatically fetch and pull messages in the background.");
+                            info!("Connected to Carol's server");
+                            info!("Type messages for {} and press Enter", other_name);
                         }
                     }
                     SwarmEvent::ConnectionClosed {
@@ -411,22 +286,21 @@ async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
                         ..
                     } => {
                         info!(
-                            "🔌 Connection closed with {} (remaining: {}) - cause: {:?}",
+                            "Connection closed with {} (remaining: {}) - cause: {:?}",
                             closed_peer, num_established, cause
                         );
                         if closed_peer == carol_peer_id {
-                            connected_to_server = false;
-                            info!("⚠️  Lost connection to Carol's server");
+                            info!("Lost connection to Carol's server");
                         }
                     }
                     SwarmEvent::OutgoingConnectionError { peer_id: failed_peer, error, .. } => {
-                        error!("❌ Outgoing connection error to {:?}: {}", failed_peer, error);
+                        error!("Outgoing connection error to {:?}: {}", failed_peer, error);
                     }
                     SwarmEvent::Dialing {
                         peer_id: dialing_peer,
                         connection_id,
                     } => {
-                        info!("📞 Dialing {:?} (connection: {:?})", dialing_peer, connection_id);
+                        info!("Dialing {:?} (connection: {:?})", dialing_peer, connection_id);
                     }
                     event => {
                         info!("Other swarm event: {:?}", event);
@@ -435,6 +309,14 @@ async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
             }
         }
     }
+}
+
+async fn run_client_alice(party: Party) -> Result<(), Box<dyn Error>> {
+    run_client(party, Party::Bob).await
+}
+
+async fn run_client_bob(party: Party) -> Result<(), Box<dyn Error>> {
+    run_client(party, Party::Alice).await
 }
 
 fn init_tracing(level: LevelFilter) {
