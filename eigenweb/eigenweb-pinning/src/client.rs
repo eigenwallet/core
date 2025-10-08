@@ -43,10 +43,8 @@ pub struct Behaviour<S> {
     backoff: HashMap<PeerId, backoff::ExponentialBackoff>,
 
     /// Hashes of all known messages we want to get pinned
-    /// We only store the hash here.
     ///
-    /// If we need the message (for example when we send it to someone),
-    /// we can look it up in the storage.
+    /// If we need the message itself, we can look it up in the storage.
     outgoing_messages: HashSet<[u8; 32]>,
 
     /// Hashes of messages we want to pull
@@ -60,7 +58,6 @@ pub struct Behaviour<S> {
     /// Queues for outgoing requests
     ///
     /// These are futures as this allows us to schedule when they should be sent
-    /// (for example after a backoff delay)
     queued_outgoing_pin_requests: FuturesHashSet<(PeerId, [u8; 32]), ()>,
     queued_outgoing_fetch_requests: FuturesHashSet<PeerId, ()>,
     queued_outgoing_pull_requests: FuturesHashSet<(PeerId, [u8; 32]), ()>,
@@ -163,7 +160,7 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
 
     /// Inserts a message into the internal system
     /// such that it will be contineously broadcasted
-    pub fn insert_pinned_message(&mut self, message: UnsignedPinnedMessage) {
+    pub fn pin_message(&mut self, message: UnsignedPinnedMessage) {
         // Sign the message
         let signed_message = SignedMessage::new(&self.keypair, message).unwrap();
         let message_hash = signed_message.content_hash();
@@ -174,14 +171,6 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
 
         // Save the message in storage
         self.storage.store(signed_message).unwrap();
-    }
-
-    /// Schedules a pin request for a server after backoff
-    fn pin_at_server(&mut self, msg: SignedPinnedMessage) {
-        let msg_hash = msg.content_hash();
-
-        self.storage.store(msg.clone()).unwrap();
-        self.outgoing_messages.insert(msg_hash);
     }
 
     pub fn handle_event(&mut self, event: codec::ToSwarm) {
@@ -325,6 +314,8 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
 
             // For every server: see which hashes we want to send
             for server in servers.iter() {
+                // TODO: There must a more succinct way to do this
+
                 // All the hashes which the server does not have yet but we want him to have
                 let dont_want = self.dont_want_read_only(*server);
                 let hashes_to_send: HashSet<_> = self

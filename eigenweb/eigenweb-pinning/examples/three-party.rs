@@ -226,7 +226,7 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
                             encrypted_content: Bytes::from(input.trim().to_string()),
                         };
 
-                        swarm.behaviour_mut().insert_pinned_message(message);
+                        swarm.behaviour_mut().pin_message(message);
                         info!("Message queued for {}", other_name);
                     }
                     Ok(None) => {

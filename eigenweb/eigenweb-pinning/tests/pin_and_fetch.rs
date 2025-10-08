@@ -143,7 +143,7 @@ async fn pin_and_fetch_message() {
         encrypted_content: Bytes::from("Hello Bob from Alice!"),
     };
 
-    alice.behaviour_mut().insert_pinned_message(message);
+    alice.behaviour_mut().pin_message(message);
     tracing::info!("Alice: message queued for Bob");
 
     // Run event loops until Bob receives the message
