@@ -1,10 +1,13 @@
 use anyhow::{Context, Result, anyhow, bail};
+use bollard::container::{self, CreateContainerOptions};
 use clap::Parser;
 use dialoguer::Select;
 use dialoguer::theme::ColorfulTheme;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
+use std::process::Command;
 use swap_env::config::{
     Bitcoin, Config, ConfigNotInitialized, Data, Maker, Monero, Network, TorConf,
 };
@@ -61,7 +64,40 @@ async fn main() {
 }
 
 async fn handle_start_command() -> anyhow::Result<()> {
-    let docker_client = bollard::Docker::connect_with_local_defaults();
+    println!("connecting to docker daemon...");
+
+    let docker = bollard::Docker::connect_with_local_defaults()
+        .context("Couldn't connect to docker daemon")?;
+
+    let info = match docker.info().await {
+        Ok(info) => info,
+        Err(error) => {
+            if matches!(error, bollard::errors::Error::IOError { .. }) {
+                println!("Couldn't connect to your docker daemon. Is it running?");
+                return Ok(());
+            }
+
+            bail!(error);
+        }
+    };
+
+    println!("connected to daemon");
+
+    let mut unparsed_compose_config = String::new();
+    File::open(DOCKER_COMPOSE_PATH)?.read_to_string(&mut unparsed_compose_config)?;
+
+    let compose_config: compose_spec::Compose = serde_yaml::from_str(&unparsed_compose_config)
+        .context("invalid docker-compose.yml syntax")?;
+
+    let services: Vec<compose_spec::Service> = compose_config.services.values().cloned().collect();
+
+    let probe_result = Command::new("docker")
+        .args(&["compose", "version"])
+        .output();
+
+    if let Err(err) = probe_result {
+        bail!(anyhow!(err).context("Couldn't call docker compose cli - is the daemon running?"));
+    }
 
     Ok(())
 }
@@ -72,9 +108,11 @@ async fn handle_init_command(
 ) -> anyhow::Result<()> {
     // Read the already existing config, if it's there
     let existing_config: Option<Result<Config>> =
-        swap_env::config::read_config(PathBuf::from(CONFIG_PATH))
-            .ok()
-            .map(|res| res.context("Couldn't parse config.toml"));
+        match swap_env::config::read_config(PathBuf::from(CONFIG_PATH)) {
+            Ok(Ok(config)) => Some(Ok(config)),
+            Ok(Err(_)) => None,
+            Err(err) => Some(Err(err)),
+        };
 
     // Run the wizard and generate the configs, if necessary.
     // If the maker config already exists, it will be returned as-is and only the docker config re-generated.
@@ -84,9 +122,13 @@ async fn handle_init_command(
 
     // Write the configs to their files.
     let maker_config_stringified = toml::to_string(&maker_config)?;
-    File::create(CONFIG_PATH)?.write_all(maker_config_stringified.as_bytes())?;
+    File::create(CONFIG_PATH)
+        .context("Can't create maker config.toml file")?
+        .write_all(maker_config_stringified.as_bytes())?;
     let compose_config_stringified = compose_config.build();
-    File::create(DOCKER_COMPOSE_PATH)?.write_all(compose_config_stringified.as_bytes())?;
+    File::create(DOCKER_COMPOSE_PATH)
+        .context("Can't create docker-compose.yml file")?
+        .write_all(compose_config_stringified.as_bytes())?;
 
     Ok(())
 }
@@ -165,7 +207,6 @@ fn setup_wizard(
     };
 
     // At this point we either have no or an invalid config, so we do the whole wizard.
-    println!("Starting the wizard.");
 
     // Maker questions (spread, max, min etc)
     let min_buy = config_prompt::min_buy_amount()?;

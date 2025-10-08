@@ -75,8 +75,8 @@ pub fn electrum_server_type(default_electrum_urls: &Vec<Url>) -> ElectrumServerT
     let select = Select::with_theme(&theme)
         .with_prompt("How do you want to connect to the Bitcoin blockchain?")
         .items(&[
-            "Create a full Bitcoin node and Electrum server (most private - but requires 1-2 days to sync and ~500GB of disk space)",
             "Use a mix of default Electrum servers (instant)",
+            "Create a full Bitcoin node and Electrum server (most private - but requires 1-2 days to sync and ~500GB of disk space)",
             "Specify my own Electrum server (instant)",
             "Specify my own Electrum server in addition to the mix of default Electrum servers (instant)",
             "Print the list of the default Electrum servers"
@@ -97,8 +97,8 @@ pub fn electrum_server_type(default_electrum_urls: &Vec<Url>) -> ElectrumServerT
 
         fn try_from(value: usize) -> Result<Self, Self::Error> {
             Ok(match value {
-                0 => Choice::RunFullNode,
-                1 => Choice::ElectrumPool,
+                0 => Choice::ElectrumPool,
+                1 => Choice::RunFullNode,
                 2 => Choice::CustomElectrumNode,
                 3 => Choice::CustomElectrumNodeAndPool,
                 4 => Choice::PrintPoolUrls,
