@@ -396,8 +396,7 @@ export function isContextFullyInitialized(
   return (
     status.status.bitcoin_wallet_available &&
     status.status.monero_wallet_available &&
-    status.status.database_available &&
-    status.status.tor_available
+    status.status.database_available
   );
 }
 
