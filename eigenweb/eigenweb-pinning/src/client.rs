@@ -146,6 +146,21 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         self.dont_want.get(&peer_id).cloned().unwrap_or_default()
     }
 
+    fn schedule_backoff<T>(
+        &mut self,
+        peer_id: PeerId,
+        value: T,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>
+    where
+        T: Send + 'static,
+    {
+        let backoff = self.backoff(peer_id).next_backoff().unwrap();
+        Box::pin(async move {
+            tokio::time::sleep(backoff).await;
+            value
+        })
+    }
+
     /// Inserts a message into the internal system
     /// such that it will be contineously broadcasted
     pub fn insert_pinned_message(&mut self, message: UnsignedPinnedMessage) {
@@ -303,14 +318,8 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
                 if !self.dont_want.contains_key(server)
                     && !self.queued_outgoing_fetch_requests.contains_key(server)
                 {
-                    println!("we do not have a [`dont_want`] set yet for {}, adding to pending outgoing fetch requests", server);
-
-                    let backoff = self.backoff(*server).next_backoff().unwrap();
-                    let future = async move {
-                        tokio::time::sleep(backoff).await;
-                    };
-                    self.queued_outgoing_fetch_requests
-                        .insert(*server, Box::pin(future));
+                    let future = self.schedule_backoff(*server, ());
+                    self.queued_outgoing_fetch_requests.insert(*server, future);
                 }
             }
 
@@ -333,12 +342,9 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
                 let hashes_to_send_non_inflight = hashes_to_send.difference(&inflight_hashes);
 
                 for hash in hashes_to_send_non_inflight {
-                    let backoff_time = self.backoff(*server).next_backoff().unwrap();
-                    let future = async move {
-                        tokio::time::sleep(backoff_time).await;
-                    };
+                    let future = self.schedule_backoff(*server, ());
                     self.queued_outgoing_pin_requests
-                        .insert((*server, *hash), Box::pin(future));
+                        .insert((*server, *hash), future);
                 }
             }
 
@@ -355,12 +361,9 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
             for hash in interesting_hashes {
                 for server in servers.iter() {
                     if self.dont_want_read_only(*server).contains(&hash) {
-                        let backoff = self.backoff(*server).next_backoff().unwrap();
-                        let future = async move {
-                            tokio::time::sleep(backoff).await;
-                        };
+                        let future = self.schedule_backoff(*server, ());
                         self.queued_outgoing_pull_requests
-                            .insert((*server, hash), Box::pin(future));
+                            .insert((*server, hash), future);
                     }
                 }
             }
