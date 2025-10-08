@@ -4,7 +4,7 @@ use crate::cli::api::tauri_bindings::LockBitcoinDetails;
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriSwapProgressEvent};
 use crate::cli::EventLoopHandle;
 use crate::common::retry;
-use crate::monero::MoneroAddressPool;
+use crate::monero::{MoneroAddressPool, TransferProof};
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::state::*;
@@ -583,7 +583,10 @@ async fn next_state(
 
             // Clone these for the closure
             let event_emitter_clone = event_emitter.clone();
-            let transfer_proof_hash = state.lock_transfer_proof.tx_hash();
+            let transfer_proof_hash = state
+                .lock_transfer_proof
+                .as_ref()
+                .map(TransferProof::tx_hash);
 
             let watch_future = monero_wallet.wait_until_confirmed(
                 watch_request,

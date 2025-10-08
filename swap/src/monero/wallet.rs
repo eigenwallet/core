@@ -43,14 +43,20 @@ pub struct Wallets {
     tauri_handle: Option<TauriHandle>,
     /// Database for tracking wallet usage history.
     wallet_database: Option<Arc<monero_sys::Database>>,
+    /// How many blocks a transaction must be included in the blockchain for
+    /// to be considered final/confirmed. Used to protect against reorg attacks
+    /// by malicious actors.
+    confirmation_requirement: u64,
 }
 
-/// A request to watch for a transfer.
+/// A request to watch for a transfer. If the transfer proof
+/// isn't specified this will cause a manual sync.
 pub struct WatchRequest {
     pub public_view_key: super::PublicViewKey,
     pub public_spend_key: monero::PublicKey,
     /// The proof of the transfer.
-    pub transfer_proof: TransferProof,
+    /// If empty we scan for funds manually.
+    pub transfer_proof: Option<TransferProof>,
     /// The expected amount of the transfer.
     pub expected_amount: monero::Amount,
     /// The number of confirmations required for the transfer to be considered confirmed.
@@ -362,12 +368,14 @@ impl Wallets {
 
     /// Open the lock wallet of a specific swap.
     /// Used to redeem (Bob) or refund (Alice) the Monero.
+    /// If you can, pass in the lock transaction hash.
+    /// Otherwise we need to scan for the funds.
     pub async fn swap_wallet(
         &self,
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
         view_key: super::PrivateViewKey,
-        tx_lock_id: TxHash,
+        scan_type: ScanType,
     ) -> Result<Arc<Wallet>> {
         // Derive wallet address from the keys
         let address = {
@@ -381,9 +389,15 @@ impl Wallets {
         let filename = swap_id.to_string();
         let wallet_path = self.wallet_dir.join(&filename).display().to_string();
 
-        let blockheight = self.direct_rpc_block_height().await?;
-
         let (daemon, _) = self.daemon.read().await.clone();
+
+        let restore_height = match &scan_type {
+            ScanType::ScanFromHeight { restore_height } => *restore_height,
+            ScanType::ScanTransaction { .. } => self
+                .direct_rpc_block_height()
+                .await
+                .context("Couldn't fetch Monero block height")?,
+        };
 
         let wallet = Wallet::open_or_create_from_keys(
             wallet_path.clone(),
@@ -392,7 +406,7 @@ impl Wallets {
             address,
             view_key.into(),
             spend_key,
-            blockheight,
+            restore_height,
             false, // We don't sync the swap wallet, just import the transaction
             daemon,
         )
@@ -411,12 +425,29 @@ impl Wallets {
             "Opened temporary Monero wallet, loading lock transaction"
         );
 
-        wallet
-            .scan_transaction(tx_lock_id.0.clone())
-            .await
-            .context("Couldn't import Monero lock transaction")?;
+        if let ScanType::ScanTransaction { txid } = scan_type {
+            wallet
+                .scan_transaction(txid)
+                .await
+                .context("Couldn't import Monero lock transaction")?;
 
-        wallet.set_restore_height(blockheight).await?;
+            // Scanning the transaction changes the blockheight so we need to set it again.
+            wallet.set_restore_height(restore_height).await?;
+        } else {
+            const SYNC_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(60);
+            retry(
+                "syncing the Monero swap wallet",
+                || async {
+                    wallet
+                    .wait_until_synced(Some(|progress| tracing::debug!(%progress, "Made progress syncing the Monero swap wallet")))
+                    .await
+                    .context("Failed to sync Monero swap wallet")
+                    .map_err(backoff::Error::transient)
+                },
+                None,
+                SYNC_RETRY_MAX_INTERVAL
+            ).await.context("Couldn't sync Monero swap wallet even after retries")?;
+        }
 
         Ok(Arc::new(wallet))
     }

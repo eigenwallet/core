@@ -912,7 +912,7 @@ pub enum TauriSwapProgressEvent {
     RedeemingMonero,
     WaitingForXmrConfirmationsBeforeRedeem {
         #[typeshare(serialized_as = "string")]
-        xmr_lock_txid: monero::TxHash,
+        xmr_lock_txid: Option<monero::TxHash>,
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_confirmations: u64,
         #[typeshare(serialized_as = "number")]

@@ -41,7 +41,7 @@ pub enum Response {
     Fullfilled {
         swap_id: Uuid,
         s_a: Scalar,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: Option<TransferProof>,
     },
     Rejected {
         swap_id: Uuid,

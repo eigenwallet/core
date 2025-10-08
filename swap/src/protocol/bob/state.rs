@@ -467,7 +467,7 @@ impl State3 {
         WatchRequest {
             public_spend_key: S,
             public_view_key: self.v.public(),
-            transfer_proof,
+            transfer_proof: Some(transfer_proof),
             confirmation_target,
             expected_amount: self.xmr.into(),
         }
@@ -615,7 +615,7 @@ impl State4 {
                 xmr: self.xmr,
                 tx_lock: self.tx_lock.clone(),
                 monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
-                lock_transfer_proof: self.lock_transfer_proof.clone(),
+                lock_transfer_proof: Some(self.lock_transfer_proof.clone()),
             }))
         } else {
             Ok(None)
@@ -701,7 +701,7 @@ pub struct State5 {
     xmr: monero::Amount,
     tx_lock: bitcoin::TxLock,
     pub monero_wallet_restore_blockheight: BlockHeight,
-    pub lock_transfer_proof: TransferProof,
+    pub lock_transfer_proof: Option<TransferProof>,
 }
 
 impl State5 {
@@ -905,7 +905,7 @@ impl State6 {
     pub fn attempt_cooperative_redeem(
         &self,
         s_a: monero::Scalar,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: Option<TransferProof>,
     ) -> State5 {
         let s_a = monero::PrivateKey::from_scalar(s_a);
 

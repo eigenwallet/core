@@ -37,7 +37,7 @@ pub enum OutEvent {
         id: OutboundRequestId,
         s_a: Scalar,
         swap_id: uuid::Uuid,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: Option<TransferProof>,
     },
     CooperativeXmrRedeemRejected {
         id: OutboundRequestId,
