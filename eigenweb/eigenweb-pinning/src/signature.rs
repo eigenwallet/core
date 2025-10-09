@@ -40,9 +40,9 @@ where
     }
 
     /// Computes the SHA256 hash of the CBOR encoding of the message
-    pub fn content_hash(&self) -> [u8; 32] {
+    pub fn content_hash(&self) -> MessageHash {
         let message_vec = self.message_to_vec().unwrap();
-        sha2::Sha256::digest(message_vec).into()
+        MessageHash(sha2::Sha256::digest(message_vec).into())
     }
 
     fn message_to_vec(&self) -> Result<Vec<u8>, serde_cbor::error::Error> {
@@ -93,5 +93,58 @@ where
             key,
             signature: helper.signature,
         })
+    }
+}
+
+impl<M> TryFrom<Vec<u8>> for SignedMessage<M>
+where
+    M: for<'de> Deserialize<'de>,
+{
+    type Error = serde_cbor::Error;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        serde_cbor::from_slice(&bytes)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct MessageHash([u8; 32]);
+
+impl MessageHash {
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub fn to_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl From<[u8; 32]> for MessageHash {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl From<MessageHash> for [u8; 32] {
+    fn from(hash: MessageHash) -> Self {
+        hash.0
+    }
+}
+
+impl std::fmt::Debug for MessageHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Print only first 6 hex characters (first 3 bytes)
+        write!(f, "{:02x}{:02x}{:02x}", self.0[0], self.0[1], self.0[2])
+    }
+}
+
+impl std::fmt::Display for MessageHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Print full hash as hex
+        for byte in &self.0 {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
     }
 }

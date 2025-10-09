@@ -1,25 +1,25 @@
 use libp2p::PeerId;
 use std::collections::HashMap;
 
-use crate::SignedPinnedMessage;
+use crate::{SignedPinnedMessage, signature::MessageHash};
 
 pub trait Storage: Send {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn store(&mut self, msg: SignedPinnedMessage) -> Result<(), Self::Error>;
-    fn hashes_by_sender(&self, sender: PeerId) -> Vec<[u8; 32]>;
-    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<[u8; 32]>;
-    fn get_by_hashes(&self, hashes: Vec<[u8; 32]>) -> Vec<SignedPinnedMessage>;
+    fn hashes_by_sender(&self, sender: PeerId) -> Vec<MessageHash>;
+    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<MessageHash>;
+    fn get_by_hashes(&self, hashes: Vec<MessageHash>) -> Vec<SignedPinnedMessage>;
     fn get_by_receiver_and_hash(
         &self,
         receiver: PeerId,
-        hashes: Vec<[u8; 32]>,
+        hashes: Vec<MessageHash>,
     ) -> Vec<SignedPinnedMessage>;
 }
 
 #[derive(Debug, Default)]
 pub struct MemoryStorage {
-    messages: HashMap<[u8; 32], SignedPinnedMessage>,
+    messages: HashMap<MessageHash, SignedPinnedMessage>,
 }
 
 impl MemoryStorage {
@@ -37,7 +37,7 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    fn hashes_by_sender(&self, sender: PeerId) -> Vec<[u8; 32]> {
+    fn hashes_by_sender(&self, sender: PeerId) -> Vec<MessageHash> {
         self.messages
             .iter()
             .filter(|(_, msg)| msg.message().sender == sender)
@@ -45,7 +45,7 @@ impl Storage for MemoryStorage {
             .collect()
     }
 
-    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<[u8; 32]> {
+    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<MessageHash> {
         self.messages
             .iter()
             .filter(|(_, msg)| msg.message().receiver == receiver)
@@ -53,7 +53,7 @@ impl Storage for MemoryStorage {
             .collect()
     }
 
-    fn get_by_hashes(&self, hashes: Vec<[u8; 32]>) -> Vec<SignedPinnedMessage> {
+    fn get_by_hashes(&self, hashes: Vec<MessageHash>) -> Vec<SignedPinnedMessage> {
         hashes
             .iter()
             .filter_map(|hash| self.messages.get(hash).cloned())
@@ -63,7 +63,7 @@ impl Storage for MemoryStorage {
     fn get_by_receiver_and_hash(
         &self,
         receiver: PeerId,
-        hashes: Vec<[u8; 32]>,
+        hashes: Vec<MessageHash>,
     ) -> Vec<SignedPinnedMessage> {
         hashes
             .iter()

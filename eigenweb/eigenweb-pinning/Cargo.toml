@@ -19,6 +19,7 @@ sha2 = "0.10"
 
 backoff = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

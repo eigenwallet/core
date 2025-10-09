@@ -4,6 +4,7 @@ use eigenweb_pinning::UnsignedPinnedMessage;
 use libp2p::futures::StreamExt;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, Multiaddr, PeerId, SwarmBuilder};
+use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
@@ -204,7 +205,7 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
     let other_peer_id = other_party.peer_id();
     let other_name = other_party.name();
 
-    let mut all_messages = Vec::new();
+    let mut all_messages: HashMap<eigenweb_pinning::signature::MessageHash, eigenweb_pinning::SignedPinnedMessage> = HashMap::new();
 
     // Event loop
     loop {
@@ -245,22 +246,18 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
                     SwarmEvent::NewListenAddr { address, .. } => {
                         info!("Listening on {}", address);
                     }
-                    SwarmEvent::Behaviour(event) => {
-                        match event {
-                            eigenweb_pinning::client::Event::IncomingPinnedMessagesReceived { peer, outgoing_request_id, messages } => {
-                                if messages.is_empty() {
-                                    info!("No new messages (request {:?})", outgoing_request_id);
-                                } else {
-                                    all_messages.extend(messages.into_iter());
-                                    info!("Received {} total message(s) from {} (request {:?})", all_messages.len(), peer, outgoing_request_id);
-                                    for msg in &all_messages {
-                                        let content = String::from_utf8_lossy(&msg.message().encrypted_content);
-                                        info!("  From {}: {}", other_name, content);
-                                    }
-                                }
+                    SwarmEvent::Behaviour(eigenweb_pinning::client::Event::IncomingPinnedMessagesReceived { peer, outgoing_request_id, messages }) => {
+                        if messages.is_empty() {
+                            info!("No new messages (request {:?})", outgoing_request_id);
+                        } else {
+                            for msg in messages {
+                                let hash = msg.content_hash();
+                                all_messages.insert(hash, msg);
                             }
-                            _ => {
-                                info!("Behaviour event: {:?}", event);
+                            info!("Received {} total message(s) from {} (request {:?})", all_messages.len(), peer, outgoing_request_id);
+                            for msg in all_messages.values() {
+                                let content = String::from_utf8_lossy(&msg.message().encrypted_content);
+                                info!("  From {}: {}", other_name, content);
                             }
                         }
                     }

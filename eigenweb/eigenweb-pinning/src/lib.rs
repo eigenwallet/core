@@ -50,14 +50,14 @@ pub struct FetchRequest {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FetchResponse {
     /// Hashes of all messages where:
-    ///    `hash.receiver == requester.peer_id`
-    pub messages: Vec<[u8; 32]>,
+    ///    `hash.receiver == requester.peer_id || hash.sender == requester.peer_id`
+    pub messages: Vec<signature::MessageHash>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequest {
     /// Hashes of all messages we want to download
-    pub hashes: Vec<[u8; 32]>,
+    pub hashes: Vec<signature::MessageHash>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

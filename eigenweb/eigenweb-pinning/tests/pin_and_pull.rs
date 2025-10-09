@@ -144,9 +144,9 @@ where
                 .authenticate(auth_config)
                 .multiplex(libp2p::yamux::Config::default())
         })
-        .expect("failed to build transport")
+        .unwrap()
         .with_behaviour(|_| behaviour)
-        .expect("failed to build behaviour")
+        .unwrap()
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(TIMEOUT))
         .build()
 }

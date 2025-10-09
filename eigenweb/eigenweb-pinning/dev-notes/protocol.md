@@ -97,6 +97,14 @@ Grants can safely be gossiped between servers as they are expensive to generate.
 
 **For simplicity, this is not implemented and won't be for a while: For now this is not implemented.**
 
+### Vouchers
+
+Alice can sign a message that says:
+
+> I am Alice. I allow Clara to use 50kb of the space you have allocated to me. This expires on July 1st, 2026.
+
+Alice can then share this messae
+
 ### Prioritization
 
 Alice might sends a lot of messages to Clara. She knows that Clara will only accept so many messages from her. Clara will prioritize messages based on the `msg.priority` field. In case of a tie, she will prioritize messages based on the `msg.ttl` field (discard messages with a smaller `msg.ttl`).

@@ -56,6 +56,12 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
             other => other,
         }
     }
+
+    pub fn len(&self) -> usize {
+        assert_eq!(self.keys.len(), self.futures.len());
+
+        self.keys.len()
+    }
 }
 
 impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> Default for FuturesHashSet<K, V> {

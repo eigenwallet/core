@@ -1,3 +1,4 @@
+/// This file is much less complete than client.rs
 use libp2p::{
     request_response::ResponseChannel,
     swarm::{FromSwarm, NetworkBehaviour},
@@ -88,10 +89,11 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let hashes = self.storage.hashes_by_receiver(peer);
-        let _ = self.inner.send_response(
+        let incoming_messages = self.storage.hashes_by_receiver(peer);
+        let outgoing_messages = self.storage.hashes_by_sender(peer);
+        let messages = incoming_messages.into_iter().chain(outgoing_messages.into_iter()).collect();
             channel,
-            codec::Response::Fetch(crate::FetchResponse { messages: hashes }),
+            codec::Response::Fetch(crate::FetchResponse { messages }),
         );
     }
 
@@ -115,6 +117,30 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                 },
                 _ => {}
             },
+            libp2p::request_response::Event::InboundFailure {
+                request_id,
+                error,
+                peer,
+            } => {
+                tracing::error!(
+                    "Inbound failure for request {:?}: {:?} with peer {:?}",
+                    request_id,
+                    error,
+                    peer
+                );
+            }
+            libp2p::request_response::Event::OutboundFailure {
+                request_id,
+                error,
+                peer,
+            } => {
+                tracing::error!(
+                    "Outbound failure for request {:?}: {:?} with peer {:?}",
+                    request_id,
+                    error,
+                    peer
+                );
+            }
             _ => {}
         }
     }
