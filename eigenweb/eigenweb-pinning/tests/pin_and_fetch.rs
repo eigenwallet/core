@@ -3,20 +3,16 @@
 use bytes::Bytes;
 use eigenweb_pinning::storage::MemoryStorage;
 use eigenweb_pinning::UnsignedPinnedMessage;
+use libp2p::core::transport::{MemoryTransport, Transport};
+use libp2p::core::upgrade;
 use libp2p::futures::StreamExt;
-use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, Multiaddr, SwarmBuilder};
 use std::time::Duration;
 use uuid::Uuid;
 
-const TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Helper to create deterministic keypairs for testing
-fn create_keypair(seed: u8) -> identity::Keypair {
-    let bytes = [seed; 32];
-    identity::Keypair::ed25519_from_bytes(bytes).expect("valid keypair")
-}
+const TIMEOUT: Duration = Duration::from_secs(5);
+const MESSAGE_CONTENT: &str = "Hello Bob from Alice!";
 
 #[tokio::test]
 async fn pin_and_fetch_message() {
@@ -25,72 +21,30 @@ async fn pin_and_fetch_message() {
         .try_init();
 
     // Create keypairs
-    let alice_keypair = create_keypair(1);
-    let bob_keypair = create_keypair(2);
-    let carol_keypair = create_keypair(3);
+    let (alice_keypair, bob_keypair, carol_keypair) =
+        (create_keypair(1), create_keypair(2), create_keypair(3));
 
-    let carol_peer_id = carol_keypair.public().to_peer_id();
-    let alice_peer_id = alice_keypair.public().to_peer_id();
-    let bob_peer_id = bob_keypair.public().to_peer_id();
+    let (carol_peer_id, alice_peer_id, bob_peer_id) = (
+        carol_keypair.public().to_peer_id(),
+        alice_keypair.public().to_peer_id(),
+        bob_keypair.public().to_peer_id(),
+    );
 
-    // Create server (Carol)
-    let storage = MemoryStorage::new();
-    let server_behaviour = eigenweb_pinning::server::Behaviour::new(storage, TIMEOUT);
+    // Create storages
+    let (alice_storage, bob_storage, carol_storage) = (
+        MemoryStorage::new(),
+        MemoryStorage::new(),
+        MemoryStorage::new(),
+    );
 
-    let mut server = SwarmBuilder::with_existing_identity(carol_keypair)
-        .with_tokio()
-        .with_tcp(
-            libp2p::tcp::Config::default(),
-            libp2p::noise::Config::new,
-            libp2p::yamux::Config::default,
-        )
-        .expect("failed to build server transport")
-        .with_behaviour(|_| server_behaviour)
-        .expect("failed to build server behaviour")
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(TIMEOUT))
-        .build();
-
-    // Listen on localhost
-    let listen_addr: Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
-    server.listen_on(listen_addr).unwrap();
-
-    // Wait for server to start listening and get the address
-    let server_addr = loop {
-        match server.select_next_some().await {
-            SwarmEvent::NewListenAddr { address, .. } => {
-                tracing::info!("Server listening on {}", address);
-                break format!("{}/p2p/{}", address, carol_peer_id)
-                    .parse::<Multiaddr>()
-                    .unwrap();
-            }
-            _ => {}
-        }
-    };
-
-    // Create client (Alice)
-    let alice_storage = MemoryStorage::new();
+    // Create behaviours
     let alice_behaviour = eigenweb_pinning::client::Behaviour::new(
         alice_keypair.clone(),
         vec![carol_peer_id],
         alice_storage,
         TIMEOUT,
     );
-
-    let mut alice = SwarmBuilder::with_existing_identity(alice_keypair)
-        .with_tokio()
-        .with_tcp(
-            libp2p::tcp::Config::default(),
-            libp2p::noise::Config::new,
-            libp2p::yamux::Config::default,
-        )
-        .expect("failed to build alice transport")
-        .with_behaviour(|_| alice_behaviour)
-        .expect("failed to build alice behaviour")
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(TIMEOUT))
-        .build();
-
-    // Create client (Bob)
-    let bob_storage = MemoryStorage::new();
+    let carol_behaviour = eigenweb_pinning::server::Behaviour::new(carol_storage, TIMEOUT);
     let bob_behaviour = eigenweb_pinning::client::Behaviour::new(
         bob_keypair.clone(),
         vec![carol_peer_id],
@@ -98,40 +52,18 @@ async fn pin_and_fetch_message() {
         TIMEOUT,
     );
 
-    let mut bob = SwarmBuilder::with_existing_identity(bob_keypair)
-        .with_tokio()
-        .with_tcp(
-            libp2p::tcp::Config::default(),
-            libp2p::noise::Config::new,
-            libp2p::yamux::Config::default,
-        )
-        .expect("failed to build bob transport")
-        .with_behaviour(|_| bob_behaviour)
-        .expect("failed to build bob behaviour")
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(TIMEOUT))
-        .build();
+    // Create swarms
+    let mut alice = create_swarm(alice_keypair, alice_behaviour);
+    let mut bob = create_swarm(bob_keypair, bob_behaviour);
+    let mut carol = create_swarm(carol_keypair, carol_behaviour);
 
-    alice.add_peer_address(carol_peer_id, server_addr.clone());
-    bob.add_peer_address(carol_peer_id, server_addr.clone());
+    // Carol needs to listen
+    let carol_address: Multiaddr = format!("/memory/1/p2p/{}", carol_peer_id).parse().unwrap();
+    carol.listen_on(carol_address.clone()).unwrap();
 
-    // Connect Alice to Carol
-    alice
-        .dial(
-            DialOpts::peer_id(carol_peer_id)
-                .condition(PeerCondition::Disconnected)
-                .addresses(vec![server_addr.clone()])
-                .extend_addresses_through_behaviour()
-                .build(),
-        )
-        .unwrap();
-    bob.dial(
-        DialOpts::peer_id(carol_peer_id)
-            .condition(PeerCondition::Disconnected)
-            .addresses(vec![server_addr])
-            .extend_addresses_through_behaviour()
-            .build(),
-    )
-    .unwrap();
+    // Connect Alice and Bob to Carol
+    alice.dial(carol_address.clone()).unwrap();
+    bob.dial(carol_address).unwrap();
 
     // Alice creates and sends a message for Bob
     let message = UnsignedPinnedMessage {
@@ -140,11 +72,10 @@ async fn pin_and_fetch_message() {
         receiver: bob_peer_id,
         ttl: 3600,
         priority: 1,
-        encrypted_content: Bytes::from("Hello Bob from Alice!"),
+        encrypted_content: Bytes::from(MESSAGE_CONTENT),
     };
 
     alice.behaviour_mut().pin_message(message);
-    tracing::info!("Alice: message queued for Bob");
 
     // Run event loops until Bob receives the message
     let mut received_messages = Vec::new();
@@ -156,16 +87,8 @@ async fn pin_and_fetch_message() {
             _ = &mut timeout => {
                 panic!("Test timed out waiting for message delivery");
             }
-            event = server.select_next_some() => {
-                if let SwarmEvent::Behaviour(event) = event {
-                    tracing::debug!("Server: {:?}", event);
-                }
-            }
-            event = alice.select_next_some() => {
-                if let SwarmEvent::Behaviour(event) = event {
-                    tracing::debug!("Alice: {:?}", event);
-                }
-            }
+            _ = carol.select_next_some() => { }
+            _ = alice.select_next_some() => { }
             event = bob.select_next_some() => {
                 match event {
                     SwarmEvent::Behaviour(
@@ -180,9 +103,6 @@ async fn pin_and_fetch_message() {
                             break;
                         }
                     }
-                    SwarmEvent::Behaviour(event) => {
-                        tracing::debug!("Bob: {:?}", event);
-                    }
                     _ => {}
                 }
             }
@@ -196,7 +116,7 @@ async fn pin_and_fetch_message() {
     assert_eq!(received.message().receiver, bob_peer_id);
     assert_eq!(
         received.message().encrypted_content,
-        Bytes::from("Hello Bob from Alice!")
+        Bytes::from(MESSAGE_CONTENT)
     );
 
     // Verify signature
@@ -204,4 +124,29 @@ async fn pin_and_fetch_message() {
         received.verify_with_peer(alice_peer_id),
         "Message signature verification failed"
     );
+}
+
+fn create_keypair(seed: u8) -> identity::Keypair {
+    let bytes = [seed; 32];
+    identity::Keypair::ed25519_from_bytes(bytes).expect("valid keypair")
+}
+
+fn create_swarm<B>(keypair: identity::Keypair, behaviour: B) -> libp2p::Swarm<B>
+where
+    B: libp2p::swarm::NetworkBehaviour,
+{
+    SwarmBuilder::with_existing_identity(keypair)
+        .with_tokio()
+        .with_other_transport(|key| {
+            let auth_config = libp2p::noise::Config::new(key).unwrap();
+            let base = MemoryTransport::default();
+            base.upgrade(upgrade::Version::V1)
+                .authenticate(auth_config)
+                .multiplex(libp2p::yamux::Config::default())
+        })
+        .expect("failed to build transport")
+        .with_behaviour(|_| behaviour)
+        .expect("failed to build behaviour")
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(TIMEOUT))
+        .build()
 }

@@ -238,8 +238,8 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                 peer,
             } => {
                 println!(
-                    "outbound failure for request id: {:?} with error: {:?}",
-                    request_id, error
+                    "outbound failure for request id: {:?} with error: {:?} with peer {}",
+                    request_id, error, peer
                 );
                 let _ = self.inflight_pin_request.remove(&request_id);
                 let _ = self.inflight_pull_request.remove(&request_id);
@@ -290,42 +290,50 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
                 self.inflight_pull_request.insert(request_id, ());
             }
 
-            // Check if there is a server for which we do not have a [`dont_want`] set yet
-            // this means we do not know which messages he has
-            let servers = self.servers.clone();
-            for server in servers.iter() {
-                if !self.dont_want.contains_key(server)
-                    && !self.queued_outgoing_fetch_requests.contains_key(server)
-                {
-                    let future = self.schedule_backoff(*server, ());
-                    self.queued_outgoing_fetch_requests.insert(*server, future);
-                }
-            }
-
-            // For every server: see which hashes we want to send
-            for server in servers.iter() {
-                // TODO: There must a more succinct way to do this
-
-                // All the hashes which the server does not have yet but we want him to have
-                let dont_want = self.dont_want_read_only(*server);
-                let hashes_to_send: HashSet<_> = self
-                    .outgoing_messages
-                    .difference(&dont_want)
+            // Send an initial fetch request for ever server for
+            // which we don't have a [`dont_want`] set yet
+            //
+            // (This means we do not know which messages he has)
+            {
+                let servers = self.servers.clone();
+                let servers_to_fetch: Vec<_> = servers
+                    .iter()
+                    .filter(|server| {
+                        !self.dont_want.contains_key(server)
+                            && !self.queued_outgoing_fetch_requests.contains_key(server)
+                    })
                     .copied()
                     .collect();
 
-                // Like hashes_to_send but excluding those which are already pending
+                for server in servers_to_fetch {
+                    let future = self.schedule_backoff(server, ());
+                    self.queued_outgoing_fetch_requests.insert(server, future);
+                }
+            }
+
+            // Pin messages to server which where we know:
+            // - they do not have the message
+            // - we do not have an inflight pin request for the message
+            for server in self.servers.clone().iter() {
+                let dont_want = self.dont_want_read_only(*server);
                 let inflight_hashes: HashSet<_> = self
                     .inflight_pin_request
                     .values()
                     .map(|(_, hash)| *hash)
                     .collect();
-                let hashes_to_send_non_inflight = hashes_to_send.difference(&inflight_hashes);
 
-                for hash in hashes_to_send_non_inflight {
+                let hashes_to_send: Vec<_> = self
+                    .outgoing_messages
+                    .iter()
+                    .filter(|hash| !dont_want.contains(*hash))
+                    .filter(|hash| !inflight_hashes.contains(*hash))
+                    .copied()
+                    .collect();
+
+                for hash in hashes_to_send {
                     let future = self.schedule_backoff(*server, ());
                     self.queued_outgoing_pin_requests
-                        .insert((*server, *hash), future);
+                        .insert((*server, hash), future);
                 }
             }
 
@@ -339,7 +347,10 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
 
             // For every interesting hash, attempt to download from all servers
             // for which we know they have it
+            //
+            // TODO: This is not very efficient as we will download the same message from multiple servers
             for hash in interesting_hashes {
+                let servers = self.servers.clone();
                 for server in servers.iter() {
                     if self.dont_want_read_only(*server).contains(&hash) {
                         let future = self.schedule_backoff(*server, ());
