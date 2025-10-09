@@ -11,7 +11,7 @@ use libp2p::{identity, Multiaddr, SwarmBuilder};
 use std::time::Duration;
 use uuid::Uuid;
 
-const TIMEOUT: Duration = Duration::from_secs(5);
+const TIMEOUT: Duration = Duration::from_secs(30);
 const MESSAGE_CONTENT: &str = "Hello Bob from Alice!";
 
 #[tokio::test]

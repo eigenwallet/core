@@ -92,7 +92,8 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         let incoming_messages = self.storage.hashes_by_receiver(peer);
         let outgoing_messages = self.storage.hashes_by_sender(peer);
         let messages = incoming_messages.into_iter().chain(outgoing_messages.into_iter()).collect();
-            channel,
+        
+        self.inner.send_response(channel, 
             codec::Response::Fetch(crate::FetchResponse { messages }),
         );
     }
