@@ -10,10 +10,7 @@ async fn test_sign_message() {
         .init();
 
     let temp_dir = tempfile::tempdir().unwrap();
-    let daemon = Daemon {
-        address: PLACEHOLDER_NODE.into(),
-        ssl: false,
-    };
+    let daemon = Daemon::try_from(PLACEHOLDER_NODE).unwrap();
 
     let wallet_name = "test_signing_wallet";
     let wallet_path = temp_dir.path().join(wallet_name).display().to_string();

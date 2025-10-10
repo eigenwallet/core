@@ -177,6 +177,14 @@ impl TryFrom<String> for Daemon {
     }
 }
 
+impl<'a> TryFrom<&'a str> for Daemon {
+    type Error = anyhow::Error;
+
+    fn try_from(address: &'a str) -> Result<Self, Self::Error> {
+        address.to_string().try_into()
+    }
+}
+
 impl Daemon {
     /// Try to convert the daemon configuration to a URL
     pub fn to_url_string(&self) -> String {

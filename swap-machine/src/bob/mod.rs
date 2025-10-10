@@ -136,6 +136,7 @@ pub fn is_complete(state: &BobState) -> bool {
     )
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct State0 {
     swap_id: Uuid,
@@ -268,6 +269,7 @@ impl State0 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug)]
 pub struct State1 {
     A: bitcoin::PublicKey,
@@ -342,6 +344,7 @@ impl State1 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct State2 {
     A: bitcoin::PublicKey,
@@ -433,6 +436,7 @@ impl State2 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct State3 {
     A: bitcoin::PublicKey,
@@ -570,6 +574,7 @@ impl State3 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct State4 {
     A: bitcoin::PublicKey,
@@ -745,6 +750,7 @@ impl State5 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct State6 {
     A: bitcoin::PublicKey,

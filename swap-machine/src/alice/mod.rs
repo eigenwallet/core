@@ -127,6 +127,7 @@ impl fmt::Display for AliceState {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct State0 {
     a: swap_core::bitcoin::SecretKey,
@@ -233,6 +234,7 @@ impl State0 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug)]
 pub struct State1 {
     a: swap_core::bitcoin::SecretKey,
@@ -301,6 +303,7 @@ impl State1 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug)]
 pub struct State2 {
     a: swap_core::bitcoin::SecretKey,
@@ -417,6 +420,7 @@ impl State2 {
     }
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct State3 {
     a: swap_core::bitcoin::SecretKey,
