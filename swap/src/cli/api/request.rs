@@ -423,7 +423,8 @@ impl Request for GetLogsArgs {
     type Response = GetLogsResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let dir = self.logs_dir.unwrap_or(ctx.config.log_dir.clone());
+        let config = ctx.try_get_config().await?;
+        let dir = self.logs_dir.unwrap_or(config.log_dir.clone());
         let logs = get_logs(dir, self.swap_id, self.redact).await?;
 
         for msg in &logs {
@@ -472,11 +473,8 @@ impl Request for GetRestoreHeightArgs {
     type Response = GetRestoreHeightResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
-        let wallet = wallet.main_wallet().await;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
         let height = wallet.get_restore_height().await?;
 
         Ok(GetRestoreHeightResponse { height })
@@ -498,7 +496,8 @@ impl Request for GetMoneroAddressesArgs {
     type Response = GetMoneroAddressesResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let addresses = ctx.db.get_monero_addresses().await?;
+        let db = ctx.try_get_db().await?;
+        let addresses = db.get_monero_addresses().await?;
         Ok(GetMoneroAddressesResponse { addresses })
     }
 }
@@ -517,11 +516,8 @@ impl Request for GetMoneroHistoryArgs {
     type Response = GetMoneroHistoryResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
-        let wallet = wallet.main_wallet().await;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
 
         let transactions = wallet.history().await;
         Ok(GetMoneroHistoryResponse { transactions })
@@ -543,11 +539,8 @@ impl Request for GetMoneroMainAddressArgs {
     type Response = GetMoneroMainAddressResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
-        let wallet = wallet.main_wallet().await;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
         let address = wallet.main_address().await;
         Ok(GetMoneroMainAddressResponse { address })
     }
@@ -584,11 +577,8 @@ impl Request for SetRestoreHeightArgs {
     type Response = SetRestoreHeightResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
-        let wallet = wallet.main_wallet().await;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
 
         let height = match self {
             SetRestoreHeightArgs::Height(height) => height as u64,
@@ -663,10 +653,7 @@ impl Request for GetMoneroBalanceArgs {
     type Response = GetMoneroBalanceResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
         let total_balance = wallet.total_balance().await;
@@ -708,10 +695,7 @@ impl Request for SendMoneroArgs {
     type Response = SendMoneroResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
         // Parse the address
@@ -719,7 +703,8 @@ impl Request for SendMoneroArgs {
             .map_err(|e| anyhow::anyhow!("Invalid Monero address: {}", e))?;
 
         let tauri_handle = ctx
-            .tauri_handle()
+            .tauri_handle
+            .clone()
             .context("Tauri needs to be available to approve transactions")?;
 
         // This is a closure that will be called by the monero-sys library to get approval for the transaction
@@ -795,7 +780,8 @@ pub async fn suspend_current_swap(context: Arc<Context>) -> Result<SuspendCurren
 
 #[tracing::instrument(fields(method = "get_swap_infos_all"), skip(context))]
 pub async fn get_swap_infos_all(context: Arc<Context>) -> Result<Vec<GetSwapInfoResponse>> {
-    let swap_ids = context.db.all().await?;
+    let db = context.try_get_db().await?;
+    let swap_ids = db.all().await?;
     let mut swap_infos = Vec::new();
 
     for (swap_id, _) in swap_ids {
@@ -815,27 +801,23 @@ pub async fn get_swap_info(
     args: GetSwapInfoArgs,
     context: Arc<Context>,
 ) -> Result<GetSwapInfoResponse> {
-    let bitcoin_wallet = context
-        .bitcoin_wallet
-        .as_ref()
-        .context("Could not get Bitcoin wallet")?;
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
+    let db = context.try_get_db().await?;
 
-    let state = context.db.get_state(args.swap_id).await?;
+    let state = db.get_state(args.swap_id).await?;
     let is_completed = state.swap_finished();
 
-    let peer_id = context
-        .db
+    let peer_id = db
         .get_peer_id(args.swap_id)
         .await
         .with_context(|| "Could not get PeerID")?;
 
-    let addresses = context
-        .db
+    let addresses = db
         .get_addresses(peer_id)
         .await
         .with_context(|| "Could not get addressess")?;
 
-    let start_date = context.db.get_swap_start_date(args.swap_id).await?;
+    let start_date = db.get_swap_start_date(args.swap_id).await?;
 
     let swap_state: BobState = state.try_into()?;
 
@@ -849,8 +831,7 @@ pub async fn get_swap_info(
         btc_refund_address,
         cancel_timelock,
         punish_timelock,
-    ) = context
-        .db
+    ) = db
         .get_states(args.swap_id)
         .await?
         .iter()
@@ -886,7 +867,7 @@ pub async fn get_swap_info(
 
     let timelock = swap_state.expired_timelocks(bitcoin_wallet.clone()).await?;
 
-    let monero_receive_pool = context.db.get_monero_address_pool(args.swap_id).await?;
+    let monero_receive_pool = db.get_monero_address_pool(args.swap_id).await?;
 
     Ok(GetSwapInfoResponse {
         swap_id: args.swap_id,
@@ -926,15 +907,13 @@ pub async fn buy_xmr(
         monero_receive_pool,
     } = buy_xmr;
 
-    monero_receive_pool.assert_network(context.config.env_config.monero_network)?;
+    let config = context.try_get_config().await?;
+    let db = context.try_get_db().await?;
+
+    monero_receive_pool.assert_network(config.env_config.monero_network)?;
     monero_receive_pool.assert_sum_to_one()?;
 
-    let bitcoin_wallet = Arc::clone(
-        context
-            .bitcoin_wallet
-            .as_ref()
-            .expect("Could not find Bitcoin wallet"),
-    );
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
     let bitcoin_change_address = match bitcoin_change_address {
         Some(addr) => addr
@@ -952,21 +931,15 @@ pub async fn buy_xmr(
         }
     };
 
-    let monero_wallet = Arc::clone(
-        context
-            .monero_manager
-            .as_ref()
-            .context("Could not get Monero wallet")?,
-    );
+    let monero_wallet = context.try_get_monero_manager().await?;
 
-    let env_config = context.config.env_config;
-    let seed = context.config.seed.clone().context("Could not get seed")?;
+    let env_config = config.env_config;
+    let seed = config.seed.clone().context("Could not get seed")?;
 
     // Prepare variables for the quote fetching process
     let identity = seed.derive_libp2p_identity();
-    let namespace = context.config.namespace;
-    let tor_client = context.tor_client.clone();
-    let db = Some(context.db.clone());
+    let namespace = config.namespace;
+    let tor_client = context.tor_client.read().await.clone();
     let tauri_handle = context.tauri_handle.clone();
 
     // Wait for the user to approve a seller and to deposit coins
@@ -975,10 +948,18 @@ pub async fn buy_xmr(
 
     let bitcoin_wallet_for_closures = Arc::clone(&bitcoin_wallet);
 
-    // Clone bitcoin_change_address before moving it in the emit call
+    // Clone variables before moving them into closures
     let bitcoin_change_address_for_spawn = bitcoin_change_address.clone();
     let rendezvous_points_clone = rendezvous_points.clone();
     let sellers_clone = sellers.clone();
+    let db_for_fetch = db.clone();
+    let tor_client_for_swarm = tor_client.clone();
+
+    // Clone tauri_handle for different closures
+    let tauri_handle_for_fetch = tauri_handle.clone();
+    let tauri_handle_for_determine = tauri_handle.clone();
+    let tauri_handle_for_selection = tauri_handle.clone();
+    let tauri_handle_for_suspension = tauri_handle.clone();
 
     // Acquire the lock before the user has selected a maker and we already have funds in the wallet
     // because we need to be able to cancel the determine_btc_to_swap(..)
@@ -991,9 +972,9 @@ pub async fn buy_xmr(
                 let sellers = sellers_clone.clone();
                 let namespace = namespace;
                 let identity = identity.clone();
-                let db = db.clone();
+                let db = db_for_fetch.clone();
                 let tor_client = tor_client.clone();
-                let tauri_handle = tauri_handle.clone();
+                let tauri_handle = tauri_handle_for_fetch.clone();
 
                 Box::pin(async move {
                     fetch_quotes_task(
@@ -1001,7 +982,7 @@ pub async fn buy_xmr(
                         namespace,
                         sellers,
                         identity,
-                        db,
+                        Some(db),
                         tor_client,
                         tauri_handle,
                     ).await
@@ -1029,10 +1010,10 @@ pub async fn buy_xmr(
                     async move { w.sync().await }
                 }
             },
-            context.tauri_handle.clone(),
+            tauri_handle_for_determine,
             swap_id,
             |quote_with_address| {
-                let tauri_handle = context.tauri_handle.clone();
+                let tauri_handle_clone = tauri_handle_for_selection.clone();
                 Box::new(async move {
                     let details = SelectMakerDetails {
                         swap_id,
@@ -1040,7 +1021,7 @@ pub async fn buy_xmr(
                         maker: quote_with_address,
                     };
 
-                    tauri_handle.request_maker_selection(details, 300).await
+                    tauri_handle_clone.request_maker_selection(details, 300).await
                 }) as Box<dyn Future<Output = Result<bool>> + Send>
             },
         ) => {
@@ -1048,55 +1029,51 @@ pub async fn buy_xmr(
         }
         _ = context.swap_lock.listen_for_swap_force_suspension() => {
             context.swap_lock.release_swap_lock().await.expect("Shutdown signal received but failed to release swap lock. The swap process has been terminated but the swap lock is still active.");
-            context.tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+            if let Some(handle) = tauri_handle_for_suspension {
+                handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+            }
             bail!("Shutdown signal received");
         },
     };
 
     // Insert the peer_id into the database
-    context.db.insert_peer_id(swap_id, seller_peer_id).await?;
+    db.insert_peer_id(swap_id, seller_peer_id).await?;
 
-    context
-        .db
-        .insert_address(seller_peer_id, seller_multiaddr.clone())
+    db.insert_address(seller_peer_id, seller_multiaddr.clone())
         .await?;
 
     let behaviour = cli::Behaviour::new(
         seller_peer_id,
         env_config,
         bitcoin_wallet.clone(),
-        (seed.derive_libp2p_identity(), context.config.namespace),
+        (seed.derive_libp2p_identity(), namespace),
     );
 
     let mut swarm = swarm::cli(
         seed.derive_libp2p_identity(),
-        context.tor_client.clone(),
+        tor_client_for_swarm,
         behaviour,
     )
     .await?;
 
     swarm.add_peer_address(seller_peer_id, seller_multiaddr.clone());
 
-    context
-        .db
-        .insert_monero_address_pool(swap_id, monero_receive_pool.clone())
+    db.insert_monero_address_pool(swap_id, monero_receive_pool.clone())
         .await?;
 
     tracing::debug!(peer_id = %swarm.local_peer_id(), "Network layer initialized");
 
-    context.tauri_handle.emit_swap_progress_event(
+    tauri_handle.emit_swap_progress_event(
         swap_id,
         TauriSwapProgressEvent::ReceivedQuote(quote.clone()),
     );
 
     // Now create the event loop we use for the swap
     let (event_loop, event_loop_handle) =
-        EventLoop::new(swap_id, swarm, seller_peer_id, context.db.clone())?;
+        EventLoop::new(swap_id, swarm, seller_peer_id, db.clone())?;
     let event_loop = tokio::spawn(event_loop.run().in_current_span());
 
-    context
-        .tauri_handle
-        .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::ReceivedQuote(quote));
+    tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::ReceivedQuote(quote));
 
     context.tasks.clone().spawn(async move {
         tokio::select! {
@@ -1105,7 +1082,7 @@ pub async fn buy_xmr(
                 tracing::debug!("Shutdown signal received, exiting");
                 context.swap_lock.release_swap_lock().await.expect("Shutdown signal received but failed to release swap lock. The swap process has been terminated but the swap lock is still active.");
 
-                context.tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+                tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
 
                 bail!("Shutdown signal received");
             },
@@ -1122,9 +1099,9 @@ pub async fn buy_xmr(
             },
             swap_result = async {
                 let swap = Swap::new(
-                    Arc::clone(&context.db),
+                    db.clone(),
                     swap_id,
-                    Arc::clone(&bitcoin_wallet),
+                    bitcoin_wallet.clone(),
                     monero_wallet,
                     env_config,
                     event_loop_handle,
@@ -1132,7 +1109,7 @@ pub async fn buy_xmr(
                     bitcoin_change_address_for_spawn,
                     tx_lock_amount,
                     tx_lock_fee
-                ).with_event_emitter(context.tauri_handle.clone());
+                ).with_event_emitter(tauri_handle.clone());
 
                 bob::run(swap).await
             } => {
@@ -1154,7 +1131,7 @@ pub async fn buy_xmr(
             .await
             .expect("Could not release swap lock");
 
-        context.tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+        tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
 
         Ok::<_, anyhow::Error>(())
     }.in_current_span()).await;
@@ -1169,11 +1146,16 @@ pub async fn resume_swap(
 ) -> Result<ResumeSwapResponse> {
     let ResumeSwapArgs { swap_id } = resume;
 
-    let seller_peer_id = context.db.get_peer_id(swap_id).await?;
-    let seller_addresses = context.db.get_addresses(seller_peer_id).await?;
+    let db = context.try_get_db().await?;
+    let config = context.try_get_config().await?;
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
+    let monero_manager = context.try_get_monero_manager().await?;
+    let tor_client = context.tor_client.read().await.clone();
 
-    let seed = context
-        .config
+    let seller_peer_id = db.get_peer_id(swap_id).await?;
+    let seller_addresses = db.get_addresses(seller_peer_id).await?;
+
+    let seed = config
         .seed
         .as_ref()
         .context("Could not get seed")?
@@ -1181,16 +1163,11 @@ pub async fn resume_swap(
 
     let behaviour = cli::Behaviour::new(
         seller_peer_id,
-        context.config.env_config,
-        Arc::clone(
-            context
-                .bitcoin_wallet
-                .as_ref()
-                .context("Could not get Bitcoin wallet")?,
-        ),
-        (seed.clone(), context.config.namespace),
+        config.env_config,
+        bitcoin_wallet.clone(),
+        (seed.clone(), config.namespace),
     );
-    let mut swarm = swarm::cli(seed.clone(), context.tor_client.clone(), behaviour).await?;
+    let mut swarm = swarm::cli(seed.clone(), tor_client, behaviour).await?;
     let our_peer_id = swarm.local_peer_id();
 
     tracing::debug!(peer_id = %our_peer_id, "Network layer initialized");
@@ -1201,36 +1178,27 @@ pub async fn resume_swap(
     }
 
     let (event_loop, event_loop_handle) =
-        EventLoop::new(swap_id, swarm, seller_peer_id, context.db.clone())?;
+        EventLoop::new(swap_id, swarm, seller_peer_id, db.clone())?;
 
-    let monero_receive_pool = context.db.get_monero_address_pool(swap_id).await?;
+    let monero_receive_pool = db.get_monero_address_pool(swap_id).await?;
+
+    let tauri_handle = context.tauri_handle.clone();
 
     let swap = Swap::from_db(
-        Arc::clone(&context.db),
+        db.clone(),
         swap_id,
-        Arc::clone(
-            context
-                .bitcoin_wallet
-                .as_ref()
-                .context("Could not get Bitcoin wallet")?,
-        ),
-        context
-            .monero_manager
-            .as_ref()
-            .context("Could not get Monero wallet manager")?
-            .clone(),
-        context.config.env_config,
+        bitcoin_wallet,
+        monero_manager,
+        config.env_config,
         event_loop_handle,
         monero_receive_pool,
     )
     .await?
-    .with_event_emitter(context.tauri_handle.clone());
+    .with_event_emitter(tauri_handle.clone());
 
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
-    context
-        .tauri_handle
-        .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Resuming);
+    tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Resuming);
 
     context.tasks.clone().spawn(
         async move {
@@ -1241,7 +1209,7 @@ pub async fn resume_swap(
                      tracing::debug!("Shutdown signal received, exiting");
                     context.swap_lock.release_swap_lock().await.expect("Shutdown signal received but failed to release swap lock. The swap process has been terminated but the swap lock is still active.");
 
-                    context.tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+                    tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
 
                     bail!("Shutdown signal received");
                 },
@@ -1274,7 +1242,7 @@ pub async fn resume_swap(
                 .await
                 .expect("Could not release swap lock");
 
-            context.tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
+            tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
 
             Ok::<(), anyhow::Error>(())
         }
@@ -1292,15 +1260,12 @@ pub async fn cancel_and_refund(
     context: Arc<Context>,
 ) -> Result<serde_json::Value> {
     let CancelAndRefundArgs { swap_id } = cancel_and_refund;
-    let bitcoin_wallet = context
-        .bitcoin_wallet
-        .as_ref()
-        .context("Could not get Bitcoin wallet")?;
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
+    let db = context.try_get_db().await?;
 
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
-    let state =
-        cli::cancel_and_refund(swap_id, Arc::clone(bitcoin_wallet), Arc::clone(&context.db)).await;
+    let state = cli::cancel_and_refund(swap_id, bitcoin_wallet, db).await;
 
     context
         .swap_lock
@@ -1321,7 +1286,8 @@ pub async fn cancel_and_refund(
 
 #[tracing::instrument(fields(method = "get_history"), skip(context))]
 pub async fn get_history(context: Arc<Context>) -> Result<GetHistoryResponse> {
-    let swaps = context.db.all().await?;
+    let db = context.try_get_db().await?;
+    let swaps = db.all().await?;
     let mut vec: Vec<GetHistoryEntry> = Vec::new();
     for (swap_id, state) in swaps {
         let state: BobState = state.try_into()?;
@@ -1336,7 +1302,8 @@ pub async fn get_history(context: Arc<Context>) -> Result<GetHistoryResponse> {
 
 #[tracing::instrument(fields(method = "get_config"), skip(context))]
 pub async fn get_config(context: Arc<Context>) -> Result<serde_json::Value> {
-    let data_dir_display = context.config.data_dir.display();
+    let config = context.try_get_config().await?;
+    let data_dir_display = config.data_dir.display();
     tracing::info!(path=%data_dir_display, "Data directory");
     tracing::info!(path=%format!("{}/logs", data_dir_display), "Log files directory");
     tracing::info!(path=%format!("{}/sqlite", data_dir_display), "Sqlite file location");
@@ -1359,10 +1326,7 @@ pub async fn withdraw_btc(
     context: Arc<Context>,
 ) -> Result<WithdrawBtcResponse> {
     let WithdrawBtcArgs { address, amount } = withdraw_btc;
-    let bitcoin_wallet = context
-        .bitcoin_wallet
-        .as_ref()
-        .context("Could not get Bitcoin wallet")?;
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
     let (withdraw_tx_unsigned, amount) = match amount {
         Some(amount) => {
@@ -1404,10 +1368,7 @@ pub async fn withdraw_btc(
 #[tracing::instrument(fields(method = "get_balance"), skip(context))]
 pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<BalanceResponse> {
     let BalanceArgs { force_refresh } = balance;
-    let bitcoin_wallet = context
-        .bitcoin_wallet
-        .as_ref()
-        .context("Could not get Bitcoin wallet")?;
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
     if force_refresh {
         bitcoin_wallet.sync().await?;
@@ -1443,8 +1404,12 @@ pub async fn list_sellers(
         .filter_map(|rendezvous_point| rendezvous_point.split_peer_id())
         .collect();
 
-    let identity = context
-        .config
+    let config = context.try_get_config().await?;
+    let db = context.try_get_db().await?;
+    let tor_client = context.tor_client.read().await.clone();
+    let tauri_handle = context.tauri_handle.clone();
+
+    let identity = config
         .seed
         .as_ref()
         .context("Cannot extract seed")?
@@ -1452,11 +1417,11 @@ pub async fn list_sellers(
 
     let sellers = list_sellers_impl(
         rendezvous_nodes,
-        context.config.namespace,
-        context.tor_client.clone(),
+        config.namespace,
+        tor_client,
         identity,
-        Some(context.db.clone()),
-        context.tauri_handle(),
+        Some(db.clone()),
+        tauri_handle,
     )
     .await?;
 
@@ -1482,10 +1447,7 @@ pub async fn list_sellers(
                 // Add the peer as known to the database
                 // This'll allow us to later request a quote again
                 // without having to re-discover the peer at the rendezvous point
-                context
-                    .db
-                    .insert_address(*peer_id, multiaddr.clone())
-                    .await?;
+                db.insert_address(*peer_id, multiaddr.clone()).await?;
             }
             SellerStatus::Unreachable(UnreachableSeller { peer_id }) => {
                 tracing::trace!(
@@ -1502,10 +1464,7 @@ pub async fn list_sellers(
 
 #[tracing::instrument(fields(method = "export_bitcoin_wallet"), skip(context))]
 pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::Value> {
-    let bitcoin_wallet = context
-        .bitcoin_wallet
-        .as_ref()
-        .context("Could not get Bitcoin wallet")?;
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
     let wallet_export = bitcoin_wallet.wallet_export("cli").await?;
     tracing::info!(descriptor=%wallet_export.to_string(), "Exported bitcoin wallet");
@@ -1520,14 +1479,17 @@ pub async fn monero_recovery(
     context: Arc<Context>,
 ) -> Result<serde_json::Value> {
     let MoneroRecoveryArgs { swap_id } = monero_recovery;
-    let swap_state: BobState = context.db.get_state(swap_id).await?.try_into()?;
+    let db = context.try_get_db().await?;
+    let config = context.try_get_config().await?;
+
+    let swap_state: BobState = db.get_state(swap_id).await?.try_into()?;
 
     if let BobState::BtcRedeemed(state5) = swap_state {
         let (spend_key, view_key) = state5.xmr_keys();
         let restore_height = state5.monero_wallet_restore_blockheight.height;
 
         let address = monero::Address::standard(
-            context.config.env_config.monero_network,
+            config.env_config.monero_network,
             monero::PublicKey::from_private_key(&spend_key),
             monero::PublicKey::from(view_key.public()),
         );
@@ -1770,7 +1732,7 @@ where
             });
         }
 
-        tracing::info!(
+        tracing::trace!(
             swap_id = ?swap_id,
             pending_approvals = ?pending_approvals.len(),
             balance = ?balance,
@@ -1980,10 +1942,7 @@ impl Request for GetMoneroSyncProgressArgs {
     type Response = GetMoneroSyncProgressResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
         let sync_progress = wallet.call(|wallet| wallet.sync_progress()).await;
@@ -2010,10 +1969,7 @@ impl Request for GetMoneroSeedArgs {
     type Response = GetMoneroSeedResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let wallet_manager = ctx
-            .monero_manager
-            .as_ref()
-            .context("Monero wallet manager not available")?;
+        let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
         let seed = wallet.seed().await?;

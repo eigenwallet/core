@@ -8,7 +8,7 @@ use swap::protocol::{alice, bob};
 
 #[tokio::test]
 async fn given_alice_restarts_after_xmr_is_locked_resume_swap() {
-    harness::setup_test(SlowCancelConfig, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
         let (bob_swap, _) = ctx.bob_swap().await;
         let bob_swap = tokio::spawn(bob::run(bob_swap));
 

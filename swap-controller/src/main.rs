@@ -31,7 +31,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::BitcoinBalance => {
             let response = client.bitcoin_balance().await?;
-            println!("Current Bitcoin balance is {} BTC", response.balance);
+            println!("Current Bitcoin balance is {}", response.balance);
         }
         Cmd::MoneroBalance => {
             let response = client.monero_balance().await?;

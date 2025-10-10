@@ -43,10 +43,8 @@ export default function DepositAndChooseOfferPage({
         gap: 3,
       }}
     >
-      <Paper
-        elevation={8}
+      <Box
         sx={{
-          padding: 2,
           display: "flex",
           flexDirection: { xs: "column", md: "row" },
           gap: 2,
@@ -93,21 +91,10 @@ export default function DepositAndChooseOfferPage({
           </Typography>
           <ActionableMonospaceTextBox content={deposit_address} />
         </Box>
-      </Paper>
+      </Box>
 
       {/* Available Makers Section */}
       <Box>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            mb: 2,
-          }}
-        >
-          <Typography variant="h5">Select an offer</Typography>
-        </Box>
-
         {/* Maker Discovery Status */}
         <MakerDiscoveryStatus />
 

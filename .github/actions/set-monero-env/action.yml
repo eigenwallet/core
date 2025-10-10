@@ -29,13 +29,3 @@ runs:
       shell: bash
       run: |
         echo "CN_APPLICATION=unstoppableswap/unstoppableswap-gui-rs" >> $GITHUB_ENV
-
-    - name: Set platform identifiers
-      shell: bash
-      run: |
-        # Platform identifiers used in various workflows
-        echo "UBUNTU=ubuntu-24.04" >> $GITHUB_ENV
-        echo "UBUNTU_PLATFORM_ID=ubuntu-24.04" >> $GITHUB_ENV
-        echo "MACOS_INTEL=macos-13" >> $GITHUB_ENV
-        echo "WINDOWS=windows-latest" >> $GITHUB_ENV
-        echo "WINDOWS_PLATFORM_ID=windows-latest" >> $GITHUB_ENV

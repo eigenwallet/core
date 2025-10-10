@@ -27,6 +27,9 @@ fn test_orchestrator_spec_generation() {
             asb_controller: OrchestratorImage::Build(
                 images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone(),
             ),
+            asb_tracing_logger: OrchestratorImage::Registry(
+                images::ASB_TRACING_LOGGER_IMAGE.to_string(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),

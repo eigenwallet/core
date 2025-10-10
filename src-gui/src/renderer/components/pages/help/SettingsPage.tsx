@@ -28,12 +28,12 @@ export default function SettingsPage() {
         paddingBottom: 2,
       }}
     >
+      <DonateInfoBox />
       <SettingsBox />
-      <DiscoveryBox />
+      <DaemonControlBox />
       <MoneroPoolHealthBox />
       <ExportDataBox />
-      <DaemonControlBox />
-      <DonateInfoBox />
+      <DiscoveryBox />
     </Box>
   );
 }

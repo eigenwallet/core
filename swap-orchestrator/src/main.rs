@@ -50,6 +50,9 @@ fn main() {
             asb_controller: OrchestratorImage::Build(
                 images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone(),
             ),
+            asb_tracing_logger: OrchestratorImage::Registry(
+                images::ASB_TRACING_LOGGER_IMAGE.to_string(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
@@ -132,6 +135,8 @@ fn main() {
             .expect("Failed to prompt for listen addresses");
         let monero_node_type = prompt::monero_node_type();
         let electrum_server_type = prompt::electrum_server_type(&defaults.electrum_rpc_urls);
+        let developer_tip =
+            config_prompt::developer_tip().expect("Failed to prompt for developer tip");
 
         let electrs_url = Url::parse(&format!("tcp://electrs:{}", recipe.ports.electrs))
             .expect("electrs url to be convertible to a valid url");
@@ -180,6 +185,7 @@ fn main() {
                 ask_spread,
                 price_ticker_ws_url: defaults.price_ticker_ws_url,
                 external_bitcoin_redeem_address: None,
+                developer_tip,
             },
         };
 

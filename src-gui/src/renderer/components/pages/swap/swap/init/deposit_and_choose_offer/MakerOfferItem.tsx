@@ -18,11 +18,13 @@ export default function MakerOfferItem({
   quoteWithAddress: QuoteWithAddress;
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
+  const isOutOfLiquidity = quote.max_quantity == 0;
 
   return (
     <Paper
       variant="outlined"
       sx={{
+        position: "relative",
         display: "flex",
         flexDirection: { xs: "column", sm: "row" },
         gap: 2,
@@ -121,6 +123,35 @@ export default function MakerOfferItem({
           Select
         </PromiseInvokeButton>
       </Box>
+
+      {isOutOfLiquidity && (
+        <Box
+          sx={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(1px)",
+            borderRadius: 2,
+            pointerEvents: "auto",
+          }}
+        >
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: "bold",
+              color: "text.secondary",
+              textAlign: "center",
+            }}
+          >
+            Maker has no available funds
+          </Typography>
+        </Box>
+      )}
     </Paper>
   );
 }

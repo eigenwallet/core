@@ -1,10 +1,31 @@
 use crate::env::{Mainnet, Testnet};
 use anyhow::{Context, Result};
 use libp2p::Multiaddr;
+use rust_decimal::Decimal;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use swap_fs::{system_config_dir, system_data_dir};
 use url::Url;
+
+/*
+Here's the GPG signature of the donation address.
+
+Signed by the public key present in `utils/gpg_keys/binarybaron.asc`
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o is our donation address for Github (signed by binarybaron)
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWlQAKCRCZt10+FHai
+bhasAQDGrAkZu+FFwDZDUEZzrIVS42he+GeMiS+ykpXyL5I7RQD/dXCR3f39zFsK
+1A7y45B3a8ZJYTzC7bbppg6cEnCoWQE=
+=j+Vz
+-----END PGP SIGNATURE-----
+*/
+pub const DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET: &str = "87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o";
+pub const DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET: &str = "54ZYC5tgGRoKMJDLviAcJF2aHittSZGGkFZE6wCLkuAdUyHaaiQrjTxeSyfvxycn3yiexL4YNqdUmHuaReAk6JD4DQssQcF";
 
 pub const DEFAULT_MIN_BUY_AMOUNT: f64 = 0.002f64;
 pub const DEFAULT_MAX_BUY_AMOUNT: f64 = 0.02f64;
@@ -91,6 +112,7 @@ pub struct Defaults {
     pub price_ticker_ws_url: Url,
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
+    pub developer_tip: Decimal,
 }
 
 impl GetDefaults for Mainnet {
@@ -105,6 +127,7 @@ impl GetDefaults for Mainnet {
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
+            developer_tip: Decimal::ZERO,
         };
 
         Ok(defaults)
@@ -123,6 +146,7 @@ impl GetDefaults for Testnet {
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
+            developer_tip: Decimal::ZERO,
         };
 
         Ok(defaults)

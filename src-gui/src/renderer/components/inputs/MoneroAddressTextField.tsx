@@ -22,8 +22,9 @@ import ListItemButton from "@mui/material/ListItemButton";
 type MoneroAddressTextFieldProps = TextFieldProps & {
   address: string;
   onAddressChange: (address: string) => void;
-  onAddressValidityChange: (valid: boolean) => void;
+  onAddressValidityChange?: (valid: boolean) => void;
   helperText?: string;
+  allowEmpty?: boolean;
 };
 
 export default function MoneroAddressTextField({
@@ -31,21 +32,35 @@ export default function MoneroAddressTextField({
   onAddressChange,
   onAddressValidityChange,
   helperText,
+  allowEmpty = true,
   ...props
 }: MoneroAddressTextFieldProps) {
   const [addresses, setAddresses] = useState<string[]>([]);
   const [showDialog, setShowDialog] = useState(false);
 
-  // Validation
   const placeholder = isTestnet() ? "59McWTPGc745..." : "888tNkZrPN6J...";
-  const errorText = isXmrAddressValid(address, isTestnet())
-    ? null
-    : "Not a valid Monero address";
 
-  // Effects
+  function errorText() {
+    if (address.length === 0) {
+      if (allowEmpty) {
+        return null;
+      }
+
+      return "Cannot be empty";
+    }
+
+    if (isXmrAddressValid(address, isTestnet())) {
+      return null;
+    }
+
+    return "Not a valid Monero address";
+  }
+
   useEffect(() => {
-    onAddressValidityChange(!errorText);
-  }, [address, onAddressValidityChange, errorText]);
+    if (onAddressValidityChange != null) {
+      onAddressValidityChange(!errorText());
+    }
+  }, [address, onAddressValidityChange]);
 
   useEffect(() => {
     const fetchAddresses = async () => {
@@ -58,7 +73,6 @@ export default function MoneroAddressTextField({
     return () => clearInterval(interval);
   }, []);
 
-  // Event handlers
   const handleClose = () => setShowDialog(false);
   const handleAddressSelect = (selectedAddress: string) => {
     onAddressChange(selectedAddress);
@@ -70,8 +84,8 @@ export default function MoneroAddressTextField({
       <TextField
         value={address}
         onChange={(e) => onAddressChange(e.target.value)}
-        error={!!errorText && address.length > 0}
-        helperText={address.length > 0 ? errorText || helperText : helperText}
+        error={errorText() !== null}
+        helperText={errorText() || helperText}
         placeholder={placeholder}
         variant="outlined"
         slotProps={{

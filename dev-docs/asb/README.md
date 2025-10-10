@@ -2,28 +2,25 @@
 
 ## Quick Start
 
-From version `0.6.0` onwards the software default to running on `mainnet`.
-It is recommended to try the software on testnet first, which can be achieved by providing the `--testnet` flag.
-This quickstart guide assumes that you are running the software on testnet (i.e. Bitcoin testnet3 and Monero stagenet):
+The recommended way to operate an ASB is through the `orchestrator` tool that ships with this repository.
+The orchestrator generates a hardened Docker Compose environment that runs the ASB together with dedicated Bitcoin and Monero infrastructure.
+Refer to the [orchestrator README](https://github.com/eigenwallet/core/blob/main/swap-orchestrator/README.md) for a full command reference, architecture overview, and automation tips.
 
-1. Download [latest release](https://github.com/comit-network/xmr-btc-swap/releases/latest) of the `asb` binary
-2. Ensure that you have the Monero Wallet RPC running with `--wallet-dir` and `--disable-rpc-login`:
-   1. `monero-wallet-rpc --stagenet --daemon-host STAGENET-NODE-URL --rpc-bind-port STAGENET-NODE-PORT --disable-rpc-login --wallet-dir PATH/TO/WALLET/DIR`
-3. Run the ASB in terminal: `./asb --testnet start`
-4. Follow the setup wizard in the terminal
+1. Install [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/) on the machine that will host your maker.
+2. Download the latest [orchestrator release](https://github.com/eigenwallet/core/releases) (or build it from source) and make the binary executable.
+3. Create an empty working directory, place the binary inside and start the wizard: `./orchestrator`.
+4. Pick the networks you want to operate on (mainnet or the Bitcoin testnet/Monero stagenet pair) and answer the prompts about ports, Tor settings and maker parameters.
+5. Once the wizard finishes run `docker compose up -d --build` from the same directory to start the environment.
+6. Attach to the ASB control shell with `docker compose attach asb-controller` and type `help` to inspect available commands.
+   The README includes additional controller examples if you need to script JSON-RPC calls.
 
-Public Monero nodes for running the Monero Wallet RPC on stagenet can be found [here](https://monero.fail/?chain=monero). Public Electrum nodes for testnet can be found [here](https://1209k.com/bitcoin-eye/ele.php?chain=tbtc).
+The generated `config.toml` lives next to `docker-compose.yml`. Edit it to adjust maker parameters, then restart the ASB container with `docker compose restart asb` to apply the changes.
 
-Run `./asb --help` for more information.
+### Running on mainnet vs. testnet
 
-### Running on mainnet
+The orchestrator allows you to select the networks during the wizard. Choose Bitcoin testnet & Monero stagenet for a dry run, or Bitcoin mainnet & Monero mainnet for production.
 
-For running the ASB on mainnet you will have to change you `monero-wallet-rpc` setup to mainnet.
-
-It is recommended that you run your own Monero and Bitcoin node when running on mainnet.
-It is possible to plug into public blockchain nodes but be aware that you might lose some privacy doing so.
-Public Monero mainnet nodes can be found [here](https://monero.fail/?chain=monero).
-Public Electrum mainnet nodes can be found [here](https://1209k.com/bitcoin-eye/ele.php?chain=btc).
+If you run on mainnet we strongly recommend keeping the default self-hosted nodes that the orchestrator provisions. They provide better privacy than connecting to third-party RPC servers.
 
 ### Connect with others
 
@@ -31,9 +28,9 @@ Consider joining the designated [Matrix chat](https://matrix.to/#/%23unstoppable
 
 ### Using Docker
 
-Running the ASB and its required services (Bitcoin node, Monero node, wallet RPC) can be complex to set up manually.
-We provide a Docker Compose solution that handles all of this automatically.
-See our [docker-compose repository](https://github.com/eigenwallet/asb-docker-compose) for setup instructions and configuration details.
+The orchestrator manages the Docker Compose setup for you.
+Re-run `./orchestrator` whenever you want to regenerate the compose file with new container images or port assignments—the tool preserves your `config.toml` and Docker volumes.
+Day-to-day operations happen via `docker compose` from the orchestrator directory (`up`, `down`, `logs`, `ps`, etc.).
 
 ## ASB Details
 
@@ -95,14 +92,10 @@ The `ASB` depicted in the diagram actually consists of multiple components (prot
 
 #### Monero Wallet Setup
 
-The ASB uses the running Monero wallet RPC to create / open Monero wallets.
-Currently you cannot connect to an existing Monero wallet, but the ASB will create the wallet `asb-wallet` upon intial startup.
-In order to accept trades with a CLI you will have to send XMR to that wallet.
-The wallet's address is printed upon startup of the ASB.
-Currently the `asb-wallet` does not have a password.
-
-Upon startup of the ASB the `asb-wallet` is opened in the wallet RPC.
-You can then interact with the wallet RPC for basic wallet management as well.
+The ASB manages Monero wallets internally through direct FFI bindings and stores them inside the Docker volume mounted at `/asb-data`.
+On first start it creates a wallet and prints the primary address in the logs.
+Fund that wallet with enough XMR liquidity to cover the swaps you intend to make.
+You can export the wallet seed (and restore height) via the controller's `monero-seed` command when you need to recover it in another wallet application.
 
 #### Bitcoin Wallet Setup
 
@@ -120,12 +113,15 @@ max_buy_btc = 0.0001
 ask_spread = 0.02
 price_ticker_ws_url = "wss://ws.kraken.com"
 external_bitcoin_address = "bc1..."
+developer_tip = 0.02
 ```
 
 The minimum and maximum amount as well as a spread, that is added on top of the price fetched from a central exchange, can be configured.
 
 `external_bitcoin_address` allows to specify the Bitcoin address that the ASB will use to redeem or punish swaps.
 If the option is not set, a new address from the internal wallet is used for every swap.
+
+`developer_tip` allows configuring your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set it to a number between 0 and 1. Setting it to 0.02 will donate 2% of each swap to the donation address of the project. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction.
 
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.

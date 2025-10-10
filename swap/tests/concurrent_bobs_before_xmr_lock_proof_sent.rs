@@ -9,7 +9,7 @@ use swap::protocol::{alice, bob};
 
 #[tokio::test]
 async fn concurrent_bobs_before_xmr_lock_proof_sent() {
-    harness::setup_test(SlowCancelConfig, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
         let (bob_swap_1, bob_join_handle_1) = ctx.bob_swap().await;
 
         let swap_id = bob_swap_1.id;

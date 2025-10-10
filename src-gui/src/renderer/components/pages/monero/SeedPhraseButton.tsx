@@ -6,6 +6,7 @@ import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
 } from "models/tauriModel";
+import { isContextWithMoneroWallet } from "models/tauriModelExt";
 
 interface SeedPhraseButtonProps {
   onMenuClose: () => void;
@@ -18,34 +19,25 @@ export default function SeedPhraseButton({
   onMenuClose,
   onSeedPhraseSuccess,
 }: SeedPhraseButtonProps) {
-  const handleSeedPhraseSuccess = (
-    response: [GetMoneroSeedResponse, GetRestoreHeightResponse],
-  ) => {
-    onSeedPhraseSuccess(response);
-    onMenuClose();
-  };
-
   return (
-    <MenuItem component="div">
-      <PromiseInvokeButton
-        onInvoke={getMoneroSeedAndRestoreHeight}
-        onSuccess={handleSeedPhraseSuccess}
-        displayErrorSnackbar={true}
-        variant="text"
-        sx={{
-          justifyContent: "flex-start",
-          textTransform: "none",
-          padding: 0,
-          minHeight: "auto",
-          width: "100%",
-          color: "text.primary",
-        }}
-      >
-        <ListItemIcon>
-          <KeyIcon />
-        </ListItemIcon>
-        <Typography>Seedphrase</Typography>
-      </PromiseInvokeButton>
-    </MenuItem>
+    <PromiseInvokeButton
+      onInvoke={getMoneroSeedAndRestoreHeight}
+      onSuccess={onSeedPhraseSuccess}
+      displayErrorSnackbar={true}
+      contextRequirement={isContextWithMoneroWallet}
+      component={MenuItem}
+      disableRipple={false}
+      sx={{
+        textTransform: "none",
+        width: "100%",
+        borderRadius: "0px",
+      }}
+      color="inherit"
+    >
+      <ListItemIcon>
+        <KeyIcon />
+      </ListItemIcon>
+      <Typography>Seedphrase</Typography>
+    </PromiseInvokeButton>
   );
 }

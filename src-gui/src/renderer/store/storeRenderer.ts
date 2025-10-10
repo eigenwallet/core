@@ -17,7 +17,7 @@ import { LazyStore } from "@tauri-apps/plugin-store";
 const rootPersistConfig = {
   key: "gui-global-state-store",
   storage: sessionStorage,
-  blacklist: ["settings", "conversations", "logs"],
+  blacklist: ["settings", "conversations", "alerts", "logs"],
 };
 
 // Use Tauri's store plugin for persistent settings
@@ -58,6 +58,12 @@ const conversationsPersistConfig = {
   storage: createTauriStorage(),
 };
 
+// Persist alerts across application restarts
+const alertsPersistConfig = {
+  key: "alerts",
+  storage: createTauriStorage(),
+};
+
 // Create a persisted version of the settings reducer
 const persistedSettingsReducer = persistReducer(
   settingsPersistConfig,
@@ -70,11 +76,18 @@ const persistedConversationsReducer = persistReducer(
   reducers.conversations,
 );
 
+// Create a persisted version of the alerts reducer
+const persistedAlertsReducer = persistReducer(
+  alertsPersistConfig,
+  reducers.alerts,
+);
+
 // Combine all reducers, using the persisted settings reducer
 const rootReducer = combineReducers({
   ...reducers,
   settings: persistedSettingsReducer,
   conversations: persistedConversationsReducer,
+  alerts: persistedAlertsReducer,
 });
 
 // Enable persistence for the entire application state
