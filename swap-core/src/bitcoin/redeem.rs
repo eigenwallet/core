@@ -1,18 +1,18 @@
 use crate::bitcoin::{
-    verify_encsig, verify_sig, Address, Amount, EmptyWitnessStack, EncryptedSignature, NoInputs,
-    NotThreeWitnesses, PublicKey, SecretKey, TooManyInputs, Transaction, TxLock,
+    Address, Amount, EmptyWitnessStack, EncryptedSignature, NoInputs, NotThreeWitnesses, PublicKey,
+    SecretKey, TooManyInputs, Transaction, TxLock, verify_encsig, verify_sig,
 };
-use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, Txid};
-use anyhow::{bail, Context, Result};
+use ::bitcoin::{Txid, sighash::SegwitV0Sighash as Sighash};
+use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin::sighash::SighashCache;
-use bitcoin::{secp256k1, ScriptBuf};
 use bitcoin::{EcdsaSighashType, Weight};
+use bitcoin::{ScriptBuf, secp256k1};
 use bitcoin_wallet::primitives::Watchable;
+use ecdsa_fun::Signature;
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::fun::Scalar;
 use ecdsa_fun::nonce::Deterministic;
-use ecdsa_fun::Signature;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::Arc;

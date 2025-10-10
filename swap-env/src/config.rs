@@ -1,7 +1,7 @@
 use crate::defaults::GetDefaults;
 use crate::env::{Mainnet, Testnet};
 use crate::prompt;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use config::ConfigError;
 use libp2p::core::Multiaddr;
 use rust_decimal::Decimal;

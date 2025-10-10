@@ -1,13 +1,13 @@
 use crate::bitcoin;
 use crate::bitcoin::{
-    build_shared_output_descriptor, Address, Amount, BlockHeight, PublicKey, Transaction, TxLock,
+    Address, Amount, BlockHeight, PublicKey, Transaction, TxLock, build_shared_output_descriptor,
 };
+use ::bitcoin::Weight;
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::transaction::Version;
-use ::bitcoin::Weight;
 use ::bitcoin::{
-    locktime::absolute::LockTime as PackedLockTime, secp256k1, sighash::SegwitV0Sighash as Sighash,
     EcdsaSighashType, OutPoint, ScriptBuf, Sequence, TxIn, TxOut, Txid,
+    locktime::absolute::LockTime as PackedLockTime, secp256k1, sighash::SegwitV0Sighash as Sighash,
 };
 use anyhow::Result;
 use bdk_wallet::miniscript::Descriptor;
