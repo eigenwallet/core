@@ -105,6 +105,9 @@ check_gui_eslint:
 check_gui_tsc:
 	cd src-gui && yarn run tsc --noEmit
 
+test test_name:
+    cargo test --test {{test_name}} -- --nocapture
+
 # Run the checks for the GUI frontend
 check_gui:
 	just check_gui_eslint || true
