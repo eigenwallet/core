@@ -36,7 +36,7 @@ libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "reques
 rust_decimal = { workspace = true, features = ["serde-float"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde_json = { workspace = true }
-structopt = "0.3"
+structopt = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

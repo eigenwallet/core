@@ -1,4 +1,4 @@
-name: "Build swap, asb, asb-controller, orchestrator and rendezvous-server release binaries"
+name: "Build swap, asb, asb-controller, orchestrator and rendezvous-node release binaries"
 
 on:
   pull_request:
@@ -52,7 +52,7 @@ jobs:
           - name: asb-controller
             smoke_test_args: ""
             smoke_test_fake_interactive: false
-          - name: rendezvous-server
+          - name: rendezvous-node
             smoke_test_args: "--help"
             smoke_test_fake_interactive: false
           - name: orchestrator

@@ -8,19 +8,20 @@ use structopt::StructOpt;
 use tokio::fs;
 use tokio::fs::{DirBuilder, OpenOptions};
 use tokio::io::AsyncWriteExt;
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::filter::LevelFilter;
 
 use crate::swarm::{create_swarm, create_swarm_with_onion, Addresses};
+use crate::tracing_util::init_tracing;
 
 pub mod swarm;
+pub mod tracing_util;
 
 #[derive(Debug, StructOpt)]
 struct Cli {
     /// Path to the file that contains the secret key of the rendezvous server's
     /// identity keypair
     /// If the file does not exist, a new secret key will be generated and saved to the file
-    #[structopt(long, default_value = "./rendezvous-server-secret.key")]
+    #[structopt(long, default_value = "./rendezvous-node-secret.key")]
     secret_file: PathBuf,
 
     /// Port used for listening on TCP (default)
@@ -108,66 +109,6 @@ async fn main() -> Result<()> {
             }
         }
     }
-}
-
-fn init_tracing(level: LevelFilter, json_format: bool, no_timestamp: bool) {
-    if level == LevelFilter::OFF {
-        return;
-    }
-
-    let is_terminal = atty::is(atty::Stream::Stderr);
-
-    let builder = FmtSubscriber::builder()
-        .with_env_filter(format!(
-            "rendezvous_server={},\
-                 libp2p={},\
-                 libp2p_allow_block_list={},\
-                 libp2p_connection_limits={},\
-                 libp2p_core={},\
-                 libp2p_dns={},\
-                 libp2p_identity={},\
-                 libp2p_noise={},\
-                 libp2p_ping={},\
-                 libp2p_rendezvous={},\
-                 libp2p_request_response={},\
-                 libp2p_swarm={},\
-                 libp2p_tcp={},\
-                 libp2p_tls={},\
-                 libp2p_tor={},\
-                 libp2p_websocket={},\
-                 libp2p_yamux={}",
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level
-        ))
-        .with_writer(std::io::stderr)
-        .with_ansi(is_terminal)
-        .with_target(false);
-
-    if json_format {
-        builder.json().init();
-        return;
-    }
-
-    if no_timestamp {
-        builder.without_time().init();
-        return;
-    }
-    builder.init();
 }
 
 async fn load_secret_key_from_file(path: impl AsRef<Path>) -> Result<ed25519::SecretKey> {
