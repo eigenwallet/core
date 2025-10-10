@@ -5,8 +5,9 @@ use crate::network::swap_setup::{
 };
 use crate::protocol::alice::{State0, State3};
 use crate::protocol::{Message0, Message2, Message4};
-use crate::{asb, bitcoin, monero};
+use crate::{asb, monero};
 use anyhow::{anyhow, Context, Result};
+use bitcoin_wallet::BitcoinWallet;
 use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
@@ -17,8 +18,10 @@ use libp2p::swarm::{ConnectionHandlerEvent, NetworkBehaviour, SubstreamProtocol,
 use libp2p::{Multiaddr, PeerId};
 use std::collections::VecDeque;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::task::Poll;
 use std::time::{Duration, Instant};
+use swap_core::bitcoin;
 use swap_env::env;
 use uuid::Uuid;
 
@@ -55,7 +58,7 @@ pub struct WalletSnapshot {
 
 impl WalletSnapshot {
     pub async fn capture(
-        bitcoin_wallet: &bitcoin::Wallet,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: &monero::Wallets,
         external_redeem_address: &Option<bitcoin::Address>,
         transfer_amount: bitcoin::Amount,

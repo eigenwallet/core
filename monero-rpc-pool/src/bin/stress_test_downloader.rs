@@ -1,4 +1,4 @@
-use arti_client::{config::StreamTimeoutConfig, TorClient, TorClientConfig};
+use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
 use cuprate_epee_encoding::{epee_object, from_bytes, to_bytes};
 use futures::stream::{self, StreamExt};

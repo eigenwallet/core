@@ -1,7 +1,7 @@
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
 use super::api::SwapLock;
 use super::cancel_and_refund;
-use crate::bitcoin::{ExpiredTimelocks, Wallet};
+use crate::bitcoin::Wallet;
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin::ExpiredTimelocks;
 use uuid::Uuid;
 
 /// A long running task which watches for changes to timelocks and balance

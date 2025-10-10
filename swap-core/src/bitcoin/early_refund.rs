@@ -1,14 +1,14 @@
 use crate::bitcoin;
 use ::bitcoin::sighash::SighashCache;
-use ::bitcoin::{secp256k1, ScriptBuf};
-use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
+use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
+use ::bitcoin::{ScriptBuf, secp256k1};
 use anyhow::{Context, Result};
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin::{Address, Amount, Transaction};
 use std::collections::HashMap;
 
-use super::wallet::Watchable;
 use super::TxLock;
+use bitcoin_wallet::primitives::Watchable;
 
 const TX_EARLY_REFUND_WEIGHT: usize = 548;
 

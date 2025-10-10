@@ -5,14 +5,14 @@
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
 use crate::common::throttle::{throttle, Throttle};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_simple_request_rpc::SimpleRequestRpc;
 use monero_sys::WalletEventListener;
-pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -21,7 +21,7 @@ use crate::cli::api::{
     tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle},
 };
 
-use super::{BlockHeight, TransferProof, TxHash};
+use super::{BlockHeight, TxHash, WatchRequest};
 
 /// Entrance point to the Monero blockchain.
 /// You can use this struct to open specific wallets and monitor the blockchain.
@@ -43,25 +43,6 @@ pub struct Wallets {
     tauri_handle: Option<TauriHandle>,
     /// Database for tracking wallet usage history.
     wallet_database: Option<Arc<monero_sys::Database>>,
-}
-
-/// A request to watch for a transfer.
-pub struct WatchRequest {
-    pub public_view_key: super::PublicViewKey,
-    pub public_spend_key: monero::PublicKey,
-    /// The proof of the transfer.
-    pub transfer_proof: TransferProof,
-    /// The expected amount of the transfer.
-    pub expected_amount: monero::Amount,
-    /// The number of confirmations required for the transfer to be considered confirmed.
-    pub confirmation_target: u64,
-}
-
-/// Transfer a specified amount of money to a specified address.
-pub struct TransferRequest {
-    pub public_spend_key: monero::PublicKey,
-    pub public_view_key: super::PublicViewKey,
-    pub amount: monero::Amount,
 }
 
 struct TauriWalletListener {
@@ -510,15 +491,6 @@ impl Wallets {
             db.record_wallet_access(wallet_path).await?;
         }
         Ok(())
-    }
-}
-
-impl TransferRequest {
-    pub fn address_and_amount(&self, network: Network) -> (Address, monero::Amount) {
-        (
-            Address::standard(network, self.public_spend_key, self.public_view_key.0),
-            self.amount,
-        )
     }
 }
 

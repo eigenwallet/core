@@ -1,0 +1,12 @@
+[package]
+name = "bitcoin-wallet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bdk_wallet = { workspace = true }
+bitcoin = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

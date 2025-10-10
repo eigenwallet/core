@@ -21,12 +21,14 @@ use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Txid};
 use bitcoin::{ScriptBuf, Weight};
+use derive_builder::Builder;
+use electrum_pool::ElectrumBalancer;
+use moka;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::fmt;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
@@ -34,16 +36,12 @@ use std::sync::Arc;
 use std::sync::Mutex as SyncMutex;
 use std::time::Duration;
 use std::time::Instant;
+use swap_core::bitcoin::bitcoin_address::revalidate_network;
+use swap_core::bitcoin::BlockHeight;
 use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
 use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug_span, Instrument};
-
-use super::bitcoin_address::revalidate_network;
-use super::BlockHeight;
-use derive_builder::Builder;
-use electrum_pool::ElectrumBalancer;
-use moka;
 
 /// We allow transaction fees of up to 20% of the transferred amount to ensure
 /// that lock transactions can always be published, even when fees are high.
@@ -239,63 +237,9 @@ pub enum PersisterConfig {
     InMemorySqlite,
 }
 
-/// A subscription to the status of a given transaction
-/// that can be used to wait for the transaction to be confirmed.
-#[derive(Debug, Clone)]
-pub struct Subscription {
-    /// A receiver used to await updates to the status of the transaction.
-    receiver: watch::Receiver<ScriptStatus>,
-    /// The number of confirmations we require for a transaction to be considered final.
-    finality_confirmations: u32,
-    /// The transaction ID we are subscribing to.
-    txid: Txid,
-}
-
-/// The possible statuses of a script.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ScriptStatus {
-    Unseen,
-    InMempool,
-    Confirmed(Confirmed),
-    Retrying,
-}
-
-/// The status of a confirmed transaction.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Confirmed {
-    /// The depth of this transaction within the blockchain.
-    ///
-    /// Zero if the transaction is included in the latest block.
-    depth: u32,
-}
-
-/// Defines a watchable transaction.
-///
-/// For a transaction to be watchable, we need to know two things: Its
-/// transaction ID and the specific output script that is going to change.
-/// A transaction can obviously have multiple outputs but our protocol purposes,
-/// we are usually interested in a specific one.
-pub trait Watchable {
-    /// The transaction ID.
-    fn id(&self) -> Txid;
-    /// The script of the output we are interested in.
-    fn script(&self) -> ScriptBuf;
-    /// Convenience method to get both the script and the txid.
-    fn script_and_txid(&self) -> (ScriptBuf, Txid) {
-        (self.script(), self.id())
-    }
-}
-
-/// An object that can estimate fee rates and minimum relay fees.
-pub trait EstimateFeeRate {
-    /// Estimate the fee rate for a given target block.
-    fn estimate_feerate(
-        &self,
-        target_block: u32,
-    ) -> impl std::future::Future<Output = Result<FeeRate>> + Send;
-    /// Get the minimum relay fee.
-    fn min_relay_fee(&self) -> impl std::future::Future<Output = Result<FeeRate>> + Send;
-}
+pub use bitcoin_wallet::primitives::{
+    Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable,
+};
 
 /// A caching wrapper around EstimateFeeRate implementations.
 ///
@@ -725,7 +669,10 @@ impl Wallet {
 
         // to watch for confirmations, watching a single output is enough
         let subscription = self
-            .subscribe_to((txid, transaction.output[0].script_pubkey.clone()))
+            .subscribe_to(Box::new((
+                txid,
+                transaction.output[0].script_pubkey.clone(),
+            )))
             .await;
 
         let client = self.electrum_client.lock().await;
@@ -808,10 +755,7 @@ impl Wallet {
         Ok(last_tx.tx_node.txid)
     }
 
-    pub async fn status_of_script<T>(&self, tx: &T) -> Result<ScriptStatus>
-    where
-        T: Watchable,
-    {
+    pub async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
         self.electrum_client
             .lock()
             .await
@@ -819,7 +763,7 @@ impl Wallet {
             .await
     }
 
-    pub async fn subscribe_to(&self, tx: impl Watchable + Send + Sync + 'static) -> Subscription {
+    pub async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         let txid = tx.id();
         let script = tx.script();
 
@@ -1209,7 +1153,6 @@ where
                     electrum_rate_sat_vb = electrum_rate.to_sat_per_vb_ceil(),
                     mempool_space_rate_sat_vb = mempool_space_rate.to_sat_per_vb_ceil(),
                     "Successfully fetched fee rates from both Electrum and mempool.space. We will use the higher one"
-
                 );
                 Ok(std::cmp::max(electrum_rate, mempool_space_rate))
             }
@@ -1372,7 +1315,8 @@ where
         change_override: Option<Address>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
-        let address = revalidate_network(address, self.network)?;
+        let address =
+            swap_core::bitcoin::bitcoin_address::revalidate_network(address, self.network)?;
 
         change_override
             .as_ref()
@@ -1431,11 +1375,14 @@ where
         change_override: Option<Address>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
-        let address = revalidate_network(address, self.network)?;
+        let address =
+            swap_core::bitcoin::bitcoin_address::revalidate_network(address, self.network)?;
 
         change_override
             .as_ref()
-            .map(|a| revalidate_network(a.clone(), self.network))
+            .map(|a| {
+                swap_core::bitcoin::bitcoin_address::revalidate_network(a.clone(), self.network)
+            })
             .transpose()
             .context("Change address is not on the correct network")?;
 
@@ -1687,7 +1634,7 @@ impl Client {
     /// As opposed to [`update_state`] this function does not
     /// check the time since the last update before refreshing
     /// It therefore also does not take a [`force`] parameter
-    pub async fn update_state_single(&mut self, script: &impl Watchable) -> Result<()> {
+    pub async fn update_state_single(&mut self, script: &dyn Watchable) -> Result<()> {
         self.update_script_history(script).await?;
         self.update_block_height().await?;
 
@@ -1781,7 +1728,7 @@ impl Client {
     }
 
     /// Update the script history of a single script.
-    pub async fn update_script_history(&mut self, script: &impl Watchable) -> Result<()> {
+    pub async fn update_script_history(&mut self, script: &dyn Watchable) -> Result<()> {
         let (script_buf, _) = script.script_and_txid();
         let script_clone = script_buf.clone();
 
@@ -1858,7 +1805,7 @@ impl Client {
     /// Get the status of a script.
     pub async fn status_of_script(
         &mut self,
-        script: &impl Watchable,
+        script: &dyn Watchable,
         force: bool,
     ) -> Result<ScriptStatus> {
         let (script_buf, txid) = script.script_and_txid();
@@ -2106,6 +2053,122 @@ impl Client {
     }
 }
 
+#[derive(Clone)]
+pub struct SyncRequestBuilderFactory {
+    chain_tip: bdk_wallet::chain::CheckPoint,
+    spks: Vec<((KeychainKind, u32), ScriptBuf)>,
+}
+
+impl SyncRequestBuilderFactory {
+    fn build(self) -> SyncRequestBuilder<(KeychainKind, u32)> {
+        SyncRequest::builder()
+            .chain_tip(self.chain_tip)
+            .spks_with_indexes(self.spks)
+    }
+}
+
+#[async_trait::async_trait]
+impl bitcoin_wallet::BitcoinWallet for Wallet {
+    async fn balance(&self) -> Result<Amount> {
+        Wallet::balance(self).await
+    }
+
+    async fn balance_info(&self) -> Result<Balance> {
+        Wallet::balance_info(self).await
+    }
+
+    async fn new_address(&self) -> Result<Address> {
+        Wallet::new_address(self).await
+    }
+
+    async fn send_to_address(
+        &self,
+        address: Address,
+        amount: Amount,
+        spending_fee: Amount,
+        change_override: Option<Address>,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
+    }
+
+    async fn send_to_address_dynamic_fee(
+        &self,
+        address: Address,
+        amount: Amount,
+        change_override: Option<Address>,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        Wallet::send_to_address_dynamic_fee(self, address, amount, change_override).await
+    }
+
+    async fn sweep_balance_to_address_dynamic_fee(
+        &self,
+        address: Address,
+    ) -> Result<bitcoin::psbt::Psbt> {
+        Wallet::sweep_balance_to_address_dynamic_fee(self, address).await
+    }
+
+    async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction> {
+        Wallet::sign_and_finalize(self, psbt).await
+    }
+
+    async fn broadcast(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, bitcoin_wallet::Subscription)> {
+        Wallet::broadcast(self, transaction, kind).await
+    }
+
+    async fn sync(&self) -> Result<()> {
+        Wallet::sync(self).await
+    }
+
+    async fn subscribe_to(
+        &self,
+        tx: Box<dyn bitcoin_wallet::Watchable>,
+    ) -> bitcoin_wallet::Subscription {
+        Wallet::subscribe_to(self, tx).await
+    }
+
+    async fn status_of_script(
+        &self,
+        tx: &dyn bitcoin_wallet::Watchable,
+    ) -> Result<bitcoin_wallet::primitives::ScriptStatus> {
+        Wallet::status_of_script(self, tx).await
+    }
+
+    async fn get_raw_transaction(
+        &self,
+        txid: Txid,
+    ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
+        Wallet::get_raw_transaction(self, txid).await
+    }
+
+    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+        Wallet::max_giveable(self, locking_script_size).await
+    }
+
+    async fn estimate_fee(
+        &self,
+        weight: Weight,
+        transfer_amount: Option<Amount>,
+    ) -> Result<Amount> {
+        Wallet::estimate_fee(self, weight, transfer_amount).await
+    }
+
+    fn network(&self) -> Network {
+        self.network
+    }
+
+    fn finality_confirmations(&self) -> u32 {
+        self.finality_confirmations
+    }
+
+    async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
+        Wallet::wallet_export(self, role).await
+    }
+}
+
 impl EstimateFeeRate for Client {
     async fn estimate_feerate(&self, target_block: u32) -> Result<FeeRate> {
         // Now that the Electrum client methods are async, we can parallelize the calls
@@ -2342,61 +2405,6 @@ fn trace_status_change(txid: Txid, old: Option<ScriptStatus>, new: ScriptStatus)
     new
 }
 
-impl Subscription {
-    pub async fn wait_until_final(&self) -> Result<()> {
-        let conf_target = self.finality_confirmations;
-        let txid = self.txid;
-
-        tracing::info!(%txid, required_confirmation=%conf_target, "Waiting for Bitcoin transaction finality");
-
-        let mut seen_confirmations = 0;
-
-        self.wait_until(|status| match status {
-            ScriptStatus::Confirmed(inner) => {
-                let confirmations = inner.confirmations();
-
-                if confirmations > seen_confirmations {
-                    tracing::info!(%txid,
-                        seen_confirmations = %confirmations,
-                        needed_confirmations = %conf_target,
-                        "Waiting for Bitcoin transaction finality");
-                    seen_confirmations = confirmations;
-                }
-
-                inner.meets_target(conf_target)
-            }
-            _ => false,
-        })
-        .await
-    }
-
-    pub async fn wait_until_seen(&self) -> Result<()> {
-        self.wait_until(ScriptStatus::has_been_seen).await
-    }
-
-    pub async fn wait_until_confirmed_with<T>(&self, target: T) -> Result<()>
-    where
-        T: Into<u32>,
-        T: Copy,
-    {
-        self.wait_until(|status| status.is_confirmed_with(target))
-            .await
-    }
-
-    pub async fn wait_until(&self, mut predicate: impl FnMut(&ScriptStatus) -> bool) -> Result<()> {
-        let mut receiver = self.receiver.clone();
-
-        while !predicate(&receiver.borrow()) {
-            receiver
-                .changed()
-                .await
-                .context("Failed while waiting for next status update")?;
-        }
-
-        Ok(())
-    }
-}
-
 /// Estimate the absolute fee for a transaction.
 ///
 /// This function takes the following parameters:
@@ -2613,111 +2621,6 @@ mod mempool_client {
             // Construct the fee rate
             FeeRate::from_sat_per_vb(minimum_relay_fee)
                 .context("Failed to parse mempool min relay fee (out of range)")
-        }
-    }
-}
-
-impl Watchable for (Txid, ScriptBuf) {
-    fn id(&self) -> Txid {
-        self.0
-    }
-
-    fn script(&self) -> ScriptBuf {
-        self.1.clone()
-    }
-}
-
-impl ScriptStatus {
-    pub fn from_confirmations(confirmations: u32) -> Self {
-        match confirmations {
-            0 => Self::InMempool,
-            confirmations => Self::Confirmed(Confirmed::new(confirmations - 1)),
-        }
-    }
-}
-
-impl Confirmed {
-    pub fn new(depth: u32) -> Self {
-        Self { depth }
-    }
-
-    /// Compute the depth of a transaction based on its inclusion height and the
-    /// latest known block.
-    ///
-    /// Our information about the latest block might be outdated. To avoid an
-    /// overflow, we make sure the depth is 0 in case the inclusion height
-    /// exceeds our latest known block,
-    pub fn from_inclusion_and_latest_block(inclusion_height: u32, latest_block: u32) -> Self {
-        let depth = latest_block.saturating_sub(inclusion_height);
-
-        Self { depth }
-    }
-
-    pub fn confirmations(&self) -> u32 {
-        self.depth + 1
-    }
-
-    pub fn meets_target<T>(&self, target: T) -> bool
-    where
-        T: Into<u32>,
-    {
-        self.confirmations() >= target.into()
-    }
-
-    pub fn blocks_left_until<T>(&self, target: T) -> u32
-    where
-        T: Into<u32> + Copy,
-    {
-        if self.meets_target(target) {
-            0
-        } else {
-            target.into() - self.confirmations()
-        }
-    }
-}
-
-impl ScriptStatus {
-    /// Check if the script has any confirmations.
-    pub fn is_confirmed(&self) -> bool {
-        matches!(self, ScriptStatus::Confirmed(_))
-    }
-
-    /// Check if the script has met the given confirmation target.
-    pub fn is_confirmed_with<T>(&self, target: T) -> bool
-    where
-        T: Into<u32>,
-    {
-        match self {
-            ScriptStatus::Confirmed(inner) => inner.meets_target(target),
-            _ => false,
-        }
-    }
-
-    // Calculate the number of blocks left until the target is met.
-    pub fn blocks_left_until<T>(&self, target: T) -> u32
-    where
-        T: Into<u32> + Copy,
-    {
-        match self {
-            ScriptStatus::Confirmed(inner) => inner.blocks_left_until(target),
-            _ => target.into(),
-        }
-    }
-
-    pub fn has_been_seen(&self) -> bool {
-        matches!(self, ScriptStatus::InMempool | ScriptStatus::Confirmed(_))
-    }
-}
-
-impl fmt::Display for ScriptStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ScriptStatus::Unseen => write!(f, "unseen"),
-            ScriptStatus::InMempool => write!(f, "in mempool"),
-            ScriptStatus::Retrying => write!(f, "retrying"),
-            ScriptStatus::Confirmed(inner) => {
-                write!(f, "confirmed with {} blocks", inner.confirmations())
-            }
         }
     }
 }
@@ -2989,10 +2892,113 @@ mod tests {
     use super::*;
     use crate::bitcoin::{PublicKey, TxLock};
     use crate::tracing_ext::capture_logs;
+    use async_trait::async_trait;
+    use bdk::bitcoin::psbt::Psbt;
     use bitcoin::address::NetworkUnchecked;
     use bitcoin::hashes::Hash;
+    use bitcoin_wallet::BitcoinWallet;
     use proptest::prelude::*;
     use tracing::level_filters::LevelFilter;
+
+    // Implement BitcoinWallet trait for a stub wallet and panic when the function is not implemented
+    #[async_trait]
+    impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
+        async fn balance(&self) -> Result<Amount> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn balance_info(&self) -> Result<Balance> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn new_address(&self) -> Result<Address> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn send_to_address(
+            &self,
+            address: Address,
+            amount: Amount,
+            spending_fee: Amount,
+            change_override: Option<Address>,
+        ) -> Result<Psbt> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn send_to_address_dynamic_fee(
+            &self,
+            address: Address,
+            amount: Amount,
+            change_override: Option<Address>,
+        ) -> Result<bitcoin::psbt::Psbt> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn sweep_balance_to_address_dynamic_fee(
+            &self,
+            address: Address,
+        ) -> Result<bitcoin::psbt::Psbt> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn sign_and_finalize(
+            &self,
+            psbt: bitcoin::psbt::Psbt,
+        ) -> Result<bitcoin::Transaction> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn broadcast(
+            &self,
+            transaction: bitcoin::Transaction,
+            kind: &str,
+        ) -> Result<(Txid, Subscription)> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn sync(&self) -> Result<()> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn get_raw_transaction(
+            &self,
+            txid: Txid,
+        ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn estimate_fee(
+            &self,
+            weight: Weight,
+            transfer_amount: Option<Amount>,
+        ) -> Result<Amount> {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        fn network(&self) -> Network {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        fn finality_confirmations(&self) -> u32 {
+            unimplemented!("stub method called erroniosly")
+        }
+
+        async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
+            unimplemented!("stub method called erroniosly")
+        }
+    }
 
     #[test]
     fn given_depth_0_should_meet_confirmation_target_one() {
@@ -3652,19 +3658,5 @@ TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=00000000000
             let _fee2 = cached2.estimate_feerate(6).await.unwrap();
             assert_eq!(mock.estimate_call_count(), 1); // Still 1, cache was shared
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct SyncRequestBuilderFactory {
-    chain_tip: bdk_wallet::chain::CheckPoint,
-    spks: Vec<((KeychainKind, u32), ScriptBuf)>,
-}
-
-impl SyncRequestBuilderFactory {
-    fn build(self) -> SyncRequestBuilder<(KeychainKind, u32)> {
-        SyncRequest::builder()
-            .chain_tip(self.chain_tip)
-            .spks_with_indexes(self.spks)
     }
 }
