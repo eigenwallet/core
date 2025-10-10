@@ -2,7 +2,8 @@
 //! Alice holds XMR and wishes receive BTC.
 pub use crate::protocol::alice::swap::*;
 use crate::protocol::Database;
-use crate::{asb, bitcoin, monero};
+use crate::{asb, monero};
+use bitcoin_wallet::BitcoinWallet;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use swap_env::env::Config;
@@ -14,7 +15,7 @@ pub mod swap;
 pub struct Swap {
     pub state: AliceState,
     pub event_loop_handle: asb::EventLoopHandle,
-    pub bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+    pub bitcoin_wallet: Arc<dyn BitcoinWallet>,
     pub monero_wallet: Arc<monero::Wallets>,
     pub env_config: Config,
     pub developer_tip: TipConfig,

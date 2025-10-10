@@ -4,6 +4,7 @@ use crate::protocol::alice::swap::XmrRefundable;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
+use bitcoin_wallet::BitcoinWallet;
 use libp2p::PeerId;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -27,7 +28,7 @@ pub enum Error {
 
 pub async fn refund(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     db: Arc<dyn Database>,
 ) -> Result<AliceState> {

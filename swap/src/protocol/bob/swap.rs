@@ -64,7 +64,7 @@ pub async fn run_until(
             current_state.clone(),
             &mut swap.event_loop_handle,
             swap.db.clone(),
-            swap.bitcoin_wallet.as_ref(),
+            swap.bitcoin_wallet.clone(),
             swap.monero_wallet.clone(),
             swap.monero_receive_pool.clone(),
             swap.event_emitter.clone(),
@@ -92,7 +92,7 @@ async fn next_state(
     state: BobState,
     event_loop_handle: &mut EventLoopHandle,
     db: Arc<dyn Database + Send + Sync>,
-    bitcoin_wallet: &crate::bitcoin::Wallet,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     monero_receive_pool: MoneroAddressPool,
     event_emitter: Option<TauriHandle>,
@@ -270,7 +270,7 @@ async fn next_state(
             // (Most likely redundant but cannot hurt)
             // We only warn if this fails
             if let Ok(true) = state3
-                .expired_timelock(bitcoin_wallet)
+                .expired_timelock(&*bitcoin_wallet)
                 .await
                 .inspect_err(|err| {
                     tracing::warn!(?err, "Failed to check for cancel timelock expiration");
@@ -285,7 +285,7 @@ async fn next_state(
             // (Most likely redundant because we already do this below but cannot hurt)
             // We only warn if this fail here
             if let Ok(Some(_)) = state3
-                .check_for_tx_early_refund(bitcoin_wallet)
+                .check_for_tx_early_refund(&*bitcoin_wallet)
                 .await
                 .inspect_err(|err| {
                     tracing::warn!(?err, "Failed to check for early refund transaction");
@@ -397,7 +397,7 @@ async fn next_state(
             // Check if the cancel timelock has expired
             // If it has, we have to cancel the swap
             if state
-                .expired_timelock(bitcoin_wallet)
+                .expired_timelock(&*bitcoin_wallet)
                 .await?
                 .cancel_timelock_expired()
             {
@@ -483,13 +483,13 @@ async fn next_state(
             // In case we send the encrypted signature to Alice, but she doesn't give us a confirmation
             // We need to check if she still published the Bitcoin redeem transaction
             // Otherwise we risk staying stuck in "XmrLocked"
-            if let Some(state5) = state.check_for_tx_redeem(bitcoin_wallet).await? {
+            if let Some(state5) = state.check_for_tx_redeem(&*bitcoin_wallet).await? {
                 return Ok(BobState::BtcRedeemed(state5));
             }
 
             // Check whether we can cancel the swap and do so if possible.
             if state
-                .expired_timelock(bitcoin_wallet)
+                .expired_timelock(&*bitcoin_wallet)
                 .await?
                 .cancel_timelock_expired()
             {
@@ -539,12 +539,12 @@ async fn next_state(
             // We need to make sure that Alice did not publish the redeem transaction while we were offline
             // Even if the cancel timelock expired, if Alice published the redeem transaction while we were away we cannot miss it
             // If we do we cannot refund and will never be able to leave the "CancelTimelockExpired" state
-            if let Some(state5) = state.check_for_tx_redeem(bitcoin_wallet).await? {
+            if let Some(state5) = state.check_for_tx_redeem(&*bitcoin_wallet).await? {
                 return Ok(BobState::BtcRedeemed(state5));
             }
 
             if state
-                .expired_timelock(bitcoin_wallet)
+                .expired_timelock(&*bitcoin_wallet)
                 .await?
                 .cancel_timelock_expired()
             {
@@ -562,7 +562,7 @@ async fn next_state(
             select! {
                 // Wait for Alice to redeem the Bitcoin
                 // We can then extract the key and redeem our Monero
-                state5 = state.watch_for_redeem_btc(bitcoin_wallet) => {
+                state5 = state.watch_for_redeem_btc(&*bitcoin_wallet) => {
                     BobState::BtcRedeemed(state5?)
                 },
                 // Wait for the cancel timelock to expire
@@ -644,16 +644,20 @@ async fn next_state(
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::CancelTimelockExpired);
 
-            if state6.check_for_tx_cancel(bitcoin_wallet).await?.is_none() {
+            if state6
+                .check_for_tx_cancel(&*bitcoin_wallet)
+                .await?
+                .is_none()
+            {
                 tracing::debug!("Couldn't find tx_cancel yet, publishing ourselves");
 
-                if let Err(tx_cancel_err) = state6.submit_tx_cancel(bitcoin_wallet).await {
+                if let Err(tx_cancel_err) = state6.submit_tx_cancel(&*bitcoin_wallet).await {
                     tracing::warn!(err = %tx_cancel_err, "Failed to publish tx_cancel even though it is not present in the chain. Did Alice already refund us our Bitcoin early?");
 
                     // If tx_cancel is not present in the chain and we fail to publish it. There's only one logical conclusion:
                     // The tx_lock UTXO has been spent by the tx_early_refund transaction
                     // Therefore we check for the early refund transaction
-                    match state6.check_for_tx_early_refund(bitcoin_wallet).await? {
+                    match state6.check_for_tx_early_refund(&*bitcoin_wallet).await? {
                         Some(_) => {
                             return Ok(BobState::BtcEarlyRefundPublished(state6));
                         }
@@ -675,14 +679,14 @@ async fn next_state(
             );
 
             // Bob has cancelled the swap
-            match state.expired_timelock(bitcoin_wallet).await? {
+            match state.expired_timelock(&*bitcoin_wallet).await? {
                 ExpiredTimelocks::None { .. } => {
                     bail!(
                         "Internal error: canceled state reached before cancel timelock was expired"
                     );
                 }
                 ExpiredTimelocks::Cancel { .. } => {
-                    let btc_refund_txid = state.publish_refund_btc(bitcoin_wallet).await?;
+                    let btc_refund_txid = state.publish_refund_btc(&*bitcoin_wallet).await?;
 
                     tracing::info!(%btc_refund_txid, "Refunded our Bitcoin");
 

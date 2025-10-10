@@ -24,6 +24,7 @@ pub static CROSS_CURVE_PROOF_SYSTEM: Lazy<
     )
 });
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message0 {
     pub swap_id: Uuid,
@@ -40,6 +41,7 @@ pub struct Message0 {
     pub tx_cancel_fee: bitcoin::Amount,
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message1 {
     pub A: bitcoin::PublicKey,
@@ -57,17 +59,20 @@ pub struct Message1 {
     pub tx_punish_fee: bitcoin::Amount,
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message2 {
     pub psbt: bitcoin::PartiallySignedTransaction,
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message3 {
     pub tx_cancel_sig: bitcoin::Signature,
     pub tx_refund_encsig: bitcoin::EncryptedSignature,
 }
 
+#[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message4 {
     pub tx_punish_sig: bitcoin::Signature,

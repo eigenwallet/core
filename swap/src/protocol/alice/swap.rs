@@ -6,11 +6,12 @@ use std::time::Duration;
 
 use crate::asb::{EventLoopHandle, LatestRate};
 use crate::common::retry;
+use crate::monero;
 use crate::monero::TransferProof;
 use crate::protocol::alice::{AliceState, Swap, TipConfig};
-use crate::{bitcoin, monero};
 use ::bitcoin::consensus::encode::serialize_hex;
 use anyhow::{bail, Context, Result};
+use bitcoin_wallet::BitcoinWallet;
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
 use swap_env::env::Config;
@@ -42,7 +43,7 @@ where
             swap.swap_id,
             current_state,
             &mut swap.event_loop_handle,
-            swap.bitcoin_wallet.as_ref(),
+            swap.bitcoin_wallet.clone(),
             swap.monero_wallet.clone(),
             &swap.env_config,
             swap.developer_tip.clone(),
@@ -62,7 +63,7 @@ async fn next_state<LR>(
     swap_id: Uuid,
     state: AliceState,
     event_loop_handle: &mut EventLoopHandle,
-    bitcoin_wallet: &crate::bitcoin::Wallet,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     env_config: &Config,
     developer_tip: TipConfig,
@@ -146,7 +147,7 @@ where
                     // because there is no way for the swap to succeed.
                     if !matches!(
                         state3
-                            .expired_timelocks(bitcoin_wallet)
+                            .expired_timelocks(&*bitcoin_wallet)
                             .await
                             .context("Failed to check for expired timelocks before locking Monero")
                             .map_err(backoff::Error::transient)?,
@@ -311,7 +312,7 @@ where
             monero_wallet_restore_blockheight,
             transfer_proof,
             state3,
-        } => match state3.expired_timelocks(bitcoin_wallet).await? {
+        } => match state3.expired_timelocks(&*bitcoin_wallet).await? {
             ExpiredTimelocks::None { .. } => {
                 tracing::info!("Locked Monero, waiting for confirmations");
                 monero_wallet
@@ -466,7 +467,7 @@ where
             match backoff::future::retry_notify(backoff.clone(), || async {
                 // If the cancel timelock is expired, there is no need to try to publish the redeem transaction anymore
                 if !matches!(
-                    state3.expired_timelocks(bitcoin_wallet).await?,
+                    state3.expired_timelocks(&*bitcoin_wallet).await?,
                     ExpiredTimelocks::None { .. }
                 ) {
                     return Ok(None);
@@ -530,13 +531,17 @@ where
             transfer_proof,
             state3,
         } => {
-            if state3.check_for_tx_cancel(bitcoin_wallet).await?.is_none() {
+            if state3
+                .check_for_tx_cancel(&*bitcoin_wallet)
+                .await?
+                .is_none()
+            {
                 // If Bob hasn't yet broadcasted the cancel transaction, Alice has to publish it
                 // to be able to eventually punish. Since the punish timelock is
                 // relative to the publication of the cancel transaction we have to ensure it
                 // gets published once the cancel timelock expires.
 
-                if let Err(e) = state3.submit_tx_cancel(bitcoin_wallet).await {
+                if let Err(e) = state3.submit_tx_cancel(&*bitcoin_wallet).await {
                     // TODO: Actually ensure the transaction is published
                     // What about a wrapper function ensure_tx_published that repeats the tx submission until
                     // our subscription sees it in the mempool?
@@ -564,7 +569,7 @@ where
                 .await;
 
             select! {
-                spend_key = state3.watch_for_btc_tx_refund(bitcoin_wallet) => {
+                spend_key = state3.watch_for_btc_tx_refund(&*bitcoin_wallet) => {
                     let spend_key = spend_key?;
 
                     AliceState::BtcRefunded {
@@ -619,7 +624,7 @@ where
         } => {
             // TODO: We should retry indefinitely here until we find the refund transaction
             // TODO: If we crash while we are waiting for the punish_tx to be confirmed (punish_btc waits until confirmation), we will remain in this state forever because we will attempt to re-publish the punish transaction
-            let punish = state3.punish_btc(bitcoin_wallet).await;
+            let punish = state3.punish_btc(&*bitcoin_wallet).await;
 
             match punish {
                 Ok(_) => AliceState::BtcPunished {
@@ -669,6 +674,7 @@ where
     })
 }
 
+#[allow(async_fn_in_trait)]
 pub trait XmrRefundable {
     async fn refund_xmr(
         &self,

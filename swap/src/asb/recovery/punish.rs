@@ -1,6 +1,7 @@
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
+use bitcoin_wallet::BitcoinWallet;
 use std::convert::TryInto;
 use std::sync::Arc;
 use swap_core::bitcoin::Txid;
@@ -14,7 +15,7 @@ pub enum Error {
 
 pub async fn punish(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database>,
 ) -> Result<(Txid, AliceState)> {
     let state = db.get_state(swap_id).await?.try_into()?;

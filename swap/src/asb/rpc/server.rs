@@ -2,6 +2,7 @@ use crate::asb::event_loop::EventLoopService;
 use crate::monero;
 use crate::protocol::Database;
 use anyhow::{Context, Result};
+use bitcoin_wallet::BitcoinWallet;
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
@@ -20,7 +21,7 @@ impl RpcServer {
     pub async fn start(
         host: String,
         port: u16,
-        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
@@ -54,7 +55,7 @@ impl RpcServer {
 }
 
 pub struct RpcImpl {
-    bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     event_loop_service: EventLoopService,
     db: Arc<dyn Database + Send + Sync>,

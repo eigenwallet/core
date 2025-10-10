@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use bitcoin_wallet::BitcoinWallet;
 use std::convert::TryInto;
 use uuid::Uuid;
 
@@ -21,7 +22,7 @@ pub struct Swap {
     pub state: BobState,
     pub event_loop_handle: cli::EventLoopHandle,
     pub db: Arc<dyn Database + Send + Sync>,
-    pub bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+    pub bitcoin_wallet: Arc<dyn BitcoinWallet>,
     pub monero_wallet: Arc<monero::Wallets>,
     pub env_config: env::Config,
     pub id: Uuid,
@@ -34,7 +35,7 @@ impl Swap {
     pub fn new(
         db: Arc<dyn Database + Send + Sync>,
         id: Uuid,
-        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         env_config: env::Config,
         event_loop_handle: cli::EventLoopHandle,
@@ -64,7 +65,7 @@ impl Swap {
     pub async fn from_db(
         db: Arc<dyn Database + Send + Sync>,
         id: Uuid,
-        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         env_config: env::Config,
         event_loop_handle: cli::EventLoopHandle,

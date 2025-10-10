@@ -8,6 +8,7 @@ use crate::network::{
 };
 use crate::protocol::bob::State2;
 use anyhow::{anyhow, Error, Result};
+use bitcoin_wallet::BitcoinWallet;
 use libp2p::request_response::{
     InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
 };
@@ -103,7 +104,7 @@ impl Behaviour {
     pub fn new(
         alice: PeerId,
         env_config: env::Config,
-        bitcoin_wallet: Arc<crate::bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         identify_params: (identity::Keypair, XmrBtcNamespace),
     ) -> Self {
         let agentVersion = format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), identify_params.1);
