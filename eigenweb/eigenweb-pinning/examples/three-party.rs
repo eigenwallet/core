@@ -266,19 +266,13 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
                     SwarmEvent::NewListenAddr { address, .. } => {
                         info!("Listening on {}", address);
                     }
-                    SwarmEvent::Behaviour(eigenweb_pinning::client::Event::IncomingPinnedMessagesReceived { peer, outgoing_request_id, messages }) => {
-                        if messages.is_empty() {
-                            info!("No new messages (request {:?})", outgoing_request_id);
-                        } else {
-                            for msg in messages {
-                                let hash = msg.content_hash();
-                                all_messages.insert(hash, msg);
-                            }
-                            info!("Received {} total message(s) from {} (request {:?})", all_messages.len(), peer, outgoing_request_id);
-                            for msg in all_messages.values() {
-                                let content = String::from_utf8_lossy(&msg.message().encrypted_content);
-                                info!("  From {}: {}", other_name, content);
-                            }
+                    SwarmEvent::Behaviour(eigenweb_pinning::client::Event::IncomingPinnedMessageReceived(msg)) => {
+                        let hash = msg.content_hash();
+                        all_messages.insert(hash, msg.clone());
+                        info!("Received message! Total messages: {}", all_messages.len());
+                        for msg in all_messages.values() {
+                            let content = String::from_utf8_lossy(&msg.message().encrypted_content);
+                            info!("  From {}: {}", other_name, content);
                         }
                     }
                     SwarmEvent::ConnectionEstablished {

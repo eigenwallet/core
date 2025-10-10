@@ -70,6 +70,8 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     /// Queues for outgoing requests
     ///
     /// These are futures as this allows us to schedule when they should be sent
+    ///
+    /// TODO: This is basically a tokio::DelayQueue but with an additional HashMap
     queued_outgoing_pin_requests: FuturesHashSet<(PeerId, MessageHash), ()>,
     queued_outgoing_fetch_requests: FuturesHashSet<PeerId, ()>,
     queued_outgoing_pull_requests: FuturesHashSet<(PeerId, MessageHash), ()>,
@@ -92,11 +94,7 @@ pub struct Behaviour<S: storage::Storage + Sync> {
 
 #[derive(Debug)]
 pub enum Event {
-    IncomingPinnedMessagesReceived {
-        peer: PeerId,
-        outgoing_request_id: OutboundRequestId,
-        messages: Vec<SignedPinnedMessage>,
-    },
+    IncomingPinnedMessageReceived(SignedPinnedMessage),
 }
 
 // This is the API that will be publicly accessible
@@ -270,18 +268,29 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                                     self.dont_want.insert(peer, Arc::new(set));
                                 }
 
-                                // Save all the hashes in our dont_want set
+                                // Save all the hashes in our dont_want set and in the storage layer
                                 for message in messages.iter() {
-                                    self.mark_do_not_want(self.peer_id(), message.content_hash());
-                                }
+                                    let msg_hash = message.content_hash();
 
-                                self.to_swarm_events.push_back(ToSwarm::GenerateEvent(
-                                    Event::IncomingPinnedMessagesReceived {
-                                        peer,
-                                        outgoing_request_id: request_id,
-                                        messages,
-                                    },
-                                ))
+                                    self.mark_do_not_want(self.peer_id(), msg_hash);
+
+                                    // Inform the swarm that we just stored a new message
+                                    // TODO: Only do this once the have stored successfully
+                                    self.to_swarm_events.push_back(ToSwarm::GenerateEvent(
+                                        Event::IncomingPinnedMessageReceived(message.clone()),
+                                    ));
+
+                                    if !self.pending_storage_store.contains_key(&msg_hash) {
+                                        let storage = self.storage.clone();
+                                        let message_clone = message.clone();
+                                        self.pending_storage_store.insert(
+                                            msg_hash,
+                                            Box::pin(
+                                                async move { storage.pin(message_clone).await },
+                                            ),
+                                        );
+                                    }
+                                }
                             }
                         }
                         _ => {}
@@ -341,6 +350,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
             {
                 // TODO: Do we need to do anything with this?
                 // TODO: Handle errors by potentially retrying
+                // TODO: If this fails we should remove the message from our `dont_want` set
             }
 
             while let Poll::Ready(Some((hash, result))) =
@@ -482,10 +492,6 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                 })
                 .copied()
                 .collect();
-
-            if hashes_to_send.is_empty() {
-                continue;
-            }
 
             for hash in hashes_to_send {
                 let future = self.schedule_backoff(*server, (), Duration::ZERO);

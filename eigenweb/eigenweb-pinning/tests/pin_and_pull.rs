@@ -43,14 +43,16 @@ async fn pin_and_fetch_message() {
         vec![carol_peer_id],
         alice_storage,
         TIMEOUT,
-    );
+    )
+    .await;
     let carol_behaviour = eigenweb_pinning::server::Behaviour::new(carol_storage, TIMEOUT);
     let bob_behaviour = eigenweb_pinning::client::Behaviour::new(
         bob_keypair.clone(),
         vec![carol_peer_id],
         bob_storage,
         TIMEOUT,
-    );
+    )
+    .await;
 
     // Create swarms
     let mut alice = create_swarm(alice_keypair, alice_behaviour);
@@ -78,7 +80,7 @@ async fn pin_and_fetch_message() {
     alice.behaviour_mut().pin_message(message);
 
     // Run event loops until Bob receives the message
-    let mut received_messages = Vec::new();
+    let mut received_messages: Vec<eigenweb_pinning::SignedPinnedMessage> = Vec::new();
     let timeout = tokio::time::sleep(TIMEOUT);
     tokio::pin!(timeout);
 
@@ -92,16 +94,11 @@ async fn pin_and_fetch_message() {
             event = bob.select_next_some() => {
                 match event {
                     SwarmEvent::Behaviour(
-                        eigenweb_pinning::client::Event::IncomingPinnedMessagesReceived {
-                            messages,
-                            ..
-                        },
+                        eigenweb_pinning::client::Event::IncomingPinnedMessageReceived(message),
                     ) => {
-                        if !messages.is_empty() {
-                            tracing::info!("Bob: received {} message(s)", messages.len());
-                            received_messages.extend(messages);
-                            break;
-                        }
+                        tracing::info!("Bob: received message");
+                        received_messages.push(message);
+                        break;
                     }
                     _ => {}
                 }
@@ -111,7 +108,7 @@ async fn pin_and_fetch_message() {
 
     // Verify the message
     assert_eq!(received_messages.len(), 1, "Expected exactly 1 message");
-    let received = &received_messages[0];
+    let received: &eigenweb_pinning::SignedPinnedMessage = &received_messages[0];
     assert_eq!(received.message().sender, alice_peer_id);
     assert_eq!(received.message().receiver, bob_peer_id);
     assert_eq!(

@@ -5,16 +5,11 @@ use libp2p::{
     swarm::{FromSwarm, NetworkBehaviour},
 };
 use libp2p_identity::PeerId;
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-    task::Poll,
-    time::Duration,
-};
+use std::{collections::VecDeque, sync::Arc, task::Poll, time::Duration};
 
 use crate::{
-    codec, futures_utils::FuturesHashSet, signature::MessageHash, storage, PinRejectReason,
-    PinRequest, PinResponse, SignedPinnedMessage,
+    codec, signature::MessageHash, storage, PinRejectReason, PinRequest, PinResponse,
+    SignedPinnedMessage,
 };
 
 pub type ToSwarm = libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<codec::Behaviour>>;
