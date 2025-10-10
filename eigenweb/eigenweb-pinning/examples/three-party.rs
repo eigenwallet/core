@@ -18,6 +18,7 @@ enum Party {
     Alice,
     Bob,
     Carol,
+    David,
 }
 
 impl Party {
@@ -26,6 +27,7 @@ impl Party {
             Party::Alice => [1u8; 32],
             Party::Bob => [2u8; 32],
             Party::Carol => [3u8; 32],
+            Party::David => [4u8; 32],
         };
         identity::Keypair::ed25519_from_bytes(bytes).expect("valid keypair")
     }
@@ -39,6 +41,7 @@ impl Party {
             Party::Alice => "Alice",
             Party::Bob => "Bob",
             Party::Carol => "Carol",
+            Party::David => "David",
         }
     }
 }
@@ -48,18 +51,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
     let party = if args.len() < 2 {
-        eprintln!("Usage: {} --alice|--bob|--carol", args[0]);
+        eprintln!("Usage: {} --alice|--bob|--carol|--david", args[0]);
         eprintln!("  --alice: Run as Alice (sender client)");
         eprintln!("  --bob:   Run as Bob (receiver client)");
         eprintln!("  --carol: Run as Carol (pinning server)");
+        eprintln!("  --david: Run as David (pinning server)");
         std::process::exit(1);
     } else {
         match args[1].as_str() {
             "--alice" => Party::Alice,
             "--bob" => Party::Bob,
             "--carol" => Party::Carol,
+            "--david" => Party::David,
             _ => {
-                eprintln!("Invalid argument. Use --alice, --bob, or --carol");
+                eprintln!("Invalid argument. Use --alice, --bob, --carol, or --david");
                 std::process::exit(1);
             }
         }
@@ -72,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Local peer id: {}", party.peer_id());
 
     match party {
-        Party::Carol => run_server(party).await,
+        Party::Carol | Party::David => run_server(party).await,
         Party::Alice => run_client_alice(party).await,
         Party::Bob => run_client_bob(party).await,
     }
@@ -101,7 +106,12 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
         .build();
 
     // Listen on a fixed port for easier connection
-    let listen_addr: Multiaddr = "/ip4/0.0.0.0/tcp/9000".parse()?;
+    let port = match party {
+        Party::Carol => 9000,
+        Party::David => 9001,
+        _ => unreachable!(),
+    };
+    let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{}", port).parse()?;
     swarm.listen_on(listen_addr.clone())?;
     info!("Server listening on {}", listen_addr);
 
@@ -111,8 +121,8 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!("Listening on {}", address);
                 info!(
-                    "Clients can connect using: /ip4/127.0.0.1/tcp/9000/p2p/{}",
-                    peer_id
+                    "Clients can connect using: /ip4/127.0.0.1/tcp/{}/p2p/{}",
+                    port, peer_id
                 );
             }
             SwarmEvent::Behaviour(event) => {
@@ -169,12 +179,14 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
     // Create the pinning client behaviour
     let storage = MemoryStorage::new();
     let carol_peer_id = Party::Carol.peer_id();
+    let david_peer_id = Party::David.peer_id();
     let behaviour = eigenweb_pinning::client::Behaviour::new(
         keypair.clone(),
-        vec![carol_peer_id],
+        vec![carol_peer_id, david_peer_id],
         storage,
         Duration::from_secs(10),
-    );
+    )
+    .await;
 
     // Build the swarm
     let mut swarm = SwarmBuilder::with_existing_identity(keypair)
@@ -193,11 +205,16 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
     swarm.listen_on(listen_addr)?;
 
     // Connect to Carol's server
-    let server_addr: Multiaddr =
+    let carol_server_addr: Multiaddr =
         format!("/ip4/127.0.0.1/tcp/9000/p2p/{}", carol_peer_id).parse()?;
+    info!("Dialing Carol's server at {}", carol_server_addr);
+    swarm.dial(carol_server_addr)?;
 
-    info!("Dialing Carol's server at {}", server_addr);
-    swarm.dial(server_addr)?;
+    // Connect to David's server
+    let david_server_addr: Multiaddr =
+        format!("/ip4/127.0.0.1/tcp/9001/p2p/{}", david_peer_id).parse()?;
+    info!("Dialing David's server at {}", david_server_addr);
+    swarm.dial(david_server_addr)?;
 
     // Set up stdin reader for interactive input
     let stdin = tokio::io::stdin();
@@ -205,7 +222,10 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
     let other_peer_id = other_party.peer_id();
     let other_name = other_party.name();
 
-    let mut all_messages: HashMap<eigenweb_pinning::signature::MessageHash, eigenweb_pinning::SignedPinnedMessage> = HashMap::new();
+    let mut all_messages: HashMap<
+        eigenweb_pinning::signature::MessageHash,
+        eigenweb_pinning::SignedPinnedMessage,
+    > = HashMap::new();
 
     // Event loop
     loop {
@@ -273,6 +293,11 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
                         );
                         if connected_peer == carol_peer_id {
                             info!("Connected to Carol's server");
+                        } else if connected_peer == david_peer_id {
+                            info!("Connected to David's server");
+                        }
+                        // Show message prompt once connected to at least one server
+                        if connected_peer == carol_peer_id || connected_peer == david_peer_id {
                             info!("Type messages for {} and press Enter", other_name);
                         }
                     }
@@ -288,6 +313,8 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
                         );
                         if closed_peer == carol_peer_id {
                             info!("Lost connection to Carol's server");
+                        } else if closed_peer == david_peer_id {
+                            info!("Lost connection to David's server");
                         }
                     }
                     SwarmEvent::OutgoingConnectionError { peer_id: failed_peer, error, .. } => {

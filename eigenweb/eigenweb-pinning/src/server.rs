@@ -1,34 +1,81 @@
 /// This file is much less complete than client.rs
 use libp2p::{
+    futures::stream::FuturesUnordered,
     request_response::ResponseChannel,
     swarm::{FromSwarm, NetworkBehaviour},
 };
 use libp2p_identity::PeerId;
-use std::{collections::VecDeque, task::Poll, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+    task::Poll,
+    time::Duration,
+};
 
-use crate::{codec, storage, PinRejectReason, PinRequest, PinResponse};
+use crate::{
+    codec, futures_utils::FuturesHashSet, signature::MessageHash, storage, PinRejectReason,
+    PinRequest, PinResponse, SignedPinnedMessage,
+};
 
 pub type ToSwarm = libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<codec::Behaviour>>;
 
-pub struct Behaviour<S> {
+pub struct Behaviour<S: storage::Storage> {
     /// The inner request-response behaviour
     inner: codec::Behaviour,
 
     to_swarm: VecDeque<ToSwarm>,
 
     /// We use this to persist data
-    storage: S,
+    storage: Arc<S>,
+
+    pending_storage_pin: FuturesUnordered<
+        std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = (Result<(), S::Error>, ResponseChannel<codec::Response>),
+                    > + Send,
+            >,
+        >,
+    >,
+    pending_storage_pull: FuturesUnordered<
+        std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = (
+                            Result<Vec<SignedPinnedMessage>, S::Error>,
+                            ResponseChannel<codec::Response>,
+                        ),
+                    > + Send,
+            >,
+        >,
+    >,
+    pending_storage_fetch: FuturesUnordered<
+        std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = (
+                            Result<Vec<MessageHash>, S::Error>,
+                            ResponseChannel<codec::Response>,
+                        ),
+                    > + Send,
+            >,
+        >,
+    >,
 }
 
 #[derive(Debug)]
 pub struct Event {}
 
-impl<S: storage::Storage + 'static> Behaviour<S> {
+impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     pub fn new(storage: S, timeout: Duration) -> Self {
         Self {
             inner: codec::server(timeout),
-            storage,
+            storage: Arc::new(storage),
             to_swarm: VecDeque::new(),
+
+            pending_storage_pin: FuturesUnordered::new(),
+            pending_storage_pull: FuturesUnordered::new(),
+            pending_storage_fetch: FuturesUnordered::new(),
         }
     }
 
@@ -38,9 +85,7 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let unverified_msg = request.message;
-
-        if !unverified_msg.verify_with_peer(peer) {
+        if !request.message.verify_with_peer(peer) {
             // If the signature is invalid, reject immediately
             // TODO: Ban the peer as he should not be relaying invalid signatures
             let _ = self.inner.send_response(
@@ -50,24 +95,11 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
             return;
         }
 
-        // Rename to make it clear that this has been verified
-        let verified_msg = unverified_msg;
-
-        // TODO: Use an async storage trait here; this will require more logic
-        match self.storage.store(verified_msg) {
-            Ok(_) => {
-                let _ = self
-                    .inner
-                    .send_response(channel, codec::Response::Pin(PinResponse::Stored));
-            }
-            Err(_) => {
-                // TODO: Log the error here
-                let _ = self.inner.send_response(
-                    channel,
-                    codec::Response::Pin(PinResponse::Rejected(PinRejectReason::Other)),
-                );
-            }
-        }
+        let storage = self.storage.clone();
+        self.pending_storage_pin.push(Box::pin(async move {
+            let result = storage.pin(request.message).await;
+            (result, channel)
+        }));
     }
 
     fn handle_pull_request(
@@ -76,11 +108,12 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let messages = self.storage.get_by_receiver_and_hash(peer, request.hashes);
-        let _ = self.inner.send_response(
-            channel,
-            codec::Response::Pull(crate::PullResponse { messages }),
-        );
+        let storage = self.storage.clone();
+        let hashes = request.hashes;
+        self.pending_storage_pull.push(Box::pin(async move {
+            let result = storage.get_by_receiver_and_hash(peer, hashes).await;
+            (result, channel)
+        }));
     }
 
     fn handle_fetch_request(
@@ -89,13 +122,11 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let incoming_messages = self.storage.hashes_by_receiver(peer);
-        let outgoing_messages = self.storage.hashes_by_sender(peer);
-        let messages = incoming_messages.into_iter().chain(outgoing_messages.into_iter()).collect();
-        
-        self.inner.send_response(channel, 
-            codec::Response::Fetch(crate::FetchResponse { messages }),
-        );
+        let storage = self.storage.clone();
+        self.pending_storage_fetch.push(Box::pin(async move {
+            let result = storage.get_hashes_involving(peer).await;
+            (result, channel)
+        }));
     }
 
     pub fn handle_event(&mut self, event: codec::ToSwarm) {
@@ -147,7 +178,7 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
     }
 }
 
-impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
+impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
     type ConnectionHandler = <codec::Behaviour as NetworkBehaviour>::ConnectionHandler;
 
     type ToSwarm = Event;
@@ -156,6 +187,67 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
+        use libp2p::futures::StreamExt;
+
+        // Poll the pending storage futures
+        {
+            while let Poll::Ready(Some((result, channel))) =
+                self.pending_storage_pin.poll_next_unpin(cx)
+            {
+                if result.is_ok() {
+                    let _ = self
+                        .inner
+                        .send_response(channel, codec::Response::Pin(PinResponse::Stored));
+                } else {
+                    // TODO: Log the error here
+                    let _ = self.inner.send_response(
+                        channel,
+                        codec::Response::Pin(PinResponse::Rejected(PinRejectReason::Other)),
+                    );
+                }
+            }
+
+            while let Poll::Ready(Some((result, channel))) =
+                self.pending_storage_pull.poll_next_unpin(cx)
+            {
+                match result {
+                    Ok(messages) => {
+                        let _ = self.inner.send_response(
+                            channel,
+                            codec::Response::Pull(crate::PullResponse { messages }),
+                        );
+                    }
+                    Err(_) => {
+                        // TODO: Log the error here
+                        let _ = self.inner.send_response(
+                            channel,
+                            codec::Response::Pull(crate::PullResponse { messages: vec![] }),
+                        );
+                    }
+                }
+            }
+
+            while let Poll::Ready(Some((result, channel))) =
+                self.pending_storage_fetch.poll_next_unpin(cx)
+            {
+                match result {
+                    Ok(messages) => {
+                        let _ = self.inner.send_response(
+                            channel,
+                            codec::Response::Fetch(crate::FetchResponse { messages }),
+                        );
+                    }
+                    Err(_) => {
+                        // TODO: Log the error here
+                        let _ = self.inner.send_response(
+                            channel,
+                            codec::Response::Fetch(crate::FetchResponse { messages: vec![] }),
+                        );
+                    }
+                }
+            }
+        }
+
         // TODO: Is this the correct way to handle events?
         // TODO: Will this always wake us up again ?
         while let Poll::Ready(event) = self.inner.poll(cx) {

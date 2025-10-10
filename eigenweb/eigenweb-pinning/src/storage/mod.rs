@@ -1,25 +1,37 @@
 use libp2p::PeerId;
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future, sync::Mutex};
 
-use crate::{SignedPinnedMessage, signature::MessageHash};
+use crate::{signature::MessageHash, SignedPinnedMessage};
 
 pub trait Storage: Send {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn store(&mut self, msg: SignedPinnedMessage) -> Result<(), Self::Error>;
-    fn hashes_by_sender(&self, sender: PeerId) -> Vec<MessageHash>;
-    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<MessageHash>;
-    fn get_by_hashes(&self, hashes: Vec<MessageHash>) -> Vec<SignedPinnedMessage>;
+    fn pin(&self, msg: SignedPinnedMessage)
+        -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn hashes_by_sender(&self, sender: PeerId) -> impl Future<Output = Vec<MessageHash>> + Send;
+    // returns any hashes where the peer is either sender or receiver
+    fn get_hashes_involving(
+        &self,
+        peer: PeerId,
+    ) -> impl Future<Output = Result<Vec<MessageHash>, Self::Error>> + Send;
+    fn get_by_hashes(
+        &self,
+        hashes: Vec<MessageHash>,
+    ) -> impl Future<Output = Vec<SignedPinnedMessage>> + Send;
+    fn get_by_hash(
+        &self,
+        hash: MessageHash,
+    ) -> impl Future<Output = Result<Option<SignedPinnedMessage>, Self::Error>> + Send;
     fn get_by_receiver_and_hash(
         &self,
         receiver: PeerId,
         hashes: Vec<MessageHash>,
-    ) -> Vec<SignedPinnedMessage>;
+    ) -> impl Future<Output = Result<Vec<SignedPinnedMessage>, Self::Error>> + Send;
 }
 
 #[derive(Debug, Default)]
 pub struct MemoryStorage {
-    messages: HashMap<MessageHash, SignedPinnedMessage>,
+    messages: Mutex<HashMap<MessageHash, SignedPinnedMessage>>,
 }
 
 impl MemoryStorage {
@@ -31,44 +43,51 @@ impl MemoryStorage {
 impl Storage for MemoryStorage {
     type Error = std::convert::Infallible;
 
-    fn store(&mut self, msg: SignedPinnedMessage) -> Result<(), Self::Error> {
+    async fn pin(&self, msg: SignedPinnedMessage) -> Result<(), Self::Error> {
         let hash = msg.content_hash();
-        self.messages.insert(hash, msg);
+        self.messages.lock().unwrap().insert(hash, msg);
         Ok(())
     }
 
-    fn hashes_by_sender(&self, sender: PeerId) -> Vec<MessageHash> {
+    async fn hashes_by_sender(&self, sender: PeerId) -> Vec<MessageHash> {
         self.messages
+            .lock()
+            .unwrap()
             .iter()
             .filter(|(_, msg)| msg.message().sender == sender)
             .map(|(hash, _)| *hash)
             .collect()
     }
 
-    fn hashes_by_receiver(&self, receiver: PeerId) -> Vec<MessageHash> {
-        self.messages
+    async fn get_hashes_involving(&self, peer: PeerId) -> Result<Vec<MessageHash>, Self::Error> {
+        Ok(self
+            .messages
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|(_, msg)| msg.message().receiver == receiver)
+            .filter(|(_, msg)| msg.message().receiver == peer || msg.message().sender == peer)
             .map(|(hash, _)| *hash)
-            .collect()
+            .collect())
     }
 
-    fn get_by_hashes(&self, hashes: Vec<MessageHash>) -> Vec<SignedPinnedMessage> {
+    async fn get_by_hashes(&self, hashes: Vec<MessageHash>) -> Vec<SignedPinnedMessage> {
+        let messages = self.messages.lock().unwrap();
         hashes
             .iter()
-            .filter_map(|hash| self.messages.get(hash).cloned())
+            .filter_map(|hash| messages.get(hash).cloned())
             .collect()
     }
 
-    fn get_by_receiver_and_hash(
+    async fn get_by_receiver_and_hash(
         &self,
         receiver: PeerId,
         hashes: Vec<MessageHash>,
-    ) -> Vec<SignedPinnedMessage> {
-        hashes
+    ) -> Result<Vec<SignedPinnedMessage>, Self::Error> {
+        let messages = self.messages.lock().unwrap();
+        Ok(hashes
             .iter()
             .filter_map(|hash| {
-                self.messages.get(hash).and_then(|msg| {
+                messages.get(hash).and_then(|msg| {
                     if msg.message().receiver == receiver {
                         Some(msg.clone())
                     } else {
@@ -76,6 +95,13 @@ impl Storage for MemoryStorage {
                     }
                 })
             })
-            .collect()
+            .collect())
+    }
+
+    async fn get_by_hash(
+        &self,
+        hash: MessageHash,
+    ) -> Result<Option<SignedPinnedMessage>, Self::Error> {
+        Ok(self.messages.lock().unwrap().get(&hash).cloned())
     }
 }

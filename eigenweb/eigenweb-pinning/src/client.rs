@@ -1,6 +1,8 @@
 use crate::{
-    codec, futures_utils::FuturesHashSet, signature::{MessageHash, SignedMessage}, storage, PinRequest,
-    PinResponse, PullRequest, SignedPinnedMessage, UnsignedPinnedMessage,
+    codec,
+    futures_utils::FuturesHashSet,
+    signature::{MessageHash, SignedMessage},
+    storage, PinRequest, PinResponse, PullRequest, SignedPinnedMessage, UnsignedPinnedMessage,
 };
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use libp2p::{
@@ -18,7 +20,7 @@ use tokio::sync::mpsc;
 
 const HEARTBEAT_FETCH_INTERVAL: Duration = Duration::from_secs(5);
 
-pub struct Behaviour<S> {
+pub struct Behaviour<S: storage::Storage + Sync> {
     /// The peer ID of the local node
     keypair: Keypair,
 
@@ -40,7 +42,7 @@ pub struct Behaviour<S> {
         VecDeque<libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<codec::Behaviour>>>,
 
     /// We use this to persist data
-    storage: S,
+    storage: Arc<S>,
 
     /// Stores the backoff for each server
     backoff: HashMap<PeerId, backoff::ExponentialBackoff>,
@@ -63,6 +65,8 @@ pub struct Behaviour<S> {
     /// For every server we store the set of hashes of messages that we know he has
     dont_want: HashMap<PeerId, Arc<HashSet<MessageHash>>>,
 
+    // TODO: We also need to store which hashes a server **cannot* provide
+    //       this means we have tried pulling
     /// Queues for outgoing requests
     ///
     /// These are futures as this allows us to schedule when they should be sent
@@ -73,8 +77,17 @@ pub struct Behaviour<S> {
     /// For each outbound request we make, we store the id in here
     /// TODO: Doesn't really do anything useful as of now
     inflight_pin_request: HashMap<OutboundRequestId, (PeerId, MessageHash)>,
-    inflight_pull_request: HashMap<OutboundRequestId, PeerId>,
+    inflight_pull_request: HashMap<OutboundRequestId, (PeerId, MessageHash)>,
     inflight_fetch_request: HashMap<OutboundRequestId, PeerId>,
+
+    pending_storage_store: FuturesHashSet<MessageHash, Result<(), S::Error>>,
+
+    /// When the event loop wants to get a certain message, it calls storage.get(...) and insert the future into `pending_storage_get`
+    /// once that future completes, the result is put into `completed_storage_get`.
+    pending_storage_get: FuturesHashSet<MessageHash, Result<Option<SignedPinnedMessage>, S::Error>>,
+
+    // todo: this should be able to hold multiple values per hash? or it should cache values using a ringbuffer ?
+    completed_storage_get: HashMap<MessageHash, Result<Option<SignedPinnedMessage>, S::Error>>,
 }
 
 #[derive(Debug)]
@@ -87,7 +100,7 @@ pub enum Event {
 }
 
 // This is the API that will be publicly accessible
-impl<S: storage::Storage + 'static> Behaviour<S> {
+impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     /// Inserts a message into the internal system
     /// such that it will be contineously broadcasted
     pub fn pin_message(&mut self, message: UnsignedPinnedMessage) {
@@ -95,11 +108,19 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
     }
 }
 
-impl<S: storage::Storage + 'static> Behaviour<S> {
-    pub fn new(keypair: Keypair, servers: Vec<PeerId>, storage: S, timeout: Duration) -> Self {
+impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
+    pub async fn new(
+        keypair: Keypair,
+        servers: Vec<PeerId>,
+        storage: S,
+        timeout: Duration,
+    ) -> Self {
         let peer_id = keypair.public().to_peer_id();
-        let outgoing_messages_hashes: HashSet<_> =
-            storage.hashes_by_sender(peer_id).into_iter().collect();
+        let outgoing_messages_hashes: HashSet<_> = storage
+            .hashes_by_sender(peer_id)
+            .await
+            .into_iter()
+            .collect();
 
         let (message_queue_tx, message_queue_rx) = mpsc::unbounded_channel();
 
@@ -107,7 +128,7 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
             inner: codec::client(timeout),
             keypair,
             servers,
-            storage,
+            storage: Arc::new(storage),
 
             message_queue_rx,
             message_queue_tx,
@@ -127,6 +148,11 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
             inflight_pin_request: HashMap::new(),
             inflight_pull_request: HashMap::new(),
             inflight_fetch_request: HashMap::new(),
+
+            pending_storage_store: FuturesHashSet::new(),
+            pending_storage_get: FuturesHashSet::new(),
+
+            completed_storage_get: HashMap::new(),
         }
     }
 
@@ -217,7 +243,9 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                             }
                         }
                         codec::Response::Pull(pull_response) => {
-                            if let Some(peer) = self.inflight_pull_request.remove(&request_id) {
+                            if let Some((peer, hash)) =
+                                self.inflight_pull_request.remove(&request_id)
+                            {
                                 // we got a successful response, so we reset the backoff
                                 self.backoff(peer).reset();
 
@@ -231,6 +259,16 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
                                         message.verify_with_peer(message.message.sender)
                                     })
                                     .collect();
+
+                                // If the list does not contain the hash we asked for,
+                                // it means that the server cannot provide the hash.
+                                //
+                                // We therefore remove it from his [`dont_want`] set
+                                if let Some(existing) = self.dont_want.get(&peer) {
+                                    let mut set = existing.as_ref().clone();
+                                    set.remove(&hash);
+                                    self.dont_want.insert(peer, Arc::new(set));
+                                }
 
                                 // Save all the hashes in our dont_want set
                                 for message in messages.iter() {
@@ -287,7 +325,7 @@ impl<S: storage::Storage + 'static> Behaviour<S> {
     }
 }
 
-impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
+impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
     type ConnectionHandler = <codec::Behaviour as NetworkBehaviour>::ConnectionHandler;
 
     type ToSwarm = Event;
@@ -296,43 +334,20 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
-        #[cfg(never)]
+        // Poll the pending storage futures
         {
-            println!("========================");
-            println!("We are getting polled!");
-            println!("inner_events: {}", self.inner_events.len());
-            println!("to_swarm_events: {}", self.to_swarm_events.len());
-            println!(
-                "queued_outgoing_pin_requests: {}",
-                self.queued_outgoing_pin_requests.len()
-            );
-            println!(
-                "queued_outgoing_fetch_requests: {}",
-                self.queued_outgoing_fetch_requests.len()
-            );
-            println!(
-                "queued_outgoing_pull_requests: {}",
-                self.queued_outgoing_pull_requests.len()
-            );
-            println!("inflight_pin_request: {}", self.inflight_pin_request.len());
-            println!(
-                "inflight_pull_request: {}",
-                self.inflight_pull_request.len()
-            );
-            println!(
-                "inflight_fetch_request: {}",
-                self.inflight_fetch_request.len()
-            );
-            println!("outgoing_messages: {}", self.outgoing_messages.len());
-            println!("incoming_messages: {}", self.incoming_messages.len());
-            println!();
-            println!(
-                "We know this many messages: {}",
-                self.dont_want_read_only(self.peer_id())
-                    .map(|s| s.len())
-                    .unwrap_or(0)
-            );
-            println!("========================");
+            while let Poll::Ready(Some((_hash, _result))) =
+                self.pending_storage_store.poll_next_unpin(cx)
+            {
+                // TODO: Do we need to do anything with this?
+                // TODO: Handle errors by potentially retrying
+            }
+
+            while let Poll::Ready(Some((hash, result))) =
+                self.pending_storage_get.poll_next_unpin(cx)
+            {
+                self.completed_storage_get.insert(hash, result);
+            }
         }
 
         // Move messages from the message queue to the internal system
@@ -346,25 +361,41 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
             self.mark_do_not_want(self.peer_id(), message_hash);
 
             // Save the message in storage
-            self.storage.store(signed_message).unwrap();
+            let storage = self.storage.clone();
+            self.pending_storage_store.insert(
+                message_hash,
+                Box::pin(async move { storage.pin(signed_message).await }),
+            );
         }
 
         // Send pending pin requests
         while let Poll::Ready(Some(((peer_id, hash), _))) =
             self.queued_outgoing_pin_requests.poll_next_unpin(cx)
         {
-            let message = self
-                .storage
-                .get_by_hashes(vec![hash])
-                .into_iter()
-                .next()
-                .unwrap();
-            let request = codec::Request::Pin(PinRequest { message });
-            let request_id = self.inner.send_request(&peer_id, request);
-            self.inflight_pin_request
-                .insert(request_id, (peer_id, hash));
+            // Check if we have the hash ready from the storage layer
+            if let Some(message) = self.completed_storage_get.remove(&hash) {
+                // TODO: Do not unwrap here
+                let message = message.unwrap().unwrap();
 
-            tracing::debug!("Pinning {:?} at {}", hash, peer_id);
+                let request = codec::Request::Pin(PinRequest { message });
+                let request_id = self.inner.send_request(&peer_id, request);
+                self.inflight_pin_request
+                    .insert(request_id, (peer_id, hash));
+
+                tracing::debug!("Pinning {:?} at {}", hash, peer_id);
+
+                continue;
+            }
+
+            // If we do not have the hash ready from the storage layer,
+            // ensure we have a pending get operation for the storage
+            if !self.pending_storage_get.contains_key(&hash) {
+                let storage = self.storage.clone();
+                self.pending_storage_get.insert(
+                    hash,
+                    Box::pin(async move { storage.get_by_hash(hash).await }),
+                );
+            }
         }
 
         // Send pending fetch requests
@@ -384,7 +415,8 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
         {
             let request = codec::Request::Pull(PullRequest { hashes: vec![hash] });
             let request_id = self.inner.send_request(&peer_id, request);
-            self.inflight_pull_request.insert(request_id, peer_id);
+            self.inflight_pull_request
+                .insert(request_id, (peer_id, hash));
 
             tracing::debug!("Pulling {} from {}", hash, peer_id);
         }
@@ -399,20 +431,19 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
             let servers = self.servers.clone();
             let servers_to_fetch: Vec<_> = servers
                 .iter()
-                .filter(|server| {
-                    !self.queued_outgoing_fetch_requests.contains_key(server)
-                })
+                .filter(|server| !self.queued_outgoing_fetch_requests.contains_key(server))
                 .copied()
-                .map(|server| if self.dont_want.contains_key(&server) {
-                    (server, HEARTBEAT_FETCH_INTERVAL)
-                } else {
-                    (server, Duration::ZERO)
+                .map(|server| {
+                    if self.dont_want.contains_key(&server) {
+                        (server, HEARTBEAT_FETCH_INTERVAL)
+                    } else {
+                        (server, Duration::ZERO)
+                    }
                 })
-
                 .collect();
 
             for (server, interval) in servers_to_fetch {
-                tracing::info!(
+                tracing::debug!(
                     "We have no `dont_want` set for {} (or the heartbeat interval is due)",
                     server
                 );
@@ -444,6 +475,11 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
                 .iter()
                 .filter(|hash| !dont_want.contains(*hash))
                 .filter(|hash| !inflight_hashes.contains(*hash))
+                .filter(|hash| {
+                    !self
+                        .queued_outgoing_pin_requests
+                        .contains_key(&(*server, **hash))
+                })
                 .copied()
                 .collect();
 
@@ -453,11 +489,7 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
 
             for hash in hashes_to_send {
                 let future = self.schedule_backoff(*server, (), Duration::ZERO);
-                tracing::debug!(
-                    "Queuing {:?} to be pinned at {}",
-                    hash,
-                    server
-                );
+                tracing::debug!("Queuing {:?} to be pinned at {}", hash, server);
                 self.queued_outgoing_pin_requests
                     .insert((*server, hash), future);
             }
@@ -479,7 +511,15 @@ impl<S: storage::Storage + 'static> NetworkBehaviour for Behaviour<S> {
             let servers = self.servers.clone();
             for server in servers.iter() {
                 if let Some(dont_want) = self.dont_want_read_only(*server) {
-                    if dont_want.contains(&hash) {
+                    if dont_want.contains(&hash)
+                        && !self
+                            .inflight_pull_request
+                            .values()
+                            .any(|v| v == &(*server, hash))
+                        && !self
+                            .queued_outgoing_pull_requests
+                            .contains_key(&(*server, hash))
+                    {
                         tracing::info!("We are interested in {:?}, pulling from {}", hash, server);
 
                         let future = self.schedule_backoff(*server, (), Duration::ZERO);
