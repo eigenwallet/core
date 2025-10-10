@@ -25,6 +25,7 @@ swap = { path = "../swap" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-serde = { path = "../swap-serde" }
+swap-machine = { path = "../swap-machine"}
 
 # Async
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }

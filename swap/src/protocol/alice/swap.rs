@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use crate::asb::{EventLoopHandle, LatestRate};
 use crate::common::retry;
-use crate::monero;
 use crate::monero::TransferProof;
 use crate::protocol::alice::{AliceState, Swap, TipConfig};
 use crate::{bitcoin, monero};

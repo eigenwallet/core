@@ -34,7 +34,6 @@ use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{open_db, AccessMode};
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::swap::is_complete;
 use swap::protocol::alice::{run, AliceState, TipConfig};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
@@ -43,6 +42,7 @@ use swap_env::config::{
     initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
 };
 use swap_feed;
+use swap_machine::alice::is_complete;
 use tracing_subscriber::filter::LevelFilter;
 use uuid::Uuid;
 

@@ -743,48 +743,6 @@ impl State5 {
             expected_amount: self.xmr.into(),
         }
     }
-
-    pub async fn redeem_xmr(
-        &self,
-        monero_wallet: &monero::Wallets,
-        swap_id: Uuid,
-        monero_receive_pool: MoneroAddressPool,
-    ) -> Result<Vec<TxHash>> {
-        let (spend_key, view_key) = self.xmr_keys();
-
-        tracing::info!(%swap_id, "Redeeming Monero from extracted keys");
-
-        tracing::debug!(%swap_id, "Opening temporary Monero wallet");
-
-        let wallet = monero_wallet
-            .swap_wallet(
-                swap_id,
-                spend_key,
-                view_key,
-                self.lock_transfer_proof.tx_hash(),
-            )
-            .await
-            .context("Failed to open Monero wallet")?;
-
-        tracing::debug!(%swap_id, receive_address=?monero_receive_pool, "Sweeping Monero to receive address");
-
-        let main_address = monero_wallet.main_wallet().await.main_address().await;
-
-        let tx_hashes = wallet
-            .sweep_multi_destination(
-                &monero_receive_pool.fill_empty_addresses(main_address),
-                &monero_receive_pool.percentages(),
-            )
-            .await
-            .context("Failed to redeem Monero")?
-            .into_iter()
-            .map(|tx_receipt| TxHash(tx_receipt.txid))
-            .collect();
-
-        tracing::info!(%swap_id, txids=?tx_hashes, "Monero sweep completed");
-
-        Ok(tx_hashes)
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

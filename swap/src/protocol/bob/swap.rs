@@ -998,7 +998,7 @@ impl XmrRedeemable for State5 {
         let main_address = monero_wallet.main_wallet().await.main_address().await;
 
         let tx_hashes = wallet
-            .sweep_multi(
+            .sweep_multi_destination(
                 &monero_receive_pool.fill_empty_addresses(main_address),
                 &monero_receive_pool.percentages(),
             )
