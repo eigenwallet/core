@@ -2217,7 +2217,7 @@ impl FfiWallet {
 
         Ok(TxReceipt {
             txid,
-            tx_key: tx_keys[0].clone(),
+            tx_key,
             height,
         })
     }
