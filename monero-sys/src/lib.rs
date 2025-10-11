@@ -1763,7 +1763,7 @@ impl FfiWallet {
     /// then refresh_blocking() will hopefully ensure that we are synced by the time this function returns.
     fn ensure_refreshed_blocking(&mut self) -> anyhow::Result<()> {
         if !self.synchronized() {
-            bail!("Not synchronized")
+            bail!("Not synchronized (according to wallet2_api.h::Wallet::synchronized)")
         }
 
         self.refresh_blocking()
