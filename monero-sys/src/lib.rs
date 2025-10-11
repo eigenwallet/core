@@ -1764,7 +1764,7 @@ impl FfiWallet {
     fn ensure_synchronized_blocking(&mut self) -> anyhow::Result<()> {
         let is_synchronized = self.synchronized();
         tracing::trace!(
-            "Ensuring our wallet is synchronized. wallet2_api.h::Wallet::synchronized() = {}",
+            "Ensuring our wallet is synchronized... wallet2_api.h::Wallet::synchronized() = {}",
             is_synchronized
         );
 
@@ -1776,7 +1776,7 @@ impl FfiWallet {
         }
 
         tracing::trace!(
-            "Ensuring our wallet is synchronized. wallet2_api.h::Wallet::synchronized() told us we are synchronized but we calling refresh_blocking() anyway to be safe"
+            "Ensuring our wallet is synchronized... wallet2_api.h::Wallet::synchronized() told us we are synchronized but we calling refresh_blocking() anyway to be safe"
         );
 
         let start = std::time::Instant::now();
@@ -1784,7 +1784,7 @@ impl FfiWallet {
         let elapsed = start.elapsed();
 
         tracing::trace!(
-            "Ensuring our wallet is synchronized. Successfully called refresh_blocking(). It took us {}ms",
+            "Ensured our wallet is synchronized. Successfully called refresh_blocking() and wallet2_api.h::Wallet::synchronized() = true before we called refresh_blocking(). It took us {}ms",
             elapsed.as_millis()
         );
 
