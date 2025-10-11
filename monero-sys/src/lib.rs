@@ -472,17 +472,7 @@ impl WalletHandle {
         address: &monero::Address,
         amount: monero::Amount,
     ) -> anyhow::Result<TxReceipt> {
-        let address = *address;
-
-        retry_notify(backoff(None, None), || async {
-            self.call(move |wallet| wallet.transfer_single_destination(&address, amount))
-                .await
-                .map_err(backoff::Error::transient)
-        }, |error, duration: Duration| {
-            tracing::error!(error=%error, "Failed to transfer funds, retrying in {} secs", duration.as_secs());
-        })
-        .await
-        .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e}"))
+        self.transfer_multi_destination(&[(*address, amount)]).await
     }
 
     /// Transfer funds to multiple addresses in a single transaction without approval.
@@ -499,10 +489,10 @@ impl WalletHandle {
             .await
             .map_err(backoff::Error::transient)
         }, |error, duration: Duration| {
-            tracing::error!(error=?error, "Failed to transfer funds to multiple destinations, retrying in {} secs", duration.as_secs());
+            tracing::error!(error=?error, "Failed to transfer funds, retrying in {} secs", duration.as_secs());
         })
         .await
-        .map_err(|e| anyhow!("Failed to transfer funds to multiple destinations after multiple attempts: {e:?}"))
+        .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e:?}"))
     }
 
     /// Sweep all funds to an address.
@@ -1764,6 +1754,21 @@ impl FfiWallet {
         Ok(())
     }
 
+    /// Will fail immediately if we are sure the wallet is not synchronized
+    ///
+    /// If we believe the wallet is synchronized, we call refresh_blocking() and then return Ok()
+    ///
+    /// Because synchronized() is not reliable, the idea is that if we were already synced,
+    /// calling refresh_blocking() will be quick. If synchronized return true but we weren't synced
+    /// then refresh_blocking() will hopefully ensure that we are synced by the time this function returns.
+    fn ensure_refreshed_blocking(&mut self) -> anyhow::Result<()> {
+        if !self.synchronized() {
+            bail!("Not synchronized")
+        }
+
+        self.refresh_blocking()
+    }
+
     /// Get the wallet creation height.
     fn creation_height(&self) -> u64 {
         self.inner
@@ -1905,20 +1910,6 @@ impl FfiWallet {
         Ok(())
     }
 
-    /// Transfer a specified amount of monero to a specified address and return a receipt containing
-    /// the transaction id, transaction key and current blockchain height. This can be used later
-    /// to prove the transfer or to wait for confirmations.
-    fn transfer_single_destination(
-        &mut self,
-        address: &monero::Address,
-        amount: monero::Amount,
-    ) -> anyhow::Result<TxReceipt> {
-        let mut pending_tx = self.create_pending_transaction_single_dest(address, amount)?;
-        let result = self.publish_pending_transaction(&mut pending_tx);
-        self.dispose_pending_transaction(pending_tx);
-        result
-    }
-
     /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
     /// the transaction id, transaction key and current blockchain height. This can be used later
     /// to prove the transfer or to wait for confirmations.
@@ -1926,6 +1917,9 @@ impl FfiWallet {
         &mut self,
         destinations: &[(monero::Address, monero::Amount)],
     ) -> anyhow::Result<TxReceipt> {
+        self.ensure_refreshed_blocking()
+            .context("Cannot transfer when wallet is not synchronized")?;
+
         let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
         let result = self.publish_pending_transaction(&mut pending_tx);
         self.dispose_pending_transaction(pending_tx);
@@ -1939,6 +1933,9 @@ impl FfiWallet {
         address: &monero::Address,
         amount: monero::Amount,
     ) -> anyhow::Result<PendingTransaction> {
+        self.ensure_refreshed_blocking()
+            .context("Cannot construct transaction when wallet is not synchronized")?;
+
         let_cxx_string!(address_str = address.to_string());
         let amount_pico = amount.as_pico();
 
@@ -1961,6 +1958,9 @@ impl FfiWallet {
         // If set to false, the fee will be paid by the wallet and the exact amounts will be sent to the destinations
         subtract_fee_from_outputs: bool,
     ) -> anyhow::Result<PendingTransaction> {
+        self.ensure_refreshed_blocking()
+            .context("Cannot construct transaction when wallet is not synchronized")?;
+
         // Filter out any destinations with zero amount
         let destinations = destinations
             .iter()
@@ -2008,6 +2008,9 @@ impl FfiWallet {
         &mut self,
         address: &monero::Address,
     ) -> anyhow::Result<PendingTransaction> {
+        self.ensure_refreshed_blocking()
+            .context("Cannot construct transaction when wallet is not synchronized")?;
+
         let_cxx_string!(address_str = address.to_string());
 
         let pending_tx = PendingTransaction(
@@ -2058,9 +2061,10 @@ impl FfiWallet {
     /// Sweep all funds from the wallet to a specified address.
     /// Returns a list of transaction ids of the created transactions.
     fn sweep(&mut self, address: &monero::Address) -> anyhow::Result<Vec<TxReceipt>> {
-        tracing::info!("Sweeping funds to {}, refreshing wallet first", address);
+        self.ensure_refreshed_blocking()
+            .context("Cannot sweep when wallet is not synchronized")?;
 
-        self.refresh_blocking()?;
+        tracing::info!("Sweeping funds to {}, refreshing wallet first", address);
 
         let_cxx_string!(address = address.to_string());
 
@@ -2117,6 +2121,9 @@ impl FfiWallet {
         addresses: &[monero::Address],
         ratios: &[f64],
     ) -> anyhow::Result<Vec<TxReceipt>> {
+        self.ensure_refreshed_blocking()
+            .context("Cannot multi-sweep when wallet is not synchronized")?;
+
         if addresses.is_empty() {
             bail!("No addresses to sweep to");
         }
@@ -2129,8 +2136,6 @@ impl FfiWallet {
             "Sweeping funds to {} addresses, refreshing wallet first",
             addresses.len()
         );
-
-        self.refresh_blocking()?;
 
         let balance = self.unlocked_balance();
 
