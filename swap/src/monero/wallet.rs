@@ -399,6 +399,16 @@ impl Wallets {
 
         wallet.set_restore_height(blockheight).await?;
 
+        // We synchronously refresh the wallet
+        // This should be quick because we just set the restore height to the current blockheight.
+        wallet.refresh_blocking().await?;
+
+        // Now we start the refresh thread
+        // Why?
+        // Because if the user later tries to spend the funds (after a new block is mined), the wallet will not be synchronized anymore
+        // We start the refresh thread such that the wallet will keep up with the chain tip in the background.
+        wallet.start_refresh_thread().await;
+
         Ok(Arc::new(wallet))
     }
 
