@@ -287,11 +287,13 @@ pub mod ffi {
         /// Get the error string of a pending transaction.
         fn pendingTransactionErrorString(tx: &PendingTransaction) -> Result<UniquePtr<CxxString>>;
 
-        /// Get the first transaction id of a pending transaction (if any).
-        fn pendingTransactionTxId(tx: &PendingTransaction) -> Result<UniquePtr<CxxString>>;
-
         /// Get all transaction ids of a pending transaction.
         fn pendingTransactionTxIds(
+            tx: &PendingTransaction,
+        ) -> Result<UniquePtr<CxxVector<CxxString>>>;
+
+        /// Get the transaction keys for each transaction within the pending set.
+        fn pendingTransactionTxKeys(
             tx: &PendingTransaction,
         ) -> Result<UniquePtr<CxxVector<CxxString>>>;
 

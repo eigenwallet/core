@@ -865,10 +865,20 @@ impl WalletHandle {
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
-                // Get txid
-                let txid = ffi::pendingTransactionTxId(&pending_tx)
+                // This can return multiple txids if wallet2 decided to split the transaction
+                let txids = ffi::pendingTransactionTxIds(&pending_tx)
                     .context("Failed to get txid from pending transaction")?
-                    .to_string();
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>();
+
+                // Ensure it only created one transaction
+                if txids.len() != 1 {
+                    anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
+                }
+
+                // Get the txid
+                let txid = txids[0].clone();
 
                 // Get the amount
                 let amount = ffi::pendingTransactionAmount(&pending_tx)
@@ -2056,28 +2066,56 @@ impl FfiWallet {
         &mut self,
         pending_tx: &mut PendingTransaction,
     ) -> anyhow::Result<TxReceipt> {
+        // TODO: Always dispose the pending transaction if we error out
+
         // Get the txid from the pending transaction before we publish
-        let txid = ffi::pendingTransactionTxId(pending_tx)
+        // This can return multiple txids if wallet2 decided to split the transaction
+        let txids = ffi::pendingTransactionTxIds(pending_tx)
             .context("Failed to get txid from pending transaction: FFI call failed with exception")?
-            .to_string();
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
 
-        // Publish the transaction
-        pending_tx
-            .publish()
-            .context("Failed to publish transaction")?;
+        // Ensure it only created one transaction
+        if txids.len() != 1 {
+            anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
+        }
 
-        // Fetch the tx key from the wallet
-        let_cxx_string!(txid_cxx = txid.clone());
-        let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
-            .context("Failed to get tx key from wallet: FFI call failed with exception")?
-            .to_string();
+        // Get the txid
+        let txid = txids[0].clone();
+
+        // Extract the transaction keys
+        // Again, this can return multiple tx keys if wallet2 decided to split the transaction
+        let tx_keys = ffi::pendingTransactionTxKeys(pending_tx)
+            .context("Failed to get tx key from pending transaction: FFI call failed with exception")?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        // Ensure it only created one transaction
+        if tx_keys.len() != 1 {
+            anyhow::bail!("Expected 1 tx key, got {}. We only do not allow splitting transactions", tx_keys.len());
+        }
+
+        // Get the tx key
+        let tx_key = tx_keys[0].clone();
+
+        // Ensure the tx key is valid
+        monero::PrivateKey::from_str(&tx_key)
+            .with_context(|| format!("Invalid tx key: {tx_key}"))?;
 
         // Get current blockchain height
         let height = self.blockchain_height();
 
+        // Publish the transaction
+        // To ensure atomicity, this is the 
+        pending_tx
+            .publish()
+            .context("Failed to publish transaction")?;
+
         Ok(TxReceipt {
             txid,
-            tx_key,
+            tx_key: tx_keys[0].clone(),
             height,
         })
     }
@@ -2109,6 +2147,34 @@ impl FfiWallet {
             .map(|s| s.to_string())
             .collect();
 
+        // Ensure it only created one transaction
+        if txids.len() != 1 {
+            anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
+        }
+
+        // Get the txid
+        let txid = txids[0].clone();
+
+        // Extract the transaction keys
+        // Again, this can return multiple tx keys if wallet2 decided to split the transaction
+        let tx_keys = ffi::pendingTransactionTxKeys(&pending_tx)
+            .context("Failed to get tx key from pending transaction: FFI call failed with exception")?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        // Ensure it only created one transaction
+        if tx_keys.len() != 1 {
+            anyhow::bail!("Expected 1 tx key, got {}. We only do not allow splitting transactions", tx_keys.len());
+        }
+
+        // Get the tx key
+        let tx_key = tx_keys[0].clone();
+
+        // Ensure the tx key is valid
+        monero::PrivateKey::from_str(&tx_key)
+            .with_context(|| format!("Invalid tx key: {tx_key}"))?;
+
         // Publish the transaction
         let result = pending_tx
             .publish()
@@ -2121,25 +2187,14 @@ impl FfiWallet {
         result.context("Failed to publish transaction")?;
 
         // Get the receipts for the transactions.
-        let mut receipts = Vec::new();
+        let height = self.blockchain_height();
 
-        for txid in txids {
-            let_cxx_string!(txid_cxx = &txid);
-
-            let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
-                .context("Failed to get tx key from wallet: FFI call failed with exception")?
-                .to_string();
-
-            let height = self.blockchain_height();
-
-            receipts.push(TxReceipt {
-                txid: txid.clone(),
-                tx_key,
-                height,
-            });
-        }
-
-        Ok(receipts)
+        // TODO: Change this to return a single receipt
+        Ok(vec![TxReceipt {
+            txid,
+            tx_key,
+            height,
+        }])
     }
 
     /// Sweep all funds to a set of addresses with a set of ratios.
@@ -2193,7 +2248,38 @@ impl FfiWallet {
             .map(|s| s.to_string())
             .collect();
 
+        // Ensure it only created one transaction
+        if txids.len() != 1 {
+            anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
+        }
+
+        // Get the txid
+        let txid = txids[0].clone();
+
+        // Extract the transaction keys for each transaction
+        let tx_keys = ffi::pendingTransactionTxKeys(&pending_tx)
+            .context("Failed to get tx key from pending transaction: FFI call failed with exception")?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        // Ensure it only created one transaction
+        if tx_keys.len() != 1 {
+            anyhow::bail!("Expected 1 tx key, got {}. We only do not allow splitting transactions", tx_keys.len());
+        }
+
+        // Get the tx key
+        let tx_key = tx_keys[0].clone();
+
+        // Ensure the tx key is valid
+        monero::PrivateKey::from_str(&tx_key)
+            .with_context(|| format!("Invalid tx key: {tx_key}"))?;
+
+        // We do this before calling .publish() in case this panics
+        let height = self.blockchain_height();
+
         // Publish the transaction
+        // do this at the very last step
         let result = pending_tx
             .publish()
             .context("Failed to publish transaction");
@@ -2204,26 +2290,12 @@ impl FfiWallet {
         // Check for errors only after cleaning up the memory.
         result.context("Failed to publish transaction")?;
 
-        // Get the receipts for the transactions.
-        let mut receipts = Vec::new();
-
-        for txid in txids {
-            let_cxx_string!(txid_cxx = &txid);
-
-            let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
-                .context("Failed to get tx key from wallet: FFI call failed with exception")?
-                .to_string();
-
-            let height = self.blockchain_height();
-
-            receipts.push(TxReceipt {
-                txid: txid.clone(),
-                tx_key,
-                height,
-            });
-        }
-
-        Ok(receipts)
+        // TODO: Change this to return a single TxReceipt
+        Ok(vec![TxReceipt {
+            txid,
+            tx_key,
+            height,
+        }])
     }
 
     /// Distribute the funds in the wallet to a set of addresses with a set of percentages,

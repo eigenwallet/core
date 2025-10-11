@@ -1,0 +1,53 @@
+diff --git a/src/wallet/api/pending_transaction.cpp b/src/wallet/api/pending_transaction.cpp
+index 2dd118ea3..92d71febd 100644
+--- a/src/wallet/api/pending_transaction.cpp
++++ b/src/wallet/api/pending_transaction.cpp
+@@ -78,6 +78,24 @@ std::vector<std::string> PendingTransactionImpl::txid() const
+     return txid;
+ }
+ 
++std::vector<std::string> PendingTransactionImpl::txKeys() const
++{
++    std::vector<std::string> keys;
++    keys.reserve(m_pending_tx.size());
++
++    for (const auto &ptx : m_pending_tx)
++    {
++        std::string key = epee::string_tools::pod_to_hex(unwrap(unwrap(ptx.tx_key)));
++        // TODO: If possible, do not take these into account
++        // TODO: According to moneromoo, its non standard behavior to have multiple tx keys
++        for (const auto &additional_key : ptx.additional_tx_keys)
++            key += epee::string_tools::pod_to_hex(unwrap(unwrap(additional_key)));
++        keys.emplace_back(std::move(key));
++    }
++
++    return keys;
++}
++
+ bool PendingTransactionImpl::commit(const std::string &filename, bool overwrite)
+ {
+ 
+diff --git a/src/wallet/api/pending_transaction.h b/src/wallet/api/pending_transaction.h
+index c5f4328a8..c4c53f0a6 100644
+--- a/src/wallet/api/pending_transaction.h
++++ b/src/wallet/api/pending_transaction.h
+@@ -50,6 +50,7 @@ public:
+     uint64_t dust() const override;
+     uint64_t fee() const override;
+     std::vector<std::string> txid() const override;
++    std::vector<std::string> txKeys() const override;
+     uint64_t txCount() const override;
+     std::vector<uint32_t> subaddrAccount() const override;
+     std::vector<std::set<uint32_t>> subaddrIndices() const override;
+diff --git a/src/wallet/api/wallet2_api.h b/src/wallet/api/wallet2_api.h
+index ca807ac87..223fea9ab 100644
+--- a/src/wallet/api/wallet2_api.h
++++ b/src/wallet/api/wallet2_api.h
+@@ -131,6 +131,7 @@ struct PendingTransaction
+     virtual uint64_t dust() const = 0;
+     virtual uint64_t fee() const = 0;
+     virtual std::vector<std::string> txid() const = 0;
++    virtual std::vector<std::string> txKeys() const = 0;
+     /*!
+      * \brief txCount - number of transactions current transaction will be splitted to
+      * \return

@@ -215,14 +215,6 @@ namespace Monero
         return wallet.setDaemon(daemon_address, ssl);
     }
 
-    inline std::unique_ptr<std::string> pendingTransactionTxId(const PendingTransaction &tx)
-    {
-        const auto ids = tx.txid();
-        if (ids.empty())
-            return std::make_unique<std::string>("");
-        return std::make_unique<std::string>(ids.front());
-    }
-
     /**
      * Get the transaction key for a given transaction id
      */
@@ -250,6 +242,11 @@ namespace Monero
         return std::make_unique<std::string>(seed);
     }
 
+    /**
+     * Get the transaction ids of a pending transaction.
+     * 
+     * A pending transaction can contain multiple transactions, so we return a vector of txids.
+     */
     inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxIds(const PendingTransaction &tx)
     {
         return std::make_unique<std::vector<std::string>>(tx.txid());
@@ -291,6 +288,16 @@ namespace Monero
     inline uint64_t transactionInfoTimestamp(const TransactionInfo &tx_info)
     {
         return static_cast<uint64_t>(tx_info.timestamp());
+    }
+
+    inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxKeys(const PendingTransaction &tx)
+    {
+        auto keys = tx.txKeys();
+        auto vec = std::make_unique<std::vector<std::string>>();
+        vec->reserve(keys.size());
+        for (auto &key : keys)
+            vec->push_back(std::move(key));
+        return vec;
     }
 
     // bridge.h
