@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.1.2] - 2025-10-11
 
 - ASB: Fix an issue where we would sometimes create Monero transaction without ensuring we were fully synchronized
+- GUI: Fix an issue where swaps would not be displayed at all if the status of the Bitcoin timelock could not be fetched
+
 - GUI: Fix an issue where it would always say "Wait for the application to load all required components" if Tor was disabled.
 - GUI: Remember acknowledged alerts and do not show them again.
 - RENDEZVOUS-SERVER: Fix an issue where connections would timeout immediately.

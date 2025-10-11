@@ -42,6 +42,7 @@ use thiserror::Error;
 use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tracing::debug_span;
+use tracing::error;
 use tracing::Instrument;
 use tracing::Span;
 use typeshare::typeshare;
@@ -865,7 +866,13 @@ pub async fn get_swap_info(
         })
         .with_context(|| "Did not find SwapSetupCompleted state for swap")?;
 
-    let timelock = swap_state.expired_timelocks(bitcoin_wallet.clone()).await?;
+    let timelock = match swap_state.expired_timelocks(bitcoin_wallet.clone()).await {
+        Ok(timelock) => timelock,
+        Err(err) => {
+            error!(swap_id = %args.swap_id, error = ?err, "Failed to fetch expired timelock status");
+            None
+        }
+    };
 
     let monero_receive_pool = db.get_monero_address_pool(args.swap_id).await?;
 
