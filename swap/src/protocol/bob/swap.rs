@@ -977,7 +977,6 @@ impl XmrRedeemable for State5 {
         let (spend_key, view_key) = self.xmr_keys();
 
         tracing::info!(%swap_id, "Redeeming Monero from extracted keys");
-
         tracing::debug!(%swap_id, "Opening temporary Monero wallet");
 
         let wallet = monero_wallet
@@ -990,12 +989,8 @@ impl XmrRedeemable for State5 {
             .await
             .context("Failed to open Monero wallet")?;
 
-        // Update blockheight to ensure that the wallet knows the funds are unlocked
-        tracing::debug!(%swap_id, "Updating temporary Monero wallet's blockheight");
-        let _ = wallet
-            .blockchain_height()
-            .await
-            .context("Couldn't get Monero blockheight")?;
+        // Before we sweep, we ensure that the wallet is synchronized
+        wallet.refresh_blocking().await?;
 
         tracing::debug!(%swap_id, receive_address=?monero_receive_pool, "Sweeping Monero to receive address");
 

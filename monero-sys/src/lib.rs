@@ -613,6 +613,13 @@ impl WalletHandle {
         self.call(move |wallet| wallet.start_refresh_thread()).await
     }
 
+    /// Refresh blocking
+    pub async fn refresh_blocking(&self) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.refresh_blocking())
+            .await
+            .context("Refresh blocking failed")
+    }
+
     /// Stop the background refresh once (doesn't stop background refresh thread).
     pub async fn stop(&self) {
         self.call(move |wallet| wallet.stop()).await

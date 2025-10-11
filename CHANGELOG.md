@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + SWAP: Fix an issue where we would fail to redeem the Monero because the wallet was not fully synchronized.
+
 ## [3.1.2] - 2025-10-11
 
 - ASB: Fix an issue where we would sometimes create Monero transaction without ensuring we were fully synchronized
