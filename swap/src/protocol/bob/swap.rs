@@ -996,19 +996,17 @@ impl XmrRedeemable for State5 {
 
         let main_address = monero_wallet.main_wallet().await.main_address().await;
 
-        let tx_hashes = wallet
+        let tx_hash = wallet
             .sweep_multi_destination(
                 &monero_receive_pool.fill_empty_addresses(main_address),
                 &monero_receive_pool.percentages(),
             )
             .await
             .context("Failed to redeem Monero")?
-            .into_iter()
-            .map(|tx_receipt| TxHash(tx_receipt.txid))
-            .collect();
+            .txid;
 
-        tracing::info!(%swap_id, txids=?tx_hashes, "Monero sweep completed");
+        tracing::info!(%swap_id, %tx_hash, "Monero sweep completed");
 
-        Ok(tx_hashes)
+        Ok(vec![TxHash(tx_hash)])
     }
 }

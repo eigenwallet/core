@@ -495,8 +495,37 @@ impl WalletHandle {
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e:?}"))
     }
 
+    /// Sweep all funds to a set of addresses.
+    /// If the address is `None`, the address will be set to the primary address of the
+    /// wallet
+    pub async fn sweep_multi_destination(
+        &self,
+        addresses: &[monero::Address],
+        percentages: &[f64],
+    ) -> anyhow::Result<TxReceipt> {
+        tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping to multiple destinations");
+
+        let percentages = percentages.to_vec();
+        let addresses = addresses.to_vec();
+
+        retry_notify(backoff(None, None), || async {
+            let addresses = addresses.clone();
+            let percentages = percentages.clone();
+            
+            self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
+                .await
+                .map_err(backoff::Error::transient)
+        }, |error, duration: Duration| {
+            tracing::error!(error=?error, "Failed to sweep to multiple destinations, retrying in {} secs", duration.as_secs());
+        })
+        .await
+        .map_err(|e| anyhow!("Failed to sweep to multiple destinations after multiple attempts: {e:?}"))
+    }
+
     /// Sweep all funds to an address.
-    pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<Vec<TxReceipt>> {
+    pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
+        tracing::debug!(address=?address, "Sweeping to a single destination");
+
         let address = *address;
 
         retry_notify(backoff(None, None), || async {
@@ -518,23 +547,6 @@ impl WalletHandle {
     /// Get the creation height of the wallet.
     pub async fn creation_height(&self) -> u64 {
         self.call(move |wallet| wallet.creation_height()).await
-    }
-
-    /// Sweep all funds to a set of addresses.
-    /// If the address is `None`, the address will be set to the primary address of the
-    /// wallet
-    pub async fn sweep_multi_destination(
-        &self,
-        addresses: &[monero::Address],
-        percentages: &[f64],
-    ) -> anyhow::Result<Vec<TxReceipt>> {
-        tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping multi");
-
-        let percentages = percentages.to_vec();
-        let addresses = addresses.to_vec();
-
-        self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
-            .await
     }
 
     /// Get the transaction history and convert it to a list of serializable transaction infos.
@@ -865,6 +877,7 @@ impl WalletHandle {
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
+                // TODO: Use the publish_pending_transaction function here to avoid duplicate code
                 // This can return multiple txids if wallet2 decided to split the transaction
                 let txids = ffi::pendingTransactionTxIds(&pending_tx)
                     .context("Failed to get txid from pending transaction")?
@@ -873,12 +886,13 @@ impl WalletHandle {
                     .collect::<Vec<_>>();
 
                 // Ensure it only created one transaction
-                if txids.len() != 1 {
-                    anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
-                }
-
-                // Get the txid
-                let txid = txids[0].clone();
+                let txid = match txids.as_slice() {
+                    [txid] => txid.clone(),
+                    _ => anyhow::bail!(
+                        "Expected 1 txid, got {}. We do not allow splitting transactions",
+                        txids.len()
+                    ),
+                };
 
                 // Get the amount
                 let amount = ffi::pendingTransactionAmount(&pending_tx)
@@ -911,8 +925,13 @@ impl WalletHandle {
                         anyhow!("Pending transaction not found for UUID: {}", uuid)
                     })?;
 
+                    // Publish the transaction
                     let result = wallet.publish_pending_transaction(&mut pending_tx);
+                    
+                    // Dispose the pending transaction after we're done with it
+                    // independent of whether the publish was successful or not
                     wallet.dispose_pending_transaction(pending_tx);
+
                     result
                 })
                 .await?;
@@ -921,11 +940,14 @@ impl WalletHandle {
         } else {
             // Dispose the pending transaction without publishing
             self.call_with_pending_txs(move |wallet, pending_txs| {
+                // Remove the pending transaction from the internal map
                 let pending_tx = pending_txs
                     .remove(&uuid)
                     .ok_or_else(|| anyhow!("Pending transaction not found for UUID: {}", uuid))?;
 
+                // Dispose the pending transaction after we're done with it
                 wallet.dispose_pending_transaction(pending_tx);
+                
                 Ok::<(), anyhow::Error>(())
             })
             .await?;
@@ -1949,6 +1971,59 @@ impl FfiWallet {
         Ok(())
     }
 
+    /// Sweep all funds from the wallet to a specified address.
+    /// Returns a list of transaction ids of the created transactions.
+    fn sweep(&mut self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
+        self.sweep_multi(&[*address], &[1.0])
+    }
+
+    /// Sweep all funds to a set of addresses with a set of ratios.
+    fn sweep_multi(
+        &mut self,
+        addresses: &[monero::Address],
+        ratios: &[f64],
+    ) -> anyhow::Result<TxReceipt> {
+        self.ensure_synchronized_blocking()
+            .context("Cannot multi-sweep when wallet is not synchronized")?;
+
+        if addresses.is_empty() {
+            bail!("No addresses to sweep to");
+        }
+
+        if addresses.len() != ratios.len() {
+            bail!("Number of addresses and ratios must match");
+        }
+
+        tracing::info!(
+            "Sweeping funds to {} addresses, refreshing wallet first",
+            addresses.len()
+        );
+
+        let balance = self.unlocked_balance();
+
+        // Since we're using "subtract fee from outputs", we distribute the full balance
+        // The underlying transaction creation will subtract the fee proportionally from each output
+        let amounts = FfiWallet::distribute(balance, ratios)?;
+
+        tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
+
+        // Build destinations vector for create_pending_transaction_multi_dest
+        let destinations: Vec<(monero::Address, monero::Amount)> = addresses
+            .iter()
+            .zip(amounts.iter())
+            .map(|(addr, &amount)| (addr.clone(), amount))
+            .collect();
+
+        // Create the multi-sweep pending transaction using the shared function
+        // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
+        let mut pending_tx = self
+            .create_pending_transaction_multi_dest(&destinations, true)
+            .context("Failed to create multi-sweep transaction")?;
+
+        // Publish the transaction
+        self.publish_pending_transaction(&mut pending_tx)
+    }
+
     /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
     /// the transaction id, transaction key and current blockchain height. This can be used later
     /// to prove the transfer or to wait for confirmations.
@@ -1959,9 +2034,16 @@ impl FfiWallet {
         self.ensure_synchronized_blocking()
             .context("Cannot transfer when wallet is not synchronized")?;
 
+        // Construct the pending transaction
         let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
+        
+        // Publish the transaction
         let result = self.publish_pending_transaction(&mut pending_tx);
+        
+        // Dispose the pending transaction after we're done with it
+        // independent of whether the publish was successful or not
         self.dispose_pending_transaction(pending_tx);
+
         result
     }
 
@@ -1972,18 +2054,10 @@ impl FfiWallet {
         address: &monero::Address,
         amount: monero::Amount,
     ) -> anyhow::Result<PendingTransaction> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot construct transaction when wallet is not synchronized")?;
-
-        let_cxx_string!(address_str = address.to_string());
-        let amount_pico = amount.as_pico();
-
-        let pending_tx = PendingTransaction(
-            ffi::createTransaction(self.inner.pinned(), &address_str, amount_pico)
-                .context("Failed to create transaction: FFI call failed with exception")?,
-        );
-
-        Ok(pending_tx)
+        // This is just a wrapper around the function that creates a multi-destination transaction
+        // This is what wallet2 does under the hood:
+        // https://github.com/SNeedlewoods/seraphis_wallet/blob/dbbccecc89e1121762a4ad6b531638ece82aa0c7/src/wallet/api/wallet.cpp#L1952
+        self.create_pending_transaction_multi_dest(&[(*address, amount)], false)
     }
 
     /// Create a pending transaction that spends to multiple destinations without publishing it.
@@ -2076,14 +2150,6 @@ impl FfiWallet {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
 
-        // Ensure it only created one transaction
-        if txids.len() != 1 {
-            anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
-        }
-
-        // Get the txid
-        let txid = txids[0].clone();
-
         // Extract the transaction keys
         // Again, this can return multiple tx keys if wallet2 decided to split the transaction
         let tx_keys = ffi::pendingTransactionTxKeys(pending_tx)
@@ -2092,17 +2158,32 @@ impl FfiWallet {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
 
-        // Ensure it only created one transaction
-        if tx_keys.len() != 1 {
-            anyhow::bail!("Expected 1 tx key, got {}. We only do not allow splitting transactions", tx_keys.len());
-        }
+        // Get the txid from the pending transaction
+        let txid = match txids.as_slice() {
+            [txid] => txid.clone(),
+            _ => anyhow::bail!(
+                "Expected 1 txid, got {}. We do not allow splitting transactions", 
+                txids.len()
+            ),
+        };
 
         // Get the tx key
-        let tx_key = tx_keys[0].clone();
+        let tx_key = match tx_keys.as_slice() {
+            [key] => key.clone(),
+            _ => anyhow::bail!(
+                "Expected 1 tx key, got {}. We do not allow splitting transactions", 
+                tx_keys.len()
+            ),
+        };
 
         // Ensure the tx key is valid
         monero::PrivateKey::from_str(&tx_key)
             .with_context(|| format!("Invalid tx key: {tx_key}"))?;
+
+        // Ensure the tx hash is not an empty string
+        if txid.is_empty() {
+            anyhow::bail!("Got an empty txid");
+        }
 
         // Get current blockchain height
         let height = self.blockchain_height();
@@ -2118,184 +2199,6 @@ impl FfiWallet {
             tx_key: tx_keys[0].clone(),
             height,
         })
-    }
-
-    /// Dispose of a pending transaction to free memory.
-    fn dispose_pending_transaction(&mut self, pending_tx: PendingTransaction) {
-        self.dispose_transaction(pending_tx);
-    }
-
-    /// Sweep all funds from the wallet to a specified address.
-    /// Returns a list of transaction ids of the created transactions.
-    fn sweep(&mut self, address: &monero::Address) -> anyhow::Result<Vec<TxReceipt>> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot sweep when wallet is not synchronized")?;
-
-        let_cxx_string!(address = address.to_string());
-
-        // Create the sweep transaction
-        let mut pending_tx = PendingTransaction(
-            ffi::createSweepTransaction(self.inner.pinned(), &address)
-                .context("Failed to create sweep transaction: FFI call failed with exception")?,
-        );
-
-        // Get the txids from the pending transaction before we publish,
-        // otherwise it might be null.
-        let txids: Vec<String> = ffi::pendingTransactionTxIds(&pending_tx)
-            .context("Failed to get txids of pending transaction: FFI call failed with exception")?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        // Ensure it only created one transaction
-        if txids.len() != 1 {
-            anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
-        }
-
-        // Get the txid
-        let txid = txids[0].clone();
-
-        // Extract the transaction keys
-        // Again, this can return multiple tx keys if wallet2 decided to split the transaction
-        let tx_keys = ffi::pendingTransactionTxKeys(&pending_tx)
-            .context("Failed to get tx key from pending transaction: FFI call failed with exception")?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-
-        // Ensure it only created one transaction
-        if tx_keys.len() != 1 {
-            anyhow::bail!("Expected 1 tx key, got {}. We only do not allow splitting transactions", tx_keys.len());
-        }
-
-        // Get the tx key
-        let tx_key = tx_keys[0].clone();
-
-        // Ensure the tx key is valid
-        monero::PrivateKey::from_str(&tx_key)
-            .with_context(|| format!("Invalid tx key: {tx_key}"))?;
-
-        // Publish the transaction
-        let result = pending_tx
-            .publish()
-            .context("Failed to publish transaction");
-
-        // Dispose of the transaction to avoid leaking memory.
-        self.dispose_transaction(pending_tx);
-
-        // Check for errors only after cleaning up the memory.
-        result.context("Failed to publish transaction")?;
-
-        // Get the receipts for the transactions.
-        let height = self.blockchain_height();
-
-        // TODO: Change this to return a single receipt
-        Ok(vec![TxReceipt {
-            txid,
-            tx_key,
-            height,
-        }])
-    }
-
-    /// Sweep all funds to a set of addresses with a set of ratios.
-    fn sweep_multi(
-        &mut self,
-        addresses: &[monero::Address],
-        ratios: &[f64],
-    ) -> anyhow::Result<Vec<TxReceipt>> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot multi-sweep when wallet is not synchronized")?;
-
-        if addresses.is_empty() {
-            bail!("No addresses to sweep to");
-        }
-
-        if addresses.len() != ratios.len() {
-            bail!("Number of addresses and ratios must match");
-        }
-
-        tracing::info!(
-            "Sweeping funds to {} addresses, refreshing wallet first",
-            addresses.len()
-        );
-
-        let balance = self.unlocked_balance();
-
-        // Since we're using "subtract fee from outputs", we distribute the full balance
-        // The underlying transaction creation will subtract the fee proportionally from each output
-        let amounts = FfiWallet::distribute(balance, ratios)?;
-
-        tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
-
-        // Build destinations vector for create_pending_transaction_multi_dest
-        let destinations: Vec<(monero::Address, monero::Amount)> = addresses
-            .iter()
-            .zip(amounts.iter())
-            .map(|(addr, &amount)| (addr.clone(), amount))
-            .collect();
-
-        // Create the multi-sweep pending transaction using the shared function
-        // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
-        let mut pending_tx = self
-            .create_pending_transaction_multi_dest(&destinations, true)
-            .context("Failed to create multi-sweep transaction")?;
-
-        // Get the txids from the pending transaction before we publish,
-        // otherwise it might be null.
-        let txids: Vec<String> = ffi::pendingTransactionTxIds(&pending_tx)
-            .context("Failed to get txids of pending transaction: FFI call failed with exception")?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        // Ensure it only created one transaction
-        if txids.len() != 1 {
-            anyhow::bail!("Expected 1 txid, got {}. We only do not allow splitting transactions", txids.len());
-        }
-
-        // Get the txid
-        let txid = txids[0].clone();
-
-        // Extract the transaction keys for each transaction
-        let tx_keys = ffi::pendingTransactionTxKeys(&pending_tx)
-            .context("Failed to get tx key from pending transaction: FFI call failed with exception")?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-
-        // Ensure it only created one transaction
-        if tx_keys.len() != 1 {
-            anyhow::bail!("Expected 1 tx key, got {}. We only do not allow splitting transactions", tx_keys.len());
-        }
-
-        // Get the tx key
-        let tx_key = tx_keys[0].clone();
-
-        // Ensure the tx key is valid
-        monero::PrivateKey::from_str(&tx_key)
-            .with_context(|| format!("Invalid tx key: {tx_key}"))?;
-
-        // We do this before calling .publish() in case this panics
-        let height = self.blockchain_height();
-
-        // Publish the transaction
-        // do this at the very last step
-        let result = pending_tx
-            .publish()
-            .context("Failed to publish transaction");
-
-        // Dispose of the transaction to avoid leaking memory.
-        self.dispose_transaction(pending_tx);
-
-        // Check for errors only after cleaning up the memory.
-        result.context("Failed to publish transaction")?;
-
-        // TODO: Change this to return a single TxReceipt
-        Ok(vec![TxReceipt {
-            txid,
-            tx_key,
-            height,
-        }])
     }
 
     /// Distribute the funds in the wallet to a set of addresses with a set of percentages,
@@ -2405,7 +2308,7 @@ impl FfiWallet {
     /// Dispose (deallocate) a pending transaction object.
     /// Always call this before dropping a pending transaction object,
     /// otherwise we leak memory.
-    fn dispose_transaction(&mut self, tx: PendingTransaction) {
+    fn dispose_pending_transaction(&mut self, tx: PendingTransaction) {
         // Safety: we pass a valid pointer and we verified it's not used again since PendingTransaction is moved into this function
         unsafe {
             self.inner
