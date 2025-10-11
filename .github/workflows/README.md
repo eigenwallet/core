@@ -12,7 +12,7 @@ The functionality is composed in such a way that a human can easily start the wo
 ### Preview release
 
 We have a rolling tag `preview` that always points to HEAD of `master`.
-The [preview-release.yml](./preview-release.yml) workflow moves this tag to latest HEAD every time a PR gets merged.
+The [preview-release.yml](./preview-release.yml) workflow moves this tag to latest HEAD once per day at noon UTC.
 It also creates a corresponding GitHub "pre-release".
 
 ### Building release binaries and attaching changelog
