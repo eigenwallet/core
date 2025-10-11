@@ -1,15 +1,15 @@
-use crate::alice::AliceState;
 use crate::alice::is_complete as alice_is_complete;
-use crate::bob::BobState;
+use crate::alice::AliceState;
 use crate::bob::is_complete as bob_is_complete;
+use crate::bob::BobState;
 use anyhow::Result;
 use async_trait::async_trait;
 use conquer_once::Lazy;
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use sigma_fun::HashTranscript;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
+use sigma_fun::HashTranscript;
 use std::convert::TryInto;
 use swap_core::bitcoin;
 use swap_core::monero::{self, MoneroAddressPool};

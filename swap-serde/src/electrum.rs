@@ -1,6 +1,6 @@
 pub mod urls {
     use serde::de::Unexpected;
-    use serde::{Deserialize, Deserializer, de};
+    use serde::{de, Deserialize, Deserializer};
     use serde_json::Value;
     use url::Url;
 

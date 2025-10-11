@@ -1,10 +1,10 @@
-use crate::bitcoin::{Address, Amount, PublicKey, Transaction, build_shared_output_descriptor};
+use crate::bitcoin::{build_shared_output_descriptor, Address, Amount, PublicKey, Transaction};
 use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 use ::bitcoin::{OutPoint, TxIn, TxOut, Txid};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use bdk_wallet::miniscript::Descriptor;
 use bdk_wallet::psbt::PsbtUtils;
-use bitcoin::{ScriptBuf, Sequence, locktime::absolute::LockTime as PackedLockTime};
+use bitcoin::{locktime::absolute::LockTime as PackedLockTime, ScriptBuf, Sequence};
 use bitcoin_wallet::primitives::Watchable;
 use serde::{Deserialize, Serialize};
 
@@ -195,8 +195,8 @@ impl Watchable for TxLock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bitcoin::Amount;
     use crate::bitcoin::wallet::TestWalletBuilder;
+    use crate::bitcoin::Amount;
     use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 
     // Basic setup function for tests

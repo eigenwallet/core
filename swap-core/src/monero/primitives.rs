@@ -1,10 +1,10 @@
 use crate::bitcoin;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 pub use curve25519_dalek::scalar::Scalar;
 use monero::Address;
 use rand::{CryptoRng, RngCore};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;
@@ -382,10 +382,12 @@ impl MoneroAddressPool {
 
 impl From<::monero::Address> for MoneroAddressPool {
     fn from(address: ::monero::Address) -> Self {
-        Self(vec![
-            LabeledMoneroAddress::new(address, Decimal::from(1), "user address".to_string())
-                .expect("Percentage 1 is always valid"),
-        ])
+        Self(vec![LabeledMoneroAddress::new(
+            address,
+            Decimal::from(1),
+            "user address".to_string(),
+        )
+        .expect("Percentage 1 is always valid")])
     }
 }
 

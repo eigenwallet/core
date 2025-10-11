@@ -1,7 +1,7 @@
 pub mod multiaddresses {
     use libp2p::Multiaddr;
     use serde::de::Unexpected;
-    use serde::{Deserialize, Deserializer, de};
+    use serde::{de, Deserialize, Deserializer};
     use serde_json::Value;
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Multiaddr>, D::Error>

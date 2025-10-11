@@ -1,17 +1,17 @@
-use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
-use anyhow::{Context, Result, anyhow, bail};
+use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
+use anyhow::{anyhow, bail, Context, Result};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
-    TxPunish, TxRedeem, TxRefund, Txid, current_epoch,
+    current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
+    TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
 };
 use swap_core::monero;
-use swap_core::monero::ScalarExt;
 use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
+use swap_core::monero::ScalarExt;
 use swap_env::env::Config;
 use uuid::Uuid;
 

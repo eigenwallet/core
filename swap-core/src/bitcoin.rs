@@ -16,21 +16,21 @@ pub use crate::bitcoin::timelocks::{BlockHeight, ExpiredTimelocks};
 pub use ::bitcoin::amount::Amount;
 pub use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 pub use ::bitcoin::{Address, AddressType, Network, Transaction, Txid};
-pub use ecdsa_fun::Signature;
 pub use ecdsa_fun::adaptor::EncryptedSignature;
 pub use ecdsa_fun::fun::Scalar;
+pub use ecdsa_fun::Signature;
 
 use ::bitcoin::hashes::Hash;
 use ::bitcoin::secp256k1::ecdsa;
 use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use bdk_wallet::miniscript::descriptor::Wsh;
 use bdk_wallet::miniscript::{Descriptor, Segwitv0};
 use bitcoin_wallet::primitives::ScriptStatus;
-use ecdsa_fun::ECDSA;
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::fun::Point;
 use ecdsa_fun::nonce::Deterministic;
+use ecdsa_fun::ECDSA;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -261,8 +261,8 @@ pub fn current_epoch(
 pub mod bitcoin_address {
     use anyhow::{Context, Result};
     use bitcoin::{
-        Address,
         address::{NetworkChecked, NetworkUnchecked},
+        Address,
     };
     use serde::Serialize;
     use std::str::FromStr;
