@@ -528,6 +528,10 @@ impl WalletHandle {
         //  however this here calls a completely different function in wallet2 (create_transactions_all instead of create_transactions_2)
         //  I think there is a case to be made that going full in with our custom implementation is better
         //  because the code will behave the same regardless of sweep or sweep_multi
+        //
+        // Ideally sweep(address) should behave the same as sweep_multi_destination([address, 1.0])
+        // currently this cannot be guaranteed however because sweep_multi_destination uses our own logic
+        // while sweep(..) delegated to wallet2
         tracing::debug!(address=?address, "Sweeping to a single destination");
 
         let address = *address;
@@ -2202,8 +2206,11 @@ impl FfiWallet {
         // Get current blockchain height
         let height = self.blockchain_height();
 
-        // Publish the transaction
-        // To ensure atomicity, this is the 
+        // Publish the transaction to the blockchain
+        // 
+        // To ensure atomicity, this is the last step in this function
+        //
+        // TODO: We should retry here
         pending_tx
             .publish()
             .context("Failed to publish transaction")?;
