@@ -524,6 +524,10 @@ impl WalletHandle {
 
     /// Sweep all funds to an address.
     pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
+        // TODO: This could call sweep_multi_destination under the hood?
+        //  however this here calls a completely different function in wallet2 (create_transactions_all instead of create_transactions_2)
+        //  I think there is a case to be made that going full in with our custom implementation is better
+        //  because the code will behave the same regardless of sweep or sweep_multi
         tracing::debug!(address=?address, "Sweeping to a single destination");
 
         let address = *address;
@@ -877,7 +881,6 @@ impl WalletHandle {
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
-                // TODO: Use the publish_pending_transaction function here to avoid duplicate code
                 // This can return multiple txids if wallet2 decided to split the transaction
                 let txids = ffi::pendingTransactionTxIds(&pending_tx)
                     .context("Failed to get txid from pending transaction")?
@@ -886,8 +889,10 @@ impl WalletHandle {
                     .collect::<Vec<_>>();
 
                 // Ensure it only created one transaction
+                // fail otherwise
                 let txid = match txids.as_slice() {
                     [txid] => txid.clone(),
+                    // TODO: Dispose the transaction here
                     _ => anyhow::bail!(
                         "Expected 1 txid, got {}. We do not allow splitting transactions",
                         txids.len()
@@ -947,7 +952,7 @@ impl WalletHandle {
 
                 // Dispose the pending transaction after we're done with it
                 wallet.dispose_pending_transaction(pending_tx);
-                
+
                 Ok::<(), anyhow::Error>(())
             })
             .await?;
@@ -1974,7 +1979,15 @@ impl FfiWallet {
     /// Sweep all funds from the wallet to a specified address.
     /// Returns a list of transaction ids of the created transactions.
     fn sweep(&mut self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
-        self.sweep_multi(&[*address], &[1.0])
+        self.ensure_synchronized_blocking()
+            .context("Cannot sweep when wallet is not synchronized")?;
+
+        // Construct the sweep transaction
+        let mut pending_tx = self.create_pending_sweep_transaction(&address)?;
+
+        // Publish the transaction
+        self.publish_pending_transaction(&mut pending_tx)
+            .context("Failed to publish sweep transaction")
     }
 
     /// Sweep all funds to a set of addresses with a set of ratios.
@@ -2022,6 +2035,7 @@ impl FfiWallet {
 
         // Publish the transaction
         self.publish_pending_transaction(&mut pending_tx)
+            .context("Failed to publish multi-sweep transaction")
     }
 
     /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
