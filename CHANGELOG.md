@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Fix an issue where we would sometimes create Monero transaction without ensuring we were fully synchronized
+
 ## [3.1.1] - 2025-10-08
 
 - GUI: Fix an issue where it would always say "Wait for the application to load all required components" if Tor was disabled.
