@@ -258,13 +258,6 @@ pub mod ffi {
         /// Scan for a specified list of transactions.
         fn scanTransaction(wallet: Pin<&mut Wallet>, tx_id: &CxxString) -> Result<bool>;
 
-        /// Create a new transaction.
-        fn createTransaction(
-            wallet: Pin<&mut Wallet>,
-            dest_address: &CxxString,
-            amount: u64,
-        ) -> Result<*mut PendingTransaction>;
-
         /// Create a sweep transaction.
         fn createSweepTransaction(
             wallet: Pin<&mut Wallet>,

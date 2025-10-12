@@ -5,7 +5,13 @@ index 2dd118ea3..92d71febd 100644
 @@ -78,6 +78,24 @@ std::vector<std::string> PendingTransactionImpl::txid() const
      return txid;
  }
- 
+
++// This functions return **all** tx keys for the pending transaction.
++// If the transaction contains multiple transaction, this will return multiple tx keys.
++// If the transaction contains only a single transaction but that transaction has multiple tx keys, this will return multiple tx keys.
++//
++// Strictly speaking this does not allow us to clearly map tx keys to transactions if we have multiple transactions and one or more
++// of the transactions have multiple tx keys.
 +std::vector<std::string> PendingTransactionImpl::txKeys() const
 +{
 +    std::vector<std::string> keys;
@@ -14,11 +20,12 @@ index 2dd118ea3..92d71febd 100644
 +    for (const auto &ptx : m_pending_tx)
 +    {
 +        std::string key = epee::string_tools::pod_to_hex(unwrap(unwrap(ptx.tx_key)));
-+        // TODO: If possible, do not take these into account
-+        // TODO: According to moneromoo, its non standard behavior to have multiple tx keys
-+        for (const auto &additional_key : ptx.additional_tx_keys)
-+            key += epee::string_tools::pod_to_hex(unwrap(unwrap(additional_key)));
 +        keys.emplace_back(std::move(key));
++        // TODO: According to moneromoo, its non standard behavior to have multiple tx keys
++        // We still provide return them here. Our Rust wrapper will then fail if it detects multiple tx keys.
++        for (const auto &additional_key : ptx.additional_tx_keys) {
++            keys.emplace_back(epee::string_tools::pod_to_hex(unwrap(unwrap(additional_key))));
++        }
 +    }
 +
 +    return keys;
