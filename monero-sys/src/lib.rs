@@ -922,7 +922,7 @@ impl WalletHandle {
 
                     // Publish the transaction
                     let result = wallet.publish_pending_transaction(&mut pending_tx);
-                    
+
                     // Dispose the pending transaction after we're done with it
                     // independent of whether the publish was successful or not
                     wallet.dispose_pending_transaction(pending_tx);
@@ -1976,8 +1976,15 @@ impl FfiWallet {
         let mut pending_tx = self.create_pending_sweep_transaction(&address)?;
 
         // Publish the transaction
-        self.publish_pending_transaction(&mut pending_tx)
-            .context("Failed to publish sweep transaction")
+        let result = self
+            .publish_pending_transaction(&mut pending_tx)
+            .context("Failed to publish sweep transaction");
+
+        // Dispose the pending transaction after we're done with it
+        // independent of whether the publish was successful or not
+        self.dispose_pending_transaction(pending_tx);
+
+        result
     }
 
     /// Sweep all funds to a set of addresses with a set of ratios.
@@ -2024,8 +2031,15 @@ impl FfiWallet {
             .context("Failed to create multi-sweep transaction")?;
 
         // Publish the transaction
-        self.publish_pending_transaction(&mut pending_tx)
-            .context("Failed to publish multi-sweep transaction")
+        let result = self
+            .publish_pending_transaction(&mut pending_tx)
+            .context("Failed to publish multi-sweep transaction");
+
+        // Dispose the pending transaction after we're done with it
+        // independent of whether the publish was successful or not
+        self.dispose_pending_transaction(pending_tx);
+
+        result
     }
 
     /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
@@ -2040,10 +2054,10 @@ impl FfiWallet {
 
         // Construct the pending transaction
         let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
-        
+
         // Publish the transaction
         let result = self.publish_pending_transaction(&mut pending_tx);
-        
+
         // Dispose the pending transaction after we're done with it
         // independent of whether the publish was successful or not
         self.dispose_pending_transaction(pending_tx);
@@ -2144,14 +2158,15 @@ impl FfiWallet {
         &mut self,
         pending_tx: &mut PendingTransaction,
     ) -> anyhow::Result<TxReceipt> {
-        // TODO: Always dispose the pending transaction if we error out
-
         // Ensure the transaction only has a single txid and tx key
         //
         // We forbid splitting transactions. We forbid multiple tx keys.
-        let (txid, tx_key) = pending_tx.validate_single_txid_single_tx_key()?;
+        let (txid, tx_key) = pending_tx.validate_single_txid_single_tx_key().context(
+            "Failed to ensure transaction has one txid and one tx key before publishing",
+        )?;
 
         // Get current blockchain height
+        // We do this before publishing incase this causes a panic
         let height = self.blockchain_height();
 
         // Publish the transaction to the blockchain
