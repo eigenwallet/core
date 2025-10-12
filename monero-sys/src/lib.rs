@@ -885,23 +885,9 @@ impl WalletHandle {
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
-                // This can return multiple txids if wallet2 decided to split the transaction
-                let txids = ffi::pendingTransactionTxIds(&pending_tx)
-                    .context("Failed to get txid from pending transaction")?
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>();
-
-                // Ensure it only created one transaction
-                // fail otherwise
-                let txid = match txids.as_slice() {
-                    [txid] => txid.clone(),
-                    // TODO: Dispose the transaction here
-                    _ => anyhow::bail!(
-                        "Expected 1 txid, got {}. We do not allow splitting transactions",
-                        txids.len()
-                    ),
-                };
+                let (txid, _) = pending_tx.validate_single_txid_single_tx_key().context(
+                    "Failed to validate PendingTransaction to have single txid and single tx key",
+                )?;
 
                 // Get the amount
                 let amount = ffi::pendingTransactionAmount(&pending_tx)
@@ -2160,50 +2146,10 @@ impl FfiWallet {
     ) -> anyhow::Result<TxReceipt> {
         // TODO: Always dispose the pending transaction if we error out
 
-        // Get the txid from the pending transaction before we publish
-        // This can return multiple txids if wallet2 decided to split the transaction
-        let txids = ffi::pendingTransactionTxIds(pending_tx)
-            .context("Failed to get txid from pending transaction: FFI call failed with exception")?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-
-        // Extract the transaction keys
-        // Again, this can return multiple tx keys if wallet2 decided to split the transaction
-        let tx_keys = ffi::pendingTransactionTxKeys(pending_tx)
-            .context(
-                "Failed to get tx key from pending transaction: FFI call failed with exception",
-            )?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-
-        // Get the txid from the pending transaction
-        let txid = match txids.as_slice() {
-            [txid] => txid.clone(),
-            _ => anyhow::bail!(
-                "Expected 1 txid, got {}. We do not allow splitting transactions",
-                txids.len()
-            ),
-        };
-
-        // Get the tx key
-        let tx_key = match tx_keys.as_slice() {
-            [key] => key.clone(),
-            _ => anyhow::bail!(
-                "Expected 1 tx key, got {}. We do not allow splitting transactions",
-                tx_keys.len()
-            ),
-        };
-
-        // Ensure the tx key is valid
-        monero::PrivateKey::from_str(&tx_key)
-            .with_context(|| format!("Invalid tx key: {tx_key}"))?;
-
-        // Ensure the tx hash is not an empty string
-        if txid.is_empty() {
-            anyhow::bail!("Got an empty txid");
-        }
+        // Ensure the transaction only has a single txid and tx key
+        //
+        // We forbid splitting transactions. We forbid multiple tx keys.
+        let (txid, tx_key) = pending_tx.validate_single_txid_single_tx_key()?;
 
         // Get current blockchain height
         let height = self.blockchain_height();
@@ -2212,7 +2158,7 @@ impl FfiWallet {
         //
         // To ensure atomicity, this is the last step in this function
         //
-        // TODO: We should retry here
+        // TODO: We should retry here?
         pending_tx
             .publish()
             .context("Failed to publish transaction")?;
@@ -2485,6 +2431,58 @@ impl PendingTransaction {
                     "Failed to commit transaction to blockchain"
                 )))
         }
+    }
+
+    fn validate_single_txid_single_tx_key(
+        self: &mut Self,
+    ) -> Result<(String, String), anyhow::Error> {
+        // This can return multiple txids if wallet2 decided to split the transaction
+        let txids = ffi::pendingTransactionTxIds(self)
+            .context("Failed to get txid from pending transaction: FFI call failed with exception")?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        // This can return multiple tx keys if wallet2 decided to split the transaction
+        // TODO: It can also maybe return multiple tx key even if we only have one transaction?
+        let tx_keys = ffi::pendingTransactionTxKeys(self)
+            .context(
+                "Failed to get tx key from pending transaction: FFI call failed with exception",
+            )?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        // Ensure it only created one transaction
+        let txid = match txids.as_slice() {
+            [txid] => txid.clone(),
+            _ => anyhow::bail!(
+                "Expected 1 txid, got {}. We do not allow splitting transactions",
+                txids.len()
+            ),
+        };
+
+        // Ensure we only have one tx key
+        // If we have multiple tx keys, we would need to create multiple transfer proofs
+        let tx_key = match tx_keys.as_slice() {
+            [key] => key.clone(),
+            _ => anyhow::bail!(
+                "Expected 1 tx key, got {}. We do not allow splitting transactions",
+                tx_keys.len()
+            ),
+        };
+
+        // Ensure we didn't get junk from wallet2
+        {
+            monero::PrivateKey::from_str(&tx_key)
+                .with_context(|| format!("Invalid tx key: {tx_key}"))?;
+
+            if txid.is_empty() {
+                anyhow::bail!("Got an empty txid");
+            }
+        }
+
+        Ok((txid, tx_key))
     }
 }
 
