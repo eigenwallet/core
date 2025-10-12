@@ -511,7 +511,7 @@ impl WalletHandle {
         retry_notify(backoff(None, None), || async {
             let addresses = addresses.clone();
             let percentages = percentages.clone();
-            
+
             self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
                 .await
                 .map_err(backoff::Error::transient)
@@ -2171,7 +2171,9 @@ impl FfiWallet {
         // Extract the transaction keys
         // Again, this can return multiple tx keys if wallet2 decided to split the transaction
         let tx_keys = ffi::pendingTransactionTxKeys(pending_tx)
-            .context("Failed to get tx key from pending transaction: FFI call failed with exception")?
+            .context(
+                "Failed to get tx key from pending transaction: FFI call failed with exception",
+            )?
             .into_iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
@@ -2180,7 +2182,7 @@ impl FfiWallet {
         let txid = match txids.as_slice() {
             [txid] => txid.clone(),
             _ => anyhow::bail!(
-                "Expected 1 txid, got {}. We do not allow splitting transactions", 
+                "Expected 1 txid, got {}. We do not allow splitting transactions",
                 txids.len()
             ),
         };
@@ -2189,7 +2191,7 @@ impl FfiWallet {
         let tx_key = match tx_keys.as_slice() {
             [key] => key.clone(),
             _ => anyhow::bail!(
-                "Expected 1 tx key, got {}. We do not allow splitting transactions", 
+                "Expected 1 tx key, got {}. We do not allow splitting transactions",
                 tx_keys.len()
             ),
         };
@@ -2207,7 +2209,7 @@ impl FfiWallet {
         let height = self.blockchain_height();
 
         // Publish the transaction to the blockchain
-        // 
+        //
         // To ensure atomicity, this is the last step in this function
         //
         // TODO: We should retry here
