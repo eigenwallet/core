@@ -878,7 +878,7 @@ impl WalletHandle {
         // Store the pending transaction in the wallet thread inside the [`pending_txs`] map
         let (uuid, txid, amount, fee) = self
             .call_with_pending_txs(move |wallet, pending_txs| {
-                let pending_tx = match amount {
+                let mut pending_tx = match amount {
                     Some(amount) => {
                         wallet.create_pending_transaction_single_dest(&address, amount)?
                     }

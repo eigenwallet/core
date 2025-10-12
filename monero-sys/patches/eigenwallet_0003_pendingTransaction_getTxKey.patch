@@ -1,13 +1,13 @@
 diff --git a/src/wallet/api/pending_transaction.cpp b/src/wallet/api/pending_transaction.cpp
-index 2dd118ea3..92d71febd 100644
+index 2dd118ea3..f243109e5 100644
 --- a/src/wallet/api/pending_transaction.cpp
 +++ b/src/wallet/api/pending_transaction.cpp
-@@ -78,6 +78,24 @@ std::vector<std::string> PendingTransactionImpl::txid() const
+@@ -78,6 +78,33 @@ std::vector<std::string> PendingTransactionImpl::txid() const
      return txid;
  }
-
-+// This functions return **all** tx keys for the pending transaction.
-+// If the transaction contains multiple transaction, this will return multiple tx keys.
+ 
++// This function returns **all** tx keys for the pending transaction.
++// If the transaction contains multiple transactions, this will return multiple tx keys.
 +// If the transaction contains only a single transaction but that transaction has multiple tx keys, this will return multiple tx keys.
 +//
 +// Strictly speaking this does not allow us to clearly map tx keys to transactions if we have multiple transactions and one or more
@@ -21,8 +21,10 @@ index 2dd118ea3..92d71febd 100644
 +    {
 +        std::string key = epee::string_tools::pod_to_hex(unwrap(unwrap(ptx.tx_key)));
 +        keys.emplace_back(std::move(key));
++        
 +        // TODO: According to moneromoo, its non standard behavior to have multiple tx keys
-+        // We still provide return them here. Our Rust wrapper will then fail if it detects multiple tx keys.
++        // We still provide return them here for the sake of correctness.
++        // Our Rust wrapper will then fail if it detects multiple tx keys.
 +        for (const auto &additional_key : ptx.additional_tx_keys) {
 +            keys.emplace_back(epee::string_tools::pod_to_hex(unwrap(unwrap(additional_key))));
 +        }
@@ -46,15 +48,3 @@ index c5f4328a8..c4c53f0a6 100644
      uint64_t txCount() const override;
      std::vector<uint32_t> subaddrAccount() const override;
      std::vector<std::set<uint32_t>> subaddrIndices() const override;
-diff --git a/src/wallet/api/wallet2_api.h b/src/wallet/api/wallet2_api.h
-index ca807ac87..223fea9ab 100644
---- a/src/wallet/api/wallet2_api.h
-+++ b/src/wallet/api/wallet2_api.h
-@@ -131,6 +131,7 @@ struct PendingTransaction
-     virtual uint64_t dust() const = 0;
-     virtual uint64_t fee() const = 0;
-     virtual std::vector<std::string> txid() const = 0;
-+    virtual std::vector<std::string> txKeys() const = 0;
-     /*!
-      * \brief txCount - number of transactions current transaction will be splitted to
-      * \return
