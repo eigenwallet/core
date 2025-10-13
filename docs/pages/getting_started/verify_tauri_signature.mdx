@@ -1,72 +1,32 @@
-# Verifying the signature of the GUI
+# Verifying Release Binaries
 
-Verifying downloads is a good habit. The signature files that accompany our GUI binaries are wrapped in an additional `base64` layer. This guide shows how to decode that wrapper and then verify the Minisign file.
+Each release includes `.asc` signature files alongside the binaries.
 
-## Prerequisites
+### 1. Import the signing key
 
-| Tool | Purpose | Install (cmd examples) |
-| --- | --- | --- |
-| **minisign** | Signature verification | `brew install minisign` or `apt install minisign` |
-| **base64** | Decode a double-encoded sig | Comes with most Unix systems |
+```bash
+# Download the key from GitHub
+wget https://raw.githubusercontent.com/eigenwallet/core/master/utils/gpg_keys/binarybaron_and_einliterflasche.asc
 
-## Files involved
-
-```text
-UnstoppableSwap_2.0.0-beta.2_amd64.AppImage        # the binary you will verify
-UnstoppableSwap_2.0.0-beta.2_amd64.AppImage.sig    # contains a base64 encoded signature
+# Import it
+gpg --import binarybaron_and_einliterflasche.asc
 ```
 
-## Step-by-step
+### 2. Download and verify the signature
 
-1. **Decode base64**:
+```bash
+# Download both the binary and its signature
+wget https://github.com/eigenwallet/core/releases/download/3.1.3/eigenwallet_3.1.3_aarch64.dmg
+wget https://github.com/eigenwallet/core/releases/download/3.1.3/eigenwallet_3.1.3_aarch64.dmg.asc
 
-   ```bash
-   base64 -D -i UnstoppableSwap_2.0.0-beta.2_amd64.AppImage.sig \
-     > UnstoppableSwap_2.0.0-beta.2_amd64.AppImage.minisig
-   ```
+# Verify the signature
+gpg --verify eigenwallet_3.1.3_aarch64.dmg.asc eigenwallet_3.1.3_aarch64.dmg
+```
 
-   The new file will start with the classic two-line Minisign header:
+Successful verification shows something like this:
 
-   ```
-   untrusted comment: signature from tauri secret key
-   RURc8dYGEB0I…
-   trusted comment: timestamp:1749671728    file:UnstoppableSwap_2.0.0-beta.2_amd64.AppImage
-   4LKsm8VRcErR…
-   ```
-
-2. **Grab the public key** (two options):
-
-   *From code:* `tauri.conf.json → plugins.updater.pubkey`
-
-   ```bash
-   # prints raw 56-byte key
-   jq -r '.plugins.updater.pubkey' src-tauri/tauri.conf.json | base64 -D
-   ```
-
-   *or* copy the key from below:
-
-   ```text
-   RWRc8dYGEB0Ipl37n2fWnO3gtVgUoPkY6XUS0C1ppRsgRUYsmSGtcECA
-   ```
-
-4. **Verify the signature**:
-
-   ```bash
-   minisign -Vm UnstoppableSwap_2.0.0-beta.2_amd64.AppImage \
-            -x  UnstoppableSwap_2.0.0-beta.2_amd64.AppImage.minisig \
-            -P  RWRc8dYGEB0Ipl37n2fWnO3gtVgUoPkY6XUS0C1ppRsgRUYsmSGtcECA
-   ```
-
-   Expected output:
-
-   ```
-   Signature and comment signature verified
-   Trusted comment: timestamp:1749671728    file:UnstoppableSwap_2.0.0-beta.2_amd64.AppImage
-   ```
-
-## Troubleshooting cheatsheet
-
-| Symptom | Likely cause | Fix |
-| --- | --- | --- |
-| `Untrusted signature comment too long` | Fed Minisign the *outer* base64 file | Decode the `.sig` first (Step 1) |
-| `Signature mismatch` | Wrong public key | Re-extract the key from `tauri.conf.json` and make sure there’s no extra whitespace |
+```
+gpg: Signature made Sat Oct 11 20:26:07 2025 CEST
+gpg:                using RSA key 0518460FEBEC1DA14A155A7B44AE6F0B166AAD5A
+gpg: Good signature from "binarybaron-flatpak <binarybaron@protonmail.com>" [ultimate]
+```
