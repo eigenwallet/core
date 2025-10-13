@@ -505,6 +505,57 @@ pub async fn main() -> Result<()> {
             println!("Seed          : {seed}");
             println!("Restore height: {creation_height}");
         }
+        Command::ExportMoneroLockWallet { swap_id } => {
+            let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
+            let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, false).await?;
+
+            let swap_states = db
+                .get_states(swap_id)
+                .await
+                .context(format!("Error querying database for swap {swap_id}"))?;
+
+            if swap_states.is_empty() {
+                tracing::error!("No state save for this swap in the database");
+            }
+
+            tracing::info!(?swap_states, "Found swap states");
+
+            let state3 = swap_states
+                .iter()
+                .filter_map(|state| match state {
+                    State::Alice(AliceState::Started { state3 })
+                    | State::Alice(AliceState::BtcLocked { state3 })
+                    | State::Alice(AliceState::BtcLockTransactionSeen { state3 }) => {
+                        Some(state3.clone())
+                    }
+                    _ => None,
+                })
+                .next()
+                .context("Couldn't find state Started for this swap")?;
+
+            let secret_spend_key = match state3.watch_for_btc_tx_refund(&bitcoin_wallet).await {
+                Ok(secret) => secret,
+                Err(error) => {
+                    tracing::error!(
+                        ?error,
+                        "Could not extract refund secret from taker's refund transaction"
+                    );
+                    return Ok(());
+                }
+            };
+            let secret_view_key = state3.v;
+            let primary_address = {
+                let public_spend_key = monero::PublicKey::from_private_key(&secret_spend_key);
+                let public_view_key = monero::PublicKey::from_private_key(&secret_view_key.into());
+
+                monero::Address::standard(config.monero.network, public_spend_key, public_view_key)
+            };
+
+            println!("Retrieved the refund secret from taker's refund transaction. Below are the keys to the Monero lock wallet:
+private spend key: {secret_spend_key}
+private view key: {secret_view_key}
+primary address: {primary_address}");
+        }
     }
 
     Ok(())
