@@ -18,13 +18,13 @@ use libp2p::Swarm;
 use monero_sys::Daemon;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use serde::Serialize;
 use std::convert::TryInto;
 use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
-use swap::libp2p_ext::MultiAddrExt;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
@@ -465,6 +465,40 @@ pub async fn main() -> Result<()> {
             let (txid, _) = punish(swap_id, Arc::new(bitcoin_wallet), db).await?;
 
             tracing::info!("Punish transaction successfully published with id {}", txid);
+        }
+        Command::ExportCooperativeRedeemKey { swap_id } => {
+            let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
+
+            let state = db
+                .get_state(swap_id)
+                .await
+                .context("Failed to query database for swap state")?;
+
+            let (state3, transfer_proof) = match state {
+                State::Alice(AliceState::BtcPunished { state3, transfer_proof }) => (state3, transfer_proof),
+                State::Alice(otherwise) => bail!("Can't reveal cooperative redeem key because we haven't punished yet. Current state: {otherwise}"),
+                _ => bail!("Can't reveal cooperative redeem key because this is a Bob state")
+            };
+
+            // We need a small serialization wrapper around the Monero PrivateKeys
+            struct PrivateKeySerializationWrapper<'a>(&'a monero::PrivateKey);
+            impl<'a> Serialize for PrivateKeySerializationWrapper<'a> {
+                fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    swap_serde::monero::private_key::serialize(self.0, serializer)
+                }
+            }
+
+            let s_a = serde_json::to_string(&PrivateKeySerializationWrapper(
+                &monero::PrivateKey::from_scalar(state3.s_a),
+            ))?;
+            let txid = transfer_proof.tx_hash().0;
+            let txkey =
+                serde_json::to_string(&PrivateKeySerializationWrapper(&transfer_proof.tx_key()))?;
+
+            println!("Printing secret cooperative redeem key for swap {swap_id}.\ns_a: {s_a}\nlock transaction id: {txid}\nlock transaction key: {txkey}");
         }
         Command::SafelyAbort { swap_id } => {
             let db = open_db(db_file, AccessMode::ReadWrite, None).await?;

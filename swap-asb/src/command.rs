@@ -161,6 +161,16 @@ where
             env_config: env_config(testnet),
             cmd: Command::Punish { swap_id },
         },
+        RawCommand::ManualRecovery(ManualRecovery::ExportCooperativeRedeemKey { swap_id }) => {
+            Arguments {
+                testnet,
+                json,
+                trace,
+                config_path: config_path(config, testnet)?,
+                env_config: env_config(testnet),
+                cmd: Command::ExportCooperativeRedeemKey { swap_id },
+            }
+        }
         RawCommand::ManualRecovery(ManualRecovery::SafelyAbort { swap_id }) => Arguments {
             testnet,
             json,
@@ -248,6 +258,9 @@ pub enum Command {
         swap_id: Uuid,
     },
     SafelyAbort {
+        swap_id: Uuid,
+    },
+    ExportCooperativeRedeemKey {
         swap_id: Uuid,
     },
     ExportBitcoinWallet,
@@ -390,6 +403,14 @@ pub enum ManualRecovery {
     Punish {
         #[structopt(flatten)]
         punish_params: RecoverCommandParams,
+    },
+    #[structopt(about = "Export the cooperative redeem information manually.")]
+    ExportCooperativeRedeemKey {
+        #[structopt(
+            long = "swap-id",
+            help = "The swap id for which to releave the cooperative redeem information."
+        )]
+        swap_id: Uuid,
     },
     #[structopt(about = "Safely Abort requires the swap to be in a state prior to locking XMR.")]
     SafelyAbort {

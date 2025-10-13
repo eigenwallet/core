@@ -1025,10 +1025,10 @@
   dependencies:
     "@tauri-apps/api" "^2.6.0"
 
-"@tauri-apps/plugin-dialog@^2.0.0":
-  version "2.3.3"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/plugin-dialog/-/plugin-dialog-2.3.3.tgz#0bfd78f1f754157b39295a33826afd41f769f28f"
-  integrity sha512-cWXB9QJDbLIA0v7I5QY183awazBEQNPhp19iPvrMZoJRX8SbFkhWFx1/q7zy7xGpXXzxz29qtq6z21Ho7W5Iew==
+"@tauri-apps/plugin-dialog@2.4.0":
+  version "2.4.0"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/plugin-dialog/-/plugin-dialog-2.4.0.tgz#e37388bd3197f920a9975e323a105a75cb55d648"
+  integrity sha512-OvXkrEBfWwtd8tzVCEXIvRfNEX87qs2jv6SqmVPiHcJjBhSF/GUvjqUNIDmKByb5N8nvDqVUM7+g1sXwdC/S9w==
   dependencies:
     "@tauri-apps/api" "^2.8.0"
 
