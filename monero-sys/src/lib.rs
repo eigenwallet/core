@@ -886,21 +886,31 @@ impl WalletHandle {
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
-                let (txid, _) = pending_tx.validate_single_txid_single_tx_key().context(
-                    "Failed to validate PendingTransaction to have single txid and single tx key",
-                )?;
+                // Closure that returns (txid, amount, fee) or error
+                let result = (|| -> Result<(String, monero::Amount, monero::Amount), anyhow::Error> {
+                    let (txid, _) = pending_tx.validate_single_txid_single_tx_key()
+                        .context("Failed to validate PendingTransaction to have single txid and single tx key")?;
 
-                // Get the amount
-                let amount = ffi::pendingTransactionAmount(&pending_tx)
-                    .context("Failed to get amount from pending transaction")?;
-                let amount = monero::Amount::from_pico(amount);
+                    let amount = ffi::pendingTransactionAmount(&pending_tx)
+                        .context("Failed to get amount from pending transaction")?;
+                    let amount = monero::Amount::from_pico(amount);
 
-                // Get the fee
-                let fee = ffi::pendingTransactionFee(&pending_tx)
-                    .context("Failed to get fee from pending transaction")?;
-                let fee = monero::Amount::from_pico(fee);
+                    let fee = ffi::pendingTransactionFee(&pending_tx)
+                        .context("Failed to get fee from pending transaction")?;
+                    let fee = monero::Amount::from_pico(fee);
 
-                // Generate UUID and store it in the pending transactions map
+                    Ok((txid, amount, fee))
+                })();
+
+                // Dispose transaction and return error, or store and return success
+                let (txid, amount, fee) = match result {
+                    Ok(values) => values,
+                    Err(e) => {
+                        wallet.dispose_pending_transaction(pending_tx);
+                        return Err(e);
+                    }
+                };
+
                 let uuid = Uuid::new_v4();
                 pending_txs.insert(uuid, pending_tx);
 
@@ -913,43 +923,32 @@ impl WalletHandle {
         // Get approval asynchronously (no wallet thread blocking)
         let approved = approval_callback(txid, amount, fee).await;
 
-        if approved {
-            // Publish the transaction
-            let receipt = self
-                .call_with_pending_txs(move |wallet, pending_txs| {
-                    let mut pending_tx = pending_txs.remove(&uuid).ok_or_else(|| {
-                        anyhow!("Pending transaction not found for UUID: {}", uuid)
-                    })?;
-
-                    // Publish the transaction
-                    let result = wallet.publish_pending_transaction(&mut pending_tx);
-
-                    // Dispose the pending transaction after we're done with it
-                    // independent of whether the publish was successful or not
-                    wallet.dispose_pending_transaction(pending_tx);
-
-                    result
-                })
-                .await?;
-
-            Ok(Some((receipt, amount, fee)))
-        } else {
-            // Dispose the pending transaction without publishing
-            self.call_with_pending_txs(move |wallet, pending_txs| {
-                // Remove the pending transaction from the internal map
-                let pending_tx = pending_txs
+        let result = self
+            .call_with_pending_txs(move |wallet, pending_txs| {
+                let mut pending_tx = pending_txs
                     .remove(&uuid)
                     .ok_or_else(|| anyhow!("Pending transaction not found for UUID: {}", uuid))?;
 
-                // Dispose the pending transaction after we're done with it
+                // Publish the transaction
+                if approved {
+                    let receipt_result = wallet.publish_pending_transaction(&mut pending_tx);
+
+                    // Dispose the pending transaction independent of whether the publish was successful or not
+                    wallet.dispose_pending_transaction(pending_tx);
+
+                    let receipt = receipt_result?;
+
+                    return Ok(Some((receipt, amount, fee)));
+                }
+
+                // Dispose the pending transaction if the user didn't approve
                 wallet.dispose_pending_transaction(pending_tx);
 
-                Ok::<(), anyhow::Error>(())
+                Ok(None)
             })
-            .await?;
+            .await;
 
-            Ok(None)
-        }
+        result
     }
 
     /// Verify the password for a wallet at the given path.
