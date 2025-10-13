@@ -2468,6 +2468,12 @@ impl PendingTransaction {
             ),
         };
 
+        // Sanity check that the txid is at least the correct length
+        const EXPECTED_TXID_LENGTH: usize = 64; // 256 bits in hex is 64 characters
+        if txid.len() != EXPECTED_TXID_LENGTH {
+            anyhow::bail!("Expected txid to be {} characters, got {}", EXPECTED_TXID_LENGTH, txid.len());
+        }
+
         // This could theoretically return multiple tx keys as Monero does allow multiple tx keys for a single transaction
         // According to moneromoo, its non standard behavior though so wallet2 should never do this
         let_cxx_string!(txid_cxx = &txid);
