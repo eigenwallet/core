@@ -648,9 +648,23 @@ impl WalletHandle {
 
     /// Store the wallet state.
     /// If `path` is `None`, the wallet will be stored in the location it was opened from.
-    pub async fn store(&self, path: Option<&str>) {
-        let path = path.unwrap_or("").to_string();
-        self.call(move |wallet| wallet.store(&path)).await;
+    pub async fn store(&self, path: &str) -> anyhow::Result<()> {
+        let path = path.to_string();
+
+        self.call(move |wallet| wallet.store(&path))
+            .await
+            .context("Failed to store wallet: FFI call failed with exception")?;
+
+        Ok(())
+    }
+
+    /// Store the wallet state in the file it was opened from.
+    pub async fn store_in_current_file(&self) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.store_in_current_file())
+            .await
+            .context("Failed to store wallet in current file: FFI call failed with exception")?;
+
+        Ok(())
     }
 
     /// Get the sync progress of the wallet.
@@ -1740,13 +1754,25 @@ impl FfiWallet {
     }
 
     /// Store the wallet state.
-    fn store(&mut self, path: &str) {
+    fn store(&mut self, path: &str) -> anyhow::Result<()> {
         let_cxx_string!(path = path);
-        self.inner
+
+        let success = self
+            .inner
             .pinned()
             .store(&path)
-            .context("Failed to store wallet: FFI call failed with exception")
-            .expect("Shouldn't panic");
+            .context("Failed to store wallet: FFI call failed with exception")?;
+
+        if !success {
+            self.check_error().context("Failed to store wallet")?;
+        }
+
+        Ok(())
+    }
+
+    /// Store the wallet state in the current file.
+    fn store_in_current_file(&mut self) -> anyhow::Result<()> {
+        self.store("")
     }
 
     /// Start the background refresh thread (refreshes every 10 seconds).
@@ -2173,17 +2199,49 @@ impl FfiWallet {
         // Publish the transaction to the blockchain
         //
         // To ensure atomicity, this is the last step in this function
-        //
-        // TODO: We should retry here?
-        pending_tx
-            .publish()
-            .context("Failed to publish transaction")?;
+        const MAX_ATTEMPTS: usize = 5;
+        const RETRY_DELAY_MS: u64 = 250;
 
-        Ok(TxReceipt {
-            txid,
-            tx_key,
-            height,
-        })
+        for attempt in 0..MAX_ATTEMPTS {
+            match pending_tx
+                .publish()
+                .context("Failed to publish transaction")
+            {
+                Ok(_) => {
+                    // TODO: This is not a good place for this
+                    if let Err(error) = self.store_in_current_file() {
+                        tracing::error!(?error, "Failed to store wallet in current file after publishing transaction, continuing anyway because we must propagate the successfully published transaction to the caller to ensure transaction atomicity");
+                    }
+
+                    return Ok(TxReceipt {
+                        txid,
+                        tx_key,
+                        height,
+                    });
+                }
+                Err(error) => {
+                    if attempt == MAX_ATTEMPTS - 1 {
+                        tracing::error!(
+                            ?error,
+                            "Failed to publish transaction after {} attempts",
+                            MAX_ATTEMPTS
+                        );
+                        return Err(error);
+                    }
+
+                    tracing::error!(
+                        ?error,
+                        attempt = attempt + 1,
+                        "Failed to publish transaction, retrying"
+                    );
+
+                    std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS));
+                }
+            }
+        }
+
+        // We always return before reaching this
+        unreachable!()
     }
 
     /// Distribute the funds in the wallet to a set of addresses with a set of percentages,
@@ -2471,7 +2529,11 @@ impl PendingTransaction {
         // Sanity check that the txid is at least the correct length
         const EXPECTED_TXID_LENGTH: usize = 64; // 256 bits in hex is 64 characters
         if txid.len() != EXPECTED_TXID_LENGTH {
-            anyhow::bail!("Expected txid to be {} characters, got {}", EXPECTED_TXID_LENGTH, txid.len());
+            anyhow::bail!(
+                "Expected txid to be {} characters, got {}",
+                EXPECTED_TXID_LENGTH,
+                txid.len()
+            );
         }
 
         // This could theoretically return multiple tx keys as Monero does allow multiple tx keys for a single transaction

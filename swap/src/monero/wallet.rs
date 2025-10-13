@@ -134,7 +134,7 @@ impl TauriWalletListener {
                 let wallet = wallet.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
-                    wallet.store(None).await;
+                    wallet.store_in_current_file().await;
                 });
             }
         };
