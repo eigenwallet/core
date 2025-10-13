@@ -500,6 +500,7 @@ impl WalletHandle {
     /// wallet
     pub async fn sweep_multi_destination(
         &self,
+        // TOOD: Change this to &[(Address, f64)]
         addresses: &[monero::Address],
         percentages: &[f64],
     ) -> anyhow::Result<TxReceipt> {
@@ -1990,6 +1991,7 @@ impl FfiWallet {
     /// Sweep all funds to a set of addresses with a set of ratios.
     fn sweep_multi(
         &mut self,
+        // TOOD: Change this to &[(Address, f64)]
         addresses: &[monero::Address],
         ratios: &[f64],
     ) -> anyhow::Result<TxReceipt> {
