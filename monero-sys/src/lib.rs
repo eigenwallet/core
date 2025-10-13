@@ -2458,16 +2458,6 @@ impl PendingTransaction {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
 
-        // This can return multiple tx keys if wallet2 decided to split the transaction
-        // TODO: It can also maybe return multiple tx key even if we only have one transaction?
-        let tx_keys = ffi::pendingTransactionTxKeys(self)
-            .context(
-                "Failed to get tx key from pending transaction: FFI call failed with exception",
-            )?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-
         // Ensure it only created one transaction
         let txid = match txids.as_slice() {
             [txid] => txid.clone(),
@@ -2476,6 +2466,17 @@ impl PendingTransaction {
                 txids.len()
             ),
         };
+
+        // This could theoretically return multiple tx keys as Monero does allow multiple tx keys for a single transaction
+        // According to moneromoo, its non standard behavior though so wallet2 should never do this
+        let_cxx_string!(txid_cxx = &txid);
+        let tx_keys = ffi::pendingTransactionTxKeys(self, &txid_cxx)
+            .context(
+                "Failed to get tx key from pending transaction: FFI call failed with exception",
+            )?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
 
         // Ensure we only have one tx key
         // If we have multiple tx keys, we would need to create multiple transfer proofs

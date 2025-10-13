@@ -288,6 +288,7 @@ pub mod ffi {
         /// Get the transaction keys for each transaction within the pending set.
         fn pendingTransactionTxKeys(
             tx: &PendingTransaction,
+            tx_hash: &CxxString,
         ) -> Result<UniquePtr<CxxVector<CxxString>>>;
 
         /// Get the fee of a pending transaction.

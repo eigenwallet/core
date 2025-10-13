@@ -290,9 +290,9 @@ namespace Monero
         return static_cast<uint64_t>(tx_info.timestamp());
     }
 
-    inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxKeys(const PendingTransaction &tx)
+    inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxKeys(const PendingTransaction &tx, const std::string &tx_hash)
     {
-        auto keys = tx.txKeys();
+        auto keys = tx.txKeys(tx_hash);
         auto vec = std::make_unique<std::vector<std::string>>();
         vec->reserve(keys.size());
         for (auto &key : keys)
