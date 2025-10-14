@@ -7,12 +7,12 @@
 
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
-use throttle::{throttle, Throttle};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_simple_request_rpc::SimpleRequestRpc;
 use monero_sys::WalletEventListener;
 use std::{path::PathBuf, sync::Arc, time::Duration};
+use throttle::{throttle, Throttle};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 

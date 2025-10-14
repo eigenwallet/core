@@ -2807,10 +2807,10 @@ impl WalletHandleListener {
                 let rt = rt.clone();
 
                 rt.spawn(async move {
-                    tracing::trace!("Doing periodic storing of wallet to disk");
-
                     if let Err(error) = wallet.store_in_current_file().await {
-                        tracing::warn!(?error, "Failed to store wallet in current file");
+                        tracing::warn!(?error, "Storing the wallet upon an event failed");
+                    } else {
+                        tracing::trace!("Stored wallet to disk upon an event");
                     }
                 });
             }
@@ -2827,15 +2827,18 @@ impl WalletHandleListener {
 }
 
 impl WalletEventListener for WalletHandleListener {
-    fn on_money_spent(&self, _txid: &str, _amount: u64) {
+    fn on_money_spent(&self, txid: &str, amount: u64) {
+        tracing::trace!(%txid, %amount, "Queueing storing wallet because money was spent");
         self.store_job.call(());
     }
 
-    fn on_money_received(&self, _txid: &str, _amount: u64) {
+    fn on_money_received(&self, txid: &str, amount: u64) {
+        tracing::trace!(%txid, %amount, "Queueing storing wallet because money was received");
         self.store_job.call(());
     }
 
-    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+        tracing::trace!(%txid, %amount, "Queueing storing wallet because unconfirmed money was received");
         self.store_job.call(());
     }
 
@@ -2844,6 +2847,7 @@ impl WalletEventListener for WalletHandleListener {
     fn on_updated(&self) {}
 
     fn on_refreshed(&self) {
+        tracing::trace!("Queueing storing wallet because wallet was refreshed");
         self.store_job.call(());
 
         // When the wallet finishes refreshing, we start the refresh thread again.
