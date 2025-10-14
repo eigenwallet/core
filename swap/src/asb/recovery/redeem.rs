@@ -1,7 +1,7 @@
-use crate::bitcoin::Wallet;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
+use bitcoin_wallet::BitcoinWallet;
 use std::convert::TryInto;
 use std::sync::Arc;
 use swap_core::bitcoin::Txid;
@@ -24,7 +24,7 @@ impl Finality {
 
 pub async fn redeem(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database>,
     finality: Finality,
 ) -> Result<(Txid, AliceState)> {

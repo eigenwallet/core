@@ -1,4 +1,3 @@
-pub mod throttle;
 pub mod tor;
 pub mod tracing_util;
 

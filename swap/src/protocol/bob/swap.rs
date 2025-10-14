@@ -613,7 +613,7 @@ async fn next_state(
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::RedeemingMonero);
 
-            let xmr_redeem_txids = retry(
+            let xmr_redeem_txid = retry(
                 "Redeeming Monero",
                 || async {
                     state
@@ -631,7 +631,7 @@ async fn next_state(
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::XmrRedeemInMempool {
-                    xmr_redeem_txids,
+                    xmr_redeem_txids: vec![xmr_redeem_txid],
                     xmr_receive_pool: monero_receive_pool.clone(),
                 },
             );
@@ -878,11 +878,11 @@ async fn next_state(
                     .await
                     .context("Failed to redeem Monero")
                     {
-                        Ok(xmr_redeem_txids) => {
+                        Ok(xmr_redeem_txid) => {
                             event_emitter.emit_swap_progress_event(
                                 swap_id,
                                 TauriSwapProgressEvent::XmrRedeemInMempool {
-                                    xmr_redeem_txids,
+                                    xmr_redeem_txids: vec![xmr_redeem_txid],
                                     xmr_receive_pool: monero_receive_pool.clone(),
                                 },
                             );
@@ -964,7 +964,7 @@ trait XmrRedeemable {
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> Result<Vec<TxHash>>;
+    ) -> Result<TxHash>;
 }
 
 impl XmrRedeemable for State5 {
@@ -973,7 +973,7 @@ impl XmrRedeemable for State5 {
         monero_wallet: &monero::Wallets,
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
-    ) -> Result<Vec<TxHash>> {
+    ) -> Result<TxHash> {
         let (spend_key, view_key) = self.xmr_keys();
 
         tracing::info!(%swap_id, "Redeeming Monero from extracted keys");
@@ -996,19 +996,17 @@ impl XmrRedeemable for State5 {
 
         let main_address = monero_wallet.main_wallet().await.main_address().await;
 
-        let tx_hashes = wallet
+        let tx_hash = wallet
             .sweep_multi_destination(
                 &monero_receive_pool.fill_empty_addresses(main_address),
                 &monero_receive_pool.percentages(),
             )
             .await
             .context("Failed to redeem Monero")?
-            .into_iter()
-            .map(|tx_receipt| TxHash(tx_receipt.txid))
-            .collect();
+            .txid;
 
-        tracing::info!(%swap_id, txids=?tx_hashes, "Monero sweep completed");
+        tracing::info!(%swap_id, %tx_hash, "Monero sweep completed");
 
-        Ok(tx_hashes)
+        Ok(TxHash(tx_hash))
     }
 }

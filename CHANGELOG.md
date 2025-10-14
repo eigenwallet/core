@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Fixed a rare race condition where it would be possible for the Monero lock step to fail but the funds to still be transferred. This would require manual intervention to recover.
+- ASB: Periodically store the Monero wallet on certain events (receive money, spend money, refresh wallet) to avoid loss of metadata
+
 ## [3.1.3] - 2025-10-11
 
 - GUI + SWAP: Fix an issue where we would fail to redeem the Monero because the wallet was not fully synchronized.

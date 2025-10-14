@@ -70,6 +70,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Increases the number of RPC retries for wallet2::refresh from 3 to 10",
         "patches/eigenwallet_0002_wallet2_increase_rpc_retries.patch"
     ),
+    embedded_patch!(
+        "eigenwallet_0003_pendingTransaction_getTxKey",
+        "Adds txKeys() to PendingTransaction in wallet2_api.h",
+        "patches/eigenwallet_0003_pendingTransaction_getTxKey.patch"
+    ),
 ];
 
 fn main() {

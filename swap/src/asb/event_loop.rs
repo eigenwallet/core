@@ -30,7 +30,6 @@ use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_feed::LatestRate;
-use tokio::fs::{write, File};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 

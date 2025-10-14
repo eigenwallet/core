@@ -16,6 +16,7 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
+use throttle::Throttle;
 
 use std::sync::{Arc, Mutex};
 use std::{
@@ -495,8 +496,46 @@ impl WalletHandle {
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e:?}"))
     }
 
+    /// Sweep all funds to a set of addresses.
+    /// If the address is `None`, the address will be set to the primary address of the
+    /// wallet
+    pub async fn sweep_multi_destination(
+        &self,
+        // TOOD: Change this to &[(Address, f64)]
+        addresses: &[monero::Address],
+        percentages: &[f64],
+    ) -> anyhow::Result<TxReceipt> {
+        tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping to multiple destinations");
+
+        let percentages = percentages.to_vec();
+        let addresses = addresses.to_vec();
+
+        retry_notify(backoff(None, None), || async {
+            let addresses = addresses.clone();
+            let percentages = percentages.clone();
+
+            self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
+                .await
+                .map_err(backoff::Error::transient)
+        }, |error, duration: Duration| {
+            tracing::error!(error=?error, "Failed to sweep to multiple destinations, retrying in {} secs", duration.as_secs());
+        })
+        .await
+        .map_err(|e| anyhow!("Failed to sweep to multiple destinations after multiple attempts: {e:?}"))
+    }
+
     /// Sweep all funds to an address.
-    pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<Vec<TxReceipt>> {
+    pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
+        // TODO: This could call sweep_multi_destination under the hood?
+        //  however this here calls a completely different function in wallet2 (create_transactions_all instead of create_transactions_2)
+        //  I think there is a case to be made that going full in with our custom implementation is better
+        //  because the code will behave the same regardless of sweep or sweep_multi
+        //
+        // Ideally sweep(address) should behave the same as sweep_multi_destination([address, 1.0])
+        // currently this cannot be guaranteed however because sweep_multi_destination uses our own logic
+        // while sweep(..) delegated to wallet2
+        tracing::debug!(address=?address, "Sweeping to a single destination");
+
         let address = *address;
 
         retry_notify(backoff(None, None), || async {
@@ -518,23 +557,6 @@ impl WalletHandle {
     /// Get the creation height of the wallet.
     pub async fn creation_height(&self) -> u64 {
         self.call(move |wallet| wallet.creation_height()).await
-    }
-
-    /// Sweep all funds to a set of addresses.
-    /// If the address is `None`, the address will be set to the primary address of the
-    /// wallet
-    pub async fn sweep_multi_destination(
-        &self,
-        addresses: &[monero::Address],
-        percentages: &[f64],
-    ) -> anyhow::Result<Vec<TxReceipt>> {
-        tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping multi");
-
-        let percentages = percentages.to_vec();
-        let addresses = addresses.to_vec();
-
-        self.call(move |wallet| wallet.sweep_multi(&addresses, &percentages))
-            .await
     }
 
     /// Get the transaction history and convert it to a list of serializable transaction infos.
@@ -627,9 +649,23 @@ impl WalletHandle {
 
     /// Store the wallet state.
     /// If `path` is `None`, the wallet will be stored in the location it was opened from.
-    pub async fn store(&self, path: Option<&str>) {
-        let path = path.unwrap_or("").to_string();
-        self.call(move |wallet| wallet.store(&path)).await;
+    pub async fn store(&self, path: &str) -> anyhow::Result<()> {
+        let path = path.to_string();
+
+        self.call(move |wallet| wallet.store(&path))
+            .await
+            .context("Failed to store wallet: FFI call failed with exception")?;
+
+        Ok(())
+    }
+
+    /// Store the wallet state in the file it was opened from.
+    pub async fn store_in_current_file(&self) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.store_in_current_file())
+            .await
+            .context("Failed to store wallet in current file: FFI call failed with exception")?;
+
+        Ok(())
     }
 
     /// Get the sync progress of the wallet.
@@ -858,29 +894,38 @@ impl WalletHandle {
         // Store the pending transaction in the wallet thread inside the [`pending_txs`] map
         let (uuid, txid, amount, fee) = self
             .call_with_pending_txs(move |wallet, pending_txs| {
-                let pending_tx = match amount {
+                let mut pending_tx = match amount {
                     Some(amount) => {
                         wallet.create_pending_transaction_single_dest(&address, amount)?
                     }
                     None => wallet.create_pending_sweep_transaction(&address)?,
                 };
 
-                // Get txid
-                let txid = ffi::pendingTransactionTxId(&pending_tx)
-                    .context("Failed to get txid from pending transaction")?
-                    .to_string();
+                // Closure that returns (txid, amount, fee) or error
+                let result = (|| -> Result<(String, monero::Amount, monero::Amount), anyhow::Error> {
+                    let (txid, _) = pending_tx.validate_single_txid_single_tx_key()
+                        .context("Failed to validate PendingTransaction to have single txid and single tx key")?;
 
-                // Get the amount
-                let amount = ffi::pendingTransactionAmount(&pending_tx)
-                    .context("Failed to get amount from pending transaction")?;
-                let amount = monero::Amount::from_pico(amount);
+                    let amount = ffi::pendingTransactionAmount(&pending_tx)
+                        .context("Failed to get amount from pending transaction")?;
+                    let amount = monero::Amount::from_pico(amount);
 
-                // Get the fee
-                let fee = ffi::pendingTransactionFee(&pending_tx)
-                    .context("Failed to get fee from pending transaction")?;
-                let fee = monero::Amount::from_pico(fee);
+                    let fee = ffi::pendingTransactionFee(&pending_tx)
+                        .context("Failed to get fee from pending transaction")?;
+                    let fee = monero::Amount::from_pico(fee);
 
-                // Generate UUID and store it in the pending transactions map
+                    Ok((txid, amount, fee))
+                })();
+
+                // Dispose transaction and return error, or store and return success
+                let (txid, amount, fee) = match result {
+                    Ok(values) => values,
+                    Err(e) => {
+                        wallet.dispose_pending_transaction(pending_tx);
+                        return Err(e);
+                    }
+                };
+
                 let uuid = Uuid::new_v4();
                 pending_txs.insert(uuid, pending_tx);
 
@@ -893,35 +938,32 @@ impl WalletHandle {
         // Get approval asynchronously (no wallet thread blocking)
         let approved = approval_callback(txid, amount, fee).await;
 
-        if approved {
-            // Publish the transaction
-            let receipt = self
-                .call_with_pending_txs(move |wallet, pending_txs| {
-                    let mut pending_tx = pending_txs.remove(&uuid).ok_or_else(|| {
-                        anyhow!("Pending transaction not found for UUID: {}", uuid)
-                    })?;
-
-                    let result = wallet.publish_pending_transaction(&mut pending_tx);
-                    wallet.dispose_pending_transaction(pending_tx);
-                    result
-                })
-                .await?;
-
-            Ok(Some((receipt, amount, fee)))
-        } else {
-            // Dispose the pending transaction without publishing
-            self.call_with_pending_txs(move |wallet, pending_txs| {
-                let pending_tx = pending_txs
+        let result = self
+            .call_with_pending_txs(move |wallet, pending_txs| {
+                let mut pending_tx = pending_txs
                     .remove(&uuid)
                     .ok_or_else(|| anyhow!("Pending transaction not found for UUID: {}", uuid))?;
 
-                wallet.dispose_pending_transaction(pending_tx);
-                Ok::<(), anyhow::Error>(())
-            })
-            .await?;
+                // Publish the transaction
+                if approved {
+                    let receipt_result = wallet.publish_pending_transaction(&mut pending_tx);
 
-            Ok(None)
-        }
+                    // Dispose the pending transaction independent of whether the publish was successful or not
+                    wallet.dispose_pending_transaction(pending_tx);
+
+                    let receipt = receipt_result?;
+
+                    return Ok(Some((receipt, amount, fee)));
+                }
+
+                // Dispose the pending transaction if the user didn't approve
+                wallet.dispose_pending_transaction(pending_tx);
+
+                Ok(None)
+            })
+            .await;
+
+        result
     }
 
     /// Verify the password for a wallet at the given path.
@@ -1713,13 +1755,25 @@ impl FfiWallet {
     }
 
     /// Store the wallet state.
-    fn store(&mut self, path: &str) {
+    fn store(&mut self, path: &str) -> anyhow::Result<()> {
         let_cxx_string!(path = path);
-        self.inner
+
+        let success = self
+            .inner
             .pinned()
             .store(&path)
-            .context("Failed to store wallet: FFI call failed with exception")
-            .expect("Shouldn't panic");
+            .context("Failed to store wallet: FFI call failed with exception")?;
+
+        if !success {
+            self.check_error().context("Failed to store wallet")?;
+        }
+
+        Ok(())
+    }
+
+    /// Store the wallet state in the current file.
+    fn store_in_current_file(&mut self) -> anyhow::Result<()> {
+        self.store("")
     }
 
     /// Start the background refresh thread (refreshes every 10 seconds).
@@ -1939,6 +1993,83 @@ impl FfiWallet {
         Ok(())
     }
 
+    /// Sweep all funds from the wallet to a specified address.
+    /// Returns a list of transaction ids of the created transactions.
+    fn sweep(&mut self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
+        self.ensure_synchronized_blocking()
+            .context("Cannot sweep when wallet is not synchronized")?;
+
+        // Construct the sweep transaction
+        let mut pending_tx = self.create_pending_sweep_transaction(&address)?;
+
+        // Publish the transaction
+        let result = self
+            .publish_pending_transaction(&mut pending_tx)
+            .context("Failed to publish sweep transaction");
+
+        // Dispose the pending transaction after we're done with it
+        // independent of whether the publish was successful or not
+        self.dispose_pending_transaction(pending_tx);
+
+        result
+    }
+
+    /// Sweep all funds to a set of addresses with a set of ratios.
+    fn sweep_multi(
+        &mut self,
+        // TOOD: Change this to &[(Address, f64)]
+        addresses: &[monero::Address],
+        ratios: &[f64],
+    ) -> anyhow::Result<TxReceipt> {
+        self.ensure_synchronized_blocking()
+            .context("Cannot multi-sweep when wallet is not synchronized")?;
+
+        if addresses.is_empty() {
+            bail!("No addresses to sweep to");
+        }
+
+        if addresses.len() != ratios.len() {
+            bail!("Number of addresses and ratios must match");
+        }
+
+        tracing::info!(
+            "Sweeping funds to {} addresses, refreshing wallet first",
+            addresses.len()
+        );
+
+        let balance = self.unlocked_balance();
+
+        // Since we're using "subtract fee from outputs", we distribute the full balance
+        // The underlying transaction creation will subtract the fee proportionally from each output
+        let amounts = FfiWallet::distribute(balance, ratios)?;
+
+        tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
+
+        // Build destinations vector for create_pending_transaction_multi_dest
+        let destinations: Vec<(monero::Address, monero::Amount)> = addresses
+            .iter()
+            .zip(amounts.iter())
+            .map(|(addr, &amount)| (addr.clone(), amount))
+            .collect();
+
+        // Create the multi-sweep pending transaction using the shared function
+        // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
+        let mut pending_tx = self
+            .create_pending_transaction_multi_dest(&destinations, true)
+            .context("Failed to create multi-sweep transaction")?;
+
+        // Publish the transaction
+        let result = self
+            .publish_pending_transaction(&mut pending_tx)
+            .context("Failed to publish multi-sweep transaction");
+
+        // Dispose the pending transaction after we're done with it
+        // independent of whether the publish was successful or not
+        self.dispose_pending_transaction(pending_tx);
+
+        result
+    }
+
     /// Transfer specified amounts of monero to multiple addresses in a single transaction and return a receipt containing
     /// the transaction id, transaction key and current blockchain height. This can be used later
     /// to prove the transfer or to wait for confirmations.
@@ -1949,9 +2080,16 @@ impl FfiWallet {
         self.ensure_synchronized_blocking()
             .context("Cannot transfer when wallet is not synchronized")?;
 
+        // Construct the pending transaction
         let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
+
+        // Publish the transaction
         let result = self.publish_pending_transaction(&mut pending_tx);
+
+        // Dispose the pending transaction after we're done with it
+        // independent of whether the publish was successful or not
         self.dispose_pending_transaction(pending_tx);
+
         result
     }
 
@@ -1962,18 +2100,10 @@ impl FfiWallet {
         address: &monero::Address,
         amount: monero::Amount,
     ) -> anyhow::Result<PendingTransaction> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot construct transaction when wallet is not synchronized")?;
-
-        let_cxx_string!(address_str = address.to_string());
-        let amount_pico = amount.as_pico();
-
-        let pending_tx = PendingTransaction(
-            ffi::createTransaction(self.inner.pinned(), &address_str, amount_pico)
-                .context("Failed to create transaction: FFI call failed with exception")?,
-        );
-
-        Ok(pending_tx)
+        // This is just a wrapper around the function that creates a multi-destination transaction
+        // This is what wallet2 does under the hood:
+        // https://github.com/SNeedlewoods/seraphis_wallet/blob/dbbccecc89e1121762a4ad6b531638ece82aa0c7/src/wallet/api/wallet.cpp#L1952
+        self.create_pending_transaction_multi_dest(&[(*address, amount)], false)
     }
 
     /// Create a pending transaction that spends to multiple destinations without publishing it.
@@ -2056,174 +2186,58 @@ impl FfiWallet {
         &mut self,
         pending_tx: &mut PendingTransaction,
     ) -> anyhow::Result<TxReceipt> {
-        // Get the txid from the pending transaction before we publish
-        let txid = ffi::pendingTransactionTxId(pending_tx)
-            .context("Failed to get txid from pending transaction: FFI call failed with exception")?
-            .to_string();
-
-        // Publish the transaction
-        pending_tx
-            .publish()
-            .context("Failed to publish transaction")?;
-
-        // Fetch the tx key from the wallet
-        let_cxx_string!(txid_cxx = txid.clone());
-        let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
-            .context("Failed to get tx key from wallet: FFI call failed with exception")?
-            .to_string();
+        // Ensure the transaction only has a single txid and tx key
+        //
+        // We forbid splitting transactions. We forbid multiple tx keys.
+        let (txid, tx_key) = pending_tx.validate_single_txid_single_tx_key().context(
+            "Failed to ensure transaction has one txid and one tx key before publishing",
+        )?;
 
         // Get current blockchain height
+        // We do this before publishing incase this causes a panic
         let height = self.blockchain_height();
 
-        Ok(TxReceipt {
-            txid,
-            tx_key,
-            height,
-        })
-    }
+        // Publish the transaction to the blockchain
+        //
+        // To ensure atomicity, this is the last step in this function
+        const MAX_ATTEMPTS: usize = 5;
+        const RETRY_DELAY_MS: u64 = 250;
 
-    /// Dispose of a pending transaction to free memory.
-    fn dispose_pending_transaction(&mut self, pending_tx: PendingTransaction) {
-        self.dispose_transaction(pending_tx);
-    }
+        for attempt in 0..MAX_ATTEMPTS {
+            match pending_tx
+                .publish()
+                .context("Failed to publish transaction")
+            {
+                Ok(_) => {
+                    return Ok(TxReceipt {
+                        txid,
+                        tx_key,
+                        height,
+                    });
+                }
+                Err(error) => {
+                    if attempt == MAX_ATTEMPTS - 1 {
+                        tracing::error!(
+                            ?error,
+                            "Failed to publish transaction after {} attempts",
+                            MAX_ATTEMPTS
+                        );
+                        return Err(error);
+                    }
 
-    /// Sweep all funds from the wallet to a specified address.
-    /// Returns a list of transaction ids of the created transactions.
-    fn sweep(&mut self, address: &monero::Address) -> anyhow::Result<Vec<TxReceipt>> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot sweep when wallet is not synchronized")?;
+                    tracing::error!(
+                        ?error,
+                        attempt = attempt + 1,
+                        "Failed to publish transaction, retrying"
+                    );
 
-        let_cxx_string!(address = address.to_string());
-
-        // Create the sweep transaction
-        let mut pending_tx = PendingTransaction(
-            ffi::createSweepTransaction(self.inner.pinned(), &address)
-                .context("Failed to create sweep transaction: FFI call failed with exception")?,
-        );
-
-        // Get the txids from the pending transaction before we publish,
-        // otherwise it might be null.
-        let txids: Vec<String> = ffi::pendingTransactionTxIds(&pending_tx)
-            .context("Failed to get txids of pending transaction: FFI call failed with exception")?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        // Publish the transaction
-        let result = pending_tx
-            .publish()
-            .context("Failed to publish transaction");
-
-        // Dispose of the transaction to avoid leaking memory.
-        self.dispose_transaction(pending_tx);
-
-        // Check for errors only after cleaning up the memory.
-        result.context("Failed to publish transaction")?;
-
-        // Get the receipts for the transactions.
-        let mut receipts = Vec::new();
-
-        for txid in txids {
-            let_cxx_string!(txid_cxx = &txid);
-
-            let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
-                .context("Failed to get tx key from wallet: FFI call failed with exception")?
-                .to_string();
-
-            let height = self.blockchain_height();
-
-            receipts.push(TxReceipt {
-                txid: txid.clone(),
-                tx_key,
-                height,
-            });
+                    std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS));
+                }
+            }
         }
 
-        Ok(receipts)
-    }
-
-    /// Sweep all funds to a set of addresses with a set of ratios.
-    fn sweep_multi(
-        &mut self,
-        addresses: &[monero::Address],
-        ratios: &[f64],
-    ) -> anyhow::Result<Vec<TxReceipt>> {
-        self.ensure_synchronized_blocking()
-            .context("Cannot multi-sweep when wallet is not synchronized")?;
-
-        if addresses.is_empty() {
-            bail!("No addresses to sweep to");
-        }
-
-        if addresses.len() != ratios.len() {
-            bail!("Number of addresses and ratios must match");
-        }
-
-        tracing::info!(
-            "Sweeping funds to {} addresses, refreshing wallet first",
-            addresses.len()
-        );
-
-        let balance = self.unlocked_balance();
-
-        // Since we're using "subtract fee from outputs", we distribute the full balance
-        // The underlying transaction creation will subtract the fee proportionally from each output
-        let amounts = FfiWallet::distribute(balance, ratios)?;
-
-        tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
-
-        // Build destinations vector for create_pending_transaction_multi_dest
-        let destinations: Vec<(monero::Address, monero::Amount)> = addresses
-            .iter()
-            .zip(amounts.iter())
-            .map(|(addr, &amount)| (addr.clone(), amount))
-            .collect();
-
-        // Create the multi-sweep pending transaction using the shared function
-        // Use subtract_fee_from_outputs=true since we're sweeping and want to distribute the full balance
-        let mut pending_tx = self
-            .create_pending_transaction_multi_dest(&destinations, true)
-            .context("Failed to create multi-sweep transaction")?;
-
-        // Get the txids from the pending transaction before we publish,
-        // otherwise it might be null.
-        let txids: Vec<String> = ffi::pendingTransactionTxIds(&pending_tx)
-            .context("Failed to get txids of pending transaction: FFI call failed with exception")?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
-
-        // Publish the transaction
-        let result = pending_tx
-            .publish()
-            .context("Failed to publish transaction");
-
-        // Dispose of the transaction to avoid leaking memory.
-        self.dispose_transaction(pending_tx);
-
-        // Check for errors only after cleaning up the memory.
-        result.context("Failed to publish transaction")?;
-
-        // Get the receipts for the transactions.
-        let mut receipts = Vec::new();
-
-        for txid in txids {
-            let_cxx_string!(txid_cxx = &txid);
-
-            let tx_key = ffi::walletGetTxKey(&self.inner, &txid_cxx)
-                .context("Failed to get tx key from wallet: FFI call failed with exception")?
-                .to_string();
-
-            let height = self.blockchain_height();
-
-            receipts.push(TxReceipt {
-                txid: txid.clone(),
-                tx_key,
-                height,
-            });
-        }
-
-        Ok(receipts)
+        // We always return before reaching this
+        unreachable!()
     }
 
     /// Distribute the funds in the wallet to a set of addresses with a set of percentages,
@@ -2333,7 +2347,7 @@ impl FfiWallet {
     /// Dispose (deallocate) a pending transaction object.
     /// Always call this before dropping a pending transaction object,
     /// otherwise we leak memory.
-    fn dispose_transaction(&mut self, tx: PendingTransaction) {
+    fn dispose_pending_transaction(&mut self, tx: PendingTransaction) {
         // Safety: we pass a valid pointer and we verified it's not used again since PendingTransaction is moved into this function
         unsafe {
             self.inner
@@ -2487,6 +2501,69 @@ impl PendingTransaction {
                     "Failed to commit transaction to blockchain"
                 )))
         }
+    }
+
+    fn validate_single_txid_single_tx_key(
+        self: &mut Self,
+    ) -> Result<(String, String), anyhow::Error> {
+        // This can return multiple txids if wallet2 decided to split the transaction
+        let txids = ffi::pendingTransactionTxIds(self)
+            .context("Failed to get txid from pending transaction: FFI call failed with exception")?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        // Ensure it only created one transaction
+        let txid = match txids.as_slice() {
+            [txid] => txid.clone(),
+            _ => anyhow::bail!(
+                "Expected 1 txid, got {}. We do not allow splitting transactions",
+                txids.len()
+            ),
+        };
+
+        // Sanity check that the txid is at least the correct length
+        const EXPECTED_TXID_LENGTH: usize = 64; // 256 bits in hex is 64 characters
+        if txid.len() != EXPECTED_TXID_LENGTH {
+            anyhow::bail!(
+                "Expected txid to be {} characters, got {}",
+                EXPECTED_TXID_LENGTH,
+                txid.len()
+            );
+        }
+
+        // This could theoretically return multiple tx keys as Monero does allow multiple tx keys for a single transaction
+        // According to moneromoo, its non standard behavior though so wallet2 should never do this
+        let_cxx_string!(txid_cxx = &txid);
+        let tx_keys = ffi::pendingTransactionTxKeys(self, &txid_cxx)
+            .context(
+                "Failed to get tx key from pending transaction: FFI call failed with exception",
+            )?
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+
+        // Ensure we only have one tx key
+        // If we have multiple tx keys, we would need to create multiple transfer proofs
+        let tx_key = match tx_keys.as_slice() {
+            [key] => key.clone(),
+            _ => anyhow::bail!(
+                "Expected 1 tx key, got {}. We do not allow splitting transactions",
+                tx_keys.len()
+            ),
+        };
+
+        // Ensure we didn't get junk from wallet2
+        {
+            monero::PrivateKey::from_str(&tx_key)
+                .with_context(|| format!("Invalid tx key: {tx_key}"))?;
+
+            if txid.is_empty() {
+                anyhow::bail!("Got an empty txid");
+            }
+        }
+
+        Ok((txid, tx_key))
     }
 }
 
@@ -2701,34 +2778,82 @@ impl Deref for TransactionInfoHandle {
     }
 }
 
+/// This listener does things on certain events like storing the wallet to disk.
+/// This is supposed to improve upon the behaviour of wallet2
 pub struct WalletHandleListener {
-    handle: Arc<WalletHandle>,
+    wallet: Arc<WalletHandle>,
+    /// We need a handle to the runtime to be able to spawn tasks
     rt_handle: tokio::runtime::Handle,
+    /// We throttle the saving of the wallet to disk to avoid storing the wallet too often
+    /// Storing can take a little bit of time and there is also no point in doing it super often
+    store_job: Throttle<()>,
 }
 
 impl WalletHandleListener {
-    pub fn new(handle: Arc<WalletHandle>) -> Self {
+    /// Store the wallet at most every 2 minutes
+    const STORE_WALLET_THROTTLE: Duration = Duration::from_millis(2 * 60 * 1000);
+
+    pub fn new(wallet: Arc<WalletHandle>) -> Self {
+        // Get the current runtime handle
         let rt_handle = tokio::runtime::Handle::current();
-        Self { handle, rt_handle }
+
+        // Create a throttle wrapper around the save job
+        let store_job = {
+            let wallet = wallet.clone();
+            let rt = rt_handle.clone();
+
+            move |()| {
+                let wallet = wallet.clone();
+                let rt = rt.clone();
+
+                rt.spawn(async move {
+                    if let Err(error) = wallet.store_in_current_file().await {
+                        tracing::warn!(?error, "Storing the wallet upon an event failed");
+                    } else {
+                        tracing::trace!("Stored wallet to disk upon an event");
+                    }
+                });
+            }
+        };
+
+        use throttle::throttle;
+
+        Self {
+            wallet,
+            rt_handle,
+            store_job: throttle(store_job, Self::STORE_WALLET_THROTTLE),
+        }
     }
 }
 
 impl WalletEventListener for WalletHandleListener {
-    fn on_money_spent(&self, _txid: &str, _amount: u64) {}
+    fn on_money_spent(&self, txid: &str, amount: u64) {
+        tracing::trace!(%txid, %amount, "Queueing storing wallet because money was spent");
+        self.store_job.call(());
+    }
 
-    fn on_money_received(&self, _txid: &str, _amount: u64) {}
+    fn on_money_received(&self, txid: &str, amount: u64) {
+        tracing::trace!(%txid, %amount, "Queueing storing wallet because money was received");
+        self.store_job.call(());
+    }
 
-    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {}
+    fn on_unconfirmed_money_received(&self, txid: &str, amount: u64) {
+        tracing::trace!(%txid, %amount, "Queueing storing wallet because unconfirmed money was received");
+        self.store_job.call(());
+    }
 
     fn on_new_block(&self, _height: u64) {}
 
     fn on_updated(&self) {}
 
     fn on_refreshed(&self) {
+        tracing::trace!("Queueing storing wallet because wallet was refreshed");
+        self.store_job.call(());
+
         // When the wallet finishes refreshing, we start the refresh thread again.
         // The purpose of this is to ensure that if the user does a rescan (restore height changed)
         // We start the refresh thread again after the rescan is complete.
-        let handle = self.handle.clone();
+        let handle = self.wallet.clone();
         self.rt_handle.spawn(async move {
             handle.start_refresh_thread().await;
         });

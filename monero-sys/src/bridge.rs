@@ -258,13 +258,6 @@ pub mod ffi {
         /// Scan for a specified list of transactions.
         fn scanTransaction(wallet: Pin<&mut Wallet>, tx_id: &CxxString) -> Result<bool>;
 
-        /// Create a new transaction.
-        fn createTransaction(
-            wallet: Pin<&mut Wallet>,
-            dest_address: &CxxString,
-            amount: u64,
-        ) -> Result<*mut PendingTransaction>;
-
         /// Create a sweep transaction.
         fn createSweepTransaction(
             wallet: Pin<&mut Wallet>,
@@ -287,12 +280,15 @@ pub mod ffi {
         /// Get the error string of a pending transaction.
         fn pendingTransactionErrorString(tx: &PendingTransaction) -> Result<UniquePtr<CxxString>>;
 
-        /// Get the first transaction id of a pending transaction (if any).
-        fn pendingTransactionTxId(tx: &PendingTransaction) -> Result<UniquePtr<CxxString>>;
-
         /// Get all transaction ids of a pending transaction.
         fn pendingTransactionTxIds(
             tx: &PendingTransaction,
+        ) -> Result<UniquePtr<CxxVector<CxxString>>>;
+
+        /// Get the transaction keys for each transaction within the pending set.
+        fn pendingTransactionTxKeys(
+            tx: &PendingTransaction,
+            tx_hash: &CxxString,
         ) -> Result<UniquePtr<CxxVector<CxxString>>>;
 
         /// Get the fee of a pending transaction.
