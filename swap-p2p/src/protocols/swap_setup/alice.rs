@@ -54,6 +54,25 @@ pub struct WalletSnapshot {
     punish_fee: bitcoin::Amount,
 }
 
+impl WalletSnapshot {
+    pub fn new(
+        unlocked_balance: swap_core::monero::Amount,
+        redeem_address: bitcoin::Address,
+        punish_address: bitcoin::Address,
+        redeem_fee: bitcoin::Amount,
+        punish_fee: bitcoin::Amount,
+    ) -> Self {
+        Self {
+            unlocked_balance,
+            lock_fee: swap_core::monero::CONSERVATIVE_MONERO_FEE,
+            redeem_address,
+            punish_address,
+            redeem_fee,
+            punish_fee,
+        }
+    }
+}
+
 impl From<OutEvent> for out_event::alice::OutEvent {
     fn from(event: OutEvent) -> Self {
         match event {

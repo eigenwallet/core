@@ -11187,6 +11187,7 @@ dependencies = [
  "url",
  "uuid",
  "vergen-git2",
+ "void",
  "zeroize",
  "zip 0.5.13",
 ]

@@ -1,4 +1,5 @@
 use libp2p::{PeerId, request_response::{InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel}};
+use libp2p::{identify, ping};
 use uuid::Uuid;
 
 use crate::protocols::{cooperative_xmr_redeem_after_punish, encrypted_signature, quote::BidQuote, swap_setup};
@@ -71,5 +72,24 @@ impl OutEvent {
             peer,
             error: anyhow::anyhow!("Unexpected response received"),
         }
+    }
+}
+
+// Some other behaviours which are not worth their own module
+impl From<ping::Event> for OutEvent {
+    fn from(_: ping::Event) -> Self {
+        OutEvent::Other
+    }
+}
+
+impl From<identify::Event> for OutEvent {
+    fn from(_: identify::Event) -> Self {
+        OutEvent::Other
+    }
+}
+
+impl From<libp2p::rendezvous::client::Event> for OutEvent {
+    fn from(e: libp2p::rendezvous::client::Event) -> Self {
+        OutEvent::Rendezvous(e)
     }
 }

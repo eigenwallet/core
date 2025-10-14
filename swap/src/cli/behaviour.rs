@@ -17,6 +17,7 @@ use libp2p::{identify, identity, ping, PeerId};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
+pub use swap_p2p::out_event::bob::OutEvent;
 
 /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Bob.
 #[derive(NetworkBehaviour)]
@@ -66,17 +67,5 @@ impl Behaviour {
             ping: ping::Behaviour::new(pingConfig),
             identify: identify::Behaviour::new(identifyConfig),
         }
-    }
-}
-
-impl From<ping::Event> for OutEvent {
-    fn from(_: ping::Event) -> Self {
-        OutEvent::Other
-    }
-}
-
-impl From<identify::Event> for OutEvent {
-    fn from(_: identify::Event) -> Self {
-        OutEvent::Other
     }
 }

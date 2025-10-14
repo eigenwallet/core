@@ -176,23 +176,6 @@ pub mod behaviour {
         }
     }
 
-    impl From<ping::Event> for OutEvent {
-        fn from(_: ping::Event) -> Self {
-            OutEvent::Other
-        }
-    }
-
-    impl From<identify::Event> for OutEvent {
-        fn from(_: identify::Event) -> Self {
-            OutEvent::Other
-        }
-    }
-
-    impl From<libp2p::rendezvous::client::Event> for OutEvent {
-        fn from(event: libp2p::rendezvous::client::Event) -> Self {
-            OutEvent::Rendezvous(event)
-        }
-    }
 }
 
 pub mod rendezvous {

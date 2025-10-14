@@ -135,9 +135,3 @@ impl NetworkBehaviour for Behaviour {
         unreachable!("The re-dial dummy connection handler does not produce any events");
     }
 }
-
-impl From<()> for cli::OutEvent {
-    fn from(_: ()) -> Self {
-        Self::Other
-    }
-}

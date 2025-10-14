@@ -1,11 +1,12 @@
-pub mod cooperative_xmr_redeem_after_punish;
-pub mod encrypted_signature;
-pub mod quote;
+pub use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
+pub use swap_p2p::protocols::encrypted_signature;
+pub use swap_p2p::protocols::quote;
+pub use swap_p2p::protocols::rendezvous;
+pub use swap_p2p::protocols::swap_setup;
+pub use swap_p2p::protocols::transfer_proof;
+
 pub mod redial;
-pub mod rendezvous;
-pub mod swap_setup;
 pub mod swarm;
-pub mod transfer_proof;
 pub mod transport;
 
 #[cfg(test)]
