@@ -531,7 +531,7 @@ mod builder {
                 );
                 tracing::info!(
                     binary = "cli",
-                    version = env!("VERGEN_GIT_DESCRIBE"),
+                    version = env!("CARGO_PKG_VERSION"),
                     os = std::env::consts::OS,
                     arch = std::env::consts::ARCH,
                     "Setting up context"

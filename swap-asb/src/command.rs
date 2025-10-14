@@ -272,7 +272,7 @@ pub enum Command {
     name = "asb",
     about = "Automated Swap Backend for swapping XMR for BTC",
     author,
-    version = env!("VERGEN_GIT_DESCRIBE")
+    version = env!("CARGO_PKG_VERSION")
 )]
 pub struct RawArguments {
     #[structopt(long, help = "Swap on testnet")]
