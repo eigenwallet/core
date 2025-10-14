@@ -7,7 +7,7 @@
 
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
-use crate::common::throttle::{throttle, Throttle};
+use throttle::{throttle, Throttle};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_simple_request_rpc::SimpleRequestRpc;
@@ -50,14 +50,12 @@ struct TauriWalletListener {
     balance_throttle: Throttle<()>,
     history_throttle: Throttle<()>,
     sync_throttle: Throttle<()>,
-    save_throttle: Throttle<()>,
 }
 
 impl TauriWalletListener {
     const BALANCE_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const HISTORY_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const SYNC_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
-    const SAVE_UPDATE_THROTTLE: Duration = Duration::from_millis(60 * 1000);
 
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
@@ -144,10 +142,6 @@ impl TauriWalletListener {
 
     fn send_sync_progress(&self) {
         self.sync_throttle.call(());
-    }
-
-    fn save_wallet(&self) {
-        self.save_throttle.call(());
     }
 }
 
