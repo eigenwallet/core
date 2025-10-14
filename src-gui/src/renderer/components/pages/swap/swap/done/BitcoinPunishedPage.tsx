@@ -25,7 +25,9 @@ export default function BitcoinPunishedPage({
     | TauriSwapProgressEventExt<"BtcPunished">
     | TauriSwapProgressEventExt<"CooperativeRedeemRejected">;
 }) {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(
+    state.type === "CooperativeRedeemRejected",
+  );
 
   return (
     <>
@@ -47,7 +49,7 @@ export default function BitcoinPunishedPage({
       <FeedbackInfoBox />
       <ManualCoopRedeemModal
         open={modalOpen}
-        onClose={() => setModalOpen(true)}
+        onClose={() => setModalOpen(false)}
       />
     </>
   );
@@ -108,7 +110,7 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
         </Typography>
 
         <TextField
-          label={"Cooperative Redeem Key"}
+          label={"Cooperative Redeem Key (s_a)"}
           onChange={(e) => setKey(e.target.value)}
         />
         <TextField
@@ -131,7 +133,7 @@ function ManualCoopRedeemModal({ open, onClose }: ManualCoopRedeemModalProps) {
             onClick={handleAttempt}
             disabled={inProgress}
           >
-            Attempt
+            Attempt cooperative redeem
           </Button>
         </Box>
       </DialogActions>
