@@ -16,6 +16,7 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
+use throttle::Throttle;
 
 use std::sync::{Arc, Mutex};
 use std::{
@@ -2208,11 +2209,6 @@ impl FfiWallet {
                 .context("Failed to publish transaction")
             {
                 Ok(_) => {
-                    // TODO: This is not a good place for this
-                    if let Err(error) = self.store_in_current_file() {
-                        tracing::error!(?error, "Failed to store wallet in current file after publishing transaction, continuing anyway because we must propagate the successfully published transaction to the caller to ensure transaction atomicity");
-                    }
-
                     return Ok(TxReceipt {
                         txid,
                         tx_key,
@@ -2782,34 +2778,78 @@ impl Deref for TransactionInfoHandle {
     }
 }
 
+/// This listener does things on certain events like storing the wallet to disk.
+/// This is supposed to improve upon the behaviour of wallet2
 pub struct WalletHandleListener {
-    handle: Arc<WalletHandle>,
+    wallet: Arc<WalletHandle>,
+    /// We need a handle to the runtime to be able to spawn tasks
     rt_handle: tokio::runtime::Handle,
+    /// We throttle the saving of the wallet to disk to avoid storing the wallet too often
+    /// Storing can take a little bit of time and there is also no point in doing it super often
+    store_job: Throttle<()>,
 }
 
 impl WalletHandleListener {
-    pub fn new(handle: Arc<WalletHandle>) -> Self {
+    /// Store the wallet at most every 2 minutes
+    const STORE_WALLET_THROTTLE: Duration = Duration::from_millis(2 * 60 * 1000);
+
+    pub fn new(wallet: Arc<WalletHandle>) -> Self {
+        // Get the current runtime handle
         let rt_handle = tokio::runtime::Handle::current();
-        Self { handle, rt_handle }
+
+        // Create a throttle wrapper around the save job
+        let store_job = {
+            let wallet = wallet.clone();
+            let rt = rt_handle.clone();
+
+            move |()| {
+                let wallet = wallet.clone();
+                let rt = rt.clone();
+
+                rt.spawn(async move {
+                    tracing::trace!("Doing periodic storing of wallet to disk");
+
+                    if let Err(error) = wallet.store_in_current_file().await {
+                        tracing::warn!(?error, "Failed to store wallet in current file");
+                    }
+                });
+            }
+        };
+
+        use throttle::throttle;
+
+        Self {
+            wallet,
+            rt_handle,
+            store_job: throttle(store_job, Self::STORE_WALLET_THROTTLE),
+        }
     }
 }
 
 impl WalletEventListener for WalletHandleListener {
-    fn on_money_spent(&self, _txid: &str, _amount: u64) {}
+    fn on_money_spent(&self, _txid: &str, _amount: u64) {
+        self.store_job.call(());
+    }
 
-    fn on_money_received(&self, _txid: &str, _amount: u64) {}
+    fn on_money_received(&self, _txid: &str, _amount: u64) {
+        self.store_job.call(());
+    }
 
-    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {}
+    fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
+        self.store_job.call(());
+    }
 
     fn on_new_block(&self, _height: u64) {}
 
     fn on_updated(&self) {}
 
     fn on_refreshed(&self) {
+        self.store_job.call(());
+
         // When the wallet finishes refreshing, we start the refresh thread again.
         // The purpose of this is to ensure that if the user does a rescan (restore height changed)
         // We start the refresh thread again after the rescan is complete.
-        let handle = self.handle.clone();
+        let handle = self.wallet.clone();
         self.rt_handle.spawn(async move {
             handle.start_refresh_thread().await;
         });

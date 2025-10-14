@@ -6946,6 +6946,7 @@ dependencies = [
  "swap-serde",
  "tempfile",
  "testcontainers",
+ "throttle",
  "tokio",
  "tracing",
  "tracing-subscriber",

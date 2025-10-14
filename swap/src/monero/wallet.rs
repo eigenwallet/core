@@ -127,25 +127,10 @@ impl TauriWalletListener {
             }
         };
 
-        let save_job = {
-            let wallet = wallet.clone();
-            let rt = rt_handle.clone();
-            move |()| {
-                let wallet = wallet.clone();
-                let rt = rt.clone();
-                rt.spawn(async move {
-                    if let Err(error) = wallet.store_in_current_file().await {
-                        tracing::warn!(?error, "Failed to store wallet in current file");
-                    }
-                });
-            }
-        };
-
         Self {
             balance_throttle: throttle(balance_job, Self::BALANCE_UPDATE_THROTTLE),
             history_throttle: throttle(history_job, Self::HISTORY_UPDATE_THROTTLE),
             sync_throttle: throttle(sync_job, Self::SYNC_UPDATE_THROTTLE),
-            save_throttle: throttle(save_job, Self::SAVE_UPDATE_THROTTLE),
         }
     }
 
@@ -170,19 +155,16 @@ impl WalletEventListener for TauriWalletListener {
     fn on_money_spent(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_new_block(&self, _height: u64) {
@@ -196,10 +178,8 @@ impl WalletEventListener for TauriWalletListener {
     }
 
     fn on_refreshed(&self) {
-        //self.wallet.start_refresh_thread();
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) {
@@ -246,16 +226,23 @@ impl Wallets {
 
         let main_wallet = Arc::new(main_wallet);
 
+        // We always register this listener
+        // It does essential things like storing the wallet on certain events
+        let handle_listener = WalletHandleListener::new(main_wallet.clone());
+        main_wallet
+            .call(move |wallet| {
+                wallet.add_listener(Box::new(handle_listener));
+            })
+            .await;
+
+        // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
             let tauri_wallet_listener =
                 TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
-            let handle_listener = WalletHandleListener::new(main_wallet.clone());
-
             main_wallet
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
-                    wallet.add_listener(Box::new(handle_listener));
                 })
                 .await;
         }
@@ -291,22 +278,32 @@ impl Wallets {
         existing_wallet: Wallet,
         wallet_database: Option<Arc<monero_sys::Database>>,
     ) -> Result<Self> {
+        // TODO: This code is duplicated in [`Wallets::new`]. Unify it.
+
         if regtest {
             existing_wallet.unsafe_prepare_for_regtest().await;
         }
 
         let main_wallet = Arc::new(existing_wallet);
 
+        let handle_listener = WalletHandleListener::new(main_wallet.clone());
+
+        // We always register this listener.
+        // It does essential things like storing the wallet on certain events
+        main_wallet
+            .call(move |wallet| {
+                wallet.add_listener(Box::new(handle_listener));
+            })
+            .await;
+
+        // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
             let tauri_wallet_listener =
                 TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
-            let handle_listener = WalletHandleListener::new(main_wallet.clone());
-
             main_wallet
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
-                    wallet.add_listener(Box::new(handle_listener));
                 })
                 .await;
         }
