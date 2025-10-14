@@ -1,14 +1,15 @@
-use crate::bitcoin::wallet::Watchable;
+use crate::bitcoin;
 use crate::bitcoin::{
     verify_sig, Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey,
     TooManyInputs, Transaction, TxCancel,
 };
-use crate::{bitcoin, monero};
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{secp256k1, ScriptBuf, Weight};
 use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
 use anyhow::{bail, Context, Result};
 use bdk_wallet::miniscript::Descriptor;
+use bitcoin_wallet::primitives::Watchable;
+use curve25519_dalek::scalar::Scalar;
 use ecdsa_fun::Signature;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -103,12 +104,10 @@ impl TxRefund {
     pub fn extract_monero_private_key(
         &self,
         published_refund_tx: Arc<bitcoin::Transaction>,
-        s_a: monero::Scalar,
+        s_a: Scalar,
         a: bitcoin::SecretKey,
         S_b_bitcoin: bitcoin::PublicKey,
-    ) -> Result<monero::PrivateKey> {
-        let s_a = monero::PrivateKey { scalar: s_a };
-
+    ) -> Result<Scalar> {
         let tx_refund_sig = self
             .extract_signature_by_key(published_refund_tx, a.public())
             .context("Failed to extract signature from Bitcoin refund tx")?;
@@ -117,7 +116,7 @@ impl TxRefund {
         let s_b = bitcoin::recover(S_b_bitcoin, tx_refund_sig, tx_refund_encsig)
             .context("Failed to recover Monero secret key from Bitcoin signature")?;
 
-        let s_b = monero::private_key_from_secp256k1_scalar(s_b.into());
+        let s_b = crate::monero::primitives::private_key_from_secp256k1_scalar(s_b.into());
 
         let spend_key = s_a + s_b;
 

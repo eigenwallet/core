@@ -1,14 +1,14 @@
 import { Box } from "@mui/material";
 import { Alert, AlertTitle } from "@mui/material";
-import { removeAlert } from "store/features/alertsSlice";
-import { useAppDispatch, useAppSelector } from "store/hooks";
+import { acknowledgeAlert } from "store/features/alertsSlice";
+import { useAlerts, useAppDispatch } from "store/hooks";
 
 export default function ApiAlertsBox() {
-  const alerts = useAppSelector((state) => state.alerts.alerts);
+  const alerts = useAlerts();
   const dispatch = useAppDispatch();
 
-  function onRemoveAlert(id: number) {
-    dispatch(removeAlert(id));
+  function onAcknowledgeAlert(id: number) {
+    dispatch(acknowledgeAlert(id));
   }
 
   if (alerts.length === 0) return null;
@@ -20,7 +20,7 @@ export default function ApiAlertsBox() {
           variant="filled"
           severity={alert.severity}
           key={alert.id}
-          onClose={() => onRemoveAlert(alert.id)}
+          onClose={() => onAcknowledgeAlert(alert.id)}
         >
           <AlertTitle>{alert.title}</AlertTitle>
           {alert.body}

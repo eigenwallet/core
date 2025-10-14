@@ -40,7 +40,7 @@ async fn given_alice_and_bob_manually_refund_after_funds_locked_both_refund() {
         if let BobState::BtcLocked { state3, .. } = bob_swap.state.clone() {
             bob_swap
                 .bitcoin_wallet
-                .subscribe_to(state3.tx_lock)
+                .subscribe_to(Box::new(state3.tx_lock))
                 .await
                 .wait_until_confirmed_with(state3.cancel_timelock)
                 .await?;

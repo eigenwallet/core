@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "bitcoin-wallet",
   "electrum-pool",
   "libp2p-rendezvous-server",
   "libp2p-tor",
@@ -13,9 +14,11 @@ members = [
   "swap-asb",
   "swap-controller",
   "swap-controller-api",
+  "swap-core",
   "swap-env",
   "swap-feed",
   "swap-fs",
+  "swap-machine",
   "swap-orchestrator",
   "swap-serde",
   "throttle",
@@ -30,6 +33,21 @@ bdk_electrum = { version = "0.23.0", default-features = false }
 bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
+# Cryptography
+curve25519-dalek = { version = "4", package = "curve25519-dalek-ng" }
+ecdsa_fun = { version = "0.10", default-features = false, features = ["libsecp_compat", "serde", "adaptor"] }
+rand = "0.8"
+# Randomness
+rand_chacha = "0.3"
+sha2 = "0.10"
+sigma_fun = { version = "0.7", default-features = false }
+
+# Async
+async-trait = "0.1"
+
+# Serialization
+serde_cbor = "0.11"
+
 anyhow = "1"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
@@ -38,7 +56,6 @@ jsonrpsee = { version = "0.25", default-features = false }
 libp2p = { version = "0.53.2" }
 monero = { version = "0.12", features = ["serde_support"] }
 once_cell = "1.19"
-rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
 rust_decimal_macros = "1"

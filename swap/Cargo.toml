@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "3.0.4"
+version = "3.2.0-rc.1"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "XMR/BTC trustless atomic swaps."
@@ -22,23 +22,24 @@ bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
 anyhow = { workspace = true }
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
 async-compression = { version = "0.3", features = ["bzip2", "tokio"] }
-async-trait = "0.1"
+async-trait = { workspace = true }
 asynchronous-codec = "0.7.0"
 atty = "0.2"
 backoff = { workspace = true }
 base64 = "0.22"
 big-bytes = "1"
 bitcoin = { workspace = true }
+bitcoin-wallet = { path = "../bitcoin-wallet" }
 bmrng = "0.5.2"
 comfy-table = "7.1"
 config = { version = "0.14", default-features = false, features = ["toml"] }
 conquer-once = "0.4"
-curve25519-dalek = { package = "curve25519-dalek-ng", version = "4" }
+curve25519-dalek = { workspace = true }
 data-encoding = "2.6"
 derive_builder = "0.20.2"
 dfx-swiss-sdk = { workspace = true, optional = true }
 dialoguer = "0.11"
-ecdsa_fun = { version = "0.10", default-features = false, features = ["libsecp_compat", "serde", "adaptor"] }
+ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
 ed25519-dalek = "1"
 electrum-pool = { path = "../electrum-pool" }
 fns = "0.0.7"
@@ -57,7 +58,7 @@ once_cell = { workspace = true }
 pem = "3.0"
 proptest = "1"
 rand = { workspace = true }
-rand_chacha = "0.3"
+rand_chacha = { workspace = true }
 regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
@@ -68,15 +69,17 @@ serde = { workspace = true }
 serde_cbor = "0.11"
 serde_json = { workspace = true }
 serde_with = { version = "1", features = ["macros"] }
-sha2 = "0.10"
-sigma_fun = { version = "0.7", default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
+sha2 = { workspace = true }
+sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 structopt = "0.3"
 strum = { version = "0.26", features = ["derive"] }
 swap-controller-api = { path = "../swap-controller-api" }
+swap-core = { path = "../swap-core" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-fs = { path = "../swap-fs" }
+swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
 thiserror = { workspace = true }

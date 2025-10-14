@@ -1,4 +1,3 @@
-use crate::bitcoin::wallet::Watchable;
 use crate::bitcoin::{
     verify_encsig, verify_sig, Address, Amount, EmptyWitnessStack, EncryptedSignature, NoInputs,
     NotThreeWitnesses, PublicKey, SecretKey, TooManyInputs, Transaction, TxLock,
@@ -9,6 +8,7 @@ use bdk_wallet::miniscript::Descriptor;
 use bitcoin::sighash::SighashCache;
 use bitcoin::{secp256k1, ScriptBuf};
 use bitcoin::{EcdsaSighashType, Weight};
+use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::fun::Scalar;
 use ecdsa_fun::nonce::Deterministic;

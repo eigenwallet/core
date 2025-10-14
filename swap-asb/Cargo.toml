@@ -24,6 +24,7 @@ monero-sys = { path = "../monero-sys" }
 swap = { path = "../swap" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
+swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 
 # Async

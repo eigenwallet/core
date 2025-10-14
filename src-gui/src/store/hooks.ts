@@ -16,6 +16,7 @@ import {
   isPendingSendMoneroApprovalEvent,
   PendingPasswordApprovalRequest,
   isPendingPasswordApprovalEvent,
+  isContextFullyInitialized,
 } from "models/tauriModelExt";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
@@ -28,8 +29,9 @@ import { RatesState } from "./features/ratesSlice";
 import {
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
-  TauriContextStatusEvent,
 } from "models/tauriModel";
+import { Alert } from "models/apiModel";
+import { fnv1a } from "utils/hash";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
@@ -111,9 +113,7 @@ export function useIsSpecificSwapRunning(swapId: string | null) {
 }
 
 export function useIsContextAvailable() {
-  return useAppSelector(
-    (state) => state.rpc.status === TauriContextStatusEvent.Available,
-  );
+  return useAppSelector((state) => isContextFullyInitialized(state.rpc.status));
 }
 
 /// We do not use a sanity check here, as opposed to the other useSwapInfo hooks,
@@ -139,10 +139,13 @@ export function useActiveSwapLogs() {
   const swapId = useActiveSwapId();
   const logs = useAppSelector((s) => s.logs.state.logs);
 
-  return useMemo(
-    () => logs.filter((log) => isCliLogRelatedToSwap(log, swapId)),
-    [logs, swapId],
-  );
+  return useMemo(() => {
+    if (swapId == null) {
+      return [];
+    }
+
+    return logs.filter((log) => isCliLogRelatedToSwap(log.log, swapId));
+  }, [logs, swapId]);
 }
 
 export function useAllMakers() {
@@ -325,4 +328,18 @@ export function useTotalUnreadMessagesCount(): number {
   }
 
   return totalUnreadCount;
+}
+
+/// Returns all the alerts that have not been acknowledged
+export function useAlerts(): Alert[] {
+  return useAppSelector((state) =>
+    state.alerts.alerts.filter(
+      (alert) =>
+        // Check if there is an acknowledgement with
+        // the same id and the same title hash
+        !state.alerts.acknowledgedAlerts.some(
+          (ack) => ack.id === alert.id && ack.titleHash === fnv1a(alert.title),
+        ),
+    ),
+  );
 }

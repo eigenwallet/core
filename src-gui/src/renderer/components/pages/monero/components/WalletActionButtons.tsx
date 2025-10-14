@@ -72,51 +72,57 @@ export default function WalletActionButtons({
         open={sendDialogOpen}
         onClose={() => setSendDialogOpen(false)}
       />
-      <Box
-        sx={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 1,
-          mb: 2,
-          alignItems: "center",
-        }}
-      >
-        <Chip
-          icon={<SendIcon />}
-          label="Send"
-          variant="button"
-          clickable
-          onClick={() => setSendDialogOpen(true)}
-        />
-        <Chip
-          onClick={() => navigate("/swap")}
-          icon={<SwapIcon />}
-          label="Swap"
-          variant="button"
-          clickable
-        />
-        <DfxButton />
-
-        <IconButton onClick={handleMenuClick}>
-          <MoreHorizIcon />
-        </IconButton>
-        <Menu anchorEl={menuAnchorEl} open={menuOpen} onClose={handleMenuClose}>
-          <MenuItem
-            onClick={() => {
-              setRestoreHeightDialogOpen(true);
-              handleMenuClose();
-            }}
-          >
-            <ListItemIcon>
-              <RestoreIcon />
-            </ListItemIcon>
-            <Typography>Restore Height</Typography>
-          </MenuItem>
-          <SeedPhraseButton
-            onMenuClose={handleMenuClose}
-            onSeedPhraseSuccess={setSeedPhrase}
+      <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 1,
+            alignItems: "center",
+          }}
+        >
+          <Chip
+            icon={<SendIcon />}
+            label="Send"
+            variant="button"
+            clickable
+            onClick={() => setSendDialogOpen(true)}
           />
-        </Menu>
+          <Chip
+            onClick={() => navigate("/swap")}
+            icon={<SwapIcon />}
+            label="Swap"
+            variant="button"
+            clickable
+          />
+          <DfxButton />
+        </Box>
+        <Box>
+          <IconButton onClick={handleMenuClick}>
+            <MoreHorizIcon />
+          </IconButton>
+          <Menu
+            anchorEl={menuAnchorEl}
+            open={menuOpen}
+            onClose={handleMenuClose}
+          >
+            <MenuItem
+              onClick={() => {
+                setRestoreHeightDialogOpen(true);
+                handleMenuClose();
+              }}
+            >
+              <ListItemIcon>
+                <RestoreIcon />
+              </ListItemIcon>
+              <Typography>Restore Height</Typography>
+            </MenuItem>
+            <SeedPhraseButton
+              onMenuClose={handleMenuClose}
+              onSeedPhraseSuccess={setSeedPhrase}
+            />
+          </Menu>
+        </Box>
       </Box>
     </>
   );

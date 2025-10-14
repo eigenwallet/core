@@ -41,6 +41,12 @@ import {
   setEnableMoneroTor,
   setUseMoneroRpcPool,
   setDonateToDevelopment,
+  setMoneroRedeemPolicy,
+  setMoneroRedeemAddress,
+  setBitcoinRefundAddress,
+  setBitcoinRefundPolicy,
+  RedeemPolicy,
+  RefundPolicy,
 } from "store/features/settingsSlice";
 import { useAppDispatch, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
@@ -62,6 +68,8 @@ import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import { isValidMultiAddressWithPeerId } from "utils/parseUtils";
 import { getNodeStatus } from "renderer/rpc";
 import { setStatus } from "store/features/nodesSlice";
+import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
+import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
 
 const PLACEHOLDER_ELECTRUM_RPC_URL = "ssl://blockstream.info:700";
 const PLACEHOLDER_MONERO_NODE_URL = "http://xmr-node.cakewallet.com:18081";
@@ -94,6 +102,8 @@ export default function SettingsBox() {
                 <TorSettings />
                 <MoneroTorSettings />
                 <DonationTipSetting />
+                <RedeemPolicySetting />
+                <RefundPolicySetting />
                 <ElectrumRpcUrlSetting />
                 <MoneroRpcPoolSetting />
                 <MoneroNodeUrlSetting />
@@ -992,5 +1002,138 @@ function DonationTipSetting() {
         </Box>
       </TableCell>
     </TableRow>
+  );
+}
+
+function RedeemPolicySetting() {
+  const moneroRedeemPolicy = useSettings(
+    (settings) => settings.moneroRedeemPolicy,
+  );
+  const moneroRedeemAddress = useSettings(
+    (settings) => settings.externalMoneroRedeemAddress,
+  );
+  const dispatch = useAppDispatch();
+
+  return (
+    <>
+      <TableRow>
+        <TableCell>
+          <SettingLabel
+            label="Redeem Policy"
+            tooltip="Where do you want Monero to be sent to in case of a successful swap? Choose between using the internal Monero wallet, or an external Monero address."
+          />
+        </TableCell>
+        <TableCell>
+          <ToggleButtonGroup
+            color="primary"
+            value={moneroRedeemPolicy}
+            onChange={(_, newPolicy) => {
+              if (
+                newPolicy == RedeemPolicy.Internal ||
+                newPolicy == RedeemPolicy.External
+              ) {
+                dispatch(setMoneroRedeemPolicy(newPolicy));
+              }
+            }}
+            exclusive
+            size="small"
+          >
+            <Tooltip title="The Monero will be sent to the currently opened Monero wallet.">
+              <ToggleButton value={RedeemPolicy.Internal}>
+                Internal (Recommended)
+              </ToggleButton>
+            </Tooltip>
+            <Tooltip title="The Monero will be sent to an external Monero address.">
+              <ToggleButton value={RedeemPolicy.External}>
+                External
+              </ToggleButton>
+            </Tooltip>
+          </ToggleButtonGroup>
+        </TableCell>
+      </TableRow>
+      <TableRow>
+        <TableCell>External Monero redeem address</TableCell>
+        <TableCell>
+          <MoneroAddressTextField
+            disabled={moneroRedeemPolicy !== RedeemPolicy.External}
+            label="External Monero redeem address"
+            address={moneroRedeemAddress}
+            onAddressChange={(address) => {
+              dispatch(setMoneroRedeemAddress(address));
+            }}
+            fullWidth
+            variant="outlined"
+            allowEmpty={moneroRedeemPolicy === RedeemPolicy.Internal}
+          />
+        </TableCell>
+      </TableRow>
+    </>
+  );
+}
+
+function RefundPolicySetting() {
+  const bitcoinRefundPolicy = useSettings(
+    (settings) => settings.bitcoinRefundPolicy,
+  );
+  const bitcoinRefundAddress = useSettings(
+    (settings) => settings.externalBitcoinRefundAddress,
+  );
+  const dispatch = useAppDispatch();
+
+  return (
+    <>
+      <TableRow>
+        <TableCell>
+          <SettingLabel
+            label="Refund Policy"
+            tooltip="Where do you want Bitcoin to be sent to in case of a successful swap? Choose between using the internal Bitcoin wallet, or an external Bitcoin address."
+          />
+        </TableCell>
+        <TableCell>
+          <ToggleButtonGroup
+            color="primary"
+            value={bitcoinRefundPolicy}
+            onChange={(_, newPolicy) => {
+              if (
+                newPolicy == RefundPolicy.Internal ||
+                newPolicy == RefundPolicy.External
+              ) {
+                dispatch(setBitcoinRefundPolicy(newPolicy));
+              }
+            }}
+            exclusive
+            size="small"
+          >
+            <Tooltip title="The Bitcoin will be sent to the internal Bitcoin wallet.">
+              <ToggleButton value={RefundPolicy.Internal}>
+                Internal (Recommended)
+              </ToggleButton>
+            </Tooltip>
+            <Tooltip title="The Bitcoin will be sent to an external Bitcoin address.">
+              <ToggleButton value={RefundPolicy.External}>
+                External
+              </ToggleButton>
+            </Tooltip>
+          </ToggleButtonGroup>
+        </TableCell>
+      </TableRow>
+      <TableRow>
+        <TableCell>External Bitcoin refund address</TableCell>
+        <TableCell>
+          <BitcoinAddressTextField
+            allowEmpty={bitcoinRefundPolicy === RefundPolicy.Internal}
+            label="External Bitcoin refund address"
+            address={bitcoinRefundAddress}
+            onAddressChange={(address) => {
+              dispatch(setBitcoinRefundAddress(address));
+            }}
+            fullWidth
+            variant="outlined"
+            disabled={bitcoinRefundPolicy !== RefundPolicy.External}
+            helperText=""
+          />
+        </TableCell>
+      </TableRow>
+    </>
   );
 }

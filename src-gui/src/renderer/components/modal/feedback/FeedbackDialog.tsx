@@ -227,7 +227,7 @@ export default function FeedbackDialog({
       <DialogActions>
         <Button onClick={handleClose}>Cancel</Button>
         <PromiseInvokeButton
-          requiresContext={false}
+          contextRequirement={false}
           color="primary"
           variant="contained"
           onInvoke={submitFeedback}

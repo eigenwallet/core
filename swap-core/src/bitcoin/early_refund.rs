@@ -7,8 +7,8 @@ use bdk_wallet::miniscript::Descriptor;
 use bitcoin::{Address, Amount, Transaction};
 use std::collections::HashMap;
 
-use super::wallet::Watchable;
 use super::TxLock;
+use bitcoin_wallet::primitives::Watchable;
 
 const TX_EARLY_REFUND_WEIGHT: usize = 548;
 

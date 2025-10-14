@@ -2,6 +2,7 @@ use self::quote::{
     make_quote, unlocked_monero_balance_with_timeout, QuoteCacheKey, QUOTE_CACHE_TTL,
 };
 use crate::asb::{Behaviour, OutEvent};
+use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::quote::BidQuote;
@@ -10,9 +11,8 @@ use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
-use crate::{bitcoin, monero};
 use anyhow::{anyhow, Context, Result};
-use bdk_chain::rusqlite::ffi::SQLITE_TRACE_CLOSE;
+use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -27,9 +27,9 @@ use std::fmt::Debug;
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin;
 use swap_env::env;
 use swap_feed::LatestRate;
-use tokio::fs::{write, File};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -42,7 +42,7 @@ where
 {
     swarm: libp2p::Swarm<Behaviour<LR>>,
     env_config: env::Config,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     db: Arc<dyn Database + Send + Sync>,
     latest_rate: LR,
@@ -133,7 +133,7 @@ where
     pub fn new(
         swarm: Swarm<Behaviour<LR>>,
         env_config: env::Config,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         db: Arc<dyn Database + Send + Sync>,
         latest_rate: LR,
@@ -246,7 +246,7 @@ where
                                 }
                             };
 
-                            let wallet_snapshot = match WalletSnapshot::capture(&self.bitcoin_wallet, &self.monero_wallet, &self.external_redeem_address, btc).await {
+                            let wallet_snapshot = match WalletSnapshot::capture(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
                                 Ok(wallet_snapshot) => wallet_snapshot,
                                 Err(error) => {
                                     tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
@@ -1189,7 +1189,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();

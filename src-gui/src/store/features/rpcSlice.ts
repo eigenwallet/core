@@ -2,7 +2,7 @@ import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { ExtendedMakerStatus, MakerStatus } from "models/apiModel";
 import {
   GetSwapInfoResponse,
-  TauriContextStatusEvent,
+  ContextStatus,
   TauriTimelockChangeEvent,
   BackgroundRefundState,
   ApprovalRequest,
@@ -37,8 +37,17 @@ interface State {
   };
 }
 
+export enum ContextStatusType {
+  Status = "status",
+  Error = "error",
+}
+
+export type ResultContextStatus =
+  | { type: ContextStatusType.Status; status: ContextStatus }
+  | { type: ContextStatusType.Error; error: string };
+
 export interface RPCSlice {
-  status: TauriContextStatusEvent | null;
+  status: ResultContextStatus | null;
   state: State;
 }
 
@@ -60,11 +69,18 @@ export const rpcSlice = createSlice({
   name: "rpc",
   initialState,
   reducers: {
-    contextStatusEventReceived(
-      slice,
-      action: PayloadAction<TauriContextStatusEvent>,
-    ) {
-      slice.status = action.payload;
+    contextStatusEventReceived(slice, action: PayloadAction<ContextStatus>) {
+      // Don't overwrite error state
+      //
+      // Once we're in an error state, stay there
+      if (slice.status?.type === ContextStatusType.Error) {
+        return;
+      }
+
+      slice.status = { type: ContextStatusType.Status, status: action.payload };
+    },
+    contextInitializationFailed(slice, action: PayloadAction<string>) {
+      slice.status = { type: ContextStatusType.Error, error: action.payload };
     },
     timelockChangeEventReceived(
       slice: RPCSlice,
@@ -160,6 +176,7 @@ export const rpcSlice = createSlice({
 
 export const {
   contextStatusEventReceived,
+  contextInitializationFailed,
   rpcSetBalance,
   rpcSetWithdrawTxId,
   rpcResetWithdrawTxId,

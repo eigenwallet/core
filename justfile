@@ -63,6 +63,9 @@ docker_test_happy_path:
 docker_test_happy_path_with_developer_tip:
 	cargo test --package swap --test happy_path_alice_developer_tip -- --nocapture
 
+docker_test_refund_path:
+	cargo test --package swap --test alice_refunds_after_restart_bob_refunded -- --nocapture
+
 docker_test_all:
 	cargo test --package swap --test all -- --nocapture
 
@@ -104,6 +107,9 @@ check_gui_eslint:
 # Run the typescript type checker for the GUI frontend
 check_gui_tsc:
 	cd src-gui && yarn run tsc --noEmit
+
+test test_name:
+    cargo test --test {{test_name}} -- --nocapture
 
 # Run the checks for the GUI frontend
 check_gui:

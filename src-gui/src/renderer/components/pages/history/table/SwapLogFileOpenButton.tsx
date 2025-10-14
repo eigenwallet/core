@@ -6,21 +6,23 @@ import {
   DialogTitle,
 } from "@mui/material";
 import { ButtonProps } from "@mui/material/Button";
-import { CliLog, parseCliLogString } from "models/cliModel";
+import { parseCliLogString } from "models/cliModel";
 import { GetLogsResponse } from "models/tauriModel";
 import { useState } from "react";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { getLogsOfSwap } from "renderer/rpc";
 import CliLogsBox from "../../../other/RenderedCliLog";
+import { HashedLog, hashLogs } from "store/features/logsSlice";
 
 export default function SwapLogFileOpenButton({
   swapId,
   ...props
 }: { swapId: string } & ButtonProps) {
-  const [logs, setLogs] = useState<(CliLog | string)[] | null>(null);
+  const [logs, setLogs] = useState<HashedLog[] | null>(null);
 
   function onLogsReceived(response: GetLogsResponse) {
-    setLogs(response.logs.map(parseCliLogString));
+    const parsedLogs = response.logs.map(parseCliLogString);
+    setLogs(hashLogs(parsedLogs));
   }
 
   return (

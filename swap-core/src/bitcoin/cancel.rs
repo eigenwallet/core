@@ -1,5 +1,4 @@
 use crate::bitcoin;
-use crate::bitcoin::wallet::Watchable;
 use crate::bitcoin::{
     build_shared_output_descriptor, Address, Amount, BlockHeight, PublicKey, Transaction, TxLock,
 };
@@ -12,6 +11,7 @@ use ::bitcoin::{
 };
 use anyhow::Result;
 use bdk_wallet::miniscript::Descriptor;
+use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;

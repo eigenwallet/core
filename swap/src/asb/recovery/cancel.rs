@@ -1,14 +1,15 @@
-use crate::bitcoin::{parse_rpc_error_code, RpcErrorCode, Txid, Wallet};
+use crate::bitcoin::{parse_rpc_error_code, RpcErrorCode, Txid};
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
+use bitcoin_wallet::BitcoinWallet;
 use std::convert::TryInto;
 use std::sync::Arc;
 use uuid::Uuid;
 
 pub async fn cancel(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database>,
 ) -> Result<(Txid, AliceState)> {
     let state = db.get_state(swap_id).await?.try_into()?;

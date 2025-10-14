@@ -13,6 +13,7 @@ import DFXSwissLogo from "assets/dfx-logo.svg";
 import { useState } from "react";
 import { dfxAuthenticate } from "renderer/rpc";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import { isContextWithMoneroWallet } from "models/tauriModelExt";
 
 function DFXLogo({ height = 24 }: { height?: number }) {
   return (
@@ -53,6 +54,7 @@ export default function DfxButton() {
         tooltipTitle="Buy Monero with fiat using DFX"
         displayErrorSnackbar
         isChipButton
+        contextRequirement={isContextWithMoneroWallet}
       >
         Buy Monero
       </PromiseInvokeButton>

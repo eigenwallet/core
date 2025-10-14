@@ -46,11 +46,13 @@ import {
   GetRestoreHeightResponse,
   MoneroNodeConfig,
   GetMoneroSeedResponse,
+  ContextStatus,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
   rpcSetSwapInfo,
   approvalRequestsReplaced,
+  contextInitializationFailed,
 } from "store/features/rpcSlice";
 import {
   setMainAddress,
@@ -204,13 +206,24 @@ export async function withdrawBtc(address: string): Promise<string> {
   return response.txid;
 }
 
-export async function buyXmr(
-  bitcoin_change_address: string | null,
-  monero_receive_address: string,
-  donation_percentage: DonateToDevelopmentTip,
-) {
-  // Get all available makers from the Redux store
+export async function buyXmr() {
   const state = store.getState();
+
+  // Determine based on redeem and refund policy which addresses to pass in
+  //
+  // null means internal wallet
+  const bitcoinChangeAddress =
+    state.settings.bitcoinRefundPolicy === "external"
+      ? state.settings.externalBitcoinRefundAddress
+      : null;
+  const moneroReceiveAddress =
+    state.settings.moneroRedeemPolicy === "external"
+      ? state.settings.externalMoneroRedeemAddress
+      : null;
+
+  const donationPercentage = state.settings.donateToDevelopment;
+
+  // Get all available makers from the Redux store
   const allMakers = [
     ...(state.makers.registry.makers || []),
     ...state.makers.rendezvous.makers,
@@ -221,29 +234,27 @@ export async function buyXmr(
     providerToConcatenatedMultiAddr(maker),
   );
 
-  console.log(`Starting buyXmr flow with these potential sellers: ${sellers}`);
-
   const address_pool: LabeledMoneroAddress[] = [];
-  if (donation_percentage !== false) {
+  if (donationPercentage !== false && donationPercentage > 0) {
     const donation_address = isTestnet()
       ? DONATION_ADDRESS_STAGENET
       : DONATION_ADDRESS_MAINNET;
 
     address_pool.push(
       {
-        address: monero_receive_address,
-        percentage: 1 - donation_percentage,
+        address: moneroReceiveAddress,
+        percentage: 1 - donationPercentage,
         label: "Your wallet",
       },
       {
         address: donation_address,
-        percentage: donation_percentage,
+        percentage: donationPercentage,
         label: "Tip to the developers",
       },
     );
   } else {
     address_pool.push({
-      address: monero_receive_address,
+      address: moneroReceiveAddress,
       percentage: 1,
       label: "Your wallet",
     });
@@ -253,7 +264,7 @@ export async function buyXmr(
     rendezvous_points: PRESET_RENDEZVOUS_POINTS,
     sellers,
     monero_receive_pool: address_pool,
-    bitcoin_change_address,
+    bitcoin_change_address: bitcoinChangeAddress,
   });
 }
 
@@ -282,9 +293,8 @@ export async function getMoneroRecoveryKeys(
   );
 }
 
-export async function checkContextAvailability(): Promise<boolean> {
-  const available = await invokeNoArgs<boolean>("is_context_available");
-  return available;
+export async function checkContextStatus(): Promise<ContextStatus> {
+  return await invokeNoArgs<ContextStatus>("get_context_status");
 }
 
 export async function getLogsOfSwap(
@@ -335,7 +345,6 @@ export async function initializeContext() {
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
 
   // Check the state of the Monero node
-
   const moneroNodeConfig =
     useMoneroRpcPool ||
     moneroNodeUrl == null ||
@@ -356,18 +365,17 @@ export async function initializeContext() {
     enable_monero_tor: useMoneroTor,
   };
 
-  logger.info("Initializing context with settings", tauriSettings);
+  logger.info({ tauriSettings }, "Initializing context with settings");
 
   try {
     await invokeUnsafe<void>("initialize_context", {
       settings: tauriSettings,
       testnet,
     });
+    logger.info("Initialized context");
   } catch (error) {
-    throw new Error("Couldn't initialize context: " + error);
+    throw new Error(error);
   }
-
-  logger.info("Initialized context");
 }
 
 export async function getWalletDescriptor() {
@@ -555,20 +563,6 @@ export async function sendMoneroTransaction(
   } catch (err) {
     console.error("Failed to send Monero:", err);
     throw err;
-  }
-}
-
-async function refreshWalletDataAfterTransaction() {
-  try {
-    const [newBalance, newHistory] = await Promise.all([
-      getMoneroBalance(),
-      getMoneroHistory(),
-    ]);
-    store.dispatch(setBalance(newBalance));
-    store.dispatch(setHistory(newHistory));
-  } catch (err) {
-    console.error("Failed to refresh wallet data after transaction:", err);
-    // Maybe show a non-blocking notification to user
   }
 }
 

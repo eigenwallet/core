@@ -501,10 +501,7 @@ impl MoneroWallet {
         self.wallet
             .sweep(address)
             .await
-            .context("Failed to perform sweep")?
-            .into_iter()
-            .next()
-            .context("No transaction receipts returned from sweep")
+            .context("Failed to perform sweep")
     }
 
     /// Sweep multiple addresses with different ratios
@@ -517,10 +514,7 @@ impl MoneroWallet {
         self.wallet
             .sweep_multi_destination(addresses, ratios)
             .await
-            .context("Failed to perform sweep")?
-            .into_iter()
-            .next()
-            .context("No transaction receipts returned from sweep")
+            .context("Failed to perform sweep")
     }
 
     pub async fn blockchain_height(&self) -> Result<u64> {

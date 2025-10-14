@@ -1,11 +1,10 @@
 use super::request::BalanceResponse;
-use crate::bitcoin;
 use crate::cli::api::request::{
     GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse,
 };
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
-use crate::{bitcoin::ExpiredTimelocks, monero, network::quote::BidQuote};
+use crate::{monero, network::quote::BidQuote};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
@@ -17,16 +16,19 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::Display;
+use swap_core::bitcoin;
+use swap_core::bitcoin::ExpiredTimelocks;
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 use uuid::Uuid;
+
+const TAURI_UNIFIED_EVENT_NAME: &str = "tauri-unified-event";
 
 #[typeshare]
 #[derive(Clone, Serialize)]
 #[serde(tag = "channelName", content = "event")]
 pub enum TauriEvent {
     SwapProgress(TauriSwapProgressEventWrapper),
-    ContextInitProgress(TauriContextStatusEvent),
     CliLog(TauriLogEvent),
     BalanceChange(BalanceResponse),
     SwapDatabaseStateUpdate(TauriDatabaseStateEvent),
@@ -46,7 +48,14 @@ pub enum MoneroWalletUpdate {
     HistoryUpdate(GetMoneroHistoryResponse),
 }
 
-const TAURI_UNIFIED_EVENT_NAME: &str = "tauri-unified-event";
+#[typeshare]
+#[derive(Clone, Debug, Serialize)]
+pub struct ContextStatus {
+    pub bitcoin_wallet_available: bool,
+    pub monero_wallet_available: bool,
+    pub database_available: bool,
+    pub tor_available: bool,
+}
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -454,10 +463,6 @@ pub trait TauriEmitter {
             swap_id,
             event,
         }));
-    }
-
-    fn emit_context_init_progress_event(&self, event: TauriContextStatusEvent) {
-        self.emit_unified_event(TauriEvent::ContextInitProgress(event));
     }
 
     fn emit_cli_log_event(&self, event: TauriLogEvent) {
@@ -869,7 +874,6 @@ pub struct TauriSwapProgressEventWrapper {
 #[typeshare]
 #[serde(tag = "type", content = "content")]
 pub enum TauriSwapProgressEvent {
-    RequestingQuote,
     Resuming,
     ReceivedQuote(BidQuote),
     WaitingForBtcDeposit {

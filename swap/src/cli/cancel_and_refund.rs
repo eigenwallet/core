@@ -1,15 +1,16 @@
-use crate::bitcoin::{ExpiredTimelocks, Wallet};
 use crate::monero::BlockHeight;
 use crate::protocol::bob::BobState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
 use bitcoin::Txid;
+use bitcoin_wallet::BitcoinWallet;
 use std::sync::Arc;
+use swap_core::bitcoin::ExpiredTimelocks;
 use uuid::Uuid;
 
 pub async fn cancel_and_refund(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database + Send + Sync>,
 ) -> Result<BobState> {
     if let Err(err) = cancel(swap_id, bitcoin_wallet.clone(), db.clone()).await {
@@ -26,7 +27,7 @@ pub async fn cancel_and_refund(
 
 pub async fn cancel(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database + Send + Sync>,
 ) -> Result<(Txid, BobState)> {
     let state = db.get_state(swap_id).await?.try_into()?;
@@ -142,7 +143,7 @@ pub async fn cancel(
 
 pub async fn refund(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database + Send + Sync>,
 ) -> Result<BobState> {
     let state = db.get_state(swap_id).await?.try_into()?;

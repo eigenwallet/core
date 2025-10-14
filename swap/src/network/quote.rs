@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use crate::{asb, bitcoin, cli};
+use crate::{asb, cli};
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
+use swap_core::bitcoin;
 use typeshare::typeshare;
 
 const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/1.0.0";

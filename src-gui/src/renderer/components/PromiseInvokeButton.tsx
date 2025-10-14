@@ -8,9 +8,12 @@ import {
   Tooltip,
 } from "@mui/material";
 import CircularProgress from "@mui/material/CircularProgress";
+import { ContextStatus } from "models/tauriModel";
+import { isContextFullyInitialized } from "models/tauriModelExt";
 import { useSnackbar } from "notistack";
 import { ReactNode, useState } from "react";
-import { useIsContextAvailable } from "store/hooks";
+import { ContextStatusType } from "store/features/rpcSlice";
+import { useAppSelector, useIsContextAvailable } from "store/hooks";
 
 interface PromiseInvokeButtonProps<T> {
   onSuccess?: (data: T) => void | null;
@@ -23,7 +26,10 @@ interface PromiseInvokeButtonProps<T> {
   disabled?: boolean;
   displayErrorSnackbar?: boolean;
   tooltipTitle?: string | null;
-  requiresContext?: boolean;
+  // true means that the entire context must be available
+  // false means that the context doesn't have to be available at all
+  // a custom function means that the context must satisfy the function
+  contextRequirement?: ((status: ContextStatus) => boolean) | false | true;
 }
 
 export default function PromiseInvokeButton<T>({
@@ -39,13 +45,11 @@ export default function PromiseInvokeButton<T>({
   isChipButton = false,
   displayErrorSnackbar = false,
   onPendingChange = null,
-  requiresContext = true,
+  contextRequirement = true,
   tooltipTitle = null,
   ...rest
 }: PromiseInvokeButtonProps<T> & ButtonProps) {
   const { enqueueSnackbar } = useSnackbar();
-  const isContextAvailable = useIsContextAvailable();
-
   const [isPending, setIsPending] = useState(false);
 
   const isLoading = isPending || isLoadingOverride;
@@ -73,7 +77,23 @@ export default function PromiseInvokeButton<T>({
     }
   }
 
-  const requiresContextButNotAvailable = requiresContext && !isContextAvailable;
+  const requiresContextButNotAvailable = useAppSelector((state) => {
+    const status = state.rpc.status;
+
+    if (contextRequirement === false) {
+      return false;
+    }
+
+    if (contextRequirement === true || contextRequirement == null) {
+      return !isContextFullyInitialized(status);
+    }
+
+    if (status == null || status.type === ContextStatusType.Error) {
+      return true;
+    }
+
+    return !contextRequirement(status.status);
+  });
   const isDisabled = disabled || isLoading || requiresContextButNotAvailable;
 
   const actualTooltipTitle =
