@@ -11097,7 +11097,6 @@ dependencies = [
  "arti-client",
  "async-compression 0.3.15",
  "async-trait",
- "asynchronous-codec 0.7.0",
  "atty",
  "backoff",
  "base64 0.22.1",
@@ -11166,6 +11165,7 @@ dependencies = [
  "swap-feed",
  "swap-fs",
  "swap-machine",
+ "swap-p2p",
  "swap-serde",
  "tauri",
  "tempfile",
@@ -11184,11 +11184,9 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "typeshare",
- "unsigned-varint 0.8.0",
  "url",
  "uuid",
  "vergen-git2",
- "void",
  "zeroize",
  "zip 0.5.13",
 ]
@@ -11367,6 +11365,35 @@ dependencies = [
  "toml 0.9.8",
  "url",
  "vergen 8.3.2",
+]
+
+[[package]]
+name = "swap-p2p"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "asynchronous-codec 0.7.0",
+ "bitcoin 0.32.7",
+ "bitcoin-wallet",
+ "bmrng",
+ "futures",
+ "libp2p",
+ "monero",
+ "rand 0.8.5",
+ "serde",
+ "serde_cbor",
+ "swap-core",
+ "swap-env",
+ "swap-feed",
+ "swap-machine",
+ "swap-serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "typeshare",
+ "unsigned-varint 0.8.0",
+ "uuid",
+ "void",
 ]
 
 [[package]]

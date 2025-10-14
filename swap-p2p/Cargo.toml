@@ -1,0 +1,45 @@
+[package]
+name = "swap-p2p"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Our crates
+swap-core = { path = "../swap-core" }
+swap-serde = { path = "../swap-serde" }
+swap-machine = { path = "../swap-machine" }
+swap-env = { path = "../swap-env" }
+swap-feed = { path = "../swap-feed" }
+bitcoin-wallet = { path = "../bitcoin-wallet" }
+
+# Networking
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json"] }
+
+# Serialization
+serde = { workspace = true }
+typeshare = { workspace = true }
+serde_cbor = { workspace = true }
+unsigned-varint = { version = "0.8.0", features = ["codec", "asynchronous_codec"] }
+asynchronous-codec = "0.7.0"
+
+# Crypto
+bitcoin = { workspace = true }
+monero = { workspace = true }
+rand = { workspace = true }
+
+# Utils
+uuid = { workspace = true, features = ["serde"] }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+void = "1"
+
+# Async
+futures = { workspace = true }
+bmrng = { workspace = true }
+tokio = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[lints]
+workspace = true

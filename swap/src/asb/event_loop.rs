@@ -765,6 +765,43 @@ impl EventLoopHandle {
     }
 }
 
+impl WalletSnapshot {
+    pub async fn capture(
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
+        monero_wallet: &monero::Wallets,
+        external_redeem_address: &Option<bitcoin::Address>,
+        transfer_amount: bitcoin::Amount,
+    ) -> Result<Self> {
+        let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await;
+        let total_balance = monero_wallet.main_wallet().await.total_balance().await;
+
+        tracing::info!(%unlocked_balance, %total_balance, "Capturing monero wallet snapshot");
+
+        let redeem_address = external_redeem_address
+            .clone()
+            .unwrap_or(bitcoin_wallet.new_address().await?);
+        let punish_address = external_redeem_address
+            .clone()
+            .unwrap_or(bitcoin_wallet.new_address().await?);
+
+        let redeem_fee = bitcoin_wallet
+            .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
+            .await?;
+        let punish_fee = bitcoin_wallet
+            .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
+            .await?;
+
+        Ok(Self {
+            unlocked_balance: unlocked_balance.into(),
+            lock_fee: swap_core::monero::CONSERVATIVE_MONERO_FEE,
+            redeem_address,
+            punish_address,
+            redeem_fee,
+            punish_fee,
+        })
+    }
+}
+
 mod service {
     use super::*;
 

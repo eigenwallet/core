@@ -19,7 +19,7 @@ members = [
   "swap-feed",
   "swap-fs",
   "swap-machine",
-  "swap-orchestrator",
+  "swap-orchestrator", "swap-p2p",
   "swap-serde",
   "throttle",
 ]
@@ -49,6 +49,7 @@ async-trait = "0.1"
 serde_cbor = "0.11"
 
 anyhow = "1"
+bmrng = "0.5.2"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"

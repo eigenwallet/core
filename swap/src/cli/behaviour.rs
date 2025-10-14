@@ -18,69 +18,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
 
-#[derive(Debug)]
-pub enum OutEvent {
-    QuoteReceived {
-        id: OutboundRequestId,
-        response: BidQuote,
-    },
-    SwapSetupCompleted(Box<Result<State2>>),
-    TransferProofReceived {
-        msg: Box<transfer_proof::Request>,
-        channel: ResponseChannel<()>,
-        peer: PeerId,
-    },
-    EncryptedSignatureAcknowledged {
-        id: OutboundRequestId,
-    },
-    CooperativeXmrRedeemFulfilled {
-        id: OutboundRequestId,
-        s_a: Scalar,
-        swap_id: uuid::Uuid,
-        lock_transfer_proof: TransferProof,
-    },
-    CooperativeXmrRedeemRejected {
-        id: OutboundRequestId,
-        reason: CooperativeXmrRedeemRejectReason,
-        swap_id: uuid::Uuid,
-    },
-    Failure {
-        peer: PeerId,
-        error: Error,
-    },
-    OutboundRequestResponseFailure {
-        peer: PeerId,
-        error: OutboundFailure,
-        request_id: OutboundRequestId,
-        protocol: String,
-    },
-    InboundRequestResponseFailure {
-        peer: PeerId,
-        error: InboundFailure,
-        request_id: InboundRequestId,
-        protocol: String,
-    },
-    /// "Fallback" variant that allows the event mapping code to swallow certain
-    /// events that we don't want the caller to deal with.
-    Other,
-}
-
-impl OutEvent {
-    pub fn unexpected_request(peer: PeerId) -> OutEvent {
-        OutEvent::Failure {
-            peer,
-            error: anyhow!("Unexpected request received"),
-        }
-    }
-
-    pub fn unexpected_response(peer: PeerId) -> OutEvent {
-        OutEvent::Failure {
-            peer,
-            error: anyhow!("Unexpected response received"),
-        }
-    }
-}
-
 /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Bob.
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "OutEvent")]
