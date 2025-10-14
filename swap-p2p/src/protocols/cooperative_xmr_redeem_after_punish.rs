@@ -1,9 +1,9 @@
-use swap_core::monero::{Scalar, TransferProof};
-use crate::{out_event};
+use crate::out_event;
 use libp2p::request_response::ProtocolSupport;
 use libp2p::{request_response, PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use swap_core::monero::{Scalar, TransferProof};
 use uuid::Uuid;
 
 const PROTOCOL: &str = "/comit/xmr/btc/cooperative_xmr_redeem_after_punish/1.0.0";

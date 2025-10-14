@@ -1,7 +1,15 @@
-use libp2p::{PeerId, request_response::{InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel}};
 use libp2p::{identify, ping};
+use libp2p::{
+    request_response::{
+        InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
+    },
+    PeerId,
+};
 
-use crate::protocols::{cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote, transfer_proof};
+use crate::protocols::{
+    cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote,
+    transfer_proof,
+};
 
 #[derive(Debug)]
 pub enum OutEvent {

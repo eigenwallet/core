@@ -106,7 +106,7 @@ pub mod behaviour {
     use swap_p2p::out_event::alice::OutEvent;
 
     use super::{rendezvous::RendezvousNode, *};
-    
+
     /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Alice.
     #[derive(NetworkBehaviour)]
     #[behaviour(out_event = "OutEvent", event_process = false)]
@@ -175,7 +175,6 @@ pub mod behaviour {
             }
         }
     }
-
 }
 
 pub mod rendezvous {

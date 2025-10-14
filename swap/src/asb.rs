@@ -5,7 +5,6 @@ pub mod rpc;
 
 pub use event_loop::{EventLoop, EventLoopHandle};
 pub use network::behaviour::Behaviour;
-pub use swap_p2p::out_event::alice::OutEvent;
 pub use network::rendezvous::RendezvousNode;
 pub use network::transport;
 pub use recovery::cancel::cancel;
@@ -15,6 +14,7 @@ pub use recovery::refund::refund;
 pub use recovery::safely_abort::safely_abort;
 pub use recovery::{cancel, refund};
 pub use swap_feed::{FixedRate, KrakenRate, LatestRate, Rate};
+pub use swap_p2p::out_event::alice::OutEvent;
 
 #[cfg(test)]
 pub use network::rendezvous;

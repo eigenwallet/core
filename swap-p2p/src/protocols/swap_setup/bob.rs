@@ -1,7 +1,7 @@
 use crate::out_event;
-use crate::protocols::swap_setup::{protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse};
-use swap_machine::bob::{State0, State2};
-use swap_machine::common::{Message1, Message3};
+use crate::protocols::swap_setup::{
+    protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse,
+};
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
 use futures::future::{BoxFuture, OptionFuture};
@@ -19,6 +19,8 @@ use std::task::Poll;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
+use swap_machine::bob::{State0, State2};
+use swap_machine::common::{Message1, Message3};
 use uuid::Uuid;
 
 use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};

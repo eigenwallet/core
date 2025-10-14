@@ -1,4 +1,4 @@
-use crate::{out_event};
+use crate::out_event;
 use libp2p::request_response::{self};
 use libp2p::{PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};

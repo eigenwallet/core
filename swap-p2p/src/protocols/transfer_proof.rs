@@ -1,7 +1,7 @@
-use std::time::Duration;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::out_event;

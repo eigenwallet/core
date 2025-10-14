@@ -1,14 +1,22 @@
-use libp2p::{PeerId, request_response::{InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel}};
 use libp2p::{identify, ping};
+use libp2p::{
+    request_response::{
+        InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
+    },
+    PeerId,
+};
 use uuid::Uuid;
 
-use crate::protocols::{cooperative_xmr_redeem_after_punish, encrypted_signature, quote::BidQuote, swap_setup};
+use crate::protocols::{
+    cooperative_xmr_redeem_after_punish, encrypted_signature, quote::BidQuote, swap_setup,
+};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum OutEvent {
     SwapSetupInitiated {
-        send_wallet_snapshot: bmrng::RequestReceiver<bitcoin::Amount, swap_setup::alice::WalletSnapshot>,
+        send_wallet_snapshot:
+            bmrng::RequestReceiver<bitcoin::Amount, swap_setup::alice::WalletSnapshot>,
     },
     SwapSetupCompleted {
         peer_id: PeerId,

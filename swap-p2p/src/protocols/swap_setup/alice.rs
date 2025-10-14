@@ -1,11 +1,8 @@
-use swap_feed::LatestRate;
 use crate::out_event;
 use crate::protocols::swap_setup;
 use crate::protocols::swap_setup::{
     protocol, BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse,
 };
-use swap_machine::alice::{State0, State3};
-use swap_machine::common::{Message0, Message2, Message4};
 use anyhow::{anyhow, Context, Result};
 use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
@@ -21,6 +18,9 @@ use std::task::Poll;
 use std::time::{Duration, Instant};
 use swap_core::bitcoin;
 use swap_env::env;
+use swap_feed::LatestRate;
+use swap_machine::alice::{State0, State3};
+use swap_machine::common::{Message0, Message2, Message4};
 use uuid::Uuid;
 
 #[derive(Debug)]
