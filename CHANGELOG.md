@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Fix an issue where the compiled binary would not know its own version
+
 ## [3.2.0-rc.1] - 2025-10-14
 
 - ASB: Fixed a rare race condition where it would be possible for the Monero lock step to fail but the funds to still be transferred. This would require manual intervention to recover.
