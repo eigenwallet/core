@@ -1,13 +1,9 @@
-use crate::asb::LatestRate;
-use crate::network::swap_setup;
-use crate::network::swap_setup::{
+use crate::out_event;
+use crate::protocols::swap_setup;
+use crate::protocols::swap_setup::{
     protocol, BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse,
 };
-use crate::protocol::alice::{State0, State3};
-use crate::protocol::{Message0, Message2, Message4};
-use crate::{asb, monero};
 use anyhow::{anyhow, Context, Result};
-use bitcoin_wallet::BitcoinWallet;
 use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
@@ -18,11 +14,13 @@ use libp2p::swarm::{ConnectionHandlerEvent, NetworkBehaviour, SubstreamProtocol,
 use libp2p::{Multiaddr, PeerId};
 use std::collections::VecDeque;
 use std::fmt::Debug;
-use std::sync::Arc;
 use std::task::Poll;
 use std::time::{Duration, Instant};
 use swap_core::bitcoin;
 use swap_env::env;
+use swap_feed::LatestRate;
+use swap_machine::alice::{State0, State3};
+use swap_machine::common::{Message0, Message2, Message4};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -44,8 +42,8 @@ pub enum OutEvent {
 
 #[derive(Debug)]
 pub struct WalletSnapshot {
-    unlocked_balance: monero::Amount,
-    lock_fee: monero::Amount,
+    unlocked_balance: swap_core::monero::Amount,
+    lock_fee: swap_core::monero::Amount,
 
     // TODO: Consider using the same address for punish and redeem (they are mutually exclusive, so
     // effectively the address will only be used once)
@@ -57,60 +55,42 @@ pub struct WalletSnapshot {
 }
 
 impl WalletSnapshot {
-    pub async fn capture(
-        bitcoin_wallet: Arc<dyn BitcoinWallet>,
-        monero_wallet: &monero::Wallets,
-        external_redeem_address: &Option<bitcoin::Address>,
-        transfer_amount: bitcoin::Amount,
-    ) -> Result<Self> {
-        let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await;
-        let total_balance = monero_wallet.main_wallet().await.total_balance().await;
-
-        tracing::info!(%unlocked_balance, %total_balance, "Capturing monero wallet snapshot");
-
-        let redeem_address = external_redeem_address
-            .clone()
-            .unwrap_or(bitcoin_wallet.new_address().await?);
-        let punish_address = external_redeem_address
-            .clone()
-            .unwrap_or(bitcoin_wallet.new_address().await?);
-
-        let redeem_fee = bitcoin_wallet
-            .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
-            .await?;
-        let punish_fee = bitcoin_wallet
-            .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
-            .await?;
-
-        Ok(Self {
-            unlocked_balance: unlocked_balance.into(),
-            lock_fee: monero::CONSERVATIVE_MONERO_FEE,
+    pub fn new(
+        unlocked_balance: swap_core::monero::Amount,
+        redeem_address: bitcoin::Address,
+        punish_address: bitcoin::Address,
+        redeem_fee: bitcoin::Amount,
+        punish_fee: bitcoin::Amount,
+    ) -> Self {
+        Self {
+            unlocked_balance,
+            lock_fee: swap_core::monero::CONSERVATIVE_MONERO_FEE,
             redeem_address,
             punish_address,
             redeem_fee,
             punish_fee,
-        })
+        }
     }
 }
 
-impl From<OutEvent> for asb::OutEvent {
+impl From<OutEvent> for out_event::alice::OutEvent {
     fn from(event: OutEvent) -> Self {
         match event {
             OutEvent::Initiated {
                 send_wallet_snapshot,
-            } => asb::OutEvent::SwapSetupInitiated {
+            } => out_event::alice::OutEvent::SwapSetupInitiated {
                 send_wallet_snapshot,
             },
             OutEvent::Completed {
                 peer_id: bob_peer_id,
                 swap_id,
                 state3,
-            } => asb::OutEvent::SwapSetupCompleted {
+            } => out_event::alice::OutEvent::SwapSetupCompleted {
                 peer_id: bob_peer_id,
                 swap_id,
                 state3,
             },
-            OutEvent::Error { peer_id, error } => asb::OutEvent::Failure {
+            OutEvent::Error { peer_id, error } => out_event::alice::OutEvent::Failure {
                 peer: peer_id,
                 error: anyhow!(error),
             },
@@ -529,7 +509,7 @@ where
 }
 
 impl SpotPriceResponse {
-    pub fn from_result_ref(result: &Result<monero::Amount, Error>) -> Self {
+    pub fn from_result_ref(result: &Result<swap_core::monero::Amount, Error>) -> Self {
         match result {
             Ok(amount) => SpotPriceResponse::Xmr(*amount),
             Err(error) => SpotPriceResponse::Error(error.to_error_response()),
@@ -553,7 +533,7 @@ pub enum Error {
     },
     #[error("Unlocked balance ({balance}) too low to fulfill swapping {buy}")]
     BalanceTooLow {
-        balance: monero::Amount,
+        balance: swap_core::monero::Amount,
         buy: bitcoin::Amount,
     },
     #[error("Failed to fetch latest rate")]

@@ -1,7 +1,7 @@
-use crate::network::swap_setup::{protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse};
-use crate::protocol::bob::{State0, State2};
-use crate::protocol::{Message1, Message3};
-use crate::{cli, monero};
+use crate::out_event;
+use crate::protocols::swap_setup::{
+    protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse,
+};
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
 use futures::future::{BoxFuture, OptionFuture};
@@ -19,6 +19,8 @@ use std::task::Poll;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
+use swap_machine::bob::{State0, State2};
+use swap_machine::common::{Message1, Message3};
 use uuid::Uuid;
 
 use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};
@@ -46,9 +48,9 @@ impl Behaviour {
     }
 }
 
-impl From<Completed> for cli::OutEvent {
+impl From<Completed> for out_event::bob::OutEvent {
     fn from(completed: Completed) -> Self {
-        cli::OutEvent::SwapSetupCompleted(Box::new(completed.0))
+        out_event::bob::OutEvent::SwapSetupCompleted(Box::new(completed.0))
     }
 }
 
@@ -322,7 +324,7 @@ impl ConnectionHandler for Handler {
     }
 }
 
-impl From<SpotPriceResponse> for Result<monero::Amount, Error> {
+impl From<SpotPriceResponse> for Result<swap_core::monero::Amount, Error> {
     fn from(response: SpotPriceResponse) -> Self {
         match response {
             SpotPriceResponse::Xmr(amount) => Ok(amount),

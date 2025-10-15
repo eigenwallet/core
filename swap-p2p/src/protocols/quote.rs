@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{asb, cli};
+use crate::out_event;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
@@ -76,7 +76,7 @@ pub fn cli() -> Behaviour {
     )
 }
 
-impl From<(PeerId, Message)> for asb::OutEvent {
+impl From<(PeerId, Message)> for out_event::alice::OutEvent {
     fn from((peer, message): (PeerId, Message)) -> Self {
         match message {
             Message::Request { channel, .. } => Self::QuoteRequested { channel, peer },
@@ -84,9 +84,9 @@ impl From<(PeerId, Message)> for asb::OutEvent {
         }
     }
 }
-crate::impl_from_rr_event!(OutEvent, asb::OutEvent, PROTOCOL);
+crate::impl_from_rr_event!(OutEvent, out_event::alice::OutEvent, PROTOCOL);
 
-impl From<(PeerId, Message)> for cli::OutEvent {
+impl From<(PeerId, Message)> for out_event::bob::OutEvent {
     fn from((peer, message): (PeerId, Message)) -> Self {
         match message {
             Message::Request { .. } => Self::unexpected_request(peer),
@@ -100,4 +100,4 @@ impl From<(PeerId, Message)> for cli::OutEvent {
         }
     }
 }
-crate::impl_from_rr_event!(OutEvent, cli::OutEvent, PROTOCOL);
+crate::impl_from_rr_event!(OutEvent, out_event::bob::OutEvent, PROTOCOL);

@@ -103,79 +103,10 @@ pub mod behaviour {
         request_response::{InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId},
         swarm::behaviour::toggle::Toggle,
     };
+    use swap_p2p::out_event::alice::OutEvent;
 
     use super::{rendezvous::RendezvousNode, *};
 
-    #[allow(clippy::large_enum_variant)]
-    #[derive(Debug)]
-    pub enum OutEvent {
-        SwapSetupInitiated {
-            send_wallet_snapshot: bmrng::RequestReceiver<bitcoin::Amount, WalletSnapshot>,
-        },
-        SwapSetupCompleted {
-            peer_id: PeerId,
-            swap_id: Uuid,
-            state3: State3,
-        },
-        SwapDeclined {
-            peer: PeerId,
-            error: alice::Error,
-        },
-        QuoteRequested {
-            channel: ResponseChannel<BidQuote>,
-            peer: PeerId,
-        },
-        TransferProofAcknowledged {
-            peer: PeerId,
-            id: OutboundRequestId,
-        },
-        EncryptedSignatureReceived {
-            msg: encrypted_signature::Request,
-            channel: ResponseChannel<()>,
-            peer: PeerId,
-        },
-        CooperativeXmrRedeemRequested {
-            channel: ResponseChannel<cooperative_xmr_redeem_after_punish::Response>,
-            swap_id: Uuid,
-            peer: PeerId,
-        },
-        Rendezvous(libp2p::rendezvous::client::Event),
-        OutboundRequestResponseFailure {
-            peer: PeerId,
-            error: OutboundFailure,
-            request_id: OutboundRequestId,
-            protocol: String,
-        },
-        InboundRequestResponseFailure {
-            peer: PeerId,
-            error: InboundFailure,
-            request_id: InboundRequestId,
-            protocol: String,
-        },
-        Failure {
-            peer: PeerId,
-            error: Error,
-        },
-        /// "Fallback" variant that allows the event mapping code to swallow
-        /// certain events that we don't want the caller to deal with.
-        Other,
-    }
-
-    impl OutEvent {
-        pub fn unexpected_request(peer: PeerId) -> OutEvent {
-            OutEvent::Failure {
-                peer,
-                error: anyhow!("Unexpected request received"),
-            }
-        }
-
-        pub fn unexpected_response(peer: PeerId) -> OutEvent {
-            OutEvent::Failure {
-                peer,
-                error: anyhow!("Unexpected response received"),
-            }
-        }
-    }
     /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Alice.
     #[derive(NetworkBehaviour)]
     #[behaviour(out_event = "OutEvent", event_process = false)]
@@ -242,24 +173,6 @@ pub mod behaviour {
                 ping: ping::Behaviour::new(pingConfig),
                 identify: identify::Behaviour::new(identifyConfig),
             }
-        }
-    }
-
-    impl From<ping::Event> for OutEvent {
-        fn from(_: ping::Event) -> Self {
-            OutEvent::Other
-        }
-    }
-
-    impl From<identify::Event> for OutEvent {
-        fn from(_: identify::Event) -> Self {
-            OutEvent::Other
-        }
-    }
-
-    impl From<libp2p::rendezvous::client::Event> for OutEvent {
-        fn from(event: libp2p::rendezvous::client::Event) -> Self {
-            OutEvent::Rendezvous(event)
         }
     }
 }

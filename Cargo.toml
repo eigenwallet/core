@@ -20,6 +20,7 @@ members = [
   "swap-fs",
   "swap-machine",
   "swap-orchestrator",
+  "swap-p2p",
   "swap-serde",
   "throttle",
 ]
@@ -50,6 +51,7 @@ serde_cbor = "0.11"
 
 anyhow = "1"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
+bmrng = "0.5.2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 jsonrpsee = { version = "0.25", default-features = false }

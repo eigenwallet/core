@@ -1,10 +1,10 @@
-use std::time::Duration;
-
-use crate::{asb, cli, monero};
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use uuid::Uuid;
+
+use crate::out_event;
 
 const PROTOCOL: &str = "/comit/xmr/btc/transfer_proof/1.0.0";
 type OutEvent = request_response::Event<Request, ()>;
@@ -24,7 +24,7 @@ impl AsRef<str> for TransferProofProtocol {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Request {
     pub swap_id: Uuid,
-    pub tx_lock_proof: monero::TransferProof,
+    pub tx_lock_proof: swap_core::monero::TransferProof,
 }
 
 pub fn alice() -> Behaviour {
@@ -41,7 +41,7 @@ pub fn bob() -> Behaviour {
     )
 }
 
-impl From<(PeerId, Message)> for asb::OutEvent {
+impl From<(PeerId, Message)> for out_event::alice::OutEvent {
     fn from((peer, message): (PeerId, Message)) -> Self {
         match message {
             Message::Request { .. } => Self::unexpected_request(peer),
@@ -53,9 +53,9 @@ impl From<(PeerId, Message)> for asb::OutEvent {
     }
 }
 
-crate::impl_from_rr_event!(OutEvent, asb::OutEvent, PROTOCOL);
+crate::impl_from_rr_event!(OutEvent, out_event::alice::OutEvent, PROTOCOL);
 
-impl From<(PeerId, Message)> for cli::OutEvent {
+impl From<(PeerId, Message)> for out_event::bob::OutEvent {
     fn from((peer, message): (PeerId, Message)) -> Self {
         match message {
             Message::Request {
@@ -69,4 +69,5 @@ impl From<(PeerId, Message)> for cli::OutEvent {
         }
     }
 }
-crate::impl_from_rr_event!(OutEvent, cli::OutEvent, PROTOCOL);
+
+crate::impl_from_rr_event!(OutEvent, out_event::bob::OutEvent, PROTOCOL);

@@ -1,4 +1,3 @@
-use crate::monero;
 use anyhow::{Context, Result};
 use asynchronous_codec::{Bytes, Framed};
 use futures::{SinkExt, StreamExt};
@@ -51,7 +50,7 @@ pub struct SpotPriceRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum SpotPriceResponse {
-    Xmr(monero::Amount),
+    Xmr(swap_core::monero::Amount),
     Error(SpotPriceError),
 }
 

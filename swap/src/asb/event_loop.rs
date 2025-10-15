@@ -246,7 +246,7 @@ where
                                 }
                             };
 
-                            let wallet_snapshot = match WalletSnapshot::capture(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
+                            let wallet_snapshot = match capture_wallet_snapshot(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
                                 Ok(wallet_snapshot) => wallet_snapshot,
                                 Err(error) => {
                                     tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
@@ -763,6 +763,40 @@ impl EventLoopHandle {
 
         Ok(())
     }
+}
+
+async fn capture_wallet_snapshot(
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
+    monero_wallet: &monero::Wallets,
+    external_redeem_address: &Option<bitcoin::Address>,
+    transfer_amount: bitcoin::Amount,
+) -> Result<WalletSnapshot> {
+    let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await;
+    let total_balance = monero_wallet.main_wallet().await.total_balance().await;
+
+    tracing::info!(%unlocked_balance, %total_balance, "Capturing monero wallet snapshot");
+
+    let redeem_address = external_redeem_address
+        .clone()
+        .unwrap_or(bitcoin_wallet.new_address().await?);
+    let punish_address = external_redeem_address
+        .clone()
+        .unwrap_or(bitcoin_wallet.new_address().await?);
+
+    let redeem_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
+        .await?;
+    let punish_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
+        .await?;
+
+    Ok(WalletSnapshot::new(
+        unlocked_balance.into(),
+        redeem_address,
+        punish_address,
+        redeem_fee,
+        punish_fee,
+    ))
 }
 
 mod service {

@@ -45,6 +45,7 @@ Run the command below to start the wizard. It’ll guide you through a bunch of 
 ```
 
 To build the images, run this command. Also run this after upgrading the `orchestrator` and re-generating `docker-compose.yml`:
+
 ```bash
 docker compose build --no-cache # --no-cache fixes a git caching issue (error: tag clobbered)
 ```
