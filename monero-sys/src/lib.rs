@@ -436,6 +436,11 @@ impl WalletHandle {
         self.call(move |wallet| wallet.main_address()).await
     }
 
+    /// Get the address of the wallet for a given account and address index.
+    pub async fn address(&self, account_index: u32, address_index: u32) -> monero::Address {
+        self.call(move |wallet| wallet.address(account_index, address_index)).await
+    }
+
     /// Get the current height of the blockchain.
     /// May involve an RPC call to the daemon.
     /// Returns `None` if the wallet is not connected to a daemon.
@@ -1537,7 +1542,7 @@ impl FfiWallet {
     /// Get the address for the given account and address index.
     /// address(0, 0) is the main address.
     /// We don't use anything besides the main address so this is a private method (for now).
-    fn address(&self, account_index: u32, address_index: u32) -> monero::Address {
+    pub fn address(&self, account_index: u32, address_index: u32) -> monero::Address {
         let address = ffi::address(&self.inner, account_index, address_index)
             .context("Failed to get wallet address: FFI call failed with exception")
             .expect("Wallet address should never fail");

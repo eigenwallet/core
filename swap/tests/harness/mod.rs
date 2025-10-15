@@ -44,7 +44,11 @@ use tokio::time::{interval, timeout};
 use url::Url;
 use uuid::Uuid;
 
-pub async fn setup_test<T, F, C>(_config: C, developer_tip_ratio: Option<Decimal>, testfn: T)
+/// developer_tip_ratio is a tuple of (ratio, use_subaddress)
+/// 
+/// If use_subaddress is true, we will use a subaddress for the developer tip. We do this
+/// because using a subaddress changes things about the tx keys involved
+pub async fn setup_test<T, F, C>(_config: C, developer_tip_ratio: Option<(Decimal, bool)>, testfn: T)
 where
     T: Fn(TestContext) -> F,
     F: Future<Output = Result<()>>,
@@ -77,6 +81,7 @@ where
         .unwrap()
         .path()
         .join("developer_tip-monero-wallets");
+
     let (_, developer_tip_monero_wallet) = init_test_wallets(
         "developer_tip",
         containers.bitcoind_url.clone(),
@@ -89,16 +94,29 @@ where
         env_config,
     )
     .await;
-    let developer_tip_monero_wallet_address = developer_tip_monero_wallet
+
+    let developer_tip_monero_wallet_main_address = developer_tip_monero_wallet
         .main_wallet()
         .await
         .main_address()
         .await
         .into();
 
+    let developer_tip_monero_wallet_subaddress = developer_tip_monero_wallet
+        .main_wallet()
+        .await
+        // explicitly use a suabddress here to test the addtional tx key logic
+        .address(0, 2)
+        .await
+        .into();
+
     let developer_tip = TipConfig {
-        ratio: developer_tip_ratio.unwrap_or(Decimal::ZERO),
-        address: developer_tip_monero_wallet_address,
+        ratio: developer_tip_ratio.unwrap_or((Decimal::ZERO, false)).0,
+        address: match developer_tip_ratio {
+            Some((_, true)) => developer_tip_monero_wallet_subaddress,
+            Some((_, false)) => developer_tip_monero_wallet_main_address,
+            None => developer_tip_monero_wallet_main_address,
+        },
     };
 
     let alice_starting_balances =
