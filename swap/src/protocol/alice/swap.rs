@@ -622,43 +622,35 @@ where
             transfer_proof,
             state3,
         } => {
-            // TODO: We should retry indefinitely here until we find the refund transaction
-            // TODO: If we crash while we are waiting for the punish_tx to be confirmed (punish_btc waits until confirmation), we will remain in this state forever because we will attempt to re-publish the punish transaction
-            let punish = state3.punish_btc(&*bitcoin_wallet).await;
+            retry(
+                "Punish Bitcoin",
+                || async {
+                    // Before punishing, we explicitly check for the refund transaction as we prefer refunds over punishments
+                    let spend_key_from_btc_refund = state3.refund_btc(&*bitcoin_wallet).await.context("Failed to check for existence of Bitcoin refund transaction before punishing").map_err(backoff::Error::transient)?;
 
-            match punish {
-                Ok(_) => AliceState::BtcPunished {
-                    state3,
-                    transfer_proof,
-                },
-                Err(error) => {
-                    tracing::warn!("Failed to publish punish transaction: {:#}", error);
-
-                    // Upon punish failure we assume that the refund tx was included but we
-                    // missed seeing it. In case we fail to fetch the refund tx we fail
-                    // with no state update because it is unclear what state we should transition
-                    // to. It does not help to race punish and refund inclusion,
-                    // because a punish tx failure is not recoverable (besides re-trying) if the
-                    // refund tx was not included.
-
-                    tracing::info!("Falling back to refund");
-
-                    let published_refund_tx = bitcoin_wallet
-                        .get_raw_transaction(state3.tx_refund().txid())
-                        .await
-                        .context("Failed to fetch refund transaction after assuming it was included because the punish transaction failed")?
-                        .context("Bitcoin refund transaction not found")?;
-
-                    let spend_key = state3.extract_monero_private_key(published_refund_tx)?;
-
-                    AliceState::BtcRefunded {
-                        monero_wallet_restore_blockheight,
-                        transfer_proof,
-                        spend_key,
-                        state3,
+                    // If we find the Bitcoin refund transaction, we go ahead and refund the Monero
+                    if let Some(spend_key_from_btc_refund) = spend_key_from_btc_refund {
+                        return Ok(AliceState::BtcRefunded {
+                            monero_wallet_restore_blockheight,
+                            transfer_proof: transfer_proof.clone(),
+                            spend_key: spend_key_from_btc_refund,
+                            state3: state3.clone(),
+                        });
                     }
-                }
-            }
+
+                    state3.punish_btc(&*bitcoin_wallet).await.context("Failed to construct and publish Bitcoin punish transaction").map_err(backoff::Error::transient)?;
+
+                    Ok(AliceState::BtcPunished {
+                        state3: state3.clone(),
+                        transfer_proof: transfer_proof.clone(),
+                    })
+                },
+                None,
+                // We can take our time when punishing
+                Duration::from_secs(60 * 5),
+            )
+            .await
+            .expect("We should never run out of retries while publishing the punish transaction")
         }
         AliceState::XmrRefunded => AliceState::XmrRefunded,
         AliceState::BtcRedeemed => AliceState::BtcRedeemed,

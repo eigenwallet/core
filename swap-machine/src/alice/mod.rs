@@ -547,11 +547,11 @@ impl State3 {
 
     pub fn extract_monero_private_key(
         &self,
-        published_refund_tx: Arc<bitcoin::Transaction>,
+        signed_refund_tx: Arc<bitcoin::Transaction>,
     ) -> Result<monero::PrivateKey> {
         Ok(monero::PrivateKey::from_scalar(
             self.tx_refund().extract_monero_private_key(
-                published_refund_tx,
+                signed_refund_tx,
                 self.s_a,
                 self.a.clone(),
                 self.S_b_bitcoin,
@@ -652,6 +652,23 @@ impl State3 {
         )
     }
 
+    pub async fn refund_btc(
+        &self,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    ) -> Result<Option<monero::PrivateKey>> {
+        let refund_tx = bitcoin_wallet
+            .get_raw_transaction(self.tx_refund().txid())
+            .await?;
+
+        match refund_tx {
+            Some(refund_tx) => {
+                let spend_key = self.extract_monero_private_key(refund_tx)?;
+                Ok(Some(spend_key))
+            }
+            None => Ok(None),
+        }
+    }
+
     pub async fn watch_for_btc_tx_refund(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
@@ -665,14 +682,9 @@ impl State3 {
             .await
             .context("Failed to monitor refund transaction")?;
 
-        let published_refund_tx = bitcoin_wallet
-            .get_raw_transaction(self.tx_refund().txid())
-            .await?
-            .context("Bitcoin refund transaction not found even though we saw it in the mempool previously. Maybe our Electrum server has cleared its mempool?")?;
-
-        let spend_key = self.extract_monero_private_key(published_refund_tx)?;
-
-        Ok(spend_key)
+        self.refund_btc(bitcoin_wallet).await?.context(
+            "Bitcoin refund transaction not found even though we saw it in the mempool previously",
+        )
     }
 }
 
