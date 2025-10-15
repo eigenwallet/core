@@ -1,9 +1,6 @@
 use anyhow::bail;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
-use swap_env::{
-    config::Monero,
-    prompt::{self as config_prompt, print_info_box},
-};
+use swap_env::prompt::print_info_box;
 use url::Url;
 
 #[derive(Debug)]

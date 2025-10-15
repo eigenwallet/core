@@ -1370,34 +1370,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bollard"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d82e7850583ead5f8bbef247e2a3c37a19bd576e8420cd262a6711921827e1e5"
-dependencies = [
- "base64 0.13.1",
- "bollard-stubs",
- "bytes",
- "futures-core",
- "futures-util",
- "hex",
- "http 0.2.12",
- "hyper 0.14.32",
- "hyperlocal",
- "log",
- "pin-project-lite",
- "serde",
- "serde_derive",
- "serde_json",
- "serde_urlencoded",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "url",
- "winapi",
-]
-
-[[package]]
 name = "bollard-stubs"
 version = "1.42.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4963,19 +4935,6 @@ dependencies = [
  "tower-service",
  "tracing",
  "windows-registry",
-]
-
-[[package]]
-name = "hyperlocal"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fafdf7b2b2de7c9784f76e02c0935e65a8117ec3b768644379983ab333ac98c"
-dependencies = [
- "futures-util",
- "hex",
- "hyper 0.14.32",
- "pin-project",
- "tokio",
 ]
 
 [[package]]
@@ -11400,8 +11359,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
- "bollard",
- "chrono",
  "clap 4.5.49",
  "compose_spec",
  "dialoguer",

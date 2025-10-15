@@ -7,9 +7,9 @@ use url::Url;
 /// Currently this only includes which flags we need to pass to the binaries
 use crate::{
     command,
-    compose::{ComposeConfig, Flag, ImageSource, Mount, Service, Volume},
+    docker::compose::{ComposeConfig, Flag, ImageSource, Mount, Service, Volume},
+    docker::images::{self, PINNED_GIT_REPOSITORY},
     flag,
-    images::{self, PINNED_GIT_REPOSITORY},
 };
 
 // Important: don't add slashes or anything here

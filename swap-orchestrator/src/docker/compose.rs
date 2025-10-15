@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::Context;
 use url::Url;
 
 use crate::writer::IndentedWriter;
@@ -20,6 +21,7 @@ trait WriteConfig {
 /// using [`ComposeConfig::add_volume`] and [`ComposeConfig::add_service`].
 #[derive(Debug, Clone)]
 pub struct ComposeConfig {
+    name: String,
     services: Vec<Arc<Service>>,
     volumes: Vec<Arc<Volume>>,
 }
@@ -45,6 +47,7 @@ pub struct Service {
 pub struct Mount {
     host_path: VolumeOrPath,
     container_path: PathBuf,
+    read_only: bool,
 }
 
 /// Host side of a mount expression.
@@ -79,11 +82,11 @@ pub enum ImageSource {
 
 #[derive(Debug, Clone)]
 pub struct Command {
-    flags: Vec<Flag>,
+    pub flags: Vec<Flag>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Flag(String);
+pub struct Flag(pub String);
 
 /// Configure when to restart the service.
 #[derive(Debug, Clone, Copy)]
@@ -92,6 +95,14 @@ pub enum RestartType {
 }
 
 impl ComposeConfig {
+    pub fn new(name: impl Into<String>) -> ComposeConfig {
+        ComposeConfig {
+            name: name.into(),
+            services: Vec::new(),
+            volumes: Vec::new(),
+        }
+    }
+
     /// Add a volume to the config.
     /// Returns a handle which can be used to reference this volume later.
     pub fn add_volume(&mut self, name: impl Into<String>) -> Arc<Volume> {
@@ -123,15 +134,6 @@ impl ComposeConfig {
             serde_yaml::from_str(&result).expect("valid docker-compose.yml syntax");
 
         result
-    }
-}
-
-impl Default for ComposeConfig {
-    fn default() -> ComposeConfig {
-        ComposeConfig {
-            services: Vec::new(),
-            volumes: Vec::new(),
-        }
     }
 }
 
@@ -373,6 +375,7 @@ impl Mount {
         Mount {
             host_path: VolumeOrPath::Path(host_path.into()),
             container_path: container_path.into(),
+            read_only: false,
         }
     }
 
@@ -383,6 +386,7 @@ impl Mount {
         Mount {
             host_path: VolumeOrPath::Volume(volume.clone()),
             container_path: volume.as_root_dir(),
+            read_only: false,
         }
     }
 
@@ -392,6 +396,15 @@ impl Mount {
         Mount {
             host_path: VolumeOrPath::Volume(volume.clone()),
             container_path: container_path.into(),
+            read_only: false,
+        }
+    }
+
+    /// Make a `Mount` read only for the container.
+    pub fn read_only(self) -> Mount {
+        Mount {
+            read_only: true,
+            ..self
         }
     }
 }
@@ -405,7 +418,9 @@ impl WriteConfig for Mount {
 
         let container = self.container_path.to_string_lossy().to_string();
 
-        writeln!(writer, "- {host}:{container}").expect("writing to a string doesn't fail")
+        let read_only = if self.read_only { "ro" } else { "rw" };
+        writeln!(writer, "- {host}:{container}:{read_only}")
+            .expect("writing to a string doesn't fail")
     }
 }
 
@@ -466,6 +481,18 @@ impl Command {
     pub fn add_flag(&mut self, flag: impl Into<Flag>) {
         self.flags.push(flag.into());
     }
+
+    /// Convert to a tokio::process::Command.
+    /// Fails if the command is empty.
+    pub fn to_tokio_command(&self) -> anyhow::Result<tokio::process::Command> {
+        let mut parts = self.flags.iter().map(|flag| flag.0.clone());
+        let binary_name = parts.next().context("Can't run empty command")?;
+
+        let mut command = tokio::process::Command::new(binary_name);
+        command.args(parts);
+
+        Ok(command)
+    }
 }
 
 impl WriteConfig for Command {
@@ -483,17 +510,17 @@ impl WriteConfig for Command {
 #[macro_export]
 macro_rules! flag {
     ($flag:expr) => {
-        crate::compose::Flag::new(format!($flag))
+        crate::docker::compose::Flag::new(format!($flag))
     };
     ($flag:expr, $($args:expr),*) => {
-        crate::compose::Flag::new(format!($flag, $($args),*))
+        crate::docker::compose::Flag::new(format!($flag, $($args),*))
     };
 }
 
 #[macro_export]
 macro_rules! command {
     ($command:expr $(, $flag:expr)* $(,)?) => {
-        crate::compose::Command::new(vec![flag!($command) $(, $flag)*])
+        crate::docker::compose::Command::new(vec![crate::flag!($command) $(, $flag)*])
     };
 }
 
