@@ -350,6 +350,9 @@ pub mod ffi {
             address: &CxxString,
             sign_with_view_key: bool,
         ) -> Result<UniquePtr<CxxString>>;
+
+        /// Add a subaddress account.
+        fn addSubaddressAccount(wallet: Pin<&mut Wallet>, label: &CxxString) -> Result<()>;
     }
 }
 
