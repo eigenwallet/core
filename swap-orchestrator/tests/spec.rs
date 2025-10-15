@@ -32,7 +32,9 @@ fn test_orchestrator_spec_generation() {
             ),
         },
         directories: OrchestratorDirectories {
-            asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
+            asb_data_dir: std::path::PathBuf::from(
+                swap_orchestrator::docker::compose::ASB_DATA_DIR,
+            ),
         },
     };
 
