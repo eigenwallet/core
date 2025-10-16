@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Explicitly retry publishing the Bitcoin punish transaction 
+
 ## [3.0.0-rc.3] - 2025-10-16
 
 - GUI + ASB: Change donation address to `4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ`. This was done because the previous donation address was a subaddress which complicates transaction building.

@@ -103,13 +103,13 @@ impl TxRefund {
 
     pub fn extract_monero_private_key(
         &self,
-        published_refund_tx: Arc<bitcoin::Transaction>,
+        signed_refund_tx: Arc<bitcoin::Transaction>,
         s_a: Scalar,
         a: bitcoin::SecretKey,
         S_b_bitcoin: bitcoin::PublicKey,
     ) -> Result<Scalar> {
         let tx_refund_sig = self
-            .extract_signature_by_key(published_refund_tx, a.public())
+            .extract_signature_by_key(signed_refund_tx, a.public())
             .context("Failed to extract signature from Bitcoin refund tx")?;
         let tx_refund_encsig = a.encsign(S_b_bitcoin, self.digest());
 
