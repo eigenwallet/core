@@ -630,7 +630,7 @@ where
 
                     // If we find the Bitcoin refund transaction, we go ahead and refund the Monero
                     if let Some(spend_key_from_btc_refund) = spend_key_from_btc_refund {
-                        return Ok(AliceState::BtcRefunded {
+                        return Ok::<AliceState, backoff::Error<anyhow::Error>>(AliceState::BtcRefunded {
                             monero_wallet_restore_blockheight,
                             transfer_proof: transfer_proof.clone(),
                             spend_key: spend_key_from_btc_refund,
@@ -640,7 +640,7 @@ where
 
                     state3.punish_btc(&*bitcoin_wallet).await.context("Failed to construct and publish Bitcoin punish transaction").map_err(backoff::Error::transient)?;
 
-                    Ok(AliceState::BtcPunished {
+                    Ok::<AliceState, backoff::Error<anyhow::Error>>(AliceState::BtcPunished {
                         state3: state3.clone(),
                         transfer_proof: transfer_proof.clone(),
                     })
