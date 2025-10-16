@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-rc.3] - 2025-10-16
+
 - GUI + ASB: Change donation address to `4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ`. This was done because the previous donation address was a subaddress which complicates transaction building.
 
 ## [3.2.0-rc.2] - 2025-10-14
@@ -689,7 +691,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.2.0-rc.2...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.0.0-rc.3...HEAD
+[3.0.0-rc.3]: https://github.com/eigenwallet/core/compare/3.2.0-rc.2...3.0.0-rc.3
 [3.2.0-rc.2]: https://github.com/eigenwallet/core/compare/3.2.0-rc.1...3.2.0-rc.2
 [3.2.0-rc.1]: https://github.com/eigenwallet/core/compare/3.1.3...3.2.0-rc.1
 [3.1.3]: https://github.com/eigenwallet/core/compare/3.1.2...3.1.3
