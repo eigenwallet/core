@@ -5,9 +5,6 @@
 #include "../monero/src/wallet/api/wallet2_api.h"
 #include "../monero/src/wallet/api/wallet_manager.h"
 
-#include "easylogging++.h"
-#include "bridge.h"
-#include "monero-sys/src/bridge.rs.h"
 
 /**
  * This file contains some C++ glue code needed to make the FFI work.
@@ -220,26 +217,6 @@ namespace Monero
     }
 
     /**
-     * Get the transaction key for a given transaction id
-     */
-    inline std::unique_ptr<std::vector<TxKey>> walletGetTxKeys(const Wallet &wallet, const std::string &txid)
-    {
-        const auto tuple_keys = wallet.txKeys(txid);
-        auto result = std::make_unique<std::vector<TxKey>>();
-        result->reserve(tuple_keys.size());
-        
-        for (const auto& [tx, addr, key] : tuple_keys) {
-            result->emplace_back(TxKey{
-                std::make_unique<std::string>(tx),
-                std::make_unique<std::string>(addr),
-                std::make_unique<std::string>(key)
-            });
-        }
-        
-        return result;
-    }
-
-    /**
      * Sign a message with the wallet's private key
      */
     inline std::unique_ptr<std::string> signMessage(Wallet &wallet, const std::string &message, const std::string &address, bool sign_with_view_key)
@@ -305,15 +282,9 @@ namespace Monero
         return static_cast<uint64_t>(tx_info.timestamp());
     }
 
-    inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxKeys(const PendingTransaction &tx, const std::string &tx_hash)
-    {
-        auto keys = tx.txKeys(tx_hash);
-        auto vec = std::make_unique<std::vector<std::string>>();
-        vec->reserve(keys.size());
-        for (auto &key : keys)
-            vec->push_back(std::move(key));
-        return vec;
-    }
+    
+
+
 
     // bridge.h
 #pragma once
@@ -467,6 +438,11 @@ namespace Monero
     }
 }
 
+#include "easylogging++.h"
+#include "bridge.h"
+#include "monero-sys/src/bridge.rs.h"
+    
+
 /**
  * This section is us capturing the log messages from easylogging++
  * and forwarding it to rust's tracing.
@@ -589,6 +565,23 @@ static std::pair<StringMap, StringVec> _monero_sys_pair_instantiation;
 
 namespace Monero
 {
+
+    inline std::unique_ptr<std::vector<TxKey>> pendingTransactionTxKeys(const PendingTransaction &tx, const std::string &tx_hash)
+    {
+        const std::vector<std::tuple<std::string, std::string, std::string>> tuple_keys = tx.txKeys(tx_hash);
+        std::unique_ptr<std::vector<TxKey>> result = std::make_unique<std::vector<TxKey>>();
+        result->reserve(tuple_keys.size());
+        
+        for (const auto& [tx, addr, key] : tuple_keys) {
+            result->emplace_back(TxKey{
+                std::make_unique<std::string>(tx),
+                std::make_unique<std::string>(addr),
+                std::make_unique<std::string>(key)
+            });
+        }
+        
+        return result;
+    }
 
     // Adapter class that forwards Monero::WalletListener callbacks to Rust
     class RustListenerAdapter final : public Monero::WalletListener

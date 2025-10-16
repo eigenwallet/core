@@ -45,7 +45,7 @@ index 2dd118ea3..2d5aefe0e 100644
 +            bool key_found = false;
 +            for (const crypto::secret_key &possible_key : keys_to_try) {
 +                crypto::key_derivation key_derivation;
-+                if (!crypto::generate_key_derivation(output.addr.m_view_public_key, unwrap(unwrap(possible_key)), key_derivation)) {
++                if (!crypto::generate_key_derivation(output.addr.m_view_public_key, possible_key, key_derivation)) {
 +                    throw std::runtime_error("Failed to generate key derivation for output " + std::to_string(i));
 +                }
 +

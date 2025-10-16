@@ -296,19 +296,13 @@ pub mod ffi {
         fn pendingTransactionTxKeys(
             tx: &PendingTransaction,
             tx_hash: &CxxString,
-        ) -> Result<UniquePtr<CxxVector<CxxString>>>;
+        ) -> Result<UniquePtr<CxxVector<TxKey>>>;
 
         /// Get the fee of a pending transaction.
         fn pendingTransactionFee(tx: &PendingTransaction) -> Result<u64>;
 
         /// Get the amount of a pending transaction.
         fn pendingTransactionAmount(tx: &PendingTransaction) -> Result<u64>;
-
-        /// Get the transaction key (r) for a given txid.
-        fn walletGetTxKeys(
-            wallet: &Wallet,
-            txid: &CxxString,
-        ) -> Result<UniquePtr<CxxVector<TxKey>>>;
 
         /// Commit a pending transaction to the blockchain.
         fn commit(
