@@ -38,7 +38,7 @@ cargo nextest run
 
 If you want to donate to the project, you can use the following address. Donations will be used to fund development.
 
-Please only do so if you do not need the money. We'd rather you keep it but people ask from time to time so we're adding it here.
+Please only do so if you do not need the money. We'd rather you keep it but people ask from time to time so we're adding it here. Either one of the address below can be used to donate.
 
 ```gpg
 -----BEGIN PGP SIGNED MESSAGE-----
@@ -51,5 +51,26 @@ iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWlQAKCRCZt10+FHai
 bhasAQDGrAkZu+FFwDZDUEZzrIVS42he+GeMiS+ykpXyL5I7RQD/dXCR3f39zFsK
 1A7y45B3a8ZJYTzC7bbppg6cEnCoWQE=
 =j+Vz
+-----END PGP SIGNATURE-----
+```
+
+```
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ is our donation address (signed by binarybaron)
+-----BEGIN PGP SIGNATURE-----
+
+iQGzBAEBCAAdFiEEBRhGD+vsHaFKFVp7RK5vCxZqrVoFAmjxV4YACgkQRK5vCxZq
+rVrFogv9F650Um1TsPlqQ+7kdobCwa7yH5uXOp1p22YaiwWGHKRU5rUSb6Ac+zI0
+3Io39VEoZufQqXqEqaiH7Q/08ABQR5r0TTPtSLNjOSEQ+ecClwv7MeF5CIXZYDdB
+AlEOnlL0CPfA24GQMhfp9lvjNiTBA2NikLARWJrc1JsLrFMK5rHesv7VHJEtm/gu
+We5eAuNOM2k3nAABTWzLiMJkH+G1amJmfkCKkBCk04inA6kZ5COUikMupyQDtsE4
+hrr/KrskMuXzGY+rjP6NhWqr/twKj819TrOxlYD4vK68cZP+jx9m+vSBE6mxgMbN
+tBVdo9xFVCVymOYQCV8BRY8ScqP+YPNV5d6BMyDH9tvHJrGqZTNQiFhVX03Tw6mg
+hccEqYP1J/TaAlFg/P4HtqsxPBZD6x3IdSxXhrJ0IjrqLpVtKyQlTZGsJuNjFWG8
+LKixaxxR7iWsyRZVCnEqCgDN8hzKZIE3Ph+kLTa4z4mTNEYyWUNeKRrFrSxKvEOK
+KM0Pp53f
+=O/zf
 -----END PGP SIGNATURE-----
 ```
