@@ -2537,8 +2537,11 @@ impl PendingTransaction {
             );
         }
 
-        // This could theoretically return multiple tx keys as Monero does allow multiple tx keys for a single transaction
-        // According to moneromoo, its non standard behavior though so wallet2 should never do this
+        // This returns only one tx key, if the destinations included at most one subaddress
+        // 
+        // If there were more than one subaddress, we will get 1 + number of outputs tx keys
+        // - one primary tx key
+        // - one tx key for each output
         let_cxx_string!(txid_cxx = &txid);
         let tx_keys = ffi::pendingTransactionTxKeys(self, &txid_cxx)
             .context(
