@@ -9,7 +9,7 @@ use std::time::{self, Duration};
 /// while ensuring the most recent argument is eventually processed.
 pub fn throttle<F, T>(closure: F, delay: Duration) -> Throttle<T>
 where
-    F: Fn(T) -> () + Send + Sync + 'static,
+    F: Fn(T) + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
     let (sender, receiver) = mpsc::channel();
@@ -22,7 +22,8 @@ where
     }));
 
     let dup_throttle_config = throttle_config.clone();
-    let throttle = Throttle {
+
+    Throttle {
         sender: Some(sender),
         thread: Some(std::thread::spawn(move || {
             let throttle_config = dup_throttle_config;
@@ -58,7 +59,7 @@ where
                     }
                 } else {
                     // There is pending work; wait for either a timeout or a new message.
-                    let message = receiver.recv_timeout((*throttle_config.lock().unwrap()).delay);
+                    let message = receiver.recv_timeout(throttle_config.lock().unwrap().delay);
                     let now = time::Instant::now();
                     match message {
                         Ok(param) => {
@@ -98,12 +99,11 @@ where
             }
         })),
         throttle_config,
-    };
-    throttle
+    }
 }
 
 struct ThrottleConfig<T> {
-    closure: Pin<Box<dyn Fn(T) -> () + Send + Sync + 'static>>,
+    closure: Pin<Box<dyn Fn(T) + Send + Sync + 'static>>,
     delay: Duration,
 }
 impl<T> Drop for ThrottleConfig<T> {

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB + CLI + GUI: Reduce redial interval to 30s; set idle connection timeout to 2h; increase auth and multiplex timeout to 60s
 - ASB: Explicitly retry publishing the Bitcoin punish transaction 
 
 ## [3.0.0-rc.3] - 2025-10-16

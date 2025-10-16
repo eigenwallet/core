@@ -15,6 +15,8 @@ use swap_core::bitcoin;
 use swap_env::env;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
+const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
+
 #[allow(clippy::too_many_arguments)]
 pub fn asb<LR>(
     seed: &Seed,
@@ -66,7 +68,7 @@ where
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::MAX))
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 
     Ok((swarm, onion_addresses))
@@ -86,7 +88,7 @@ where
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::MAX))
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 
     Ok(swarm)

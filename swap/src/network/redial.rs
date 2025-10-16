@@ -11,8 +11,6 @@ use std::time::Duration;
 use tokio::time::{Instant, Sleep};
 use void::Void;
 
-use crate::cli;
-
 /// A [`NetworkBehaviour`] that tracks whether we are connected to the given
 /// peer and attempts to re-establish a connection with an exponential backoff
 /// if we lose the connection.
