@@ -140,7 +140,7 @@ pub struct TxStatus {
 /// Contains basic information needed for later verification.
 pub struct TxReceipt {
     pub txid: String,
-    pub tx_key: String,
+    pub tx_keys: HashMap<monero::Address, monero::PrivateKey>,
     /// The blockchain height at the time of publication.
     pub height: u64,
 }
@@ -438,7 +438,8 @@ impl WalletHandle {
 
     /// Get the address of the wallet for a given account and address index.
     pub async fn address(&self, account_index: u32, address_index: u32) -> monero::Address {
-        self.call(move |wallet| wallet.address(account_index, address_index)).await
+        self.call(move |wallet| wallet.address(account_index, address_index))
+            .await
     }
 
     /// Get the current height of the blockchain.
@@ -908,7 +909,7 @@ impl WalletHandle {
 
                 // Closure that returns (txid, amount, fee) or error
                 let result = (|| -> Result<(String, monero::Amount, monero::Amount), anyhow::Error> {
-                    let (txid, _) = pending_tx.validate_single_txid_single_tx_key()
+                    let (txid, _) = pending_tx.validate_single_txid(&[address])
                         .context("Failed to validate PendingTransaction to have single txid and single tx key")?;
 
                     let amount = ffi::pendingTransactionAmount(&pending_tx)
@@ -951,7 +952,8 @@ impl WalletHandle {
 
                 // Publish the transaction
                 if approved {
-                    let receipt_result = wallet.publish_pending_transaction(&mut pending_tx);
+                    let receipt_result =
+                        wallet.publish_pending_transaction(&mut pending_tx, &[address]);
 
                     // Dispose the pending transaction independent of whether the publish was successful or not
                     wallet.dispose_pending_transaction(pending_tx);
@@ -2009,7 +2011,7 @@ impl FfiWallet {
 
         // Publish the transaction
         let result = self
-            .publish_pending_transaction(&mut pending_tx)
+            .publish_pending_transaction(&mut pending_tx, &[*address])
             .context("Failed to publish sweep transaction");
 
         // Dispose the pending transaction after we're done with it
@@ -2065,7 +2067,7 @@ impl FfiWallet {
 
         // Publish the transaction
         let result = self
-            .publish_pending_transaction(&mut pending_tx)
+            .publish_pending_transaction(&mut pending_tx, &addresses)
             .context("Failed to publish multi-sweep transaction");
 
         // Dispose the pending transaction after we're done with it
@@ -2085,11 +2087,16 @@ impl FfiWallet {
         self.ensure_synchronized_blocking()
             .context("Cannot transfer when wallet is not synchronized")?;
 
+        let output_addresses = destinations
+            .iter()
+            .map(|(address, _)| *address)
+            .collect::<Vec<_>>();
+
         // Construct the pending transaction
         let mut pending_tx = self.create_pending_transaction_multi_dest(destinations, false)?;
 
         // Publish the transaction
-        let result = self.publish_pending_transaction(&mut pending_tx);
+        let result = self.publish_pending_transaction(&mut pending_tx, &output_addresses);
 
         // Dispose the pending transaction after we're done with it
         // independent of whether the publish was successful or not
@@ -2187,15 +2194,19 @@ impl FfiWallet {
 
     /// Publish a pending transaction and return a receipt.
     /// Note: Caller is responsible for disposing the pending transaction afterwards.
+    ///
+    /// `output_addresses` is a list of monero address which are mentioned in outputs for which we
+    /// need a tx key.
     fn publish_pending_transaction(
         &mut self,
         pending_tx: &mut PendingTransaction,
+        output_addresses: &[monero::Address],
     ) -> anyhow::Result<TxReceipt> {
         // Ensure the transaction only has a single txid and tx key
         //
         // We forbid splitting transactions. We forbid multiple tx keys.
-        let (txid, tx_key) = pending_tx.validate_single_txid_single_tx_key().context(
-            "Failed to ensure transaction has one txid and one tx key before publishing",
+        let (txid, tx_keys) = pending_tx.validate_single_txid(output_addresses).context(
+            "Failed to ensure transaction has one txid and at least one tx key before publishing",
         )?;
 
         // Get current blockchain height
@@ -2216,7 +2227,7 @@ impl FfiWallet {
                 Ok(_) => {
                     return Ok(TxReceipt {
                         txid,
-                        tx_key,
+                        tx_keys,
                         height,
                     });
                 }
@@ -2508,9 +2519,12 @@ impl PendingTransaction {
         }
     }
 
-    fn validate_single_txid_single_tx_key(
+    /// Validates that the pending tx isn't split and returns the tx id as well as
+    /// the transfer key for each output.
+    fn validate_single_txid(
         self: &mut Self,
-    ) -> Result<(String, String), anyhow::Error> {
+        output_addresses: &[monero::Address],
+    ) -> Result<(String, HashMap<monero::Address, monero::PrivateKey>), anyhow::Error> {
         // This can return multiple txids if wallet2 decided to split the transaction
         let txids = ffi::pendingTransactionTxIds(self)
             .context("Failed to get txid from pending transaction: FFI call failed with exception")?
@@ -2538,40 +2552,59 @@ impl PendingTransaction {
         }
 
         // This returns only one tx key, if the destinations included at most one subaddress
-        // 
+        //
         // If there were more than one subaddress, we will get 1 + number of outputs tx keys
         // - one primary tx key
         // - one tx key for each output
         let_cxx_string!(txid_cxx = &txid);
-        let tx_keys = ffi::pendingTransactionTxKeys(self, &txid_cxx)
-            .context(
-                "Failed to get tx key from pending transaction: FFI call failed with exception",
-            )?
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
+        let tx_keys: Vec<(monero::Address, monero::PrivateKey)> =
+            ffi::pendingTransactionTxKeys(self, &txid_cxx)
+                .context(
+                    "Failed to get tx key from pending transaction: FFI call failed with exception",
+                )?
+                .into_iter()
+                .map(|tx_key| -> Result<(monero::Address, monero::PrivateKey)> {
+                    Ok((
+                        tx_key
+                            .address
+                            .to_str()
+                            .context("Got non-utf8 address string")?
+                            .parse()
+                            .context("Got invalid Monero address")?,
+                        tx_key
+                            .key
+                            .to_str()
+                            .context("Got non-utf8 key string")?
+                            .parse()
+                            .context("Got invalid Monero private key")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, anyhow::Error>>()?;
 
-        // Ensure we only have one tx key
-        // If we have multiple tx keys, we would need to create multiple transfer proofs
-        let tx_key = match tx_keys.as_slice() {
-            [key] => key.clone(),
-            _ => anyhow::bail!(
-                "Expected 1 tx key, got {}. We do not allow splitting transactions",
-                tx_keys.len()
-            ),
-        };
+        if tx_keys.is_empty() {
+            anyhow::bail!("Expected at least one tx key, got 0");
+        }
 
-        // Ensure we didn't get junk from wallet2
-        {
-            monero::PrivateKey::from_str(&tx_key)
-                .with_context(|| format!("Invalid tx key: {tx_key}"))?;
-
-            if txid.is_empty() {
-                anyhow::bail!("Got an empty txid");
+        let mut keys_map = HashMap::new();
+        for (address, tx_key) in tx_keys {
+            if keys_map.contains_key(&address) {
+                anyhow::bail!("Address {} is used for multiple outputs", address);
+            } else {
+                keys_map.insert(address, tx_key);
             }
         }
 
-        Ok((txid, tx_key))
+        for address in output_addresses {
+            if !keys_map.contains_key(address) {
+                anyhow::bail!(
+                    "Output address {} is not mentioned in tx keys for tx {}",
+                    address,
+                    txid
+                );
+            }
+        }
+
+        Ok((txid, keys_map))
     }
 }
 
