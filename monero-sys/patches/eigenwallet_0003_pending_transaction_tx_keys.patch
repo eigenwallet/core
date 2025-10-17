@@ -50,7 +50,7 @@ index 2dd118ea3..2d5aefe0e 100644
 +                }
 +
 +                crypto::public_key derived_public_key;
-+                if (!crypto::derive_public_key(key_derivation, i, output_public_key, derived_public_key)) {
++                if (!crypto::derive_public_key(key_derivation, i, output.addr.m_spend_public_key, derived_public_key)) {
 +                    throw std::runtime_error("Failed to derive public key for output " + std::to_string(i));
 +                }
 +
