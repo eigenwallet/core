@@ -42,11 +42,12 @@ pub mod transport {
         register_hidden_service: bool,
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
-        let (maybe_tor_transport, onion_addresses) = if let Some(tor_client) = maybe_tor_client {
+        let mut onion_addresses = vec![];
+        let maybe_tor_transport = if let Some(tor_client) = maybe_tor_client {
             let mut tor_transport =
                 libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
 
-            let addresses = if register_hidden_service {
+            if register_hidden_service {
                 let onion_service_config = OnionServiceConfigBuilder::default()
                     .nickname(
                         ASB_ONION_SERVICE_NICKNAME
@@ -64,20 +65,17 @@ pub mod transport {
                             %addr,
                             "Setting up onion service for libp2p to listen on"
                         );
-                        vec![addr]
+                        onion_addresses.push(addr)
                     }
                     Err(err) => {
                         tracing::warn!(error=%err, "Failed to listen on onion address");
-                        vec![]
                     }
                 }
-            } else {
-                vec![]
-            };
+            }
 
-            (OptionalTransport::some(tor_transport), addresses)
+            OptionalTransport::some(tor_transport)
         } else {
-            (OptionalTransport::none(), vec![])
+            OptionalTransport::none()
         };
 
         let tcp = maybe_tor_transport
