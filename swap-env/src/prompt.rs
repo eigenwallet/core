@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::defaults::{
     default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
 };
+use crate::env::may_init_tor;
 use anyhow::{bail, Context, Result};
 use console::Style;
 use dialoguer::Confirm;
@@ -38,6 +39,10 @@ pub fn bitcoin_confirmation_target(default_target: u16) -> Result<u16> {
 
 /// Prompt user for listen addresses
 pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multiaddr>> {
+    if !may_init_tor() {
+        return Ok(vec![]);
+    }
+
     let listen_addresses = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Enter multiaddresses (comma separated) on which asb should list for peer-to-peer communications or hit return to use default")
         .default(format!("{}", default_listen_address))
@@ -131,6 +136,10 @@ pub fn monero_daemon_url() -> Result<Option<Url>> {
 
 /// Prompt user for Tor hidden service registration
 pub fn tor_hidden_service() -> Result<bool> {
+    if !may_init_tor() {
+        return Ok(false);
+    }
+
     print_info_box([
         "Your ASB needs to be reachable from the outside world to provide quotes to takers.",
         "Your ASB can run a hidden service for itself. It'll be reachable at an .onion address.",
