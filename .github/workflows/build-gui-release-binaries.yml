@@ -195,40 +195,11 @@ jobs:
           echo "aarch64 SHA256: $AARCH64_SHA256"
           echo "x64 SHA256: $X64_SHA256"
 
-          # Generate the Homebrew formula
-          cat > eigenwallet.rb <<'EOF'
-cask "eigenwallet" do
-  version "$VERSION"
-
-  on_arm do
-    sha256 "$AARCH64_SHA256"
-    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_aarch64.dmg"
-  end
-
-  on_intel do
-    sha256 "$X64_SHA256"
-    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_x64.dmg"
-  end
-
-  name "Eigenwallet"
-  desc "GUI for XMR<>BTC Atomic Swaps"
-  homepage "https://github.com/eigenwallet/core"
-
-  livecheck do
-    url :url
-    strategy :github_latest
-  end
-
-  auto_updates true
-
-  app "eigenwallet.app"
-end
-EOF
-
-          # Now substitute the bash variables
-          sed -i "s/\$VERSION/$VERSION/g" eigenwallet.rb
-          sed -i "s/\$AARCH64_SHA256/$AARCH64_SHA256/g" eigenwallet.rb
-          sed -i "s/\$X64_SHA256/$X64_SHA256/g" eigenwallet.rb
+          # Generate the Homebrew formula from template
+          cp dev-scripts/homebrew/eigenwallet.rb.template eigenwallet.rb
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" eigenwallet.rb
+          sed -i "s/AARCH64_SHA256_PLACEHOLDER/$AARCH64_SHA256/g" eigenwallet.rb
+          sed -i "s/X64_SHA256_PLACEHOLDER/$X64_SHA256/g" eigenwallet.rb
 
           cat eigenwallet.rb
 

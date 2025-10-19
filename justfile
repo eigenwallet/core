@@ -123,7 +123,7 @@ docker-prune-network:
 
 # Install dependencies required for building monero-sys
 prepare_mac_os_brew_dependencies:
-	cd dev_scripts && chmod +x ./brew_dependencies_install.sh && ./brew_dependencies_install.sh
+	cd dev-scripts && chmod +x ./brew_dependencies_install.sh && ./brew_dependencies_install.sh
 
 # Takes a crate (e.g monero-rpc-pool) and uses code2prompt to copy to clipboard
 # E.g code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
@@ -131,4 +131,4 @@ code2prompt_single_crate crate:
 	cd {{crate}} && code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
 
 prepare-windows-build:
-    cd dev_scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+    cd dev-scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
