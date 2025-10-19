@@ -584,12 +584,9 @@ mod builder {
                 let tauri_handle = self.tauri_handle.clone();
                 async move {
                     let unbootstrapped_tor_client = if self.tor {
-                        match create_tor_client(&base_data_dir).await.inspect_err(|err| {
+                        create_tor_client(&base_data_dir).await.inspect_err(|err| {
                             tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
-                        }) {
-                            Ok(client) => Some(client),
-                            Err(_) => None,
-                        }
+                        }).ok()
                     } else {
                         tracing::warn!("Internal Tor client not enabled, skipping initialization");
                         None
