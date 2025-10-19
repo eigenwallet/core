@@ -14,7 +14,6 @@
 
 use anyhow::{bail, Context, Result};
 use comfy_table::Table;
-use libp2p::Swarm;
 use monero_sys::Daemon;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -251,8 +250,8 @@ pub async fn main() -> Result<()> {
                 config.tor.hidden_service_num_intro_points,
             )?;
 
-            for listen in config.network.listen.clone() {
-                if let Err(e) = Swarm::listen_on(&mut swarm, listen.clone()) {
+            for listen in &config.network.listen {
+                if let Err(e) = swarm.listen_on(listen.clone()) {
                     tracing::warn!("Failed to listen on network interface {}: {}. Consider removing it from the config.", listen, e);
                 }
             }
