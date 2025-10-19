@@ -1,3 +1,4 @@
+use crate::common::tor::existing_tor_config;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::alice;
 use crate::network::transport::authenticate_and_multiplex;
@@ -19,7 +20,10 @@ pub mod transport {
     use std::sync::Arc;
 
     use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
-    use libp2p::{core::transport::OptionalTransport, dns, identity, tcp, Transport};
+    use libp2p::{
+        core::transport::{OptionalTransport, OrTransport},
+        dns, identity, tcp, Transport,
+    };
     use libp2p_tor::AddressConversion;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -31,6 +35,9 @@ pub mod transport {
     type OnionTransportWithAddresses = (Boxed<(PeerId, StreamMuxerBox)>, Vec<Multiaddr>);
 
     /// Creates the libp2p transport for the ASB.
+    ///
+    /// If running on a system with a universal Tor daemon (Whonix),
+    /// only dial therethrough, and never listen.
     ///
     /// If you pass in a `None` for `maybe_tor_client`, the ASB will not use Tor at all.
     ///
@@ -44,7 +51,12 @@ pub mod transport {
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
         let mut onion_addresses = vec![];
-        let maybe_tor_transport = if let Some(tor_client) = maybe_tor_client {
+        let maybe_tor_transport = if let Some(universal_config) = existing_tor_config() {
+            OrTransport::new(
+                OptionalTransport::none(),
+                OptionalTransport::some(todo!() as libp2p_tor::TorTransport),
+            )
+        } else if let Some(tor_client) = maybe_tor_client {
             let mut tor_transport =
                 libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
 
@@ -74,9 +86,12 @@ pub mod transport {
                 }
             }
 
-            OptionalTransport::some(tor_transport)
+            OrTransport::new(
+                OptionalTransport::some(tor_transport),
+                OptionalTransport::none(),
+            )
         } else {
-            OptionalTransport::none()
+            OrTransport::new(OptionalTransport::none(), OptionalTransport::none())
         };
 
         let tcp = maybe_tor_transport

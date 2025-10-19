@@ -137,8 +137,12 @@ pub fn new(is_testnet: bool, asb_config: &AsbConfig) -> Config {
     }
 }
 
+pub fn is_whonix() -> bool {
+    fs::exists("/usr/share/whonix/marker").unwrap_or(false)
+}
+
 pub fn may_init_tor() -> bool {
-    let is_whonix = fs::exists("/usr/share/whonix/marker").unwrap_or(false);
+    let is_whonix = is_whonix();
     if is_whonix {
         tracing::info!("On whonix, not starting Tor");
     }

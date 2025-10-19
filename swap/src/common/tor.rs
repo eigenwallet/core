@@ -6,7 +6,19 @@ use crate::cli::api::tauri_bindings::{
 };
 use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
 use futures::StreamExt;
+use swap_env::env::is_whonix;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+pub enum RemoteTorClientConfig {}
+pub fn existing_tor_config() -> Option<RemoteTorClientConfig> {
+    if is_whonix() {
+        Some(
+            todo!(/*RemoteTorClientConfig::from_environment().expect("whonix always has $TOR_... set")*/),
+        )
+    } else {
+        None
+    }
+}
 
 static TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 static TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
