@@ -30,7 +30,7 @@ pub fn new(
     let maybe_tor_transport = match (existing_tor_config(), maybe_tor_client) {
         (Some(universal_config), _) => OrTransport::new(
             OptionalTransport::none(),
-            OptionalTransport::some(todo!() as libp2p_tor::TorTransport),
+            OptionalTransport::some(universal_config.transport()),
         ),
         (None, Some(client)) => OrTransport::new(
             OptionalTransport::some(libp2p_tor::TorTransport::from_client(

@@ -54,7 +54,7 @@ pub mod transport {
         let maybe_tor_transport = if let Some(universal_config) = existing_tor_config() {
             OrTransport::new(
                 OptionalTransport::none(),
-                OptionalTransport::some(todo!() as libp2p_tor::TorTransport),
+                OptionalTransport::some(universal_config.transport()),
             )
         } else if let Some(tor_client) = maybe_tor_client {
             let mut tor_transport =

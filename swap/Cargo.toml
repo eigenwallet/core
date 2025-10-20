@@ -42,7 +42,7 @@ ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"
 ed25519-dalek = "1"
 electrum-pool = { path = "../electrum-pool" }
 fns = "0.0.7"
-futures = { workspace = true }
+futures = { workspace = true, features = ["compat", "io-compat"] }
 hex = { workspace = true }
 jsonrpsee = { workspace = true, features = ["server"] }
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
@@ -89,6 +89,7 @@ void = "1"
 
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
+tokio-socks = "0.5"
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { workspace = true }
 
