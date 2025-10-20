@@ -14,7 +14,6 @@
 
 use anyhow::{bail, Context, Result};
 use comfy_table::Table;
-use libp2p::Swarm;
 use monero_sys::Daemon;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
@@ -41,6 +40,7 @@ use swap::{bitcoin, monero};
 use swap_env::config::{
     initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
 };
+use swap_env::env::may_init_tor;
 use swap_feed;
 use swap_machine::alice::is_complete;
 use tracing_subscriber::filter::LevelFilter;
@@ -225,9 +225,13 @@ pub async fn main() -> Result<()> {
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
-            let tor_client = create_tor_client(&config.data.dir).await?;
-            bootstrap_tor_client(tor_client.clone(), None).await?;
-            let tor_client = tor_client.into();
+            let tor_client = if may_init_tor() {
+                let tor_client = create_tor_client(&config.data.dir).await?;
+                bootstrap_tor_client(tor_client.clone(), None).await?;
+                Some(tor_client.into())
+            } else {
+                None
+            };
 
             let (mut swarm, onion_addresses) = swarm::asb(
                 &seed,
@@ -243,8 +247,8 @@ pub async fn main() -> Result<()> {
                 config.tor.hidden_service_num_intro_points,
             )?;
 
-            for listen in config.network.listen.clone() {
-                if let Err(e) = Swarm::listen_on(&mut swarm, listen.clone()) {
+            for listen in &config.network.listen {
+                if let Err(e) = swarm.listen_on(listen.clone()) {
                     tracing::warn!("Failed to listen on network interface {}: {}. Consider removing it from the config.", listen, e);
                 }
             }

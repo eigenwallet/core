@@ -1,3 +1,4 @@
+use crate::common::tor::existing_tor_config;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::alice;
 use crate::network::transport::authenticate_and_multiplex;
@@ -19,7 +20,10 @@ pub mod transport {
     use std::sync::Arc;
 
     use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
-    use libp2p::{core::transport::OptionalTransport, dns, identity, tcp, Transport};
+    use libp2p::{
+        core::transport::{OptionalTransport, OrTransport},
+        dns, identity, tcp, Transport,
+    };
     use libp2p_tor::AddressConversion;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -32,6 +36,9 @@ pub mod transport {
 
     /// Creates the libp2p transport for the ASB.
     ///
+    /// If running on a system with a universal Tor daemon (Whonix),
+    /// only dial therethrough, and never listen.
+    ///
     /// If you pass in a `None` for `maybe_tor_client`, the ASB will not use Tor at all.
     ///
     /// If you pass in a `Some(tor_client)`, the ASB will listen on an onion service and return
@@ -43,11 +50,17 @@ pub mod transport {
         register_hidden_service: bool,
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
-        let (maybe_tor_transport, onion_addresses) = if let Some(tor_client) = maybe_tor_client {
+        let mut onion_addresses = vec![];
+        let maybe_tor_transport = if let Some(universal_config) = existing_tor_config() {
+            OrTransport::new(
+                OptionalTransport::none(),
+                OptionalTransport::some(universal_config.transport()),
+            )
+        } else if let Some(tor_client) = maybe_tor_client {
             let mut tor_transport =
                 libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
 
-            let addresses = if register_hidden_service {
+            if register_hidden_service {
                 let onion_service_config = OnionServiceConfigBuilder::default()
                     .nickname(
                         ASB_ONION_SERVICE_NICKNAME
@@ -65,20 +78,20 @@ pub mod transport {
                             %addr,
                             "Setting up onion service for libp2p to listen on"
                         );
-                        vec![addr]
+                        onion_addresses.push(addr)
                     }
                     Err(err) => {
                         tracing::warn!(error=%err, "Failed to listen on onion address");
-                        vec![]
                     }
                 }
-            } else {
-                vec![]
-            };
+            }
 
-            (OptionalTransport::some(tor_transport), addresses)
+            OrTransport::new(
+                OptionalTransport::some(tor_transport),
+                OptionalTransport::none(),
+            )
         } else {
-            (OptionalTransport::none(), vec![])
+            OrTransport::new(OptionalTransport::none(), OptionalTransport::none())
         };
 
         let tcp = maybe_tor_transport

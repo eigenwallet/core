@@ -21,6 +21,7 @@ use swap::cli::{
     },
     command::Bitcoin,
 };
+use swap_env::env::may_init_tor;
 use tauri_plugin_dialog::DialogExt;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
@@ -69,7 +70,8 @@ macro_rules! generate_command_handlers {
             get_restore_height,
             dfx_authenticate,
             change_monero_node,
-            get_context_status
+            get_context_status,
+            get_tor_forced,
         ]
     };
 }
@@ -195,6 +197,11 @@ pub async fn initialize_context(
 #[tauri::command]
 pub async fn get_context_status(state: tauri::State<'_, State>) -> Result<ContextStatus, String> {
     Ok(state.context().status().await)
+}
+
+#[tauri::command]
+pub async fn get_tor_forced(_: tauri::State<'_, State>) -> Result<bool, String> {
+    Ok(!may_init_tor())
 }
 
 #[tauri::command]

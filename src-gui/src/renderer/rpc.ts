@@ -304,6 +304,11 @@ export async function checkContextStatus(): Promise<ContextStatus> {
   return await invokeNoArgs<ContextStatus>("get_context_status");
 }
 
+export async function getTorForced(): Promise<boolean> {
+  const forced = await invokeNoArgs<boolean>("get_tor_forced");
+  return forced;
+}
+
 export async function getLogsOfSwap(
   swapId: string,
   redact: boolean,
