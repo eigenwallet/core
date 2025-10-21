@@ -8,8 +8,8 @@ use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error
 use futures::StreamExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-static TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
-static TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
+const TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Creates an unbootstrapped Tor client
 pub async fn create_tor_client(
