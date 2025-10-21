@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.1] - 2025-10-21
+
 - ASB + GUI + CLI: Fix an issue where the internal Tor client would fail to choose guards. This would prevent all Tor traffic from working. We temporarily fix this by forcing new guards to be chosen on every startup. This will be reverted once the issue is fixed [upstream](https://gitlab.torproject.org/tpo/core/arti/-/issues/2079)
 - CLI: Remove the `--debug` flag
 
@@ -696,7 +698,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.2.0-rc.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.2.1...HEAD
+[3.2.1]: https://github.com/eigenwallet/core/compare/3.2.0-rc.4...3.2.1
 [3.2.0-rc.4]: https://github.com/eigenwallet/core/compare/3.0.0-rc.3...3.2.0-rc.4
 [3.0.0-rc.3]: https://github.com/eigenwallet/core/compare/3.2.0-rc.2...3.0.0-rc.3
 [3.2.0-rc.2]: https://github.com/eigenwallet/core/compare/3.2.0-rc.1...3.2.0-rc.2
