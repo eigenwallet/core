@@ -54,10 +54,10 @@ where
         Err(e) => anyhow::bail!(e),
     };
 
-    let debug = args.debug;
     let json = args.json;
     let is_testnet = args.testnet;
     let data = args.data;
+
     let result: Result<Arc<Context>> = match args.cmd {
         CliCommand::BuyXmr {
             seller: Seller { seller },
@@ -85,7 +85,6 @@ where
                 .with_bitcoin(bitcoin)
                 .with_monero(monero)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -105,7 +104,6 @@ where
             let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -122,7 +120,6 @@ where
             let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -141,7 +138,6 @@ where
             let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -155,7 +151,6 @@ where
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -179,7 +174,6 @@ where
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -202,7 +196,6 @@ where
                 .with_bitcoin(bitcoin)
                 .with_monero(monero)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -219,7 +212,6 @@ where
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -238,7 +230,6 @@ where
             ContextBuilder::new(is_testnet)
                 .with_tor(tor.enable_tor)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -256,7 +247,6 @@ where
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -271,7 +261,6 @@ where
             let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
-                .with_debug(debug)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
@@ -309,9 +298,6 @@ struct Arguments {
         help = "The base data directory to be used for mainnet / testnet specific data like database, wallets etc"
     )]
     data: Option<PathBuf>,
-
-    #[structopt(long, help = "Activate debug logging")]
-    debug: bool,
 
     #[structopt(
         short,

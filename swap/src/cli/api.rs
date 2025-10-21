@@ -40,7 +40,6 @@ mod config {
         pub(super) namespace: XmrBtcNamespace,
         pub env_config: EnvConfig,
         pub(super) seed: Option<Seed>,
-        pub(super) debug: bool,
         pub(super) json: bool,
         pub(super) log_dir: PathBuf,
         pub(super) data_dir: PathBuf,
@@ -57,7 +56,6 @@ mod config {
                 namespace: XmrBtcNamespace::from_is_testnet(false),
                 env_config,
                 seed: seed.into(),
-                debug: false,
                 json: false,
                 is_testnet: false,
                 data_dir,
@@ -417,7 +415,6 @@ mod builder {
         bitcoin: Option<Bitcoin>,
         data: Option<PathBuf>,
         is_testnet: bool,
-        debug: bool,
         json: bool,
         tor: bool,
         enable_monero_tor: bool,
@@ -441,7 +438,6 @@ mod builder {
                 bitcoin: None,
                 data: None,
                 is_testnet: false,
-                debug: false,
                 json: false,
                 tor: false,
                 enable_monero_tor: false,
@@ -480,12 +476,6 @@ mod builder {
             self
         }
 
-        /// Whether to include debug level logging messages (default false)
-        pub fn with_debug(mut self, debug: bool) -> Self {
-            self.debug = debug;
-            self
-        }
-
         /// Set logging format to json (default false)
         pub fn with_json(mut self, json: bool) -> Self {
             self.json = json;
@@ -515,19 +505,13 @@ mod builder {
 
             // Initialize logging
             let format = if self.json { Format::Json } else { Format::Raw };
-            let level_filter = if self.debug {
-                LevelFilter::from_level(Level::DEBUG)
-            } else {
-                LevelFilter::from_level(Level::INFO)
-            };
 
             START.call_once(|| {
                 let _ = common::tracing_util::init(
-                    level_filter,
                     format,
                     log_dir.clone(),
                     self.tauri_handle.clone(),
-                    false,
+                    true,
                 );
                 tracing::info!(
                     binary = "cli",
@@ -716,7 +700,6 @@ mod builder {
                 namespace: XmrBtcNamespace::from_is_testnet(self.is_testnet),
                 env_config,
                 seed: seed.clone().into(),
-                debug: self.debug,
                 json: self.json,
                 is_testnet: self.is_testnet,
                 data_dir: data_dir.clone(),
@@ -1165,7 +1148,6 @@ pub mod api_test {
                 namespace: XmrBtcNamespace::from_is_testnet(is_testnet),
                 env_config,
                 seed: seed.into(),
-                debug,
                 json,
                 is_testnet,
                 data_dir,

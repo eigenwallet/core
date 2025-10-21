@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ASB + GUI + CLI: Fix an issue where the internal Tor client would fail to choose guards. This would prevent all Tor traffic from working. We temporarily fix this by forcing new guards to be chosen on every startup. This will be reverted once the issue is fixed [upstream](https://gitlab.torproject.org/tpo/core/arti/-/issues/2079)
+- CLI: Remove the `--debug` flag
 
 ## [3.2.0-rc.4] - 2025-10-17
 

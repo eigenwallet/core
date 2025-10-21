@@ -13,46 +13,47 @@ use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriLogEvent};
 
-const TOR_CRATES: &[&str] = &[
-    "arti",
-    "arti-client",
-    "arti-fork",
-    "tor-api2",
-    "tor-async-utils",
-    "tor-basic-utils",
-    "tor-bytes",
-    "tor-cell",
-    "tor-cert",
-    "tor-chanmgr",
-    "tor-checkable",
-    "tor-circmgr",
-    "tor-config",
-    "tor-config-path",
-    "tor-consdiff",
-    "tor-dirclient",
-    "tor-dirmgr",
-    "tor-error",
-    "tor-general-addr",
-    "tor-guardmgr",
-    "tor-hsclient",
-    "tor-hscrypto",
-    "tor-hsservice",
-    "tor-key-forge",
-    "tor-keymgr",
-    "tor-linkspec",
-    "tor-llcrypto",
-    "tor-log-ratelim",
-    "tor-memquota",
-    "tor-netdir",
-    "tor-netdoc",
-    "tor-persist",
-    "tor-proto",
-    "tor-protover",
-    "tor-relay-selection",
-    "tor-rtcompat",
-    "tor-rtmock",
-    "tor-socksproto",
-    "tor-units",
+const TOR_CRATES: &[&str] = &["arti", "arti_client"];
+
+#[allow(dead_code)] // might be useful later
+const TOR_SUBCRATES: &[&str] = &[
+    "arti_fork",
+    "tor_api2",
+    "tor_async_utils",
+    "tor_basic_utils",
+    "tor_bytes",
+    "tor_cell",
+    "tor_cert",
+    "tor_chanmgr",
+    "tor_checkable",
+    "tor_circmgr",
+    "tor_config",
+    "tor_config_path",
+    "tor_consdiff",
+    "tor_dirclient",
+    "tor_dirmgr",
+    "tor_error",
+    "tor_general_addr",
+    "tor_guardmgr",
+    "tor_hsclient",
+    "tor_hscrypto",
+    "tor_hsservice",
+    "tor_key_forge",
+    "tor_keymgr",
+    "tor_linkspec",
+    "tor_llcrypto",
+    "tor_log_ratelim",
+    "tor_memquota",
+    "tor_netdir",
+    "tor_netdoc",
+    "tor_persist",
+    "tor_proto",
+    "tor_protover",
+    "tor_relay_selection",
+    "tor_rtcompat",
+    "tor_rtmock",
+    "tor_socksproto",
+    "tor_units",
 ];
 
 const LIBP2P_CRATES: &[&str] = &[
@@ -83,19 +84,19 @@ const LIBP2P_CRATES: &[&str] = &[
     "libp2p_gossipsub",
     "libp2p_rendezvous",
     "libp2p_dcutr",
-    "monero_cpp",
 ];
 
 const OUR_CRATES: &[&str] = &[
     "swap",
     "asb",
     "monero_sys",
-    "unstoppableswap-gui-rs",
+    "unstoppableswap_gui_rs",
     "seed",
     "swap_env",
     "swap_fs",
     "swap_serde",
     "monero_rpc_pool",
+    "monero_cpp",
 ];
 
 /// Output formats for logging messages.
@@ -112,7 +113,6 @@ pub enum Format {
 /// disregarding the arguments to this function. When `trace_stdout` is `true`,
 /// all tracing logs are also emitted to stdout.
 pub fn init(
-    level_filter: LevelFilter,
     format: Format,
     dir: impl AsRef<Path>,
     tauri_handle: Option<TauriHandle>,
@@ -143,7 +143,7 @@ pub fn init(
         .json()
         .with_filter(env_filter_with_all_crates(vec![(
             OUR_CRATES.to_vec(),
-            level_filter,
+            LevelFilter::DEBUG,
         )])?);
 
     // Layer for writing to the verbose log file
@@ -187,7 +187,7 @@ pub fn init(
         .with_line_number(true)
         .json()
         .with_filter(env_filter_with_all_crates(vec![
-            (OUR_CRATES.to_vec(), LevelFilter::DEBUG),
+            (OUR_CRATES.to_vec(), LevelFilter::TRACE),
             (LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
             (TOR_CRATES.to_vec(), LevelFilter::INFO),
         ])?);
@@ -196,11 +196,11 @@ pub fn init(
     // Otherwise, we only log the bare minimum
     let terminal_layer_env_filter = match trace_stdout {
         true => env_filter_with_all_crates(vec![
-            (OUR_CRATES.to_vec(), level_filter),
-            (TOR_CRATES.to_vec(), level_filter),
+            (OUR_CRATES.to_vec(), LevelFilter::DEBUG),
+            (TOR_CRATES.to_vec(), LevelFilter::INFO),
             (LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
         ])?,
-        false => env_filter_with_all_crates(vec![(OUR_CRATES.to_vec(), level_filter)])?,
+        false => env_filter_with_all_crates(vec![(OUR_CRATES.to_vec(), LevelFilter::INFO)])?,
     };
 
     let final_terminal_layer = match format {
@@ -222,7 +222,7 @@ pub fn init(
     subscriber.try_init()?;
 
     // Now we can use the tracing macros to log messages
-    tracing::info!(%level_filter, logs_dir=%dir.as_ref().display(), "Initialized tracing. General logs will be written to swap-all.log, and verbose logs to tracing*.log");
+    tracing::info!(logs_dir=%dir.as_ref().display(), "Initialized tracing. General logs will be written to swap-all.log, and verbose logs to tracing*.log");
 
     Ok(())
 }
