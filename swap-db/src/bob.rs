@@ -1,9 +1,8 @@
-use crate::monero::BlockHeight;
-use crate::monero::TransferProof;
-use crate::protocol::bob;
-use crate::protocol::bob::BobState;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use swap_core::monero::{BlockHeight, TransferProof};
+use swap_machine::bob;
+use swap_machine::bob::BobState;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Bob {
