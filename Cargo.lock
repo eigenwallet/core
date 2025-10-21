@@ -3748,15 +3748,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fns"
-version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9d318f82a68feac152dab48e8a6f1eb665a915ea6a0c76e4ad5ed137f80c368"
-dependencies = [
- "log",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11121,7 +11112,6 @@ dependencies = [
  "ecdsa_fun",
  "ed25519-dalek 1.0.1",
  "electrum-pool",
- "fns",
  "futures",
  "get-port",
  "hex",
@@ -11161,6 +11151,7 @@ dependencies = [
  "strum 0.26.3",
  "swap-controller-api",
  "swap-core",
+ "swap-db",
  "swap-env",
  "swap-feed",
  "swap-fs",
@@ -11271,6 +11262,18 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+]
+
+[[package]]
+name = "swap-db"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.32.7",
+ "serde",
+ "strum 0.26.3",
+ "swap-core",
+ "swap-machine",
+ "swap-serde",
 ]
 
 [[package]]

@@ -18,35 +18,53 @@ bdk_chain = { workspace = true }
 bdk_core = { workspace = true }
 bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }
 bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
-
-anyhow = { workspace = true }
-arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
-async-compression = { version = "0.3", features = ["bzip2", "tokio"] }
-async-trait = { workspace = true }
-atty = "0.2"
-backoff = { workspace = true }
-base64 = "0.22"
-big-bytes = "1"
 bitcoin = { workspace = true }
+
+# Bitcoin Wallet
 bitcoin-wallet = { path = "../bitcoin-wallet" }
-bmrng = { workspace = true }
-comfy-table = "7.1"
-config = { version = "0.14", default-features = false, features = ["toml"] }
-conquer-once = "0.4"
-curve25519-dalek = { workspace = true }
-data-encoding = "2.6"
-derive_builder = "0.20.2"
-dfx-swiss-sdk = { workspace = true, optional = true }
-dialoguer = "0.11"
-ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
-ed25519-dalek = "1"
-electrum-pool = { path = "../electrum-pool" }
-fns = "0.0.7"
-futures = { workspace = true }
-hex = { workspace = true }
-jsonrpsee = { workspace = true, features = ["server"] }
+
+# Tor
+arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
+tor-rtcompat = { workspace = true, features = ["tokio"] }
+
+# LibP2P
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
+
+# Error handling
+anyhow = { workspace = true }
+backoff = { workspace = true }
+thiserror = { workspace = true }
+
+# Crypto / Decoding / Encoding
+base64 = "0.22"
+big-bytes = "1"
+curve25519-dalek = { workspace = true }
+data-encoding = "2.6"
+ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
+ed25519-dalek = "1"
+hex = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+sha2 = { workspace = true }
+sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
+
+# Randomness
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
+# CLI
+atty = "0.2"
+comfy-table = "7.1"
+dialoguer = "0.11"
+
+# Other stuff
+bmrng = { workspace = true }
+config = { version = "0.14", default-features = false, features = ["toml"] }
+conquer-once = "0.4"
+derive_builder = "0.20.2"
+dfx-swiss-sdk = { workspace = true, optional = true }
+electrum-pool = { path = "../electrum-pool" }
+jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
 monero = { workspace = true }
 monero-rpc = { path = "../monero-rpc" }
@@ -56,25 +74,15 @@ monero-sys = { path = "../monero-sys" }
 once_cell = { workspace = true }
 pem = "3.0"
 proptest = "1"
-rand = { workspace = true }
-rand_chacha = { workspace = true }
 regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
 rust_decimal_macros = "1"
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
 semver = "1.0"
-serde = { workspace = true }
-serde_cbor = "0.11"
-serde_json = { workspace = true }
-serde_with = { version = "1", features = ["macros"] }
-sha2 = { workspace = true }
-sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 structopt = "0.3"
-strum = { version = "0.26", features = ["derive"] }
 swap-controller-api = { path = "../swap-controller-api" }
 swap-core = { path = "../swap-core" }
+swap-db = { path = "../swap-db" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
 swap-fs = { path = "../swap-fs" }
@@ -82,30 +90,45 @@ swap-machine = { path = "../swap-machine" }
 swap-p2p = { path = "../swap-p2p" }
 swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
-thiserror = { workspace = true }
 throttle = { path = "../throttle" }
 time = "0.3"
+url = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
 void = "1"
+zeroize = "1.8.1"
 
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
 tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { workspace = true }
 
-tor-rtcompat = { workspace = true, features = ["tokio"] }
+# Async
+async-compression = { version = "0.3", features = ["bzip2", "tokio"] }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
 tower = { version = "0.4.13", features = ["full"] }
 tower-http = { version = "0.3.4", features = ["full"] }
+
+# Tracing
 tracing = { workspace = true }
 tracing-appender = "0.2"
 tracing-subscriber = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_cbor = "0.11"
+serde_json = { workspace = true }
+serde_with = { version = "1", features = ["macros"] }
+strum = { workspace = true, features = ["derive"] }
 typeshare = { workspace = true }
-url = { workspace = true }
-uuid = { workspace = true, features = ["serde"] }
-zeroize = "1.8.1"
 
 # monero-oxide
 monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
 monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }
+
+# Database
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [target.'cfg(not(windows))'.dependencies]
 tokio-tar = "0.3"

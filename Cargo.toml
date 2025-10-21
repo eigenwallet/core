@@ -15,6 +15,7 @@ members = [
   "swap-controller",
   "swap-controller-api",
   "swap-core",
+  "swap-db",
   "swap-env",
   "swap-feed",
   "swap-fs",
@@ -48,6 +49,7 @@ async-trait = "0.1"
 
 # Serialization
 serde_cbor = "0.11"
+strum = { version = "0.26" }
 
 anyhow = "1"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
