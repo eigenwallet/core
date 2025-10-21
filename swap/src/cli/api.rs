@@ -24,8 +24,6 @@ use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::task::AbortOnDropHandle;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
-use tracing::level_filters::LevelFilter;
-use tracing::Level;
 use uuid::Uuid;
 
 use super::watcher::Watcher;
