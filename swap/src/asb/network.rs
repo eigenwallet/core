@@ -78,12 +78,14 @@ pub mod transport {
             OptionalTransport::none()
         };
 
-        let tcp = maybe_tor_transport
-            .or_transport(tcp::tokio::Transport::new(tcp::Config::new().nodelay(true)));
+        let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
         let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
         Ok((
-            authenticate_and_multiplex(tcp_with_dns.boxed(), identity)?,
+            authenticate_and_multiplex(
+                maybe_tor_transport.or_transport(tcp_with_dns).boxed(),
+                identity,
+            )?,
             onion_addresses,
         ))
     }
