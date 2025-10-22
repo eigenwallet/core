@@ -6,8 +6,6 @@ use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::Boxed;
-use libp2p::dns;
-use libp2p::tcp;
 use libp2p::{identity, PeerId, Transport};
 use libp2p_tor::AddressConversion;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -24,13 +22,6 @@ pub fn new(
     identity: &identity::Keypair,
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
 ) -> Result<Boxed<(PeerId, StreamMuxerBox)>> {
-    let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
-    let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
-
-    let maybe_tor_transport =
-        tor_client_to_transport(maybe_tor_client, AddressConversion::IpAndDns, |_| {});
-
-    let transport = maybe_tor_transport.or_transport(tcp_with_dns).boxed();
-
-    authenticate_and_multiplex(transport, identity)
+    let transport = tor_client_to_transport(maybe_tor_client, AddressConversion::IpAndDns, |_| {})?;
+    authenticate_and_multiplex(transport.boxed(), identity)
 }

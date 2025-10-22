@@ -19,7 +19,7 @@ pub mod transport {
 
     use crate::common::tor::tor_client_to_transport;
     use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
-    use libp2p::{dns, identity, tcp, Transport};
+    use libp2p::{identity, Transport};
     use libp2p_tor::AddressConversion;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -44,7 +44,7 @@ pub mod transport {
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
         let mut onion_addresses = vec![];
-        let maybe_tor_transport = tor_client_to_transport(
+        let transport = tor_client_to_transport(
             maybe_tor_client,
             AddressConversion::DnsOnly,
             |arti_tor_transport| {
@@ -77,16 +77,10 @@ pub mod transport {
                     }
                 }
             },
-        );
-
-        let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
-        let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
+        )?;
 
         Ok((
-            authenticate_and_multiplex(
-                maybe_tor_transport.or_transport(tcp_with_dns).boxed(),
-                identity,
-            )?,
+            authenticate_and_multiplex(transport.boxed(), identity)?,
             onion_addresses,
         ))
     }

@@ -6,16 +6,25 @@ use crate::cli::api::tauri_bindings::{
 };
 use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
 use futures::StreamExt;
-use libp2p::core::transport::OptionalTransport;
+use libp2p::core::transport::{OptionalTransport, OrTransport};
+use libp2p::Transport;
 use libp2p_tor::{AddressConversion, TorTransport};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
+type TcpTransport = libp2p::dns::tokio::Transport<libp2p::tcp::tokio::Transport>;
+type IntoTransportT = OrTransport<OptionalTransport<TorTransport>, TcpTransport>;
 pub fn tor_client_to_transport(
-    tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     arti_address_conversion: AddressConversion,
     arti_transport_hook: impl FnOnce(&mut TorTransport),
-) -> OptionalTransport<TorTransport> {
-    let tor = match tor_client {
+) -> std::io::Result<IntoTransportT> {
+    fn plain_transport() -> std::io::Result<TcpTransport> {
+        let tcp = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::new().nodelay(true));
+        libp2p::dns::tokio::Transport::system(tcp)
+    }
+    let tcp_with_dns = plain_transport()?;
+
+    let tor = match maybe_tor_client {
         Some(tor_client) => {
             let mut tor_transport = TorTransport::from_client(tor_client, arti_address_conversion);
             arti_transport_hook(&mut tor_transport);
@@ -23,7 +32,7 @@ pub fn tor_client_to_transport(
         }
         None => OptionalTransport::none(),
     };
-    tor
+    Ok(tor.or_transport(tcp_with_dns))
 }
 
 const TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
