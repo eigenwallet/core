@@ -617,12 +617,11 @@ mod builder {
 
                         async move {
                             if let Some(tor_client) = unbootstrapped_tor_client {
-                                bootstrap_tor_client(tor_client.clone(), tauri_handle.clone())
+                                let _ = bootstrap_tor_client(tor_client.clone(), tauri_handle.clone())
                                     .await
                                     .inspect_err(|err| {
                                         tracing::warn!(%err, "Failed to bootstrap Tor client. It will remain unbootstrapped");
-                                    })
-                                    .ok();
+                                    });
                             }
                         }
                     }));
