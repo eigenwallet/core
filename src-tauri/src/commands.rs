@@ -78,7 +78,8 @@ macro_rules! generate_command_handlers {
             get_context_status,
             get_monero_subaddresses,
             create_monero_subaddress,
-            set_monero_subaddress_label
+            set_monero_subaddress_label,
+            get_tor_forced_excuse,
         ]
     };
 }
@@ -207,6 +208,13 @@ pub async fn initialize_context(
 #[tauri::command]
 pub async fn get_context_status(state: tauri::State<'_, State>) -> Result<ContextStatus, String> {
     Ok(state.context().status().await)
+}
+
+#[tauri::command]
+pub async fn get_tor_forced_excuse(_: tauri::State<'_, State>) -> Result<String, String> {
+    Ok(swap_tor::TOR_ENVIRONMENT
+        .map(|ste| ste.excuse())
+        .unwrap_or(String::new()))
 }
 
 #[tauri::command]

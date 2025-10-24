@@ -408,6 +408,10 @@ export async function checkContextStatus(): Promise<ContextStatus> {
   return await invokeNoArgs<ContextStatus>("get_context_status");
 }
 
+export async function getTorForcedExcuse(): Promise<string> {
+  return await invokeNoArgs<string>("get_tor_forced_excuse");
+}
+
 export async function getLogsOfSwap(
   swapId: string,
   redact: boolean,

@@ -63,7 +63,7 @@ import { getNetwork } from "store/config";
 import { currencySymbol } from "utils/formatUtils";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import { isValidMultiAddressWithPeerId } from "utils/parseUtils";
-import { getNodeStatus } from "renderer/rpc";
+import { getNodeStatus, getTorForcedExcuse } from "renderer/rpc";
 import { setStatus } from "store/features/nodesSlice";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
@@ -704,24 +704,32 @@ function NodeTable({
   );
 }
 
+const torForced = await getTorForcedExcuse();
 export function TorSettings() {
   const dispatch = useAppDispatch();
   const torEnabled = useSettings((settings) => settings.enableTor);
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
     dispatch(setTorEnabled(event.target.checked));
-  const status = (state: boolean) => (state === true ? "enabled" : "disabled");
 
   return (
     <TableRow>
       <TableCell>
         <SettingLabel
           label="Use Tor"
-          tooltip="Route network traffic through Tor to hide your IP address from the maker."
+          tooltip={
+            "Route network traffic through Tor to hide your IP address from the maker. " +
+            torForced
+          }
         />
       </TableCell>
 
       <TableCell>
-        <Switch checked={torEnabled} onChange={handleChange} color="primary" />
+        <Switch
+          disabled={!!torForced}
+          checked={torEnabled || !!torForced}
+          onChange={handleChange}
+          color="primary"
+        />
       </TableCell>
     </TableRow>
   );
@@ -740,7 +748,8 @@ function MoneroTorSettings() {
     dispatch(setEnableMoneroTor(event.target.checked));
 
   // Hide this setting if Tor is disabled entirely
-  if (!torEnabled) {
+  // Hide this setting if it's superseded by the global Tor connection
+  if (!torEnabled || torForced) {
     return null;
   }
 
