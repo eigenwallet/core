@@ -10636,6 +10636,7 @@ dependencies = [
  "swap-p2p",
  "swap-proptest",
  "swap-serde",
+ "swap-tor",
  "tauri",
  "tempfile",
  "testcontainers",
@@ -10904,6 +10905,21 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "url",
+]
+
+[[package]]
+name = "swap-tor"
+version = "3.2.0-rc.4"
+dependencies = [
+ "anyhow",
+ "arti-client",
+ "data-encoding",
+ "libp2p",
+ "tokio",
+ "tokio-socks",
+ "tokio-util",
+ "tor-rtcompat",
+ "tracing",
 ]
 
 [[package]]
@@ -11779,6 +11795,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
  "rustls 0.23.35",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-socks"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d4770b8024672c1101b3f6733eab95b18007dbe0847a8afe341fcf79e06043f"
+dependencies = [
+ "either",
+ "futures-util",
+ "thiserror 1.0.69",
  "tokio",
 ]
 

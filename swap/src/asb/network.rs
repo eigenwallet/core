@@ -15,13 +15,10 @@ use swap_env::env;
 use swap_feed::LatestRate;
 
 pub mod transport {
-    use std::sync::Arc;
-
-    use crate::common::tor::tor_client_to_transport;
-    use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
+    use crate::common::tor::TorBackendSwap;
+    use arti_client::config::onion_service::OnionServiceConfigBuilder;
     use libp2p::{identity, Transport};
     use libp2p_tor::AddressConversion;
-    use tor_rtcompat::tokio::TokioRustlsRuntime;
 
     use super::*;
 
@@ -34,20 +31,18 @@ pub mod transport {
     ///
     /// If you pass in a `None` for `maybe_tor_client`, the ASB will not use Tor at all.
     ///
-    /// If you pass in a `Some(tor_client)`, the ASB will listen on an onion service and return
+    /// If you pass in a `Arti(tor_client)`, the ASB will listen on an onion service and return
     /// the onion address. If it fails to listen on the onion address, it will only use tor for
     /// dialing and not listening.
     pub fn new(
         identity: &identity::Keypair,
-        maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+        maybe_tor_client: swap_tor::TorBackend,
         register_hidden_service: bool,
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
         let mut onion_addresses = vec![];
-        let transport = tor_client_to_transport(
-            maybe_tor_client,
-            AddressConversion::DnsOnly,
-            |arti_tor_transport| {
+        let transport =
+            maybe_tor_client.into_transport(AddressConversion::DnsOnly, |arti_tor_transport| {
                 if !register_hidden_service {
                     return;
                 }
@@ -76,8 +71,7 @@ pub mod transport {
                         tracing::warn!(error=%err, "Failed to listen on onion address");
                     }
                 }
-            },
-        )?;
+            })?;
 
         Ok((
             authenticate_and_multiplex(transport.boxed(), identity)?,
