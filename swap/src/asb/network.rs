@@ -17,8 +17,9 @@ use swap_feed::LatestRate;
 pub mod transport {
     use std::sync::Arc;
 
+    use crate::common::tor::tor_client_to_transport;
     use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
-    use libp2p::{core::transport::OptionalTransport, dns, identity, tcp, Transport};
+    use libp2p::{dns, identity, tcp, Transport};
     use libp2p_tor::AddressConversion;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -43,11 +44,14 @@ pub mod transport {
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
         let mut onion_addresses = vec![];
-        let maybe_tor_transport = if let Some(tor_client) = maybe_tor_client {
-            let mut tor_transport =
-                libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
+        let maybe_tor_transport = tor_client_to_transport(
+            maybe_tor_client,
+            AddressConversion::DnsOnly,
+            |arti_tor_transport| {
+                if !register_hidden_service {
+                    return;
+                }
 
-            if register_hidden_service {
                 let onion_service_config = OnionServiceConfigBuilder::default()
                     .nickname(
                         ASB_ONION_SERVICE_NICKNAME
@@ -58,7 +62,8 @@ pub mod transport {
                     .build()
                     .expect("We specified a valid nickname");
 
-                match tor_transport.add_onion_service(onion_service_config, ASB_ONION_SERVICE_PORT)
+                match arti_tor_transport
+                    .add_onion_service(onion_service_config, ASB_ONION_SERVICE_PORT)
                 {
                     Ok(addr) => {
                         tracing::debug!(
@@ -71,12 +76,8 @@ pub mod transport {
                         tracing::warn!(error=%err, "Failed to listen on onion address");
                     }
                 }
-            }
-
-            OptionalTransport::some(tor_transport)
-        } else {
-            OptionalTransport::none()
-        };
+            },
+        );
 
         let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
         let tcp_with_dns = dns::tokio::Transport::system(tcp)?;

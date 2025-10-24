@@ -6,7 +6,25 @@ use crate::cli::api::tauri_bindings::{
 };
 use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
 use futures::StreamExt;
+use libp2p::core::transport::OptionalTransport;
+use libp2p_tor::{AddressConversion, TorTransport};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+pub fn tor_client_to_transport(
+    tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    arti_address_conversion: AddressConversion,
+    arti_transport_hook: impl FnOnce(&mut TorTransport),
+) -> OptionalTransport<TorTransport> {
+    let tor = match tor_client {
+        Some(tor_client) => {
+            let mut tor_transport = TorTransport::from_client(tor_client, arti_address_conversion);
+            arti_transport_hook(&mut tor_transport);
+            OptionalTransport::some(tor_transport)
+        }
+        None => OptionalTransport::none(),
+    };
+    tor
+}
 
 const TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
