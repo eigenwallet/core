@@ -17,7 +17,10 @@ pub enum OutEvent {
         id: OutboundRequestId,
         response: BidQuote,
     },
-    SwapSetupCompleted(Box<anyhow::Result<swap_machine::bob::State2>>),
+    SwapSetupCompleted {
+        peer: PeerId,
+        result: Box<anyhow::Result<swap_machine::bob::State2>>,
+    },
     TransferProofReceived {
         msg: Box<transfer_proof::Request>,
         channel: ResponseChannel<()>,

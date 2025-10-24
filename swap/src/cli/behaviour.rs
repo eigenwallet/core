@@ -38,7 +38,6 @@ pub struct Behaviour {
 
 impl Behaviour {
     pub fn new(
-        alice: PeerId,
         env_config: env::Config,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
         identify_params: (identity::Keypair, XmrBtcNamespace),
@@ -57,7 +56,7 @@ impl Behaviour {
             transfer_proof: transfer_proof::bob(),
             encrypted_signature: encrypted_signature::bob(),
             cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::bob(),
-            redial: redial::Behaviour::new(alice, INITIAL_REDIAL_INTERVAL, MAX_REDIAL_INTERVAL),
+            redial: redial::Behaviour::new(INITIAL_REDIAL_INTERVAL, MAX_REDIAL_INTERVAL),
             ping: ping::Behaviour::new(pingConfig),
             identify: identify::Behaviour::new(identifyConfig),
         }
