@@ -9,7 +9,6 @@ use hyper_util::rt::TokioIo;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::time::timeout;
 
 use tokio_rustls::rustls::{
