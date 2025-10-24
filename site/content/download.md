@@ -9,6 +9,16 @@
     white-space: wrap !important;
 }
 
+.info {
+    background-color: rgb(217, 237, 247);
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+    padding: 0.75rem;
+    text-align: center;
+    font-style: italic;
+    white-space: wrap !important;
+}
+
 @media (max-width: 600px) {
     table {
         font-size: 0.9em;

@@ -452,7 +452,9 @@ export function generateGuiTable(releaseInfo: ReleaseInfo): string {
     type: "instructions"
   };
 
-  return generateTable([...guiAssets, flatpakAsset, aurAsset], "GUI Downloads", releaseInfo.releaseDate);
+  const linuxNotice = "Due to a WebKit bug our AppImage/DEB may not work on older OSes. Try the Flatpak if you're having trouble on Linux.";
+
+  return generateTable([...guiAssets, flatpakAsset, aurAsset], "GUI Downloads", releaseInfo.releaseDate, { Linux: linuxNotice });
 }
 
 /**
@@ -566,7 +568,7 @@ function hasGuiBuildsForAllPlatforms(assets: DownloadAsset[]): { hasLinux: boole
 /**
  * Generate HTML table for downloads
  */
-function generateTable(assets: DownloadAsset[], title: string, releaseDate?: string): string {
+function generateTable(assets: DownloadAsset[], title: string, releaseDate?: string, platformNotices?: Record<string, string>): string {
   if (assets.length === 0) {
     return `<p><em>No ${title.toLowerCase()} available for this release.</em></p>`;
   }
@@ -623,9 +625,12 @@ function generateTable(assets: DownloadAsset[], title: string, releaseDate?: str
     for (const asset of platformAssets) {
       const architecture = asset.architecture;
       const fileName = asset.downloadUrl.split('/').pop() || 'Unknown';
+      const downloadIcon = asset.downloadUrl.includes('github.com/eigenwallet/core/releases/download')
+        ? `<img src="/imgs/download.svg" alt="download" style="height: 1em; width: 1em; vertical-align: baseline; display: inline; margin-left: 0.25em; filter: invert(25%) sepia(85%) saturate(4500%) hue-rotate(355deg) brightness(95%) contrast(95%);">`
+        : '';
       const fileNameLink = asset.type === 'instructions'
         ? `<a href="${asset.downloadUrl}">Instructions</a>`
-        : `<a href="${asset.downloadUrl}" style="text-decoration: none;"><code style="font-size: 0.85em; word-break: break-all;">${fileName}</code></a>`;
+        : `<a href="${asset.downloadUrl}"><code style="font-size: 0.85em; word-break: break-all;">${fileName}</code>${downloadIcon}</a>`;
       const signatureLink = asset.signatureUrl
         ? `<a href="${asset.signatureUrl}">signature</a>`
         : '';
@@ -636,6 +641,16 @@ function generateTable(assets: DownloadAsset[], title: string, releaseDate?: str
       <td>${fileNameLink}</td>
       <td>${signatureLink}</td>
       <td>${asset.size}</td>
+    </tr>`;
+    }
+
+    // Add platform-specific notice if provided
+    if (platformNotices && platformNotices[platform]) {
+      tableHtml += `
+    <tr>
+      <td colspan="4" class="info">
+        ${platformNotices[platform]}
+      </td>
     </tr>`;
     }
   }

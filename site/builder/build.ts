@@ -66,6 +66,12 @@ function convertMarkdownToHtml(markdown: string): string {
     '<sup><a href="#fn$1" id="ref$1">$1</a></sup>'
   );
 
+  // Wrap <summary> content in <h2> tags with inline display
+  processedHtml = processedHtml.replace(
+    /<summary>(.*?)<\/summary>/g,
+    '<summary><h2 style="display: inline;">$1</h2></summary>'
+  );
+
   // Process internal links
   return processInternalLinks(processedHtml);
 }
@@ -167,8 +173,8 @@ function generateDocsNavigation(relativePath: string): string {
 
   return `
   <nav style="text-align: center; margin: 0; padding: 0.25rem 0;">
-    <a href="/docs/app/index.html" style="${appStyle} color: inherit; margin: 0 1rem; font-weight: 500;">App</a>
-    <a href="/docs/maker/index.html" style="${makerStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Maker</a>
+    <a href="/docs/app/index.html" style="${appStyle} color: inherit; margin: 0 1rem; font-weight: 500;">eigenwallet App</a>
+    <a href="/docs/maker/index.html" style="${makerStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Maker Daemon</a>
   </nav>`;
 }
 
@@ -182,22 +188,29 @@ function generateNavigation(relativePath: string): string {
   const isStatsPage = relativePath === 'statistics.html';
   const isChangelogPage = relativePath === 'changelog.html';
   const isDocsPage = relativePath.startsWith('docs');
+  const isFaqPage = relativePath === 'faq.html';
 
   const visionStyle = isVisionPage ? 'text-decoration: underline;' : 'text-decoration: none;';
   const downloadStyle = isDownloadPage ? 'text-decoration: underline;' : 'text-decoration: none;';
   const statsStyle = isStatsPage ? 'text-decoration: underline;' : 'text-decoration: none;';
   const changelogStyle = isChangelogPage ? 'text-decoration: underline;' : 'text-decoration: none;';
   const docsStyle = isDocsPage ? 'text-decoration: underline;' : 'text-decoration: none;';
+  const faqStyle = isFaqPage ? 'text-decoration: underline;' : 'text-decoration: none;';
+
+  const docsNav = isDocsPage
+    ? `
+  <hr style="margin: 0.5rem 0;" />${generateDocsNavigation(relativePath)}`
+    : '';
 
   return `
   <nav style="text-align: center; margin: 0.25rem 0 0.25rem 0; padding: 0.25rem 0;">
     <a href="/index.html" style="${visionStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Vision</a>
     <a href="/download.html" style="${downloadStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Download</a>
     <a href="/docs.html" style="${docsStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Docs</a>
+    <a href="/faq.html" style="${faqStyle} color: inherit; margin: 0 1rem; font-weight: 500;">FAQ</a>
     <a href="/statistics.html" style="${statsStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Statistics</a>
     <a href="/changelog.html" style="${changelogStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Changelog</a>
-  </nav>
-  <hr style="margin: 0.5rem 0;" />${isDocsPage ? generateDocsNavigation(relativePath) : ''}
+  </nav>${docsNav}
   <hr style="margin: 0.5rem 0 2rem 0;" />`;
 }
 
