@@ -11,6 +11,7 @@ arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls"
 data-encoding = "2.6"
 futures = { workspace = true }
 libp2p = { workspace = true, features = ["tcp", "dns", "tokio"] }
+once_cell = { workspace = true }
 
 # Tokio
 tokio = { workspace = true, features = ["net"] }

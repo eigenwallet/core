@@ -13,10 +13,14 @@ use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 /// Creates an unbootstrapped Tor client or connects to well-known Tor daemon, depending on configuration.
 ///
-/// 1. if the caller requests (user enables) `tor`: prepare an Arti client
-/// 2. `None`
+/// 1. if on a system with special Tor requirements (Whonix, Tails): call the daemon appropriately
+/// 2. if the caller requests (user enables) `tor`: prepare an Arti client
+/// 3. `None`
 pub async fn create_tor_client(data_dir: &Path, tor: bool) -> Result<TorBackend, Error> {
-    Ok(if tor {
+    Ok(if let Some(ste) = *TOR_ENVIRONMENT {
+        tracing::info!("On {ste:?}, not starting Tor");
+        ste.backend()
+    } else if tor {
         TorBackend::Arti(Arc::new(create_arti_tor_client(data_dir).await?))
     } else {
         TorBackend::None

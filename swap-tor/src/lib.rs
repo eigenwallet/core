@@ -161,3 +161,46 @@ impl std::fmt::Debug for TorBackend {
         })
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub enum SpecialTorEnvironment {
+    /// Torsocksed userland, Tor control and SOCKS5 in `$TOR_...`, well-known SOCKS5 at `127.0.0.1:9050`
+    ///
+    /// The `$TOR_...` configuration uses unix-domain sockets which we'd have to wrap ourselves
+    ///
+    /// We can't support a hypothetical `TorsocksTransport` that'd substitute
+    ///   /onion3/cebulka7uxchnbpvmqapg5pfos4ngaxglsktzvha7a5rigndghvadeyd:13
+    /// with
+    ///   /dns/cebulka7uxchnbpvmqapg5pfos4ngaxglsktzvha7a5rigndghvadeyd.onion/tcp/13
+    /// then forward to TcpTransport,
+    /// because [hickory-resolver refuses to resolve `.onion` addresses](https://github.com/hickory-dns/hickory-dns/issues/3331).
+    Whonix,
+    /// Well-known SOCKS5 at `127.0.0.1:9050`, cf. `/usr/local/bin/curl`
+    ///
+    /// Userland pretends it's torsocksed but dialling actually doesn't work at all; *all* network traffic must go through SOCKS5.
+    Tails,
+}
+
+pub static TOR_ENVIRONMENT: once_cell::sync::Lazy<Option<SpecialTorEnvironment>> =
+    once_cell::sync::Lazy::new(|| {
+        if fs::exists("/usr/share/whonix/marker").unwrap_or(false) {
+            Some(SpecialTorEnvironment::Whonix)
+        } else if fs::read_to_string("/etc/os-release")
+            .unwrap_or_default()
+            .contains(r#"ID="tails""#)
+        {
+            Some(SpecialTorEnvironment::Tails)
+        } else {
+            None
+        }
+    });
+
+impl SpecialTorEnvironment {
+    pub fn backend(self) -> TorBackend {
+        match self {
+            Self::Whonix | Self::Tails => TorBackend::Socks(SocksServerAddress(
+                (std::net::Ipv4Addr::LOCALHOST, 9050).into(),
+            )),
+        }
+    }
+}
