@@ -130,6 +130,16 @@ pub async fn proxy_handler(State(state): State<AppState>, request: Request) -> R
     }
 }
 
+/// Check if we're using Tor for this request
+///
+/// Use Tor if:
+/// 1. the environment can *only* route clearnet traffic over Tor
+/// 2. it's enabled, ready, and the request didn't ask to be routed over clearnet
+fn use_tor_for_request(state: &AppState, request: &CloneableRequest) -> bool {
+    state.tor_client.masquerade_clearnet()
+        || (state.tor_client.ready_for_traffic() && !request.clearnet_whitelisted())
+}
+
 /// Given a Vec of nodes, proxy the given request to multiple nodes until we get a successful response
 async fn proxy_to_multiple_nodes(
     state: &AppState,
@@ -141,8 +151,7 @@ async fn proxy_to_multiple_nodes(
     }
 
     // Sort nodes to prioritize those with available connections
-    // Check if we're using Tor for this request
-    let use_tor = state.tor_client.ready_for_traffic() && !request.clearnet_whitelisted();
+    let use_tor = use_tor_for_request(state, &request);
 
     // Create a vector of (node, has_connection) pairs
     let mut nodes_with_availability = Vec::new();
@@ -447,11 +456,10 @@ async fn proxy_to_single_node(
 ) -> Result<Response, SingleRequestError> {
     use crate::connection_pool::GuardedSender;
 
-    if request.clearnet_whitelisted() {
+    let use_tor = use_tor_for_request(state, &request);
+    if !use_tor && request.clearnet_whitelisted() {
         tracing::trace!("Request is whitelisted, sending over clearnet");
     }
-
-    let use_tor = state.tor_client.ready_for_traffic() && !request.clearnet_whitelisted();
 
     let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
 
