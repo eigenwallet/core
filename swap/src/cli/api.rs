@@ -592,12 +592,8 @@ mod builder {
                         monero_rpc_pool::start_server_with_random_port(
                             monero_rpc_pool::config::Config::new_random_port_with_tor_client(
                                 base_data_dir.join("monero-rpc-pool"),
-                                match unbootstrapped_tor_client
-                                    .clone_for_monero_rpc(self.enable_monero_tor)
-                                {
-                                    TorBackend::Arti(arti) => Some(arti),
-                                    TorBackend::None => None,
-                                },
+                                unbootstrapped_tor_client
+                                    .clone_for_monero_rpc(self.enable_monero_tor),
                                 match self.is_testnet {
                                     true => monero::Network::Stagenet,
                                     false => monero::Network::Mainnet,

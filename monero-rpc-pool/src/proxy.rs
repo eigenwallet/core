@@ -9,11 +9,7 @@ use hyper_util::rt::TokioIo;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    time::timeout,
-};
+use tokio::time::timeout;
 
 use tokio_rustls::rustls::{
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
@@ -22,6 +18,7 @@ use tokio_rustls::rustls::{
 };
 use tracing::{error, info_span, Instrument};
 
+use crate::tor::*;
 use crate::AppState;
 
 /// wallet2.h has a default timeout of 3 minutes + 30 seconds.
@@ -31,10 +28,6 @@ static TIMEOUT: Duration = Duration::from_secs(3 * 60 + 30).checked_div(2).unwra
 
 /// If the main node does not finish within this period, we start a hedged request.
 static SOFT_TIMEOUT: Duration = TIMEOUT.checked_div(2).unwrap();
-
-/// Trait alias for a stream that can be used with hyper
-trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
-impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
 
 #[derive(Debug)]
 struct NoCertificateVerification;
@@ -149,14 +142,7 @@ async fn proxy_to_multiple_nodes(
 
     // Sort nodes to prioritize those with available connections
     // Check if we're using Tor for this request
-    let use_tor = match &state.tor_client {
-        Some(tc)
-            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
-        {
-            true
-        }
-        _ => false,
-    };
+    let use_tor = state.tor_client.ready_for_traffic() && !request.clearnet_whitelisted();
 
     // Create a vector of (node, has_connection) pairs
     let mut nodes_with_availability = Vec::new();
@@ -321,7 +307,7 @@ async fn proxy_to_multiple_nodes(
 
 /// Wraps a stream with TLS if HTTPS is being used
 async fn maybe_wrap_with_tls(
-    stream: impl AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    stream: impl HyperStream + 'static,
     scheme: &str,
     host: &str,
 ) -> Result<Box<dyn HyperStream>, SingleRequestError> {
@@ -465,14 +451,7 @@ async fn proxy_to_single_node(
         tracing::trace!("Request is whitelisted, sending over clearnet");
     }
 
-    let use_tor = match &state.tor_client {
-        Some(tc)
-            if tc.bootstrap_status().ready_for_traffic() && !request.clearnet_whitelisted() =>
-        {
-            true
-        }
-        _ => false,
-    };
+    let use_tor = state.tor_client.ready_for_traffic() && !request.clearnet_whitelisted();
 
     let key = (node.0.clone(), node.1.clone(), node.2, use_tor);
 
@@ -484,24 +463,11 @@ async fn proxy_to_single_node(
         let address = (node.1.as_str(), node.2);
 
         let maybe_tls_stream = timeout(TIMEOUT, async {
-            let no_tls_stream: Box<dyn HyperStream> = if use_tor {
-                let tor_client = state.tor_client.as_ref().ok_or_else(|| {
-                    SingleRequestError::ConnectionError("Tor requested but client missing".into())
-                })?;
-
-                let stream = tor_client
-                    .connect(address)
-                    .await
-                    .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
-
-                Box::new(stream)
-            } else {
-                let stream = TcpStream::connect(address)
-                    .await
-                    .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
-
-                Box::new(stream)
-            };
+            let no_tls_stream = match use_tor {
+                true => state.tor_client.connect(address).await,
+                false => swap_tor::TorBackend::None.connect(address).await,
+            }
+            .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
 
             maybe_wrap_with_tls(no_tls_stream, &node.0, &node.1).await
         })

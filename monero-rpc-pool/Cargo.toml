@@ -63,6 +63,7 @@ tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
 # Monero/Project specific
 monero-address = { workspace = true }
 swap-serde = { path = "../swap-serde" }
+swap-tor = { path = "../swap-tor" }
 
 # Optional dependencies (for features)
 cuprate-epee-encoding = { git = "https://github.com/Cuprate/cuprate.git", optional = true }
