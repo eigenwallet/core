@@ -10,6 +10,7 @@ anyhow = { workspace = true }
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
 data-encoding = "2.6"
 libp2p = { workspace = true, features = ["tcp", "dns", "tokio"] }
+once_cell = { workspace = true }
 
 # Tokio
 tokio = { workspace = true, features = ["net"] }
