@@ -73,7 +73,9 @@
         "shared_mutex": "cpp",
         "source_location": "cpp",
         "strstream": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "valarray": "cpp",
+        "*.ipp": "cpp"
     },
     "rust-analyzer.cargo.extraEnv": {
         "CARGO_TARGET_DIR": "target-check"
