@@ -221,7 +221,7 @@ pub enum TorBackend {
     Arti(Arc<TorClient<TokioRustlsRuntime>>),
     /// Talking through a Tor SOCKS5 proxy
     Socks(SocksServerAddress),
-    /// In an environment where standard TCP calls go over Tor and TCP can resolve .onion addresses
+    /// In an environment where standard TCP calls go over Tor and DNS+TCP can resolve .onion addresses
     Torsocks,
     /// No Tor at all
     None,
