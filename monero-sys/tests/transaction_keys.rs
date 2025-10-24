@@ -20,8 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let daemon = Daemon::try_from(STAGENET_REMOTE_NODE).unwrap();
 
     let wallet_name = "recovered_wallet";
-    let wallet_path =
-        "/Users/me/code/xmr-btc-swap/monero-sys/tests/transaction-key-wallet".to_string();
+    let wallet_path = temp_dir.path().join(wallet_name).display().to_string();
 
     tracing::info!("Recovering wallet from seed");
     let wallet = WalletHandle::open_or_create_from_seed(
