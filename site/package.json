@@ -1,0 +1,55 @@
+{
+  "name": "latex.css",
+  "version": "1.13.0",
+  "description": "A small CSS library to make your website look like a LaTeX document",
+  "main": "./style.min.css",
+  "type": "module",
+  "files": [
+    "dist",
+    "fonts",
+    "lang",
+    "latex.css",
+    "latex.min.css"
+  ],
+  "scripts": {
+    "prepack": "vite build && cp dist-build/latex.css latex.min.css",
+    "build": "npm pack --dry-run",
+    "build:md": "tsx builder/build.ts",
+    "build:static": "tsx builder/build.ts --download-assets",
+    "dev": "npm run build:md && npm run watch & vite",
+    "watch": "chokidar 'content/*.md' 'builder/build.ts' -c 'npm run build:md'",
+    "test": "tsx builder/test.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vincentdoerig/latex-css.git"
+  },
+  "keywords": [
+    "latex",
+    "latex-css",
+    "classless-theme",
+    "css"
+  ],
+  "author": "Vincent Dörig",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/vincentdoerig/latex-css/issues"
+  },
+  "homepage": "https://latex.vercel.app",
+  "devDependencies": {
+    "prettier": "^3.0.0",
+    "vite": "^7.1.12"
+  },
+  "dependencies": {
+    "@types/node": "^24.0.10",
+    "chokidar-cli": "^3.0.0",
+    "cli-progress": "^3.12.0",
+    "marked": "^16.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vega": "^6.1.2",
+    "vega-lite": "^6.2.0"
+  }
+}

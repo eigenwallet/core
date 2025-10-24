@@ -1,0 +1,18 @@
+:lang(it) .theorem::before {
+  content: 'Teorema ' counter(theorem) '. ' !important;
+}
+:lang(it) .lemma::before {
+  content: 'Lemma ' counter(theorem) '. ' !important;
+}
+:lang(it) .proof::before {
+  content: 'Dimostrazione. ' attr(title) !important;
+}
+:lang(it) .definition::before {
+  content: 'Definizione ' counter(definition) '. ' !important;
+}
+:lang(it) caption::before {
+  content: 'Tabella ' counter(caption) '. ' !important;
+}
+:lang(it) figcaption::before {
+  content: 'Figura ' counter(figcaption) '. ' !important;
+}
