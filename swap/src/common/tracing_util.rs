@@ -94,6 +94,7 @@ const OUR_CRATES: &[&str] = &[
     "seed",
     "swap_env",
     "swap_fs",
+    "swap_p2p",
     "swap_serde",
     "monero_rpc_pool",
     "monero_cpp",

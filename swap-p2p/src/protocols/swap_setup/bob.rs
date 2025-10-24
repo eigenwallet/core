@@ -30,7 +30,7 @@ pub struct Behaviour {
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     new_swaps: VecDeque<(PeerId, NewSwap)>,
-    completed_swaps: VecDeque<(PeerId, Completed)>,
+    completed_swaps: VecDeque<SwapCompleted>,
 }
 
 impl Behaviour {
@@ -48,15 +48,18 @@ impl Behaviour {
     }
 }
 
-impl From<Completed> for out_event::bob::OutEvent {
-    fn from(completed: Completed) -> Self {
-        out_event::bob::OutEvent::SwapSetupCompleted(Box::new(completed.0))
+impl From<SwapCompleted> for out_event::bob::OutEvent {
+    fn from(completed: SwapCompleted) -> Self {
+        out_event::bob::OutEvent::SwapSetupCompleted {
+            result: Box::new(completed.result),
+            peer: completed.peer,
+        }
     }
 }
 
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = Handler;
-    type ToSwarm = Completed;
+    type ToSwarm = SwapCompleted;
 
     fn handle_established_inbound_connection(
         &mut self,
@@ -88,7 +91,10 @@ impl NetworkBehaviour for Behaviour {
         _connection_id: libp2p::swarm::ConnectionId,
         event: THandlerOutEvent<Self>,
     ) {
-        self.completed_swaps.push_back((peer_id, event));
+        self.completed_swaps.push_back(SwapCompleted {
+            peer: peer_id,
+            result: event.0,
+        });
     }
 
     fn poll(
@@ -96,7 +102,7 @@ impl NetworkBehaviour for Behaviour {
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
         // Forward completed swaps from the connection handler to the swarm
-        if let Some((_peer, completed)) = self.completed_swaps.pop_front() {
+        if let Some(completed) = self.completed_swaps.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(completed));
         }
 
@@ -149,6 +155,12 @@ pub struct NewSwap {
 
 #[derive(Debug)]
 pub struct Completed(Result<State2>);
+
+#[derive(Debug)]
+pub struct SwapCompleted {
+    peer: PeerId,
+    result: Result<State2>,
+}
 
 impl ConnectionHandler for Handler {
     type FromBehaviour = NewSwap;

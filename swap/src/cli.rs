@@ -9,7 +9,7 @@ pub mod watcher;
 
 pub use behaviour::{Behaviour, OutEvent};
 pub use cancel_and_refund::{cancel, cancel_and_refund, refund};
-pub use event_loop::{EventLoop, EventLoopHandle};
+pub use event_loop::{EventLoop, EventLoopHandle, SwapEventLoopHandle};
 pub use list_sellers::{list_sellers, SellerStatus};
 
 #[cfg(test)]

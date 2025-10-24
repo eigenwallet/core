@@ -1,6 +1,6 @@
 use crate::cli::api::tauri_bindings::LockBitcoinDetails;
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriSwapProgressEvent};
-use crate::cli::EventLoopHandle;
+use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
 use crate::monero::MoneroAddressPool;
@@ -90,7 +90,7 @@ pub async fn run_until(
 async fn next_state(
     swap_id: Uuid,
     state: BobState,
-    event_loop_handle: &mut EventLoopHandle,
+    event_loop_handle: &mut SwapEventLoopHandle,
     db: Arc<dyn Database + Send + Sync>,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
