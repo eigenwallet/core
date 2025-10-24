@@ -3,7 +3,7 @@ pub mod tauri_bindings;
 
 use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice};
 use crate::cli::command::{Bitcoin, Monero};
-use crate::common::tor::{bootstrap_tor_client, create_tor_client};
+use crate::common::tor::{create_tor_client, TorBackendSwap};
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
@@ -11,7 +11,6 @@ use crate::protocol::Database;
 use crate::seed::Seed;
 use crate::{common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
-use arti_client::TorClient;
 use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
 use std::fmt;
@@ -20,11 +19,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
+use swap_tor::TorBackend;
 use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
 use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::task::AbortOnDropHandle;
-use tor_rtcompat::tokio::TokioRustlsRuntime;
 use uuid::Uuid;
 
 use super::watcher::Watcher;
@@ -242,7 +241,7 @@ mod context {
         pub tauri_handle: Option<TauriHandle>,
         pub(super) bitcoin_wallet: Arc<RwLock<Option<Arc<bitcoin_wallet::Wallet>>>>,
         pub monero_manager: Arc<RwLock<Option<Arc<monero::Wallets>>>>,
-        pub(super) tor_client: Arc<RwLock<Option<Arc<TorClient<TokioRustlsRuntime>>>>>,
+        pub(super) tor_client: Arc<RwLock<TorBackend>>,
         #[allow(dead_code)]
         pub(super) monero_rpc_pool_handle: Arc<RwLock<Option<Arc<monero_rpc_pool::PoolHandle>>>>,
         pub(super) event_loop_state: Arc<RwLock<Option<EventLoopState>>>,
@@ -267,7 +266,7 @@ mod context {
                 tauri_handle,
                 bitcoin_wallet: Arc::new(RwLock::new(None)),
                 monero_manager: Arc::new(RwLock::new(None)),
-                tor_client: Arc::new(RwLock::new(None)),
+                tor_client: Arc::new(RwLock::new(TorBackend::None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
                 event_loop_state: Arc::new(RwLock::new(None)),
             }
@@ -319,12 +318,12 @@ mod context {
         }
 
         /// Get the Tor client, returning an error if not initialized
-        pub async fn try_get_tor_client(&self) -> Result<Arc<TorClient<TokioRustlsRuntime>>> {
-            self.tor_client
-                .read()
-                .await
-                .clone()
-                .context("Tor client not initialized")
+        pub async fn try_get_tor_client(&self) -> Result<TorBackend> {
+            match self.tor_client.read().await.clone() {
+                TorBackend::None => None,
+                ret => Some(ret),
+            }
+            .context("Tor client not initialized")
         }
 
         /// Get the event loop handle, returning an error if not initialized
@@ -357,7 +356,7 @@ mod context {
                 swap_lock: SwapLock::new().into(),
                 tasks: PendingTaskList::default().into(),
                 tauri_handle: None,
-                tor_client: Arc::new(RwLock::new(None)),
+                tor_client: Arc::new(RwLock::new(TorBackend::None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
                 event_loop_state: Arc::new(RwLock::new(None)),
             }
@@ -583,24 +582,21 @@ mod builder {
             let future_unbootstrapped_tor_client_rpc_pool = {
                 let tauri_handle = self.tauri_handle.clone();
                 async move {
-                    let unbootstrapped_tor_client = if self.tor {
-                        create_tor_client(&base_data_dir).await.inspect_err(|err| {
-                            tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor");
-                        }).ok()
-                    } else {
-                        tracing::warn!("Internal Tor client not enabled, skipping initialization");
-                        None
-                    };
+                    let unbootstrapped_tor_client = create_tor_client(&base_data_dir, self.tor).await
+                        .inspect(|client| if matches!(client, TorBackend::None) { tracing::warn!("Internal Tor client not enabled, skipping initialization"); })
+                        .inspect_err(|err| tracing::warn!(%err, "Failed to create Tor client. We will continue without Tor"))
+                        .unwrap_or(TorBackend::None);
 
                     // Start Monero RPC pool server
                     let (server_info, status_receiver, pool_handle) =
                         monero_rpc_pool::start_server_with_random_port(
                             monero_rpc_pool::config::Config::new_random_port_with_tor_client(
                                 base_data_dir.join("monero-rpc-pool"),
-                                if self.enable_monero_tor {
-                                    unbootstrapped_tor_client.clone()
-                                } else {
-                                    None
+                                match unbootstrapped_tor_client
+                                    .clone_for_monero_rpc(self.enable_monero_tor)
+                                {
+                                    TorBackend::Arti(arti) => Some(arti),
+                                    TorBackend::None => None,
                                 },
                                 match self.is_testnet {
                                     true => monero::Network::Stagenet,
@@ -612,17 +608,15 @@ mod builder {
 
                     // Bootstrap Tor client in background
                     let bootstrap_tor_client_task = AbortOnDropHandle::new(tokio::spawn({
-                        let unbootstrapped_tor_client = unbootstrapped_tor_client.clone();
+                        let tor_client = unbootstrapped_tor_client.clone();
                         let tauri_handle = tauri_handle.clone();
 
                         async move {
-                            if let Some(tor_client) = unbootstrapped_tor_client {
-                                let _ = bootstrap_tor_client(tor_client.clone(), tauri_handle.clone())
+                            let _ = tor_client.bootstrap(tauri_handle)
                                     .await
                                     .inspect_err(|err| {
                                         tracing::warn!(%err, "Failed to bootstrap Tor client. It will remain unbootstrapped");
                                     });
-                            }
                         }
                     }));
 
