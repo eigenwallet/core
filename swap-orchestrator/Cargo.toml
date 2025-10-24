@@ -10,14 +10,16 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
-chrono = "0.4.41"
-compose_spec = "0.3.0"
+clap = { version = "4.5.48", features = ["derive"] }
 dialoguer = { workspace = true }
 monero = { workspace = true }
-serde_yaml = "0.9.34"
+serde_yaml = "0.9.33"
 swap-env = { path = "../swap-env" }
+tokio = { workspace = true, features = ["macros", "process"] }
 toml = { workspace = true }
 url = { workspace = true }
+
+compose_spec = "0.3.0"
 
 [build-dependencies]
 anyhow = { workspace = true }

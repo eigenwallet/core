@@ -1,7 +1,7 @@
 use crate::defaults::GetDefaults;
 use crate::env::{Mainnet, Testnet};
 use crate::prompt;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use config::ConfigError;
 use libp2p::core::Multiaddr;
 use rust_decimal::Decimal;
@@ -145,7 +145,7 @@ impl TryFrom<config::Config> for Config {
 pub struct ConfigNotInitialized;
 
 pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotInitialized>> {
-    if config_path.exists() {
+    if config_path.try_exists().unwrap_or(false) {
         tracing::info!(
             path = %config_path.display(),
             "Reading config file",
