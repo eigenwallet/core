@@ -34,7 +34,10 @@ pub trait TorBackendSwap {
     ) -> std::io::Result<IntoTransportT>;
 }
 type IntoTransportT = OrTransport<
-    OrTransport<OptionalTransport<TorTransport>, OptionalTransport<Socks5Transport>>,
+    OrTransport<
+        OptionalTransport<TorTransport>,
+        OrTransport<OptionalTransport<Socks5Transport>, OptionalTransport<TorsocksTransport>>,
+    >,
     TcpTransport,
 >;
 impl TorBackendSwap for TorBackend {
@@ -44,7 +47,7 @@ impl TorBackendSwap for TorBackend {
             TorBackend::Socks(addr) => {
                 addr.connect().await?; // validate the remote is actually listening
             }
-            TorBackend::None => {}
+            TorBackend::Torsocks | TorBackend::None => {}
         }
         Ok(())
     }
@@ -54,7 +57,7 @@ impl TorBackendSwap for TorBackend {
         match self {
             TorBackend::Arti(..) if enable_monero_tor => self.clone(),
             TorBackend::Arti(..) => TorBackend::None,
-            TorBackend::Socks(..) | TorBackend::None => self.clone(),
+            TorBackend::Socks(..) | TorBackend::Torsocks | TorBackend::None => self.clone(),
         }
     }
 
@@ -76,16 +79,27 @@ impl TorBackendSwap for TorBackend {
                 arti_transport_hook(&mut tor_transport);
                 OrTransport::new(
                     OptionalTransport::some(tor_transport),
-                    OptionalTransport::none(),
+                    OrTransport::new(OptionalTransport::none(), OptionalTransport::none()),
                 )
             }
             TorBackend::Socks(universal_config) => OrTransport::new(
                 OptionalTransport::none(),
-                OptionalTransport::some(universal_config.transport()),
+                OrTransport::new(
+                    OptionalTransport::some(universal_config.transport()),
+                    OptionalTransport::none(),
+                ),
             ),
-            TorBackend::None => {
-                OrTransport::new(OptionalTransport::none(), OptionalTransport::none())
-            }
+            TorBackend::Torsocks => OrTransport::new(
+                OptionalTransport::none(),
+                OrTransport::new(
+                    OptionalTransport::none(),
+                    OptionalTransport::some(TorsocksTransport(plain_transport()?)),
+                ),
+            ),
+            TorBackend::None => OrTransport::new(
+                OptionalTransport::none(),
+                OrTransport::new(OptionalTransport::none(), OptionalTransport::none()),
+            ),
         };
         Ok(tor.or_transport(tcp_with_dns))
     }

@@ -21,7 +21,7 @@ impl TorBackendRpc for TorBackend {
     fn ready_for_traffic(&self) -> bool {
         match self {
             TorBackend::Arti(arti) => arti.bootstrap_status().ready_for_traffic(),
-            TorBackend::Socks(..) => true,
+            TorBackend::Socks(..) | TorBackend::Torsocks => true,
             TorBackend::None => false,
         }
     }
@@ -30,7 +30,9 @@ impl TorBackendRpc for TorBackend {
         match self {
             TorBackend::Arti(tor_client) => Ok(Box::new(tor_client.connect(address).await?)),
             TorBackend::Socks(proxy) => Ok(Box::new(proxy.proxy(pair_to_socks(address)).await?)),
-            TorBackend::None => Ok(Box::new(tokio::net::TcpStream::connect(address).await?)),
+            TorBackend::Torsocks | TorBackend::None => {
+                Ok(Box::new(tokio::net::TcpStream::connect(address).await?))
+            }
         }
     }
 }
