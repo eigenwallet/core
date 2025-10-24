@@ -2,6 +2,7 @@ use arti_client::TorClient;
 use libp2p::core::multiaddr::Protocol;
 use libp2p::core::transport::{ListenerId, TransportEvent};
 use libp2p::{Multiaddr, Transport, TransportError};
+use std::fs;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -234,5 +235,39 @@ impl std::fmt::Debug for TorBackend {
             TorBackend::Torsocks => "Torsocks",
             TorBackend::None => "None",
         })
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum SpecialTorEnvironment {
+    /// Torsocksed userland, Tor control and SOCKS5 in `$TOR_...`
+    ///
+    /// The `$TOR_...` configuration uses unix-domain sockets which we'd have to wrap ourselves
+    Whonix,
+    /// Userland pretends it's torsocksed but dialling actually doesn't work at all; well-known SOCKS5 at `127.0.0.1:9050`, cf. `/usr/local/bin/curl`
+    Tails,
+}
+
+impl SpecialTorEnvironment {
+    pub fn detect() -> Option<Self> {
+        if fs::exists("/usr/share/whonix/marker").unwrap_or(false) {
+            Some(Self::Whonix)
+        } else if fs::read_to_string("/etc/os-release")
+            .unwrap_or(String::new())
+            .contains(r#"ID="tails""#)
+        {
+            Some(Self::Tails)
+        } else {
+            None
+        }
+    }
+
+    pub fn backend(self) -> TorBackend {
+        match self {
+            Self::Whonix => TorBackend::Torsocks,
+            Self::Tails => TorBackend::Socks(SocksServerAddress(
+                (std::net::Ipv4Addr::LOCALHOST, 9050).into(),
+            )),
+        }
     }
 }
