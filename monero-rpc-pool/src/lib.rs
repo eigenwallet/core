@@ -1,25 +1,21 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use arti_client::TorClient;
 use axum::{
     routing::{any, get},
     Router,
 };
 
 use tokio::task::JoinHandle;
-use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
-
-/// Type alias for the Tor client used throughout the crate
-pub type TorClientArc = Arc<TorClient<TokioRustlsRuntime>>;
 
 pub mod config;
 pub mod connection_pool;
 pub mod database;
 pub mod pool;
 pub mod proxy;
+pub(crate) mod tor;
 pub mod types;
 
 use config::Config;
@@ -30,7 +26,7 @@ use proxy::{proxy_handler, stats_handler};
 #[derive(Clone)]
 pub struct AppState {
     pub node_pool: Arc<NodePool>,
-    pub tor_client: Option<TorClientArc>,
+    pub tor_client: swap_tor::TorBackend,
     pub connection_pool: crate::connection_pool::ConnectionPool,
 }
 
