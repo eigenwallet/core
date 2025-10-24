@@ -3,12 +3,13 @@ name = "swap-tor"
 version = "3.2.0-rc.4"
 authors = ["наб <nabijaczleweli@nabijaczleweli.xyz>"]
 edition = "2021"
-description = "Arti Tor back-end."
+description = "Arti/SOCKS5 Tor back-end."
 
 [dependencies]
 anyhow = { workspace = true }
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
 data-encoding = "2.6"
+futures = { workspace = true }
 libp2p = { workspace = true, features = ["tcp", "dns", "tokio"] }
 
 # Tokio

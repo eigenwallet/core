@@ -35,6 +35,7 @@ tracing-subscriber = { workspace = true }
 # Async runtime
 crossbeam = "0.8.4"
 tokio = { workspace = true, features = ["full"] }
+tokio-socks = "0.5"
 
 # Serialization
 chrono = { version = "0.4", features = ["serde"] }
