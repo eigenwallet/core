@@ -1,0 +1,18 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+generated-client = { path = "../generated-client" }
+monero = { workspace = true }
+serde.workspace = true
+thiserror = { workspace = true }
+bitcoin = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = "0.1.17"
+
+[lints]
+workspace = true
