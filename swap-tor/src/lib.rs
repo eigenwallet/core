@@ -203,4 +203,23 @@ impl SpecialTorEnvironment {
             )),
         }
     }
+
+    /// `true` if listening on an address like `/ip4/0.0.0.0/tcp/9939` is possible in this environment
+    pub fn can_listen_tcp(self) -> bool {
+        match self {
+            Self::Whonix | Self::Tails => false,
+        }
+    }
+
+    /// `true` if listening on an address like `/onion3/whatever` is possible in this environment
+    pub fn can_listen_onion(self) -> bool {
+        match self {
+            Self::Whonix | Self::Tails => false,
+        }
+    }
+
+    /// Explain to the user why Tor is always on
+    pub fn excuse(self) -> String {
+        format!("Under {self:?}, the app always uses the global Tor connection.")
+    }
 }

@@ -15,6 +15,7 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 swap-fs = { path = "../swap-fs" }
 swap-serde = { path = "../swap-serde" }
+swap-tor = { path = "../swap-tor" }
 thiserror = { workspace = true }
 time = "0.3"
 toml = { workspace = true }
