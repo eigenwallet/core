@@ -2597,9 +2597,10 @@ impl PendingTransaction {
         for address in output_addresses {
             if !keys_map.contains_key(address) {
                 anyhow::bail!(
-                    "Output address {} is not mentioned in tx keys for tx {}",
+                    "Output address {} is not mentioned in tx keys for tx {}. tx_keys.len() = {}. Sending funds to your own primary address is NOT supported.",
                     address,
-                    txid
+                    txid,
+                    keys_map.len()
                 );
             }
         }
