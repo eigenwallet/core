@@ -3,7 +3,9 @@
 To start using eigenwallet, you need to install the application. Then you can do your first swap.
 
  1. [Install the application](/download.html)
- 2. [Do your first swap](/docs/app/first_swap.html)
+ 2. Choose "Create new wallet" and click "Continue". Creating the initial wallet might take a few seconds.
+ 3. [Do your first swap](/docs/app/first_swap.html)
+ 4. Enjoy and manage your trustlessy obtained Monero!
 
 ## What is an Atomic Swap?
 
