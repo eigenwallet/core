@@ -17,7 +17,7 @@
     "build:md": "tsx builder/build.ts",
     "build:static": "tsx builder/build.ts --download-assets",
     "dev": "npm run build:md && npm run watch & vite",
-    "watch": "chokidar 'content/*.md' 'builder/build.ts' -c 'npm run build:md'",
+    "watch": "chokidar 'content/**/*.md' 'builder/build.ts' -c 'npm run build:md'",
     "test": "tsx builder/test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

@@ -146,23 +146,42 @@ function extractAbstractAndMainContent(content: string): {
 function generateSocialLinks(): string {
   return `
   <div style="text-align: center; margin: 2rem 0;">
-    <a href="https://discord.gg/aqSyyJ35UW" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="imgs/discord.svg" alt="Discord" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
-    <a href="https://x.com/eigenwallet" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="imgs/x.svg" alt="Twitter/X" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
-    <a href="https://matrix.to/#/%23unstoppableswap-space:matrix.org" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="imgs/matrix.svg" alt="Matrix" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
-    <a href="https://github.com/eigenwallet/core" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="imgs/github.svg" alt="GitHub" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
-    <a href="http://eigenwu5vl53rjyd3zxfzy25mfoaeqlhpuvlu5s46ygggllfbb4beiid.onion/" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="imgs/tor.svg" alt="Tor" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
+    <a href="https://discord.gg/aqSyyJ35UW" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="/imgs/discord.svg" alt="Discord" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
+    <a href="https://x.com/eigenwallet" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="/imgs/x.svg" alt="Twitter/X" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
+    <a href="https://matrix.to/#/%23unstoppableswap-space:matrix.org" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="/imgs/matrix.svg" alt="Matrix" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
+    <a href="https://github.com/eigenwallet/core" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="/imgs/github.svg" alt="GitHub" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
+    <a href="http://eigenwu5vl53rjyd3zxfzy25mfoaeqlhpuvlu5s46ygggllfbb4beiid.onion/" target="_blank" style="text-decoration: none; color: inherit; margin: 0 1rem;"><img src="/imgs/tor.svg" alt="Tor" style="height: 1.5em; width: 1.5em; vertical-align: baseline; display: inline;"></a>
   </div>`;
 }
 
 /**
- * Generate navigation component
+ * Generate docs sub-navigation component
+ * @param relativePath - Path relative to dist directory (e.g., 'docs/app/index.html')
  */
-function generateNavigation(currentFileName: string): string {
-  const isVisionPage = currentFileName === 'index.html';
-  const isDownloadPage = currentFileName === 'download.html';
-  const isStatsPage = currentFileName === 'statistics.html';
-  const isChangelogPage = currentFileName === 'changelog.html';
-  const isDocsPage = currentFileName === 'docs.html';
+function generateDocsNavigation(relativePath: string): string {
+  const isAppDocs = relativePath.startsWith('docs/app') || relativePath.startsWith('docs\\app');
+  const isMakerDocs = relativePath.startsWith('docs/maker') || relativePath.startsWith('docs\\maker');
+
+  const appStyle = isAppDocs ? 'text-decoration: underline;' : 'text-decoration: none;';
+  const makerStyle = isMakerDocs ? 'text-decoration: underline;' : 'text-decoration: none;';
+
+  return `
+  <nav style="text-align: center; margin: 0; padding: 0.25rem 0;">
+    <a href="/docs/app/index.html" style="${appStyle} color: inherit; margin: 0 1rem; font-weight: 500;">App</a>
+    <a href="/docs/maker/index.html" style="${makerStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Maker</a>
+  </nav>`;
+}
+
+/**
+ * Generate navigation component
+ * @param relativePath - Path relative to dist directory (e.g., 'index.html', 'docs/app/index.html')
+ */
+function generateNavigation(relativePath: string): string {
+  const isVisionPage = relativePath === 'index.html';
+  const isDownloadPage = relativePath === 'download.html';
+  const isStatsPage = relativePath === 'statistics.html';
+  const isChangelogPage = relativePath === 'changelog.html';
+  const isDocsPage = relativePath.startsWith('docs');
 
   const visionStyle = isVisionPage ? 'text-decoration: underline;' : 'text-decoration: none;';
   const downloadStyle = isDownloadPage ? 'text-decoration: underline;' : 'text-decoration: none;';
@@ -172,22 +191,24 @@ function generateNavigation(currentFileName: string): string {
 
   return `
   <nav style="text-align: center; margin: 0.25rem 0 0.25rem 0; padding: 0.25rem 0;">
-    <a href="index.html" style="${visionStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Vision</a>
-    <a href="download.html" style="${downloadStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Download</a>
-    <a href="docs.html" style="${docsStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Docs</a>
-    <a href="statistics.html" style="${statsStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Statistics</a>
-    <a href="changelog.html" style="${changelogStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Changelog</a>
+    <a href="/index.html" style="${visionStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Vision</a>
+    <a href="/download.html" style="${downloadStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Download</a>
+    <a href="/docs.html" style="${docsStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Docs</a>
+    <a href="/statistics.html" style="${statsStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Statistics</a>
+    <a href="/changelog.html" style="${changelogStyle} color: inherit; margin: 0 1rem; font-weight: 500;">Changelog</a>
   </nav>
+  <hr style="margin: 0.5rem 0;" />${isDocsPage ? generateDocsNavigation(relativePath) : ''}
   <hr style="margin: 0.5rem 0 2rem 0;" />`;
 }
 
 /**
  * Generate complete HTML document
+ * @param relativePath - Path relative to dist directory (e.g., 'index.html', 'docs/app/index.html')
  */
 function generateHtmlDocument(
   abstractContent: string,
   mainContent: string,
-  fileName: string
+  relativePath: string
 ): string {
   const abstractSection = abstractContent
     ? `
@@ -197,13 +218,13 @@ function generateHtmlDocument(
   </div>`
     : '';
 
-  const isIndexPage = fileName === 'index.html';
-  const socialLinksSection = isIndexPage ? generateSocialLinks() : '';
-  const backButton = !isIndexPage
-    ? `<a href="index.html" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); text-decoration: none; font-size: 1.5em; color: inherit; padding: 0.5rem;">&lt;</a>`
+  const isRootIndex = relativePath === 'index.html';
+  const socialLinksSection = isRootIndex ? generateSocialLinks() : '';
+  const backButton = !isRootIndex
+    ? `<a href="/index.html" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); text-decoration: none; font-size: 1.5em; color: inherit; padding: 0.5rem;">&lt;</a>`
     : '';
 
-  const navigation = generateNavigation(fileName);
+  const navigation = generateNavigation(relativePath);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -213,16 +234,16 @@ function generateHtmlDocument(
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="google-site-verification" content="tm5Y6ZNTf-lBqbwniGjQPv1q02o2TuUQZ9GTYa4SMLg" />
   <title>eigenwallet — The Monero wallet for the future</title>
-  <link rel="stylesheet" href="latex.css" />
-  <link rel="stylesheet" href="prism/prism.css" />
-  <link rel="icon" type="image/png" href="imgs/icon.png" />
+  <link rel="stylesheet" href="/latex.css" />
+  <link rel="stylesheet" href="/prism/prism.css" />
+  <link rel="icon" type="image/png" href="/imgs/icon.png" />
 </head>
 
 <body id="top" class="text-justify">
   <header style="text-align: center; display: flex; justify-content: center; align-items: center; gap: 0.5rem; position: relative; padding: 1rem 0;">
     ${backButton}
-    <a href="index.html" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 0.5rem;">
-      <img src="imgs/icon.svg" alt="eigenwallet logo" style="height: 5em;" />
+    <a href="/index.html" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 0.5rem;">
+      <img src="/imgs/icon.svg" alt="eigenwallet logo" style="height: 5em;" />
     </a>
   </header>
 ${abstractSection}
@@ -317,8 +338,9 @@ async function buildFile(inputPath: string, outputPath: string): Promise<void> {
   const { abstract, main } = extractAbstractAndMainContent(processedContent);
 
   // Generate complete HTML document
-  const outputFileName = path.basename(outputPath);
-  const fullHTML = generateHtmlDocument(abstract, main, outputFileName);
+  // Get the relative path from dist directory (e.g., 'index.html', 'docs/app/index.html')
+  const relativePath = path.relative('dist', outputPath);
+  const fullHTML = generateHtmlDocument(abstract, main, relativePath);
 
   // Write to output file
   writeHtmlFile(fullHTML, outputPath, inputPath);
