@@ -60,17 +60,18 @@ build-gui-windows:
 tests:
         cargo nextest run
 
+# Run docker tests (e.g., "just docker_test happy_path_alice_developer_tip")
+docker_test test_name:
+	cargo test --package swap --test {{test_name}} -- --nocapture
+
 docker_test_happy_path:
-	cargo test --package swap --test happy_path -- --nocapture
+	just docker_test happy_path
 
 docker_test_happy_path_with_developer_tip:
-	cargo test --package swap --test happy_path_alice_developer_tip -- --nocapture
+	just docker_test happy_path_alice_developer_tip
 
 docker_test_refund_path:
-	cargo test --package swap --test alice_refunds_after_restart_bob_refunded -- --nocapture
-
-docker_test_all:
-	cargo test --package swap --test all -- --nocapture
+	just docker_test alice_refunds_after_restart_bob_refunded
 
 # Tests the Rust bindings for Monero
 test_monero_sys:
@@ -125,7 +126,7 @@ docker-prune-network:
 
 # Install dependencies required for building monero-sys
 prepare_mac_os_brew_dependencies:
-	cd dev_scripts && chmod +x ./brew_dependencies_install.sh && ./brew_dependencies_install.sh
+	cd dev-scripts && chmod +x ./brew_dependencies_install.sh && ./brew_dependencies_install.sh
 
 # Takes a crate (e.g monero-rpc-pool) and uses code2prompt to copy to clipboard
 # E.g code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
@@ -133,4 +134,4 @@ code2prompt_single_crate crate:
 	cd {{crate}} && code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
 
 prepare-windows-build:
-    cd dev_scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+    cd dev-scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh

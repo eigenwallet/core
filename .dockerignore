@@ -19,13 +19,13 @@ docs/_build/
 node_modules/
 
 # Development scripts
-dev_scripts/
+dev-scripts/
 dev-docs/
 
 # Tauri development files
 src-tauri/target/
 
-# GUI development files  
+# GUI development files
 src-gui/node_modules/
 src-gui/dist/
 src-gui/.next/
@@ -38,4 +38,4 @@ src-gui/.next/
 *.temp
 
 # OS files
-Thumbs.db 
+Thumbs.db

@@ -168,6 +168,49 @@ jobs:
           api-key: ${{ secrets.CN_API_KEY }}
           args: --target ${{ matrix.target }}
 
+  generate-homebrew-formula:
+    needs: [build_gui]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download DMG files and generate formula
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ github.event.release.tag_name }}"
+
+          # Download the DMG files
+          gh release download "$VERSION" --pattern "*.dmg" --dir /tmp/dmgs
+
+          # Calculate SHA256 checksums
+          AARCH64_DMG=$(ls /tmp/dmgs/*_aarch64.dmg)
+          X64_DMG=$(ls /tmp/dmgs/*_x64.dmg)
+
+          AARCH64_SHA256=$(sha256sum "$AARCH64_DMG" | awk '{print $1}')
+          X64_SHA256=$(sha256sum "$X64_DMG" | awk '{print $1}')
+
+          echo "aarch64 SHA256: $AARCH64_SHA256"
+          echo "x64 SHA256: $X64_SHA256"
+
+          # Generate the Homebrew formula from template
+          cp dev-scripts/homebrew/eigenwallet.rb.template eigenwallet.rb
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" eigenwallet.rb
+          sed -i "s/AARCH64_SHA256_PLACEHOLDER/$AARCH64_SHA256/g" eigenwallet.rb
+          sed -i "s/X64_SHA256_PLACEHOLDER/$X64_SHA256/g" eigenwallet.rb
+
+          cat eigenwallet.rb
+
+      - name: Upload Homebrew formula to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            eigenwallet.rb \
+            --clobber
+
   publish:
     # don't publish previews to crabnebula
     if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}

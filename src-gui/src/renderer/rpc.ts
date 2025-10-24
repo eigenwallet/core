@@ -79,7 +79,7 @@ import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 
 /// These are the official donation address for the eigenwallet/core project
 const DONATION_ADDRESS_MAINNET =
-  "8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq";
+  "4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ";
 const DONATION_ADDRESS_STAGENET =
   "56E274CJxTyVuuFG651dLURKyneoJ5LsSA5jMq4By9z9GBNYQKG8y5ejTYkcvZxarZW6if14ve8xXav2byK4aRnvNdKyVxp";
 
@@ -91,15 +91,22 @@ const DONATION_ADDRESS_STAGENET =
 /// - https://unstoppableswap.net/binarybaron.asc
 const DONATION_ADDRESS_MAINNET_SIG = `
 -----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA512
+Hash: SHA256
 
-8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq is our donation address (signed by binarybaron)
+4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ is our donation address (signed by binarybaron)
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWUAAKCRCZt10+FHai
-bsC/AQCkisePNGhApMnwJiOoF79AoSoQVmF98GIKxvLm8SHFvQEA68gb3n/Klt/v
-lYP1r+qmB2kRe52F62orp40CV2jSnAM=
-=gzXB
+iQGzBAEBCAAdFiEEBRhGD+vsHaFKFVp7RK5vCxZqrVoFAmjxV4YACgkQRK5vCxZq
+rVrFogv9F650Um1TsPlqQ+7kdobCwa7yH5uXOp1p22YaiwWGHKRU5rUSb6Ac+zI0
+3Io39VEoZufQqXqEqaiH7Q/08ABQR5r0TTPtSLNjOSEQ+ecClwv7MeF5CIXZYDdB
+AlEOnlL0CPfA24GQMhfp9lvjNiTBA2NikLARWJrc1JsLrFMK5rHesv7VHJEtm/gu
+We5eAuNOM2k3nAABTWzLiMJkH+G1amJmfkCKkBCk04inA6kZ5COUikMupyQDtsE4
+hrr/KrskMuXzGY+rjP6NhWqr/twKj819TrOxlYD4vK68cZP+jx9m+vSBE6mxgMbN
+tBVdo9xFVCVymOYQCV8BRY8ScqP+YPNV5d6BMyDH9tvHJrGqZTNQiFhVX03Tw6mg
+hccEqYP1J/TaAlFg/P4HtqsxPBZD6x3IdSxXhrJ0IjrqLpVtKyQlTZGsJuNjFWG8
+LKixaxxR7iWsyRZVCnEqCgDN8hzKZIE3Ph+kLTa4z4mTNEYyWUNeKRrFrSxKvEOK
+KM0Pp53f
+=O/zf
 -----END PGP SIGNATURE-----
 `;
 

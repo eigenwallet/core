@@ -268,7 +268,7 @@ impl LabeledMoneroAddress {
 
     /// Returns the Monero address.
     pub fn address(&self) -> Option<monero::Address> {
-        self.address.clone()
+        self.address
     }
 
     /// Returns the percentage as a decimal.

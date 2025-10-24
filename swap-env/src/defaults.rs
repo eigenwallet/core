@@ -10,21 +10,28 @@ use url::Url;
 /*
 Here's the GPG signature of the donation address.
 
-Signed by the public key present in `utils/gpg_keys/binarybaron.asc`
+Signed by the public key present in `utils/gpg_keys/binarybaron_and_einliterflasche.asc`
 
 -----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA512
+Hash: SHA256
 
-87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o is our donation address for Github (signed by binarybaron)
+4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ is our donation address (signed by binarybaron)
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWlQAKCRCZt10+FHai
-bhasAQDGrAkZu+FFwDZDUEZzrIVS42he+GeMiS+ykpXyL5I7RQD/dXCR3f39zFsK
-1A7y45B3a8ZJYTzC7bbppg6cEnCoWQE=
-=j+Vz
+iQGzBAEBCAAdFiEEBRhGD+vsHaFKFVp7RK5vCxZqrVoFAmjxV4YACgkQRK5vCxZq
+rVrFogv9F650Um1TsPlqQ+7kdobCwa7yH5uXOp1p22YaiwWGHKRU5rUSb6Ac+zI0
+3Io39VEoZufQqXqEqaiH7Q/08ABQR5r0TTPtSLNjOSEQ+ecClwv7MeF5CIXZYDdB
+AlEOnlL0CPfA24GQMhfp9lvjNiTBA2NikLARWJrc1JsLrFMK5rHesv7VHJEtm/gu
+We5eAuNOM2k3nAABTWzLiMJkH+G1amJmfkCKkBCk04inA6kZ5COUikMupyQDtsE4
+hrr/KrskMuXzGY+rjP6NhWqr/twKj819TrOxlYD4vK68cZP+jx9m+vSBE6mxgMbN
+tBVdo9xFVCVymOYQCV8BRY8ScqP+YPNV5d6BMyDH9tvHJrGqZTNQiFhVX03Tw6mg
+hccEqYP1J/TaAlFg/P4HtqsxPBZD6x3IdSxXhrJ0IjrqLpVtKyQlTZGsJuNjFWG8
+LKixaxxR7iWsyRZVCnEqCgDN8hzKZIE3Ph+kLTa4z4mTNEYyWUNeKRrFrSxKvEOK
+KM0Pp53f
+=O/zf
 -----END PGP SIGNATURE-----
 */
-pub const DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET: &str = "87QwQmWZQwS6RvuprCqWuJgmystL8Dw6BCx8SrrCjVJhZYGc5s6kf9A2awfFfStvEGCGeNTBNqLGrHzH6d4gi7jLM2aoq9o";
+pub const DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET: &str = "4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ";
 pub const DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET: &str = "54ZYC5tgGRoKMJDLviAcJF2aHittSZGGkFZE6wCLkuAdUyHaaiQrjTxeSyfvxycn3yiexL4YNqdUmHuaReAk6JD4DQssQcF";
 
 pub const DEFAULT_MIN_BUY_AMOUNT: f64 = 0.002f64;

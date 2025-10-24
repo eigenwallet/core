@@ -43,7 +43,6 @@ use swap_env::config::{
 };
 use swap_feed;
 use swap_machine::alice::is_complete;
-use tracing_subscriber::filter::LevelFilter;
 use uuid::Uuid;
 
 const DEFAULT_WALLET_NAME: &str = "asb-wallet";
@@ -53,8 +52,7 @@ fn initialize_tracing(json: bool, config: &Config, trace: bool) -> Result<()> {
     let format = if json { Format::Json } else { Format::Raw };
     let log_dir = config.data.dir.join("logs");
 
-    common::tracing_util::init(LevelFilter::DEBUG, format, log_dir, None, trace)
-        .expect("initialize tracing");
+    common::tracing_util::init(format, log_dir, None, trace).expect("initialize tracing");
 
     tracing::info!(
         binary = "asb",

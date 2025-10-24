@@ -1,11 +1,10 @@
-use crate::monero;
-use crate::monero::BlockHeight;
-use crate::monero::TransferProof;
-use crate::protocol::alice;
-use crate::protocol::alice::AliceState;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use swap_core::bitcoin::EncryptedSignature;
+use swap_core::monero;
+use swap_core::monero::{BlockHeight, TransferProof};
+use swap_machine::alice;
+use swap_machine::alice::AliceState;
 
 // Large enum variant is fine because this is only used for database
 // and is dropped once written in DB.

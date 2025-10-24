@@ -11,8 +11,9 @@ use std::path::Path;
 use std::sync::Arc;
 use swap_fs::ensure_directory_exists;
 
-mod alice;
-mod bob;
+pub use swap_db::alice;
+pub use swap_db::bob;
+
 mod sqlite;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

@@ -276,12 +276,12 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
 name = "arti-client"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "async-trait",
  "cfg-if",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "educe",
@@ -304,6 +304,7 @@ dependencies = [
  "tor-circmgr",
  "tor-config",
  "tor-config-path",
+ "tor-dircommon",
  "tor-dirmgr",
  "tor-error",
  "tor-guardmgr",
@@ -1403,12 +1404,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bounded-vec-deque"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2225b558afc76c596898f5f1b3fc35cfce0eb1b13635cbd7d1b2a7177dc10ccd"
-
-[[package]]
 name = "brotli"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1596,8 +1591,8 @@ dependencies = [
 
 [[package]]
 name = "caret"
-version = "0.6.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.7.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 
 [[package]]
 name = "cargo-platform"
@@ -2829,12 +2824,12 @@ dependencies = [
 
 [[package]]
 name = "derive-deftly"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957bb73a3a9c0bbcac67e129b81954661b3cfcb9e28873d8441f91b54852e77a"
+checksum = "7d308ebe4b10924331bd079044b418da7b227d724d3e2408567a47ad7c3da2a0"
 dependencies = [
- "derive-deftly-macros 1.2.0",
- "heck 0.5.0",
+ "derive-deftly-macros 1.3.0",
+ "heck 0.4.1",
 ]
 
 [[package]]
@@ -2857,18 +2852,18 @@ dependencies = [
 
 [[package]]
 name = "derive-deftly-macros"
-version = "1.2.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ea41269bd490d251b9eca50ccb43117e641cc68b129849757c15ece88fe0574"
+checksum = "dd5f2b7218a51c827a11d22d1439b598121fac94bf9b99452e4afffe512d78c9"
 dependencies = [
- "heck 0.5.0",
- "indexmap 2.11.4",
- "itertools 0.14.0",
- "proc-macro-crate 3.4.0",
+ "heck 0.4.1",
+ "indexmap 1.9.3",
+ "itertools 0.13.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "sha3",
- "strum 0.27.2",
+ "strum 0.26.3",
  "syn 2.0.106",
  "void",
 ]
@@ -3476,6 +3471,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum_dispatch"
+version = "0.3.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa18ce2bc66555b3218614519ac839ddb759a7d6720732f979ef8d13be147ecd"
+dependencies = [
+ "once_cell",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "enumflags2"
 version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3748,15 +3755,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fns"
-version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9d318f82a68feac152dab48e8a6f1eb665a915ea6a0c76e4ad5ed137f80c368"
-dependencies = [
- "log",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3827,8 +3825,8 @@ dependencies = [
 
 [[package]]
 name = "fs-mistrust"
-version = "0.11.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.12.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "derive_builder_fork_arti",
  "dirs",
@@ -3877,8 +3875,8 @@ dependencies = [
 
 [[package]]
 name = "fslock-guard"
-version = "0.3.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.4.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "fslock-arti-fork",
  "thiserror 2.0.17",
@@ -4244,6 +4242,18 @@ dependencies = [
  "r-efi",
  "wasi 0.14.7+wasi-0.2.4",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "getset"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cf0fc11e47561d47397154977bc219f4cf809b2974facc3ccb3b89e2436f912"
+dependencies = [
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -7215,6 +7225,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "nonany"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6b8866ec53810a9a4b3d434a29801e78c707430a9ae11c2db4b8b62bb9675a0"
+
+[[package]]
 name = "notify"
 version = "8.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7686,8 +7702,8 @@ checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
 
 [[package]]
 name = "oneshot-fused-workaround"
-version = "0.3.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.4.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "futures",
 ]
@@ -8537,6 +8553,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-error-attr2"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96de42df36bb9bba5542fe9f1a054b8cc87e172759a1868aa05c1f3acc89dfc5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "proc-macro-error2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
+dependencies = [
+ "proc-macro-error-attr2",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "proc-macro-hack"
 version = "0.5.20+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9201,8 +9239,8 @@ checksum = "6b3789b30bd25ba102de4beabd95d21ac45b69b1be7d14522bab988c526d6799"
 
 [[package]]
 name = "retry-error"
-version = "0.7.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.8.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 
 [[package]]
 name = "rfc6979"
@@ -9649,8 +9687,8 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "safelog"
-version = "0.5.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.6.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "derive_more 2.0.1",
  "educe",
@@ -10520,8 +10558,8 @@ dependencies = [
 
 [[package]]
 name = "slotmap-careful"
-version = "0.3.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.4.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "paste",
  "serde",
@@ -10909,6 +10947,7 @@ version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b86f5297f0f04d08cabaa0f6bff7cb6aec4d9c3b49d87990d63da9d9156a8c3"
 dependencies = [
+ "num-bigint-dig",
  "p256",
  "p384",
  "p521",
@@ -11091,7 +11130,7 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "swap"
-version = "3.2.0-rc.2"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -11121,7 +11160,6 @@ dependencies = [
  "ecdsa_fun",
  "ed25519-dalek 1.0.1",
  "electrum-pool",
- "fns",
  "futures",
  "get-port",
  "hex",
@@ -11161,6 +11199,7 @@ dependencies = [
  "strum 0.26.3",
  "swap-controller-api",
  "swap-core",
+ "swap-db",
  "swap-env",
  "swap-feed",
  "swap-fs",
@@ -11194,7 +11233,7 @@ dependencies = [
 
 [[package]]
 name = "swap-asb"
-version = "3.2.0-rc.2"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
@@ -11223,7 +11262,7 @@ dependencies = [
 
 [[package]]
 name = "swap-controller"
-version = "3.2.0-rc.2"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "clap 4.5.48",
@@ -11271,6 +11310,18 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+]
+
+[[package]]
+name = "swap-db"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.32.7",
+ "serde",
+ "strum 0.26.3",
+ "swap-core",
+ "swap-machine",
+ "swap-serde",
 ]
 
 [[package]]
@@ -12511,10 +12562,10 @@ checksum = "df8b2b54733674ad286d16267dcfc7a71ed5c776e4ac7aa3c3e2561f7c637bf2"
 
 [[package]]
 name = "tor-async-utils"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "educe",
  "futures",
  "oneshot-fused-workaround",
@@ -12526,8 +12577,8 @@ dependencies = [
 
 [[package]]
 name = "tor-basic-utils"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "derive_more 2.0.1",
  "hex",
@@ -12544,11 +12595,11 @@ dependencies = [
 
 [[package]]
 name = "tor-bytes"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "bytes",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "digest 0.10.7",
  "educe",
  "getrandom 0.3.3",
@@ -12561,14 +12612,14 @@ dependencies = [
 
 [[package]]
 name = "tor-cell"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "bitflags 2.9.4",
  "bytes",
  "caret",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "educe",
  "itertools 0.14.0",
@@ -12591,8 +12642,8 @@ dependencies = [
 
 [[package]]
 name = "tor-cert"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "caret",
  "derive_builder_fork_arti",
@@ -12606,8 +12657,8 @@ dependencies = [
 
 [[package]]
 name = "tor-chanmgr"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "async-trait",
  "caret",
@@ -12641,8 +12692,8 @@ dependencies = [
 
 [[package]]
 name = "tor-checkable"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "humantime",
  "signature 2.2.0",
@@ -12652,14 +12703,13 @@ dependencies = [
 
 [[package]]
 name = "tor-circmgr"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "async-trait",
- "bounded-vec-deque",
  "cfg-if",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "downcast-rs 2.0.2",
@@ -12675,13 +12725,13 @@ dependencies = [
  "retry-error",
  "safelog",
  "serde",
- "static_assertions",
  "thiserror 2.0.17",
  "tor-async-utils",
  "tor-basic-utils",
  "tor-cell",
  "tor-chanmgr",
  "tor-config",
+ "tor-dircommon",
  "tor-error",
  "tor-guardmgr",
  "tor-linkspec",
@@ -12701,12 +12751,12 @@ dependencies = [
 
 [[package]]
 name = "tor-config"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "cfg-if",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "educe",
  "either",
@@ -12733,8 +12783,8 @@ dependencies = [
 
 [[package]]
 name = "tor-config-path"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "directories",
  "serde",
@@ -12746,8 +12796,8 @@ dependencies = [
 
 [[package]]
 name = "tor-consdiff"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "digest 0.10.7",
  "hex",
@@ -12757,8 +12807,8 @@ dependencies = [
 
 [[package]]
 name = "tor-dirclient"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "async-compression 0.4.32",
  "base64ct",
@@ -12783,9 +12833,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-dircommon"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
+dependencies = [
+ "base64ct",
+ "derive_builder_fork_arti",
+ "getset",
+ "humantime",
+ "humantime-serde",
+ "serde",
+ "tor-basic-utils",
+ "tor-checkable",
+ "tor-config",
+ "tor-linkspec",
+ "tor-llcrypto",
+ "tor-netdoc",
+ "tracing",
+]
+
+[[package]]
 name = "tor-dirmgr"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "async-trait",
  "base64ct",
@@ -12823,6 +12893,7 @@ dependencies = [
  "tor-config",
  "tor-consdiff",
  "tor-dirclient",
+ "tor-dircommon",
  "tor-error",
  "tor-guardmgr",
  "tor-llcrypto",
@@ -12837,8 +12908,8 @@ dependencies = [
 
 [[package]]
 name = "tor-error"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "derive_more 2.0.1",
  "futures",
@@ -12853,8 +12924,8 @@ dependencies = [
 
 [[package]]
 name = "tor-general-addr"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "derive_more 2.0.1",
  "thiserror 2.0.17",
@@ -12863,12 +12934,12 @@ dependencies = [
 
 [[package]]
 name = "tor-guardmgr"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "base64ct",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "dyn-clone",
@@ -12889,6 +12960,7 @@ dependencies = [
  "tor-async-utils",
  "tor-basic-utils",
  "tor-config",
+ "tor-dircommon",
  "tor-error",
  "tor-linkspec",
  "tor-llcrypto",
@@ -12904,11 +12976,11 @@ dependencies = [
 
 [[package]]
 name = "tor-hsclient"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "async-trait",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "educe",
  "either",
@@ -12947,12 +13019,12 @@ dependencies = [
 
 [[package]]
 name = "tor-hscrypto"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "cipher",
  "data-encoding",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "digest 0.10.7",
  "hex",
@@ -12978,14 +13050,14 @@ dependencies = [
 
 [[package]]
 name = "tor-hsservice"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "async-trait",
  "base64ct",
  "cfg-if",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "digest 0.10.7",
@@ -13035,14 +13107,15 @@ dependencies = [
 
 [[package]]
 name = "tor-key-forge"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "downcast-rs 2.0.2",
  "paste",
  "rand 0.9.2",
+ "rsa",
  "signature 2.2.0",
  "ssh-key",
  "thiserror 2.0.17",
@@ -13055,13 +13128,13 @@ dependencies = [
 
 [[package]]
 name = "tor-keymgr"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "arrayvec",
  "cfg-if",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "downcast-rs 2.0.2",
@@ -13094,13 +13167,13 @@ dependencies = [
 
 [[package]]
 name = "tor-linkspec"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "base64ct",
  "by_address",
  "caret",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "hex",
@@ -13120,15 +13193,15 @@ dependencies = [
 
 [[package]]
 name = "tor-llcrypto"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "aes",
  "base64ct",
  "ctr",
  "curve25519-dalek 4.1.3",
  "der-parser 10.0.0",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "digest 0.10.7",
  "ed25519-dalek 2.2.0",
@@ -13150,6 +13223,7 @@ dependencies = [
  "signature 2.2.0",
  "subtle",
  "thiserror 2.0.17",
+ "tor-error",
  "tor-memquota",
  "visibility",
  "x25519-dalek",
@@ -13158,8 +13232,8 @@ dependencies = [
 
 [[package]]
 name = "tor-log-ratelim"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "futures",
  "humantime",
@@ -13172,11 +13246,11 @@ dependencies = [
 
 [[package]]
 name = "tor-memquota"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "cfg-if",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "dyn-clone",
  "educe",
@@ -13201,8 +13275,8 @@ dependencies = [
 
 [[package]]
 name = "tor-netdir"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "async-trait",
  "bitflags 2.9.4",
@@ -13215,7 +13289,6 @@ dependencies = [
  "num_enum",
  "rand 0.9.2",
  "serde",
- "static_assertions",
  "strum 0.27.2",
  "thiserror 2.0.17",
  "time 0.3.44",
@@ -13233,14 +13306,14 @@ dependencies = [
 
 [[package]]
 name = "tor-netdoc"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "base64ct",
  "bitflags 2.9.4",
  "cipher",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "digest 0.10.7",
@@ -13279,11 +13352,11 @@ dependencies = [
 
 [[package]]
 name = "tor-persist"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "filetime",
  "fs-mistrust",
@@ -13307,8 +13380,8 @@ dependencies = [
 
 [[package]]
 name = "tor-proto"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "asynchronous-codec 0.7.0",
@@ -13319,16 +13392,18 @@ dependencies = [
  "cipher",
  "coarsetime",
  "criterion-cycles-per-byte",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_builder_fork_arti",
  "derive_more 2.0.1",
  "digest 0.10.7",
  "educe",
+ "enum_dispatch",
  "futures",
  "futures-util",
  "hkdf",
  "hmac",
  "itertools 0.14.0",
+ "nonany",
  "oneshot-fused-workaround",
  "pin-project",
  "postage",
@@ -13369,8 +13444,8 @@ dependencies = [
 
 [[package]]
 name = "tor-protover"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "caret",
  "paste",
@@ -13381,8 +13456,8 @@ dependencies = [
 
 [[package]]
 name = "tor-relay-selection"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "rand 0.9.2",
  "serde",
@@ -13394,8 +13469,8 @@ dependencies = [
 
 [[package]]
 name = "tor-rtcompat"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "async-trait",
  "async_executors",
@@ -13423,13 +13498,13 @@ dependencies = [
 
 [[package]]
 name = "tor-rtmock"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "assert_matches",
  "async-trait",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "educe",
  "futures",
@@ -13451,12 +13526,12 @@ dependencies = [
 
 [[package]]
 name = "tor-socksproto"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
  "amplify",
  "caret",
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "educe",
  "safelog",
  "subtle",
@@ -13467,10 +13542,10 @@ dependencies = [
 
 [[package]]
 name = "tor-units"
-version = "0.34.0"
-source = "git+https://github.com/eigenwallet/arti?rev=d909ada56d6b2b7ed7b4d0edd4c14e048f72a088#d909ada56d6b2b7ed7b4d0edd4c14e048f72a088"
+version = "0.35.0"
+source = "git+https://github.com/eigenwallet/arti?rev=537dd8755817aa2b21c41e66edbd5f05f3c04373#537dd8755817aa2b21c41e66edbd5f05f3c04373"
 dependencies = [
- "derive-deftly 1.2.0",
+ "derive-deftly 1.3.0",
  "derive_more 2.0.1",
  "serde",
  "thiserror 2.0.17",
@@ -13977,7 +14052,7 @@ dependencies = [
 
 [[package]]
 name = "unstoppableswap-gui-rs"
-version = "3.2.0-rc.2"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "dfx-swiss-sdk",

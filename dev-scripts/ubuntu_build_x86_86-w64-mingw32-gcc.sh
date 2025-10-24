@@ -39,7 +39,7 @@ esac
 
 set -euo pipefail
 
-# Get the current project root (this file is in <root>/dev_scripts/ and gets called via just (just file is at <root>/justfile))
+# Get the current project root (this file is in <root>/dev-scripts/ and gets called via just (just file is at <root>/justfile))
 SRC_TAURI_DIR="$(pwd)/../src-tauri"
 
 # Check if src-tauri directory exists
