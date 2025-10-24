@@ -1,13 +1,12 @@
 use anyhow::{self, Context};
-use bitcoin::hashes::Hash;
-use std::os::macos::raw::stat;
+use reqwest::header::{ACCEPT, HeaderMap, USER_AGENT};
+use serde::de::Error;
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
-use std::{collections::HashMap, f64};
 use thiserror::Error;
-use tokio::io::DuplexStream;
 use tokio::sync::mpsc;
-use tokio_stream::{StreamExt as _, wrappers::ReceiverStream};
+use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 pub use generated_client;
@@ -20,7 +19,38 @@ pub enum OrangeFrenError {
     PathCreateError(String),
 }
 
-#[derive(Clone)]
+// {
+//     let client = Client::new();
+
+//     let trade_id = client.create_trade(..);
+
+//     while let Some(status) == client.watch_status(trade_id).await.next.await() {
+
+//     }
+// }
+
+// trait Currency {
+//     type Amount;
+//     type Address;
+// }
+
+// struct Bitcoin;
+
+// impl Currency for Bitcoin  {
+//     type Address = bitcoin::Address;
+//     type Amount = bitcoin::Amount;
+
+//     fn as_str() -> &'static str;
+// }
+
+// fn create_trade<From: Currency, To: Currency>(from_amount: From::Amount, to_address: To::Address) -> Trade {
+//     let currency = From::as_str(); // "XMR"
+//     let amount = from_amount.to_float()
+
+//         // (f64, "XMR")
+// }
+
+#[derive(Clone, Debug)]
 enum TradeStatusType {
     Initial,
     Confirming,
@@ -48,8 +78,8 @@ impl From<generated_client::models::trade_state::Type> for TradeStatusType {
     }
 }
 
-#[derive(Clone)]
-struct TradeStatus {
+#[derive(Clone, Debug)]
+pub struct TradeStatus {
     id: TradeId,
     from_currency: Currency,
     to_currency: Currency,
@@ -59,7 +89,7 @@ struct TradeStatus {
     valid_for: Duration,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct TradeId(Uuid);
 
 #[derive(Clone)]
@@ -70,14 +100,14 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new() -> Client {
+    pub fn new() -> Self {
         let mut config = generated_client::apis::configuration::Configuration::new();
 
-        config.base_path = "https://intercambio.app/apidocs/".to_string();
+        config.base_path = "https://intercambio.app".to_string();
 
-        Client {
+        Self {
             trades: HashMap::new(),
-            config, //db:
+            config,
         }
     }
 
@@ -89,23 +119,35 @@ impl Client {
         let path_request = generated_client::models::CreatePathRequest::new(
             from_amount.to_btc(),
             "BTC".to_string(),
-            to_address.as_hex(),
+            to_address.to_string(),
             "XMR".to_string(),
         );
 
-        let create_path_responce =
-            generated_client::apis::default_api::api_eigenwallet_create_path_get(
-                &self.config,
-                path_request,
-            )
-            .await
-            .map_err(|e| {
-                OrangeFrenError::PathCreateError(format!("Failed to send sign request: {}", e))
-            })?;
+        let res = generated_client::apis::default_api::api_eigenwallet_create_path_post(
+            &self.config,
+            path_request,
+        )
+        .await;
 
-        let path_uuid = create_path_responce.path_uuid.expect("Error getting uuid");
+        let create_path_response = match res {
+            Ok(ok) => ok,
+            Err(generated_client::apis::Error::ResponseError(r)) => {
+                return Err(anyhow::anyhow!(
+                    "create-path HTTP {}: {}",
+                    r.status,
+                    r.content
+                ));
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("create-path request failed: {e}"));
+            }
+        };
 
-        let path_uuid = Uuid::from_str(path_uuid.as_str()).expect("Error parsing uuid");
+        let path_uuid = create_path_response
+            .path_uuid
+            .context("Error getting uuid")?;
+
+        let path_uuid = Uuid::from_str(path_uuid.as_str()).context("Error parsing uuid")?;
         let trade_uuid = TradeId(path_uuid);
 
         let status = self
@@ -121,17 +163,7 @@ impl Client {
         Ok(trade_uuid)
     }
 
-    pub async fn get_status(&self, trade_id: TradeId) -> Result<TradeStatus, anyhow::Error> {
-        // if let Some(self.trades.get(TradeId)) {
-
-        // }
-
-        // if letzter state nicht mehr gültig {
-        // fetch new status
-        // }
-        //
-        // else return last saved state
-
+    async fn get_status(&self, trade_id: TradeId) -> Result<TradeStatus, anyhow::Error> {
         let path_response =
             generated_client::apis::default_api::api_eigenwallet_get_path_path_uuid_get(
                 &self.config,

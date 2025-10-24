@@ -6,13 +6,15 @@ edition = "2024"
 [dependencies]
 generated-client = { path = "../generated-client" }
 monero = { workspace = true }
-serde.workspace = true
+serde = { workspace = true }
 thiserror = { workspace = true }
 bitcoin = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = "0.1.17"
+reqwest = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
