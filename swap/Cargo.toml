@@ -69,7 +69,7 @@ moka = { version = "0.12", features = ["sync", "future"] }
 monero = { workspace = true }
 monero-rpc = { path = "../monero-rpc" }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
-monero-seed = { version = "0.1.0", path = "../monero-seed" }
+monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
 once_cell = { workspace = true }
 pem = "3.0"
