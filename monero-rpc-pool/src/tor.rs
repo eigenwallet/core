@@ -11,6 +11,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
 pub trait TorBackendRpc {
     fn is_some(&self) -> bool;
     fn ready_for_traffic(&self) -> bool;
+    fn masquerade_clearnet(&self) -> bool;
     async fn connect(&self, address: (&str, u16)) -> anyhow::Result<Box<dyn HyperStream>>;
 }
 impl TorBackendRpc for TorBackend {
@@ -23,6 +24,13 @@ impl TorBackendRpc for TorBackend {
             TorBackend::Arti(arti) => arti.bootstrap_status().ready_for_traffic(),
             TorBackend::Socks(..) => true,
             TorBackend::None => false,
+        }
+    }
+
+    fn masquerade_clearnet(&self) -> bool {
+        match self {
+            TorBackend::Arti(..) | TorBackend::None => false,
+            TorBackend::Socks(..) => true,
         }
     }
 
