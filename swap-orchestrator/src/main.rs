@@ -53,6 +53,9 @@ fn main() {
             asb_tracing_logger: OrchestratorImage::Registry(
                 images::ASB_TRACING_LOGGER_IMAGE.to_string(),
             ),
+            rendezvous_node: OrchestratorImage::Build(
+                images::RENDEZVOUS_NODE_IMAGE_FROM_SOURCE.clone(),
+            ),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),

@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- RENDEZVOUS: Rendezvous servers now register themselves at bootstrap rendezvous points to make them discoverable
+- RENDEZVOUS-NODE: Now takes a `--data-dir` argument and has been renamed to "rendezvous-node" (previously "rendezvous-server")
+- RENDEZVOUS-NODE: Rendezvous servers now register themselves at bootstrap rendezvous points to make them discoverable.
+- ORCHESTRATOR: The orchestrator will now also add a `rendezvous-node` service to the `docker-compose.yml` file. Rendezvous nodes help with peer discovery in the network.
 - ASB + GUI + CLI: Upgrade arti-client to 1.6.0
 
 ## [3.2.1] - 2025-10-21
