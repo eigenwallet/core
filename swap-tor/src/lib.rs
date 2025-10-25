@@ -155,7 +155,7 @@ pub struct SocksServerAddress(pub SocketAddr);
 
 impl SocksServerAddress {
     pub fn transport(self) -> Socks5Transport {
-        tracing::debug!("Using SOCKS5 proxy at {self:?}");
+        tracing::debug!("Using SOCKS5 proxy at {:?}", self.0);
         Socks5Transport(self)
     }
 
