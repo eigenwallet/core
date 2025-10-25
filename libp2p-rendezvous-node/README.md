@@ -10,7 +10,7 @@ Build the binary:
 cargo build --release
 ```
 
-Run the `libp2p-rendezvous-server`:
+Run the `libp2p-rendezvous-node`:
 
 ```
 cargo run --release
