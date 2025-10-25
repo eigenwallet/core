@@ -11357,6 +11357,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "asynchronous-codec 0.7.0",
+ "backoff",
  "bitcoin 0.32.7",
  "bitcoin-wallet",
  "bmrng",

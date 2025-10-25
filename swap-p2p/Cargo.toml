@@ -13,7 +13,7 @@ swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 
 # Networking
-libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json"] }
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify"] }
 
 # Serialization
 asynchronous-codec = "0.7.0"
@@ -29,6 +29,7 @@ rand = { workspace = true }
 
 # Utils
 anyhow = { workspace = true }
+backoff = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
