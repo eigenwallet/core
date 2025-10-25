@@ -9,6 +9,8 @@ members = [
   "monero-rpc-pool",
   "monero-sys",
   "src-tauri",
+  "orangefren-client/client",
+  "orangefren-client/generated-client",
   "swap",
   "swap-asb",
   "swap-controller",
