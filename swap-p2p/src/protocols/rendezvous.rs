@@ -45,8 +45,8 @@ impl XmrBtcNamespace {
 /// A behaviour that periodically re-registers at multiple rendezvous points as a client
 pub mod register {
     use super::*;
-    use backoff::backoff::Backoff;
     use backoff::ExponentialBackoff;
+    use backoff::backoff::Backoff;
     use futures::future::BoxFuture;
     use futures::stream::FuturesUnordered;
     use futures::{FutureExt, StreamExt};
@@ -56,7 +56,7 @@ pub mod register {
         ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
         THandlerOutEvent, ToSwarm,
     };
-    use libp2p::{identity, Multiaddr, PeerId};
+    use libp2p::{Multiaddr, PeerId, identity};
     use std::collections::HashMap;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -128,6 +128,11 @@ pub mod register {
 
             // Initialize backoff for each rendezvous node
             for node in &rendezvous_nodes {
+                // We don't want to register at our own rendezvous point
+                if node.peer_id == identity.public().to_peer_id() {
+                    continue;
+                }
+
                 backoffs.insert(
                     node.peer_id,
                     ExponentialBackoff {
@@ -331,12 +336,13 @@ pub mod register {
 
                 return Poll::Ready(ToSwarm::Dial {
                     opts: DialOpts::peer_id(peer_id)
-                        .addresses(vec![self
-                            .rendezvous_nodes
-                            .iter()
-                            .find(|node| node.peer_id == peer_id)
-                            .map(|node| node.address.clone())
-                            .expect("We should have a rendezvous node for the peer id")])
+                        .addresses(vec![
+                            self.rendezvous_nodes
+                                .iter()
+                                .find(|node| node.peer_id == peer_id)
+                                .map(|node| node.address.clone())
+                                .expect("We should have a rendezvous node for the peer id"),
+                        ])
                         .condition(PeerCondition::Disconnected)
                         // TODO: this makes the behaviour call `NetworkBehaviour::handle_pending_outbound_connection`
                         // but we don't implement it
@@ -415,7 +421,7 @@ pub mod register {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::test::{new_swarm, SwarmExt};
+        use crate::test::{SwarmExt, new_swarm};
         use futures::StreamExt;
         use libp2p::rendezvous;
         use libp2p::swarm::SwarmEvent;
@@ -431,8 +437,8 @@ pub mod register {
         //   do not work
         //
         // Ignore this test for now . This works in production :)
-        async fn given_no_initial_connection_when_constructed_asb_connects_and_registers_with_rendezvous_node(
-        ) {
+        async fn given_no_initial_connection_when_constructed_asb_connects_and_registers_with_rendezvous_node()
+         {
             let mut rendezvous_node = new_swarm(|_| {
                 rendezvous::server::Behaviour::new(rendezvous::server::Config::default())
             });
