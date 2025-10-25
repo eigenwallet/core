@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- RENDEZVOUS: Rendezvous servers now register themselves at bootstrap rendezvous points to make them discoverable
+- RENDEZVOUS-SERVER: Rendezvous servers now register themselves at bootstrap rendezvous points to make them discoverable
+- RENDEZVOUS-SERVER: Now takes a `--data-dir` argument
 - ASB + GUI + CLI: Upgrade arti-client to 1.6.0
 
 ## [3.2.1] - 2025-10-21
