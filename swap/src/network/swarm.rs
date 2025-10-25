@@ -1,4 +1,4 @@
-use crate::asb::{LatestRate, RendezvousNode};
+use crate::asb::{register, LatestRate};
 use crate::libp2p_ext::MultiAddrExt;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::seed::Seed;
@@ -43,7 +43,7 @@ where
                 .extract_peer_id()
                 .expect("Rendezvous node address must contain peer ID");
 
-            RendezvousNode::new(addr, peer_id, namespace, None)
+            register::RendezvousNode::new(addr, peer_id, namespace, None)
         })
         .collect();
 
