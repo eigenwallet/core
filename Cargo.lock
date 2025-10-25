@@ -9080,7 +9080,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rendezvous-server"
+name = "rendezvous-node"
 version = "0.2.0"
 dependencies = [
  "anyhow",
