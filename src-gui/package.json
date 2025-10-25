@@ -41,8 +41,6 @@
     "lodash": "^4.17.21",
     "multiaddr": "^10.0.1",
     "notistack": "^3.0.1",
-    "pino": "^9.2.0",
-    "pino-pretty": "^11.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-qr-code": "^2.0.15",
