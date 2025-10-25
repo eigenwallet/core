@@ -9085,10 +9085,13 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "atty",
+ "backoff",
  "futures",
  "libp2p",
  "libp2p-tor",
  "structopt",
+ "swap-env",
+ "swap-p2p",
  "tokio",
  "tor-hsservice",
  "tracing",
