@@ -5,16 +5,19 @@ use std::fmt;
 pub enum XmrBtcNamespace {
     Mainnet,
     Testnet,
+    RendezvousPoint,
 }
 
 const MAINNET: &str = "xmr-btc-swap-mainnet";
 const TESTNET: &str = "xmr-btc-swap-testnet";
+const RENDEZVOUS_POINT: &str = "rendezvous-point";
 
 impl fmt::Display for XmrBtcNamespace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             XmrBtcNamespace::Mainnet => write!(f, "{}", MAINNET),
             XmrBtcNamespace::Testnet => write!(f, "{}", TESTNET),
+            XmrBtcNamespace::RendezvousPoint => write!(f, "{}", RENDEZVOUS_POINT),
         }
     }
 }
@@ -24,6 +27,7 @@ impl From<XmrBtcNamespace> for Namespace {
         match namespace {
             XmrBtcNamespace::Mainnet => Namespace::from_static(MAINNET),
             XmrBtcNamespace::Testnet => Namespace::from_static(TESTNET),
+            XmrBtcNamespace::RendezvousPoint => Namespace::from_static(RENDEZVOUS_POINT),
         }
     }
 }

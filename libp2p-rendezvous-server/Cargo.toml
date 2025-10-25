@@ -6,9 +6,12 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
+backoff = { workspace = true, features = ["tokio"] }
 futures = { workspace = true }
 libp2p = { workspace = true, features = ["rendezvous", "tcp", "yamux", "dns", "noise", "ping", "websocket", "tokio", "macros"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
+swap-env = { path = "../swap-env" }
+swap-p2p = { path = "../swap-p2p" }
 tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net", "io-util"] }
 tor-hsservice = { workspace = true }
 tracing = { workspace = true, features = ["attributes"] }

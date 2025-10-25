@@ -13,6 +13,7 @@ use tracing_subscriber::FmtSubscriber;
 
 use crate::swarm::{create_swarm, create_swarm_with_onion, Addresses};
 
+pub mod behaviour;
 pub mod swarm;
 
 #[derive(Debug, StructOpt)]
@@ -55,10 +56,12 @@ async fn main() -> Result<()> {
 
     let identity = identity::Keypair::from(ed25519::Keypair::from(secret_key));
 
+    let rendezvous_addrs = swap_env::defaults::default_rendezvous_points();
+
     let mut swarm = if cli.no_onion {
-        create_swarm(identity)?
+        create_swarm(identity, rendezvous_addrs)?
     } else {
-        create_swarm_with_onion(identity, cli.onion_port).await?
+        create_swarm_with_onion(identity, cli.onion_port, rendezvous_addrs).await?
     };
 
     tracing::info!(peer_id=%swarm.local_peer_id(), "Rendezvous server peer id");
@@ -73,32 +76,52 @@ async fn main() -> Result<()> {
 
     loop {
         match swarm.select_next_some().await {
-            SwarmEvent::Behaviour(rendezvous::server::Event::PeerRegistered {
-                peer,
-                registration,
-            }) => {
+            SwarmEvent::Behaviour(behaviour::BehaviourEvent::Server(
+                rendezvous::server::Event::PeerRegistered { peer, registration },
+            )) => {
                 tracing::info!(%peer, namespace=%registration.namespace, addresses=?registration.record.addresses(), ttl=registration.ttl,  "Peer registered");
             }
-            SwarmEvent::Behaviour(rendezvous::server::Event::PeerNotRegistered {
-                peer,
-                namespace,
-                error,
-            }) => {
+            SwarmEvent::Behaviour(behaviour::BehaviourEvent::Server(
+                rendezvous::server::Event::PeerNotRegistered {
+                    peer,
+                    namespace,
+                    error,
+                },
+            )) => {
                 tracing::info!(%peer, %namespace, ?error, "Peer failed to register");
             }
-            SwarmEvent::Behaviour(rendezvous::server::Event::RegistrationExpired(registration)) => {
+            SwarmEvent::Behaviour(behaviour::BehaviourEvent::Server(
+                rendezvous::server::Event::RegistrationExpired(registration),
+            )) => {
                 tracing::info!(peer=%registration.record.peer_id(), namespace=%registration.namespace, addresses=%Addresses(registration.record.addresses()), ttl=registration.ttl, "Registration expired");
             }
-            SwarmEvent::Behaviour(rendezvous::server::Event::PeerUnregistered {
-                peer,
-                namespace,
-            }) => {
+            SwarmEvent::Behaviour(behaviour::BehaviourEvent::Server(
+                rendezvous::server::Event::PeerUnregistered { peer, namespace },
+            )) => {
                 tracing::info!(%peer, %namespace, "Peer unregistered");
             }
-            SwarmEvent::Behaviour(rendezvous::server::Event::DiscoverServed {
-                enquirer, ..
-            }) => {
+            SwarmEvent::Behaviour(behaviour::BehaviourEvent::Server(
+                rendezvous::server::Event::DiscoverServed { enquirer, .. },
+            )) => {
                 tracing::info!(peer=%enquirer, "Discovery served");
+            }
+            SwarmEvent::Behaviour(behaviour::BehaviourEvent::Register(
+                rendezvous::client::Event::Registered {
+                    rendezvous_node,
+                    ttl,
+                    namespace,
+                },
+            )) => {
+                tracing::info!(%rendezvous_node, %namespace, ttl, "Registered at rendezvous point");
+            }
+            SwarmEvent::Behaviour(behaviour::BehaviourEvent::Register(
+                rendezvous::client::Event::RegisterFailed {
+                    rendezvous_node,
+                    namespace,
+                    error,
+                },
+            )) => {
+                tracing::warn!(%rendezvous_node, %namespace, ?error, "Failed to register at rendezvous point");
             }
             SwarmEvent::NewListenAddr { address, .. } => {
                 tracing::info!(%address, "New listening address reported");
@@ -120,6 +143,7 @@ fn init_tracing(level: LevelFilter, json_format: bool, no_timestamp: bool) {
     let builder = FmtSubscriber::builder()
         .with_env_filter(format!(
             "rendezvous_server={},\
+                 swap_p2p={},\
                  libp2p={},\
                  libp2p_allow_block_list={},\
                  libp2p_connection_limits={},\
@@ -136,6 +160,7 @@ fn init_tracing(level: LevelFilter, json_format: bool, no_timestamp: bool) {
                  libp2p_tor={},\
                  libp2p_websocket={},\
                  libp2p_yamux={}",
+            level,
             level,
             level,
             level,
