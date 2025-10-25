@@ -411,14 +411,13 @@ pub mod register {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::network::test::{new_swarm, SwarmExt};
+        use crate::test::{new_swarm, SwarmExt};
         use futures::StreamExt;
         use libp2p::rendezvous;
         use libp2p::swarm::SwarmEvent;
         use std::collections::HashMap;
 
         #[tokio::test]
-        #[ignore]
         // Due to an issue with the libp2p rendezvous library
         // This needs to be fixed upstream and was
         // introduced in our codebase by a libp2p refactor which bumped the version of libp2p:
@@ -441,9 +440,8 @@ pub mod register {
                 None,
             );
 
-            let mut asb = new_swarm(|identity| {
-                super::rendezvous::Behaviour::new(identity, vec![rendezvous_point])
-            });
+            let mut asb =
+                new_swarm(|identity| super::Behaviour::new(identity, vec![rendezvous_point]));
             asb.listen_on_random_memory_address().await; // this adds an external address
 
             tokio::spawn(async move {
@@ -468,7 +466,6 @@ pub mod register {
         }
 
         #[tokio::test]
-        #[ignore]
         // Due to an issue with the libp2p rendezvous library
         // This needs to be fixed upstream and was
         // introduced in our codebase by a libp2p refactor which bumped the version of libp2p:
@@ -492,9 +489,8 @@ pub mod register {
                 Some(5),
             );
 
-            let mut asb = new_swarm(|identity| {
-                super::rendezvous::Behaviour::new(identity, vec![rendezvous_point])
-            });
+            let mut asb =
+                new_swarm(|identity| super::Behaviour::new(identity, vec![rendezvous_point]));
             asb.listen_on_random_memory_address().await; // this adds an external address
 
             tokio::spawn(async move {
@@ -525,7 +521,6 @@ pub mod register {
         }
 
         #[tokio::test]
-        #[ignore]
         // Due to an issue with the libp2p rendezvous library
         // This needs to be fixed upstream and was
         // introduced in our codebase by a libp2p refactor which bumped the version of libp2p:
@@ -563,7 +558,7 @@ pub mod register {
             }
 
             let mut asb =
-                new_swarm(|identity| super::rendezvous::Behaviour::new(identity, rendezvous_nodes));
+                new_swarm(|identity| register::Behaviour::new(identity, rendezvous_nodes));
             asb.listen_on_random_memory_address().await; // this adds an external address
 
             let handle = tokio::spawn(async move {

@@ -42,5 +42,9 @@ tokio = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+[dev-dependencies]
+async-trait = { workspace = true }
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio"] }
+
 [lints]
 workspace = true
