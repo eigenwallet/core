@@ -313,6 +313,8 @@ services:
     restart: unless-stopped
     volumes:
       - 'rendezvous-data:/rendezvous-data'
+    ports:
+      - '0.0.0.0:{rendezvous_node_port}:{rendezvous_node_port}'
     entrypoint: ''
     command: {command_rendezvous_node}
 volumes:
@@ -327,6 +329,7 @@ volumes:
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
         electrs_port = input.ports.electrs,
         asb_port = input.ports.asb_libp2p,
+        rendezvous_node_port = input.ports.rendezvous_node_port,
         image_monerod = input.images.monerod.to_image_attribute(),
         image_electrs = input.images.electrs.to_image_attribute(),
         image_bitcoind = input.images.bitcoind.to_image_attribute(),
