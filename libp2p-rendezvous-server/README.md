@@ -18,13 +18,13 @@ cargo run --release
 
 The server will use default values:
 
-- Secret file: `rendezvous-server-secret.key` (created automatically if it doesn't exist)
+- Data directory: `./rendezvous-data` (contains identity and Tor state, created automatically if it doesn't exist)
 - Listen port: `8888`
 
 You can customize these with:
 
 ```
-cargo run --release -- --secret-file <PATH-TO-SECRET-FILE> --listen-tcp <PORT>
+cargo run --release -- --data-dir <PATH-TO-DATA-DIR> --port <PORT>
 ```
 
 ## Tor Onion Service Support
@@ -42,21 +42,12 @@ To disable the onion service and use only TCP:
 cargo run --release -- --no-onion
 ```
 
-You can specify a custom port for the onion service:
-
-```
-cargo run --release -- --onion-port 9999
-```
-
 ## Options
 
-If the provided secret file doesn't exist, it will be created with a new random secret key.
+The data directory stores the LibP2P identity and Tor state. If it doesn't exist, it will be created along with a new random identity key.
 
 Run `cargo run --release -- --help` for all available options:
 
-- `--secret-file`: Path to the secret key file
-- `--listen-tcp`: TCP port to listen on (default: 8888)
+- `--data-dir`: Path to the data directory (default: `./rendezvous-data`)
+- `--port`: Port to listen on for both TCP and onion service (default: `8888`)
 - `--no-onion`: Disable Tor onion service (enabled by default)
-- `--onion-port`: Port for the onion service (default: 8888)
-- `--json`: Format logs as JSON
-- `--no-timestamp`: Don't include timestamp in logs
