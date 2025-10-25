@@ -124,15 +124,16 @@ pub mod register {
 
     impl Behaviour {
         pub fn new(identity: identity::Keypair, rendezvous_nodes: Vec<RendezvousNode>) -> Self {
+            let our_peer_id = identity.public().to_peer_id();
+            let rendezvous_nodes: Vec<RendezvousNode> = rendezvous_nodes
+                .into_iter()
+                .filter(|node| node.peer_id != our_peer_id)
+                .collect();
+
             let mut backoffs = HashMap::new();
 
             // Initialize backoff for each rendezvous node
             for node in &rendezvous_nodes {
-                // We don't want to register at our own rendezvous point
-                if node.peer_id == identity.public().to_peer_id() {
-                    continue;
-                }
-
                 backoffs.insert(
                     node.peer_id,
                     ExponentialBackoff {
