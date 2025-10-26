@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- RENDEZVOUS-NODE: Fix a spelling mistake in the Dockerfile
+
 ## [3.2.2] - 2025-10-25
 
 - RENDEZVOUS-NODE: Now takes a `--data-dir` argument and has been renamed to "rendezvous-node" (previously "rendezvous-server")
