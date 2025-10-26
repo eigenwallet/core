@@ -536,6 +536,7 @@ where
                 .subscribe_to(Box::new(state3.tx_lock.clone()))
                 .await;
 
+            // TODO: Retry here
             tx_lock_status_subscription
                 .wait_until_confirmed_with(state3.cancel_timelock)
                 .await?;
