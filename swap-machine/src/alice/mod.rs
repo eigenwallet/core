@@ -73,6 +73,11 @@ pub enum AliceState {
         state3: Box<State3>,
     },
     XmrRefunded,
+    WaitingForCancelTimelockExpiration {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        state3: Box<State3>,
+    },
     CancelTimelockExpired {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -120,6 +125,9 @@ impl fmt::Display for AliceState {
             AliceState::SafelyAborted => write!(f, "safely aborted"),
             AliceState::BtcPunishable { .. } => write!(f, "btc is punishable"),
             AliceState::XmrRefunded => write!(f, "xmr is refunded"),
+            AliceState::WaitingForCancelTimelockExpiration { .. } => {
+                write!(f, "waiting for cancel timelock expiration")
+            }
             AliceState::CancelTimelockExpired { .. } => write!(f, "cancel timelock is expired"),
             AliceState::BtcEarlyRefundable { .. } => write!(f, "btc is early refundable"),
             AliceState::BtcEarlyRefunded(_) => write!(f, "btc is early refunded"),

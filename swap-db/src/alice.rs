@@ -45,6 +45,11 @@ pub enum Alice {
         state3: alice::State3,
         transfer_proof: TransferProof,
     },
+    WaitingForCancelTimelockExpiration {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        state3: alice::State3,
+    },
     CancelTimelockExpired {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -181,6 +186,15 @@ impl From<AliceState> for Alice {
                 state3: state3.as_ref().clone(),
             },
             AliceState::XmrRefunded => Alice::Done(AliceEndState::XmrRefunded),
+            AliceState::WaitingForCancelTimelockExpiration {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                state3,
+            } => Alice::WaitingForCancelTimelockExpiration {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                state3: state3.as_ref().clone(),
+            },
             AliceState::CancelTimelockExpired {
                 monero_wallet_restore_blockheight,
                 transfer_proof,
@@ -259,6 +273,15 @@ impl From<Alice> for AliceState {
                 state3: Box::new(state3),
                 transfer_proof,
             },
+            Alice::WaitingForCancelTimelockExpiration {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                state3,
+            } => AliceState::WaitingForCancelTimelockExpiration {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                state3: Box::new(state3),
+            },
             Alice::CancelTimelockExpired {
                 monero_wallet_restore_blockheight,
                 transfer_proof,
@@ -335,6 +358,9 @@ impl fmt::Display for Alice {
             Alice::EncSigLearned { .. } => f.write_str("Encrypted signature learned"),
             Alice::BtcRedeemTransactionPublished { .. } => {
                 f.write_str("Bitcoin redeem transaction published")
+            }
+            Alice::WaitingForCancelTimelockExpiration { .. } => {
+                f.write_str("Waiting for cancel timelock to expire")
             }
             Alice::CancelTimelockExpired { .. } => f.write_str("Cancel timelock is expired"),
             Alice::BtcCancelled { .. } => f.write_str("Bitcoin cancel transaction published"),
