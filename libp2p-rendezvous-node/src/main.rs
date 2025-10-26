@@ -9,50 +9,50 @@ use tokio::fs;
 use tokio::fs::{DirBuilder, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::FmtSubscriber;
 
 use crate::swarm::{create_swarm, create_swarm_with_onion, Addresses};
 
 pub mod behaviour;
 pub mod swarm;
+pub mod tor;
+pub mod tracing_util;
 
 #[derive(Debug, StructOpt)]
 struct Cli {
-    /// Path to the file that contains the secret key of the rendezvous server's
-    /// identity keypair
-    /// If the file does not exist, a new secret key will be generated and saved to the file
-    #[structopt(long, default_value = "./rendezvous-server-secret.key")]
-    secret_file: PathBuf,
+    /// If the directory does not exist, it will be created
+    /// Contains Tor state and LibP2P identity
+    #[structopt(long, default_value = "./rendezvous-data")]
+    data_dir: PathBuf,
 
-    /// Port used for listening on TCP (default)
+    /// Port used for listening on TCP and onion service
     #[structopt(long, default_value = "8888")]
-    listen_tcp: u16,
+    port: u16,
 
     /// Enable listening on Tor onion service
     #[structopt(long)]
     no_onion: bool,
-
-    /// Port for the onion service (only used if --onion is enabled)
-    #[structopt(long, default_value = "8888")]
-    onion_port: u16,
-
-    /// Format logs as JSON
-    #[structopt(long)]
-    json: bool,
-
-    /// Don't include timestamp in logs. Useful if captured logs already get
-    /// timestamped, e.g. through journald.
-    #[structopt(long)]
-    no_timestamp: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::from_args();
 
-    init_tracing(LevelFilter::TRACE, cli.json, cli.no_timestamp);
+    tracing_util::init_tracing(LevelFilter::TRACE);
 
-    let secret_key = load_secret_key_from_file(&cli.secret_file).await?;
+    // Create data directory if it doesn't exist
+    DirBuilder::new()
+        .recursive(true)
+        .create(&cli.data_dir)
+        .await
+        .with_context(|| {
+            format!(
+                "Could not create data directory: {}",
+                cli.data_dir.display()
+            )
+        })?;
+
+    let identity_file = cli.data_dir.join("identity.secret");
+    let secret_key = load_secret_key_from_file(&identity_file).await?;
 
     let identity = identity::Keypair::from(ed25519::Keypair::from(secret_key));
 
@@ -61,14 +61,14 @@ async fn main() -> Result<()> {
     let mut swarm = if cli.no_onion {
         create_swarm(identity, rendezvous_addrs)?
     } else {
-        create_swarm_with_onion(identity, cli.onion_port, rendezvous_addrs).await?
+        create_swarm_with_onion(identity, cli.port, &cli.data_dir, rendezvous_addrs).await?
     };
 
     tracing::info!(peer_id=%swarm.local_peer_id(), "Rendezvous server peer id");
 
     swarm
         .listen_on(
-            format!("/ip4/0.0.0.0/tcp/{}", cli.listen_tcp)
+            format!("/ip4/0.0.0.0/tcp/{}", cli.port)
                 .parse()
                 .expect("static string is valid MultiAddress"),
         )
@@ -133,68 +133,6 @@ async fn main() -> Result<()> {
     }
 }
 
-fn init_tracing(level: LevelFilter, json_format: bool, no_timestamp: bool) {
-    if level == LevelFilter::OFF {
-        return;
-    }
-
-    let is_terminal = atty::is(atty::Stream::Stderr);
-
-    let builder = FmtSubscriber::builder()
-        .with_env_filter(format!(
-            "rendezvous_server={},\
-                 swap_p2p={},\
-                 libp2p={},\
-                 libp2p_allow_block_list={},\
-                 libp2p_connection_limits={},\
-                 libp2p_core={},\
-                 libp2p_dns={},\
-                 libp2p_identity={},\
-                 libp2p_noise={},\
-                 libp2p_ping={},\
-                 libp2p_rendezvous={},\
-                 libp2p_request_response={},\
-                 libp2p_swarm={},\
-                 libp2p_tcp={},\
-                 libp2p_tls={},\
-                 libp2p_tor={},\
-                 libp2p_websocket={},\
-                 libp2p_yamux={}",
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level,
-            level
-        ))
-        .with_writer(std::io::stderr)
-        .with_ansi(is_terminal)
-        .with_target(false);
-
-    if json_format {
-        builder.json().init();
-        return;
-    }
-
-    if no_timestamp {
-        builder.without_time().init();
-        return;
-    }
-    builder.init();
-}
-
 async fn load_secret_key_from_file(path: impl AsRef<Path>) -> Result<ed25519::SecretKey> {
     let path = path.as_ref();
 
@@ -207,14 +145,14 @@ async fn load_secret_key_from_file(path: impl AsRef<Path>) -> Result<ed25519::Se
         Err(_) => {
             // File doesn't exist, generate a new secret key
             tracing::info!(
-                "Secret file not found at {}, generating new key",
+                "Identity file not found at {}, generating new key",
                 path.display()
             );
             let secret_key = ed25519::SecretKey::generate();
 
             // Save the new key to file
             write_secret_key_to_file(&secret_key, path.to_path_buf()).await?;
-            tracing::info!("New secret key saved to {}", path.display());
+            tracing::info!("New identity saved to {}", path.display());
 
             Ok(secret_key)
         }
@@ -222,24 +160,12 @@ async fn load_secret_key_from_file(path: impl AsRef<Path>) -> Result<ed25519::Se
 }
 
 async fn write_secret_key_to_file(secret_key: &ed25519::SecretKey, path: PathBuf) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        DirBuilder::new()
-            .recursive(true)
-            .create(parent)
-            .await
-            .with_context(|| {
-                format!(
-                    "Could not create directory for secret file: {}",
-                    parent.display()
-                )
-            })?;
-    }
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&path)
         .await
-        .with_context(|| format!("Could not generate secret file at {}", path.display()))?;
+        .with_context(|| format!("Could not generate identity file at {}", path.display()))?;
 
     file.write_all(secret_key.as_ref()).await?;
 

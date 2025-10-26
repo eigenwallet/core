@@ -9,9 +9,11 @@ use libp2p::{core::muxing::StreamMuxerBox, SwarmBuilder};
 use libp2p::{dns, noise, Multiaddr, PeerId, Swarm, Transport};
 use libp2p_tor::{AddressConversion, TorTransport};
 use std::fmt;
+use std::path::Path;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 
 use crate::behaviour::Behaviour;
+use crate::tor;
 
 /// Defaults we use for the networking
 mod defaults {
@@ -55,9 +57,10 @@ pub fn create_swarm(
 pub async fn create_swarm_with_onion(
     identity: identity::Keypair,
     onion_port: u16,
+    data_dir: &Path,
     rendezvous_addrs: Vec<Multiaddr>,
 ) -> Result<Swarm<Behaviour>> {
-    let (transport, onion_address) = create_transport_with_onion(&identity, onion_port)
+    let (transport, onion_address) = create_transport_with_onion(&identity, onion_port, data_dir)
         .await
         .context("Failed to create transport with onion")?;
     let behaviour = Behaviour::new(
@@ -100,15 +103,19 @@ fn create_transport(identity: &identity::Keypair) -> Result<Boxed<(PeerId, Strea
 async fn create_transport_with_onion(
     identity: &identity::Keypair,
     onion_port: u16,
+    data_dir: &Path,
 ) -> Result<(Boxed<(PeerId, StreamMuxerBox)>, Multiaddr)> {
     // Create TCP transport
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
-    // Create Tor transport
-    let mut tor_transport = TorTransport::unbootstrapped()
-        .await?
-        .with_address_conversion(AddressConversion::IpAndDns);
+    // Create and bootstrap Tor client
+    let tor_client = tor::create_tor_client(data_dir).await?;
+
+    tokio::task::spawn(tor::bootstrap_tor_client(tor_client.clone()));
+
+    // Create Tor transport from the bootstrapped client
+    let mut tor_transport = TorTransport::from_client(tor_client, AddressConversion::IpAndDns);
 
     // Create onion service configuration
     let onion_service_config = OnionServiceConfigBuilder::default()

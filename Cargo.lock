@@ -9084,6 +9084,7 @@ name = "rendezvous-node"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "arti-client",
  "atty",
  "backoff",
  "futures",
@@ -9094,6 +9095,7 @@ dependencies = [
  "swap-p2p",
  "tokio",
  "tor-hsservice",
+ "tor-rtcompat",
  "tracing",
  "tracing-subscriber",
 ]
