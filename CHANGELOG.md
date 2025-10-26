@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Fixed an issue where we would be forced to refund a swap if Bobs acknowledgement of the transfer proof did not reach us.
+
 ## [3.2.4] - 2025-10-26
 
 ## [3.2.3] - 2025-10-26
