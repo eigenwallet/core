@@ -83,6 +83,7 @@ pub async fn redeem(
         | AliceState::XmrLockTransactionSent { .. }
         | AliceState::XmrLocked { .. }
         | AliceState::XmrLockTransferProofSent { .. }
+        | AliceState::WaitingForCancelTimelockExpiration { .. }
         | AliceState::CancelTimelockExpired { .. }
         | AliceState::BtcCancelled { .. }
         | AliceState::BtcRefunded { .. }

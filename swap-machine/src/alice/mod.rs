@@ -1,17 +1,17 @@
-use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
+use anyhow::{Context, Result, anyhow, bail};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
+    CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
+    TxPunish, TxRedeem, TxRefund, Txid, current_epoch,
 };
 use swap_core::monero;
-use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
 use swap_core::monero::ScalarExt;
+use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
 use swap_env::env::Config;
 use uuid::Uuid;
 
@@ -73,6 +73,11 @@ pub enum AliceState {
         state3: Box<State3>,
     },
     XmrRefunded,
+    WaitingForCancelTimelockExpiration {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        state3: Box<State3>,
+    },
     CancelTimelockExpired {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -120,6 +125,9 @@ impl fmt::Display for AliceState {
             AliceState::SafelyAborted => write!(f, "safely aborted"),
             AliceState::BtcPunishable { .. } => write!(f, "btc is punishable"),
             AliceState::XmrRefunded => write!(f, "xmr is refunded"),
+            AliceState::WaitingForCancelTimelockExpiration { .. } => {
+                write!(f, "waiting for cancel timelock expiration")
+            }
             AliceState::CancelTimelockExpired { .. } => write!(f, "cancel timelock is expired"),
             AliceState::BtcEarlyRefundable { .. } => write!(f, "btc is early refundable"),
             AliceState::BtcEarlyRefunded(_) => write!(f, "btc is early refunded"),
