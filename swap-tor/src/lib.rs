@@ -204,6 +204,27 @@ impl SpecialTorEnvironment {
         }
     }
 
+    /// `Some("ip4:port")` or `None`/`Some("")`
+    pub fn wallet2_proxy(self) -> Option<&'static str> {
+        self.electrum_proxy()
+    }
+
+    /// `Some("ip4:port")` or `None`
+    pub fn electrum_proxy(self) -> Option<&'static str> {
+        match self {
+            Self::Tails => Some("127.0.0.1:9050"),
+            _ => None,
+        }
+    }
+
+    /// `Some("socks5://ip4:port")` or `None`
+    pub fn reqwest_proxy(self) -> Option<&'static str> {
+        match self {
+            Self::Tails => Some("socks5://127.0.0.1:9050"),
+            _ => None,
+        }
+    }
+
     /// `true` if listening on an address like `/ip4/0.0.0.0/tcp/9939` is possible in this environment
     pub fn can_listen_tcp(self) -> bool {
         match self {

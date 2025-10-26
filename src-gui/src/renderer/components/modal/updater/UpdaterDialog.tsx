@@ -13,8 +13,14 @@ import {
   Link,
 } from "@mui/material";
 import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
-import { check, Update, DownloadEvent } from "@tauri-apps/plugin-updater";
+import {
+  check,
+  CheckOptions,
+  Update,
+  DownloadEvent,
+} from "@tauri-apps/plugin-updater";
 import { useSnackbar } from "notistack";
+import { getUpdaterProxy } from "renderer/rpc";
 import { relaunch } from "@tauri-apps/plugin-process";
 
 const GITHUB_RELEASES_URL = "https://github.com/eigenwallet/core/releases";
@@ -56,6 +62,7 @@ function LinearProgressWithLabel(
   );
 }
 
+const proxy = await getUpdaterProxy();
 export default function UpdaterDialog() {
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [downloadProgress, setDownloadProgress] =
@@ -64,7 +71,7 @@ export default function UpdaterDialog() {
 
   useEffect(() => {
     // Check for updates when component mounts
-    check()
+    check({ proxy: proxy === null ? undefined : proxy! })
       .then((updateResponse) => {
         console.log("updateResponse", updateResponse);
         setAvailableUpdate(updateResponse);

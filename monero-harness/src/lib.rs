@@ -438,9 +438,10 @@ impl MoneroWallet {
 
         // Use Mainnet network type – regtest daemon accepts mainnet prefixes
         // and this avoids address-parsing errors when calling daemon RPCs.
-        let wallet = WalletHandle::open_or_create(
+        let wallet = WalletHandle::open_or_create::<String>(
             wallet_path.display().to_string(),
             daemon,
+            None,
             monero_address::Network::Mainnet,
             background_sync,
         )

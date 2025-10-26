@@ -412,6 +412,10 @@ export async function getTorForcedExcuse(): Promise<string> {
   return await invokeNoArgs<string>("get_tor_forced_excuse");
 }
 
+export async function getUpdaterProxy(): Promise<string | null> {
+  return await invokeNoArgs<string | null>("get_updater_proxy");
+}
+
 export async function getLogsOfSwap(
   swapId: string,
   redact: boolean,
