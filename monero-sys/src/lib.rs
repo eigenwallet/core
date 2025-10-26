@@ -233,10 +233,19 @@ impl WalletHandle {
     pub async fn open_or_create(
         path: String,
         daemon: Daemon,
+        proxy_address: &str,
         network: monero::Network,
         background_sync: bool,
     ) -> anyhow::Result<Self> {
-        Self::open_or_create_with_password(path, None, daemon, network, background_sync).await
+        Self::open_or_create_with_password(
+            path,
+            None,
+            daemon,
+            proxy_address,
+            network,
+            background_sync,
+        )
+        .await
     }
 
     /// Common implementation used by all `open_*` helpers.
@@ -307,10 +316,12 @@ impl WalletHandle {
         path: String,
         password: impl Into<Option<String>>,
         daemon: Daemon,
+        proxy_address: impl Into<String>,
         network: monero::Network,
         background_sync: bool,
     ) -> anyhow::Result<Self> {
         let password = password.into();
+        let proxy_address = proxy_address.into();
 
         Self::open_with(path.clone(), daemon.clone(), move |manager| {
             manager.open_or_create_wallet(
@@ -319,6 +330,7 @@ impl WalletHandle {
                 network,
                 background_sync,
                 daemon.clone(),
+                &proxy_address,
             )
         })
         .await
@@ -334,10 +346,20 @@ impl WalletHandle {
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
+        proxy_address: impl Into<String>,
     ) -> anyhow::Result<Self> {
+        let proxy_address = proxy_address.into();
+
         Self::open_with(path.clone(), daemon.clone(), move |manager| {
             if manager.wallet_exists(&path) {
-                manager.open_or_create_wallet(&path, None, network, background_sync, daemon.clone())
+                manager.open_or_create_wallet(
+                    &path,
+                    None,
+                    network,
+                    background_sync,
+                    daemon.clone(),
+                    &proxy_address,
+                )
             } else {
                 manager.recover_wallet(
                     &path,
@@ -347,6 +369,7 @@ impl WalletHandle {
                     restore_height,
                     background_sync,
                     daemon.clone(),
+                    &proxy_address,
                 )
             }
         })
@@ -367,7 +390,10 @@ impl WalletHandle {
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
+        proxy_address: impl Into<String>,
     ) -> anyhow::Result<Self> {
+        let proxy_address = proxy_address.into();
+
         Self::open_with(path.clone(), daemon.clone(), move |manager| {
             manager.open_or_create_wallet_from_keys(
                 &path,
@@ -379,6 +405,7 @@ impl WalletHandle {
                 restore_height,
                 background_sync,
                 daemon.clone(),
+                &proxy_address,
             )
         })
         .await
@@ -1112,6 +1139,7 @@ impl WalletManager {
         network: monero::Network,
         background_sync: bool,
         daemon: Daemon,
+        proxy_address: &str,
     ) -> anyhow::Result<FfiWallet> {
         tracing::debug!(%path, "Opening or creating wallet");
 
@@ -1126,6 +1154,7 @@ impl WalletManager {
                     network,
                     background_sync,
                     daemon,
+                    proxy_address,
                     Box::new(TraceListener::new(path.to_string())),
                 )
                 .context(format!("Failed to open wallet `{}`", &path));
@@ -1158,7 +1187,7 @@ impl WalletManager {
         }
 
         let raw_wallet = RawWallet::new(wallet_pointer);
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
+        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon, proxy_address)
             .context(format!("Failed to initialize wallet `{}`", &path))?;
 
         Ok(wallet)
@@ -1177,6 +1206,7 @@ impl WalletManager {
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
+        proxy_address: &str,
     ) -> Result<FfiWallet> {
         tracing::debug!(%path, "Creating wallet from keys");
 
@@ -1190,6 +1220,7 @@ impl WalletManager {
                     network,
                     background_sync,
                     daemon.clone(),
+                    proxy_address,
                     Box::new(TraceListener::new(path.to_string())),
                 )
                 .context(format!("Failed to open wallet `{}`", &path));
@@ -1242,7 +1273,7 @@ impl WalletManager {
 
         let raw_wallet = RawWallet::new(wallet_pointer);
         tracing::debug!(path=%path, "Created wallet from keys, initializing");
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
+        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon, proxy_address)
             .context(format!("Failed to initialize wallet `{}` from keys", &path))?;
 
         Ok(wallet)
@@ -1259,6 +1290,7 @@ impl WalletManager {
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
+        proxy_address: &str,
     ) -> anyhow::Result<FfiWallet> {
         tracing::debug!(%path, "Recovering wallet from seed");
 
@@ -1283,7 +1315,7 @@ impl WalletManager {
             .context("Failed to recover wallet from seed: FFI call failed with exception")?;
 
         let raw_wallet = RawWallet::new(wallet_pointer);
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
+        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon, proxy_address)
             .context(format!("Failed to initialize wallet `{}` from seed", &path))?;
 
         Ok(wallet)
@@ -1313,6 +1345,7 @@ impl WalletManager {
         network_type: monero::Network,
         background_sync: bool,
         daemon: Daemon,
+        proxy_address: &str,
         listener: Box<dyn WalletEventListener>,
     ) -> anyhow::Result<FfiWallet> {
         tracing::debug!(%path, "Opening wallet");
@@ -1340,7 +1373,7 @@ impl WalletManager {
 
         let raw_wallet = RawWallet::new(wallet_pointer);
 
-        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon)
+        let wallet = FfiWallet::new(raw_wallet, background_sync, daemon, proxy_address)
             .context("Failed to initialize re-opened wallet")?;
 
         wallet.add_listener(listener);
@@ -1472,7 +1505,12 @@ impl FfiWallet {
     const MAIN_ACCOUNT_INDEX: u32 = 0;
 
     /// Create and initialize new wallet from a raw C++ wallet pointer.
-    fn new(inner: RawWallet, background_sync: bool, daemon: Daemon) -> anyhow::Result<Self> {
+    fn new(
+        inner: RawWallet,
+        background_sync: bool,
+        daemon: Daemon,
+        proxy_address: &str,
+    ) -> anyhow::Result<Self> {
         if inner.inner.is_null() {
             anyhow::bail!("Failed to create wallet: got null pointer");
         }
@@ -1492,7 +1530,7 @@ impl FfiWallet {
             backoff(None, None),
             || {
                 wallet
-                    .init(&daemon)
+                    .init(&daemon, proxy_address)
                     .context("Failed to initialize wallet")
                     .map_err(backoff::Error::transient)
             },
@@ -1571,15 +1609,15 @@ impl FfiWallet {
     }
 
     /// Initialize the wallet and download initial values from the remote node.
-    /// Does not actuallyt sync the wallet, use any of the refresh methods to do that.
-    fn init(&mut self, daemon: &Daemon) -> anyhow::Result<()> {
+    /// Does not actually sync the wallet, use any of the refresh methods to do that.
+    fn init(&mut self, daemon: &Daemon, proxy_address: &str) -> anyhow::Result<()> {
         let daemon_address = format!("{}:{}", daemon.hostname, daemon.port);
         tracing::debug!(%daemon_address, ssl=%daemon.ssl, "Initializing wallet");
 
         let_cxx_string!(daemon_address = daemon_address);
         let_cxx_string!(daemon_username = "");
         let_cxx_string!(daemon_password = "");
-        let_cxx_string!(proxy_address = "");
+        let_cxx_string!(proxy_address = proxy_address);
 
         let raw_wallet = &mut self.inner;
 

@@ -1823,12 +1823,14 @@ impl CheckMoneroNodeArgs {
         };
 
         static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-            reqwest::Client::builder()
+            let mut client = reqwest::Client::builder()
                 // This function is called very frequently, so we set the timeout to be short
                 .timeout(Duration::from_secs(5))
-                .https_only(false)
-                .build()
-                .expect("reqwest client to work")
+                .https_only(false);
+            if let Some(proxy) = swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.reqwest_proxy()) {
+                client = client.proxy(reqwest::Proxy::all(proxy).expect("proxy to be valid"));
+            }
+            client.build().expect("reqwest client to work")
         });
 
         let Ok(monero_daemon) = MoneroDaemon::from_str(self.url, network) else {
