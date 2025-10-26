@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
-use swap_tor::TorBackend;
+use swap_tor::{TorBackend, TOR_ENVIRONMENT};
 use tauri_bindings::{MoneroNodeConfig, TauriBackgroundProgress, TauriEmitter, TauriHandle};
 use tokio::sync::{broadcast, broadcast::Sender, Mutex as TokioMutex, RwLock};
 use tokio::task::JoinHandle;
@@ -812,12 +812,14 @@ mod wallet {
         data_dir: &PathBuf,
         env_config: EnvConfig,
         daemon: &monero_sys::Daemon,
+        proxy_address: Option<&str>,
     ) -> Result<monero_sys::WalletHandle, Error> {
         let wallet_path = data_dir.join("swap-tool-blockchain-monitoring-wallet");
 
         let wallet = monero::Wallet::open_or_create(
             wallet_path.display().to_string(),
             daemon.clone(),
+            proxy_address,
             env_config.monero_network,
             true,
         )
@@ -862,6 +864,7 @@ mod wallet {
         database: &monero_sys::Database,
     ) -> Result<(monero_sys::WalletHandle, Seed), Error> {
         let eigenwallet_wallets_dir = eigenwallet_data_dir.join("wallets");
+        let proxy_address = TOR_ENVIRONMENT.and_then(|ste| ste.wallet2_proxy());
 
         let wallet = match seed_choice {
             Some(mut seed_choice) => {
@@ -902,6 +905,7 @@ mod wallet {
                             monero::Wallet::open_or_create(
                                 wallet_path.display().to_string(),
                                 daemon.clone(),
+                                proxy_address,
                                 env_config.monero_network,
                                 true,
                             )
@@ -920,6 +924,7 @@ mod wallet {
                                 0,
                                 true,
                                 daemon.clone(),
+                                proxy_address,
                             )
                             .await
                             .context("Failed to create wallet from provided seed")?
@@ -1003,6 +1008,7 @@ mod wallet {
                                 wallet_path.clone(),
                                 password,
                                 daemon.clone(),
+                                proxy_address,
                                 env_config.monero_network,
                                 true,
                             )
@@ -1015,6 +1021,7 @@ mod wallet {
                                 legacy_data_dir,
                                 env_config,
                                 daemon,
+                                proxy_address,
                             )
                             .await?;
                             let seed = Seed::from_file_or_generate(legacy_data_dir)
@@ -1041,9 +1048,13 @@ mod wallet {
             // If we don't have a seed choice, we use the legacy wallet
             // This is used for the CLI to monitor the blockchain
             None => {
-                let wallet =
-                    request_and_open_monero_wallet_legacy(legacy_data_dir, env_config, daemon)
-                        .await?;
+                let wallet = request_and_open_monero_wallet_legacy(
+                    legacy_data_dir,
+                    env_config,
+                    daemon,
+                    proxy_address,
+                )
+                .await?;
                 let seed = Seed::from_file_or_generate(legacy_data_dir)
                     .await
                     .context("Failed to extract seed from wallet")?;

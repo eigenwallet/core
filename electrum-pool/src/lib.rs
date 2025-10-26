@@ -1,9 +1,10 @@
 use backoff::{Error as BackoffError, ExponentialBackoff};
-use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error};
+use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error, Socks5Config};
 use bdk_electrum::BdkElectrumClient;
 use bitcoin::Transaction;
 use futures::future::join_all;
 use once_cell::sync::OnceCell;
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -546,6 +547,8 @@ pub struct ElectrumBalancerConfig {
     pub request_timeout: u8,
     /// Minimum number of retry attempts across all nodes
     pub min_retries: usize,
+    /// Address of SOCKS5 proxy in `127.0.0.1:9050` format
+    pub socks5: Option<Cow<'static, str>>,
 }
 
 impl Default for ElectrumBalancerConfig {
@@ -553,6 +556,7 @@ impl Default for ElectrumBalancerConfig {
         Self {
             request_timeout: 15,
             min_retries: 15,
+            socks5: None,
         }
     }
 }
@@ -573,6 +577,7 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
     ) -> Result<Arc<BdkElectrumClient<Client>>, Error> {
         let client_config = ConfigBuilder::new()
             .timeout(Some(config.request_timeout))
+            .socks5(config.socks5.as_ref().map(Socks5Config::new))
             .retry(0)
             .build();
 
@@ -947,6 +952,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 0,
+            socks5: None,
         };
 
         let balancer = ElectrumBalancer::new_with_config_and_factory(urls, config, factory.clone())
@@ -1020,6 +1026,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 5,
             min_retries: 1,
+            socks5: None,
         };
 
         let balancer = ElectrumBalancer::new_with_config_and_factory(urls, config, factory.clone())
@@ -1162,6 +1169,7 @@ mod tests {
         let config = ElectrumBalancerConfig {
             request_timeout: 15,
             min_retries: 7,
+            socks5: None,
         };
 
         let factory = Arc::new(MockElectrumClientFactory::new());
