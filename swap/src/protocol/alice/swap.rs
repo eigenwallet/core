@@ -463,9 +463,9 @@ where
                     return Ok(None);
                 }
 
-                // If the cancel timelock is expired, it it not safe to publish the redeem transaction anymore
-                // This should never be true if the logic above is not true but we do it anyway to be safe
+                // If the cancel timelock is expired, it it not safe to publish the Bitcoin redeem transaction anymore
                 //
+                // TODO: This should never be true if the logic above is not true but we do it anyway to be safe
                 // TODO: Remove this
                 if !matches!(
                     state3.expired_timelocks(&*bitcoin_wallet).await?,
@@ -553,7 +553,8 @@ where
         } => {
             let backoff = backoff::ExponentialBackoffBuilder::new()
                 .with_max_elapsed_time(None)
-                .with_max_interval(Duration::from_secs(60))
+                // No need to be super agressive here
+                .with_max_interval(Duration::from_secs(60 * 10))
                 .build();
 
             backoff::future::retry_notify::<_, anyhow::Error, _, _, _, _>(
