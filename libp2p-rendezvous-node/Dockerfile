@@ -10,7 +10,7 @@ RUN apt-get install -y git clang cmake libsnappy-dev
 
 # Build the rendezvous server binary
 COPY . .
-RUN cargo build --release --package libp2p-rendezvous-node --bin rendezvous-node
+RUN cargo build --release --package rendezvous-node --bin rendezvous-node
 
 # Latest Debian Bookworm image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM debian:bookworm@sha256:b6507e340c43553136f5078284c8c68d86ec8262b1724dde73c325e8d3dcdeba AS runner
