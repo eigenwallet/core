@@ -70,7 +70,7 @@ export default function UpdaterDialog() {
   const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
-    // Check, CheckOptions for updates when component mounts
+    // Check for updates when component mounts
     check({ proxy })
       .then((updateResponse) => {
         console.log("updateResponse", updateResponse);
