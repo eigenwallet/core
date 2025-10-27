@@ -44,30 +44,32 @@ pub mod transport {
         let mut onion_addresses = vec![];
         let transport =
             maybe_tor_client.into_transport(AddressConversion::DnsOnly, |arti_tor_transport| {
-                if register_hidden_service {
-                    let onion_service_config = OnionServiceConfigBuilder::default()
-                        .nickname(
-                            ASB_ONION_SERVICE_NICKNAME
-                                .parse()
-                                .expect("Static nickname to be valid"),
-                        )
-                        .num_intro_points(num_intro_points)
-                        .build()
-                        .expect("We specified a valid nickname");
+                if !register_hidden_service {
+                    return;
+                }
 
-                    match arti_tor_transport
-                        .add_onion_service(onion_service_config, ASB_ONION_SERVICE_PORT)
-                    {
-                        Ok(addr) => {
-                            tracing::debug!(
-                                %addr,
-                                "Setting up onion service for libp2p to listen on"
-                            );
-                            onion_addresses.push(addr)
-                        }
-                        Err(err) => {
-                            tracing::warn!(error=%err, "Failed to listen on onion address");
-                        }
+                let onion_service_config = OnionServiceConfigBuilder::default()
+                    .nickname(
+                        ASB_ONION_SERVICE_NICKNAME
+                            .parse()
+                            .expect("Static nickname to be valid"),
+                    )
+                    .num_intro_points(num_intro_points)
+                    .build()
+                    .expect("We specified a valid nickname");
+
+                match arti_tor_transport
+                    .add_onion_service(onion_service_config, ASB_ONION_SERVICE_PORT)
+                {
+                    Ok(addr) => {
+                        tracing::debug!(
+                            %addr,
+                            "Setting up onion service for libp2p to listen on"
+                        );
+                        onion_addresses.push(addr)
+                    }
+                    Err(err) => {
+                        tracing::warn!(error=%err, "Failed to listen on onion address");
                     }
                 }
             })?;
