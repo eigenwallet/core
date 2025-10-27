@@ -16,6 +16,7 @@ import {
   WithdrawBtcResponse,
   GetSwapInfoArgs,
   ExportBitcoinWalletResponse,
+  GetBitcoinAddressResponse,
   CheckMoneroNodeArgs,
   CheckSeedArgs,
   CheckSeedResponse,
@@ -49,11 +50,11 @@ import {
   ContextStatus,
 } from "models/tauriModel";
 import {
-  rpcSetBalance,
   rpcSetSwapInfo,
   approvalRequestsReplaced,
   contextInitializationFailed,
 } from "store/features/rpcSlice";
+import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
 import {
   setMainAddress,
   setBalance,
@@ -166,7 +167,7 @@ export async function checkBitcoinBalance() {
     force_refresh: true,
   });
 
-  store.dispatch(rpcSetBalance(response.balance));
+  store.dispatch(setBitcoinBalance(response.balance));
 }
 
 export async function cheapCheckBitcoinBalance() {
@@ -174,7 +175,15 @@ export async function cheapCheckBitcoinBalance() {
     force_refresh: false,
   });
 
-  store.dispatch(rpcSetBalance(response.balance));
+  store.dispatch(setBitcoinBalance(response.balance));
+}
+
+export async function getBitcoinAddress() {
+  const response = await invokeNoArgs<GetBitcoinAddressResponse>(
+    "get_bitcoin_address",
+  );
+
+  return response.address;
 }
 
 export async function getAllSwapInfos() {

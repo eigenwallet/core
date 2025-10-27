@@ -3,6 +3,7 @@ import { throttle, debounce } from "lodash";
 import {
   getAllSwapInfos,
   checkBitcoinBalance,
+  getBitcoinAddress,
   updateAllNodeStatuses,
   fetchSellersAtPresetRendezvousPoints,
   getSwapInfo,
@@ -30,6 +31,7 @@ import {
   addFeedbackId,
   setConversation,
 } from "store/features/conversationsSlice";
+import { setBitcoinAddress } from "store/features/bitcoinWalletSlice";
 
 // Create a Map to store throttled functions per swap_id
 const throttledGetSwapInfoFunctions = new Map<
@@ -86,15 +88,21 @@ export function createMainListeners() {
 
       if (!status) return;
 
-      // If the Bitcoin wallet just came available, check the Bitcoin balance
+      // If the Bitcoin wallet just came available, check the Bitcoin balance and get address
       if (
         status.bitcoin_wallet_available &&
         !previousContextStatus?.bitcoin_wallet_available
       ) {
         logger.info(
-          "Bitcoin wallet just became available, checking balance...",
+          "Bitcoin wallet just became available, checking balance and getting address...",
         );
         await checkBitcoinBalance();
+        try {
+          const address = await getBitcoinAddress();
+          store.dispatch(setBitcoinAddress(address));
+        } catch (error) {
+          logger.error("Failed to fetch Bitcoin address", error);
+        }
       }
 
       // If the Monero wallet just came available, initialize the Monero wallet

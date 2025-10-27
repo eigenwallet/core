@@ -32,7 +32,6 @@ export default function SettingsPage() {
       <SettingsBox />
       <DaemonControlBox />
       <MoneroPoolHealthBox />
-      <ExportDataBox />
       <DiscoveryBox />
     </Box>
   );
