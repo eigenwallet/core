@@ -8,6 +8,7 @@ import nodesSlice from "./features/nodesSlice";
 import conversationsSlice from "./features/conversationsSlice";
 import poolSlice from "./features/poolSlice";
 import walletSlice from "./features/walletSlice";
+import bitcoinWalletSlice from "./features/bitcoinWalletSlice";
 import logsSlice from "./features/logsSlice";
 
 export const reducers = {
@@ -21,5 +22,6 @@ export const reducers = {
   conversations: conversationsSlice,
   pool: poolSlice,
   wallet: walletSlice,
+  bitcoinWallet: bitcoinWalletSlice,
   logs: logsSlice,
 };

@@ -14,7 +14,6 @@ import { GetSwapInfoResponseExt } from "models/tauriModelExt";
 import logger from "utils/logger";
 
 interface State {
-  balance: number | null;
   withdrawTxId: string | null;
   rendezvousDiscoveredSellers: (ExtendedMakerStatus | MakerStatus)[];
   swapInfos: {
@@ -54,7 +53,6 @@ export interface RPCSlice {
 const initialState: RPCSlice = {
   status: null,
   state: {
-    balance: null,
     withdrawTxId: null,
     rendezvousDiscoveredSellers: [],
     swapInfos: {},
@@ -94,9 +92,6 @@ export const rpcSlice = createSlice({
           `Received timelock change event for unknown swap ${action.payload.swap_id}`,
         );
       }
-    },
-    rpcSetBalance(slice, action: PayloadAction<number>) {
-      slice.state.balance = action.payload;
     },
     rpcSetWithdrawTxId(slice, action: PayloadAction<string>) {
       slice.state.withdrawTxId = action.payload;
@@ -177,7 +172,6 @@ export const rpcSlice = createSlice({
 export const {
   contextStatusEventReceived,
   contextInitializationFailed,
-  rpcSetBalance,
   rpcSetWithdrawTxId,
   rpcResetWithdrawTxId,
   rpcSetRendezvousDiscoveredMakers,
