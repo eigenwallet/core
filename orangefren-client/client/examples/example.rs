@@ -14,7 +14,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .expect("Not a valid address"))
         .await?;
 
-    let mut updates = client.watch_status(trade_id).await; // no .await needed here
+    let mut updates = client.watch_status(trade_id).await;
     while let Some(status) = updates.next().await {
         println!("status: {:?}", status);
     }
