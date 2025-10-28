@@ -35,6 +35,13 @@ pub mod ffi {
         ConnectionStatus_WrongVersion = 2,
     }
 
+    /// A transaction key corresponding to a specific output in a specific transaction.
+    struct TxKey {
+        txid: UniquePtr<CxxString>,
+        address: UniquePtr<CxxString>,
+        key: UniquePtr<CxxString>,
+    }
+
     unsafe extern "C++" {
         include!("wallet/api/wallet2_api.h");
         include!("bridge.h");
@@ -289,16 +296,13 @@ pub mod ffi {
         fn pendingTransactionTxKeys(
             tx: &PendingTransaction,
             tx_hash: &CxxString,
-        ) -> Result<UniquePtr<CxxVector<CxxString>>>;
+        ) -> Result<UniquePtr<CxxVector<TxKey>>>;
 
         /// Get the fee of a pending transaction.
         fn pendingTransactionFee(tx: &PendingTransaction) -> Result<u64>;
 
         /// Get the amount of a pending transaction.
         fn pendingTransactionAmount(tx: &PendingTransaction) -> Result<u64>;
-
-        /// Get the transaction key (r) for a given txid.
-        fn walletGetTxKey(wallet: &Wallet, txid: &CxxString) -> Result<UniquePtr<CxxString>>;
 
         /// Commit a pending transaction to the blockchain.
         fn commit(
