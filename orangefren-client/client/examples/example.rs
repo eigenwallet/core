@@ -1,11 +1,29 @@
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
+use anyhow::Context;
 use client::Client;
 use tokio_stream::StreamExt;
 
+use clap::Parser;
+use tracing_subscriber::EnvFilter;
+
+#[derive(Parser)]
+struct Cli {
+    #[arg(long)]
+    pub data_dir: PathBuf,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let mut client = Client::new();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new("info"))
+        .init();
+
+    let data_dir = Cli::parse().data_dir;
+
+    let mut client = Client::new(data_dir)
+        .await
+        .context("Error creating a client")?;
     let trade_id = client
         .new_trade(
             bitcoin::Amount::from_sat(1),
@@ -17,6 +35,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut updates = client.watch_status(trade_id).await;
     while let Some(status) = updates.next().await {
         println!("status: {:?}", status);
+        client.store(status).await?;
     }
     Ok(())
 }
