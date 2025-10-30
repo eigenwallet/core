@@ -53,7 +53,9 @@ import {
   rpcSetSwapInfo,
   approvalRequestsReplaced,
   contextInitializationFailed,
+  timelockChangeEventReceived,
 } from "store/features/rpcSlice";
+import { selectAllSwapIds } from "store/selectors";
 import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
 import {
   setMainAddress,
@@ -122,19 +124,6 @@ export const PRESET_RENDEZVOUS_POINTS = [
   "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk",
 ];
 
-export async function fetchSellersAtPresetRendezvousPoints() {
-  await Promise.all(
-    PRESET_RENDEZVOUS_POINTS.map(async (rendezvousPoint) => {
-      const response = await listSellersAtRendezvousPoint([rendezvousPoint]);
-      store.dispatch(discoveredMakersByRendezvous(response.sellers));
-
-      logger.info(
-        `Discovered ${response.sellers.length} sellers at rendezvous point ${rendezvousPoint} during startup fetch`,
-      );
-    }),
-  );
-}
-
 async function invoke<ARGS, RESPONSE>(
   command: string,
   args: ARGS,
@@ -146,6 +135,19 @@ async function invoke<ARGS, RESPONSE>(
 
 async function invokeNoArgs<RESPONSE>(command: string): Promise<RESPONSE> {
   return invokeUnsafe(command) as Promise<RESPONSE>;
+}
+
+export async function fetchSellersAtPresetRendezvousPoints() {
+  await Promise.all(
+    PRESET_RENDEZVOUS_POINTS.map(async (rendezvousPoint) => {
+      const response = await listSellersAtRendezvousPoint([rendezvousPoint]);
+      store.dispatch(discoveredMakersByRendezvous(response.sellers));
+
+      logger.info(
+        `Discovered ${response.sellers.length} sellers at rendezvous point ${rendezvousPoint} during startup fetch`,
+      );
+    }),
+  );
 }
 
 export async function checkBitcoinBalance() {
@@ -168,58 +170,6 @@ export async function checkBitcoinBalance() {
   });
 
   store.dispatch(setBitcoinBalance(response.balance));
-}
-
-export async function cheapCheckBitcoinBalance() {
-  const response = await invoke<BalanceArgs, BalanceResponse>("get_balance", {
-    force_refresh: false,
-  });
-
-  store.dispatch(setBitcoinBalance(response.balance));
-}
-
-export async function getBitcoinAddress() {
-  const response = await invokeNoArgs<GetBitcoinAddressResponse>(
-    "get_bitcoin_address",
-  );
-
-  return response.address;
-}
-
-export async function getAllSwapInfos() {
-  const response =
-    await invokeNoArgs<GetSwapInfoResponse[]>("get_swap_infos_all");
-
-  response.forEach((swapInfo) => {
-    store.dispatch(rpcSetSwapInfo(swapInfo));
-  });
-}
-
-export async function getSwapInfo(swapId: string) {
-  const response = await invoke<GetSwapInfoArgs, GetSwapInfoResponse>(
-    "get_swap_info",
-    {
-      swap_id: swapId,
-    },
-  );
-
-  store.dispatch(rpcSetSwapInfo(response));
-}
-
-export async function withdrawBtc(address: string): Promise<string> {
-  const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
-    "withdraw_btc",
-    {
-      address,
-      amount: null,
-    },
-  );
-
-  // We check the balance, this is cheap and does not sync the wallet
-  // but instead uses our local cached balance
-  await cheapCheckBitcoinBalance();
-
-  return response.txid;
 }
 
 export async function buyXmr() {
@@ -284,6 +234,153 @@ export async function buyXmr() {
   });
 }
 
+export async function initializeContext() {
+  const network = getNetwork();
+  const testnet = isTestnet();
+  const useTor = store.getState().settings.enableTor;
+
+  // Get all Bitcoin nodes without checking availability
+  // The backend ElectrumBalancer will handle load balancing and failover
+  const bitcoinNodes =
+    store.getState().settings.nodes[network][Blockchain.Bitcoin];
+
+  // For Monero nodes, determine whether to use pool or custom node
+  const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
+
+  const useMoneroTor = store.getState().settings.enableMoneroTor;
+
+  const moneroNodeUrl =
+    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+
+  // Check the state of the Monero node
+  const moneroNodeConfig =
+    useMoneroRpcPool ||
+    moneroNodeUrl == null ||
+    !(await getMoneroNodeStatus(moneroNodeUrl, network))
+      ? { type: "Pool" as const }
+      : {
+          type: "SingleNode" as const,
+          content: {
+            url: moneroNodeUrl,
+          },
+        };
+
+  // Initialize Tauri settings
+  const tauriSettings: TauriSettings = {
+    electrum_rpc_urls: bitcoinNodes,
+    monero_node_config: moneroNodeConfig,
+    use_tor: useTor,
+    enable_monero_tor: useMoneroTor,
+  };
+
+  logger.info({ tauriSettings }, "Initializing context with settings");
+
+  try {
+    await invokeUnsafe<void>("initialize_context", {
+      settings: tauriSettings,
+      testnet,
+    });
+    logger.info("Initialized context");
+  } catch (error) {
+    throw new Error(error);
+  }
+}
+
+export async function updateAllNodeStatuses() {
+  const network = getNetwork();
+  const settings = store.getState().settings;
+
+  // Only check Monero nodes if we're using custom nodes (not RPC pool)
+  // Skip Bitcoin nodes since we pass all electrum servers to the backend without checking them (ElectrumBalancer handles failover)
+  if (!settings.useMoneroRpcPool) {
+    await Promise.all(
+      settings.nodes[network][Blockchain.Monero].map((node) =>
+        updateNodeStatus(node, Blockchain.Monero, network),
+      ),
+    );
+  }
+}
+
+export async function cheapCheckBitcoinBalance() {
+  const response = await invoke<BalanceArgs, BalanceResponse>("get_balance", {
+    force_refresh: false,
+  });
+
+  store.dispatch(setBitcoinBalance(response.balance));
+}
+
+export async function getBitcoinAddress() {
+  const response = await invokeNoArgs<GetBitcoinAddressResponse>(
+    "get_bitcoin_address",
+  );
+
+  return response.address;
+}
+
+export async function getAllSwapInfos() {
+  const response =
+    await invokeNoArgs<GetSwapInfoResponse[]>("get_swap_infos_all");
+
+  response.forEach((swapInfo) => {
+    store.dispatch(rpcSetSwapInfo(swapInfo));
+  });
+}
+
+export async function getSwapInfo(swapId: string) {
+  const response = await invoke<GetSwapInfoArgs, GetSwapInfoResponse>(
+    "get_swap_info",
+    {
+      swap_id: swapId,
+    },
+  );
+
+  store.dispatch(rpcSetSwapInfo(response));
+  getSwapTimelock(swapId).catch((error) => {
+    logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
+  });
+}
+
+export async function getSwapTimelock(swapId: string) {
+  const response = await invoke<{ swap_id: string }, { swap_id: string; timelock: any }>(
+    "get_swap_timelock",
+    {
+      swap_id: swapId,
+    },
+  );
+
+  store.dispatch(timelockChangeEventReceived({ swap_id: response.swap_id, timelock: response.timelock }));
+}
+
+export async function getAllSwapTimelocks() {
+  const swapIds = selectAllSwapIds(store.getState());
+
+  await Promise.all(
+    swapIds.map(async (swapId) => {
+      try {
+        await getSwapTimelock(swapId);
+      } catch (error) {
+        logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
+      }
+    })
+  );
+}
+
+export async function withdrawBtc(address: string): Promise<string> {
+  const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
+    "withdraw_btc",
+    {
+      address,
+      amount: null,
+    },
+  );
+
+  // We check the balance, this is cheap and does not sync the wallet
+  // but instead uses our local cached balance
+  await cheapCheckBitcoinBalance();
+
+  return response.txid;
+}
+
 export async function resumeSwap(swapId: string) {
   await invoke<ResumeSwapArgs, ResumeSwapResponse>("resume_swap", {
     swap_id: swapId,
@@ -342,58 +439,6 @@ export async function listSellersAtRendezvousPoint(
   });
 }
 
-export async function initializeContext() {
-  const network = getNetwork();
-  const testnet = isTestnet();
-  const useTor = store.getState().settings.enableTor;
-
-  // Get all Bitcoin nodes without checking availability
-  // The backend ElectrumBalancer will handle load balancing and failover
-  const bitcoinNodes =
-    store.getState().settings.nodes[network][Blockchain.Bitcoin];
-
-  // For Monero nodes, determine whether to use pool or custom node
-  const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
-
-  const useMoneroTor = store.getState().settings.enableMoneroTor;
-
-  const moneroNodeUrl =
-    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
-
-  // Check the state of the Monero node
-  const moneroNodeConfig =
-    useMoneroRpcPool ||
-    moneroNodeUrl == null ||
-    !(await getMoneroNodeStatus(moneroNodeUrl, network))
-      ? { type: "Pool" as const }
-      : {
-          type: "SingleNode" as const,
-          content: {
-            url: moneroNodeUrl,
-          },
-        };
-
-  // Initialize Tauri settings
-  const tauriSettings: TauriSettings = {
-    electrum_rpc_urls: bitcoinNodes,
-    monero_node_config: moneroNodeConfig,
-    use_tor: useTor,
-    enable_monero_tor: useMoneroTor,
-  };
-
-  logger.info({ tauriSettings }, "Initializing context with settings");
-
-  try {
-    await invokeUnsafe<void>("initialize_context", {
-      settings: tauriSettings,
-      testnet,
-    });
-    logger.info("Initialized context");
-  } catch (error) {
-    throw new Error(error);
-  }
-}
-
 export async function getWalletDescriptor() {
   return await invokeNoArgs<ExportBitcoinWalletResponse>(
     "get_wallet_descriptor",
@@ -449,21 +494,6 @@ async function updateNodeStatus(
   const status = await getNodeStatus(node, blockchain, network);
 
   store.dispatch(setStatus({ node, status, blockchain }));
-}
-
-export async function updateAllNodeStatuses() {
-  const network = getNetwork();
-  const settings = store.getState().settings;
-
-  // Only check Monero nodes if we're using custom nodes (not RPC pool)
-  // Skip Bitcoin nodes since we pass all electrum servers to the backend without checking them (ElectrumBalancer handles failover)
-  if (!settings.useMoneroRpcPool) {
-    await Promise.all(
-      settings.nodes[network][Blockchain.Monero].map((node) =>
-        updateNodeStatus(node, Blockchain.Monero, network),
-      ),
-    );
-  }
 }
 
 export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> {
