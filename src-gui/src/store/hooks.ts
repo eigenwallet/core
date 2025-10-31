@@ -131,12 +131,6 @@ export function useSwapInfo(
   );
 }
 
-export function useSwapInfoWithTimelock(swapId: string | null) {
-  return useAppSelector((state) =>
-    swapId ? selectSwapInfoWithTimelock(swapId)(state) : null,
-  );
-}
-
 export function useActiveSwapId(): string | null {
   return useAppSelector((s) => s.swap.state?.swapId ?? null);
 }
