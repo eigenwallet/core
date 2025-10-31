@@ -19,7 +19,7 @@ pub struct PathResponse {
     #[serde(rename = "path_uuid")]
     pub path_uuid: String,
     #[serde(rename = "state")]
-    pub state: Option<Box<models::PathState>>,
+    pub state: Box<models::PathState>,
     /// List of trades in the path. Only present if the path_data is a non-empty list of trades.
     #[serde(rename = "trades", skip_serializing_if = "Option::is_none")]
     pub trades: Option<Vec<models::Trade>>,
@@ -37,7 +37,7 @@ impl PathResponse {
         PathResponse {
             chat: Box::new(chat),
             path_uuid,
-            state: Some(Box::new(state)),
+            state: Box::new(state),
             trades: None,
             url: Box::new(url),
         }

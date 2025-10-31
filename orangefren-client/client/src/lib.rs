@@ -202,24 +202,19 @@ impl Client {
                     raw_json: raw_json,
                 })
             }
-            None => match path_state {
-                Some(state) => {
-                    if state.r#type == generated_client::models::path_state::Type::NotFound {
-                        return Err(anyhow::anyhow!("Path not found"));
-                    } else {
-                        Ok(TradeStatus {
-                            status_type: TradeStatusType::Unrecognized,
-                            description: state.description.clone(),
-                            is_terminal: state.r#final,
-                            valid_for: Duration::from_millis(1),
-                            raw_json: raw_json,
-                        })
-                    }
+            None => {
+                if path_state.r#type == generated_client::models::path_state::Type::NotFound {
+                    return Err(anyhow::anyhow!("Path not found"));
+                } else {
+                    Ok(TradeStatus {
+                        status_type: TradeStatusType::Unrecognized,
+                        description: path_state.description.clone(),
+                        is_terminal: path_state.r#final,
+                        valid_for: Duration::from_millis(1),
+                        raw_json: raw_json,
+                    })
                 }
-                None => {
-                    return Err(anyhow::anyhow!("path returned null"));
-                }
-            },
+            }
         }
     }
 
