@@ -341,14 +341,19 @@ export async function getSwapInfo(swapId: string) {
 }
 
 export async function getSwapTimelock(swapId: string) {
-  const response = await invoke<{ swap_id: string }, { swap_id: string; timelock: any }>(
-    "get_swap_timelock",
-    {
-      swap_id: swapId,
-    },
-  );
+  const response = await invoke<
+    { swap_id: string },
+    { swap_id: string; timelock: any }
+  >("get_swap_timelock", {
+    swap_id: swapId,
+  });
 
-  store.dispatch(timelockChangeEventReceived({ swap_id: response.swap_id, timelock: response.timelock }));
+  store.dispatch(
+    timelockChangeEventReceived({
+      swap_id: response.swap_id,
+      timelock: response.timelock,
+    }),
+  );
 }
 
 export async function getAllSwapTimelocks() {
@@ -361,7 +366,7 @@ export async function getAllSwapTimelocks() {
       } catch (error) {
         logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
       }
-    })
+    }),
   );
 }
 

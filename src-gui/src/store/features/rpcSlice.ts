@@ -89,7 +89,8 @@ export const rpcSlice = createSlice({
       slice: RPCSlice,
       action: PayloadAction<TauriTimelockChangeEvent>,
     ) {
-      slice.state.swapTimelocks[action.payload.swap_id] = action.payload.timelock;
+      slice.state.swapTimelocks[action.payload.swap_id] =
+        action.payload.timelock;
     },
     rpcSetWithdrawTxId(slice, action: PayloadAction<string>) {
       slice.state.withdrawTxId = action.payload;

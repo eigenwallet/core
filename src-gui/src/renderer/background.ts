@@ -124,10 +124,14 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
 
     case "SwapDatabaseStateUpdate":
       getSwapInfo(eventData.swap_id).catch((error) => {
-        logger.debug(`Failed to fetch swap info for swap ${eventData.swap_id}: ${error}`);
+        logger.debug(
+          `Failed to fetch swap info for swap ${eventData.swap_id}: ${error}`,
+        );
       });
       getSwapTimelock(eventData.swap_id).catch((error) => {
-        logger.debug(`Failed to fetch timelock for swap ${eventData.swap_id}: ${error}`);
+        logger.debug(
+          `Failed to fetch timelock for swap ${eventData.swap_id}: ${error}`,
+        );
       });
 
       // This is ugly but it's the best we can do for now
@@ -135,10 +139,14 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
       // in the database. So we wait a bit before fetching the new state
       setTimeout(() => {
         getSwapInfo(eventData.swap_id).catch((error) => {
-          logger.debug(`Failed to fetch swap info for swap ${eventData.swap_id}: ${error}`);
+          logger.debug(
+            `Failed to fetch swap info for swap ${eventData.swap_id}: ${error}`,
+          );
         });
         getSwapTimelock(eventData.swap_id).catch((error) => {
-          logger.debug(`Failed to fetch timelock for swap ${eventData.swap_id}: ${error}`);
+          logger.debug(
+            `Failed to fetch timelock for swap ${eventData.swap_id}: ${error}`,
+          );
         });
       }, 3000);
       break;

@@ -947,9 +947,7 @@ pub async fn get_swap_timelock(
     let state = db.get_state(args.swap_id).await?;
     let swap_state: BobState = state.try_into()?;
 
-    let timelock = swap_state
-        .expired_timelocks(bitcoin_wallet.clone())
-        .await?;
+    let timelock = swap_state.expired_timelocks(bitcoin_wallet.clone()).await?;
 
     Ok(GetSwapTimelockResponse {
         swap_id: args.swap_id,

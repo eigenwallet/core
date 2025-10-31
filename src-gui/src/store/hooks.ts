@@ -32,7 +32,11 @@ import {
 } from "models/tauriModel";
 import { Alert } from "models/apiModel";
 import { fnv1a } from "utils/hash";
-import { selectAllSwapInfos, selectPendingApprovals, selectSwapInfoWithTimelock } from "./selectors";
+import {
+  selectAllSwapInfos,
+  selectPendingApprovals,
+  selectSwapInfoWithTimelock,
+} from "./selectors";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
@@ -129,7 +133,7 @@ export function useSwapInfo(
 
 export function useSwapInfoWithTimelock(swapId: string | null) {
   return useAppSelector((state) =>
-    swapId ? selectSwapInfoWithTimelock(swapId)(state) : null
+    swapId ? selectSwapInfoWithTimelock(swapId)(state) : null,
   );
 }
 

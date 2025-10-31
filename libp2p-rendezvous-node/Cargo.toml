@@ -11,9 +11,9 @@ tor-hsservice = { workspace = true }
 tor-rtcompat = { workspace = true }
 
 # Async
+backoff = { workspace = true, features = ["tokio"] }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net", "io-util"] }
-backoff = { workspace = true, features = ["tokio"] }
 
 # Libp2p
 libp2p = { workspace = true, features = ["rendezvous", "tcp", "yamux", "dns", "noise", "ping", "websocket", "tokio", "macros"] }
@@ -28,6 +28,6 @@ tracing-subscriber = { workspace = true, default-features = false, features = ["
 anyhow = "1"
 
 # Other
-swap-env = { path = "../swap-env" }
 atty = "0.2"
 structopt = { version = "0.3", default-features = false }
+swap-env = { path = "../swap-env" }
