@@ -5,7 +5,6 @@ import {
   GetSwapInfoResponseExt,
   GetSwapInfoResponseExtRunningSwap,
   isGetSwapInfoResponseRunningSwap,
-  isGetSwapInfoResponseWithTimelock,
   TimelockCancel,
   TimelockNone,
 } from "models/tauriModelExt";
@@ -15,7 +14,7 @@ import HumanizedBitcoinBlockDuration from "../../other/HumanizedBitcoinBlockDura
 import TruncatedText from "../../other/TruncatedText";
 import { SwapMoneroRecoveryButton } from "../../pages/history/table/SwapMoneroRecoveryButton";
 import { TimelockTimeline } from "./TimelockTimeline";
-import { useIsSpecificSwapRunning } from "store/hooks";
+import { useIsSpecificSwapRunning, useSwapInfoWithTimelock } from "store/hooks";
 
 /**
  * Component for displaying a list of messages.
@@ -68,7 +67,7 @@ function BitcoinRedeemedStateAlert({ swap }: { swap: GetSwapInfoResponseExt }) {
           "If this step fails, you can manually redeem your funds",
         ]}
       />
-      <SwapMoneroRecoveryButton swap={swap} size="small" variant="contained" />
+      <SwapMoneroRecoveryButton swap={swapWithTimelock} size="small" variant="contained" />
     </Box>
   );
 }
@@ -169,7 +168,7 @@ export function StateAlert({
   swap,
   isRunning,
 }: {
-  swap: GetSwapInfoResponseExtRunningSwap;
+  swap: GetSwapInfoResponseExtRunningSwap & { timelock: ExpiredTimelocks | null };
   isRunning: boolean;
 }) {
   switch (swap.state_name) {
@@ -209,8 +208,6 @@ export function StateAlert({
           case "Punish":
             return <PunishTimelockExpiredAlert />;
           default:
-            // We have covered all possible timelock states above
-            // If we reach this point, it means we have missed a case
             exhaustiveGuard(swap.timelock);
         }
       }
@@ -244,35 +241,36 @@ export default function SwapStatusAlert({
   swap: GetSwapInfoResponseExt;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
 }) {
-  if (swap == null) {
+  const swapWithTimelock = useSwapInfoWithTimelock(swap.swap_id);
+
+  if (swapWithTimelock == null) {
     return null;
   }
 
-  // If the swap is completed, we do not need to display anything
-  if (!isGetSwapInfoResponseRunningSwap(swap)) {
+  if (!isGetSwapInfoResponseRunningSwap(swapWithTimelock)) {
     return null;
   }
 
-  // If we don't have a timelock for the swap, we cannot display the alert
-  if (!isGetSwapInfoResponseWithTimelock(swap)) {
+  const { timelock } = swapWithTimelock;
+
+  if (timelock == null) {
     return null;
   }
 
   const hasUnusualAmountOfTimePassed =
-    swap.timelock.type === "None" &&
-    swap.timelock.content.blocks_left >
+    timelock.type === "None" &&
+    timelock.content.blocks_left >
       UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD;
 
-  // If we are only showing if an unusual amount of time has passed, we need to check if the swap has been running for a while
   if (onlyShowIfUnusualAmountOfTimeHasPassed && hasUnusualAmountOfTimePassed) {
     return null;
   }
 
-  const isRunning = useIsSpecificSwapRunning(swap.swap_id);
+  const isRunning = useIsSpecificSwapRunning(swapWithTimelock.swap_id);
 
   return (
     <Alert
-      key={swap.swap_id}
+      key={swapWithTimelock.swap_id}
       severity="warning"
       variant="filled"
       classes={{ message: "alert-message-flex-grow" }}
@@ -291,7 +289,7 @@ export default function SwapStatusAlert({
           )
         ) : (
           <>
-            Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
+            Swap <TruncatedText>{swapWithTimelock.swap_id}</TruncatedText> is not running
           </>
         )}
       </AlertTitle>
@@ -302,8 +300,8 @@ export default function SwapStatusAlert({
           gap: 1,
         }}
       >
-        <StateAlert swap={swap} isRunning={isRunning} />
-        <TimelockTimeline swap={swap} />
+        <StateAlert swap={swapWithTimelock} isRunning={isRunning} />
+        <TimelockTimeline swap={swapWithTimelock} />
       </Box>
     </Alert>
   );
