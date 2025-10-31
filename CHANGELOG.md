@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Fix an issue where we would not redeem the Bitcoin and force a refund even though it was still possible to do so.
+
 ## [3.2.7] - 2025-10-28
 
 ## [3.2.6] - 2025-10-27
