@@ -9,6 +9,8 @@ members = [
   "monero-rpc-pool",
   "monero-sys",
   "src-tauri",
+  "orangefren-client/client",
+  "orangefren-client/generated-client",
   "swap",
   "swap-asb",
   "swap-controller",
@@ -94,6 +96,9 @@ dfx-swiss-sdk = { git = "https://github.com/eigenwallet/dfx-swiss-rs" }
 # Build dependencies
 vergen = { version = "8.3", default-features = false, features = ["build", "git", "git2"] }
 vergen-git2 = { version = "1", features = ["build"] }
+
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "chrono"] }
+clap = { version = "4", features = ["derive"] }
 
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51
