@@ -451,26 +451,25 @@ where
                 .build();
 
             match backoff::future::retry_notify(backoff.clone(), || async {
-                // We can only redeem the Bitcoin if we are sure that our Bitcoin redeem transaction
-                // will be confirmed before the timelock expires
-                //
-                // We only publish the transaction if we have more than half of the timelock left.
                 let tx_lock_status = bitcoin_wallet
                     .status_of_script(&state3.tx_lock.clone())
                     .await?;
 
-                if tx_lock_status.is_confirmed_with(state3.cancel_timelock.half()) {
+                // If the cancel timelock is expired, it it not safe to publish the Bitcoin redeem transaction anymore
+                //
+                // TODO: In practice this should be redundant because the logic above will trigger for a superset of the cases where this is true
+                if tx_lock_status.is_confirmed_with(state3.cancel_timelock) {
                     return Ok(None);
                 }
 
-                // If the cancel timelock is expired, it it not safe to publish the Bitcoin redeem transaction anymore
+                // We can only redeem the Bitcoin if we are fairly sure that our Bitcoin redeem transaction
+                // will be confirmed before the cancel timelock expires
                 //
-                // TODO: This should never be true if the logic above is not true but we do it anyway to be safe
-                // TODO: Remove this
-                if !matches!(
-                    state3.expired_timelocks(&*bitcoin_wallet).await?,
-                    ExpiredTimelocks::None { .. }
-                ) {
+                // We make an assumption that it will take at most `env_config.bitcoin_blocks_till_confirmed_upper_bound_assumption` blocks
+                // until our transaction is included in a block. If this assumption is not satisfied, we will not publish the transaction.
+                //
+                // We will instead wait for the cancel timelock to expire and then refund.
+                if tx_lock_status.blocks_left_until(state3.cancel_timelock) < env_config.bitcoin_blocks_till_confirmed_upper_bound_assumption {
                     return Ok(None);
                 }
 
@@ -494,6 +493,7 @@ where
                 // We wait until we see the transaction in the mempool before transitioning to the next state
                 Some((txid, subscription)) => match subscription.wait_until_seen().await {
                     Ok(_) => AliceState::BtcRedeemTransactionPublished { state3, transfer_proof },
+                    // TODO: No need to bail here, we should just retry?
                     Err(e) => {
                         // We extract the txid and the hex representation of the transaction
                         // this'll allow the user to manually re-publish the transaction
@@ -503,7 +503,8 @@ where
                     }
                 },
 
-                // More than half of the cancel timelock expired before we could publish the redeem transaction
+                // It is not safe to publish the Bitcoin redeem transaction anymore
+                // We wait for the cancel timelock to expire and then refund
                 None => {
                     tracing::error!("We were unable to publish the Bitcoin redeem transaction before the timelock expired.");
 
