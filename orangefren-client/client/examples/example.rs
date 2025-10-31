@@ -21,7 +21,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let data_dir = Cli::parse().data_dir;
 
-    let mut client = Client::new(data_dir)
+    let mut client = Client::new(data_dir.clone())
         .await
         .context("Error creating a client")?;
     let trade_id = client
@@ -32,10 +32,22 @@ async fn main() -> Result<(), anyhow::Error> {
         .expect("Not a valid address"))
         .await?;
 
-    let mut updates = client.watch_status(trade_id).await;
+    let mut updates = client.watch_status(trade_id.clone()).await;
     while let Some(status) = updates.next().await {
-        println!("status: {:?}", status);
+        tracing::info!("status: {:?}", status);
         client.store(status).await?;
+    }
+
+    let mut client2 = Client::new(data_dir.clone())
+        .await
+        .context("Error creating a client")?;
+
+    let _ = client2.load_from_db();
+
+    let mut updates = client2.watch_status(trade_id).await;
+    while let Some(status) = updates.next().await {
+        tracing::info!("status: {:?}", status);
+        client2.store(status).await?;
     }
     Ok(())
 }

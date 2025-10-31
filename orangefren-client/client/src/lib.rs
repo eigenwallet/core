@@ -1,20 +1,18 @@
 pub mod database;
 
 use anyhow::{Context, Result};
-use reqwest::header::{ACCEPT, HeaderMap, USER_AGENT};
-use serde::Serialize;
-use serde::de::Error;
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
-use std::os::macos::raw::stat;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
+
+use tracing;
 
 pub use database::Database;
 pub use generated_client;
@@ -29,6 +27,7 @@ pub enum OrangeFrenError {
 
 #[derive(Clone, Debug)]
 enum TradeStatusType {
+    Queued,
     Initial,
     Confirming,
     Exchanging,
@@ -68,7 +67,7 @@ pub struct TradeStatus {
 pub struct TradeId(Uuid);
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
-pub struct Trade {
+pub struct TradeInfo {
     from_currency: Currency,
     to_currency: Currency,
     from_network: Currency,
@@ -76,12 +75,9 @@ pub struct Trade {
     withdraw_address: monero::Address,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
-struct TradeKey(TradeId, Trade);
-
 #[derive(Clone)]
 pub struct Client {
-    trades: HashMap<TradeId, (Trade, Vec<TradeStatus>)>,
+    trades: HashMap<TradeId, (TradeInfo, Vec<TradeStatus>)>,
     config: generated_client::apis::configuration::Configuration,
     db: Database,
 }
@@ -144,32 +140,52 @@ impl Client {
             .path_uuid
             .context("Error getting uuid")?;
 
-        println!("Got uuid: {}", path_uuid);
+        tracing::info!("Got uuid: {}", path_uuid);
 
         let path_uuid = Uuid::from_str(path_uuid.as_str()).context("Error parsing uuid")?;
         let trade_uuid = TradeId(path_uuid);
 
-        let status = self
-            .get_status(trade_uuid.clone())
-            .await
-            .context("Error getting status")?;
-
-        let trade = Trade {
-            from_currency: Currency::Btc,
-            to_currency: Currency::Xmr,
-            from_network: Currency::Btc,
-            to_network: Currency::Xmr,
-            withdraw_address: to_address,
-        };
-
-        let entry = self
-            .trades
-            .entry(trade_uuid.clone())
-            .or_insert_with(|| (trade, Vec::new()));
-
-        entry.1.push(status);
-
         Ok(trade_uuid)
+    }
+
+    async fn wait_until_created(&self, trade_id: TradeId) -> Result<TradeStatus, anyhow::Error> {
+        let delay = Duration::from_millis(250);
+        let deadline = Instant::now() + Duration::from_secs(60);
+
+        loop {
+            let path_response =
+                generated_client::apis::default_api::api_eigenwallet_get_path_path_uuid_post(
+                    &self.config,
+                    &trade_id.0.to_string(),
+                )
+                .await
+                .context("Error getting path response")?;
+
+            use generated_client::models::path_state::Type as State;
+
+            match path_response.state.r#type {
+                State::NotFound => anyhow::bail!("Path not found"),
+                State::Error => anyhow::bail!("Error getting path response"),
+                State::Queued => {
+                    if Instant::now() >= deadline {
+                        anyhow::bail!("Waiting for path to be created timed out");
+                    }
+                    tokio::time::sleep(delay).await;
+                }
+                State::Created => {
+                    tracing::info!("Creating");
+                    let raw_json = serde_json::to_string(&path_response).context("Serde error")?;
+                    tracing::info!("Created");
+                    return Ok(TradeStatus {
+                        status_type: TradeStatusType::Initial,
+                        is_terminal: path_response.state.r#final,
+                        description: path_response.state.description,
+                        valid_for: Duration::from_millis(100),
+                        raw_json: raw_json,
+                    });
+                }
+            }
+        }
     }
 
     async fn get_status(&self, trade_id: TradeId) -> Result<TradeStatus, anyhow::Error> {
@@ -179,11 +195,9 @@ impl Client {
                 &trade_id.0.to_string(),
             )
             .await
-            .context("Error getting the initial path responce")?;
+            .context("Error getting path responce")?;
 
         let raw_json = serde_json::to_string(&path_response)?;
-
-        let path_state = path_response.state;
 
         match path_response.trades {
             Some(trades) => {
@@ -203,17 +217,7 @@ impl Client {
                 })
             }
             None => {
-                if path_state.r#type == generated_client::models::path_state::Type::NotFound {
-                    return Err(anyhow::anyhow!("Path not found"));
-                } else {
-                    Ok(TradeStatus {
-                        status_type: TradeStatusType::Unrecognized,
-                        description: path_state.description.clone(),
-                        is_terminal: path_state.r#final,
-                        valid_for: Duration::from_millis(1),
-                        raw_json: raw_json,
-                    })
-                }
+                anyhow::bail!("No trades found");
             }
         }
     }
@@ -223,6 +227,22 @@ impl Client {
         let client = self.clone();
 
         tokio::spawn(async move {
+            if client.wait_until_created(trade.clone()).await.is_err() {
+                let error_status = TradeStatus {
+                    status_type: TradeStatusType::Failed,
+                    is_terminal: true,
+                    description: "Error creating the path".to_string(),
+                    valid_for: Duration::from_secs(30),
+                    raw_json: "None".to_string(),
+                };
+
+                if tx.send(error_status.clone()).await.is_err() {
+                    tracing::error!("Error sending the error status");
+                };
+
+                return;
+            }
+
             loop {
                 let status = match client.get_status(trade.clone()).await {
                     Ok(s) => s,
@@ -255,20 +275,30 @@ impl Client {
         ReceiverStream::new(rx)
     }
 
-    pub async fn store(&self, status: TradeStatus) -> Result<(), anyhow::Error> {
+    pub async fn store(&mut self, status: TradeStatus) -> Result<(), anyhow::Error> {
         let now = Utc::now().to_rfc3339();
 
         for trade in self.trades.clone() {
             let trade_key = trade.0;
             let trade_id = trade_key.0;
-            let trade_info = trade.1.0;
             let path_uuid = &trade_id.to_string();
+
+            let trade_info = trade.1.0.clone();
             let from_currency = trade_info.from_currency.as_str().to_string();
             let to_currency = trade_info.to_currency.as_str().to_string();
             let from_network = trade_info.from_network.as_str().to_string();
             let to_network = trade_info.to_network.as_str().to_string();
             let address = trade_info.withdraw_address.to_string();
+
             let raw_json = status.raw_json.clone();
+
+            let entry = self
+                .trades
+                .entry(trade_key)
+                .or_insert_with(|| (trade_info, Vec::new()));
+
+            entry.1.push(status.clone());
+
             sqlx::query!(
                 r#"
                 INSERT INTO trades (
@@ -299,6 +329,45 @@ impl Client {
 
         Ok(())
     }
+
+    pub async fn load_from_db(&mut self) -> Result<(), anyhow::Error> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                path_uuid,
+                from_currency,
+                from_network,
+                to_currency,
+                to_network,
+                withdraw_address
+            FROM trades
+            ORDER BY id ASC
+            "#,
+        )
+        .fetch_all(&self.db.pool)
+        .await
+        .context("load_from_db(): failed to fetch rows")?;
+
+        for row in rows {
+            let trade_id = TradeId(
+                Uuid::parse_str(&row.path_uuid)
+                    .with_context(|| format!("invalid UUID in path_uuid: {}", row.path_uuid))?,
+            );
+
+            if !self.trades.contains_key(&trade_id) {
+                let trade = TradeInfo {
+                    from_currency: row.from_currency.clone().try_into()?,
+                    to_currency: row.to_currency.clone().try_into()?,
+                    from_network: row.from_network.clone().try_into()?,
+                    to_network: row.to_network.clone().try_into()?,
+                    withdraw_address: monero::Address::from_str(row.withdraw_address.as_str())?,
+                };
+                self.trades.insert(trade_id.clone(), (trade, Vec::new()));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -320,6 +389,17 @@ impl TryFrom<&generated_client::models::Currency> for Currency {
     type Error = OrangeFrenError;
     fn try_from(c: &generated_client::models::Currency) -> Result<Self, Self::Error> {
         match c.symbol.as_str() {
+            "XMR" => Ok(Currency::Xmr),
+            "BTC" => Ok(Currency::Btc),
+            other => Err(OrangeFrenError::UnknownCurrency(other.to_string())),
+        }
+    }
+}
+
+impl TryFrom<String> for Currency {
+    type Error = OrangeFrenError;
+    fn try_from(c: String) -> Result<Self, Self::Error> {
+        match c.as_str() {
             "XMR" => Ok(Currency::Xmr),
             "BTC" => Ok(Currency::Btc),
             other => Err(OrangeFrenError::UnknownCurrency(other.to_string())),
