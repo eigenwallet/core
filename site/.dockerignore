@@ -1,0 +1,35 @@
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist-build
+
+# Logs
+*.log
+
+# Documentation
+README.md
+BUILD.md
+CHANGELOG.md
+
+# Docker
+Dockerfile
+.dockerignore 
