@@ -2,11 +2,13 @@ import { createListenerMiddleware } from "@reduxjs/toolkit";
 import { throttle, debounce } from "lodash";
 import {
   getAllSwapInfos,
+  getAllSwapTimelocks,
   checkBitcoinBalance,
   getBitcoinAddress,
   updateAllNodeStatuses,
   fetchSellersAtPresetRendezvousPoints,
   getSwapInfo,
+  getSwapTimelock,
   initializeMoneroWallet,
   changeMoneroNode,
   getCurrentMoneroNodeConfig,
@@ -46,7 +48,12 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
     // but will wait for 3 seconds of quiet during rapid calls (using debounce)
     const debouncedGetSwapInfo = debounce(() => {
       logger.debug(`Executing getSwapInfo for swap ${swapId}`);
-      getSwapInfo(swapId);
+      getSwapInfo(swapId).catch((error) => {
+        logger.debug(`Failed to fetch swap info for swap ${swapId}: ${error}`);
+      });
+      getSwapTimelock(swapId).catch((error) => {
+        logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
+      });
     }, 3000); // 3 seconds debounce for rapid calls
 
     const throttledFunction = throttle(debouncedGetSwapInfo, 2000, {
@@ -131,6 +138,7 @@ export function createMainListeners() {
           "Database & Bitcoin wallet just became available, fetching swap infos...",
         );
         await getAllSwapInfos();
+        await getAllSwapTimelocks();
       }
 
       // If the database just became availiable, fetch sellers at preset rendezvous points
