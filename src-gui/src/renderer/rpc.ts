@@ -48,6 +48,8 @@ import {
   MoneroNodeConfig,
   GetMoneroSeedResponse,
   ContextStatus,
+  GetSwapTimelockArgs,
+  GetSwapTimelockResponse,
 } from "models/tauriModel";
 import {
   rpcSetSwapInfo,
@@ -335,15 +337,12 @@ export async function getSwapInfo(swapId: string) {
   );
 
   store.dispatch(rpcSetSwapInfo(response));
-  getSwapTimelock(swapId).catch((error) => {
-    logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
-  });
 }
 
 export async function getSwapTimelock(swapId: string) {
   const response = await invoke<
-    { swap_id: string },
-    { swap_id: string; timelock: any }
+    GetSwapTimelockArgs,
+    GetSwapTimelockResponse
   >("get_swap_timelock", {
     swap_id: swapId,
   });

@@ -268,7 +268,7 @@ pub struct GetSwapTimelockArgs {
 pub struct GetSwapTimelockResponse {
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
-    pub timelock: ExpiredTimelocks,
+    pub timelock: Option<ExpiredTimelocks>,
 }
 
 impl Request for GetSwapTimelockArgs {
