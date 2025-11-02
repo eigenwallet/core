@@ -523,6 +523,17 @@ where
                             let count = self.swarm.connected_peers().count();
                             let _ = respond_to.send(count);
                         }
+                        EventLoopRequest::GetRegistrationStatus { respond_to } => {
+                            let registrations = self
+                                .swarm
+                                .behaviour()
+                                .rendezvous
+                                .as_ref()
+                                .map(|b| b.registrations())
+                                .unwrap_or_default(); // If rendezvous behaviour is disabled we report empty list
+
+                            let _ = respond_to.send(registrations);
+                        }
                     }
                 }
             }
@@ -829,6 +840,9 @@ mod service {
         GetActiveConnections {
             respond_to: oneshot::Sender<usize>,
         },
+        GetRegistrationStatus {
+            respond_to: oneshot::Sender<Vec<crate::asb::register::RegistrationReport>>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -857,6 +871,18 @@ mod service {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GetActiveConnections { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the registration status at configured rendezvous points
+        pub async fn get_registration_status(
+            &self,
+        ) -> anyhow::Result<Vec<crate::asb::register::RegistrationReport>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetRegistrationStatus { respond_to: tx })
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
