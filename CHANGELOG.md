@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - ASB + CONTROLLER: Add a `registration-status` command to the controller shell. You can use it to get the registration status of the ASB at the configured rendezvous points.
+- ASB + GUI + CLI + SWAP: Split high-verbosity tracing into separate hourly-rotating JSON log files per subsystem to reduce noise and aid debugging: `tracing*.log` (core things), `tracing-tor*.log` (purely tor related), `tracing-libp2p*.log` (low level networking), `tracing-monero-wallet*.log` (low level Monero wallet related). `swap-all.log` remains for non-verbose logs.
 - ASB: Fix an issue where we would not redeem the Bitcoin and force a refund even though it was still possible to do so.
 
 ## [3.2.7] - 2025-10-28
