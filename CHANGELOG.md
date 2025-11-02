@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.8] - 2025-11-02
+
 - ASB + CONTROLLER: Add a `registration-status` command to the controller shell. You can use it to get the registration status of the ASB at the configured rendezvous points.
 - ASB + GUI + CLI + SWAP: Split high-verbosity tracing into separate hourly-rotating JSON log files per subsystem to reduce noise and aid debugging: `tracing*.log` (core things), `tracing-tor*.log` (purely tor related), `tracing-libp2p*.log` (low level networking), `tracing-monero-wallet*.log` (low level Monero wallet related). `swap-all.log` remains for non-verbose logs.
 - ASB: Fix an issue where we would not redeem the Bitcoin and force a refund even though it was still possible to do so.
@@ -724,7 +726,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.2.7...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.2.8...HEAD
+[3.2.8]: https://github.com/eigenwallet/core/compare/3.2.7...3.2.8
 [3.2.7]: https://github.com/eigenwallet/core/compare/3.2.6...3.2.7
 [3.2.6]: https://github.com/eigenwallet/core/compare/3.2.5...3.2.6
 [3.2.5]: https://github.com/eigenwallet/core/compare/3.2.4...3.2.5
