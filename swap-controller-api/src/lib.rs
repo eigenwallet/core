@@ -92,6 +92,5 @@ pub trait AsbApi {
     #[method(name = "get_swaps")]
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
     #[method(name = "registration_status")]
-    async fn registration_status(&self)
-        -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
+    async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
 }

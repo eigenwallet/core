@@ -90,8 +90,7 @@ pub mod register {
     impl Behaviour {
         /// Returns a snapshot of registration and connection status for all configured rendezvous nodes.
         pub fn registrations(&self) -> Vec<RegistrationReport> {
-            self
-                .rendezvous_nodes
+            self.rendezvous_nodes
                 .iter()
                 .map(|n| RegistrationReport {
                     address: n.address.clone(),
@@ -125,7 +124,7 @@ pub mod register {
         pub connection: ConnectionStatusReport,
         pub registration: RegistrationStatusReport,
     }
-    
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum ConnectionStatusReport {
         Disconnected,
