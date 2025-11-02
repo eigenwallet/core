@@ -18,7 +18,12 @@ export default function SwapWidget() {
     <Box
       sx={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}
     >
-      <SwapStatusAlert swap={swapInfo} onlyShowIfUnusualAmountOfTimeHasPassed />
+      {swapInfo != null && (
+        <SwapStatusAlert
+          swap={swapInfo}
+          onlyShowIfUnusualAmountOfTimeHasPassed
+        />
+      )}
       <Dialog
         fullWidth
         maxWidth="md"
