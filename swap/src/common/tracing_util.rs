@@ -88,16 +88,41 @@ const LIBP2P_CRATES: &[&str] = &[
 
 const OUR_CRATES: &[&str] = &[
     "swap",
+    "swap_p2p",
     "asb",
-    "monero_sys",
-    "unstoppableswap_gui_rs",
-    "seed",
     "swap_env",
     "swap_fs",
     "swap_serde",
-    "monero_rpc_pool",
-    "monero_cpp",
+    "unstoppableswap_gui_rs",
 ];
+
+const MONERO_WALLET_CRATES: &[&str] = &[
+    "monero_sys",
+    "monero_cpp",
+    "monero_rpc_pool",
+];
+
+macro_rules! json_rolling_layer {
+    ($dir:expr, $prefix:expr, $env_filter:expr, $max_files:expr) => {{
+        let appender: RollingFileAppender = RollingFileAppender::builder()
+            .rotation(Rotation::HOURLY)
+            .filename_prefix($prefix)
+            .filename_suffix("log")
+            .max_log_files($max_files)
+            .build($dir)
+            .expect("initializing rolling file appender failed");
+
+        fmt::layer()
+            .with_writer(appender)
+            .with_ansi(false)
+            .with_timer(UtcTime::rfc_3339())
+            .with_target(false)
+            .with_file(true)
+            .with_line_number(true)
+            .json()
+            .with_filter($env_filter?)
+    }};
+}
 
 /// Output formats for logging messages.
 pub enum Format {
@@ -118,54 +143,61 @@ pub fn init(
     tauri_handle: Option<TauriHandle>,
     trace_stdout: bool,
 ) -> Result<()> {
-    // General log file for non-verbose logs
-    let file_appender: RollingFileAppender = tracing_appender::rolling::never(&dir, "swap-all.log");
+    // Write our crates to the general log file at DEBUG level
+    let file_layer = {
+        let file_appender: RollingFileAppender =
+            tracing_appender::rolling::never(&dir, "swap-all.log");
 
-    // Verbose log file, rotated hourly, with a maximum of 24 files
-    let tracing_file_appender: RollingFileAppender = RollingFileAppender::builder()
-        .rotation(Rotation::HOURLY)
-        .filename_prefix("tracing")
-        .filename_suffix("log")
-        .max_log_files(24)
-        .build(&dir)
-        .expect("initializing rolling file appender failed");
+        fmt::layer()
+            .with_writer(file_appender)
+            .with_ansi(false)
+            .with_timer(UtcTime::rfc_3339())
+            .with_target(false)
+            .with_file(true)
+            .with_line_number(true)
+            .json()
+            .with_filter(env_filter_with_all_crates(vec![(
+                OUR_CRATES.to_vec(),
+                LevelFilter::DEBUG,
+            )])?)
+    };
 
-    // Layer for writing to the general log file
-    // Crates: swap, asb
-    // Level: Passed in
-    let file_layer = fmt::layer()
-        .with_writer(file_appender)
-        .with_ansi(false)
-        .with_timer(UtcTime::rfc_3339())
-        .with_target(false)
-        .with_file(true)
-        .with_line_number(true)
-        .json()
-        .with_filter(env_filter_with_all_crates(vec![(
-            OUR_CRATES.to_vec(),
-            LevelFilter::DEBUG,
-        )])?);
-
-    // Layer for writing to the verbose log file
-    // Crates: All crates with different levels (libp2p at INFO+, others at TRACE)
-    // Level: TRACE for our crates, INFO for libp2p, TRACE for tor
-    let tracing_file_layer = fmt::layer()
-        .with_writer(tracing_file_appender)
-        .with_ansi(false)
-        .with_timer(UtcTime::rfc_3339())
-        .with_target(false)
-        .with_file(true)
-        .with_line_number(true)
-        .json()
-        .with_filter(env_filter_with_all_crates(vec![
+    // Write our crates to a verbose log file (tracing*.log)
+    let tracing_file_layer = json_rolling_layer!(
+        &dir,
+        "tracing",
+        env_filter_with_all_crates(vec![
             (OUR_CRATES.to_vec(), LevelFilter::TRACE),
             (LIBP2P_CRATES.to_vec(), LevelFilter::TRACE),
-            (TOR_CRATES.to_vec(), LevelFilter::TRACE),
-        ])?);
+        ]),
+        24
+    );
+
+    // Write Tor/arti to a verbose log file (tracing-tor*.log)
+    let tor_file_layer = json_rolling_layer!(
+        &dir,
+        "tracing-tor",
+        env_filter_with_all_crates(vec![(TOR_CRATES.to_vec(), LevelFilter::TRACE)]),
+        24
+    );
+
+    // Write libp2p to a verbose log file (tracing-libp2p*.log)
+    let libp2p_file_layer = json_rolling_layer!(
+        &dir,
+        "tracing-libp2p",
+        env_filter_with_all_crates(vec![(LIBP2P_CRATES.to_vec(), LevelFilter::TRACE)]),
+        24
+    );
+
+    // Write monero wallet crates to a verbose log file (tracing-monero-wallet*.log)
+    let monero_wallet_file_layer = json_rolling_layer!(
+        &dir,
+        "tracing-monero-wallet",
+        env_filter_with_all_crates(vec![(MONERO_WALLET_CRATES.to_vec(), LevelFilter::TRACE)]),
+        24
+    );
 
     // Layer for writing to the terminal
-    // Crates: swap, asb
-    // Level: Passed in
     let is_terminal = std::io::stderr().is_terminal();
     let terminal_layer = fmt::layer()
         .with_writer(std::io::stderr)
@@ -188,6 +220,7 @@ pub fn init(
         .json()
         .with_filter(env_filter_with_all_crates(vec![
             (OUR_CRATES.to_vec(), LevelFilter::TRACE),
+            (MONERO_WALLET_CRATES.to_vec(), LevelFilter::INFO),
             (LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
             (TOR_CRATES.to_vec(), LevelFilter::INFO),
         ])?);
@@ -216,13 +249,19 @@ pub fn init(
     let subscriber = tracing_subscriber::registry()
         .with(file_layer)
         .with(tracing_file_layer)
+        .with(tor_file_layer)
+        .with(libp2p_file_layer)
+        .with(monero_wallet_file_layer)
         .with(final_terminal_layer)
         .with(tauri_layer);
 
     subscriber.try_init()?;
 
     // Now we can use the tracing macros to log messages
-    tracing::info!(logs_dir=%dir.as_ref().display(), "Initialized tracing. General logs will be written to swap-all.log, and verbose logs to tracing*.log");
+    tracing::info!(
+        logs_dir = %dir.as_ref().display(),
+        "Initialized tracing. General logs go to swap-all.log; verbose logs: tracing*.log (ours), tracing-tor*.log (tor), tracing-libp2p*.log (libp2p)"
+    );
 
     Ok(())
 }
