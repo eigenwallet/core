@@ -86,6 +86,59 @@ pub mod register {
         backoffs: HashMap<PeerId, ExponentialBackoff>,
     }
 
+    // Provide a read-only snapshot of rendezvous registrations
+    impl Behaviour {
+        /// Returns a snapshot of registration and connection status for all configured rendezvous nodes.
+        pub fn registrations(&self) -> Vec<RegistrationReport> {
+            self
+                .rendezvous_nodes
+                .iter()
+                .map(|n| RegistrationReport {
+                    address: n.address.clone(),
+                    peer_id: n.peer_id,
+                    namespace: n.namespace,
+                    connection: match n.connection_status {
+                        ConnectionStatus::Disconnected => ConnectionStatusReport::Disconnected,
+                        ConnectionStatus::Dialling => ConnectionStatusReport::Dialling,
+                        ConnectionStatus::Connected => ConnectionStatusReport::Connected,
+                    },
+                    registration: match &n.registration_status {
+                        RegistrationStatus::RegisterOnNextConnection => {
+                            RegistrationStatusReport::RegisterOnNextConnection
+                        }
+                        RegistrationStatus::Pending => RegistrationStatusReport::Pending,
+                        RegistrationStatus::Registered { .. } => {
+                            RegistrationStatusReport::Registered
+                        }
+                    },
+                })
+                .collect()
+        }
+    }
+
+    /// Public representation of a rendezvous node registration status
+    #[derive(Debug, Clone)]
+    pub struct RegistrationReport {
+        pub address: Multiaddr,
+        pub peer_id: PeerId,
+        pub namespace: XmrBtcNamespace,
+        pub connection: ConnectionStatusReport,
+        pub registration: RegistrationStatusReport,
+    }
+    
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ConnectionStatusReport {
+        Disconnected,
+        Dialling,
+        Connected,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RegistrationStatusReport {
+        RegisterOnNextConnection,
+        Pending,
+        Registered,
+    }
     /// A node running the rendezvous server protocol.
     pub struct RendezvousNode {
         pub address: Multiaddr,

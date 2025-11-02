@@ -108,6 +108,7 @@ where
     rl.set_helper(Some(completer));
 
     println!("ASB Control Shell - Type 'help' for commands, 'quit' to exit\n");
+    
 
     loop {
         let readline = rl.readline("asb> ");

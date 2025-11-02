@@ -34,6 +34,32 @@ pub struct ActiveConnectionsResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum RpcConnectionStatus {
+    Disconnected,
+    Dialling,
+    Connected,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum RpcRegistrationStatus {
+    RegisterOnNextConnection,
+    Pending,
+    Registered,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RegistrationStatusItem {
+    pub address: String,
+    pub connection: RpcConnectionStatus,
+    pub registration: RpcRegistrationStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RegistrationStatusResponse {
+    pub registrations: Vec<RegistrationStatusItem>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Swap {
     pub id: String,
     pub state: String,
@@ -65,4 +91,7 @@ pub trait AsbApi {
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
     #[method(name = "get_swaps")]
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
+    #[method(name = "registration_status")]
+    async fn registration_status(&self)
+        -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
 }

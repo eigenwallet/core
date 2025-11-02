@@ -9,7 +9,9 @@ use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
-    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse, Swap,
+    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
+    RegistrationStatusItem, RegistrationStatusResponse, RpcConnectionStatus, RpcRegistrationStatus,
+    Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -158,6 +160,45 @@ impl AsbApiServer for RpcImpl {
             .collect();
 
         Ok(swaps)
+    }
+
+    async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned> {
+        let regs = self
+            .event_loop_service
+            .get_registration_status()
+            .await
+            .into_json_rpc_result()?;
+
+        let registrations = regs
+            .into_iter()
+            .map(|r| RegistrationStatusItem {
+                address: r.address.to_string(),
+                connection: match r.connection {
+                    crate::asb::register::ConnectionStatusReport::Disconnected => {
+                        RpcConnectionStatus::Disconnected
+                    }
+                    crate::asb::register::ConnectionStatusReport::Dialling => {
+                        RpcConnectionStatus::Dialling
+                    }
+                    crate::asb::register::ConnectionStatusReport::Connected => {
+                        RpcConnectionStatus::Connected
+                    }
+                },
+                registration: match r.registration {
+                    crate::asb::register::RegistrationStatusReport::RegisterOnNextConnection => {
+                        RpcRegistrationStatus::RegisterOnNextConnection
+                    }
+                    crate::asb::register::RegistrationStatusReport::Pending => {
+                        RpcRegistrationStatus::Pending
+                    }
+                    crate::asb::register::RegistrationStatusReport::Registered => {
+                        RpcRegistrationStatus::Registered
+                    }
+                },
+            })
+            .collect();
+
+        Ok(RegistrationStatusResponse { registrations })
     }
 }
 
