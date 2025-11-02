@@ -62,8 +62,8 @@ pub mod register {
     use std::task::{Context, Poll};
     use std::time::Duration;
 
-    #[derive(Clone, PartialEq)]
-    enum ConnectionStatus {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ConnectionStatus {
         Disconnected,
         Dialling,
         Connected,
@@ -96,11 +96,7 @@ pub mod register {
                     address: n.address.clone(),
                     peer_id: n.peer_id,
                     namespace: n.namespace,
-                    connection: match n.connection_status {
-                        ConnectionStatus::Disconnected => ConnectionStatusReport::Disconnected,
-                        ConnectionStatus::Dialling => ConnectionStatusReport::Dialling,
-                        ConnectionStatus::Connected => ConnectionStatusReport::Connected,
-                    },
+                    connection: n.connection_status,
                     registration: match &n.registration_status {
                         RegistrationStatus::RegisterOnNextConnection => {
                             RegistrationStatusReport::RegisterOnNextConnection
@@ -121,15 +117,8 @@ pub mod register {
         pub address: Multiaddr,
         pub peer_id: PeerId,
         pub namespace: XmrBtcNamespace,
-        pub connection: ConnectionStatusReport,
+        pub connection: ConnectionStatus,
         pub registration: RegistrationStatusReport,
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum ConnectionStatusReport {
-        Disconnected,
-        Dialling,
-        Connected,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

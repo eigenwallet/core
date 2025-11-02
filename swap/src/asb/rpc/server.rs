@@ -174,13 +174,13 @@ impl AsbApiServer for RpcImpl {
             .map(|r| RegistrationStatusItem {
                 address: r.address.to_string(),
                 connection: match r.connection {
-                    crate::asb::register::ConnectionStatusReport::Disconnected => {
+                    crate::asb::register::ConnectionStatus::Disconnected => {
                         RpcConnectionStatus::Disconnected
                     }
-                    crate::asb::register::ConnectionStatusReport::Dialling => {
+                    crate::asb::register::ConnectionStatus::Dialling => {
                         RpcConnectionStatus::Dialling
                     }
-                    crate::asb::register::ConnectionStatusReport::Connected => {
+                    crate::asb::register::ConnectionStatus::Connected => {
                         RpcConnectionStatus::Connected
                     }
                 },
