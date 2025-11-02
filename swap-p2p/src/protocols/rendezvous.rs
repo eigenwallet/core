@@ -110,6 +110,7 @@ pub mod register {
     }
 
     /// Public representation of a rendezvous node registration status
+    /// The raw `RegistrationStatus` cannot be exposed because it is not serializable
     #[derive(Debug, Clone)]
     pub struct RegistrationReport {
         pub address: Multiaddr,
@@ -123,6 +124,7 @@ pub mod register {
         Pending,
         Registered,
     }
+
     /// A node running the rendezvous server protocol.
     pub struct RendezvousNode {
         pub address: Multiaddr,
