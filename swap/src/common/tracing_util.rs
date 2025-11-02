@@ -180,7 +180,9 @@ pub fn init(
 
 /// This function controls which crate's logs actually get logged and from which level, including all crate categories.
 fn env_filter_with_all_crates(crates: Vec<(Vec<&str>, LevelFilter)>) -> Result<EnvFilter> {
-    let mut filter = EnvFilter::from_default_env();
+    let mut filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::OFF.into())
+        .from_env_lossy();
 
     // Add directives for each group of crates with their specified level filter
     for (crate_names, level_filter) in crates {
