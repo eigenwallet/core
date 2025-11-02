@@ -34,14 +34,14 @@ pub struct ActiveConnectionsResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum RpcConnectionStatus {
+pub enum RendezvousConnectionStatus {
     Disconnected,
     Dialling,
     Connected,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum RpcRegistrationStatus {
+pub enum RendezvousRegistrationStatus {
     RegisterOnNextConnection,
     Pending,
     Registered,
@@ -50,8 +50,8 @@ pub enum RpcRegistrationStatus {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RegistrationStatusItem {
     pub address: String,
-    pub connection: RpcConnectionStatus,
-    pub registration: RpcRegistrationStatus,
+    pub connection: RendezvousConnectionStatus,
+    pub registration: RendezvousRegistrationStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

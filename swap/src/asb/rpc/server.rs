@@ -10,8 +10,8 @@ use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    RegistrationStatusItem, RegistrationStatusResponse, RpcConnectionStatus, RpcRegistrationStatus,
-    Swap,
+    RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
+    RendezvousRegistrationStatus, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -175,24 +175,24 @@ impl AsbApiServer for RpcImpl {
                 address: r.address.to_string(),
                 connection: match r.connection {
                     crate::asb::register::ConnectionStatus::Disconnected => {
-                        RpcConnectionStatus::Disconnected
+                        RendezvousConnectionStatus::Disconnected
                     }
                     crate::asb::register::ConnectionStatus::Dialling => {
-                        RpcConnectionStatus::Dialling
+                        RendezvousConnectionStatus::Dialling
                     }
                     crate::asb::register::ConnectionStatus::Connected => {
-                        RpcConnectionStatus::Connected
+                        RendezvousConnectionStatus::Connected
                     }
                 },
                 registration: match r.registration {
                     crate::asb::register::RegistrationStatusReport::RegisterOnNextConnection => {
-                        RpcRegistrationStatus::RegisterOnNextConnection
+                        RendezvousRegistrationStatus::RegisterOnNextConnection
                     }
                     crate::asb::register::RegistrationStatusReport::Pending => {
-                        RpcRegistrationStatus::Pending
+                        RendezvousRegistrationStatus::Pending
                     }
                     crate::asb::register::RegistrationStatusReport::Registered => {
-                        RpcRegistrationStatus::Registered
+                        RendezvousRegistrationStatus::Registered
                     }
                 },
             })
