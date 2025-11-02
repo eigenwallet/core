@@ -13,95 +13,6 @@ use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriLogEvent};
 
-const TOR_CRATES: &[&str] = &["arti", "arti_client"];
-
-#[allow(dead_code)] // might be useful later
-const TOR_SUBCRATES: &[&str] = &[
-    "arti_fork",
-    "tor_api2",
-    "tor_async_utils",
-    "tor_basic_utils",
-    "tor_bytes",
-    "tor_cell",
-    "tor_cert",
-    "tor_chanmgr",
-    "tor_checkable",
-    "tor_circmgr",
-    "tor_config",
-    "tor_config_path",
-    "tor_consdiff",
-    "tor_dirclient",
-    "tor_dirmgr",
-    "tor_error",
-    "tor_general_addr",
-    "tor_guardmgr",
-    "tor_hsclient",
-    "tor_hscrypto",
-    "tor_hsservice",
-    "tor_key_forge",
-    "tor_keymgr",
-    "tor_linkspec",
-    "tor_llcrypto",
-    "tor_log_ratelim",
-    "tor_memquota",
-    "tor_netdir",
-    "tor_netdoc",
-    "tor_persist",
-    "tor_proto",
-    "tor_protover",
-    "tor_relay_selection",
-    "tor_rtcompat",
-    "tor_rtmock",
-    "tor_socksproto",
-    "tor_units",
-];
-
-const LIBP2P_CRATES: &[&str] = &[
-    "libp2p",
-    "libp2p_swarm",
-    "libp2p_core",
-    "libp2p_tcp",
-    "libp2p_noise",
-    "libp2p_tor",
-    "libp2p_core::transport",
-    "libp2p_core::transport::choice",
-    "libp2p_core::transport::dummy",
-    "libp2p_swarm::connection",
-    "libp2p_swarm::dial",
-    "libp2p_tcp::transport",
-    "libp2p_noise::protocol",
-    "libp2p_identify",
-    "libp2p_ping",
-    "libp2p_request_response",
-    "libp2p_kad",
-    "libp2p_dns",
-    "libp2p_yamux",
-    "libp2p_quic",
-    "libp2p_websocket",
-    "libp2p_relay",
-    "libp2p_autonat",
-    "libp2p_mdns",
-    "libp2p_gossipsub",
-    "libp2p_rendezvous",
-    "libp2p_dcutr",
-];
-
-const OUR_CRATES: &[&str] = &[
-    "swap",
-    "swap_p2p",
-    "asb",
-    "swap_env",
-    "swap_fs",
-    "swap_serde",
-    "unstoppableswap_gui_rs",
-];
-
-const MONERO_WALLET_CRATES: &[&str] = &[
-    "monero_sys",
-    "monero_cpp",
-    "monero_rpc_pool",
-];
-
 macro_rules! json_rolling_layer {
     ($dir:expr, $prefix:expr, $env_filter:expr, $max_files:expr) => {{
         let appender: RollingFileAppender = RollingFileAppender::builder()
@@ -157,7 +68,7 @@ pub fn init(
             .with_line_number(true)
             .json()
             .with_filter(env_filter_with_all_crates(vec![(
-                OUR_CRATES.to_vec(),
+                crates::OUR_CRATES.to_vec(),
                 LevelFilter::DEBUG,
             )])?)
     };
@@ -167,8 +78,8 @@ pub fn init(
         &dir,
         "tracing",
         env_filter_with_all_crates(vec![
-            (OUR_CRATES.to_vec(), LevelFilter::TRACE),
-            (LIBP2P_CRATES.to_vec(), LevelFilter::TRACE),
+            (crates::OUR_CRATES.to_vec(), LevelFilter::TRACE),
+            (crates::LIBP2P_CRATES.to_vec(), LevelFilter::TRACE),
         ]),
         24
     );
@@ -177,7 +88,7 @@ pub fn init(
     let tor_file_layer = json_rolling_layer!(
         &dir,
         "tracing-tor",
-        env_filter_with_all_crates(vec![(TOR_CRATES.to_vec(), LevelFilter::TRACE)]),
+        env_filter_with_all_crates(vec![(crates::TOR_CRATES.to_vec(), LevelFilter::TRACE)]),
         24
     );
 
@@ -185,7 +96,7 @@ pub fn init(
     let libp2p_file_layer = json_rolling_layer!(
         &dir,
         "tracing-libp2p",
-        env_filter_with_all_crates(vec![(LIBP2P_CRATES.to_vec(), LevelFilter::TRACE)]),
+        env_filter_with_all_crates(vec![(crates::LIBP2P_CRATES.to_vec(), LevelFilter::TRACE)]),
         24
     );
 
@@ -193,7 +104,7 @@ pub fn init(
     let monero_wallet_file_layer = json_rolling_layer!(
         &dir,
         "tracing-monero-wallet",
-        env_filter_with_all_crates(vec![(MONERO_WALLET_CRATES.to_vec(), LevelFilter::TRACE)]),
+        env_filter_with_all_crates(vec![(crates::MONERO_WALLET_CRATES.to_vec(), LevelFilter::TRACE)]),
         24
     );
 
@@ -219,21 +130,22 @@ pub fn init(
         .with_line_number(true)
         .json()
         .with_filter(env_filter_with_all_crates(vec![
-            (OUR_CRATES.to_vec(), LevelFilter::TRACE),
-            (MONERO_WALLET_CRATES.to_vec(), LevelFilter::INFO),
-            (LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
-            (TOR_CRATES.to_vec(), LevelFilter::INFO),
+            (crates::OUR_CRATES.to_vec(), LevelFilter::TRACE),
+            (crates::MONERO_WALLET_CRATES.to_vec(), LevelFilter::INFO),
+            (crates::LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
+            (crates::TOR_CRATES.to_vec(), LevelFilter::INFO),
         ])?);
 
-    // If trace_stdout is true, we log all messages to the terminal
-    // Otherwise, we only log the bare minimum
+    // If trace_stdout is true, we log our crates at TRACE level, others at INFO level
+    // Otherwise, we only log our crates at INFO level
     let terminal_layer_env_filter = match trace_stdout {
         true => env_filter_with_all_crates(vec![
-            (OUR_CRATES.to_vec(), LevelFilter::DEBUG),
-            (TOR_CRATES.to_vec(), LevelFilter::INFO),
-            (LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
+            (crates::OUR_CRATES.to_vec(), LevelFilter::TRACE),
+            (crates::MONERO_WALLET_CRATES.to_vec(), LevelFilter::INFO),
+            (crates::LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
+            (crates::TOR_CRATES.to_vec(), LevelFilter::INFO),
         ])?,
-        false => env_filter_with_all_crates(vec![(OUR_CRATES.to_vec(), LevelFilter::INFO)])?,
+        false => env_filter_with_all_crates(vec![(crates::OUR_CRATES.to_vec(), LevelFilter::INFO)])?,
     };
 
     let final_terminal_layer = match format {
@@ -281,6 +193,42 @@ fn env_filter_with_all_crates(crates: Vec<(Vec<&str>, LevelFilter)>) -> Result<E
     }
 
     Ok(filter)
+}
+
+mod crates {
+    pub const TOR_CRATES: &[&str] = &["arti", "arti_client"];
+
+    pub const LIBP2P_CRATES: &[&str] = &[
+        "libp2p",
+        "libp2p_swarm",
+        "libp2p_core",
+        // Protocols
+        "libp2p_identify",
+        "libp2p_ping",
+        "libp2p_request_response",
+        "libp2p_rendezvous",
+        // Transports
+        "libp2p_dns",
+        "libp2p_yamux",
+        "libp2p_tor",
+        "libp2p_tcp",
+    ];
+
+    pub const OUR_CRATES: &[&str] = &[
+        "swap",
+        "swap_p2p",
+        "asb",
+        "swap_env",
+        "swap_fs",
+        "swap_serde",
+        "monero_sys",
+        "unstoppableswap_gui_rs",
+    ];
+
+    pub const MONERO_WALLET_CRATES: &[&str] = &[
+        "monero_cpp",
+        "monero_rpc_pool",
+    ];
 }
 
 /// A writer that forwards tracing log messages to the tauri guest.
