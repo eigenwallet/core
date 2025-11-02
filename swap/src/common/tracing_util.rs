@@ -13,6 +13,7 @@ use tracing_subscriber::{fmt, EnvFilter, Layer};
 
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriLogEvent};
 
+/// Creates a tracing layer that writes to a rolling file appender.
 macro_rules! json_rolling_layer {
     ($dir:expr, $prefix:expr, $env_filter:expr, $max_files:expr) => {{
         let appender: RollingFileAppender = RollingFileAppender::builder()
@@ -78,8 +79,7 @@ pub fn init(
         &dir,
         "tracing",
         env_filter_with_all_crates(vec![
-            (crates::OUR_CRATES.to_vec(), LevelFilter::TRACE),
-            (crates::LIBP2P_CRATES.to_vec(), LevelFilter::TRACE),
+            (crates::OUR_CRATES.to_vec(), LevelFilter::TRACE)
         ]),
         24
     );
