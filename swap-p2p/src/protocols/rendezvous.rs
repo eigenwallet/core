@@ -94,8 +94,6 @@ pub mod register {
                 .iter()
                 .map(|n| RegistrationReport {
                     address: n.address.clone(),
-                    peer_id: n.peer_id,
-                    namespace: n.namespace,
                     connection: n.connection_status,
                     registration: match &n.registration_status {
                         RegistrationStatus::RegisterOnNextConnection => {
@@ -115,8 +113,6 @@ pub mod register {
     #[derive(Debug, Clone)]
     pub struct RegistrationReport {
         pub address: Multiaddr,
-        pub peer_id: PeerId,
-        pub namespace: XmrBtcNamespace,
         pub connection: ConnectionStatus,
         pub registration: RegistrationStatusReport,
     }
