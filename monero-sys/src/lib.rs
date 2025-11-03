@@ -141,6 +141,9 @@ pub struct TxStatus {
 /// Contains basic information needed for later verification.
 pub struct TxReceipt {
     pub txid: String,
+    /// A map that has an entry for each non-change output
+    /// where the key is the output's address and the value is the transfer key
+    /// corresponding to that output. We use these for our transfer proofs.
     pub tx_keys: HashMap<monero::Address, monero::PrivateKey>,
     /// The blockchain height at the time of publication.
     pub height: u64,
