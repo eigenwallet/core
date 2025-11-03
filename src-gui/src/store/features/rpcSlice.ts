@@ -8,17 +8,20 @@ import {
   ApprovalRequest,
   TauriBackgroundProgressWrapper,
   TauriBackgroundProgress,
+  ExpiredTimelocks,
 } from "models/tauriModel";
 import { MoneroRecoveryResponse } from "../../models/rpcModel";
 import { GetSwapInfoResponseExt } from "models/tauriModelExt";
 import logger from "utils/logger";
 
 interface State {
-  balance: number | null;
   withdrawTxId: string | null;
   rendezvousDiscoveredSellers: (ExtendedMakerStatus | MakerStatus)[];
   swapInfos: {
     [swapId: string]: GetSwapInfoResponseExt;
+  };
+  swapTimelocks: {
+    [swapId: string]: ExpiredTimelocks;
   };
   moneroRecovery: {
     swapId: string;
@@ -54,10 +57,10 @@ export interface RPCSlice {
 const initialState: RPCSlice = {
   status: null,
   state: {
-    balance: null,
     withdrawTxId: null,
     rendezvousDiscoveredSellers: [],
     swapInfos: {},
+    swapTimelocks: {},
     moneroRecovery: null,
     background: {},
     backgroundRefund: null,
@@ -86,17 +89,8 @@ export const rpcSlice = createSlice({
       slice: RPCSlice,
       action: PayloadAction<TauriTimelockChangeEvent>,
     ) {
-      if (slice.state.swapInfos[action.payload.swap_id]) {
-        slice.state.swapInfos[action.payload.swap_id].timelock =
-          action.payload.timelock;
-      } else {
-        logger.warn(
-          `Received timelock change event for unknown swap ${action.payload.swap_id}`,
-        );
-      }
-    },
-    rpcSetBalance(slice, action: PayloadAction<number>) {
-      slice.state.balance = action.payload;
+      slice.state.swapTimelocks[action.payload.swap_id] =
+        action.payload.timelock;
     },
     rpcSetWithdrawTxId(slice, action: PayloadAction<string>) {
       slice.state.withdrawTxId = action.payload;
@@ -177,7 +171,6 @@ export const rpcSlice = createSlice({
 export const {
   contextStatusEventReceived,
   contextInitializationFailed,
-  rpcSetBalance,
   rpcSetWithdrawTxId,
   rpcResetWithdrawTxId,
   rpcSetRendezvousDiscoveredMakers,

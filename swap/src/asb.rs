@@ -3,9 +3,9 @@ mod network;
 mod recovery;
 pub mod rpc;
 
+pub use crate::network::rendezvous::register;
 pub use event_loop::{EventLoop, EventLoopHandle};
 pub use network::behaviour::Behaviour;
-pub use network::rendezvous::RendezvousNode;
 pub use network::transport;
 pub use recovery::cancel::cancel;
 pub use recovery::punish::punish;

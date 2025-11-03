@@ -1,13 +1,13 @@
 {
   "productName": "eigenwallet",
-  "version": "3.2.1",
+  "version": "3.2.7",
   "identifier": "net.unstoppableswap.gui",
   "build": {
     "devUrl": "http://localhost:1420",
     "frontendDist": "../src-gui/dist",
     "beforeBuildCommand": {
       "cwd": "../src-gui",
-      "script": "yarn install && yarn run build"
+      "script": "yarn install --frozen-lockfile && yarn run build"
     }
   },
   "app": {

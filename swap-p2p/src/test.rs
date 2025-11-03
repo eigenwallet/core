@@ -34,12 +34,15 @@ where
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
         .boxed();
 
+    const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
+
     SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
         .with_other_transport(|_| Ok(transport))
         .unwrap()
         .with_behaviour(|keypair| Ok(behaviour_fn(keypair.clone())))
         .unwrap()
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build()
 }
 

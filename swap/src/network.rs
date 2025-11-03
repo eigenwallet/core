@@ -10,4 +10,4 @@ pub mod swarm;
 pub mod transport;
 
 #[cfg(test)]
-pub mod test;
+pub use swap_p2p::test;

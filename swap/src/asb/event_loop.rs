@@ -648,24 +648,28 @@ where
         EventLoopHandle {
             swap_id,
             peer,
-            recv_encrypted_signature: Some(encrypted_signature_receiver),
-            transfer_proof_sender: Some(transfer_proof_sender),
+            recv_encrypted_signature: tokio::sync::Mutex::new(Some(encrypted_signature_receiver)),
+            transfer_proof_sender: tokio::sync::Mutex::new(Some(transfer_proof_sender)),
         }
     }
 }
 
+// We use a Mutex here to allow recv_encrypted_signature and transfer_proof_sender to be accessed concurrently
 #[derive(Debug)]
 pub struct EventLoopHandle {
     swap_id: Uuid,
     peer: PeerId,
-    recv_encrypted_signature: Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>,
+    recv_encrypted_signature:
+        tokio::sync::Mutex<Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>>,
     #[allow(clippy::type_complexity)]
-    transfer_proof_sender: Option<
-        tokio::sync::mpsc::UnboundedSender<(
-            PeerId,
-            transfer_proof::Request,
-            oneshot::Sender<Result<(), OutboundFailure>>,
-        )>,
+    transfer_proof_sender: tokio::sync::Mutex<
+        Option<
+            tokio::sync::mpsc::UnboundedSender<(
+                PeerId,
+                transfer_proof::Request,
+                oneshot::Sender<Result<(), OutboundFailure>>,
+            )>,
+        >,
     >,
 }
 
@@ -681,9 +685,16 @@ impl EventLoopHandle {
     }
 
     /// Wait for an encrypted signature from Bob
-    pub async fn recv_encrypted_signature(&mut self) -> Result<bitcoin::EncryptedSignature> {
-        let receiver = self
+    ///
+    /// This function can not be called concurrently (even though it doesn't take &self mut)
+    /// It internally acquires a Mutex. If another instance of this is already running, it will fail.
+    pub async fn recv_encrypted_signature(&self) -> Result<bitcoin::EncryptedSignature> {
+        let mut recv_encrypted_signature_guard = self
             .recv_encrypted_signature
+            .try_lock()
+            .map_err(|_| anyhow!("recv_encrypted_signature is already being called"))?;
+
+        let receiver = recv_encrypted_signature_guard
             .as_mut()
             .context("Encrypted signature was already received")?;
 
@@ -697,7 +708,7 @@ impl EventLoopHandle {
             .context("Failed to acknowledge receipt of encrypted signature")?;
 
         // Only take after successful receipt and acknowledgement
-        self.recv_encrypted_signature.take();
+        recv_encrypted_signature_guard.take();
 
         Ok(tx_redeem_encsig)
     }
@@ -710,9 +721,16 @@ impl EventLoopHandle {
     /// This will fail if
     /// 1. the transfer proof has already been sent once
     /// 2. there is an error with the bmrng channel
-    pub async fn send_transfer_proof(&mut self, msg: monero::TransferProof) -> Result<()> {
-        let sender = self
+    ///
+    /// This function can not be called concurrently (even though it doesn't take &self mut)
+    /// It internally acquires a Mutex. If another instance of this is already running, it will fail.
+    pub async fn send_transfer_proof(&self, msg: monero::TransferProof) -> Result<()> {
+        let mut transfer_proof_sender_guard = self
             .transfer_proof_sender
+            .try_lock()
+            .map_err(|_| anyhow!("send_transfer_proof is already being called"))?;
+
+        let sender = transfer_proof_sender_guard
             .as_ref()
             .context("Transfer proof was already sent")?;
 
@@ -759,7 +777,7 @@ impl EventLoopHandle {
         )
         .await?;
 
-        self.transfer_proof_sender.take();
+        transfer_proof_sender_guard.take();
 
         Ok(())
     }

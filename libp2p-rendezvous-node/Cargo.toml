@@ -1,18 +1,33 @@
 [package]
-name = "rendezvous-server"
+name = "rendezvous-node"
 version = "0.2.0"
 edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1"
+# Tor
+arti-client = { workspace = true }
+tor-hsservice = { workspace = true }
+tor-rtcompat = { workspace = true }
+
+# Async
+backoff = { workspace = true, features = ["tokio"] }
 futures = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net", "io-util"] }
+
+# Libp2p
 libp2p = { workspace = true, features = ["rendezvous", "tcp", "yamux", "dns", "noise", "ping", "websocket", "tokio", "macros"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net", "io-util"] }
-tor-hsservice = { workspace = true }
+swap-p2p = { path = "../swap-p2p" }
+
+# Tracing
 tracing = { workspace = true, features = ["attributes"] }
 tracing-subscriber = { workspace = true, default-features = false, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log", "json"] }
 
+# Error
+anyhow = "1"
+
+# Other
 atty = "0.2"
 structopt = { version = "0.3", default-features = false }
+swap-env = { path = "../swap-env" }

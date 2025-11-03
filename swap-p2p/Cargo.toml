@@ -29,6 +29,7 @@ rand = { workspace = true }
 
 # Utils
 anyhow = { workspace = true }
+backoff = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
@@ -41,6 +42,10 @@ tokio = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio"] }
 
 [lints]
 workspace = true

@@ -30,34 +30,6 @@ use libp2p::{
 use std::iter;
 
 /// Initializes a new [`FromFnUpgrade`].
-///
-/// # Example
-///
-/// ```no_run
-/// # use libp2p::core::transport::{Transport, MemoryTransport, memory::Channel};
-/// # use libp2p::core::{upgrade::{self, Negotiated, Version}, Endpoint};
-/// # use libp2p::core::upgrade::length_delimited;
-/// # use std::io;
-/// # use futures::AsyncWriteExt;
-/// # use swap::network::swap_setup::vendor_from_fn::from_fn;
-///
-/// let _transport = MemoryTransport::default()
-///     .and_then(move |out, endpoint| { // Changed cp to endpoint to match from_fn signature
-///         upgrade::apply(out, self::from_fn("/foo/1", move |mut sock: Negotiated<Channel<Vec<u8>>>, endpoint_arg: Endpoint| async move {
-///             if endpoint_arg.is_dialer() {
-///                 length_delimited::write_length_prefixed(&mut sock, b"some handshake data").await?;
-///                 sock.close().await?;
-///             } else {
-///                 let handshake_data = length_delimited::read_length_prefixed(&mut sock, 1024).await?;
-///                 if handshake_data != b"some handshake data" {
-///                     return Err(io::Error::new(io::ErrorKind::Other, "bad handshake"));
-///                 }
-///             }
-///             Ok(sock)
-///         }), endpoint, Version::V1) // Assuming cp was meant to be endpoint, and Version is needed by apply
-///     });
-/// ```
-///
 pub fn from_fn<P, F, C, Fut, Out, Err>(protocol_name: P, fun: F) -> FromFnUpgrade<P, F>
 where
     // Note: these bounds are there in order to help the compiler infer types

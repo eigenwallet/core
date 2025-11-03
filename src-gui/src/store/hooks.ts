@@ -32,6 +32,11 @@ import {
 } from "models/tauriModel";
 import { Alert } from "models/apiModel";
 import { fnv1a } from "utils/hash";
+import {
+  selectAllSwapInfos,
+  selectPendingApprovals,
+  selectSwapInfoWithTimelock,
+} from "./selectors";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
@@ -159,8 +164,8 @@ export function useAllMakers() {
 /// This hook returns the all swap infos, as an array
 /// Excluding those who are in a state where it's better to hide them from the user
 export function useSaneSwapInfos() {
-  const swapInfos = useAppSelector((state) => state.rpc.state.swapInfos);
-  return Object.values(swapInfos).filter((swap) => {
+  const swapInfos = useAppSelector(selectAllSwapInfos);
+  return swapInfos.filter((swap) => {
     // We hide swaps that are in the SwapSetupCompleted state
     // This is because they are probably ones where:
     // 1. The user force stopped the swap while we were waiting for their confirmation of the offer
@@ -203,10 +208,7 @@ export function useNodes<T>(selector: (nodes: NodesSlice) => T): T {
 }
 
 export function usePendingApprovals(): PendingApprovalRequest[] {
-  const approvals = useAppSelector((state) => state.rpc.state.approvalRequests);
-  return Object.values(approvals).filter(
-    (c) => c.request_status.state === "Pending",
-  ) as PendingApprovalRequest[];
+  return useAppSelector(selectPendingApprovals) as PendingApprovalRequest[];
 }
 
 export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalRequest[] {
