@@ -86,7 +86,7 @@ index 2dd118ea3..0972089d1 100644
 +                }
 +            }
 +
-+            if (!found_key) {
++            if (!found_key || matched_key == crypto::null_skey) {
 +                throw std::runtime_error("No matching tx key found for output");
 +            }
 +

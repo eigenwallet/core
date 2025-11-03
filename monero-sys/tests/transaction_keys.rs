@@ -48,16 +48,17 @@ async fn main() -> anyhow::Result<()> {
 
     wallet.store_in_current_file().await?;
 
-    let main_address = wallet.address(1, 0).await;
-    let subaddress = wallet.address(0, 2).await;
+    // Test sending to some (sub)addresses
+    let subaddress1 = wallet.address(1, 0).await;
+    let subaddress2 = wallet.address(0, 2).await;
 
-    let addresses = [main_address.to_string(), subaddress.to_string()];
+    let addresses = [subaddress1.to_string(), subaddress2.to_string()];
     tracing::info!(addresses=?addresses, "Got the destination addresses");
 
     let amount = Amount::from_xmr(0.02)?;
 
     let tx_receipt = wallet
-        .transfer_multi_destination(&[(main_address, amount), (subaddress, amount)])
+        .transfer_multi_destination(&[(subaddress1, amount), (subaddress2, amount)])
         .await?;
 
     // at this point we managed to publish the transaction and
