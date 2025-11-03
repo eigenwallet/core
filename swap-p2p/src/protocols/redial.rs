@@ -1,12 +1,11 @@
 use crate::futures_util::FuturesHashSet;
-use backoff::ExponentialBackoff;
 use backoff::backoff::Backoff;
-use libp2p::PeerId;
+use backoff::ExponentialBackoff;
 use libp2p::core::Multiaddr;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{NetworkBehaviour, ToSwarm};
+use libp2p::PeerId;
 use std::collections::{HashMap, HashSet};
-use std::future;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use void::Void;

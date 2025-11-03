@@ -309,7 +309,6 @@ impl EventLoop {
                 // because the protocol does not dial Alice itself
                 // (unlike request-response above)
                 Some(((alice_peer_id, swap), responder)) = self.execution_setup_requests.next().fuse() => {
-                    self.swarm.dial(alice_peer_id).unwrap();
                     self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
                     self.inflight_swap_setup.insert(alice_peer_id, responder);
 
@@ -421,8 +420,10 @@ impl EventLoopHandle {
 
         // Register this sender in the `EventLoop`'s
         // It is put into the queue and then later moved into `registered_transfer_proof_senders`
+        //
+        // We use `send(...) instead of send_receive(...)` because the event loop needs to be running for this to respond
         self.queued_transfer_proof_sender
-            .send_receive((swap_id, peer_id, transfer_proof_sender))
+            .send((swap_id, peer_id, transfer_proof_sender))
             .await
             .context("Failed to register transfer proof sender with event loop")?;
 
