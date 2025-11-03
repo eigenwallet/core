@@ -1,6 +1,9 @@
 use anyhow::Context;
 use monero_harness::Cli;
 
+/// Create a transaction with transaction proofs, and verify them.
+/// Fails if the publishing fails due to the transfer keys not being extracted successfully
+/// or due to them not being able to be verified by the recipients.
 #[tokio::test]
 async fn monero_transfers() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
