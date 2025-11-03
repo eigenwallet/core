@@ -6,6 +6,7 @@ use libp2p::{
     PeerId,
 };
 
+use crate::protocols::redial;
 use crate::protocols::{
     cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote,
     transfer_proof,
@@ -56,6 +57,7 @@ pub enum OutEvent {
         request_id: InboundRequestId,
         protocol: String,
     },
+    Redial(redial::Event),
     /// "Fallback" variant that allows the event mapping code to swallow certain
     /// events that we don't want the caller to deal with.
     Other,

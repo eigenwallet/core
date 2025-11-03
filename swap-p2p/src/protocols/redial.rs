@@ -1,11 +1,12 @@
 use crate::futures_util::FuturesHashSet;
+use crate::out_event;
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
 use libp2p::core::Multiaddr;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{NetworkBehaviour, ToSwarm};
 use libp2p::PeerId;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use void::Void;
@@ -25,6 +26,8 @@ pub struct Behaviour {
     initial_interval: Duration,
     /// Maximum interval for backoff.
     max_interval: Duration,
+    /// A queue of events to be sent to the swarm.
+    to_swarm: VecDeque<Event>,
 }
 
 impl Behaviour {
@@ -35,15 +38,19 @@ impl Behaviour {
             backoff: HashMap::new(),
             initial_interval: interval,
             max_interval,
+            to_swarm: VecDeque::new(),
         }
     }
 
     /// Adds a peer to the set of peers to track. Returns true if the peer was newly added.
     pub fn add_peer(&mut self, peer: PeerId) -> bool {
         let newly_added = self.peers.insert(peer);
+
+        // If the peer is newly added, schedule a dial immediately
         if newly_added {
             self.sleep.insert(peer, Box::pin(std::future::ready(())));
         }
+
         newly_added
     }
 
@@ -65,9 +72,20 @@ impl Behaviour {
     }
 }
 
+#[derive(Debug)]
+pub enum Event {
+    ScheduledRedial {
+        peer: PeerId,
+        next_dial_in: Duration,
+    },
+    Redialing {
+        peer: PeerId,
+    },
+}
+
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = libp2p::swarm::dummy::ConnectionHandler;
-    type ToSwarm = ();
+    type ToSwarm = Event;
 
     fn handle_established_inbound_connection(
         &mut self,
@@ -133,6 +151,9 @@ impl NetworkBehaviour for Behaviour {
                     tokio::time::sleep(next_dial_in).await;
                 }),
             ) {
+                self.to_swarm
+                    .push_back(Event::ScheduledRedial { peer, next_dial_in });
+
                 tracing::info!(
                     peer_id = %peer,
                     seconds_until_next_redial = %next_dial_in.as_secs(),
@@ -143,14 +164,26 @@ impl NetworkBehaviour for Behaviour {
     }
 
     fn poll(&mut self, cx: &mut Context<'_>) -> std::task::Poll<ToSwarm<Self::ToSwarm, Void>> {
+        // Check if we have any event to send to the swarm
+        if let Some(event) = self.to_swarm.pop_front() {
+            return Poll::Ready(ToSwarm::GenerateEvent(event));
+        }
+
         // Check if any peer's sleep timer has completed
         // If it has, dial that peer
         match self.sleep.poll_next_unpin(cx) {
-            Poll::Ready(Some((peer, _))) => Poll::Ready(ToSwarm::Dial {
-                opts: DialOpts::peer_id(peer)
-                    .condition(PeerCondition::Always)
-                    .build(),
-            }),
+            Poll::Ready(Some((peer, _))) => {
+                // Inform the swarm
+                self.to_swarm.push_back(Event::Redialing { peer });
+
+                // Actually dial the peer
+                Poll::Ready(ToSwarm::Dial {
+                    opts: DialOpts::peer_id(peer)
+                        // TODO: Maybe use DisconnectedAndNotDialing here?
+                        .condition(PeerCondition::Disconnected)
+                        .build(),
+                })
+            }
             Poll::Ready(None) | Poll::Pending => Poll::Pending,
         }
     }
@@ -162,5 +195,18 @@ impl NetworkBehaviour for Behaviour {
         _event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
         unreachable!("The re-dial dummy connection handler does not produce any events");
+    }
+}
+
+impl From<Event> for out_event::bob::OutEvent {
+    fn from(event: Event) -> Self {
+        out_event::bob::OutEvent::Redial(event)
+    }
+}
+
+impl From<Event> for out_event::alice::OutEvent {
+    fn from(_event: Event) -> Self {
+        // TODO: Once this is used by Alice, convert this to a proper event
+        out_event::alice::OutEvent::Other
     }
 }

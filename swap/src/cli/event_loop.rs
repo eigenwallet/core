@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::EncryptedSignature;
+use swap_p2p::protocols::redial;
 use uuid::Uuid;
 
 static REQUEST_RESPONSE_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(60);
@@ -138,41 +139,81 @@ impl EventLoop {
 
     pub async fn run(mut self) {
         tracing::info!("Bob's event loop started");
-        
+
         loop {
             // Note: We are making very elaborate use of `select!` macro's feature here. Make sure to read the documentation thoroughly: https://docs.rs/tokio/1.4.0/tokio/macro.select.html
             tokio::select! {
                 swarm_event = self.swarm.select_next_some() => {
                     match swarm_event {
                         SwarmEvent::Behaviour(OutEvent::QuoteReceived { id, response }) => {
+                            tracing::trace!(
+                                %id,
+                                "Processing received quote"
+                            );
+
                             if let Some(responder) = self.inflight_quote_requests.remove(&id) {
                                 let _ = responder.respond(Ok(response));
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted { peer, result }) => {
+                            tracing::trace!(
+                                %peer,
+                                "Processing swap setup completion"
+                            );
+
                             if let Some(responder) = self.inflight_swap_setup.remove(&peer) {
                                 let _ = responder.respond(*result);
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::TransferProofReceived { msg, channel, peer }) => {
+                            tracing::trace!(
+                                %peer,
+                                %msg.swap_id,
+                                "Processing received transfer proof"
+                            );
+
                             let swap_id = msg.swap_id;
 
-                            // TODO: Warn instead of panic if we have no peer for this swap
-                            let alice_peer_id = self.swap_peer_id(&swap_id).expect("received transfer proof for unknown swap");
+                            // Check if we have a registered handler for this swap
+                            if let Some((expected_peer_id, sender)) = self.registered_swap_handlers.get(&swap_id) {
+                                // Ensure the transfer proof is coming from the expected peer
+                                if peer != *expected_peer_id {
+                                    tracing::warn!(
+                                        %swap_id,
+                                        "Ignoring malicious transfer proof from {}, expected to receive it from {}",
+                                        peer,
+                                        expected_peer_id);
+                                    continue;
+                                }
 
-                            if peer != alice_peer_id {
-                                tracing::warn!(
+                                // Send the transfer proof to the registered handler
+                                match sender.send(msg.tx_lock_proof).await {
+                                    Ok(mut responder) => {
+                                        // Insert a future that will resolve when the handle "takes the transfer proof out"
+                                        self.pending_transfer_proof_acks.push(async move {
+                                            let _ = responder.recv().await;
+                                            (swap_id, channel)
+                                        }.boxed());
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
                                             %swap_id,
-                                            "Ignoring malicious transfer proof from {}, expected to receive it from {}",
-                                            peer,
-                                            alice_peer_id);
-                                        continue;
+                                            %peer,
+                                            error = ?e,
+                                            "Failed to pass transfer proof to registered handler"
+                                        );
+                                    }
+                                }
+
+                                continue;
                             }
 
                             // Immediately acknowledge if we've already processed this transfer proof
                             // This handles the case where Alice didn't receive our previous acknowledgment
                             // and is retrying sending the transfer proof
                             if let Ok(state) = self.db.get_state(swap_id).await {
+                                // TODO: This could panic if the database contains an invalid state
+                                // TODO: We should warn instead of panicking
                                 let state: BobState = state.try_into()
                                     .expect("Bobs database only contains Bob states");
 
@@ -186,20 +227,6 @@ impl EventLoop {
                                     }.boxed());
 
                                     continue;
-                                }
-                            }
-
-                            // TODO: Warn instead of panic if we have no sender for this swap
-                            let (_peer_id, sender) = self.registered_swap_handlers.get(&swap_id).expect("received transfer proof for swap with no sender");
-                            match sender.send(msg.tx_lock_proof).await {
-                                Ok(mut responder) => {
-                                    self.pending_transfer_proof_acks.push(async move {
-                                        let _ = responder.recv().await;
-                                        (swap_id, channel)
-                                    }.boxed());
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to pass on transfer proof: {:#}", e);
                                 }
                             }
                         }
@@ -236,7 +263,7 @@ impl EventLoop {
                             tracing::info!(%peer_id, "Successfully closed connection to peer");
                         }
                         SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id),  error, connection_id } => {
-                            tracing::warn!(%peer_id, %connection_id, ?error, "Failed to connect to peer");
+                            tracing::warn!(%peer_id, %connection_id, ?error, "Outgoing connection error to peer");
 
                             // TODO: Propagate an event from redial behaviour
                             // if let Some(duration) = self.swarm.behaviour_mut().redial.until_next_redial() {
@@ -278,7 +305,20 @@ impl EventLoop {
                                 %request_id,
                                 ?error,
                                 %protocol,
-                                "Failed to receive request-response request from peer");
+                                "Failed to receive or send response for request-response request from peer");
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Redial(redial::Event::ScheduledRedial { peer, next_dial_in })) => {
+                            tracing::trace!(
+                                %peer,
+                                seconds_until_next_redial = %next_dial_in.as_secs(),
+                                "Scheduled redial for peer"
+                            );
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Redial(redial::Event::Redialing { peer })) => {
+                            tracing::trace!(
+                                %peer,
+                                "Redialing peer"
+                            );
                         }
                         _ => {}
                     }
@@ -286,6 +326,11 @@ impl EventLoop {
 
                 // Handle to-be-sent outgoing requests for all our network protocols.
                 Some((peer_id, responder)) = self.quote_requests.next().fuse() => {
+                    tracing::trace!(
+                        %peer_id,
+                        "Sending quote request"
+                    );
+
                     let id = self.swarm.behaviour_mut().quote.send_request(&peer_id, ());
                     self.inflight_quote_requests.insert(id, responder);
                 },
@@ -295,32 +340,41 @@ impl EventLoop {
                         tx_redeem_encsig
                     };
 
-                    let id = self.swarm.behaviour_mut().encrypted_signature.send_request(&peer_id, request);
-                    self.inflight_encrypted_signature_requests.insert(id, responder);
+                    let outbound_request_id = self.swarm.behaviour_mut().encrypted_signature.send_request(&peer_id, request);
+                    self.inflight_encrypted_signature_requests.insert(outbound_request_id, responder);
+
+                    tracing::trace!(
+                        %peer_id,
+                        %swap_id,
+                        %outbound_request_id,
+                        "Sending encrypted signature"
+                    );
                 },
                 Some(((peer_id, swap_id), responder)) = self.cooperative_xmr_redeem_requests.next().fuse() => {
-                    let id = self.swarm.behaviour_mut().cooperative_xmr_redeem.send_request(&peer_id, Request {
+                    let outbound_request_id = self.swarm.behaviour_mut().cooperative_xmr_redeem.send_request(&peer_id, Request {
                         swap_id
                     });
-                    self.inflight_cooperative_xmr_redeem_requests.insert(id, responder);
+                    self.inflight_cooperative_xmr_redeem_requests.insert(outbound_request_id, responder);
+
+                    tracing::trace!(
+                        %peer_id,
+                        %swap_id,
+                        %outbound_request_id,
+                        "Sending cooperative xmr redeem request"
+                    );
                 },
 
                 // We use `self.swarm.is_connected` as a guard to "buffer" requests until we are connected.
                 // because the protocol does not dial Alice itself
                 // (unlike request-response above)
                 Some(((alice_peer_id, swap), responder)) = self.execution_setup_requests.next().fuse() => {
+                    tracing::trace!(
+                        %alice_peer_id,
+                        "Sending execution setup request"
+                    );
+
                     self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
                     self.inflight_swap_setup.insert(alice_peer_id, responder);
-
-                    // if self.swarm.is_connected(&alice_peer_id) {
-                    //     // TODO: we need to be able to store multiple reponders per peer_id potentially
-                    //     self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
-                    //     self.inflight_swap_setup.insert(alice_peer_id, responder);
-                    // } else {
-                    //     // TODO: I think we need to put the request back if we're not connected yet?
-                    //     // wont we lose the request if we don't put it back?
-                    //     continue;
-                    // }
                 },
 
                 // Send an acknowledgement to Alice once the EventLoopHandle has processed a received transfer proof
@@ -341,7 +395,7 @@ impl EventLoop {
                 },
 
                 Some(((swap_id, peer_id, sender), responder)) = self.queued_swap_handlers.next().fuse() => {
-                    tracing::debug!(%swap_id, %peer_id, "Registering swap handler");
+                    tracing::trace!(%swap_id, %peer_id, "Registering swap handle for a swap internally inside the event loop");
 
                     // This registers the swap_id -> peer_id and swap_id -> transfer_proof_sender
                     self.registered_swap_handlers.insert(swap_id, (peer_id, sender));
@@ -418,7 +472,7 @@ impl EventLoopHandle {
         // The sender is stored in the `EventLoop`. The receiver is stored in the `SwapEventLoopHandle`.
         let (transfer_proof_sender, transfer_proof_receiver) = bmrng::channel(1);
 
-        // Register this sender in the `EventLoop`'s
+        // Register this sender in the `EventLoop`
         // It is put into the queue and then later moved into `registered_transfer_proof_senders`
         //
         // We use `send(...) instead of send_receive(...)` because the event loop needs to be running for this to respond
@@ -442,7 +496,9 @@ impl EventLoopHandle {
 
         backoff::future::retry_notify(backoff, || async {
             match self.execution_setup_sender.send_receive((peer_id, swap.clone())).await {
-                Ok(Ok(state2)) => Ok(state2),
+                Ok(Ok(state2)) => {
+                    Ok(state2)
+                }
                 // These are errors thrown by the swap_setup/bob behaviour
                 Ok(Err(err)) => {
                     Err(backoff::Error::transient(err.context("A network error occurred while setting up the swap")))
@@ -462,7 +518,7 @@ impl EventLoopHandle {
                 error = ?err,
                 "Failed to setup swap. We will retry in {} seconds",
                 wait_time.as_secs()
-            )
+            );
         })
         .await
         .context("Failed to setup swap after retries")
