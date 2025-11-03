@@ -42,12 +42,10 @@ async fn main() -> Result<(), anyhow::Error> {
         .await
         .context("Error creating a client")?;
 
-    let _ = client2.load_from_db();
+    client2.load_from_db().await?;
 
-    let mut updates = client2.watch_status(trade_id).await;
-    while let Some(status) = updates.next().await {
-        tracing::info!("status: {:?}", status);
-        client2.store(status).await?;
+    if let Some((info, status)) = client2.trade_state_by_id(trade_id) {
+        tracing::info!("got info {:?}, state{:?}", info, status);
     }
     Ok(())
 }

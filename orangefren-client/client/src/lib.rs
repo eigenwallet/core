@@ -1,6 +1,7 @@
 pub mod database;
 
 use anyhow::{Context, Result};
+use generated_client::models::path_response;
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -60,7 +61,6 @@ pub struct TradeStatus {
     is_terminal: bool,
     description: String,
     valid_for: Duration,
-    raw_json: String,
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
@@ -73,6 +73,8 @@ pub struct TradeInfo {
     from_network: Currency,
     to_network: Currency,
     withdraw_address: monero::Address,
+    deposit_address: Option<bitcoin::Address>,
+    raw_json: String,
 }
 
 #[derive(Clone)]
@@ -143,12 +145,29 @@ impl Client {
         tracing::info!("Got uuid: {}", path_uuid);
 
         let path_uuid = Uuid::from_str(path_uuid.as_str()).context("Error parsing uuid")?;
-        let trade_uuid = TradeId(path_uuid);
+        let trade_id = TradeId(path_uuid);
 
-        Ok(trade_uuid)
+        let trade_info = self
+            .wait_until_created(trade_id.clone())
+            .await
+            .context("Error creating the trade")?;
+
+        self.trades
+            .insert(trade_id.clone(), (trade_info.clone(), Vec::new()));
+
+        self.db
+            .insert_trade_info(trade_info, trade_id.clone())
+            .await
+            .context("Could not insert trade info into the db")?;
+
+        Ok(trade_id)
     }
 
-    async fn wait_until_created(&self, trade_id: TradeId) -> Result<TradeStatus, anyhow::Error> {
+    pub fn trade_state_by_id(&self, trade_id: TradeId) -> Option<(TradeInfo, Vec<TradeStatus>)> {
+        self.trades.get(&trade_id).cloned()
+    }
+
+    async fn wait_until_created(&self, trade_id: TradeId) -> Result<TradeInfo, anyhow::Error> {
         let delay = Duration::from_millis(250);
         let deadline = Instant::now() + Duration::from_secs(60);
 
@@ -173,22 +192,63 @@ impl Client {
                     tokio::time::sleep(delay).await;
                 }
                 State::Created => {
-                    tracing::info!("Creating");
-                    let raw_json = serde_json::to_string(&path_response).context("Serde error")?;
-                    tracing::info!("Created");
-                    return Ok(TradeStatus {
-                        status_type: TradeStatusType::Initial,
-                        is_terminal: path_response.state.r#final,
-                        description: path_response.state.description,
-                        valid_for: Duration::from_millis(100),
-                        raw_json: raw_json,
-                    });
+                    let trade_info = self
+                        .get_trade_info(path_response)
+                        .await
+                        .context("Could not get trade info")?;
+
+                    return Ok(trade_info);
                 }
             }
         }
     }
 
-    async fn get_status(&self, trade_id: TradeId) -> Result<TradeStatus, anyhow::Error> {
+    async fn get_trade_info(
+        &self,
+        path_response: generated_client::models::PathResponse,
+    ) -> Result<TradeInfo, anyhow::Error> {
+        match path_response.clone().trades {
+            Some(trades) => {
+                if trades.len() > 1 {
+                    anyhow::bail!("expected not more than 1 trade, got {}", trades.len());
+                }
+
+                let last_trade = trades.last().context("Last trade not found")?;
+
+                tracing::info!("bitcoin addr: {}", last_trade.deposit_address);
+                let bitcoin_addr = if last_trade.deposit_address != "None" {
+                    Some(
+                        bitcoin::Address::from_str(last_trade.deposit_address.as_str())
+                            .context("Could not parse bitcoin address")?
+                            .assume_checked(),
+                    )
+                } else {
+                    None
+                };
+
+                let raw_json = serde_json::to_string(&path_response).context("Serde error")?;
+
+                let trade_info = TradeInfo {
+                    from_currency: Currency::try_from(last_trade.from_currency.as_ref())?,
+                    to_currency: Currency::try_from(last_trade.to_currency.as_ref())?,
+                    from_network: last_trade.from_currency.network.clone().try_into()?,
+                    to_network: last_trade.from_currency.network.clone().try_into()?,
+                    withdraw_address: monero::Address::from_str(
+                        last_trade.withdrawal_address.as_str(),
+                    )?,
+                    deposit_address: bitcoin_addr,
+                    raw_json: raw_json,
+                };
+
+                Ok(trade_info)
+            }
+            None => {
+                anyhow::bail!("No trades found");
+            }
+        }
+    }
+
+    async fn get_trade_status(&self, trade_id: TradeId) -> Result<TradeStatus, anyhow::Error> {
         let path_response =
             generated_client::apis::default_api::api_eigenwallet_get_path_path_uuid_post(
                 &self.config,
@@ -196,8 +256,6 @@ impl Client {
             )
             .await
             .context("Error getting path responce")?;
-
-        let raw_json = serde_json::to_string(&path_response)?;
 
         match path_response.trades {
             Some(trades) => {
@@ -208,13 +266,14 @@ impl Client {
                 let last_trade = trades.last().context("Last trade not found")?;
                 let trade_state = last_trade.state.as_ref();
 
-                Ok(TradeStatus {
+                let trade_status = TradeStatus {
                     status_type: trade_state.r#type.into(),
                     description: trade_state.description.clone(),
                     is_terminal: trade_state.r#final,
                     valid_for: Duration::from_secs(trade_state.valid_for as u64),
-                    raw_json: raw_json,
-                })
+                };
+
+                Ok(trade_status)
             }
             None => {
                 anyhow::bail!("No trades found");
@@ -227,24 +286,8 @@ impl Client {
         let client = self.clone();
 
         tokio::spawn(async move {
-            if client.wait_until_created(trade.clone()).await.is_err() {
-                let error_status = TradeStatus {
-                    status_type: TradeStatusType::Failed,
-                    is_terminal: true,
-                    description: "Error creating the path".to_string(),
-                    valid_for: Duration::from_secs(30),
-                    raw_json: "None".to_string(),
-                };
-
-                if tx.send(error_status.clone()).await.is_err() {
-                    tracing::error!("Error sending the error status");
-                };
-
-                return;
-            }
-
             loop {
-                let status = match client.get_status(trade.clone()).await {
+                let status = match client.get_trade_status(trade.clone()).await {
                     Ok(s) => s,
                     Err(e) => {
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -253,7 +296,6 @@ impl Client {
                             is_terminal: true,
                             description: e.to_string(),
                             valid_for: Duration::from_secs(30),
-                            raw_json: "None".to_string(),
                         };
 
                         if tx.send(error_status.clone()).await.is_err() {
@@ -276,94 +318,29 @@ impl Client {
     }
 
     pub async fn store(&mut self, status: TradeStatus) -> Result<(), anyhow::Error> {
-        let now = Utc::now().to_rfc3339();
-
         for trade in self.trades.clone() {
             let trade_key = trade.0;
-            let trade_id = trade_key.0;
-            let path_uuid = &trade_id.to_string();
 
             let trade_info = trade.1.0.clone();
-            let from_currency = trade_info.from_currency.as_str().to_string();
-            let to_currency = trade_info.to_currency.as_str().to_string();
-            let from_network = trade_info.from_network.as_str().to_string();
-            let to_network = trade_info.to_network.as_str().to_string();
-            let address = trade_info.withdraw_address.to_string();
-
-            let raw_json = status.raw_json.clone();
-
             let entry = self
                 .trades
                 .entry(trade_key)
                 .or_insert_with(|| (trade_info, Vec::new()));
 
             entry.1.push(status.clone());
-
-            sqlx::query!(
-                r#"
-                INSERT INTO trades (
-                    path_uuid,
-                    timestamp,
-                    from_currency,
-                    from_network,
-                    to_currency,
-                    to_network,
-                    withdraw_address,
-                    json
-                    ) values (
-                    ?, ?, ?, ?, ?, ?, ?, ?
-                    );
-                "#,
-                path_uuid,
-                now,
-                from_currency,
-                from_network,
-                to_currency,
-                to_network,
-                address,
-                raw_json
-            )
-            .execute(&self.db.pool)
-            .await?;
         }
 
         Ok(())
     }
 
     pub async fn load_from_db(&mut self) -> Result<(), anyhow::Error> {
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                path_uuid,
-                from_currency,
-                from_network,
-                to_currency,
-                to_network,
-                withdraw_address
-            FROM trades
-            ORDER BY id ASC
-            "#,
-        )
-        .fetch_all(&self.db.pool)
-        .await
-        .context("load_from_db(): failed to fetch rows")?;
+        let trades = self.db.get_trades().await?;
 
-        for row in rows {
-            let trade_id = TradeId(
-                Uuid::parse_str(&row.path_uuid)
-                    .with_context(|| format!("invalid UUID in path_uuid: {}", row.path_uuid))?,
-            );
-
-            if !self.trades.contains_key(&trade_id) {
-                let trade = TradeInfo {
-                    from_currency: row.from_currency.clone().try_into()?,
-                    to_currency: row.to_currency.clone().try_into()?,
-                    from_network: row.from_network.clone().try_into()?,
-                    to_network: row.to_network.clone().try_into()?,
-                    withdraw_address: monero::Address::from_str(row.withdraw_address.as_str())?,
-                };
-                self.trades.insert(trade_id.clone(), (trade, Vec::new()));
-            }
+        for (id, info) in trades {
+            self.trades
+                .entry(id)
+                .and_modify(|(old_info, _statuses)| *old_info = info.clone())
+                .or_insert((info, Vec::new()));
         }
 
         Ok(())

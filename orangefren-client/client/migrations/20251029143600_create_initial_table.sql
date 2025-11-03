@@ -7,7 +7,8 @@ CREATE TABLE trades (
     to_currency TEXT NOT NULL,
     to_network TEXT NOT NULL,
     withdraw_address TEXT NOT NULL,
-    json TEXT NOT NULL
+    deposit_address TEXT,
+    raw_json TEXT NOT NULL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_change_unique ON trades(timestamp, path_uuid);

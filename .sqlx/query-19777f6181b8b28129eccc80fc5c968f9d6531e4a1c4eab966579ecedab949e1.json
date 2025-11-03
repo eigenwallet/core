@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n            SELECT\n                path_uuid,\n                from_currency,\n                from_network,\n                to_currency,\n                to_network,\n                withdraw_address\n            FROM trades\n            ORDER BY id ASC\n            ",
+  "query": "\n            SELECT\n                path_uuid,\n                from_currency,\n                from_network,\n                to_currency,\n                to_network,\n                withdraw_address,\n                deposit_address,\n                raw_json\n            FROM trades\n            ORDER BY id ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,16 @@
         "name": "withdraw_address",
         "ordinal": 5,
         "type_info": "Text"
+      },
+      {
+        "name": "deposit_address",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "raw_json",
+        "ordinal": 7,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -43,8 +53,10 @@
       false,
       false,
       false,
+      false,
+      true,
       false
     ]
   },
-  "hash": "19d0ab30dde359355c7123c64a7cd147e559ad3ed7abe67ae6a1ef17bd981a84"
+  "hash": "19777f6181b8b28129eccc80fc5c968f9d6531e4a1c4eab966579ecedab949e1"
 }
