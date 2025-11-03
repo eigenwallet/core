@@ -45,7 +45,7 @@ import {
   RefundPolicy,
 } from "store/features/settingsSlice";
 import { Blockchain, Network } from "store/types";
-import { useAppDispatch, useNodes, useSettings } from "store/hooks";
+import { useAppDispatch, useAppSelector, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
 import HelpIcon from "@mui/icons-material/HelpOutline";
 import { ReactNode, useState } from "react";
@@ -63,7 +63,7 @@ import { getNetwork } from "store/config";
 import { currencySymbol } from "utils/formatUtils";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import { isValidMultiAddressWithPeerId } from "utils/parseUtils";
-import { getNodeStatus, getTorForcedExcuse } from "renderer/rpc";
+import { getNodeStatus } from "renderer/rpc";
 import { setStatus } from "store/features/nodesSlice";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
@@ -704,12 +704,12 @@ function NodeTable({
   );
 }
 
-const torForced = await getTorForcedExcuse();
 export function TorSettings() {
   const dispatch = useAppDispatch();
   const torEnabled = useSettings((settings) => settings.enableTor);
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
     dispatch(setTorEnabled(event.target.checked));
+  const torForced = useAppSelector((s) => s.rpc.state.torForcedExcuse);
 
   return (
     <TableRow>
@@ -749,6 +749,7 @@ function MoneroTorSettings() {
 
   // Hide this setting if Tor is disabled entirely
   // Hide this setting if it's superseded by the global Tor connection
+  const torForced = useAppSelector((s) => s.rpc.state.torForcedExcuse);
   if (!torEnabled || torForced) {
     return null;
   }
