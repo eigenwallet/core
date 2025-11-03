@@ -61,6 +61,7 @@ import {
 import {
   rpcSetSwapInfo,
   rpcSetSwapInfosLoaded,
+  rpcSetTorNetworkConfig,
   approvalRequestsReplaced,
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
@@ -216,6 +217,12 @@ export async function buyXmr() {
 }
 
 export async function initializeContext() {
+  store.dispatch(
+    rpcSetTorNetworkConfig(
+      await invokeNoArgs<[string, string | null]>("get_tor_network_config"),
+    ),
+  );
+
   const network = getNetwork();
   const testnet = isTestnet();
   const useTor = store.getState().settings.enableTor;
@@ -406,14 +413,6 @@ export async function getMoneroRecoveryKeys(
 
 export async function checkContextStatus(): Promise<ContextStatus> {
   return await invokeNoArgs<ContextStatus>("get_context_status");
-}
-
-export async function getTorForcedExcuse(): Promise<string> {
-  return await invokeNoArgs<string>("get_tor_forced_excuse");
-}
-
-export async function getUpdaterProxy(): Promise<string | null> {
-  return await invokeNoArgs<string | null>("get_updater_proxy");
 }
 
 export async function getLogsOfSwap(
