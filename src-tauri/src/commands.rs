@@ -71,8 +71,7 @@ macro_rules! generate_command_handlers {
             dfx_authenticate,
             change_monero_node,
             get_context_status,
-            get_tor_forced_excuse,
-            get_updater_proxy,
+            get_tor_network_config,
         ]
     };
 }
@@ -200,15 +199,12 @@ pub async fn get_context_status(state: tauri::State<'_, State>) -> Result<Contex
 }
 
 #[tauri::command]
-pub async fn get_tor_forced_excuse(_: tauri::State<'_, State>) -> Result<String, String> {
-    Ok(swap_tor::TOR_ENVIRONMENT
-        .map(|ste| ste.excuse())
-        .unwrap_or(String::new()))
-}
-
-#[tauri::command]
-pub async fn get_updater_proxy(_: tauri::State<'_, State>) -> Result<Option<&'static str>, String> {
-    Ok(swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.reqwest_proxy()))
+pub async fn get_tor_network_config(
+    _: tauri::State<'_, State>,
+) -> Result<(String, Option<&'static str>), String> {
+    let tor_forced_excuse = swap_tor::TOR_ENVIRONMENT.map_or(String::new(), |ste| ste.excuse());
+    let updater_proxy = swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.reqwest_proxy());
+    Ok((tor_forced_excuse, updater_proxy))
 }
 
 #[tauri::command]
