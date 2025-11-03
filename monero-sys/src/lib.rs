@@ -127,6 +127,7 @@ pub struct SyncProgress {
 }
 
 /// The status of a transaction.
+#[derive(Debug, Clone)]
 pub struct TxStatus {
     /// The amount received in the transaction.
     pub received: monero::Amount,
@@ -799,7 +800,7 @@ impl WalletHandle {
     }
 
     /// Check the status of a transaction.
-    async fn check_tx_status(
+    pub async fn check_tx_status(
         &self,
         txid: String,
         tx_key: monero::PrivateKey,
@@ -2535,10 +2536,13 @@ impl PendingTransaction {
         // Ensure it only created one transaction
         let txid = match txids.as_slice() {
             [txid] => txid.clone(),
-            _ => anyhow::bail!(
-                "Expected 1 txid, got {}. We do not allow splitting transactions",
-                txids.len()
-            ),
+            _ => {
+                tracing::debug!(txids=?txids,"Got the transaction id's");
+                anyhow::bail!(
+                    "Expected 1 txid, got {}. We do not allow splitting transactions",
+                    txids.len()
+                )
+            }
         };
 
         // Sanity check that the txid is at least the correct length

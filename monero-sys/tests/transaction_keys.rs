@@ -51,20 +51,37 @@ async fn main() -> anyhow::Result<()> {
     // Test sending to some (sub)addresses
     let subaddress1 = wallet.address(1, 0).await;
     let subaddress2 = wallet.address(0, 2).await;
+    let subaddress3 = wallet.address(1, 2).await;
+    let subaddress4 = wallet.address(2, 2).await;
 
-    let addresses = [subaddress1.to_string(), subaddress2.to_string()];
+    let addresses = [
+        subaddress1.to_string(),
+        subaddress2.to_string(),
+        subaddress3.to_string(),
+        subaddress4.to_string(),
+    ];
     tracing::info!(addresses=?addresses, "Got the destination addresses");
 
     let amount = Amount::from_xmr(0.02)?;
 
     let tx_receipt = wallet
-        .transfer_multi_destination(&[(subaddress1, amount), (subaddress2, amount)])
+        .transfer_multi_destination(&[
+            (subaddress1, amount),
+            (subaddress2, amount),
+            (subaddress3, amount),
+            (subaddress4, amount),
+        ])
         .await?;
 
     // at this point we managed to publish the transaction and
     // got all transaction keys (for each output).
     // The test passed, the logs are just for debugging.
     tracing::info!(tx_id = &tx_receipt.txid, "Transaction published! (good)");
+    assert_eq!(
+        tx_receipt.tx_keys.len(),
+        4,
+        "Expect one tx key per output (none for change)"
+    );
     for (addr, key) in tx_receipt.tx_keys {
         tracing::info!(address=%addr, %key, "Got transaction key");
     }

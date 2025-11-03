@@ -6966,6 +6966,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "monero-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "monero",
+ "monero-harness",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

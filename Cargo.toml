@@ -8,7 +8,7 @@ members = [
   "monero-rpc",
   "monero-rpc-pool",
   "monero-seed",
-  "monero-sys",
+  "monero-sys", "monero-tests",
   "src-tauri",
   "swap",
   "swap-asb",
