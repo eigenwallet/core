@@ -12,6 +12,7 @@ use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
+use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use std::collections::HashMap;
@@ -148,7 +149,7 @@ impl EventLoop {
                         SwarmEvent::Behaviour(OutEvent::QuoteReceived { id, response }) => {
                             tracing::trace!(
                                 %id,
-                                "Processing received quote"
+                                "Received quote"
                             );
 
                             if let Some(responder) = self.inflight_quote_requests.remove(&id) {
@@ -169,7 +170,7 @@ impl EventLoop {
                             tracing::trace!(
                                 %peer,
                                 %msg.swap_id,
-                                "Processing received transfer proof"
+                                "Received transfer proof"
                             );
 
                             let swap_id = msg.swap_id;
@@ -264,11 +265,6 @@ impl EventLoop {
                         }
                         SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id),  error, connection_id } => {
                             tracing::warn!(%peer_id, %connection_id, ?error, "Outgoing connection error to peer");
-
-                            // TODO: Propagate an event from redial behaviour
-                            // if let Some(duration) = self.swarm.behaviour_mut().redial.until_next_redial() {
-                            //     tracing::info!(seconds_until_next_redial = %duration.as_secs(), "Waiting for next redial attempt");
-                            // }
                         }
                         SwarmEvent::Behaviour(OutEvent::OutboundRequestResponseFailure {peer, error, request_id, protocol}) => {
                             tracing::error!(
@@ -328,7 +324,7 @@ impl EventLoop {
                 Some((peer_id, responder)) = self.quote_requests.next().fuse() => {
                     tracing::trace!(
                         %peer_id,
-                        "Sending quote request"
+                        "Dispatching outgoing quote request"
                     );
 
                     let id = self.swarm.behaviour_mut().quote.send_request(&peer_id, ());
@@ -347,7 +343,7 @@ impl EventLoop {
                         %peer_id,
                         %swap_id,
                         %outbound_request_id,
-                        "Sending encrypted signature"
+                        "Dispatching outgoing encrypted signature"
                     );
                 },
                 Some(((peer_id, swap_id), responder)) = self.cooperative_xmr_redeem_requests.next().fuse() => {
@@ -360,7 +356,7 @@ impl EventLoop {
                         %peer_id,
                         %swap_id,
                         %outbound_request_id,
-                        "Sending cooperative xmr redeem request"
+                        "Dispatching outgoing cooperative xmr redeem request"
                     );
                 },
 
@@ -370,10 +366,13 @@ impl EventLoop {
                 Some(((alice_peer_id, swap), responder)) = self.execution_setup_requests.next().fuse() => {
                     tracing::trace!(
                         %alice_peer_id,
-                        "Sending execution setup request"
+                        "Dispatching outgoing execution setup request"
                     );
 
+                    // TODO: Dont unwrap
+                    let _ = self.swarm.dial(DialOpts::peer_id(alice_peer_id).condition(PeerCondition::Disconnected).build());
                     self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
+
                     self.inflight_swap_setup.insert(alice_peer_id, responder);
                 },
 

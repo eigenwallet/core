@@ -43,8 +43,14 @@ impl Behaviour {
         }
     }
 
-    pub async fn start(&mut self, alice: PeerId, swap: NewSwap) {
-        self.new_swaps.push_back((alice, swap))
+    pub async fn start(&mut self, alice_peer_id: PeerId, swap: NewSwap) {
+        tracing::trace!(
+            %alice_peer_id,
+            ?swap,
+            "Queuing new swap setup request",
+        );
+
+        self.new_swaps.push_back((alice_peer_id, swap));
     }
 }
 
@@ -103,11 +109,21 @@ impl NetworkBehaviour for Behaviour {
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
         // Forward completed swaps from the connection handler to the swarm
         if let Some(completed) = self.completed_swaps.pop_front() {
+            tracing::trace!(
+                peer = %completed.peer,
+                "Forwarding completed swap to the swarm",
+            );
+
             return Poll::Ready(ToSwarm::GenerateEvent(completed));
         }
 
         // If there is a new swap to be started, send it to the connection handler
         if let Some((peer, event)) = self.new_swaps.pop_front() {
+            tracing::trace!(
+                peer = %peer,
+                "Forwarding dispatched new swap setup request to the connection handler",
+            );
+
             return Poll::Ready(ToSwarm::NotifyHandler {
                 peer_id: peer,
                 handler: libp2p::swarm::NotifyHandler::Any,
@@ -222,6 +238,13 @@ impl ConnectionHandler for Handler {
                                 .context("Failed to read spot price response from Alice")?,
                         )?;
 
+                        tracing::trace!(
+                            %new_swap_request.swap_id,
+                            xmr = %xmr,
+                            btc = %new_swap_request.btc,
+                            "Got spot price response from Alice as part of swap setup",
+                        );
+
                         let state0 = State0::new(
                             new_swap_request.swap_id,
                             &mut rand::thread_rng(),
@@ -269,13 +292,18 @@ impl ConnectionHandler for Handler {
                             .await
                             .context("Failed to close substream")?;
 
+                        tracing::trace!(
+                            %new_swap_request.swap_id,
+                            "Swap setup completed",
+                        );
+
                         Ok(state2)
                     }
                     .await;
 
-                    result.map_err(|e: anyhow::Error| {
-                        tracing::error!("Error occurred during swap setup protocol: {:#}", e);
-                        Error::Other
+                    result.map_err(|err: anyhow::Error| {
+                        tracing::error!(?err, "Error occurred during swap setup protocol");
+                        Error::Other // TODO: Propagate the actual error to the caller
                     })
                 });
 
@@ -291,7 +319,24 @@ impl ConnectionHandler for Handler {
                 // Once the outbound stream is created, we keep the connection alive
                 self.keep_alive = true;
             }
-            _ => {}
+            libp2p::swarm::handler::ConnectionEvent::AddressChange(address_change) => {
+                tracing::trace!(?address_change, "Connection address changed during swap setup");
+            }
+            libp2p::swarm::handler::ConnectionEvent::DialUpgradeError(dial_upgrade_error) => {
+                tracing::trace!(error = %dial_upgrade_error.error, "Dial upgrade error during swap setup");
+            }
+            libp2p::swarm::handler::ConnectionEvent::ListenUpgradeError(listen_upgrade_error) => {
+                tracing::trace!(?listen_upgrade_error, "Listen upgrade error during swap setup");
+            }
+            libp2p::swarm::handler::ConnectionEvent::LocalProtocolsChange(local_protocols_change) => {
+                tracing::trace!(?local_protocols_change, "Local protocols changed during swap setup");
+            }
+            libp2p::swarm::handler::ConnectionEvent::RemoteProtocolsChange(remote_protocols_change) => {
+                tracing::trace!(?remote_protocols_change, "Remote protocols changed during swap setup");
+            }
+            _ => {
+                tracing::trace!("Received unknown connection event during swap setup");
+            }
         }
     }
 
@@ -300,7 +345,7 @@ impl ConnectionHandler for Handler {
     }
 
     fn connection_keep_alive(&self) -> bool {
-        self.keep_alive
+        true // TODO: temporary fix
     }
 
     fn poll(
@@ -311,6 +356,11 @@ impl ConnectionHandler for Handler {
     > {
         // Check if there is a new swap to be started
         if let Some(new_swap) = self.new_swaps.pop_front() {
+            tracing::trace!(
+                ?new_swap.swap_id,
+
+                "Instructing swarm to start a new outbound substream as part of swap setup",
+            );
             self.keep_alive = true;
 
             // We instruct the swarm to start a new outbound substream

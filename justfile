@@ -70,6 +70,11 @@ docker_test_happy_path_with_developer_tip:
 docker_test_refund_path:
 	just docker_test alice_refunds_after_restart_bob_refunded
 
+# Run all integration tests in parallel across tmux panes.
+# Requires tmux installed; attach to observe output; detach with Ctrl-b d
+docker_test_all:
+	bash ./dev-scripts/docker_test_all.sh
+
 # Tests the Rust bindings for Monero
 test_monero_sys:
         cd monero-sys && cargo nextest run
@@ -132,3 +137,4 @@ code2prompt_single_crate crate:
 
 prepare-windows-build:
     cd dev-scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+
