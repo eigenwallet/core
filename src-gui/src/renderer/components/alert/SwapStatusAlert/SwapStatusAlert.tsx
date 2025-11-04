@@ -239,10 +239,17 @@ export default function SwapStatusAlert({
   swap,
   onlyShowIfUnusualAmountOfTimeHasPassed,
 }: {
-  swap: GetSwapInfoResponseExt;
+  swap: GetSwapInfoResponseExt | null;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
 }) {
-  const timelock = useAppSelector(selectSwapTimelock(swap.swap_id));
+  // Call hooks unconditionally at the top (Rules of Hooks)
+  const swapId = swap?.swap_id ?? null;
+  const timelock = useAppSelector(selectSwapTimelock(swapId));
+  const isRunning = useIsSpecificSwapRunning(swapId);
+
+  if (swap == null) {
+    return null;
+  }
 
   if (!isGetSwapInfoResponseRunningSwap(swap)) {
     return null;
@@ -260,7 +267,6 @@ export default function SwapStatusAlert({
     return null;
   }
 
-  const isRunning = useIsSpecificSwapRunning(swap.swap_id);
 
   return (
     <Alert
