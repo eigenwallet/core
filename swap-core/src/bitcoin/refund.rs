@@ -2,8 +2,8 @@
 
 use crate::bitcoin;
 use crate::bitcoin::{
-    verify_sig, Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey,
-    TooManyInputs, Transaction, TxCancel,
+    build_shared_output_descriptor, verify_sig, Address, Amount, EmptyWitnessStack, NoInputs,
+    NotThreeWitnesses, PublicKey, TooManyInputs, Transaction, TxCancel,
 };
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{secp256k1, ScriptBuf, Weight};
@@ -23,16 +23,32 @@ pub struct TxRefund {
     inner: Transaction,
     digest: Sighash,
     cancel_output_descriptor: Descriptor<::bitcoin::PublicKey>,
+    pub(in crate::bitcoin) amnesty_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,
 }
 
 impl TxRefund {
-    pub fn new(tx_cancel: &TxCancel, refund_address: &Address, spending_fee: Amount) -> Self {
-        let tx_refund = tx_cancel.build_spend_transaction(refund_address, None, spending_fee);
+    pub fn new(
+        tx_cancel: &TxCancel,
+        refund_address: &Address,
+        A: PublicKey,
+        B: PublicKey,
+        amnesty_amount: Amount,
+        spending_fee: Amount,
+    ) -> Result<Self> {
+        let amnesty_output_descriptor = build_shared_output_descriptor(A.0, B.0)?;
+
+        let tx_refund = tx_cancel.build_refund_with_amnesty_transaction(
+            refund_address,
+            &amnesty_output_descriptor,
+            amnesty_amount,
+            spending_fee,
+        );
 
         let digest = SighashCache::new(&tx_refund)
             .p2wsh_signature_hash(
-                0, // Only one input: cancel transaction
+                // Only one input: cancel transaction
+                0,
                 &tx_cancel
                     .output_descriptor
                     .script_code()
@@ -42,12 +58,13 @@ impl TxRefund {
             )
             .expect("sighash");
 
-        Self {
+        Ok(Self {
             inner: tx_refund,
             digest,
             cancel_output_descriptor: tx_cancel.output_descriptor.clone(),
+            amnesty_output_descriptor,
             watch_script: refund_address.script_pubkey(),
-        }
+        })
     }
 
     pub fn txid(&self) -> Txid {
@@ -56,6 +73,41 @@ impl TxRefund {
 
     pub fn digest(&self) -> Sighash {
         self.digest
+    }
+
+    pub fn amnesty_amount(&self) -> Amount {
+        self.inner.output[1].value
+    }
+
+    pub fn amnesty_outpoint(&self) -> ::bitcoin::OutPoint {
+        ::bitcoin::OutPoint::new(self.txid(), 1)
+    }
+
+    pub fn build_amnesty_spend_transaction(
+        &self,
+        refund_address: &Address,
+        spending_fee: Amount,
+    ) -> Transaction {
+        use ::bitcoin::{transaction::Version, locktime::absolute::LockTime as PackedLockTime, Sequence, TxIn, TxOut};
+
+        let tx_in = TxIn {
+            previous_output: self.amnesty_outpoint(),
+            script_sig: Default::default(),
+            sequence: Sequence(0xFFFF_FFFF),
+            witness: Default::default(),
+        };
+
+        let tx_out = TxOut {
+            value: self.amnesty_amount() - spending_fee,
+            script_pubkey: refund_address.script_pubkey(),
+        };
+
+        Transaction {
+            version: Version(2),
+            lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
+            input: vec![tx_in],
+            output: vec![tx_out],
+        }
     }
 
     pub fn add_signatures(
@@ -77,6 +129,7 @@ impl TxRefund {
 
             let sig_a = secp256k1::ecdsa::Signature::from_compact(&sig_a.to_bytes())?;
             let sig_b = secp256k1::ecdsa::Signature::from_compact(&sig_b.to_bytes())?;
+            
             // The order in which these are inserted doesn't matter
             satisfier.insert(
                 A,
