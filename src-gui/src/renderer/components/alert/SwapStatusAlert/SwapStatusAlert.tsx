@@ -175,6 +175,10 @@ export function StateAlert({
   timelock: ExpiredTimelocks | null;
   isRunning: boolean;
 }) {
+  if (swap == null) {
+    return null;
+  }
+
   switch (swap.state_name) {
     // This is the state where the swap is safe because the other party has redeemed the Bitcoin
     // It cannot be punished anymore
@@ -243,7 +247,11 @@ export default function SwapStatusAlert({
   swap: GetSwapInfoResponseExt | null;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
 }) {
+<<<<<<< HEAD
   const swapId = swap?.swap_id ?? null;
+=======
+  const swapId = swap?.swap_id ?? "";
+>>>>>>> b539b31b (fix react bug nullish check)
   const timelock = useAppSelector(selectSwapTimelock(swapId));
   const isRunning = useIsSpecificSwapRunning(swapId);
 
@@ -269,7 +277,7 @@ export default function SwapStatusAlert({
 
   return (
     <Alert
-      key={swap.swap_id}
+      key={swapId}
       severity="warning"
       variant="filled"
       classes={{ message: "alert-message-flex-grow" }}
@@ -288,7 +296,11 @@ export default function SwapStatusAlert({
           )
         ) : (
           <>
+<<<<<<< HEAD
             Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
+=======
+            Swap <TruncatedText>{swapId}</TruncatedText> is not running
+>>>>>>> b539b31b (fix react bug nullish check)
           </>
         )}
       </AlertTitle>
