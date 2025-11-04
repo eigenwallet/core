@@ -69,11 +69,7 @@ function BitcoinRedeemedStateAlert({ swap }: { swap: GetSwapInfoResponseExt }) {
           "If this step fails, you can manually redeem your funds",
         ]}
       />
-      <SwapMoneroRecoveryButton
-        swap={swap}
-        size="small"
-        variant="contained"
-      />
+      <SwapMoneroRecoveryButton swap={swap} size="small" variant="contained" />
     </Box>
   );
 }
@@ -179,6 +175,10 @@ export function StateAlert({
   timelock: ExpiredTimelocks | null;
   isRunning: boolean;
 }) {
+  if (swap == null) {
+    return null;
+  }
+
   switch (swap.state_name) {
     // This is the state where the swap is safe because the other party has redeemed the Bitcoin
     // It cannot be punished anymore
@@ -208,10 +208,7 @@ export function StateAlert({
             );
           case "Cancel":
             return (
-              <BitcoinPossiblyCancelledAlert
-                timelock={timelock}
-                swap={swap}
-              />
+              <BitcoinPossiblyCancelledAlert timelock={timelock} swap={swap} />
             );
           case "Punish":
             return <PunishTimelockExpiredAlert />;
@@ -246,10 +243,16 @@ export default function SwapStatusAlert({
   swap,
   onlyShowIfUnusualAmountOfTimeHasPassed,
 }: {
-  swap: GetSwapInfoResponseExt;
+  swap: GetSwapInfoResponseExt | null;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
 }) {
-  const timelock = useAppSelector(selectSwapTimelock(swap.swap_id));
+  const swapId = swap?.swap_id ?? "";
+  const timelock = useAppSelector(selectSwapTimelock(swapId));
+  const isRunning = useIsSpecificSwapRunning(swapId);
+
+  if (swap == null) {
+    return null;
+  }
 
   if (!isGetSwapInfoResponseRunningSwap(swap)) {
     return null;
@@ -267,11 +270,9 @@ export default function SwapStatusAlert({
     return null;
   }
 
-  const isRunning = useIsSpecificSwapRunning(swap.swap_id);
-
   return (
     <Alert
-      key={swap.swap_id}
+      key={swapId}
       severity="warning"
       variant="filled"
       classes={{ message: "alert-message-flex-grow" }}
@@ -290,8 +291,7 @@ export default function SwapStatusAlert({
           )
         ) : (
           <>
-            Swap <TruncatedText>{swap.swap_id}</TruncatedText> is
-            not running
+            Swap <TruncatedText>{swapId}</TruncatedText> is not running
           </>
         )}
       </AlertTitle>
