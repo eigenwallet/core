@@ -9,6 +9,7 @@ try {
 } catch {
   matches = {
     args: {},
+    subcommand: null,
   };
 }
 

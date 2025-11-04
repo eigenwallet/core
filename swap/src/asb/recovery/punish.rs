@@ -26,6 +26,7 @@ pub async fn punish(
         | AliceState::XmrLocked {state3, transfer_proof, ..}
         | AliceState::XmrLockTransferProofSent {state3, transfer_proof, ..}
         | AliceState::EncSigLearned {state3, transfer_proof, ..}
+        | AliceState::WaitingForCancelTimelockExpiration {state3, transfer_proof, ..}
         | AliceState::CancelTimelockExpired {state3, transfer_proof, ..}
         // Punish possible due to cancel transaction already being published
         | AliceState::BtcCancelled {state3, transfer_proof, ..}

@@ -9,7 +9,7 @@ import WithdrawDialog from "../../modal/wallet/WithdrawDialog";
 import WalletRefreshButton from "./WalletRefreshButton";
 
 export default function WithdrawWidget() {
-  const walletBalance = useAppSelector((state) => state.rpc.state.balance);
+  const walletBalance = useAppSelector((state) => state.bitcoinWallet.balance);
   const [showDialog, setShowDialog] = useState(false);
 
   function onShowDialog() {

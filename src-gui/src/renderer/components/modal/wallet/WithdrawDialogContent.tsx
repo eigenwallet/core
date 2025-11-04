@@ -19,6 +19,7 @@ export default function WithdrawDialogContent({
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
+        gap: 2,
       }}
     >
       <Box>{children}</Box>

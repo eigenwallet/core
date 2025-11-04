@@ -33,4 +33,6 @@ pub enum Cmd {
     ActiveConnections,
     /// Get list of swaps
     GetSwaps,
+    /// Show rendezvous registration status
+    RegistrationStatus,
 }

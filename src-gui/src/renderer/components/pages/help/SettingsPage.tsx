@@ -1,9 +1,7 @@
 import { Box } from "@mui/material";
-import ContactInfoBox from "./ContactInfoBox";
 import DonateInfoBox from "./DonateInfoBox";
 import DaemonControlBox from "./DaemonControlBox";
 import SettingsBox from "./SettingsBox";
-import ExportDataBox from "./ExportDataBox";
 import DiscoveryBox from "./DiscoveryBox";
 import MoneroPoolHealthBox from "./MoneroPoolHealthBox";
 import { useLocation } from "react-router-dom";
@@ -32,7 +30,6 @@ export default function SettingsPage() {
       <SettingsBox />
       <DaemonControlBox />
       <MoneroPoolHealthBox />
-      <ExportDataBox />
       <DiscoveryBox />
     </Box>
   );

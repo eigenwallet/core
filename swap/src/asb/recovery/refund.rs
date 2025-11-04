@@ -45,6 +45,7 @@ pub async fn refund(
         | AliceState::XmrLocked { transfer_proof, state3, .. }
         | AliceState::XmrLockTransferProofSent { transfer_proof, state3, .. }
         | AliceState::EncSigLearned { transfer_proof, state3, .. }
+        | AliceState::WaitingForCancelTimelockExpiration { transfer_proof, state3, .. }
         | AliceState::CancelTimelockExpired { transfer_proof, state3, .. }
 
         // Refund possible due to cancel transaction already being published

@@ -84,6 +84,20 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             let response = client.bitcoin_seed().await?;
             println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}", response.descriptor);
         }
+        Cmd::RegistrationStatus => {
+            let response = client.registration_status().await?;
+            println!("Your asb registers at rendezvous to make itself discoverable to takers.\n");
+            if response.registrations.is_empty() {
+                println!("No rendezvous points configured");
+            } else {
+                for item in response.registrations {
+                    println!(
+                        "Connection status to rendezvous point at \"{}\" is \"{:?}\". Registration status is \"{:?}\"",
+                        item.address, item.connection, item.registration
+                    );
+                }
+            }
+        }
     }
     Ok(())
 }

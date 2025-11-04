@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.8] - 2025-11-02
+
+- ASB + CONTROLLER: Add a `registration-status` command to the controller shell. You can use it to get the registration status of the ASB at the configured rendezvous points.
+- ASB + GUI + CLI + SWAP: Split high-verbosity tracing into separate hourly-rotating JSON log files per subsystem to reduce noise and aid debugging: `tracing*.log` (core things), `tracing-tor*.log` (purely tor related), `tracing-libp2p*.log` (low level networking), `tracing-monero-wallet*.log` (low level Monero wallet related). `swap-all.log` remains for non-verbose logs.
+- ASB: Fix an issue where we would not redeem the Bitcoin and force a refund even though it was still possible to do so.
+- GUI: Potentially fix issue here swaps would not be displayed
+
+## [3.2.7] - 2025-10-28
+
+## [3.2.6] - 2025-10-27
+
+## [3.2.5] - 2025-10-26
+
+- ASB: Fixed an issue where we would be forced to refund a swap if Bobs acknowledgement of the transfer proof did not reach us.
+- RENDEZVOUS-NODE: Fix an issue where the `--data-dir` argument was not accepted
+
+## [3.2.4] - 2025-10-26
+
+## [3.2.3] - 2025-10-26
+
+- RENDEZVOUS-NODE: Fix a spelling mistake in the Dockerfile
+
+## [3.2.2] - 2025-10-25
+
+- RENDEZVOUS-NODE: Now takes a `--data-dir` argument and has been renamed to "rendezvous-node" (previously "rendezvous-server")
+- RENDEZVOUS-NODE: Rendezvous servers now register themselves at bootstrap rendezvous points to make them discoverable.
+- ORCHESTRATOR: The orchestrator will now also add a `rendezvous-node` service to the `docker-compose.yml` file. Rendezvous nodes help with peer discovery in the network.
 - ASB + GUI + CLI: Upgrade arti-client to 1.6.0
 
 ## [3.2.1] - 2025-10-21
@@ -700,7 +727,14 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.2.1...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.2.8...HEAD
+[3.2.8]: https://github.com/eigenwallet/core/compare/3.2.7...3.2.8
+[3.2.7]: https://github.com/eigenwallet/core/compare/3.2.6...3.2.7
+[3.2.6]: https://github.com/eigenwallet/core/compare/3.2.5...3.2.6
+[3.2.5]: https://github.com/eigenwallet/core/compare/3.2.4...3.2.5
+[3.2.4]: https://github.com/eigenwallet/core/compare/3.2.3...3.2.4
+[3.2.3]: https://github.com/eigenwallet/core/compare/3.2.2...3.2.3
+[3.2.2]: https://github.com/eigenwallet/core/compare/3.2.1...3.2.2
 [3.2.1]: https://github.com/eigenwallet/core/compare/3.2.0-rc.4...3.2.1
 [3.2.0-rc.4]: https://github.com/eigenwallet/core/compare/3.0.0-rc.3...3.2.0-rc.4
 [3.0.0-rc.3]: https://github.com/eigenwallet/core/compare/3.2.0-rc.2...3.0.0-rc.3

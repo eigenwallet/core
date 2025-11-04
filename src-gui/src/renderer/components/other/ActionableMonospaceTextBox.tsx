@@ -92,40 +92,43 @@ export default function ActionableMonospaceTextBox({
         >
           <Box
             sx={{
-              display: "flex",
-              alignItems: "center",
               cursor: "pointer",
               filter: spoilerText && !isRevealed ? "blur(8px)" : "none",
               transition: "filter 0.3s ease",
             }}
+            onClick={handleCopy}
           >
-            <Box sx={{ flexGrow: 1 }} onClick={handleCopy}>
-              <MonospaceTextBox light={light}>
-                {content}
-                {displayCopyIcon && (
-                  <IconButton
-                    onClick={handleCopy}
-                    size="small"
-                    sx={{ marginLeft: 1 }}
-                  >
-                    <FileCopyOutlined />
-                  </IconButton>
-                )}
-                {enableQrCode && (
-                  <Tooltip title="Show QR Code" arrow>
-                    <IconButton
-                      onClick={() => setQrCodeOpen(true)}
-                      onMouseEnter={() => setIsQrCodeButtonHovered(true)}
-                      onMouseLeave={() => setIsQrCodeButtonHovered(false)}
-                      size="small"
-                      sx={{ marginLeft: 1 }}
-                    >
-                      <QrCodeIcon />
-                    </IconButton>
-                  </Tooltip>
-                )}
-              </MonospaceTextBox>
-            </Box>
+            <MonospaceTextBox
+              light={light}
+              actions={
+                <>
+                  {displayCopyIcon && (
+                    <Tooltip title="Copy to clipboard" arrow>
+                      <IconButton onClick={handleCopy} size="small">
+                        <FileCopyOutlined />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  {enableQrCode && (
+                    <Tooltip title="Show QR Code" arrow>
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQrCodeOpen(true);
+                        }}
+                        onMouseEnter={() => setIsQrCodeButtonHovered(true)}
+                        onMouseLeave={() => setIsQrCodeButtonHovered(false)}
+                        size="small"
+                      >
+                        <QrCodeIcon />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </>
+              }
+            >
+              {content}
+            </MonospaceTextBox>
           </Box>
         </Tooltip>
 
