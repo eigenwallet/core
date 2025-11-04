@@ -4,6 +4,7 @@ mod lock;
 mod punish;
 mod redeem;
 mod refund;
+mod refund_amnesty;
 mod timelocks;
 
 pub use crate::bitcoin::cancel::{CancelTimelock, PunishTimelock, TxCancel};
@@ -12,6 +13,7 @@ pub use crate::bitcoin::lock::TxLock;
 pub use crate::bitcoin::punish::TxPunish;
 pub use crate::bitcoin::redeem::TxRedeem;
 pub use crate::bitcoin::refund::TxRefund;
+pub use crate::bitcoin::refund_amnesty::TxRefundAmnesty;
 pub use crate::bitcoin::timelocks::{BlockHeight, ExpiredTimelocks};
 pub use ::bitcoin::amount::Amount;
 pub use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
