@@ -8,12 +8,14 @@ use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
 use libp2p::core::upgrade;
+use libp2p::swarm::behaviour::ConnectionEstablished;
 use libp2p::swarm::{
-    ConnectionDenied, ConnectionHandler, ConnectionHandlerEvent, ConnectionId, FromSwarm,
-    NetworkBehaviour, SubstreamProtocol, THandler, THandlerInEvent, THandlerOutEvent, ToSwarm,
+    ConnectionClosed, ConnectionDenied, ConnectionHandler, ConnectionHandlerEvent, ConnectionId,
+    FromSwarm, NetworkBehaviour, SubstreamProtocol, THandler, THandlerInEvent, THandlerOutEvent,
+    ToSwarm,
 };
 use libp2p::{Multiaddr, PeerId};
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -29,8 +31,25 @@ use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};
 pub struct Behaviour {
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
-    new_swaps: VecDeque<(PeerId, NewSwap)>,
-    completed_swaps: VecDeque<SwapCompleted>,
+
+    // Queue of swap setup request that haven't been assigned to a connection handler yet
+    // (peer_id, swap_id, new_swap)
+    new_swaps: VecDeque<(PeerId, Uuid, NewSwap)>,
+
+    // Maintains the list of connections handlers for a specific peer
+    //
+    // 0. List of connection handlers that are still active but haven't been assigned a swap setup request yet
+    // 1. List of connection handlers that have died. Once their death is acknowledged / processed, they are removed from the list
+    connection_handlers: HashMap<PeerId, (VecDeque<ConnectionId>, VecDeque<ConnectionId>)>,
+
+    // Queue of completed swaps that we have assigned a connection handler to but where we haven't notified the ConnectionHandler yet
+    // We notify the ConnectionHandler by emitting a ConnectionHandlerEvent::NotifyBehaviour event
+    assigned_unnotified_swaps: VecDeque<(ConnectionId, PeerId, Uuid, NewSwap)>,
+
+    // Maintains the list of requests that we have sent to a connection handler but haven't yet received a response
+    inflight_requests: HashMap<ConnectionId, (Uuid, PeerId)>,
+
+    to_swarm: VecDeque<SwapSetupResult>,
 }
 
 impl Behaviour {
@@ -39,7 +58,10 @@ impl Behaviour {
             env_config,
             bitcoin_wallet,
             new_swaps: VecDeque::default(),
-            completed_swaps: VecDeque::default(),
+            to_swarm: VecDeque::default(),
+            assigned_unnotified_swaps: VecDeque::default(),
+            inflight_requests: HashMap::default(),
+            connection_handlers: HashMap::default(),
         }
     }
 
@@ -50,22 +72,37 @@ impl Behaviour {
             "Queuing new swap setup request",
         );
 
-        self.new_swaps.push_back((alice_peer_id, swap));
+        // TODO: This is a bit redundant because we already have the swap_id in the NewSwap struct
+        self.new_swaps
+            .push_back((alice_peer_id, swap.swap_id, swap));
     }
-}
 
-impl From<SwapCompleted> for out_event::bob::OutEvent {
-    fn from(completed: SwapCompleted) -> Self {
-        out_event::bob::OutEvent::SwapSetupCompleted {
-            result: Box::new(completed.result),
-            peer: completed.peer,
-        }
+    // Returns a mutable reference to the queues of the connection handlers for a specific peer
+    fn connection_handlers_mut(
+        &mut self,
+        peer_id: PeerId,
+    ) -> &mut (VecDeque<ConnectionId>, VecDeque<ConnectionId>) {
+        self.connection_handlers.entry(peer_id).or_default()
+    }
+
+    // Returns a mutable reference to the queues of the connection handlers for a specific peer
+    fn alive_connection_handlers_mut(&mut self, peer_id: PeerId) -> &mut VecDeque<ConnectionId> {
+        &mut self.connection_handlers_mut(peer_id).0
+    }
+
+    // Returns a mutable reference to the queues of the connection handlers for a specific peer
+    fn dead_connection_handlers_mut(&mut self, peer_id: PeerId) -> &mut VecDeque<ConnectionId> {
+        &mut self.connection_handlers_mut(peer_id).1
+    }
+
+    fn known_peers(&self) -> HashSet<PeerId> {
+        self.connection_handlers.keys().copied().collect()
     }
 }
 
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = Handler;
-    type ToSwarm = SwapCompleted;
+    type ToSwarm = SwapSetupResult;
 
     fn handle_established_inbound_connection(
         &mut self,
@@ -87,20 +124,58 @@ impl NetworkBehaviour for Behaviour {
         Ok(Handler::new(self.env_config, self.bitcoin_wallet.clone()))
     }
 
-    fn on_swarm_event(&mut self, _event: FromSwarm<'_>) {
-        // We do not need to handle swarm events
+    fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
+        match event {
+            FromSwarm::ConnectionEstablished(ConnectionEstablished {
+                peer_id,
+                connection_id,
+                endpoint,
+                ..
+            }) => {
+                tracing::trace!(
+                    peer = %peer_id,
+                    connection_id = %connection_id,
+                    endpoint = ?endpoint,
+                    "A new connection handler has been established",
+                );
+
+                self.alive_connection_handlers_mut(peer_id)
+                    .push_back(connection_id);
+            }
+            FromSwarm::ConnectionClosed(ConnectionClosed {
+                peer_id,
+                connection_id,
+                ..
+            }) => {
+                tracing::trace!(
+                    peer = %peer_id,
+                    connection_id = %connection_id,
+                    "A swap setup connection handler has died",
+                );
+
+                self.dead_connection_handlers_mut(peer_id)
+                    .push_back(connection_id);
+            }
+            _ => {}
+        }
     }
 
     fn on_connection_handler_event(
         &mut self,
-        peer_id: PeerId,
-        _connection_id: libp2p::swarm::ConnectionId,
+        event_peer_id: PeerId,
+        connection_id: libp2p::swarm::ConnectionId,
         event: THandlerOutEvent<Self>,
     ) {
-        self.completed_swaps.push_back(SwapCompleted {
-            peer: peer_id,
-            result: event.0,
-        });
+        // TODO: we should be able to use .remove() here but we need to return the value
+        if let Some((swap_id, peer_id)) = self.inflight_requests.get(&connection_id) {
+            assert_eq!(*peer_id, event_peer_id);
+
+            self.to_swarm.push_back(SwapSetupResult {
+                peer: *peer_id,
+                swap_id: *swap_id,
+                result: event,
+            });
+        }
     }
 
     fn poll(
@@ -108,7 +183,7 @@ impl NetworkBehaviour for Behaviour {
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
         // Forward completed swaps from the connection handler to the swarm
-        if let Some(completed) = self.completed_swaps.pop_front() {
+        if let Some(completed) = self.to_swarm.pop_front() {
             tracing::trace!(
                 peer = %completed.peer,
                 "Forwarding completed swap to the swarm",
@@ -117,18 +192,82 @@ impl NetworkBehaviour for Behaviour {
             return Poll::Ready(ToSwarm::GenerateEvent(completed));
         }
 
-        // If there is a new swap to be started, send it to the connection handler
-        if let Some((peer, event)) = self.new_swaps.pop_front() {
+        // Remove any unused already dead connection handlers that were never assigned a request
+        for peer in self.known_peers() {
+            let (alive_connection_handlers, dead_connection_handlers) =
+                self.connection_handlers_mut(peer);
+
+            // Create sets for efficient lookup
+            let alive_set: HashSet<_> = alive_connection_handlers.iter().copied().collect();
+            let dead_set: HashSet<_> = dead_connection_handlers.iter().copied().collect();
+
+            // Remove from alive any handlers that are also in dead
+            alive_connection_handlers.retain(|id| !dead_set.contains(id));
+
+            // Remove from dead any handlers that were in alive (the overlap we just processed)
+            dead_connection_handlers.retain(|id| !alive_set.contains(id));
+        }
+
+        // Go through our new_swaps queue (without popping) and try to assign a request to a connection handler
+        // TODO: Do we really need to clone the queue here?
+        for (index, (peer, swap_id, new_swap)) in self.new_swaps.clone().iter().enumerate() {
+            // Pop that connection handler and queue it to be notified for the swap setup request
+            if let Some(connection_id) = self.alive_connection_handlers_mut(*peer).pop_front() {
+                self.assigned_unnotified_swaps.push_back((
+                    connection_id,
+                    *peer,
+                    *swap_id,
+                    new_swap.clone(),
+                )); // TODO: Do we really need to clone the new_swap here?
+
+                // We don't need to assign that request to anyone else anymore
+                self.new_swaps.remove(index);
+            }
+        }
+
+        // Iterate through our assigned_unnotified_swaps queue (with popping)
+        if let Some((connection_id, peer_id, swap_id, new_swap)) =
+            self.assigned_unnotified_swaps.pop_front()
+        {
             tracing::trace!(
-                peer = %peer,
-                "Forwarding dispatched new swap setup request to the connection handler",
+                swap_id = %swap_id,
+                connection_id = %connection_id,
+                ?new_swap,
+                "Dispatching swap setup request to a specific connection handler",
             );
 
-            return Poll::Ready(ToSwarm::NotifyHandler {
-                peer_id: peer,
-                handler: libp2p::swarm::NotifyHandler::Any,
-                event,
-            });
+            // Check if the connection handler is still alive
+            if let Some(dead_connection_handler) = self
+                .dead_connection_handlers_mut(peer_id)
+                .iter()
+                .position(|id| *id == connection_id)
+            {
+                self.dead_connection_handlers_mut(peer_id)
+                    .remove(dead_connection_handler);
+
+                self.to_swarm.push_back(SwapSetupResult {
+                    peer: peer_id,
+                    swap_id,
+                    result: Err(anyhow::anyhow!("Connection handler for peer {} has died before we could notify it of the swap setup request", peer_id)),
+                });
+            } else {
+                // ConnectionHandler must still be alive, notify it of the swap setup request
+                tracing::trace!(
+                    peer = %peer_id,
+                    swap_id = %swap_id,
+                    ?new_swap,
+                    "Notifying connection handler of the swap setup request (we are assuming it is still alive)",
+                );
+
+                self.inflight_requests
+                    .insert(connection_id, (swap_id, peer_id));
+
+                return Poll::Ready(ToSwarm::NotifyHandler {
+                    peer_id,
+                    handler: libp2p::swarm::NotifyHandler::One(connection_id),
+                    event: new_swap,
+                });
+            }
         }
 
         Poll::Pending
@@ -170,17 +309,15 @@ pub struct NewSwap {
 }
 
 #[derive(Debug)]
-pub struct Completed(Result<State2>);
-
-#[derive(Debug)]
-pub struct SwapCompleted {
+pub struct SwapSetupResult {
     peer: PeerId,
+    swap_id: Uuid,
     result: Result<State2>,
 }
 
 impl ConnectionHandler for Handler {
     type FromBehaviour = NewSwap;
-    type ToBehaviour = Completed;
+    type ToBehaviour = Result<State2>;
     type InboundProtocol = upgrade::DeniedUpgrade;
     type OutboundProtocol = protocol::SwapSetup;
     type InboundOpenInfo = ();
@@ -320,19 +457,35 @@ impl ConnectionHandler for Handler {
                 self.keep_alive = true;
             }
             libp2p::swarm::handler::ConnectionEvent::AddressChange(address_change) => {
-                tracing::trace!(?address_change, "Connection address changed during swap setup");
+                tracing::trace!(
+                    ?address_change,
+                    "Connection address changed during swap setup"
+                );
             }
             libp2p::swarm::handler::ConnectionEvent::DialUpgradeError(dial_upgrade_error) => {
                 tracing::trace!(error = %dial_upgrade_error.error, "Dial upgrade error during swap setup");
             }
             libp2p::swarm::handler::ConnectionEvent::ListenUpgradeError(listen_upgrade_error) => {
-                tracing::trace!(?listen_upgrade_error, "Listen upgrade error during swap setup");
+                tracing::trace!(
+                    ?listen_upgrade_error,
+                    "Listen upgrade error during swap setup"
+                );
             }
-            libp2p::swarm::handler::ConnectionEvent::LocalProtocolsChange(local_protocols_change) => {
-                tracing::trace!(?local_protocols_change, "Local protocols changed during swap setup");
+            libp2p::swarm::handler::ConnectionEvent::LocalProtocolsChange(
+                local_protocols_change,
+            ) => {
+                tracing::trace!(
+                    ?local_protocols_change,
+                    "Local protocols changed during swap setup"
+                );
             }
-            libp2p::swarm::handler::ConnectionEvent::RemoteProtocolsChange(remote_protocols_change) => {
-                tracing::trace!(?remote_protocols_change, "Remote protocols changed during swap setup");
+            libp2p::swarm::handler::ConnectionEvent::RemoteProtocolsChange(
+                remote_protocols_change,
+            ) => {
+                tracing::trace!(
+                    ?remote_protocols_change,
+                    "Remote protocols changed during swap setup"
+                );
             }
             _ => {
                 tracing::trace!("Received unknown connection event during swap setup");
@@ -377,9 +530,9 @@ impl ConnectionHandler for Handler {
             self.keep_alive = false;
 
             // We notify the swarm that the swap setup is completed / failed
-            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(Completed(
-                result.map_err(anyhow::Error::from),
-            )));
+            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
+                result.map_err(anyhow::Error::from).into(),
+            ));
         }
 
         Poll::Pending
@@ -442,6 +595,15 @@ impl From<SpotPriceError> for Error {
                 Error::BlockchainNetworkMismatch { cli, asb }
             }
             SpotPriceError::Other => Error::Other,
+        }
+    }
+}
+
+impl From<SwapSetupResult> for out_event::bob::OutEvent {
+    fn from(completed: SwapSetupResult) -> Self {
+        out_event::bob::OutEvent::SwapSetupCompleted {
+            result: Box::new(completed.result),
+            peer: completed.peer,
         }
     }
 }
