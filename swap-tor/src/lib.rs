@@ -1,9 +1,9 @@
 use arti_client::TorClient;
+use futures::future::BoxFuture;
 use libp2p::core::multiaddr::Protocol;
 use libp2p::core::transport::{ListenerId, TransportEvent};
 use libp2p::{Multiaddr, Transport, TransportError};
 use std::fs;
-use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -76,7 +76,7 @@ impl Transport for Socks5Transport {
     type Output = tokio_util::compat::Compat<TcpStream>;
     type Error = tokio_socks::Error;
     type ListenerUpgrade = std::future::Pending<Result<Self::Output, Self::Error>>;
-    type Dial = Pin<Box<dyn Future<Output = Result<Self::Output, Self::Error>> + Send + 'static>>;
+    type Dial = BoxFuture<'static, Result<Self::Output, Self::Error>>;
 
     fn listen_on(
         &mut self,
