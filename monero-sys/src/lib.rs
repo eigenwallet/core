@@ -310,7 +310,7 @@ impl WalletHandle {
         network: monero::Network,
         background_sync: bool,
     ) -> anyhow::Result<Self> {
-        let password = password.into();
+        let password: Option<String> = password.into();
 
         Self::open_with(path.clone(), daemon.clone(), move |manager| {
             manager.open_or_create_wallet(
