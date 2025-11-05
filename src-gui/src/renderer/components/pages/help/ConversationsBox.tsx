@@ -378,10 +378,6 @@ function MessageBubble({ message }: { message: Message }) {
       <Box
         sx={(theme) => ({
           padding: 1.5,
-          borderRadius:
-            typeof theme.shape.borderRadius === "number"
-              ? theme.shape.borderRadius * 2
-              : 8,
           maxWidth: "75%",
           wordBreak: "break-word",
           boxShadow: theme.shadows[1],

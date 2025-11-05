@@ -115,12 +115,13 @@ export default function UpdaterDialog() {
 
   const isDownloading = downloadProgress !== null;
 
-  const progress = isDownloading && downloadProgress.contentLength
-    ? Math.round(
-        (downloadProgress.downloadedBytes / downloadProgress.contentLength) *
-          100,
-      )
-    : 0;
+  const progress =
+    isDownloading && downloadProgress.contentLength
+      ? Math.round(
+          (downloadProgress.downloadedBytes / downloadProgress.contentLength) *
+            100,
+        )
+      : 0;
 
   return (
     <Dialog

@@ -843,7 +843,9 @@ function RendezvousPointsSetting() {
                         <ValidatedTextField
                           label="Add new rendezvous point"
                           value={newPoint}
-                          onValidatedChange={(value) => setNewPoint(value ?? "")}
+                          onValidatedChange={(value) =>
+                            setNewPoint(value ?? "")
+                          }
                           placeholder="/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
                           fullWidth
                           isValid={isValidMultiAddressWithPeerId}

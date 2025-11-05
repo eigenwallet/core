@@ -255,7 +255,9 @@ export function useBitcoinSyncProgress(): TauriBitcoinSyncProgress[] {
     .filter(isBitcoinSyncProgress);
   return syncingProcesses
     .map((c) => c.progress.content)
-    .filter((content): content is TauriBitcoinSyncProgress => content !== undefined);
+    .filter(
+      (content): content is TauriBitcoinSyncProgress => content !== undefined,
+    );
 }
 
 export function isSyncingBitcoin(): boolean {

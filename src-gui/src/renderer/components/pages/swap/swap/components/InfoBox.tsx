@@ -2,7 +2,7 @@ import { Box, LinearProgress, Paper, Typography } from "@mui/material";
 import { ReactNode } from "react";
 
 type Props = {
-  id?: string;
+  id?: string | null;
   title: ReactNode | null;
   mainContent: ReactNode;
   additionalContent: ReactNode;
@@ -11,7 +11,7 @@ type Props = {
 };
 
 export default function InfoBox({
-  id = null,
+  id,
   title,
   mainContent,
   additionalContent,

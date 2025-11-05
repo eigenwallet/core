@@ -4,7 +4,10 @@ import { PiconeroAmount } from "../../../other/Units";
 import { FiatPiconeroAmount } from "../../../other/Units";
 import StateIndicator from "./StateIndicator";
 import humanizeDuration from "humanize-duration";
-import { GetMoneroBalanceResponse, GetMoneroSyncProgressResponse } from "models/tauriModel";
+import {
+  GetMoneroBalanceResponse,
+  GetMoneroSyncProgressResponse,
+} from "models/tauriModel";
 
 interface TimeEstimationResult {
   blocksLeft: number;

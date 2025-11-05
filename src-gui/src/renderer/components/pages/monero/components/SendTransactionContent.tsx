@@ -90,7 +90,9 @@ export default function SendTransactionContent({
   const moneroAmount =
     currency === "XMR"
       ? parseFloat(sendAmount)
-      : xmrPrice !== null ? parseFloat(sendAmount) / xmrPrice : null;
+      : xmrPrice !== null
+        ? parseFloat(sendAmount) / xmrPrice
+        : null;
 
   const handleSend = async () => {
     if (!sendAddress) {
@@ -103,7 +105,7 @@ export default function SendTransactionContent({
         amount: { type: "Sweep" },
       });
     } else {
-      if (!sendAmount || sendAmount === "<MAX>") {
+      if (!sendAmount || sendAmount === "<MAX>" || moneroAmount === null) {
         throw new Error("Amount is required");
       }
 

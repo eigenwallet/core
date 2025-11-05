@@ -48,6 +48,10 @@ export default function SendAmountInput({
       return "0.00";
     }
 
+    if (xmrPrice === null) {
+      return "?";
+    }
+
     const primaryValue = parseFloat(amount);
     if (currency === "XMR") {
       // Primary is XMR, secondary is USD
@@ -76,7 +80,7 @@ export default function SendAmountInput({
 
         if (currency === "XMR") {
           onAmountChange(Math.max(0, maxAmountXmr).toString());
-        } else {
+        } else if (xmrPrice !== null) {
           // Convert to USD for display
           const maxAmountUsd = maxAmountXmr * xmrPrice;
           onAmountChange(Math.max(0, maxAmountUsd).toString());
@@ -103,8 +107,9 @@ export default function SendAmountInput({
     (currency === "XMR"
       ? parseFloat(amount) >
         piconerosToXmr(parseFloat(balance.unlocked_balance))
-      : parseFloat(amount) / xmrPrice >
-        piconerosToXmr(parseFloat(balance.unlocked_balance)));
+      : xmrPrice !== null &&
+        parseFloat(amount) / xmrPrice >
+          piconerosToXmr(parseFloat(balance.unlocked_balance)));
 
   return (
     <Card
