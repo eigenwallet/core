@@ -8,6 +8,7 @@ import {
   TauriSwapProgressEvent,
   SendMoneroDetails,
   ContextStatus,
+  QuoteWithAddress,
 } from "./tauriModel";
 import {
   ContextStatusType,
@@ -16,6 +17,16 @@ import {
 } from "store/features/rpcSlice";
 
 export type TauriSwapProgressEventType = TauriSwapProgressEvent["type"];
+
+// Wrapper for QuoteWithAddress with an optional approval request
+// Approving that request will result in a swap being initiated with that maker
+export type SortableQuoteWithAddress = {
+  quote_with_address: QuoteWithAddress;
+  approval: {
+    request_id: string;
+    expiration_ts: number;
+  } | null;
+};
 
 export type TauriSwapProgressEventContent<
   T extends TauriSwapProgressEventType,
