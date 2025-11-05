@@ -249,7 +249,13 @@ export default function SwapStatusAlert({
   swap: GetSwapInfoResponseExt;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
 }) {
+<<<<<<< Updated upstream
   const timelock = useAppSelector(selectSwapTimelock(swap.swap_id));
+=======
+  // Call hooks unconditionally at the top (Rules of Hooks)
+  const timelock = useAppSelector(selectSwapTimelock(swap.swap_id));
+  const isRunning = useIsSpecificSwapRunning(swap.swap_id);
+>>>>>>> Stashed changes
 
   if (!isGetSwapInfoResponseRunningSwap(swap)) {
     return null;

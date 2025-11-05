@@ -503,8 +503,13 @@ impl EventLoopHandle {
     pub async fn send_encrypted_signature(
         &mut self,
         tx_redeem_encsig: EncryptedSignature,
+<<<<<<< Updated upstream
     ) -> Result<()> {
         tracing::debug!("Sending encrypted signature");
+=======
+    ) {
+        tracing::debug!(%peer_id, %swap_id, "Sending encrypted signature");
+>>>>>>> Stashed changes
 
         // We will retry indefinitely until we succeed
         let backoff = backoff::ExponentialBackoffBuilder::new()
@@ -530,6 +535,60 @@ impl EventLoopHandle {
             )
         })
         .await
-        .context("Failed to send encrypted signature after retries")
+        .expect("we should never run out of retries when sending an encrypted signature")
     }
 }
+<<<<<<< Updated upstream
+=======
+
+#[derive(Debug)]
+pub struct SwapEventLoopHandle {
+    handle: EventLoopHandle,
+    peer_id: PeerId,
+    swap_id: Uuid,
+    transfer_proof_receiver: Option<bmrng::RequestReceiver<monero::TransferProof, ()>>,
+}
+
+impl SwapEventLoopHandle {
+    pub async fn recv_transfer_proof(&mut self) -> Result<monero::TransferProof> {
+        let receiver = self
+            .transfer_proof_receiver
+            .as_mut()
+            .context("Transfer proof receiver not available")?;
+
+        let (transfer_proof, responder) = receiver
+            .recv()
+            .await
+            .context("Failed to receive transfer proof")?;
+
+        responder
+            .respond(())
+            .context("Failed to acknowledge receipt of transfer proof")?;
+
+        Ok(transfer_proof)
+    }
+
+    pub async fn send_encrypted_signature(
+        &mut self,
+        tx_redeem_encsig: EncryptedSignature,
+    ) {
+        self.handle
+            .send_encrypted_signature(self.peer_id, self.swap_id, tx_redeem_encsig)
+            .await
+    }
+
+    pub async fn request_cooperative_xmr_redeem(&mut self) -> Result<Response> {
+        self.handle
+            .request_cooperative_xmr_redeem(self.peer_id, self.swap_id)
+            .await
+    }
+
+    pub async fn setup_swap(&mut self, swap: NewSwap) -> Result<State2> {
+        self.handle.setup_swap(self.peer_id, swap).await
+    }
+
+    pub async fn request_quote(&mut self) -> Result<BidQuote> {
+        self.handle.request_quote(self.peer_id).await
+    }
+}
+>>>>>>> Stashed changes
