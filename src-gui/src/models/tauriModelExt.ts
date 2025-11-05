@@ -9,6 +9,7 @@ import {
   SendMoneroDetails,
   ContextStatus,
   QuoteWithAddress,
+  ExportBitcoinWalletResponse,
 } from "./tauriModel";
 import {
   ContextStatusType,
@@ -406,4 +407,21 @@ export function isContextWithMoneroWallet(
   status: ContextStatus | null,
 ): boolean {
   return status?.monero_wallet_available ?? false;
+}
+
+export type ExportBitcoinWalletResponseExt = ExportBitcoinWalletResponse & {
+  wallet_descriptor: {
+    descriptor: string;
+  };
+};
+
+export function hasDescriptorProperty(
+  response: ExportBitcoinWalletResponse,
+): response is ExportBitcoinWalletResponseExt {
+  return (
+    typeof response.wallet_descriptor === "object" &&
+    response.wallet_descriptor !== null &&
+    "descriptor" in response.wallet_descriptor &&
+    typeof (response.wallet_descriptor as { descriptor?: unknown }).descriptor === "string"
+  );
 }

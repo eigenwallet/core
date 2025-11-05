@@ -298,7 +298,7 @@ export async function initializeContext() {
     });
     logger.info("Initialized context");
   } catch (error) {
-    throw new Error(error);
+    throw new Error(String(error));
   }
 }
 
