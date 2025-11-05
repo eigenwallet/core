@@ -203,7 +203,7 @@ fn build(input: OrchestratorInput) -> String {
     let command_asb_tracing_logger = command![
         "sh",
         flag!("-c"),
-        flag!("tail -f /asb-data/logs/tracing*.log"),
+        flag!("exec tail -f /asb-data/logs/tracing*.log"),
     ];
 
     let command_rendezvous_node = command![
