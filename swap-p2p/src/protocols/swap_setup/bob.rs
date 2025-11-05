@@ -225,6 +225,20 @@ impl NetworkBehaviour for Behaviour {
             }
         }
 
+        // If a connection handler died which had an assigned swap setup request,
+        // we need to notify the swarm that the request failed
+        for peer_id in self.known_peers() {
+            while let Some(connection_id) = self.dead_connection_handlers_mut(peer_id).pop_front() {
+                if let Some((swap_id, _)) = self.inflight_requests.get(&connection_id) {
+                    self.to_swarm.push_back(SwapSetupResult {
+                        peer: peer_id,
+                        swap_id: *swap_id,
+                        result: Err(anyhow::anyhow!("Connection handler for peer {} has died after we notified it of the swap setup request", peer_id)),
+                    });
+                }
+            }
+        }   
+
         // Iterate through our assigned_unnotified_swaps queue (with popping)
         if let Some((connection_id, peer_id, swap_id, new_swap)) =
             self.assigned_unnotified_swaps.pop_front()
