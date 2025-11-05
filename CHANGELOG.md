@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.2.9] - 2025-11-05
 
 - GUI: Fix an issue where an error in the UI runtime would cause a white screen to be displayed and nothing would be rendered.
+- GUI(Linux): Fix an issue where the GUI would display a white screen on some systems (among others Fedora 43)
 
 ## [3.2.8] - 2025-11-02
 
