@@ -78,9 +78,7 @@ pub fn init(
     let tracing_file_layer = json_rolling_layer!(
         &dir,
         "tracing",
-        env_filter_with_all_crates(vec![
-            (crates::OUR_CRATES.to_vec(), LevelFilter::TRACE)
-        ]),
+        env_filter_with_all_crates(vec![(crates::OUR_CRATES.to_vec(), LevelFilter::TRACE)]),
         24
     );
 
@@ -104,7 +102,10 @@ pub fn init(
     let monero_wallet_file_layer = json_rolling_layer!(
         &dir,
         "tracing-monero-wallet",
-        env_filter_with_all_crates(vec![(crates::MONERO_WALLET_CRATES.to_vec(), LevelFilter::TRACE)]),
+        env_filter_with_all_crates(vec![(
+            crates::MONERO_WALLET_CRATES.to_vec(),
+            LevelFilter::TRACE
+        )]),
         24
     );
 
@@ -145,7 +146,9 @@ pub fn init(
             (crates::LIBP2P_CRATES.to_vec(), LevelFilter::INFO),
             (crates::TOR_CRATES.to_vec(), LevelFilter::INFO),
         ])?,
-        false => env_filter_with_all_crates(vec![(crates::OUR_CRATES.to_vec(), LevelFilter::INFO)])?,
+        false => {
+            env_filter_with_all_crates(vec![(crates::OUR_CRATES.to_vec(), LevelFilter::INFO)])?
+        }
     };
 
     let final_terminal_layer = match format {
@@ -227,10 +230,7 @@ mod crates {
         "unstoppableswap_gui_rs",
     ];
 
-    pub const MONERO_WALLET_CRATES: &[&str] = &[
-        "monero_cpp",
-        "monero_rpc_pool",
-    ];
+    pub const MONERO_WALLET_CRATES: &[&str] = &["monero_cpp", "monero_rpc_pool"];
 }
 
 /// A writer that forwards tracing log messages to the tauri guest.

@@ -340,12 +340,12 @@ export async function getSwapInfo(swapId: string) {
 }
 
 export async function getSwapTimelock(swapId: string) {
-  const response = await invoke<
-    GetSwapTimelockArgs,
-    GetSwapTimelockResponse
-  >("get_swap_timelock", {
-    swap_id: swapId,
-  });
+  const response = await invoke<GetSwapTimelockArgs, GetSwapTimelockResponse>(
+    "get_swap_timelock",
+    {
+      swap_id: swapId,
+    },
+  );
 
   store.dispatch(
     timelockChangeEventReceived({

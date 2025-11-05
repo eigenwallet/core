@@ -69,11 +69,7 @@ function BitcoinRedeemedStateAlert({ swap }: { swap: GetSwapInfoResponseExt }) {
           "If this step fails, you can manually redeem your funds",
         ]}
       />
-      <SwapMoneroRecoveryButton
-        swap={swap}
-        size="small"
-        variant="contained"
-      />
+      <SwapMoneroRecoveryButton swap={swap} size="small" variant="contained" />
     </Box>
   );
 }
@@ -208,10 +204,7 @@ export function StateAlert({
             );
           case "Cancel":
             return (
-              <BitcoinPossiblyCancelledAlert
-                timelock={timelock}
-                swap={swap}
-              />
+              <BitcoinPossiblyCancelledAlert timelock={timelock} swap={swap} />
             );
           case "Punish":
             return <PunishTimelockExpiredAlert />;
@@ -246,10 +239,16 @@ export default function SwapStatusAlert({
   swap,
   onlyShowIfUnusualAmountOfTimeHasPassed,
 }: {
-  swap: GetSwapInfoResponseExt;
+  swap: GetSwapInfoResponseExt | null;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
 }) {
-  const timelock = useAppSelector(selectSwapTimelock(swap.swap_id));
+  const swapId = swap?.swap_id ?? null;
+  const timelock = useAppSelector(selectSwapTimelock(swapId));
+  const isRunning = useIsSpecificSwapRunning(swapId);
+
+  if (swap == null) {
+    return null;
+  }
 
   if (!isGetSwapInfoResponseRunningSwap(swap)) {
     return null;
@@ -266,8 +265,6 @@ export default function SwapStatusAlert({
   if (onlyShowIfUnusualAmountOfTimeHasPassed && hasUnusualAmountOfTimePassed) {
     return null;
   }
-
-  const isRunning = useIsSpecificSwapRunning(swap.swap_id);
 
   return (
     <Alert
@@ -290,8 +287,7 @@ export default function SwapStatusAlert({
           )
         ) : (
           <>
-            Swap <TruncatedText>{swap.swap_id}</TruncatedText> is
-            not running
+            Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
           </>
         )}
       </AlertTitle>

@@ -18,10 +18,9 @@ export const selectSwapTimelocks = createSelector(
   (rpcState) => rpcState.swapTimelocks,
 );
 
-export const selectSwapTimelock = (swapId: string) =>
-  createSelector(
-    [selectSwapTimelocks],
-    (timelocks) => timelocks[swapId] ?? null,
+export const selectSwapTimelock = (swapId: string | null) =>
+  createSelector([selectSwapTimelocks], (timelocks) =>
+    swapId ? (timelocks[swapId] ?? null) : null,
   );
 
 export const selectSwapInfoWithTimelock = (swapId: string) =>
