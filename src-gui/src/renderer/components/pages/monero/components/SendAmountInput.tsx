@@ -208,14 +208,11 @@ export default function SendAmountInput({
         }}
       >
         <Typography color="text.secondary">Available</Typography>
-        <Box sx={{ display: "flex", alignItems: "baseline", gap: 0.5 }}>
-          <Typography color="text.primary">
-            <MoneroAmount
-              amount={piconerosToXmr(parseFloat(balance.unlocked_balance))}
-            />
-          </Typography>
-          <Typography color="text.secondary">XMR</Typography>
-        </Box>
+        <Typography color="text.primary">
+          <MoneroAmount
+            amount={piconerosToXmr(parseFloat(balance.unlocked_balance))}
+          />
+        </Typography>
         <Button
           variant={isMaxSelected ? "contained" : "secondary"}
           size="tiny"
