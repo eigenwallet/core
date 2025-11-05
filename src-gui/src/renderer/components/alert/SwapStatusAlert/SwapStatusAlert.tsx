@@ -267,7 +267,6 @@ export default function SwapStatusAlert({
     return null;
   }
 
-
   return (
     <Alert
       key={swap.swap_id}

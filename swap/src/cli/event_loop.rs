@@ -74,7 +74,7 @@ pub struct EventLoop {
         HashMap<OutboundRequestId, bmrng::Responder<Result<BidQuote, OutboundFailure>>>,
     inflight_encrypted_signature_requests:
         HashMap<OutboundRequestId, bmrng::Responder<Result<(), OutboundFailure>>>,
-    inflight_swap_setup: HashMap<PeerId, bmrng::Responder<Result<State2>>>,
+    inflight_swap_setup: HashMap<(PeerId, Uuid), bmrng::Responder<Result<State2>>>,
     inflight_cooperative_xmr_redeem_requests: HashMap<
         OutboundRequestId,
         bmrng::Responder<Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>>,
@@ -156,13 +156,13 @@ impl EventLoop {
                                 let _ = responder.respond(Ok(response));
                             }
                         }
-                        SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted { peer, result }) => {
+                        SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted { peer, swap_id, result }) => {
                             tracing::trace!(
                                 %peer,
                                 "Processing swap setup completion"
                             );
 
-                            if let Some(responder) = self.inflight_swap_setup.remove(&peer) {
+                            if let Some(responder) = self.inflight_swap_setup.remove(&(peer, swap_id)) {
                                 let _ = responder.respond(*result);
                             }
                         }
@@ -364,16 +364,18 @@ impl EventLoop {
                 // because the protocol does not dial Alice itself
                 // (unlike request-response above)
                 Some(((alice_peer_id, swap), responder)) = self.execution_setup_requests.next().fuse() => {
+                    let swap_id = swap.swap_id.clone();
+
                     tracing::trace!(
                         %alice_peer_id,
                         "Dispatching outgoing execution setup request"
                     );
 
-                    // TODO: Dont unwrap
+                    // TODO: handle the error here
                     let _ = self.swarm.dial(DialOpts::peer_id(alice_peer_id).condition(PeerCondition::Disconnected).build());
                     self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
 
-                    self.inflight_swap_setup.insert(alice_peer_id, responder);
+                    self.inflight_swap_setup.insert((alice_peer_id, swap_id), responder);
                 },
 
                 // Send an acknowledgement to Alice once the EventLoopHandle has processed a received transfer proof

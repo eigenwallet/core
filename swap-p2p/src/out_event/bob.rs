@@ -20,6 +20,7 @@ pub enum OutEvent {
     },
     SwapSetupCompleted {
         peer: PeerId,
+        swap_id: uuid::Uuid,
         result: Box<anyhow::Result<swap_machine::bob::State2>>,
     },
     TransferProofReceived {

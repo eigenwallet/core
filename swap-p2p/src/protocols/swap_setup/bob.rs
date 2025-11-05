@@ -237,7 +237,7 @@ impl NetworkBehaviour for Behaviour {
                     });
                 }
             }
-        }   
+        }
 
         // Iterate through our assigned_unnotified_swaps queue (with popping)
         if let Some((connection_id, peer_id, swap_id, new_swap)) =
@@ -617,6 +617,7 @@ impl From<SwapSetupResult> for out_event::bob::OutEvent {
     fn from(completed: SwapSetupResult) -> Self {
         out_event::bob::OutEvent::SwapSetupCompleted {
             result: Box::new(completed.result),
+            swap_id: completed.swap_id,
             peer: completed.peer,
         }
     }

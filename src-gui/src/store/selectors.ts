@@ -19,9 +19,8 @@ export const selectSwapTimelocks = createSelector(
 );
 
 export const selectSwapTimelock = (swapId: string | null) =>
-  createSelector(
-    [selectSwapTimelocks],
-    (timelocks) => (swapId ? timelocks[swapId] ?? null : null),
+  createSelector([selectSwapTimelocks], (timelocks) =>
+    swapId ? (timelocks[swapId] ?? null) : null,
   );
 
 export const selectSwapInfoWithTimelock = (swapId: string) =>
