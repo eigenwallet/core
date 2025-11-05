@@ -26,6 +26,7 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import PasswordEntryDialog from "./modal/password-entry/PasswordEntryDialog";
 import ContextErrorDialog from "./modal/context-error/ContextErrorDialog";
+import ErrorBoundary from "./other/ErrorBoundary";
 
 declare module "@mui/material/styles" {
   interface Theme {
@@ -47,24 +48,26 @@ export default function App() {
   console.log("Current theme:", { theme, currentTheme });
 
   return (
-    <StyledEngineProvider injectFirst>
-      <ThemeProvider theme={currentTheme}>
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <CssBaseline />
-          <GlobalSnackbarProvider>
-            <IntroductionModal />
-            <SeedSelectionDialog />
-            <PasswordEntryDialog />
-            <ContextErrorDialog />
-            <Router>
-              <Navigation />
-              <InnerContent />
-              <UpdaterDialog />
-            </Router>
-          </GlobalSnackbarProvider>
-        </LocalizationProvider>
-      </ThemeProvider>
-    </StyledEngineProvider>
+    <ErrorBoundary>
+      <StyledEngineProvider injectFirst>
+        <ThemeProvider theme={currentTheme}>
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <CssBaseline />
+            <GlobalSnackbarProvider>
+              <IntroductionModal />
+              <SeedSelectionDialog />
+              <PasswordEntryDialog />
+              <ContextErrorDialog />
+              <Router>
+                <Navigation />
+                <InnerContent />
+                <UpdaterDialog />
+              </Router>
+            </GlobalSnackbarProvider>
+          </LocalizationProvider>
+        </ThemeProvider>
+      </StyledEngineProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -79,13 +82,13 @@ function InnerContent() {
       }}
     >
       <Routes>
-        <Route path="/" element={<MoneroWalletPage />} />
-        <Route path="/monero-wallet" element={<MoneroWalletPage />} />
-        <Route path="/swap" element={<SwapPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/bitcoin-wallet" element={<WalletPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/feedback" element={<FeedbackPage />} />
+        <Route path="/" element={<ErrorBoundary><MoneroWalletPage /></ErrorBoundary>} />
+        <Route path="/monero-wallet" element={<ErrorBoundary><MoneroWalletPage /></ErrorBoundary>} />
+        <Route path="/swap" element={<ErrorBoundary><SwapPage /></ErrorBoundary>} />
+        <Route path="/history" element={<ErrorBoundary><HistoryPage /></ErrorBoundary>} />
+        <Route path="/bitcoin-wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />
+        <Route path="/settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
+        <Route path="/feedback" element={<ErrorBoundary><FeedbackPage /></ErrorBoundary>} />
       </Routes>
     </Box>
   );

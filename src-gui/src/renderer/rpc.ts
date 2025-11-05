@@ -210,7 +210,13 @@ export async function buyXmr() {
 
     address_pool.push(
       {
-        address: moneroReceiveAddress,
+        // We need to assert this as being not null even though it can be null
+        //
+        // This is correct because a LabeledMoneroAddress can actually have a null address but
+        // typeshare cannot express that yet (easily)
+        //
+        // TODO: Let typescript do its job here and not assert it
+        address: moneroReceiveAddress!,
         percentage: 1 - donationPercentage,
         label: "Your wallet",
       },
@@ -222,7 +228,13 @@ export async function buyXmr() {
     );
   } else {
     address_pool.push({
-      address: moneroReceiveAddress,
+      // We need to assert this as being not null even though it can be null
+      //
+      // This is correct because a LabeledMoneroAddress can actually have a null address but
+      // typeshare cannot express that yet (easily)
+      //
+      // TODO: Let typescript do its job here and not assert it
+      address: moneroReceiveAddress!,
       percentage: 1,
       label: "Your wallet",
     });
@@ -232,7 +244,9 @@ export async function buyXmr() {
     rendezvous_points: PRESET_RENDEZVOUS_POINTS,
     sellers,
     monero_receive_pool: address_pool,
-    bitcoin_change_address: bitcoinChangeAddress,
+    // We convert null to undefined because typescript
+    // expects undefined if the field is optional and does not accept null here
+    bitcoin_change_address: bitcoinChangeAddress ?? undefined,
   });
 }
 
@@ -284,7 +298,7 @@ export async function initializeContext() {
     });
     logger.info("Initialized context");
   } catch (error) {
-    throw new Error(error);
+    throw new Error(String(error));
   }
 }
 
@@ -340,12 +354,12 @@ export async function getSwapInfo(swapId: string) {
 }
 
 export async function getSwapTimelock(swapId: string) {
-  const response = await invoke<
-    GetSwapTimelockArgs,
-    GetSwapTimelockResponse
-  >("get_swap_timelock", {
-    swap_id: swapId,
-  });
+  const response = await invoke<GetSwapTimelockArgs, GetSwapTimelockResponse>(
+    "get_swap_timelock",
+    {
+      swap_id: swapId,
+    },
+  );
 
   store.dispatch(
     timelockChangeEventReceived({
@@ -369,12 +383,12 @@ export async function getAllSwapTimelocks() {
   );
 }
 
-export async function withdrawBtc(address: string): Promise<string> {
+export async function sweepBtc(address: string): Promise<string> {
   const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
     "withdraw_btc",
     {
       address,
-      amount: null,
+      amount: undefined,
     },
   );
 

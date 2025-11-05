@@ -9,7 +9,7 @@ export function AmountWithUnit({
   unit,
   fixedPrecision,
   exchangeRate,
-  parenthesisText = null,
+  parenthesisText,
   labelStyles,
   amountStyles,
   disableTooltip = false,
@@ -18,7 +18,7 @@ export function AmountWithUnit({
   unit: string;
   fixedPrecision: number;
   exchangeRate?: Amount;
-  parenthesisText?: string;
+  parenthesisText?: string | null;
   labelStyles?: SxProps;
   amountStyles?: SxProps;
   disableTooltip?: boolean;
@@ -142,7 +142,7 @@ export function MoneroBitcoinExchangeRate({
 }) {
   const marketRate = useAppSelector((state) => state.rates?.xmrBtcRate);
   const markup =
-    displayMarkup && marketRate != null
+    displayMarkup && marketRate != null && rate != null
       ? `${getMarkup(rate, marketRate).toFixed(2)}% markup`
       : null;
 
@@ -179,7 +179,7 @@ export function MoneroSatsExchangeRate({
   rate: Amount;
   displayMarkup?: boolean;
 }) {
-  const btc = satsToBtc(rate);
+  const btc = rate == null ? null : satsToBtc(rate);
 
   return <MoneroBitcoinExchangeRate rate={btc} displayMarkup={displayMarkup} />;
 }

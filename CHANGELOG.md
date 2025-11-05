@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix an issue where an error in the UI runtime would cause a white screen to be displayed and nothing would be rendered.
+
 ## [3.2.8] - 2025-11-02
 
 - ASB + CONTROLLER: Add a `registration-status` command to the controller shell. You can use it to get the registration status of the ASB at the configured rendezvous points.

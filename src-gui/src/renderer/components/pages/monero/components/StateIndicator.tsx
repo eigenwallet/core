@@ -1,6 +1,6 @@
 import { Box, darken, lighten, useTheme } from "@mui/material";
 
-function getColor(colorName: string) {
+function getColor(colorName: string): string {
   const theme = useTheme();
   switch (colorName) {
     case "primary":
@@ -11,6 +11,8 @@ function getColor(colorName: string) {
       return theme.palette.success.main;
     case "warning":
       return theme.palette.warning.main;
+    default:
+      return theme.palette.primary.main;
   }
 }
 

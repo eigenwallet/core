@@ -119,9 +119,9 @@ export function SwapMoneroRecoveryButton({
         onInvoke={(): Promise<MoneroRecoveryResponse> =>
           getMoneroRecoveryKeys(swap.swap_id)
         }
-        onSuccess={(keys: MoneroRecoveryResponse) =>
-          store.dispatch(rpcSetMoneroRecoveryKeys([swap.swap_id, keys]))
-        }
+        onSuccess={(keys: MoneroRecoveryResponse) => {
+          store.dispatch(rpcSetMoneroRecoveryKeys([swap.swap_id, keys]));
+        }}
         {...props}
       >
         Display Monero Recovery Keys

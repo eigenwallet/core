@@ -20,7 +20,6 @@
     "@emotion/styled": "^11.14.0",
     "@fontsource/roboto": "^5.1.0",
     "@mui/icons-material": "^7.1.1",
-    "@mui/lab": "^7.0.0-beta.13",
     "@mui/material": "^7.1.1",
     "@mui/x-date-pickers": "^8.8.0",
     "@reduxjs/toolkit": "^2.3.0",

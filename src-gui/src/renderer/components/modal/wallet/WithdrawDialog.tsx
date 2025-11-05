@@ -1,7 +1,7 @@
 import { Button, Dialog, DialogActions } from "@mui/material";
 import { useState } from "react";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { withdrawBtc } from "renderer/rpc";
+import { sweepBtc } from "renderer/rpc";
 import DialogHeader from "../DialogHeader";
 import AddressInputPage from "./pages/AddressInputPage";
 import BtcTxInMempoolPageContent from "./pages/BitcoinWithdrawTxInMempoolPage";
@@ -59,7 +59,7 @@ export default function WithdrawDialog({
             variant="contained"
             color="primary"
             disabled={!withdrawAddressValid}
-            onInvoke={() => withdrawBtc(withdrawAddress)}
+            onInvoke={() => sweepBtc(withdrawAddress)}
             onPendingChange={setPending}
             onSuccess={setWithdrawTxId}
             contextRequirement={isContextWithBitcoinWallet}

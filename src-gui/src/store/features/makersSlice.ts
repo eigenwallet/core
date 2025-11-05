@@ -30,31 +30,6 @@ const initialState: MakersSlice = {
   selectedMaker: null,
 };
 
-function selectNewSelectedMaker(
-  slice: MakersSlice,
-  peerId?: string,
-): MakerStatus {
-  const selectedPeerId = peerId || slice.selectedMaker?.peerId;
-
-  // Check if we still have a record of the currently selected provider
-  const currentMaker =
-    slice.registry.makers?.find((prov) => prov.peerId === selectedPeerId) ||
-    slice.rendezvous.makers.find((prov) => prov.peerId === selectedPeerId);
-
-  // If the currently selected provider is not outdated, keep it
-  if (currentMaker != null && !isMakerOutdated(currentMaker)) {
-    return currentMaker;
-  }
-
-  // Otherwise we'd prefer to switch to a provider that has the newest version
-  const providers = [
-    ...(slice.registry.makers ?? []),
-    ...(slice.rendezvous.makers ?? []),
-  ];
-
-  return providers.at(0) || null;
-}
-
 export const makersSlice = createSlice({
   name: "providers",
   initialState,
@@ -83,31 +58,14 @@ export const makersSlice = createSlice({
           slice.rendezvous.makers.push(discoveredMakerStatus);
         }
       });
-
-      // Sort the provider list and select a new provider if needed
-      slice.selectedMaker = selectNewSelectedMaker(slice);
     },
     setRegistryMakers(slice, action: PayloadAction<ExtendedMakerStatus[]>) {
       if (stubTestnetMaker) {
         action.payload.push(stubTestnetMaker);
       }
-
-      // Sort the provider list and select a new provider if needed
-      slice.selectedMaker = selectNewSelectedMaker(slice);
     },
     registryConnectionFailed(slice) {
       slice.registry.connectionFailsCount += 1;
-    },
-    setSelectedMaker(
-      slice,
-      action: PayloadAction<{
-        peerId: string;
-      }>,
-    ) {
-      slice.selectedMaker = selectNewSelectedMaker(
-        slice,
-        action.payload.peerId,
-      );
     },
   },
 });
@@ -116,7 +74,6 @@ export const {
   discoveredMakersByRendezvous,
   setRegistryMakers,
   registryConnectionFailed,
-  setSelectedMaker,
 } = makersSlice.actions;
 
 export default makersSlice.reducer;
