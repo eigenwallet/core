@@ -82,13 +82,62 @@ function InnerContent() {
       }}
     >
       <Routes>
-        <Route path="/" element={<ErrorBoundary><MoneroWalletPage /></ErrorBoundary>} />
-        <Route path="/monero-wallet" element={<ErrorBoundary><MoneroWalletPage /></ErrorBoundary>} />
-        <Route path="/swap" element={<ErrorBoundary><SwapPage /></ErrorBoundary>} />
-        <Route path="/history" element={<ErrorBoundary><HistoryPage /></ErrorBoundary>} />
-        <Route path="/bitcoin-wallet" element={<ErrorBoundary><WalletPage /></ErrorBoundary>} />
-        <Route path="/settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
-        <Route path="/feedback" element={<ErrorBoundary><FeedbackPage /></ErrorBoundary>} />
+        <Route
+          path="/"
+          element={
+            <ErrorBoundary>
+              <MoneroWalletPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/monero-wallet"
+          element={
+            <ErrorBoundary>
+              <MoneroWalletPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/swap"
+          element={
+            <ErrorBoundary>
+              <SwapPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <ErrorBoundary>
+              <HistoryPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/bitcoin-wallet"
+          element={
+            <ErrorBoundary>
+              <WalletPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ErrorBoundary>
+              <SettingsPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/feedback"
+          element={
+            <ErrorBoundary>
+              <FeedbackPage />
+            </ErrorBoundary>
+          }
+        />
       </Routes>
     </Box>
   );

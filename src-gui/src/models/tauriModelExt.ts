@@ -422,6 +422,7 @@ export function hasDescriptorProperty(
     typeof response.wallet_descriptor === "object" &&
     response.wallet_descriptor !== null &&
     "descriptor" in response.wallet_descriptor &&
-    typeof (response.wallet_descriptor as { descriptor?: unknown }).descriptor === "string"
+    typeof (response.wallet_descriptor as { descriptor?: unknown })
+      .descriptor === "string"
   );
 }

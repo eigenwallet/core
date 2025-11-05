@@ -1,8 +1,9 @@
 import { Typography } from "@mui/material";
 import SlideTemplate from "./SlideTemplate";
 import imagePath from "assets/simpleSwapFlowDiagram.svg";
+import { IntroSlideProps } from "./SlideTypes";
 
-export default function Slide02_ChooseAMaker(props: slideProps) {
+export default function Slide02_ChooseAMaker(props: IntroSlideProps) {
   return (
     <SlideTemplate
       title="Execute Swap"

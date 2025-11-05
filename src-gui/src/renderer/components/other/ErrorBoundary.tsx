@@ -13,7 +13,7 @@ interface State {
 class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
-    error: null
+    error: null,
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -30,13 +30,19 @@ class ErrorBoundary extends Component<Props, State> {
       return (
         <div>
           <h1>Sorry.. there was an error</h1>
-          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
             {this.state.error?.message}
           </pre>
           {this.state.error?.stack && (
-            <details style={{ marginTop: '1rem' }}>
+            <details style={{ marginTop: "1rem" }}>
               <summary>Stack trace</summary>
-              <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.875rem' }}>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  fontSize: "0.875rem",
+                }}
+              >
                 {this.state.error.stack}
               </pre>
             </details>

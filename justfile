@@ -113,6 +113,10 @@ check_gui_eslint:
 check_gui_tsc:
 	cd src-gui && yarn run tsc --noEmit
 
+# Check for unused code in the GUI frontend
+check_gui_unused_code:
+	cd src-gui && npx knip
+
 test test_name:
     cargo test --test {{test_name}} -- --nocapture
 
