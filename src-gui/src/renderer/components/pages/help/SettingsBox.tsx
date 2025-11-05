@@ -432,7 +432,7 @@ function MoneroNodeUrlSetting() {
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <ValidatedTextField
             value={moneroNodeUrl}
-            onValidatedChange={handleNodeUrlChange}
+            onValidatedChange={(value) => value && handleNodeUrlChange(value)}
             placeholder={PLACEHOLDER_MONERO_NODE_URL}
             disabled={useMoneroRpcPool}
             fullWidth

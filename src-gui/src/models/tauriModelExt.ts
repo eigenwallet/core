@@ -354,9 +354,9 @@ export function isPendingPasswordApprovalEvent(
  * @returns True if funds have been locked, false otherwise
  */
 export function haveFundsBeenLocked(
-  event: TauriSwapProgressEvent | null,
+  event: TauriSwapProgressEvent | null | undefined,
 ): boolean {
-  if (event === null) {
+  if (event === null || event === undefined) {
     return false;
   }
 
@@ -372,7 +372,7 @@ export function haveFundsBeenLocked(
 }
 
 export function isContextFullyInitialized(
-  status: ResultContextStatus,
+  status: ResultContextStatus | null,
 ): boolean {
   if (status == null || status.type === ContextStatusType.Error) {
     return false;

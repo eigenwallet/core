@@ -299,7 +299,7 @@ export default function SwapStatusAlert({
         }}
       >
         <StateAlert swap={swap} timelock={timelock} isRunning={isRunning} />
-        <TimelockTimeline swap={swap} timelock={timelock} />
+        {timelock && <TimelockTimeline swap={swap} timelock={timelock} />}
       </Box>
     </Alert>
   );

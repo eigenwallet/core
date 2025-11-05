@@ -108,7 +108,7 @@ export default function ScrollablePaperTextBox({
         <IconButton onClick={scrollToBottom} size="small">
           <KeyboardArrowDownIcon />
         </IconButton>
-        {searchQuery !== undefined && setSearchQuery !== undefined && (
+        {searchQuery !== null && setSearchQuery !== null && (
           <ExpandableSearchBox query={searchQuery} setQuery={setSearchQuery} />
         )}
       </Box>
