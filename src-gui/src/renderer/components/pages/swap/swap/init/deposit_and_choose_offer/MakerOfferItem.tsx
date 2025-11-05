@@ -111,7 +111,12 @@ export default function MakerOfferItem({
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <PromiseInvokeButton
           variant="contained"
-          onInvoke={() => resolveApproval(requestId, true as unknown as object)}
+          onInvoke={() => {
+            if (!requestId) {
+              throw new Error("Request ID is required");
+            }
+            return resolveApproval(requestId, true as unknown as object);
+          }}
           displayErrorSnackbar
           disabled={!requestId}
           tooltipTitle={

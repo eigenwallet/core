@@ -21,7 +21,7 @@ export default function InfoBox({
   return (
     <Paper
       variant="outlined"
-      id={id}
+      id={id ?? undefined}
       sx={{
         padding: 1.5,
         overflow: "hidden",
