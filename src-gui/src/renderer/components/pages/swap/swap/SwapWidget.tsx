@@ -18,11 +18,7 @@ export default function SwapWidget() {
     <Box
       sx={{ display: "flex", flexDirection: "column", gap: 2, width: "100%" }}
     >
-<<<<<<< Updated upstream
       {swapInfo != null && (
-=======
-      {swapInfo && (
->>>>>>> Stashed changes
         <SwapStatusAlert
           swap={swapInfo}
           onlyShowIfUnusualAmountOfTimeHasPassed
