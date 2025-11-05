@@ -500,10 +500,7 @@ impl EventLoopHandle {
         .context("Failed to request cooperative XMR redeem after retries")
     }
 
-    pub async fn send_encrypted_signature(
-        &mut self,
-        tx_redeem_encsig: EncryptedSignature,
-    ) {
+    pub async fn send_encrypted_signature(&mut self, tx_redeem_encsig: EncryptedSignature) {
         tracing::debug!("Sending encrypted signature");
 
         // We will retry indefinitely until we succeed

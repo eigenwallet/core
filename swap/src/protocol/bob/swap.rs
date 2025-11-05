@@ -703,23 +703,27 @@ async fn next_state(
             retry(
                 "Check for tx_redeem, tx_early_refund and tx_cancel then publish tx_cancel if necessary",
                 || async {
+
+                    // TODO: Uncomment this once we have the required data in State6
                     // First we check if tx_redeem is present on the chain
                     // 
                     // We may have sent the enc sig close to the timelock expiration,
                     // never received the confirmation and now the cancel timelock has expired.
                     //
                     // Alice may still have received the enc sig even if we are in this state
-                    if state6.check_for_tx_redeem(&*bitcoin_wallet).await?.is_some() {
-                        return Ok(BobState::BtcRedeemed(state6));
-                    }
+                    // if state6.check_for_tx_redeem(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?.is_some() {
+                    //     return Ok(BobState::BtcRedeemed(state6));
+                    // }
+
+                    // TODO: Do these in parallel to speed up
 
                     // Check if tx_early_refund is present on the chain, if it is then there 
-                    if state6.check_for_tx_early_refund(&*bitcoin_wallet).await?.is_some() {
+                    if state6.check_for_tx_early_refund(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?.is_some() {
                         return Ok(BobState::BtcEarlyRefundPublished(state6));
                     }
 
                     // Then we check if tx_cancel is present on the chain
-                    if state6.check_for_tx_cancel(&*bitcoin_wallet).await?.is_some() {
+                    if state6.check_for_tx_cancel(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?.is_some() {
                         return Ok(BobState::BtcCancelled(state6));
                     }
 
@@ -732,7 +736,7 @@ async fn next_state(
                 None,
             )
             .await
-            .context("Failed to check for tx_redeem, tx_early_refund and tx_cancel then publish tx_cancel if necessary")
+            .expect("we never stop retrying to check for tx_redeem, tx_early_refund and tx_cancel then publishing tx_cancel if necessary")
         }
         BobState::BtcCancelled(state) => {
             // TODO: We should differentiate between BtcCancelPublished and BtcCancelled (confirmed)
@@ -746,30 +750,30 @@ async fn next_state(
             retry(
                 "Check timelocks and try to refund",
                 || async {
-                    match state.expired_timelock(&*bitcoin_wallet).await? {
+                    match state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)? {
                         ExpiredTimelocks::None { .. } => {
-                            bail!(
+                            Err(backoff::Error::Permanent(anyhow::anyhow!(
                                 "Internal error: canceled state reached before cancel timelock was expired"
-                            );
+                            )))
                         }
                         ExpiredTimelocks::Cancel { .. } => {
-                            let btc_refund_txid = state.publish_refund_btc(&*bitcoin_wallet).await?;
-        
+                            let btc_refund_txid = state.publish_refund_btc(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?;
+
                             tracing::info!(%btc_refund_txid, "Refunded our Bitcoin");
-        
-                            BobState::BtcRefundPublished(state)
+
+                            Ok(BobState::BtcRefundPublished(state))
                         }
-                        ExpiredTimelocks::Punish => BobState::BtcPunished {
+                        ExpiredTimelocks::Punish => Ok(BobState::BtcPunished {
                             tx_lock_id: state.tx_lock_id(),
                             state,
-                        },
+                        }),
                     }
                 },
                 None,
                 None,
             )
             .await
-            .context("Failed to check timelocks and try to refund")
+            .expect("we never stop retrying to refund")
         }
         BobState::BtcRefundPublished(state) => {
             // Emit a Tauri event
