@@ -69,11 +69,7 @@ function BitcoinRedeemedStateAlert({ swap }: { swap: GetSwapInfoResponseExt }) {
           "If this step fails, you can manually redeem your funds",
         ]}
       />
-      <SwapMoneroRecoveryButton
-        swap={swap}
-        size="small"
-        variant="contained"
-      />
+      <SwapMoneroRecoveryButton swap={swap} size="small" variant="contained" />
     </Box>
   );
 }
@@ -208,10 +204,7 @@ export function StateAlert({
             );
           case "Cancel":
             return (
-              <BitcoinPossiblyCancelledAlert
-                timelock={timelock}
-                swap={swap}
-              />
+              <BitcoinPossiblyCancelledAlert timelock={timelock} swap={swap} />
             );
           case "Punish":
             return <PunishTimelockExpiredAlert />;
@@ -289,8 +282,7 @@ export default function SwapStatusAlert({
           )
         ) : (
           <>
-            Swap <TruncatedText>{swap.swap_id}</TruncatedText> is
-            not running
+            Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
           </>
         )}
       </AlertTitle>
