@@ -90,7 +90,7 @@ export default function SendTransactionContent({
   const moneroAmount =
     currency === "XMR"
       ? parseFloat(sendAmount)
-      : parseFloat(sendAmount) / xmrPrice;
+      : xmrPrice !== null ? parseFloat(sendAmount) / xmrPrice : null;
 
   const handleSend = async () => {
     if (!sendAddress) {

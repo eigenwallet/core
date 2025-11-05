@@ -369,12 +369,12 @@ export async function getAllSwapTimelocks() {
   );
 }
 
-export async function withdrawBtc(address: string): Promise<string> {
+export async function sweepBtc(address: string): Promise<string> {
   const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
     "withdraw_btc",
     {
       address,
-      amount: null,
+      amount: undefined,
     },
   );
 

@@ -16,7 +16,7 @@ interface SendAmountInputProps {
   currency: string;
   onCurrencyChange: (currency: string) => void;
   fiatCurrency: string;
-  xmrPrice: number;
+  xmrPrice: number | null;
   showFiatRate: boolean;
   disabled?: boolean;
 }
