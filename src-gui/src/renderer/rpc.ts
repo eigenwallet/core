@@ -210,7 +210,13 @@ export async function buyXmr() {
 
     address_pool.push(
       {
-        address: moneroReceiveAddress,
+        // We need to assert this as being not null even though it can be null
+        //
+        // This is correct because a LabeledMoneroAddress can actually have a null address but
+        // typeshare cannot express that yet (easily)
+        //
+        // TODO: Let typescript do its job here and not assert it
+        address: moneroReceiveAddress!,
         percentage: 1 - donationPercentage,
         label: "Your wallet",
       },
@@ -222,7 +228,13 @@ export async function buyXmr() {
     );
   } else {
     address_pool.push({
-      address: moneroReceiveAddress,
+      // We need to assert this as being not null even though it can be null
+      //
+      // This is correct because a LabeledMoneroAddress can actually have a null address but
+      // typeshare cannot express that yet (easily)
+      //
+      // TODO: Let typescript do its job here and not assert it
+      address: moneroReceiveAddress!,
       percentage: 1,
       label: "Your wallet",
     });
@@ -232,7 +244,9 @@ export async function buyXmr() {
     rendezvous_points: PRESET_RENDEZVOUS_POINTS,
     sellers,
     monero_receive_pool: address_pool,
-    bitcoin_change_address: bitcoinChangeAddress,
+    // We convert null to undefined because typescript
+    // expects undefined if the field is optional and does not accept null here
+    bitcoin_change_address: bitcoinChangeAddress ?? undefined,
   });
 }
 
