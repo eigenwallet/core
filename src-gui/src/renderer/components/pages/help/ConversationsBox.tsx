@@ -29,7 +29,6 @@ import ChatIcon from "@mui/icons-material/Chat";
 import SendIcon from "@mui/icons-material/Send";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import TruncatedText from "renderer/components/other/TruncatedText";
-import clsx from "clsx";
 import {
   useAppSelector,
   useAppDispatch,
