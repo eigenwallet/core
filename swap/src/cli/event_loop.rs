@@ -596,7 +596,7 @@ impl EventLoopHandle {
         peer_id: PeerId,
         swap_id: Uuid,
         tx_redeem_encsig: EncryptedSignature,
-    ) -> Result<()> {
+    ) -> () {
         tracing::debug!(%peer_id, %swap_id, "Sending encrypted signature");
 
         // We will retry indefinitely until we succeed
@@ -623,7 +623,7 @@ impl EventLoopHandle {
             )
         })
         .await
-        .context("Failed to send encrypted signature after retries")
+        .expect("we should never run out of retries when sending an encrypted signature")
     }
 }
 
@@ -657,7 +657,7 @@ impl SwapEventLoopHandle {
     pub async fn send_encrypted_signature(
         &mut self,
         tx_redeem_encsig: EncryptedSignature,
-    ) -> Result<()> {
+    ) -> () {
         self.handle
             .send_encrypted_signature(self.peer_id, self.swap_id, tx_redeem_encsig)
             .await
