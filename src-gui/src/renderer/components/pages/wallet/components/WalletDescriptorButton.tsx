@@ -13,7 +13,10 @@ import ActionableMonospaceTextBox from "renderer/components/other/ActionableMono
 import { getWalletDescriptor } from "renderer/rpc";
 import { ExportBitcoinWalletResponse } from "models/tauriModel";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
-import { isContextWithBitcoinWallet } from "models/tauriModelExt";
+import {
+  isContextWithBitcoinWallet,
+  hasDescriptorProperty,
+} from "models/tauriModelExt";
 
 const WALLET_DESCRIPTOR_DOCS_URL =
   "https://github.com/eigenwallet/core/blob/master/dev-docs/asb/README.md#exporting-the-bitcoin-wallet-descriptor";
@@ -58,8 +61,12 @@ function WalletDescriptorModal({
   onClose: () => void;
   walletDescriptor: ExportBitcoinWalletResponse;
 }) {
+  if (!hasDescriptorProperty(walletDescriptor)) {
+    throw new Error("Wallet descriptor does not have descriptor property");
+  }
+
   const parsedDescriptor = JSON.parse(
-    walletDescriptor.wallet_descriptor["descriptor"],
+    walletDescriptor.wallet_descriptor.descriptor,
   );
   const stringifiedDescriptor = JSON.stringify(parsedDescriptor, null, 4);
 

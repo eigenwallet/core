@@ -85,7 +85,11 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+
+# Launch the ASB controller REPL against a local testnet ASB instance
+asb-testnet-controller:
+	cargo run -p swap-controller --bin asb-controller -- --url http://127.0.0.1:9944
 
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:
@@ -113,6 +117,10 @@ check_gui_eslint:
 # Run the typescript type checker for the GUI frontend
 check_gui_tsc:
 	cd src-gui && yarn run tsc --noEmit
+
+# Check for unused code in the GUI frontend
+check_gui_unused_code:
+	cd src-gui && npx knip
 
 test test_name:
     cargo test --test {{test_name}} -- --nocapture

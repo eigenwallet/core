@@ -5,9 +5,9 @@ import dayjs from "dayjs";
 import TransactionItem from "./TransactionItem";
 
 interface TransactionHistoryProps {
-  history?: {
+  history: {
     transactions: TransactionInfo[];
-  };
+  } | null;
 }
 
 interface TransactionGroup {

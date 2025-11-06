@@ -24,7 +24,7 @@ declare module "@mui/material/styles" {
     tint?: string;
   }
 
-  interface PaletteColorOptions {
+  interface SimplePaletteColorOptions {
     tint?: string;
   }
 }
@@ -60,16 +60,6 @@ const baseTheme: ThemeOptions = {
             borderColor: "color-mix(in srgb, currentColor 30%, transparent)",
             backgroundColor: "color-mix(in srgb, #bdbdbd 10%, transparent)",
           },
-        },
-        sizeTiny: {
-          fontSize: "0.75rem",
-          fontWeight: 500,
-          padding: "4px 8px",
-          minHeight: "24px",
-          minWidth: "auto",
-          lineHeight: 1.2,
-          textTransform: "none",
-          borderRadius: "4px",
         },
       },
       variants: [

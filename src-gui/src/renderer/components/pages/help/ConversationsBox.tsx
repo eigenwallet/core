@@ -29,7 +29,6 @@ import ChatIcon from "@mui/icons-material/Chat";
 import SendIcon from "@mui/icons-material/Send";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import TruncatedText from "renderer/components/other/TruncatedText";
-import clsx from "clsx";
 import {
   useAppSelector,
   useAppDispatch,
@@ -378,10 +377,6 @@ function MessageBubble({ message }: { message: Message }) {
       <Box
         sx={(theme) => ({
           padding: 1.5,
-          borderRadius:
-            typeof theme.shape.borderRadius === "number"
-              ? theme.shape.borderRadius * 2
-              : 8,
           maxWidth: "75%",
           wordBreak: "break-word",
           boxShadow: theme.shadows[1],

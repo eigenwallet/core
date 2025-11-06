@@ -4,8 +4,9 @@ import imagePath from "assets/groupWithChatbubbles.png";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import MatrixIcon from "renderer/components/icons/MatrixIcon";
 import LinkIconButton from "renderer/components/icons/LinkIconButton";
+import { IntroSlideProps } from "./SlideTypes";
 
-export default function Slide02_ChooseAMaker(props: slideProps) {
+export default function Slide02_ChooseAMaker(props: IntroSlideProps) {
   return (
     <SlideTemplate
       title="Reach out"

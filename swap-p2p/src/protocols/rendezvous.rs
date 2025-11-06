@@ -62,8 +62,8 @@ pub mod register {
     use std::task::{Context, Poll};
     use std::time::Duration;
 
-    #[derive(Clone, PartialEq)]
-    enum ConnectionStatus {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ConnectionStatus {
         Disconnected,
         Dialling,
         Connected,
@@ -84,6 +84,45 @@ pub mod register {
         // do not insert directly into this future
         to_dial: FuturesUnordered<BoxFuture<'static, PeerId>>,
         backoffs: HashMap<PeerId, ExponentialBackoff>,
+    }
+
+    // Provide a read-only snapshot of rendezvous registrations
+    impl Behaviour {
+        /// Returns a snapshot of registration and connection status for all configured rendezvous nodes.
+        pub fn registrations(&self) -> Vec<RegistrationReport> {
+            self.rendezvous_nodes
+                .iter()
+                .map(|n| RegistrationReport {
+                    address: n.address.clone(),
+                    connection: n.connection_status,
+                    registration: match &n.registration_status {
+                        RegistrationStatus::RegisterOnNextConnection => {
+                            RegistrationStatusReport::RegisterOnNextConnection
+                        }
+                        RegistrationStatus::Pending => RegistrationStatusReport::Pending,
+                        RegistrationStatus::Registered { .. } => {
+                            RegistrationStatusReport::Registered
+                        }
+                    },
+                })
+                .collect()
+        }
+    }
+
+    /// Public representation of a rendezvous node registration status
+    /// The raw `RegistrationStatus` cannot be exposed because it is not serializable
+    #[derive(Debug, Clone)]
+    pub struct RegistrationReport {
+        pub address: Multiaddr,
+        pub connection: ConnectionStatus,
+        pub registration: RegistrationStatusReport,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RegistrationStatusReport {
+        RegisterOnNextConnection,
+        Pending,
+        Registered,
     }
 
     /// A node running the rendezvous server protocol.
