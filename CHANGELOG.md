@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix an issue where we a manual resume of a swap would be necessary if we failed to fetch certain Bitcoin transactions due to network issues.
+
 ## [3.2.9] - 2025-11-05
 
 - GUI: Fix an issue where an error in the UI runtime would cause a white screen to be displayed and nothing would be rendered.
