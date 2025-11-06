@@ -32,7 +32,7 @@ export default function SubaddressesModal({ open, onClose }: Props) {
   const subaddresses = useAppSelector((s) => s.wallet.state.subaddresses);
   const [newLabel, setNewLabel] = useState("");
   const [isCreating, setIsCreating] = useState(false);
-  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<number | undefined>();
   const [editLabel, setEditLabel] = useState("");
 
   return (
@@ -72,11 +72,7 @@ export default function SubaddressesModal({ open, onClose }: Props) {
         ) : (
           <List dense>
             {subaddresses.map((s) => (
-              <ListItem
-                key={`${s.account_index}-${s.address_index}`}
-                divider
-                sx={{ display: "block" }}
-              >
+              <ListItem key={s.address_index} divider sx={{ display: "block" }}>
                 <ListItemText
                   primary={<ActionableMonospaceTextBox content={s.address} />}
                   secondary={
@@ -91,8 +87,7 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                       <Typography variant="body2" color="text.secondary">
                         Address #{s.address_index}
                       </Typography>
-                      {editingKey ===
-                        `${s.account_index}-${s.address_index}` ? (
+                      {editingKey === s.address_index ? (
                         <>
                           <TextField
                             size="small"
@@ -111,7 +106,7 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                               );
                               const subs = await getMoneroSubAddresses();
                               dispatch(setSubaddresses(subs));
-                              setEditingKey(null);
+                              setEditingKey(undefined);
                               setEditLabel("");
                             }}
                           >
@@ -120,7 +115,7 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                           <Button
                             size="small"
                             onClick={() => {
-                              setEditingKey(null);
+                              setEditingKey(undefined);
                               setEditLabel("");
                             }}
                           >
@@ -137,15 +132,8 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                           <Button
                             size="small"
                             onClick={() => {
-                              // Drop the "#<index>" prefix if present
-                              const cleaned = s.label.replace(
-                                new RegExp(`^#${s.address_index}\\s?`),
-                                "",
-                              );
-                              setEditingKey(
-                                `${s.account_index}-${s.address_index}`,
-                              );
-                              setEditLabel(cleaned);
+                              setEditingKey(s.address_index);
+                              setEditLabel(s.label);
                             }}
                           >
                             Edit label

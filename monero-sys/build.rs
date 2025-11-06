@@ -75,6 +75,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Adds txKeys() to PendingTransaction in wallet2_api.h",
         "patches/eigenwallet_0003_pending_transaction_tx_keys.patch"
     ),
+    embedded_patch!(
+        "eigenwallet_0004_wallet_impl_balance_per_subaddress.patch",
+        "Adds balancePerSubaddress() and unlockedBalancePerSubaddress() to wallet::WalletImpl in api/wallet.h",
+        "patches/eigenwallet_0004_wallet_impl_balance_per_subaddress.patch"
+    ),
 ];
 
 fn main() {
