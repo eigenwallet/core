@@ -1,8 +1,9 @@
 import { Typography } from "@mui/material";
 import SlideTemplate from "./SlideTemplate";
 import imagePath from "assets/walletWithBitcoinAndMonero.png";
+import { IntroSlideProps } from "./SlideTypes";
 
-export default function Slide01_GettingStarted(props: slideProps) {
+export default function Slide01_GettingStarted(props: IntroSlideProps) {
   return (
     <SlideTemplate title="Getting Started" {...props} imagePath={imagePath}>
       <Typography variant="subtitle1">
