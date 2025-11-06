@@ -7,7 +7,7 @@ use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::swap::has_already_processed_transfer_proof;
 use crate::protocol::bob::{BobState, State2};
 use crate::protocol::Database;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
@@ -209,18 +209,12 @@ impl EventLoop {
                                 continue;
                             }
 
+
                             // Immediately acknowledge if we've already processed this transfer proof
                             // This handles the case where Alice didn't receive our previous acknowledgment
                             // and is retrying sending the transfer proof
-                            if let Ok(state) = self.db.get_state(swap_id).await {
-                                // TODO: This could panic if the database contains an invalid state
-                                // TODO: We should warn instead of panicking
-                                let state: BobState = state.try_into()
-                                    .expect("Bobs database only contains Bob states");
-
-                                if has_already_processed_transfer_proof(&state) {
-                                    tracing::warn!("Received transfer proof for swap {} but we are already in state {}. Acknowledging immediately. Alice most likely did not receive the acknowledgment when we sent it before", swap_id, state);
-
+                            match should_acknowledge_transfer_proof(self.db.clone(), swap_id, peer).await {
+                                Ok(true) => {
                                     // We set this to a future that will resolve immediately, and returns the channel
                                     // This will be resolved in the next iteration of the event loop, and a response will be sent to Alice
                                     self.pending_transfer_proof_acks.push(async move {
@@ -228,6 +222,16 @@ impl EventLoop {
                                     }.boxed());
 
                                     continue;
+                                }
+                                // TODO: Maybe we should log here?
+                                Ok(false) => {}
+                                Err(error) => {
+                                    tracing::warn!(
+                                        %swap_id,
+                                        %peer,
+                                        error = ?error,
+                                        "Failed to evaluate if we should acknowledge the transfer proof, we will not respond at all"
+                                    );
                                 }
                             }
                         }
@@ -371,10 +375,16 @@ impl EventLoop {
                         "Dispatching outgoing execution setup request"
                     );
 
-                    // TODO: handle the error here
-                    let _ = self.swarm.dial(DialOpts::peer_id(alice_peer_id).condition(PeerCondition::Disconnected).build());
-                    self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
+                    // Dial Alice and warn if it fails
+                    if let Err(err) = self.swarm.dial(DialOpts::peer_id(alice_peer_id).condition(PeerCondition::DisconnectedAndNotDialing).build()) {
+                        tracing::trace!(
+                            %alice_peer_id,
+                            error = ?err,
+                            "Failed to dial Alice before starting the swap setup protocol. This is probably fine."
+                        );
+                    }
 
+                    self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
                     self.inflight_swap_setup.insert((alice_peer_id, swap_id), responder);
                 },
 
@@ -666,4 +676,29 @@ impl SwapEventLoopHandle {
     pub async fn request_quote(&mut self) -> Result<BidQuote> {
         self.handle.request_quote(self.peer_id).await
     }
+}
+
+async fn should_acknowledge_transfer_proof(
+    db: Arc<dyn Database + Send + Sync>,
+    swap_id: Uuid,
+    peer_id: PeerId,
+) -> Result<bool> {
+    let expected_peer_id = db.get_peer_id(swap_id).await.context(
+        "Failed to get peer id for swap to check if we should acknowledge the transfer proof",
+    )?;
+
+    // If the peer id is not the expected peer id, we should not acknowledge the transfer proof
+    // This is to prevent malicious requests
+    if expected_peer_id != peer_id {
+        bail!("Expected peer id {} but got {}", expected_peer_id, peer_id);
+    }
+
+    let state = db.get_state(swap_id).await.context(
+        "Failed to get state for swap to check if we should acknowledge the transfer proof",
+    )?;
+    let state: BobState = state.try_into().context(
+        "Failed to convert state to BobState to check if we should acknowledge the transfer proof",
+    )?;
+
+    Ok(has_already_processed_transfer_proof(&state))
 }

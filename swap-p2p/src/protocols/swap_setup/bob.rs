@@ -69,10 +69,11 @@ impl Behaviour {
         tracing::trace!(
             %alice_peer_id,
             ?swap,
-            "Queuing new swap setup request",
+            "Queuing new swap setup request inside the Behaviour",
         );
 
         // TODO: This is a bit redundant because we already have the swap_id in the NewSwap struct
+        // TODO: Maybe we should force a dial here if no connection handler is available?
         self.new_swaps
             .push_back((alice_peer_id, swap.swap_id, swap));
     }
@@ -166,7 +167,7 @@ impl NetworkBehaviour for Behaviour {
         connection_id: libp2p::swarm::ConnectionId,
         event: THandlerOutEvent<Self>,
     ) {
-        // TODO: we should be able to use .remove() here but we need to return the value
+        // TODO: we should be able to use .remove() here?
         if let Some((swap_id, peer_id)) = self.inflight_requests.get(&connection_id) {
             assert_eq!(*peer_id, event_peer_id);
 
@@ -186,7 +187,7 @@ impl NetworkBehaviour for Behaviour {
         if let Some(completed) = self.to_swarm.pop_front() {
             tracing::trace!(
                 peer = %completed.peer,
-                "Forwarding completed swap to the swarm",
+                "Forwarding completed swap setup from Behaviour to the Swarm",
             );
 
             return Poll::Ready(ToSwarm::GenerateEvent(completed));
@@ -247,7 +248,7 @@ impl NetworkBehaviour for Behaviour {
                 swap_id = %swap_id,
                 connection_id = %connection_id,
                 ?new_swap,
-                "Dispatching swap setup request to a specific connection handler",
+                "Dispatching swap setup request from Behaviour to a specific connection handler",
             );
 
             // Check if the connection handler is still alive
@@ -270,7 +271,7 @@ impl NetworkBehaviour for Behaviour {
                     peer = %peer_id,
                     swap_id = %swap_id,
                     ?new_swap,
-                    "Notifying connection handler of the swap setup request (we are assuming it is still alive)",
+                    "Notifying connection handler of the swap setup request. We are assuming it is still alive.",
                 );
 
                 self.inflight_requests
@@ -454,7 +455,7 @@ impl ConnectionHandler for Handler {
 
                     result.map_err(|err: anyhow::Error| {
                         tracing::error!(?err, "Error occurred during swap setup protocol");
-                        Error::Other // TODO: Propagate the actual error to the caller
+                        Error::Protocol(format!("{:?}", err))
                     })
                 });
 
@@ -470,6 +471,7 @@ impl ConnectionHandler for Handler {
                 // Once the outbound stream is created, we keep the connection alive
                 self.keep_alive = true;
             }
+            // TODO: These are a bit redundant, probably just remove them
             libp2p::swarm::handler::ConnectionEvent::AddressChange(address_change) => {
                 tracing::trace!(
                     ?address_change,
@@ -512,7 +514,7 @@ impl ConnectionHandler for Handler {
     }
 
     fn connection_keep_alive(&self) -> bool {
-        true // TODO: temporary fix
+        self.keep_alive
     }
 
     fn poll(
@@ -521,11 +523,11 @@ impl ConnectionHandler for Handler {
     ) -> Poll<
         ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::ToBehaviour>,
     > {
-        // Check if there is a new swap to be started
+        // Check if there is a new swap to be started on this connection
+        // Has the Behaviour assigned us a new swap to be started on this connection?
         if let Some(new_swap) = self.new_swaps.pop_front() {
             tracing::trace!(
                 ?new_swap.swap_id,
-
                 "Instructing swarm to start a new outbound substream as part of swap setup",
             );
             self.keep_alive = true;
@@ -587,6 +589,11 @@ pub enum Error {
 
     #[error("Failed to complete swap setup within {seconds}s")]
     Timeout { seconds: u64 },
+
+    /// Something went wrong during the swap setup protocol that is not covered by the other errors
+    /// but where we have some context about the error
+    #[error("Something went wrong during the swap setup protocol: {0}")]
+    Protocol(String),
 
     /// To be used for errors that cannot be explained on the CLI side (e.g.
     /// rate update problems on the seller side)

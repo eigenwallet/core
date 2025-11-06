@@ -6,7 +6,7 @@ use crate::network::{
 use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{identify, identity, ping, PeerId};
+use libp2p::{identify, identity, ping};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
