@@ -495,6 +495,7 @@ async fn next_state(
                         let redeem_state = state_for_attempt
                             .check_for_tx_redeem(&*bitcoin_wallet)
                             .await
+                            .context("Failed to check for existence of tx_redeem before sending encrypted signature")
                             .map_err(backoff::Error::transient)?;
 
                         // We do not want to race tx_refund against tx_redeem
@@ -502,6 +503,7 @@ async fn next_state(
                         let expired_timelocks = state_for_attempt
                             .expired_timelock(&*bitcoin_wallet)
                             .await
+                            .context("Failed to check for expired timelocks before sending encrypted signature")
                             .map_err(backoff::Error::transient)?;
 
                         Ok::<_, backoff::Error<anyhow::Error>>((
@@ -576,12 +578,14 @@ async fn next_state(
                         let redeem_state = state_for_attempt
                             .check_for_tx_redeem(&*bitcoin_wallet)
                             .await
+                            .context("Failed to check for existence of tx_redeem after sending encrypted signature")
                             .map_err(backoff::Error::transient)?;
 
                         // Then, check timelock status
                         let expired_timelocks = state_for_attempt
                             .expired_timelock(&*bitcoin_wallet)
                             .await
+                            .context("Failed to check for expired timelocks after sending encrypted signature")
                             .map_err(backoff::Error::transient)?;
 
                         Ok::<_, backoff::Error<anyhow::Error>>((
@@ -700,9 +704,14 @@ async fn next_state(
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::CancelTimelockExpired);
 
+            let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
+            let state6_for_retry = state6.clone();
             retry(
                 "Check for tx_redeem, tx_early_refund and tx_cancel then publish tx_cancel if necessary",
-                || async {
+                || {
+                    let bitcoin_wallet = bitcoin_wallet_for_retry.clone();
+                    let state6 = state6_for_retry.clone();
+                    async move {
 
                     // TODO: Uncomment this once we have the required data in State6
                     // First we check if tx_redeem is present on the chain
@@ -718,19 +727,20 @@ async fn next_state(
                     // TODO: Do these in parallel to speed up
 
                     // Check if tx_early_refund is present on the chain, if it is then there 
-                    if state6.check_for_tx_early_refund(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?.is_some() {
-                        return Ok(BobState::BtcEarlyRefundPublished(state6));
+                    if state6.check_for_tx_early_refund(&*bitcoin_wallet).await.context("Failed to check for existence of tx_early_refund before cancelling").map_err(backoff::Error::transient)?.is_some() {
+                        return Ok(BobState::BtcEarlyRefundPublished(state6.clone()));
                     }
 
                     // Then we check if tx_cancel is present on the chain
-                    if state6.check_for_tx_cancel(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?.is_some() {
-                        return Ok(BobState::BtcCancelled(state6));
+                    if state6.check_for_tx_cancel(&*bitcoin_wallet).await.context("Failed to check for existence of tx_cancel before cancelling").map_err(backoff::Error::transient)?.is_some() {
+                        return Ok(BobState::BtcCancelled(state6.clone()));
                     }
 
                     // If none of the above are present, we publish tx_cancel
-                    state6.submit_tx_cancel(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?;
+                    state6.submit_tx_cancel(&*bitcoin_wallet).await.context("Failed to submit tx_cancel after ensuring both tx_early_refund and tx_cancel are not present").map_err(backoff::Error::transient)?;
 
                     Ok(BobState::BtcCancelled(state6))
+                    }
                 },
                 None,
                 None,
@@ -747,9 +757,14 @@ async fn next_state(
                 TauriSwapProgressEvent::BtcCancelled { btc_cancel_txid },
             );
 
+            let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
+            let state_for_retry = state.clone();
             retry(
                 "Check timelocks and try to refund",
-                || async {
+                || {
+                    let bitcoin_wallet = bitcoin_wallet_for_retry.clone();
+                    let state = state_for_retry.clone();
+                    async move {
                     match state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)? {
                         ExpiredTimelocks::None { .. } => {
                             Err(backoff::Error::Permanent(anyhow::anyhow!(
@@ -757,16 +772,20 @@ async fn next_state(
                             )))
                         }
                         ExpiredTimelocks::Cancel { .. } => {
-                            let btc_refund_txid = state.publish_refund_btc(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?;
+                            let btc_refund_txid = state.publish_refund_btc(&*bitcoin_wallet).await.context("Failed to publish refund transaction after ensuring cancel timelock has expired and refund timelock has not expired").map_err(backoff::Error::transient)?;
 
                             tracing::info!(%btc_refund_txid, "Refunded our Bitcoin");
 
-                            Ok(BobState::BtcRefundPublished(state))
+                            Ok(BobState::BtcRefundPublished(state.clone()))
                         }
-                        ExpiredTimelocks::Punish => Ok(BobState::BtcPunished {
-                            tx_lock_id: state.tx_lock_id(),
-                            state,
-                        }),
+                        ExpiredTimelocks::Punish => {
+                            let tx_lock_id = state.tx_lock_id();
+                            Ok(BobState::BtcPunished {
+                                tx_lock_id,
+                                state,
+                            })
+                        }
+                    }
                     }
                 },
                 None,
