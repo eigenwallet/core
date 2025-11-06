@@ -922,7 +922,7 @@ mod wallet {
                             .await
                             .context("Failed to create wallet from random seed")?
                         }
-                        SeedChoice::FromSeed { seed: mnemonic } => {
+                        SeedChoice::FromSeed { seed: mnemonic, restore_height } => {
                             // Create wallet from provided seed
                             let wallet_path = new_wallet_path(&eigenwallet_wallets_dir)
                                 .context("Failed to determine path for new wallet")?;
@@ -931,7 +931,7 @@ mod wallet {
                                 wallet_path.display().to_string(),
                                 mnemonic,
                                 env_config.monero_network,
-                                0,
+                                restore_height.unwrap_or(0),
                                 true,
                                 daemon.clone(),
                             )

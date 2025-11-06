@@ -36,7 +36,9 @@ export default function SeedSelectionDialog() {
     SeedChoice["type"] | undefined
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
+  const [blockheight, setBlockheight] = useState<string>("");
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
+  const [isBlockheightValid, setIsBlockheightValid] = useState<boolean>(true);
   const [walletPath, setWalletPath] = useState<string>("");
 
   const approval = pendingApprovals[0];
@@ -80,6 +82,18 @@ export default function SeedSelectionDialog() {
     }
   };
 
+  const handleBlockheightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setBlockheight(val);
+
+    const num = parseInt(val, 10) || undefined;
+    if (num && !Number.isNaN(num) && num >= 0) {
+      setIsBlockheightValid(true);
+    } else {
+      setIsBlockheightValid(false);
+    }
+  };
+
   const Legacy = async () => {
     if (!approval)
       throw new Error("No approval request found for seed selection");
@@ -97,7 +111,15 @@ export default function SeedSelectionDialog() {
       selectedOption === "RandomSeed"
         ? { type: "RandomSeed" }
         : selectedOption === "FromSeed"
-          ? { type: "FromSeed", content: { seed: customSeed } }
+          ? {
+            type: "FromSeed",
+            content: {
+              seed: customSeed,
+              ...(blockheight && {
+                restore_height: parseInt(blockheight, 10),
+              }),
+            },
+          }
           : { type: "FromWalletPath", content: { wallet_path: walletPath } };
 
     await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
@@ -109,9 +131,12 @@ export default function SeedSelectionDialog() {
 
   // Disable the button if the user is restoring from a seed and the seed is invalid
   // or if selecting wallet path and no path is selected
+  // or if blockheight is provided but invalid
   const isDisabled =
     selectedOption === "FromSeed"
-      ? customSeed.trim().length === 0 || !isSeedValid
+      ? customSeed.trim().length === 0 ||
+      !isSeedValid ||
+      (blockheight && !isBlockheightValid)
       : selectedOption === "FromWalletPath"
         ? !walletPath
         : false;
@@ -250,23 +275,39 @@ export default function SeedSelectionDialog() {
         )}
 
         {selectedOption === "FromSeed" && (
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Enter your seed phrase"
-            value={customSeed}
-            onChange={(e) => setCustomSeed(e.target.value)}
-            placeholder="Enter your Monero 25 words seed phrase..."
-            error={!isSeedValid && customSeed.length > 0}
-            helperText={
-              isSeedValid
-                ? "Seed is valid"
-                : customSeed.length > 0
-                  ? "Seed is invalid"
-                  : ""
-            }
-          />
+          <>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Enter your seed phrase"
+              value={customSeed}
+              onChange={(e) => setCustomSeed(e.target.value)}
+              placeholder="Enter your Monero 25 words seed phrase..."
+              error={!isSeedValid && customSeed.length > 0}
+              helperText={
+                isSeedValid
+                  ? "Seed is valid"
+                  : customSeed.length > 0
+                    ? "Seed is invalid"
+                    : ""
+              }
+            />
+            <TextField
+              label="Restore blockheight (optional)"
+              value={blockheight}
+              onChange={handleBlockheightChange}
+              placeholder="Restore blockheight (optional)"
+              error={blockheight && !isBlockheightValid}
+              helperText={
+                blockheight && !isBlockheightValid
+                  ? "Please enter a valid blockheight"
+                  : blockheight
+                    ? "Valid blockheight"
+                    : ""
+              }
+            />
+          </>
         )}
 
         {selectedOption === "FromWalletPath" && (
