@@ -1,6 +1,6 @@
-use crate::bitcoin;
+use crate::bitcoin::{self, CancelTimelock, PunishTimelock};
 use crate::bitcoin::{
-    build_shared_output_descriptor, Address, Amount, BlockHeight, PublicKey, Transaction, TxLock,
+    build_shared_output_descriptor, Address, Amount, PublicKey, Transaction, TxLock,
 };
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::transaction::Version;
@@ -13,112 +13,7 @@ use anyhow::Result;
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
-use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fmt;
-use std::ops::Add;
-use typeshare::typeshare;
-
-/// Represent a timelock, expressed in relative block height as defined in
-/// [BIP68](https://github.com/bitcoin/bips/blob/master/bip-0068.mediawiki).
-/// E.g. The timelock expires 10 blocks after the reference transaction is
-/// mined.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(transparent)]
-#[typeshare]
-pub struct CancelTimelock(u32);
-
-impl From<CancelTimelock> for u32 {
-    fn from(cancel_timelock: CancelTimelock) -> Self {
-        cancel_timelock.0
-    }
-}
-
-impl From<u32> for CancelTimelock {
-    fn from(number_of_blocks: u32) -> Self {
-        Self(number_of_blocks)
-    }
-}
-
-impl CancelTimelock {
-    pub const fn new(number_of_blocks: u32) -> Self {
-        Self(number_of_blocks)
-    }
-}
-
-impl Add<CancelTimelock> for BlockHeight {
-    type Output = BlockHeight;
-
-    fn add(self, rhs: CancelTimelock) -> Self::Output {
-        self + rhs.0
-    }
-}
-
-impl PartialOrd<CancelTimelock> for u32 {
-    fn partial_cmp(&self, other: &CancelTimelock) -> Option<Ordering> {
-        self.partial_cmp(&other.0)
-    }
-}
-
-impl PartialEq<CancelTimelock> for u32 {
-    fn eq(&self, other: &CancelTimelock) -> bool {
-        self.eq(&other.0)
-    }
-}
-
-impl fmt::Display for CancelTimelock {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} blocks", self.0)
-    }
-}
-
-/// Represent a timelock, expressed in relative block height as defined in
-/// [BIP68](https://github.com/bitcoin/bips/blob/master/bip-0068.mediawiki).
-/// E.g. The timelock expires 10 blocks after the reference transaction is
-/// mined.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(transparent)]
-#[typeshare]
-pub struct PunishTimelock(u32);
-
-impl From<PunishTimelock> for u32 {
-    fn from(punish_timelock: PunishTimelock) -> Self {
-        punish_timelock.0
-    }
-}
-
-impl From<u32> for PunishTimelock {
-    fn from(number_of_blocks: u32) -> Self {
-        Self(number_of_blocks)
-    }
-}
-
-impl PunishTimelock {
-    pub const fn new(number_of_blocks: u32) -> Self {
-        Self(number_of_blocks)
-    }
-}
-
-impl Add<PunishTimelock> for BlockHeight {
-    type Output = BlockHeight;
-
-    fn add(self, rhs: PunishTimelock) -> Self::Output {
-        self + rhs.0
-    }
-}
-
-impl PartialOrd<PunishTimelock> for u32 {
-    fn partial_cmp(&self, other: &PunishTimelock) -> Option<Ordering> {
-        self.partial_cmp(&other.0)
-    }
-}
-
-impl PartialEq<PunishTimelock> for u32 {
-    fn eq(&self, other: &PunishTimelock) -> bool {
-        self.eq(&other.0)
-    }
-}
 
 #[derive(Debug)]
 pub struct TxCancel {
