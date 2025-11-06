@@ -150,7 +150,9 @@ jobs:
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
           - package: monero-tests
-            test_name: transactions
+            test_name: transfers
+          - package: monero-tests
+            test_name: transfers_wrong_key
 
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
