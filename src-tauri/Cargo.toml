@@ -27,9 +27,9 @@ uuid = "1.16.0"
 zip = "4.0.0"
 
 # Tauri
-tauri = { version = "2.*", features = [ "config-json5" ] }
+tauri = { version = "2.8.0", features = [ "config-json5" ] }
 tauri-plugin-clipboard-manager = "2.*"
-tauri-plugin-dialog = "2.2.2"
+tauri-plugin-dialog = "2.3.3"
 tauri-plugin-opener = "2.*"
 tauri-plugin-process = "2.*"
 tauri-plugin-shell = "2.*"
