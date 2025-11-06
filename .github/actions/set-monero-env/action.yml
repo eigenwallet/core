@@ -12,10 +12,10 @@ runs:
         echo "DEPS_GUI_UBUNTU_SPECIFIC=libgtk-3-dev libappindicator3-dev librsvg2-dev" {libwebkit2gtk-4.1-0,libwebkit2gtk-4.1-dev,libjavascriptcoregtk-4.1-0,libjavascriptcoregtk-4.1-dev,gir1.2-javascriptcoregtk-4.1,gir1.2-webkit2-4.1}"$pin" >> $GITHUB_ENV
 
         # Build tooling (Linux)
-        echo "DEPS_BUILD_LINUX=autoconf nsis mingw-w64 build-essential pkg-config libtool ccache make cmake gcc g++ git curl lbzip2 gperf g++-mingw-w64-x86-64" >> $GITHUB_ENV
+        echo "DEPS_BUILD_LINUX=sccache autoconf nsis mingw-w64 build-essential pkg-config libtool ccache make cmake gcc g++ git curl lbzip2 gperf g++-mingw-w64-x86-64" >> $GITHUB_ENV
 
         # Build tooling (macos)
-        echo "DEPS_BUILD_MACOS=autoconf automake pkg-config libtool ccache make cmake gcc git curl lbzip2 gperf" >> $GITHUB_ENV
+        echo "DEPS_BUILD_MACOS=sccache autoconf automake pkg-config libtool ccache make cmake gcc git curl lbzip2 gperf" >> $GITHUB_ENV
 
         # APT configuration for better reliability
         echo 'APT_SET_CONF_COMMAND<<EOF
