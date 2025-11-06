@@ -343,6 +343,12 @@ pub mod ffi {
         /// Get the timestamp of the transaction.
         fn transactionInfoTimestamp(tx_info: &TransactionInfo) -> u64;
 
+        /// Get the subaddress account of a transaction.
+        fn transactionInfoSubaddrAccount(tx_info: &TransactionInfo) -> u32;
+
+        /// Get the subaddress indices of a transaction as a vector.
+        fn transactionInfoSubaddrIndices(tx_info: &TransactionInfo) -> UniquePtr<CxxVector<u32>>;
+
         /// Sign a message with the wallet's private key.
         fn signMessage(
             wallet: Pin<&mut Wallet>,
@@ -350,6 +356,31 @@ pub mod ffi {
             address: &CxxString,
             sign_with_view_key: bool,
         ) -> Result<UniquePtr<CxxString>>;
+
+        /// Get the number of subaddresses for a given account index.
+        fn numSubaddresses(wallet: &Wallet, account_index: u32) -> usize;
+
+        /// Get the label for a given subaddress.
+        fn getSubaddressLabel(
+            wallet: &Wallet,
+            account_index: u32,
+            address_index: u32,
+        ) -> Result<UniquePtr<CxxString>>;
+
+        /// Create a new subaddress for the given account with an optional label.
+        fn addSubaddress(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            label: &CxxString,
+        ) -> Result<bool>;
+
+        /// Set a label for a specific subaddress.
+        fn setSubaddressLabel(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            address_index: u32,
+            label: &CxxString,
+        ) -> Result<bool>;
     }
 }
 

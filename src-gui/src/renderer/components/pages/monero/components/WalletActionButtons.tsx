@@ -18,10 +18,12 @@ import {
   SwapHoriz as SwapIcon,
   Restore as RestoreIcon,
   MoreHoriz as MoreHorizIcon,
+  FormatListBulleted as ListIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
 import { setMoneroRestoreHeight } from "renderer/rpc";
 import SendTransactionModal from "../SendTransactionModal";
+import SubaddressesModal from "../SubaddressesModal";
 import { useNavigate } from "react-router-dom";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
@@ -46,6 +48,7 @@ export default function WalletActionButtons({
 
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
+  const [subaddressesDialogOpen, setSubaddressesDialogOpen] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState<
     [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
   >(null);
@@ -72,6 +75,10 @@ export default function WalletActionButtons({
         open={sendDialogOpen}
         onClose={() => setSendDialogOpen(false)}
       />
+      <SubaddressesModal
+        open={subaddressesDialogOpen}
+        onClose={() => setSubaddressesDialogOpen(false)}
+      />
       <Box sx={{ display: "flex", justifyContent: "space-between" }}>
         <Box
           sx={{
@@ -92,6 +99,13 @@ export default function WalletActionButtons({
             onClick={() => navigate("/swap")}
             icon={<SwapIcon />}
             label="Swap"
+            variant="button"
+            clickable
+          />
+          <Chip
+            onClick={() => setSubaddressesDialogOpen(true)}
+            icon={<ListIcon />}
+            label="Subaddresses"
             variant="button"
             clickable
           />

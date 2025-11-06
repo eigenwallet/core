@@ -17,7 +17,10 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::cli::api::{
-    request::{GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse},
+    request::{
+        GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSubaddressesResponse,
+        GetMoneroSyncProgressResponse,
+    },
     tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle},
 };
 
@@ -50,12 +53,14 @@ struct TauriWalletListener {
     balance_throttle: Throttle<()>,
     history_throttle: Throttle<()>,
     sync_throttle: Throttle<()>,
+    addresses_throttle: Throttle<()>,
 }
 
 impl TauriWalletListener {
     const BALANCE_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const HISTORY_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const SYNC_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
+    const ADDRESSES_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
 
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
@@ -125,10 +130,30 @@ impl TauriWalletListener {
             }
         };
 
+        let addresses_job = {
+            let wallet = wallet.clone();
+            let tauri = tauri_handle.clone();
+            let rt = rt_handle.clone();
+            move |()| {
+                let wallet = wallet.clone();
+                let tauri = tauri.clone();
+                let rt = rt.clone();
+                rt.spawn(async move {
+                    let subaddresses = wallet.subaddress_summaries(0).await;
+                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+                        MoneroWalletUpdate::SubaddressesUpdate(GetMoneroSubaddressesResponse {
+                            subaddresses,
+                        }),
+                    ));
+                });
+            }
+        };
+
         Self {
             balance_throttle: throttle(balance_job, Self::BALANCE_UPDATE_THROTTLE),
             history_throttle: throttle(history_job, Self::HISTORY_UPDATE_THROTTLE),
             sync_throttle: throttle(sync_job, Self::SYNC_UPDATE_THROTTLE),
+            addresses_throttle: throttle(addresses_job, Self::ADDRESSES_UPDATE_THROTTLE),
         }
     }
 
@@ -143,6 +168,10 @@ impl TauriWalletListener {
     fn send_sync_progress(&self) {
         self.sync_throttle.call(());
     }
+
+    fn send_addresses_update(&self) {
+        self.addresses_throttle.call(());
+    }
 }
 
 impl WalletEventListener for TauriWalletListener {
@@ -154,11 +183,13 @@ impl WalletEventListener for TauriWalletListener {
     fn on_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
+        self.send_addresses_update();
     }
 
     fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
+        self.send_addresses_update();
     }
 
     fn on_new_block(&self, _height: u64) {
@@ -169,11 +200,13 @@ impl WalletEventListener for TauriWalletListener {
 
     fn on_updated(&self) {
         self.send_balance_update();
+        self.send_addresses_update();
     }
 
     fn on_refreshed(&self) {
         self.send_balance_update();
         self.send_history_update();
+        self.send_addresses_update();
     }
 
     fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) {

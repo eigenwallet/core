@@ -34,6 +34,13 @@ import {
   LabeledMoneroAddress,
   GetMoneroHistoryResponse,
   GetMoneroMainAddressResponse,
+  SubaddressSummary,
+  GetMoneroSubaddressesArgs,
+  GetMoneroSubaddressesResponse,
+  CreateMoneroSubaddressArgs,
+  CreateMoneroSubaddressResponse,
+  SetMoneroSubaddressLabelArgs,
+  SetMoneroSubaddressLabelResponse,
   GetMoneroBalanceResponse,
   SendMoneroArgs,
   SendMoneroResponse,
@@ -540,6 +547,48 @@ export async function getMoneroMainAddress(): Promise<GetMoneroMainAddressRespon
   return await invokeNoArgs<GetMoneroMainAddressResponse>(
     "get_monero_main_address",
   );
+}
+
+export async function getMoneroSubAddresses(
+  accountIndex: number = 0,
+): Promise<SubaddressSummary[]> {
+  const resp = await invoke<
+    GetMoneroSubaddressesArgs,
+    GetMoneroSubaddressesResponse
+  >("get_monero_subaddresses", {
+    account_index: accountIndex,
+  });
+  return resp.subaddresses;
+}
+
+export async function createMoneroSubaddress(
+  label: string,
+  accountIndex: number = 0,
+): Promise<SubaddressSummary> {
+  const resp = await invoke<
+    CreateMoneroSubaddressArgs,
+    CreateMoneroSubaddressResponse
+  >("create_monero_subaddress", {
+    account_index: accountIndex,
+    label,
+  });
+  return resp.subaddress;
+}
+
+export async function setMoneroSubaddressLabel(
+  accountIndex: number,
+  addressIndex: number,
+  label: string,
+): Promise<boolean> {
+  const resp = await invoke<
+    SetMoneroSubaddressLabelArgs,
+    SetMoneroSubaddressLabelResponse
+  >("set_monero_subaddress_label", {
+    account_index: accountIndex,
+    address_index: addressIndex,
+    label,
+  });
+  return resp.success;
 }
 
 export async function getMoneroBalance(): Promise<GetMoneroBalanceResponse> {

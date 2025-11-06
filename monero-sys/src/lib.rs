@@ -211,6 +211,22 @@ pub struct TransactionInfo {
 }
 
 #[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubaddressSummary {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+    #[typeshare(serialized_as = "number")]
+    pub address_index: u32,
+    #[typeshare(serialized_as = "String")]
+    pub address: monero::Address,
+    pub label: String,
+    #[typeshare(serialized_as = "number")]
+    pub received: u64,
+    #[typeshare(serialized_as = "number")]
+    pub tx_count: u32,
+}
+
+#[typeshare]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TransactionDirection {
     In,
@@ -434,6 +450,36 @@ impl WalletHandle {
     /// The main address is the first address of the first account.
     pub async fn main_address(&self) -> monero::Address {
         self.call(move |wallet| wallet.main_address()).await
+    }
+
+    /// Compute subaddress summaries for an account on the wallet thread.
+    pub async fn subaddress_summaries(&self, account_index: u32) -> Vec<SubaddressSummary> {
+        self.call(move |wallet| wallet.subaddress_summaries_sync(account_index))
+            .await
+    }
+
+    /// Create a new subaddress in the specified account and persist changes.
+    pub async fn create_subaddress(&self, account_index: u32, label: String) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.add_subaddress(account_index, &label))
+            .await
+            .context("Failed to add subaddress")?;
+        // Persist changes on disk
+        self.store_in_current_file().await?;
+        Ok(())
+    }
+
+    /// Update the label of an existing subaddress and persist changes.
+    pub async fn update_subaddress_label(
+        &self,
+        account_index: u32,
+        address_index: u32,
+        label: String,
+    ) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.set_subaddress_label(account_index, address_index, &label))
+            .await
+            .context("Failed to set subaddress label")?;
+        self.store_in_current_file().await?;
+        Ok(())
     }
 
     /// Get the current height of the blockchain.
@@ -1570,7 +1616,121 @@ impl FfiWallet {
         self.address(Self::MAIN_ACCOUNT_INDEX, 0)
     }
 
-    /// Initialize the wallet and download initial values from the remote node.
+    /// Get the address for the given account and subaddress index.
+    pub fn address_at(&self, account_index: u32, address_index: u32) -> monero::Address {
+        // Reuse the private `address` helper
+        self.address(account_index, address_index)
+    }
+
+    /// Get the number of subaddresses for a given account.
+    pub fn num_subaddresses(&self, account_index: u32) -> usize {
+        ffi::numSubaddresses(&self.inner, account_index) as usize
+    }
+
+    /// Get the label for a specific subaddress.
+    pub fn subaddress_label(&self, account_index: u32, address_index: u32) -> String {
+        ffi::getSubaddressLabel(&self.inner, account_index, address_index)
+            .context("Failed to get subaddress label: FFI call failed with exception")
+            .expect("getSubaddressLabel should not fail")
+            .to_string()
+    }
+
+    /// Compute subaddress summaries for a given account index.
+    fn subaddress_summaries_sync(&mut self, account_index: u32) -> Vec<SubaddressSummary> {
+        let history_ptr = self
+            .inner
+            .pinned()
+            .history()
+            .context("Failed to get transaction history: FFI call failed with exception");
+
+        let Ok(history_ptr) = history_ptr else {
+            tracing::error!(error=%history_ptr.unwrap_err(), "Failed to get transaction history, proceeding with empty history");
+            let size = self.num_subaddresses(account_index) as u32;
+            return (0..size)
+                .map(|idx| {
+                    let address = self.address_at(account_index, idx);
+                    let label = self.subaddress_label(account_index, idx);
+                    SubaddressSummary {
+                        account_index,
+                        address_index: idx,
+                        address,
+                        label,
+                        received: 0,
+                        tx_count: 0,
+                    }
+                })
+                .rev()
+                .collect();
+        };
+
+        let history = unsafe {
+            Pin::new_unchecked(
+                history_ptr
+                    .as_mut()
+                    .expect("history pointer to not be null after we just checked"),
+            )
+        };
+        let _ = history
+            .refresh()
+            .context("Failed to refresh transaction history: FFI call failed with exception")
+            .inspect_err(|e| tracing::error!(error=%e,"Failed to refresh transaction history"));
+
+        let history_handle = TransactionHistoryHandle(history_ptr);
+        let count = history_handle.count();
+
+        let size = self.num_subaddresses(account_index) as u32;
+        let mut received: Vec<u64> = vec![0; size as usize];
+        let mut tx_count: Vec<u32> = vec![0; size as usize];
+
+        for i in 0..count {
+            if let Some(tx_info) = history_handle.transaction(i) {
+                let Ok(direction) = tx_info.direction() else {
+                    continue;
+                };
+                if direction != TransactionDirection::In {
+                    continue;
+                }
+
+                let tx_account = ffi::transactionInfoSubaddrAccount(&tx_info);
+                if tx_account != account_index {
+                    continue;
+                }
+
+                let amount = tx_info.amount();
+                let indices_vec = ffi::transactionInfoSubaddrIndices(&tx_info);
+                let indices_ref = indices_vec
+                    .as_ref()
+                    .expect("vector should not be null after FFI call");
+                for j in 0..indices_ref.len() {
+                    let idx_u32 = unsafe { *indices_ref.get_unchecked(j) };
+                    if (idx_u32 as usize) < received.len() {
+                        received[idx_u32 as usize] =
+                            received[idx_u32 as usize].saturating_add(amount);
+                        tx_count[idx_u32 as usize] = tx_count[idx_u32 as usize].saturating_add(1);
+                    }
+                }
+            }
+        }
+
+        // Build result list
+        let mut list: Vec<SubaddressSummary> = (0..size)
+            .map(|idx| {
+                let address = self.address_at(account_index, idx);
+                let label = self.subaddress_label(account_index, idx);
+                SubaddressSummary {
+                    account_index,
+                    address_index: idx,
+                    address,
+                    label,
+                    received: received[idx as usize],
+                    tx_count: tx_count[idx as usize],
+                }
+            })
+            .collect();
+
+        list
+    }
+
     /// Does not actuallyt sync the wallet, use any of the refresh methods to do that.
     fn init(&mut self, daemon: &Daemon) -> anyhow::Result<()> {
         let daemon_address = format!("{}:{}", daemon.hostname, daemon.port);
@@ -1810,6 +1970,45 @@ impl FfiWallet {
             tracing::error!(connected, "Failed to sync Monero wallet");
             self.check_error().context("Failed to refresh wallet")?;
             anyhow::bail!("Failed to refresh wallet (no reason given)");
+        }
+
+        Ok(())
+    }
+
+    /// Create a new subaddress for an account with a label.
+    fn add_subaddress(&mut self, account_index: u32, label: &str) -> anyhow::Result<()> {
+        let_cxx_string!(label = label);
+        let success = bridge::ffi::addSubaddress(self.inner.pinned(), account_index, &label)
+            .context("Failed to add subaddress: FFI call failed with exception")?;
+
+        if !success {
+            self.check_error().context("Failed to add subaddress")?;
+            anyhow::bail!("Failed to add subaddress (no reason given)");
+        }
+
+        Ok(())
+    }
+
+    /// Set the label for an existing subaddress.
+    fn set_subaddress_label(
+        &mut self,
+        account_index: u32,
+        address_index: u32,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        let_cxx_string!(label = label);
+        let success = bridge::ffi::setSubaddressLabel(
+            self.inner.pinned(),
+            account_index,
+            address_index,
+            &label,
+        )
+        .context("Failed to set subaddress label: FFI call failed with exception")?;
+
+        if !success {
+            self.check_error()
+                .context("Failed to set subaddress label")?;
+            anyhow::bail!("Failed to set subaddress label (no reason given)");
         }
 
         Ok(())

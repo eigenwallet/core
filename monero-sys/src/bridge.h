@@ -1,6 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <string>
+#include <vector>
+#include <set>
+#include <algorithm>
 
 #include "../monero/src/wallet/api/wallet2_api.h"
 #include "../monero/src/wallet/api/wallet_manager.h"
@@ -79,6 +83,19 @@ namespace Monero
     inline void startRefresh(Wallet &wallet)
     {
         wallet.startRefresh();
+    }
+
+    inline size_t numSubaddresses(const Wallet &wallet, uint32_t account_index)
+    {
+        return wallet.numSubaddresses(account_index);
+    }
+
+    inline std::unique_ptr<std::string> getSubaddressLabel(const Wallet &wallet,
+                                                           uint32_t account_index,
+                                                           uint32_t address_index)
+    {
+        auto label = wallet.getSubaddressLabel(account_index, address_index);
+        return std::make_unique<std::string>(label);
     }
 
     /**
@@ -290,6 +307,22 @@ namespace Monero
         return static_cast<uint64_t>(tx_info.timestamp());
     }
 
+    inline uint32_t transactionInfoSubaddrAccount(const TransactionInfo &tx_info)
+    {
+        return tx_info.subaddrAccount();
+    }
+
+    inline std::unique_ptr<std::vector<uint32_t>> transactionInfoSubaddrIndices(const TransactionInfo &tx_info)
+    {
+        auto indices_set = tx_info.subaddrIndex();
+        auto vec = std::make_unique<std::vector<uint32_t>>();
+        vec->reserve(indices_set.size());
+        for (auto const &idx : indices_set) {
+            vec->push_back(idx);
+        }
+        return vec;
+    }
+
     inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxKeys(const PendingTransaction &tx, const std::string &tx_hash)
     {
         auto keys = tx.txKeys(tx_hash);
@@ -298,6 +331,28 @@ namespace Monero
         for (auto &key : keys)
             vec->push_back(std::move(key));
         return vec;
+    }
+
+    inline bool addSubaddress(Wallet* wallet, uint32_t account_index, const std::string &label)
+    {
+        try {
+            auto* sub = wallet->subaddress();
+            sub->addRow(account_index, label);
+            return true;
+        } catch(...) {
+            return false;
+        }
+    }
+
+    inline bool setSubaddressLabel(Wallet* wallet, uint32_t account_index, uint32_t address_index, const std::string &label)
+    {
+        try {
+            auto* sub = wallet->subaddress();
+            sub->setLabel(account_index, address_index, label);
+            return true;
+        } catch(...) {
+            return false;
+        }
     }
 
     // bridge.h

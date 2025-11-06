@@ -11,10 +11,12 @@ use swap::cli::{
             ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs,
             GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
             GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
-            GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
-            RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
-            SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            GetMoneroSubaddressesArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse,
+            GetRestoreHeightArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs,
+            MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse,
+            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs,
+            SuspendCurrentSwapArgs, WithdrawBtcArgs, CreateMoneroSubaddressArgs,
+            SetMoneroSubaddressLabelArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
         ContextBuilder,
@@ -70,7 +72,10 @@ macro_rules! generate_command_handlers {
             get_restore_height,
             dfx_authenticate,
             change_monero_node,
-            get_context_status
+            get_context_status,
+            get_monero_subaddresses,
+            create_monero_subaddress,
+            set_monero_subaddress_label
         ]
     };
 }
@@ -450,4 +455,7 @@ tauri_command!(get_restore_height, GetRestoreHeightArgs, no_args);
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
+tauri_command!(get_monero_subaddresses, GetMoneroSubaddressesArgs);
+tauri_command!(create_monero_subaddress, CreateMoneroSubaddressArgs);
+tauri_command!(set_monero_subaddress_label, SetMoneroSubaddressLabelArgs);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
