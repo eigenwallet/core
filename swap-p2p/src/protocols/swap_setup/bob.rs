@@ -172,7 +172,6 @@ impl NetworkBehaviour for Behaviour {
         connection_id: libp2p::swarm::ConnectionId,
         result: THandlerOutEvent<Self>,
     ) {
-        // TODO: we should be able to use .remove() here?
         if let Some((swap_id, peer)) = self.inflight_requests.remove(&connection_id) {
             assert_eq!(peer, event_peer_id);
 
@@ -390,109 +389,7 @@ impl ConnectionHandler for Handler {
                 let env_config = self.env_config;
 
                 let protocol = tokio::time::timeout(self.timeout, async move {
-                    let result = async {
-                        // Here we request the spot price from Alice
-                        write_cbor_message(
-                            &mut substream,
-                            SpotPriceRequest {
-                                btc: new_swap_request.btc,
-                                blockchain_network: BlockchainNetwork {
-                                    bitcoin: env_config.bitcoin_network,
-                                    monero: env_config.monero_network,
-                                },
-                            },
-                        )
-                        .await
-                        .context("Failed to send spot price request to Alice")?;
-
-                        // Here we read the spot price response from Alice
-                        // The outer ? checks if Alice responded with an error (SpotPriceError)
-                        let xmr = Result::from(
-                            // The inner ? is for the read_cbor_message function
-                            // It will return an error if the deserialization fails
-                            read_cbor_message::<SpotPriceResponse>(&mut substream)
-                                .await
-                                .context("Failed to read spot price response from Alice")?,
-                        )?;
-
-                        tracing::trace!(
-                            %new_swap_request.swap_id,
-                            xmr = %xmr,
-                            btc = %new_swap_request.btc,
-                            "Got spot price response from Alice as part of swap setup",
-                        );
-
-                        let state0 = State0::new(
-                            new_swap_request.swap_id,
-                            &mut rand::thread_rng(),
-                            new_swap_request.btc,
-                            xmr,
-                            env_config.bitcoin_cancel_timelock.into(),
-                            env_config.bitcoin_punish_timelock.into(),
-                            new_swap_request.bitcoin_refund_address.clone(),
-                            env_config.monero_finality_confirmations,
-                            new_swap_request.tx_refund_fee,
-                            new_swap_request.tx_cancel_fee,
-                            new_swap_request.tx_lock_fee,
-                        );
-
-                        tracing::trace!(
-                            %new_swap_request.swap_id,
-                            "Transitioned into state0 during swap setup",
-                        );
-
-                        write_cbor_message(&mut substream, state0.next_message())
-                            .await
-                            .context("Failed to send state0 message to Alice")?;
-                        let message1 = read_cbor_message::<Message1>(&mut substream)
-                            .await
-                            .context("Failed to read message1 from Alice")?;
-                        let state1 = state0
-                            .receive(bitcoin_wallet.as_ref(), message1)
-                            .await
-                            .context("Failed to receive state1")?;
-
-                        tracing::trace!(
-                            %new_swap_request.swap_id,
-                            "Transitioned into state1 during swap setup",
-                        );
-
-                        write_cbor_message(&mut substream, state1.next_message())
-                            .await
-                            .context("Failed to send state1 message")?;
-                        let message3 = read_cbor_message::<Message3>(&mut substream)
-                            .await
-                            .context("Failed to read message3 from Alice")?;
-                        let state2 = state1
-                            .receive(message3)
-                            .context("Failed to receive state2")?;
-
-                        tracing::trace!(
-                            %new_swap_request.swap_id,
-                            "Transitioned into state2 during swap setup",
-                        );
-
-                        write_cbor_message(&mut substream, state2.next_message())
-                            .await
-                            .context("Failed to send state2 message")?;
-
-                        substream
-                            .flush()
-                            .await
-                            .context("Failed to flush substream")?;
-                        substream
-                            .close()
-                            .await
-                            .context("Failed to close substream")?;
-
-                        tracing::trace!(
-                            %new_swap_request.swap_id,
-                            "Swap setup completed",
-                        );
-
-                        Ok(state2)
-                    }
-                    .await;
+                    let result = run_swap_setup(&mut substream, new_swap_request, env_config, bitcoin_wallet).await;
 
                     result.map_err(|err: anyhow::Error| {
                         tracing::error!(?err, "Error occurred during swap setup protocol");
@@ -508,11 +405,7 @@ impl ConnectionHandler for Handler {
                     })?
                 })
                     as OutboundStream));
-
-                // Once the outbound stream is created, we keep the connection alive
-                self.keep_alive = true;
             }
-            // TODO: These are a bit redundant, probably just remove them
             libp2p::swarm::handler::ConnectionEvent::AddressChange(address_change) => {
                 tracing::trace!(
                     ?address_change,
@@ -528,24 +421,8 @@ impl ConnectionHandler for Handler {
                     "Listen upgrade error during swap setup"
                 );
             }
-            libp2p::swarm::handler::ConnectionEvent::LocalProtocolsChange(
-                local_protocols_change,
-            ) => {
-                tracing::trace!(
-                    ?local_protocols_change,
-                    "Local protocols changed during swap setup"
-                );
-            }
-            libp2p::swarm::handler::ConnectionEvent::RemoteProtocolsChange(
-                remote_protocols_change,
-            ) => {
-                tracing::trace!(
-                    ?remote_protocols_change,
-                    "Remote protocols changed during swap setup"
-                );
-            }
             _ => {
-                tracing::trace!("Received unknown connection event during swap setup");
+                // We ignore the rest of events
             }
         }
     }
@@ -571,6 +448,8 @@ impl ConnectionHandler for Handler {
                 ?new_swap.swap_id,
                 "Instructing swarm to start a new outbound substream as part of swap setup",
             );
+
+            // Keep the connection alive because we want to use it
             self.keep_alive = true;
 
             // We instruct the swarm to start a new outbound substream
@@ -594,6 +473,109 @@ impl ConnectionHandler for Handler {
 
         Poll::Pending
     }
+}
+
+async fn run_swap_setup(mut substream: &mut libp2p::swarm::Stream, new_swap_request: NewSwap, env_config: env::Config, bitcoin_wallet: Arc<dyn BitcoinWallet>) -> Result<State2> {
+    // Here we request the spot price from Alice
+    write_cbor_message(
+        &mut substream,
+        SpotPriceRequest {
+            btc: new_swap_request.btc,
+            blockchain_network: BlockchainNetwork {
+                bitcoin: env_config.bitcoin_network,
+                monero: env_config.monero_network,
+            },
+        },
+    )
+    .await
+    .context("Failed to send spot price request to Alice")?;
+
+    // Here we read the spot price response from Alice
+    // The outer ? checks if Alice responded with an error (SpotPriceError)
+    let xmr = Result::from(
+        // The inner ? is for the read_cbor_message function
+        // It will return an error if the deserialization fails
+        read_cbor_message::<SpotPriceResponse>(&mut substream)
+            .await
+            .context("Failed to read spot price response from Alice")?,
+    )?;
+
+    tracing::trace!(
+        %new_swap_request.swap_id,
+        xmr = %xmr,
+        btc = %new_swap_request.btc,
+        "Got spot price response from Alice as part of swap setup",
+    );
+
+    let state0 = State0::new(
+        new_swap_request.swap_id,
+        &mut rand::thread_rng(),
+        new_swap_request.btc,
+        xmr,
+        env_config.bitcoin_cancel_timelock.into(),
+        env_config.bitcoin_punish_timelock.into(),
+        new_swap_request.bitcoin_refund_address.clone(),
+        env_config.monero_finality_confirmations,
+        new_swap_request.tx_refund_fee,
+        new_swap_request.tx_cancel_fee,
+        new_swap_request.tx_lock_fee,
+    );
+
+    tracing::trace!(
+        %new_swap_request.swap_id,
+        "Transitioned into state0 during swap setup",
+    );
+
+    write_cbor_message(&mut substream, state0.next_message())
+        .await
+        .context("Failed to send state0 message to Alice")?;
+    let message1 = read_cbor_message::<Message1>(&mut substream)
+        .await
+        .context("Failed to read message1 from Alice")?;
+    let state1 = state0
+        .receive(bitcoin_wallet.as_ref(), message1)
+        .await
+        .context("Failed to receive state1")?;
+
+    tracing::trace!(
+        %new_swap_request.swap_id,
+        "Transitioned into state1 during swap setup",
+    );
+
+    write_cbor_message(&mut substream, state1.next_message())
+        .await
+        .context("Failed to send state1 message")?;
+    let message3 = read_cbor_message::<Message3>(&mut substream)
+        .await
+        .context("Failed to read message3 from Alice")?;
+    let state2 = state1
+        .receive(message3)
+        .context("Failed to receive state2")?;
+
+    tracing::trace!(
+        %new_swap_request.swap_id,
+        "Transitioned into state2 during swap setup",
+    );
+
+    write_cbor_message(&mut substream, state2.next_message())
+        .await
+        .context("Failed to send state2 message")?;
+
+    substream
+        .flush()
+        .await
+        .context("Failed to flush substream")?;
+    substream
+        .close()
+        .await
+        .context("Failed to close substream")?;
+
+    tracing::trace!(
+        %new_swap_request.swap_id,
+        "Swap setup completed",
+    );
+
+    Ok(state2)
 }
 
 impl From<SpotPriceResponse> for Result<swap_core::monero::Amount, Error> {
