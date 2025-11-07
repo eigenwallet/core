@@ -165,16 +165,16 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         event_peer_id: PeerId,
         connection_id: libp2p::swarm::ConnectionId,
-        event: THandlerOutEvent<Self>,
+        result: THandlerOutEvent<Self>,
     ) {
         // TODO: we should be able to use .remove() here?
-        if let Some((swap_id, peer_id)) = self.inflight_requests.get(&connection_id) {
-            assert_eq!(*peer_id, event_peer_id);
+        if let Some((swap_id, peer)) = self.inflight_requests.remove(&connection_id) {
+            assert_eq!(peer, event_peer_id);
 
             self.to_swarm.push_back(SwapSetupResult {
-                peer: *peer_id,
-                swap_id: *swap_id,
-                result: event,
+                peer,
+                swap_id,
+                result,
             });
         }
     }
@@ -209,31 +209,35 @@ impl NetworkBehaviour for Behaviour {
             dead_connection_handlers.retain(|id| !alive_set.contains(id));
         }
 
-        // Go through our new_swaps queue (without popping) and try to assign a request to a connection handler
-        // TODO: Do we really need to clone the queue here?
-        for (index, (peer, swap_id, new_swap)) in self.new_swaps.clone().iter().enumerate() {
-            // Pop that connection handler and queue it to be notified for the swap setup request
-            if let Some(connection_id) = self.alive_connection_handlers_mut(*peer).pop_front() {
-                self.assigned_unnotified_swaps.push_back((
-                    connection_id,
-                    *peer,
-                    *swap_id,
-                    new_swap.clone(),
-                )); // TODO: Do we really need to clone the new_swap here?
-
-                // We don't need to assign that request to anyone else anymore
-                self.new_swaps.remove(index);
+        // Go through our new_swaps and try to assign a request to a connection handler
+        //
+        // If we find a connection handler for the peer, it will be removed from new_swaps
+        // If we don't find a connection handler for the peer, it will remain in new_swaps
+        {
+            let new_swaps = &mut self.new_swaps;
+            let connection_handlers = &mut self.connection_handlers;
+            let assigned_unnotified_swaps = &mut self.assigned_unnotified_swaps;
+        
+            let mut remaining = std::collections::VecDeque::new();
+            for (peer, swap_id, new_swap) in new_swaps.drain(..) {
+                if let Some(connection_id) = connection_handlers.entry(peer).or_default().0.pop_front() {
+                    assigned_unnotified_swaps.push_back((connection_id, peer, swap_id, new_swap));
+                } else {
+                    remaining.push_back((peer, swap_id, new_swap));
+                }
             }
+
+            *new_swaps = remaining;
         }
 
         // If a connection handler died which had an assigned swap setup request,
         // we need to notify the swarm that the request failed
         for peer_id in self.known_peers() {
             while let Some(connection_id) = self.dead_connection_handlers_mut(peer_id).pop_front() {
-                if let Some((swap_id, _)) = self.inflight_requests.get(&connection_id) {
+                if let Some((swap_id, _)) = self.inflight_requests.remove(&connection_id) {
                     self.to_swarm.push_back(SwapSetupResult {
                         peer: peer_id,
-                        swap_id: *swap_id,
+                        swap_id,
                         result: Err(anyhow::anyhow!("Connection handler for peer {} has died after we notified it of the swap setup request", peer_id)),
                     });
                 }
