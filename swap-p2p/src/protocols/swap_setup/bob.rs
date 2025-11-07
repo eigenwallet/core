@@ -332,7 +332,7 @@ impl Handler {
             timeout: Duration::from_secs(120),
             new_swaps: VecDeque::default(),
             bitcoin_wallet,
-            keep_alive: true,
+            keep_alive: false,
         }
     }
 }
