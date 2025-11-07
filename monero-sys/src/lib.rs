@@ -144,6 +144,7 @@ pub struct TxReceipt {
     /// A map that has an entry for each non-change output
     /// where the key is the output's address and the value is the transfer key
     /// corresponding to that output. We use these for our transfer proofs.
+    /// In Monero lingo, this is the r for each K^s/K^v.
     pub tx_keys: HashMap<monero::Address, monero::PrivateKey>,
     /// The blockchain height at the time of publication.
     pub height: u64,
