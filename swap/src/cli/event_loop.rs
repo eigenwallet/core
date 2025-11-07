@@ -387,19 +387,18 @@ impl EventLoop {
                     );
                 },
                 // Send an acknowledgement to Alice once the EventLoopHandle has processed a received transfer proof
-                // We use `self.swarm.is_connected` as a guard to "buffer" requests until we are connected.
-                //
-                // Why do we do this here but not for the other request-response channels?
-                // This is the only request, we don't have a retry mechanism for. We lazily send this.
                 Some((swap_id, response_channel)) = self.pending_transfer_proof_acks.next() => {
-                    if let Some(peer_id) = self.swap_peer_id(&swap_id) {
-                        if self.swarm.is_connected(&peer_id) {
-                            if self.swarm.behaviour_mut().transfer_proof.send_response(response_channel, ()).is_err() {
-                                tracing::warn!("Failed to send acknowledgment to Alice that we have received the transfer proof");
-                            } else {
-                                tracing::info!("Sent acknowledgment to Alice that we have received the transfer proof");
-                            }
-                        }
+                    tracing::trace!(
+                        %swap_id,
+                        "Dispatching outgoing transfer proof acknowledgment");
+
+                    // We do not check if we are connected to Alice here because responding on a channel
+                    // which has been dropped works even if a new connections has been established since
+                    // will not work because because a channel is always bounded to one connection
+                    if self.swarm.behaviour_mut().transfer_proof.send_response(response_channel, ()).is_err() {
+                        tracing::warn!("Failed to send acknowledgment to Alice that we have received the transfer proof");
+                    } else {
+                        tracing::info!("Sent acknowledgment to Alice that we have received the transfer proof");
                     }
                 },
 
