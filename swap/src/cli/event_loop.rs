@@ -223,7 +223,6 @@ impl EventLoop {
                                 continue;
                             }
 
-
                             // Immediately acknowledge if we've already processed this transfer proof
                             // This handles the case where Alice didn't receive our previous acknowledgment
                             // and is retrying sending the transfer proof
@@ -247,6 +246,16 @@ impl EventLoop {
                                         "Failed to evaluate if we should acknowledge the transfer proof, we will not respond at all"
                                     );
                                 }
+                            }
+
+                            // Check if we should buffer the transfer proof
+                            if let Err(error) = buffer_transfer_proof_if_needed(self.db.clone(), swap_id, peer, msg.tx_lock_proof).await {
+                                tracing::warn!(
+                                    %swap_id,
+                                    %peer,
+                                    error = ?error,
+                                    "Failed to buffer transfer proof"
+                                );
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::EncryptedSignatureAcknowledged { id }) => {
@@ -677,6 +686,10 @@ impl SwapEventLoopHandle {
     }
 }
 
+/// Returns Ok(true) if we should acknowledge the transfer proof
+///
+/// - Checks if the peer id is the expected peer id
+/// - Checks if the state indicates that we have already processed the transfer proof
 async fn should_acknowledge_transfer_proof(
     db: Arc<dyn Database + Send + Sync>,
     swap_id: Uuid,
@@ -700,4 +713,24 @@ async fn should_acknowledge_transfer_proof(
     )?;
 
     Ok(has_already_processed_transfer_proof(&state))
+}
+
+/// Buffers the transfer proof in the database if its from the expected peer
+async fn buffer_transfer_proof_if_needed(
+    db: Arc<dyn Database + Send + Sync>,
+    swap_id: Uuid,
+    peer_id: PeerId,
+    transfer_proof: monero::TransferProof,
+) -> Result<()> {
+    let expected_peer_id = db.get_peer_id(swap_id).await.context(
+        "Failed to get peer id for swap to check if we should buffer the transfer proof",
+    )?;
+
+    if expected_peer_id != peer_id {
+        bail!("Expected peer id {} but got {}", expected_peer_id, peer_id);
+    }
+
+    db.insert_buffered_transfer_proof(swap_id, transfer_proof)
+        .await
+        .context("Failed to buffer transfer proof in database")
 }
