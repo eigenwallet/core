@@ -36,31 +36,39 @@ pub struct EventLoop {
     // The sender of the channel is sent into this queue. The receiver is stored in the `SwapEventLoopHandle`.
     //
     // This is polled and then moved into `registered_swap_handlers`
-    queued_swap_handlers: bmrng::RequestReceiverStream<
+    queued_swap_handlers: bmrng::unbounded::UnboundedRequestReceiverStream<
         (
             Uuid,
             PeerId,
-            bmrng::RequestSender<monero::TransferProof, ()>,
+            bmrng::unbounded::UnboundedRequestSender<monero::TransferProof, ()>,
         ),
         (),
     >,
-    registered_swap_handlers:
-        HashMap<Uuid, (PeerId, bmrng::RequestSender<monero::TransferProof, ()>)>,
+    registered_swap_handlers: HashMap<
+        Uuid,
+        (
+            PeerId,
+            bmrng::unbounded::UnboundedRequestSender<monero::TransferProof, ()>,
+        ),
+    >,
 
     // These streams represents outgoing requests that we have to make (queues)
     //
-    // Requests are keyed by the PeerId because they do not correspond to any swap
-    quote_requests: bmrng::RequestReceiverStream<PeerId, Result<BidQuote, OutboundFailure>>,
-    execution_setup_requests: bmrng::RequestReceiverStream<(PeerId, NewSwap), Result<State2>>,
+    // Requests are keyed by the PeerId because they do not correspond to an existing swap yet
+    quote_requests:
+        bmrng::unbounded::UnboundedRequestReceiverStream<PeerId, Result<BidQuote, OutboundFailure>>,
+    // TODO: technically NewSwap.swap_id already contains the id of the swap
+    execution_setup_requests:
+        bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, NewSwap), Result<State2>>,
 
     // These streams represents outgoing requests that we have to make (queues)
     //
     // Requests are keyed by the swap_id because they correspond to a specific swap
-    cooperative_xmr_redeem_requests: bmrng::RequestReceiverStream<
+    cooperative_xmr_redeem_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
         (PeerId, Uuid),
         Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>,
     >,
-    encrypted_signatures_requests: bmrng::RequestReceiverStream<
+    encrypted_signatures_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
         (PeerId, Uuid, EncryptedSignature),
         Result<(), OutboundFailure>,
     >,
@@ -69,20 +77,27 @@ pub struct EventLoop {
     // Meaning that we have sent them to Alice, but we have not yet received a response.
     // Once we get a response to a matching [`RequestId`], we will use the responder to relay the
     // response.
-    inflight_quote_requests:
-        HashMap<OutboundRequestId, bmrng::Responder<Result<BidQuote, OutboundFailure>>>,
-    inflight_encrypted_signature_requests:
-        HashMap<OutboundRequestId, bmrng::Responder<Result<(), OutboundFailure>>>,
-    inflight_swap_setup: HashMap<(PeerId, Uuid), bmrng::Responder<Result<State2>>>,
+    inflight_quote_requests: HashMap<
+        OutboundRequestId,
+        bmrng::unbounded::UnboundedResponder<Result<BidQuote, OutboundFailure>>,
+    >,
+    inflight_encrypted_signature_requests: HashMap<
+        OutboundRequestId,
+        bmrng::unbounded::UnboundedResponder<Result<(), OutboundFailure>>,
+    >,
+    inflight_swap_setup:
+        HashMap<(PeerId, Uuid), bmrng::unbounded::UnboundedResponder<Result<State2>>>,
     inflight_cooperative_xmr_redeem_requests: HashMap<
         OutboundRequestId,
-        bmrng::Responder<Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>>,
+        bmrng::unbounded::UnboundedResponder<
+            Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>,
+        >,
     >,
 
     /// The future representing the successful handling of an incoming transfer proof (by the state machine)
     ///
     /// Once we've sent a transfer proof to the ongoing swap, a future is inserted into this set
-    /// which will resolve once the state machine has "processes" the transfer proof.
+    /// which will resolve once the state machine has "processed" the transfer proof.
     ///
     /// The future will yield the swap_id and the response channel which are used to send an acknowledgement to Alice.
     pending_transfer_proof_acks: FuturesUnordered<BoxFuture<'static, (Uuid, ResponseChannel<()>)>>,
@@ -101,13 +116,16 @@ impl EventLoop {
     ) -> Result<(Self, EventLoopHandle)> {
         // We still use a timeout here because we trust our own implementation of the swap setup protocol less than the libp2p library
         let (execution_setup_sender, execution_setup_receiver) =
-            bmrng::channel_with_timeout(1, EXECUTION_SETUP_PROTOCOL_TIMEOUT);
+            bmrng::unbounded::channel_with_timeout(EXECUTION_SETUP_PROTOCOL_TIMEOUT);
 
         // It is okay to not have a timeout here, as timeouts are enforced by the request-response protocol
-        let (encrypted_signature_sender, encrypted_signature_receiver) = bmrng::channel(1);
-        let (quote_sender, quote_receiver) = bmrng::channel(1);
-        let (cooperative_xmr_redeem_sender, cooperative_xmr_redeem_receiver) = bmrng::channel(1);
-        let (queued_transfer_proof_sender, queued_transfer_proof_receiver) = bmrng::channel(1);
+        let (encrypted_signature_sender, encrypted_signature_receiver) =
+            bmrng::unbounded::channel();
+        let (quote_sender, quote_receiver) = bmrng::unbounded::channel();
+        let (cooperative_xmr_redeem_sender, cooperative_xmr_redeem_receiver) =
+            bmrng::unbounded::channel();
+        let (queued_transfer_proof_sender, queued_transfer_proof_receiver) =
+            bmrng::unbounded::channel();
 
         let event_loop = EventLoop {
             swarm,
@@ -184,7 +202,7 @@ impl EventLoop {
                                 }
 
                                 // Send the transfer proof to the registered handler
-                                match sender.send(msg.tx_lock_proof).await {
+                                match sender.send(msg.tx_lock_proof) {
                                     Ok(mut responder) => {
                                         // Insert a future that will resolve when the handle "takes the transfer proof out"
                                         self.pending_transfer_proof_acks.push(async move {
@@ -316,13 +334,14 @@ impl EventLoop {
 
                 // Handle to-be-sent outgoing requests for all our network protocols.
                 Some((peer_id, responder)) = self.quote_requests.next().fuse() => {
+                    let outbound_request_id = self.swarm.behaviour_mut().quote.send_request(&peer_id, ());
+                    self.inflight_quote_requests.insert(outbound_request_id, responder);
+
                     tracing::trace!(
                         %peer_id,
+                        %outbound_request_id,
                         "Dispatching outgoing quote request"
                     );
-
-                    let id = self.swarm.behaviour_mut().quote.send_request(&peer_id, ());
-                    self.inflight_quote_requests.insert(id, responder);
                 },
                 Some(((peer_id, swap_id, tx_redeem_encsig), responder)) = self.encrypted_signatures_requests.next().fuse() => {
                     let request = encrypted_signature::Request {
@@ -354,21 +373,19 @@ impl EventLoop {
                     );
                 },
 
-                // We use `self.swarm.is_connected` as a guard to "buffer" requests until we are connected.
-                // because the protocol does not dial Alice itself
-                // (unlike request-response above)
+                // Instruct the swap setup behaviour to do a swap setup request
+                // The behaviour will instruct the swarm to dial Alice, so we don't need to check if we are connected
                 Some(((alice_peer_id, swap), responder)) = self.execution_setup_requests.next().fuse() => {
                     let swap_id = swap.swap_id.clone();
+
+                    self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
+                    self.inflight_swap_setup.insert((alice_peer_id, swap_id), responder);
 
                     tracing::trace!(
                         %alice_peer_id,
                         "Dispatching outgoing execution setup request"
                     );
-
-                    self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
-                    self.inflight_swap_setup.insert((alice_peer_id, swap_id), responder);
                 },
-
                 // Send an acknowledgement to Alice once the EventLoopHandle has processed a received transfer proof
                 // We use `self.swarm.is_connected` as a guard to "buffer" requests until we are connected.
                 //
@@ -393,6 +410,7 @@ impl EventLoop {
                     self.registered_swap_handlers.insert(swap_id, (peer_id, sender));
 
                     // Instruct the swarm to contineously redial the peer
+                    // TODO: We must remove it again once the swap is complete?
                     self.swarm.behaviour_mut().redial.add_peer(peer_id);
 
                     // Acknowledge the registration
@@ -409,36 +427,40 @@ pub struct EventLoopHandle {
     /// 1. Trigger the swap setup protocol with the specified peer to negotiate the swap parameters
     /// 2. Return the resulting State2 if successful
     /// 3. Return an anyhow error if the request fails
-    execution_setup_sender: bmrng::RequestSender<(PeerId, NewSwap), Result<State2>>,
+    execution_setup_sender:
+        bmrng::unbounded::UnboundedRequestSender<(PeerId, NewSwap), Result<State2>>,
 
     /// When a (PeerId, Uuid, EncryptedSignature) tuple is sent into this channel, the EventLoop will:
     /// 1. Send the encrypted signature to the specified peer over the network
     /// 2. Return Ok(()) if the peer acknowledges receipt, or
     /// 3. Return an OutboundFailure error if the request fails
-    encrypted_signature_sender:
-        bmrng::RequestSender<(PeerId, Uuid, EncryptedSignature), Result<(), OutboundFailure>>,
+    encrypted_signature_sender: bmrng::unbounded::UnboundedRequestSender<
+        (PeerId, Uuid, EncryptedSignature),
+        Result<(), OutboundFailure>,
+    >,
 
     /// When a PeerId is sent into this channel, the EventLoop will:
     /// 1. Request a price quote from the specified peer
     /// 2. Return the quote if successful
     /// 3. Return an OutboundFailure error if the request fails
-    quote_sender: bmrng::RequestSender<PeerId, Result<BidQuote, OutboundFailure>>,
+    quote_sender:
+        bmrng::unbounded::UnboundedRequestSender<PeerId, Result<BidQuote, OutboundFailure>>,
 
     /// When a (PeerId, Uuid) tuple is sent into this channel, the EventLoop will:
     /// 1. Request the specified peer's cooperation in redeeming the Monero for the given swap
     /// 2. Return a response object (Fullfilled or Rejected), if the network request is successful
     ///    The Fullfilled object contains the keys required to redeem the Monero
     /// 3. Return an OutboundFailure error if the network request fails
-    cooperative_xmr_redeem_sender: bmrng::RequestSender<
+    cooperative_xmr_redeem_sender: bmrng::unbounded::UnboundedRequestSender<
         (PeerId, Uuid),
         Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>,
     >,
 
-    queued_transfer_proof_sender: bmrng::RequestSender<
+    queued_transfer_proof_sender: bmrng::unbounded::UnboundedRequestSender<
         (
             Uuid,
             PeerId,
-            bmrng::RequestSender<monero::TransferProof, ()>,
+            bmrng::unbounded::UnboundedRequestSender<monero::TransferProof, ()>,
         ),
         (),
     >,
@@ -462,7 +484,7 @@ impl EventLoopHandle {
         // Create a channel for sending transfer proofs from the `EventLoop` to the `SwapEventLoopHandle`
         //
         // The sender is stored in the `EventLoop`. The receiver is stored in the `SwapEventLoopHandle`.
-        let (transfer_proof_sender, transfer_proof_receiver) = bmrng::channel(1);
+        let (transfer_proof_sender, transfer_proof_receiver) = bmrng::unbounded_channel();
 
         // Register this sender in the `EventLoop`
         // It is put into the queue and then later moved into `registered_transfer_proof_senders`
@@ -470,7 +492,6 @@ impl EventLoopHandle {
         // We use `send(...) instead of send_receive(...)` because the event loop needs to be running for this to respond
         self.queued_transfer_proof_sender
             .send((swap_id, peer_id, transfer_proof_sender))
-            .await
             .context("Failed to register transfer proof sender with event loop")?;
 
         Ok(SwapEventLoopHandle {
@@ -613,7 +634,8 @@ pub struct SwapEventLoopHandle {
     handle: EventLoopHandle,
     peer_id: PeerId,
     swap_id: Uuid,
-    transfer_proof_receiver: Option<bmrng::RequestReceiver<monero::TransferProof, ()>>,
+    transfer_proof_receiver:
+        Option<bmrng::unbounded::UnboundedRequestReceiver<monero::TransferProof, ()>>,
 }
 
 impl SwapEventLoopHandle {

@@ -77,7 +77,7 @@ pub enum Event {
     ScheduledRedial {
         peer: PeerId,
         next_dial_in: Duration,
-    }
+    },
 }
 
 impl NetworkBehaviour for Behaviour {

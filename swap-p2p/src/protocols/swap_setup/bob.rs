@@ -389,7 +389,13 @@ impl ConnectionHandler for Handler {
                 let env_config = self.env_config;
 
                 let protocol = tokio::time::timeout(self.timeout, async move {
-                    let result = run_swap_setup(&mut substream, new_swap_request, env_config, bitcoin_wallet).await;
+                    let result = run_swap_setup(
+                        &mut substream,
+                        new_swap_request,
+                        env_config,
+                        bitcoin_wallet,
+                    )
+                    .await;
 
                     result.map_err(|err: anyhow::Error| {
                         tracing::error!(?err, "Error occurred during swap setup protocol");
@@ -475,7 +481,12 @@ impl ConnectionHandler for Handler {
     }
 }
 
-async fn run_swap_setup(mut substream: &mut libp2p::swarm::Stream, new_swap_request: NewSwap, env_config: env::Config, bitcoin_wallet: Arc<dyn BitcoinWallet>) -> Result<State2> {
+async fn run_swap_setup(
+    mut substream: &mut libp2p::swarm::Stream,
+    new_swap_request: NewSwap,
+    env_config: env::Config,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
+) -> Result<State2> {
     // Here we request the spot price from Alice
     write_cbor_message(
         &mut substream,
