@@ -436,6 +436,11 @@ impl ConnectionHandler for Handler {
                             new_swap_request.tx_lock_fee,
                         );
 
+                        tracing::trace!(
+                            %new_swap_request.swap_id,
+                            "Transitioned into state0 during swap setup",
+                        );
+
                         write_cbor_message(&mut substream, state0.next_message())
                             .await
                             .context("Failed to send state0 message to Alice")?;
@@ -446,6 +451,12 @@ impl ConnectionHandler for Handler {
                             .receive(bitcoin_wallet.as_ref(), message1)
                             .await
                             .context("Failed to receive state1")?;
+
+                        tracing::trace!(
+                            %new_swap_request.swap_id,
+                            "Transitioned into state1 during swap setup",
+                        );
+
                         write_cbor_message(&mut substream, state1.next_message())
                             .await
                             .context("Failed to send state1 message")?;
@@ -455,6 +466,11 @@ impl ConnectionHandler for Handler {
                         let state2 = state1
                             .receive(message3)
                             .context("Failed to receive state2")?;
+
+                        tracing::trace!(
+                            %new_swap_request.swap_id,
+                            "Transitioned into state2 during swap setup",
+                        );
 
                         write_cbor_message(&mut substream, state2.next_message())
                             .await
