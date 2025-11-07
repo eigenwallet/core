@@ -12,6 +12,20 @@ const DEFAULT_RENDEZVOUS_POINTS = [
   "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
 ];
 
+// Known broken nodes to remove when applying defaults
+const NEGATIVE_NODES_MAINNET = [
+  "tcp://electrum.blockstream.info:50001",
+  "tcp://electrum.coinucopia.io:50001",
+  "tcp://se-mma-crypto-payments-001.mullvad.net:50001",
+  "tcp://electrum2.bluewallet.io:50777",
+];
+
+const NEGATIVE_NODES_TESTNET = [
+  "ssl://ax101.blockeng.ch:60002",
+  "tcp://electrum.blockstream.info:60001",
+  "tcp://blockstream.info:143",
+];
+
 export interface SettingsState {
   /// This is an ordered list of node urls for each network and blockchain
   nodes: Record<Network, Record<Blockchain, string[]>>;
@@ -42,6 +56,8 @@ export interface SettingsState {
   externalMoneroRedeemAddress: string;
   /// The external Bitcoin refund address
   externalBitcoinRefundAddress: string;
+  /// UTC timestamp (in milliseconds) when default nodes were last applied
+  lastAppliedDefaultNodes: number | null;
 }
 
 export enum RedeemPolicy {
@@ -118,14 +134,11 @@ const initialState: SettingsState = {
   nodes: {
     [Network.Testnet]: {
       [Blockchain.Bitcoin]: [
-        "ssl://ax101.blockeng.ch:60002",
         "ssl://blackie.c3-soft.com:57006",
         "ssl://v22019051929289916.bestsrv.de:50002",
         "tcp://v22019051929289916.bestsrv.de:50001",
-        "tcp://electrum.blockstream.info:60001",
         "ssl://electrum.blockstream.info:60002",
         "ssl://blockstream.info:993",
-        "tcp://blockstream.info:143",
         "ssl://testnet.qtornado.com:51002",
         "tcp://testnet.qtornado.com:51001",
         "tcp://testnet.aranguren.org:51001",
@@ -139,14 +152,15 @@ const initialState: SettingsState = {
     [Network.Mainnet]: {
       [Blockchain.Bitcoin]: [
         "ssl://electrum.blockstream.info:50002",
-        "tcp://electrum.blockstream.info:50001",
         "ssl://bitcoin.stackwallet.com:50002",
         "ssl://b.1209k.com:50002",
-        "tcp://electrum.coinucopia.io:50001",
         "ssl://mainnet.foundationdevices.com:50002",
         "tcp://bitcoin.lu.ke:50001",
-        "tcp://se-mma-crypto-payments-001.mullvad.net:50001",
         "ssl://electrum.coinfinity.co:50002",
+        "tcp://electrum1.bluewallet.io:50001",
+        "tcp://electrum2.bluewallet.io:50001",
+        "tcp://electrum3.bluewallet.io:50001",
+        "ssl://btc-electrum.cakewallet.com:50002",
       ],
       [Blockchain.Monero]: [],
     },
@@ -164,6 +178,7 @@ const initialState: SettingsState = {
   bitcoinRefundPolicy: RefundPolicy.Internal,
   externalMoneroRedeemAddress: "",
   externalBitcoinRefundAddress: "",
+  lastAppliedDefaultNodes: null,
 };
 
 const alertsSlice = createSlice({
@@ -273,6 +288,55 @@ const alertsSlice = createSlice({
     setBitcoinRefundAddress(slice, action: PayloadAction<string>) {
       slice.externalBitcoinRefundAddress = action.payload;
     },
+    applyDefaultNodes(slice) {
+      const now = Date.now();
+      const twoWeeksInMs = 14 * 24 * 60 * 60 * 1000;
+
+      // Check if we should apply defaults (first time or more than 2 weeks)
+      if (
+        slice.lastAppliedDefaultNodes === null ||
+        now - slice.lastAppliedDefaultNodes > twoWeeksInMs
+      ) {
+        // Remove negative nodes from mainnet
+        slice.nodes[Network.Mainnet][Blockchain.Bitcoin] = slice.nodes[
+          Network.Mainnet
+        ][Blockchain.Bitcoin].filter(
+          (node) => !NEGATIVE_NODES_MAINNET.includes(node),
+        );
+
+        // Remove negative nodes from testnet
+        slice.nodes[Network.Testnet][Blockchain.Bitcoin] = slice.nodes[
+          Network.Testnet
+        ][Blockchain.Bitcoin].filter(
+          (node) => !NEGATIVE_NODES_TESTNET.includes(node),
+        );
+
+        // Add new default nodes if they don't exist (mainnet)
+        initialState.nodes[Network.Mainnet][Blockchain.Bitcoin].forEach(
+          (node) => {
+            if (
+              !slice.nodes[Network.Mainnet][Blockchain.Bitcoin].includes(node)
+            ) {
+              slice.nodes[Network.Mainnet][Blockchain.Bitcoin].push(node);
+            }
+          },
+        );
+
+        // Add new default nodes if they don't exist (testnet)
+        initialState.nodes[Network.Testnet][Blockchain.Bitcoin].forEach(
+          (node) => {
+            if (
+              !slice.nodes[Network.Testnet][Blockchain.Bitcoin].includes(node)
+            ) {
+              slice.nodes[Network.Testnet][Blockchain.Bitcoin].push(node);
+            }
+          },
+        );
+
+        // Update the timestamp
+        slice.lastAppliedDefaultNodes = now;
+      }
+    },
   },
 });
 
@@ -295,6 +359,7 @@ export const {
   setBitcoinRefundPolicy,
   setMoneroRedeemAddress,
   setBitcoinRefundAddress,
+  applyDefaultNodes,
 } = alertsSlice.actions;
 
 export default alertsSlice.reducer;
