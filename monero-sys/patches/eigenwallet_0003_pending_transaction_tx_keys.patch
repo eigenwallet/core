@@ -73,7 +73,7 @@ index 2dd118ea3..0972089d1 100644
 +                    throw std::runtime_error("Failed to generate key derivation for output " + std::to_string(i));
 +                }
 +
-+                // derive expected output public key and compare
++                // derive expected output public key and compare. We check if the K^0 we derive matches the expected one.
 +                crypto::public_key expected_out_pk;
 +                if (!crypto::derive_public_key(derivation, i, dest_entry.addr.m_spend_public_key, expected_out_pk)) {
 +                    throw std::runtime_error("Failed to derive public key for output " + std::to_string(i));
