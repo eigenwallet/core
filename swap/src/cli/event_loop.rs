@@ -310,12 +310,6 @@ impl EventLoop {
                                 "Scheduled redial for peer"
                             );
                         }
-                        SwarmEvent::Behaviour(OutEvent::Redial(redial::Event::Redialing { peer })) => {
-                            tracing::trace!(
-                                %peer,
-                                "Redialing peer"
-                            );
-                        }
                         _ => {}
                     }
                 },

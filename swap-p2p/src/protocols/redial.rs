@@ -77,10 +77,7 @@ pub enum Event {
     ScheduledRedial {
         peer: PeerId,
         next_dial_in: Duration,
-    },
-    Redialing {
-        peer: PeerId,
-    },
+    }
 }
 
 impl NetworkBehaviour for Behaviour {
@@ -173,9 +170,6 @@ impl NetworkBehaviour for Behaviour {
         // If it has, dial that peer
         match self.sleep.poll_next_unpin(cx) {
             Poll::Ready(Some((peer, _))) => {
-                // Inform the swarm
-                self.to_swarm.push_back(Event::Redialing { peer });
-
                 // Actually dial the peer
                 Poll::Ready(ToSwarm::Dial {
                     opts: DialOpts::peer_id(peer)
