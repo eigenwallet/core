@@ -685,22 +685,18 @@ impl TestContext {
     }
 
     pub async fn alice_next_swap(&mut self) -> alice::Swap {
-        timeout(Duration::from_secs(60), self.alice_swap_handle.recv())
+        timeout(Duration::from_secs(20), self.alice_swap_handle.recv())
             .await
             .expect("No Alice swap within 20 seconds, aborting because this test is likely waiting for a swap forever...")
             .unwrap()
     }
 
     pub async fn bob_swap(&mut self) -> (bob::Swap, BobApplicationHandle) {
-        tracing::info!("Creating Bob's swap and event loop");
         let (swap, event_loop) = self.bob_params.new_swap(self.btc_amount).await.unwrap();
 
         // ensure the wallet is up to date for concurrent swap tests
-        tracing::info!("Syncing Bob's Bitcoin wallet");
         swap.bitcoin_wallet.sync().await.unwrap();
-        tracing::info!("Bob's Bitcoin wallet synced");
 
-        tracing::info!("Spawning Bob's event loop");
         let join_handle = tokio::spawn(event_loop.run());
 
         (swap, BobApplicationHandle(join_handle))

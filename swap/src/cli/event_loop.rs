@@ -99,8 +99,7 @@ impl EventLoop {
         swarm: Swarm<Behaviour>,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<(Self, EventLoopHandle)> {
-        // We still use a timeout here, because this protocol does not dial Alice itself
-        // and we want to fail if we cannot reach Alice
+        // We still use a timeout here because we trust our own implementation of the swap setup protocol less than the libp2p library
         let (execution_setup_sender, execution_setup_receiver) =
             bmrng::channel_with_timeout(1, EXECUTION_SETUP_PROTOCOL_TIMEOUT);
 
@@ -138,8 +137,6 @@ impl EventLoop {
     }
 
     pub async fn run(mut self) {
-        tracing::info!("Bob's event loop started");
-
         loop {
             // Note: We are making very elaborate use of `select!` macro's feature here. Make sure to read the documentation thoroughly: https://docs.rs/tokio/1.4.0/tokio/macro.select.html
             tokio::select! {
@@ -253,13 +250,13 @@ impl EventLoop {
                             tracing::warn!(%peer, err = ?error, "Communication error");
                             return;
                         }
-                        SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+                        SwarmEvent::ConnectionEstablished { peer_id: _, endpoint, .. } => {
                             tracing::info!(peer_id = %endpoint.get_remote_address(), "Connected to peer");
                         }
                         SwarmEvent::Dialing { peer_id: Some(peer_id), connection_id } => {
                             tracing::debug!(%peer_id, %connection_id, "Dialing peer");
                         }
-                        SwarmEvent::ConnectionClosed { peer_id, endpoint, num_established, cause: Some(error), connection_id } if num_established == 0 => {
+                        SwarmEvent::ConnectionClosed { peer_id: _, endpoint, num_established, cause: Some(error), connection_id } if num_established == 0 => {
                             tracing::warn!(peer_id = %endpoint.get_remote_address(), cause = ?error, %connection_id, "Lost connection to peer");
                         }
                         SwarmEvent::ConnectionClosed { peer_id, num_established, cause: None, .. } if num_established == 0 => {
