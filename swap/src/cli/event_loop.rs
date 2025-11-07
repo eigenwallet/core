@@ -12,7 +12,6 @@ use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChannel};
-use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use std::collections::HashMap;
@@ -645,10 +644,7 @@ impl SwapEventLoopHandle {
         Ok(transfer_proof)
     }
 
-    pub async fn send_encrypted_signature(
-        &mut self,
-        tx_redeem_encsig: EncryptedSignature,
-    ) -> () {
+    pub async fn send_encrypted_signature(&mut self, tx_redeem_encsig: EncryptedSignature) -> () {
         self.handle
             .send_encrypted_signature(self.peer_id, self.swap_id, tx_redeem_encsig)
             .await

@@ -52,7 +52,14 @@ export default function SwapWidget() {
           flex: 1,
         }}
       >
-        <Box sx={{ display: "flex", minHeight: "30vh", flexDirection: "column", justifyContent: "center" }}>
+        <Box
+          sx={{
+            display: "flex",
+            minHeight: "30vh",
+            flexDirection: "column",
+            justifyContent: "center",
+          }}
+        >
           <SwapStatePage state={swap.state} />
         </Box>
         {swap.state !== null && (

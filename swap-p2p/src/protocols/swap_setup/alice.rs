@@ -477,8 +477,8 @@ where
         // If keep_alive_until is None, we keep the connection alive indefinitely
         // If keep_alive_until is Some, we keep the connection alive until the given instant
         match self.keep_alive_until {
-             None => true,
-             Some(keep_alive_until) => Instant::now() < keep_alive_until,
+            None => true,
+            Some(keep_alive_until) => Instant::now() < keep_alive_until,
         }
     }
 

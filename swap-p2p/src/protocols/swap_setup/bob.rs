@@ -204,9 +204,11 @@ impl NetworkBehaviour for Behaviour {
                 peer = %peer,
                 "Instructing swarm to dial a new connection handler for a swap setup request",
             );
-            
+
             return Poll::Ready(ToSwarm::Dial {
-                opts: DialOpts::peer_id(peer).condition(PeerCondition::DisconnectedAndNotDialing).build(),
+                opts: DialOpts::peer_id(peer)
+                    .condition(PeerCondition::DisconnectedAndNotDialing)
+                    .build(),
             });
         }
 
@@ -234,10 +236,12 @@ impl NetworkBehaviour for Behaviour {
             let new_swaps = &mut self.new_swaps;
             let connection_handlers = &mut self.connection_handlers;
             let assigned_unnotified_swaps = &mut self.assigned_unnotified_swaps;
-        
+
             let mut remaining = std::collections::VecDeque::new();
             for (peer, swap_id, new_swap) in new_swaps.drain(..) {
-                if let Some(connection_id) = connection_handlers.entry(peer).or_default().0.pop_front() {
+                if let Some(connection_id) =
+                    connection_handlers.entry(peer).or_default().0.pop_front()
+                {
                     assigned_unnotified_swaps.push_back((connection_id, peer, swap_id, new_swap));
                 } else {
                     remaining.push_back((peer, swap_id, new_swap));
