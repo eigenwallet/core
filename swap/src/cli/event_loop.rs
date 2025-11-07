@@ -375,15 +375,6 @@ impl EventLoop {
                         "Dispatching outgoing execution setup request"
                     );
 
-                    // Dial Alice and warn if it fails
-                    if let Err(err) = self.swarm.dial(DialOpts::peer_id(alice_peer_id).condition(PeerCondition::DisconnectedAndNotDialing).build()) {
-                        tracing::trace!(
-                            %alice_peer_id,
-                            error = ?err,
-                            "Failed to dial Alice before starting the swap setup protocol. This is probably fine."
-                        );
-                    }
-
                     self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
                     self.inflight_swap_setup.insert((alice_peer_id, swap_id), responder);
                 },

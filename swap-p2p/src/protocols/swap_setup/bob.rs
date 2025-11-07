@@ -9,6 +9,7 @@ use futures::AsyncWriteExt;
 use futures::FutureExt;
 use libp2p::core::upgrade;
 use libp2p::swarm::behaviour::ConnectionEstablished;
+use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{
     ConnectionClosed, ConnectionDenied, ConnectionHandler, ConnectionHandlerEvent, ConnectionId,
     FromSwarm, NetworkBehaviour, SubstreamProtocol, THandler, THandlerInEvent, THandlerOutEvent,
@@ -50,6 +51,9 @@ pub struct Behaviour {
     inflight_requests: HashMap<ConnectionId, (Uuid, PeerId)>,
 
     to_swarm: VecDeque<SwapSetupResult>,
+
+    // Queue of peers that we want to instruct the Swarm to dial
+    to_dial: VecDeque<PeerId>,
 }
 
 impl Behaviour {
@@ -62,6 +66,7 @@ impl Behaviour {
             assigned_unnotified_swaps: VecDeque::default(),
             inflight_requests: HashMap::default(),
             connection_handlers: HashMap::default(),
+            to_dial: VecDeque::default(),
         }
     }
 
@@ -73,9 +78,9 @@ impl Behaviour {
         );
 
         // TODO: This is a bit redundant because we already have the swap_id in the NewSwap struct
-        // TODO: Maybe we should force a dial here if no connection handler is available?
         self.new_swaps
             .push_back((alice_peer_id, swap.swap_id, swap));
+        self.to_dial.push_back(alice_peer_id);
     }
 
     // Returns a mutable reference to the queues of the connection handlers for a specific peer
@@ -191,6 +196,18 @@ impl NetworkBehaviour for Behaviour {
             );
 
             return Poll::Ready(ToSwarm::GenerateEvent(completed));
+        }
+
+        // Forward any peers that we want to dial to the Swarm
+        if let Some(peer) = self.to_dial.pop_front() {
+            tracing::trace!(
+                peer = %peer,
+                "Instructing swarm to dial a new connection handler for a swap setup request",
+            );
+            
+            return Poll::Ready(ToSwarm::Dial {
+                opts: DialOpts::peer_id(peer).condition(PeerCondition::DisconnectedAndNotDialing).build(),
+            });
         }
 
         // Remove any unused already dead connection handlers that were never assigned a request
