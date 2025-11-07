@@ -53,6 +53,7 @@ import {
 } from "models/tauriModel";
 import {
   rpcSetSwapInfo,
+  rpcSetTorNetworkConfig,
   approvalRequestsReplaced,
   contextInitializationFailed,
   timelockChangeEventReceived,
@@ -251,6 +252,12 @@ export async function buyXmr() {
 }
 
 export async function initializeContext() {
+  store.dispatch(
+    rpcSetTorNetworkConfig(
+      await invokeNoArgs<[string, string | null]>("get_tor_network_config"),
+    ),
+  );
+
   const network = getNetwork();
   const testnet = isTestnet();
   const useTor = store.getState().settings.enableTor;

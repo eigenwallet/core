@@ -8,7 +8,6 @@ use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::{quote, swarm};
 use crate::protocol::Database;
 use anyhow::Result;
-use arti_client::TorClient;
 use futures::StreamExt;
 use libp2p::identify;
 use libp2p::multiaddr::Protocol;
@@ -22,7 +21,6 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
-use tor_rtcompat::tokio::TokioRustlsRuntime;
 use typeshare::typeshare;
 
 /// Builds an identify config for the CLI with appropriate protocol and agent versions.
@@ -45,7 +43,7 @@ fn build_identify_config(identity: identity::Keypair) -> identify::Config {
 pub async fn list_sellers_init(
     rendezvous_points: Vec<(PeerId, Multiaddr)>,
     namespace: XmrBtcNamespace,
-    maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    maybe_tor_client: swap_tor::TorBackend,
     identity: identity::Keypair,
     db: Option<Arc<dyn Database + Send + Sync>>,
     tauri_handle: Option<TauriHandle>,
@@ -141,7 +139,7 @@ pub async fn list_sellers_init(
 pub async fn list_sellers(
     rendezvous_points: Vec<(PeerId, Multiaddr)>,
     namespace: XmrBtcNamespace,
-    maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    maybe_tor_client: swap_tor::TorBackend,
     identity: identity::Keypair,
     db: Option<Arc<dyn Database + Send + Sync>>,
     tauri_handle: Option<TauriHandle>,

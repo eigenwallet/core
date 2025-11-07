@@ -30,10 +30,12 @@ impl Client {
     }
 
     fn new(host: String, port: u16) -> Result<Self> {
+        let mut client = reqwest::Client::builder().connection_verbose(true);
+        if let Some(proxy) = swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.reqwest_proxy()) {
+            client = client.proxy(reqwest::Proxy::all(proxy)?);
+        }
         Ok(Self {
-            inner: reqwest::ClientBuilder::new()
-                .connection_verbose(true)
-                .build()?,
+            inner: client.build()?,
             base_url: format!("http://{}:{}/json_rpc", host, port)
                 .parse()
                 .context("url is well formed")?,
