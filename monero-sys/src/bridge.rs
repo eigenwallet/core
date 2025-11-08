@@ -670,6 +670,9 @@ fn forward_cpp_log(
 
         // We don't want to log the performance timer.
         if func_str.starts_with("tools::LoggingPerformanceTimer")
+            || func_str.starts_with("void tools::detail::print_source_entry(")
+            || func_str.starts_with("bool cryptonote::construct_tx_with_tx_key(")
+            || func_str.starts_with("void tools::wallet2::get_outs(")
             || msg_str.starts_with("Processed block: <")
             || msg_str.starts_with("Found new pool tx: <")
         {
