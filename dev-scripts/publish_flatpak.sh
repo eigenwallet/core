@@ -292,44 +292,19 @@ if [ -n "$GPG_SIGN" ]; then
 fi
 flatpak build-bundle "${BUNDLE_ARGS[@]}" org.eigenwallet.app
 
-# Generate .flatpakrepo file
-echo "📝  Generating .flatpakrepo file..."
-cat > "$REPO_DIR/eigenwallet.flatpakrepo" << EOF
-[Flatpak Repo]
-Title=eigenwallet
-Name=eigenwallet
-Url=${PAGES_URL}/
-Homepage=https://github.com/${GITHUB_USER}/${REPO_NAME}
-Comment=Unstoppable cross-chain atomic swaps
-Description=Repository for eigenwallet applications - providing secure and decentralized XMR-BTC atomic swaps
-Icon=${PAGES_URL}/icon.png
-SuggestRemoteName=eigenwallet
-EOF
-
-# Generate .flatpakref file
-echo "📝  Generating .flatpakref file..."
-cat > "$REPO_DIR/org.eigenwallet.app.flatpakref" << EOF
-[Flatpak Ref]
-Title=eigenwallet GUI
-Name=org.eigenwallet.app
-Branch=stable
-Url=${PAGES_URL}/
-SuggestRemoteName=eigenwallet
-Homepage=https://github.com/${GITHUB_USER}/${REPO_NAME}
-Icon=${PAGES_URL}/icon.png
-RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
-IsRuntime=false
-EOF
-
-# Add GPG key if signing
+# Add GPG key only if signing
 if [ -n "$GPG_SIGN" ]; then
-    echo "🔑  Adding GPG key to .flatpakrepo and .flatpakref..."
-    {
-        printf "GPGKey="
-        gpg --export "$GPG_SIGN" | base64 -w 0
-        echo
-    } | tee -a "$REPO_DIR/eigenwallet.flatpakrepo" "$REPO_DIR/org.eigenwallet.app.flatpakref"
+    echo "🔑  Adding GPG keys to .flatpakrepo and .flatpakref..."
+    GPGKey="s|%GPGKey%|$(gpg --export "$GPG_SIGN" | base64 -w 0)|"
+else
+    GPGKey="/%GPGKey%/d"
 fi
+
+cp -v flatpak/*.flatpakre* "$REPO_DIR/"
+sed -e "s|%Url%|${PAGES_URL}|" \
+    -e "s|%Homepage%|https://github.com/${GITHUB_USER}/${REPO_NAME}|" \
+    -e "$GPGKey" \
+    -i "$REPO_DIR"/*.flatpakre*
 
 # Copy bundle to repo directory
 cp org.eigenwallet.app.flatpak "$REPO_DIR/"

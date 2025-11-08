@@ -1,0 +1,11 @@
+[Flatpak Repo]
+Url=%Url%
+Icon=%Url%/icon.png
+SuggestRemoteName=eigenwallet
+Homepage=%Homepage%
+GPGKey=%GPGKey%
+
+Title=eigenwallet
+Name=eigenwallet
+Comment=Unstoppable cross-chain atomic swaps
+Description=Repository for eigenwallet applications - providing secure and decentralized XMR-BTC atomic swaps
