@@ -101,8 +101,7 @@ jobs:
             exit 1
           fi
 
-          export GNUPGHOME="$(mktemp -d)"
-          chmod 700 "$GNUPGHOME"
+          export GNUPGHOME="$(umask 077; mktemp -d)"
 
           # Allow loopback pinentry when passphrase is provided
           echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
@@ -152,9 +151,6 @@ jobs:
           # Find all .asc signature files we just created
           find target/${{ matrix.target }}/release/bundle -type f -name "*.asc" -print0 | while IFS= read -r -d '' sig_file; do
             echo "Uploading signature: $sig_file"
-            # Get just the filename for the asset name
-            asset_name=$(basename "$sig_file")
-
             gh release upload "${{ github.event.release.tag_name }}" \
               "$sig_file" \
               --clobber
@@ -186,8 +182,8 @@ jobs:
           gh release download "$VERSION" --pattern "*.dmg" --dir /tmp/dmgs
 
           # Calculate SHA256 checksums
-          AARCH64_DMG=$(ls /tmp/dmgs/*_aarch64_darwin.dmg)
-          X64_DMG=$(ls /tmp/dmgs/*_x64_darwin.dmg)
+          AARCH64_DMG=/tmp/dmgs/*_aarch64_darwin.dmg
+          X64_DMG=/tmp/dmgs/*_x64_darwin.dmg
 
           AARCH64_SHA256=$(sha256sum "$AARCH64_DMG" | awk '{print $1}')
           X64_SHA256=$(sha256sum "$X64_DMG" | awk '{print $1}')
@@ -196,12 +192,10 @@ jobs:
           echo "x64 SHA256: $X64_SHA256"
 
           # Generate the Homebrew formula from template
-          cp dev-scripts/homebrew/eigenwallet.rb.template eigenwallet.rb
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" eigenwallet.rb
-          sed -i "s/AARCH64_SHA256_PLACEHOLDER/$AARCH64_SHA256/g" eigenwallet.rb
-          sed -i "s/X64_SHA256_PLACEHOLDER/$X64_SHA256/g" eigenwallet.rb
-
-          cat eigenwallet.rb
+          sed -e "s/VERSION_PLACEHOLDER/$VERSION/g"               \
+              -e "s/AARCH64_SHA256_PLACEHOLDER/$AARCH64_SHA256/g" \
+              -e "s/X64_SHA256_PLACEHOLDER/$X64_SHA256/g"         \
+              dev-scripts/homebrew/eigenwallet.rb.template | tee eigenwallet.rb
 
       - name: Upload Homebrew formula to release
         env:
