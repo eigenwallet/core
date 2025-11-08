@@ -333,7 +333,9 @@ impl Handler {
             timeout: Duration::from_secs(120),
             new_swaps: VecDeque::default(),
             bitcoin_wallet,
-            keep_alive: false,
+            // TODO: This will keep ALL connections alive indefinitely
+            // which is not optimal
+            keep_alive: true,
         }
     }
 }
