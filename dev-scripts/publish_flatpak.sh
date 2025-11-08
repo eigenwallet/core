@@ -11,7 +11,6 @@ BRANCH="gh-pages"
 GPG_SIGN=""
 NO_GPG_FLAG=""
 REPO_DIR="flatpak-repo"
-TEMP_DIR="$(mktemp -d)"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -39,13 +38,11 @@ done
 # Function to list available GPG keys
 list_gpg_keys() {
     echo "📋  Available GPG keys:"
-    gpg --list-secret-keys --keyid-format=long 2>/dev/null | grep -E "^(sec|uid)" | while IFS= read -r line; do
-        if [[ $line =~ ^sec ]]; then
-            key_info=$(echo "$line" | awk '{print $2}')
+    gpg --list-secret-keys --keyid-format=long 2>/dev/null | while read -r type key_info name; do
+        if [[ $type = sec ]]; then
             echo "   🔑  Key: $key_info"
-        elif [[ $line =~ ^uid ]]; then
-            uid=$(echo "$line" | sed 's/uid[[:space:]]*\[[^]]*\][[:space:]]*//')
-            echo "      👤  $uid"
+        elif [[ $type = uid ]]; then
+            echo "      👤  $name"
             echo ""
         fi
     done
@@ -58,7 +55,7 @@ select_gpg_key() {
         exit 1
     fi
 
-    local keys=($(gpg --list-secret-keys --keyid-format=long 2>/dev/null | grep "^sec" | awk '{print $2}' | cut -d'/' -f2))
+    local keys=($(gpg --list-secret-keys --keyid-format=long 2>/dev/null | awk -F "[$IFS/]*" '/^sec/ {print $3}'))
 
     if [ ${#keys[@]} -eq 0 ]; then
         echo "🔑  No GPG keys found."
@@ -70,7 +67,6 @@ select_gpg_key() {
             select_gpg_key
         else
             echo "⚠️   Proceeding without GPG signing (not recommended for production)"
-            GPG_SIGN=""
             return
         fi
     else
@@ -80,7 +76,7 @@ select_gpg_key() {
         echo "Please select a GPG key for signing:"
         for i in "${!keys[@]}"; do
             local key_id="${keys[i]}"
-            local user_info=$(gpg --list-secret-keys --keyid-format=long "$key_id" 2>/dev/null | grep "^uid" | head -1 | sed 's/uid[[:space:]]*\[[^]]*\][[:space:]]*//')
+            local user_info=$(gpg --list-secret-keys --keyid-format=long "$key_id" 2>/dev/null | awk '/^uid/ {$1=""; $2="\b"; print; exit}')
             echo "   $((i+1))) ${key_id} - ${user_info}"
         done
         echo "   $((${#keys[@]}+1))) Skip GPG signing"
@@ -93,7 +89,6 @@ select_gpg_key() {
             if [[ $choice =~ ^[0-9]+$ ]] && [ $choice -ge 1 ] && [ $choice -le $((${#keys[@]}+2)) ]; then
                 if [ $choice -eq $((${#keys[@]}+1)) ]; then
                     echo "⚠️   Proceeding without GPG signing"
-                    GPG_SIGN=""
                     break
                 elif [ $choice -eq $((${#keys[@]}+2)) ]; then
                     import_gpg_key
@@ -101,7 +96,7 @@ select_gpg_key() {
                     break
                 else
                     GPG_SIGN="${keys[$((choice-1))]}"
-                    local selected_user=$(gpg --list-secret-keys --keyid-format=long "$GPG_SIGN" 2>/dev/null | grep "^uid" | head -1 | sed 's/uid[[:space:]]*\[[^]]*\][[:space:]]*//')
+                    local selected_user=$(gpg --list-secret-keys --keyid-format=long "$GPG_SIGN" 2>/dev/null | awk '/^uid/ {$1=""; $2="\b"; print; exit}')
                     echo "✅  Selected key: $GPG_SIGN - $selected_user"
                     break
                 fi
@@ -122,28 +117,19 @@ import_gpg_key() {
     echo "   Press Ctrl+D when finished:"
     echo ""
 
-    local temp_key_file=$(mktemp)
-    cat > "$temp_key_file"
-
-    echo ""
-    echo "🔄  Importing key..."
-
-    if gpg --import "$temp_key_file" 2>/dev/null; then
+    if gpg --import - 2>/dev/null; then
         echo "✅  GPG key imported successfully!"
     else
         echo "❌  Failed to import GPG key. Please check the format and try again."
-        rm -f "$temp_key_file"
         exit 1
     fi
-
-    rm -f "$temp_key_file"
 }
 
 # Check requirements
 if ! command -v flatpak-builder &> /dev/null; then
     echo "❌  flatpak-builder is required but not installed"
     echo "Install with: sudo apt install flatpak-builder (Ubuntu/Debian)"
-    echo "             sudo dnf install flatpak-builder (Fedora)"
+    echo "              sudo dnf install flatpak-builder (Fedora)"
     exit 1
 fi
 
@@ -155,12 +141,12 @@ fi
 if ! command -v jq &> /dev/null; then
     echo "❌  jq is required but not installed"
     echo "Install with: sudo apt install jq (Ubuntu/Debian)"
-    echo "             sudo dnf install jq (Fedora)"
+    echo "              sudo dnf install jq (Fedora)"
     exit 1
 fi
 
 # Get repository info
-REPO_URL=$(git remote get-url origin 2>/dev/null || echo "")
+REPO_URL=$(git remote get-url origin 2>/dev/null || :)
 if [[ $REPO_URL =~ github\.com[:/]([^/]+)/([^/.]+) ]]; then
     GITHUB_USER="${BASH_REMATCH[1]}"
     REPO_NAME="${BASH_REMATCH[2]}"
@@ -203,12 +189,13 @@ echo ""
 # Always use local .deb file - build if needed
 echo "🔍  Ensuring local .deb file exists..."
 MANIFEST_FILE="flatpak/org.eigenwallet.app.json"
-TEMP_MANIFEST=""
+trap 'rm -f "$TEMP_MANIFEST"' EXIT INT
+TEMP_MANIFEST=$(mktemp --suffix=.json)
 
 # Look for the .deb file in the expected location
-DEB_FILE=$(find ./target/release/bundle/deb/ -name "*.deb" -not -name "*.deb.sig" 2>/dev/null | head -1)
+DEB_FILE=$(find "$PWD/target/debug/bundle/deb/" -name "*.deb" -print -quit)
 
-if [ -n "$DEB_FILE" ] && [ -f "$DEB_FILE" ]; then
+if [ -f "$DEB_FILE" ]; then
     echo "✅  Found local .deb file: $DEB_FILE"
 else
     echo "🏗️   No local .deb file found, building locally..."
@@ -219,7 +206,7 @@ else
     fi
 
     # Extract version from Cargo.toml
-    VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/.*= "//' | sed 's/".*//')
+    VERSION=$(awk -F "[$IFS\"]*"  '/^version/ { print $3; exit; }' Cargo.toml)
     if [ -z "$VERSION" ]; then
         echo "❌  Could not determine version from Cargo.toml"
         exit 1
@@ -229,8 +216,8 @@ else
     ./release-build.sh "$VERSION"
 
     # Look for the .deb file again
-    DEB_FILE=$(find ./target/release/bundle/deb/ -name "*.deb" -not -name "*.deb.sig" 2>/dev/null | head -1)
-    if [ -z "$DEB_FILE" ] || [ ! -f "$DEB_FILE" ]; then
+    DEB_FILE=$(find "$PWD/target/debug/bundle/deb/" -name "*.deb" -print -quit)
+    if ! [ -f "$DEB_FILE" ]; then
         echo "❌  Failed to build .deb file"
         exit 1
     fi
@@ -238,39 +225,26 @@ else
     echo "✅  Local build completed: $DEB_FILE"
 fi
 
-# Get the absolute path
-DEB_ABSOLUTE_PATH=$(realpath "$DEB_FILE")
-
 # Calculate SHA256 hash of the .deb file
 echo "🔢  Calculating SHA256 hash..."
-DEB_SHA256=$(sha256sum "$DEB_ABSOLUTE_PATH" | cut -d' ' -f1)
+read -r DEB_SHA256 _ < <(sha256sum "$DEB_FILE")
 echo "   Hash: $DEB_SHA256"
-
-# Create a temporary manifest with the local file
-TEMP_MANIFEST=$(mktemp --suffix=.json)
 
 echo "📝  Creating manifest with local .deb..."
 
 # Modify the manifest to use the local file
-jq --arg deb_path "file://$DEB_ABSOLUTE_PATH" --arg deb_hash "$DEB_SHA256" '
+jq --arg deb_path "file://$DEB_FILE" --arg deb_hash "$DEB_SHA256" '
     .modules[0].sources = [
         {
             "type": "file",
             "url": $deb_path,
-            "sha256": $deb_hash,
-            "dest": ".",
-            "dest-filename": "eigenwallet.deb"
+            "sha256": $deb_hash
         }
-    ] |
-    .modules[0]."build-commands" = [
-        "ar -x eigenwallet.deb",
-        "tar -xf data.tar.gz",
-        "install -Dm755 usr/bin/unstoppableswap-gui-rs /app/bin/unstoppableswap-gui-rs"
     ]
 ' "$MANIFEST_FILE" > "$TEMP_MANIFEST"
 
 MANIFEST_FILE="$TEMP_MANIFEST"
-echo "📦  Using local build: $(basename "$DEB_FILE")"
+echo "📦  Using local build: ${DEB_FILE##*/}"
 
 echo ""
 
@@ -332,13 +306,6 @@ Icon=${PAGES_URL}/icon.png
 SuggestRemoteName=eigenwallet
 EOF
 
-# Add GPG key if signing
-if [ -n "$GPG_SIGN" ]; then
-    echo "🔑  Adding GPG key to .flatpakrepo..."
-    GPG_KEY_B64=$(gpg --export "$GPG_SIGN" | base64 -w 0)
-    echo "GPGKey=$GPG_KEY_B64" >> "$REPO_DIR/eigenwallet.flatpakrepo"
-fi
-
 # Generate .flatpakref file
 echo "📝  Generating .flatpakref file..."
 cat > "$REPO_DIR/org.eigenwallet.app.flatpakref" << EOF
@@ -356,21 +323,19 @@ EOF
 
 # Add GPG key if signing
 if [ -n "$GPG_SIGN" ]; then
-    GPG_KEY_B64=$(gpg --export "$GPG_SIGN" | base64 -w 0)
-    echo "GPGKey=$GPG_KEY_B64" >> "$REPO_DIR/org.eigenwallet.app.flatpakref"
+    echo "🔑  Adding GPG key to .flatpakrepo and .flatpakref..."
+    {
+        printf "GPGKey="
+        gpg --export "$GPG_SIGN" | base64 -w 0
+        echo
+    } | tee -a "$REPO_DIR/eigenwallet.flatpakrepo" "$REPO_DIR/org.eigenwallet.app.flatpakref"
 fi
 
 # Copy bundle to repo directory
 cp org.eigenwallet.app.flatpak "$REPO_DIR/"
 
 # Use index.html from flatpak directory
-if [ -f "flatpak/index.html" ]; then
-    echo "Copying index.html from flatpak directory..."
-    cp flatpak/index.html "$REPO_DIR/index.html"
-else
-    echo "Error: flatpak/index.html not found"
-    exit 1
-fi
+cp -v flatpak/index.html "$REPO_DIR/"
 
 # Copy any additional files
 if [ -f "icon.png" ]; then
@@ -382,44 +347,27 @@ if [ -f "README.md" ]; then
 fi
 
 # Add .nojekyll file to skip Jekyll processing
-touch "$REPO_DIR/.nojekyll"
+>> "$REPO_DIR/.nojekyll"
 
 echo "✅  Flatpak repository built successfully!"
-echo "📊  Repository size: $(du -sh $REPO_DIR | cut -f1)"
+echo "📊  Repository size: $(du -sh "$REPO_DIR" | { read -r s _; echo "$s"; })"
 echo "📁  Repository files are in: $REPO_DIR/"
 
 if [ "$PUSH_FLAG" = "--push" ]; then
     echo ""
     echo "🚀  Deploying to GitHub Pages..."
 
-    # Store current branch
-    CURRENT_BRANCH=$(git branch --show-current)
-
-    # Create a temporary directory for deployment
-    DEPLOY_DIR=$(mktemp -d)
-
-    # Copy flatpak repo to deploy directory (including hidden files)
-    echo "📁  Preparing deployment files..."
-    cp -r "$REPO_DIR"/. "$DEPLOY_DIR/"
-
     # Initialize fresh git repo in deploy directory
-    cd "$DEPLOY_DIR"
-    git init
-    git add .
-    git commit -m "Update Flatpak repository $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-
-    # Go back to original directory
-    cd - > /dev/null
+    git -C "$REPO_DIR" init
+    git -C "$REPO_DIR" add .
+    git -C "$REPO_DIR" commit -m "Update Flatpak repository $(date -u '+%F %T %Z')"
 
     # Push to GitHub Pages branch
     echo "🚀  Force pushing to $BRANCH..."
-    cd "$DEPLOY_DIR"
-    git remote add origin "$(cd - > /dev/null && git remote get-url origin)"
-    git push --force origin HEAD:"$BRANCH"
+    git -C "$REPO_DIR" push --force "$REPO_URL" HEAD:"$BRANCH"
 
-    # Return to original directory and clean up
-    cd - > /dev/null
-    rm -rf "$DEPLOY_DIR"
+    # Clean up
+    rm -rf "$REPO_DIR/.git"
 
     echo "🎉  Deployed successfully!"
     echo "🌐  Your Flatpak repository is available at: $PAGES_URL"
@@ -438,12 +386,3 @@ else
     echo ""
     echo "📋  Or manually copy the contents of $REPO_DIR/ to your gh-pages branch"
 fi
-
-# Cleanup temporary manifest if created
-if [ -n "$TEMP_MANIFEST" ] && [ -f "$TEMP_MANIFEST" ]; then
-    rm -f "$TEMP_MANIFEST"
-fi
-
-# Cleanup
-rm -rf "$TEMP_DIR"
-echo "🧹  Cleanup completed"
