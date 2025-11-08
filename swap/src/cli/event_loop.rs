@@ -418,7 +418,7 @@ impl EventLoop {
                     self.registered_swap_handlers.insert(swap_id, (peer_id, sender));
 
                     // Instruct the swarm to contineously redial the peer
-                    // TODO: We must remove it again once the swap is complete?
+                    // TODO: We must remove it again once the swap is complete, otherwise we will redial indefinitely
                     self.swarm.behaviour_mut().redial.add_peer(peer_id);
 
                     // Acknowledge the registration

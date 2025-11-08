@@ -91,8 +91,9 @@ impl NetworkBehaviour for Behaviour {
         _local_addr: &Multiaddr,
         _remote_addr: &Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        // TOOD: Uncomment this if we want to redial ALL peers we ever connected to
         // Add the peer if it's not already tracked.
-        self.add_peer(peer);
+        // self.add_peer(peer);
 
         // Reset the backoff state to start with the initial interval again once we disconnect again
         if let Some(backoff) = self.backoff.get_mut(&peer) {
@@ -109,8 +110,9 @@ impl NetworkBehaviour for Behaviour {
         _addr: &Multiaddr,
         _role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+        // TOOD: Uncomment this if we want to redial ALL peers we ever connected to
         // Add the peer if it's not already tracked.
-        self.add_peer(peer);
+        // self.add_peer(peer);
 
         // Reset the backoff state to start with the initial interval again once we disconnect again
         if let Some(backoff) = self.backoff.get_mut(&peer) {
@@ -135,12 +137,9 @@ impl NetworkBehaviour for Behaviour {
         if let Some(peer) = peer_to_redial {
             let backoff = self.get_backoff(&peer);
 
-            let next_dial_in = match backoff.next_backoff() {
-                Some(next_dial_in) => next_dial_in,
-                None => {
-                    unreachable!("The backoff should never run out of attempts");
-                }
-            };
+            let next_dial_in = backoff
+                .next_backoff()
+                .expect("redial backoff should never run out of attempts");
 
             if self.sleep.insert(
                 peer,

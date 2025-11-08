@@ -50,6 +50,7 @@ pub struct Behaviour {
     // Maintains the list of requests that we have sent to a connection handler but haven't yet received a response
     inflight_requests: HashMap<ConnectionId, (Uuid, PeerId)>,
 
+    // Queue of swap setup results that we want to notify the Swarm about
     to_swarm: VecDeque<SwapSetupResult>,
 
     // Queue of peers that we want to instruct the Swarm to dial
@@ -379,7 +380,7 @@ impl ConnectionHandler for Handler {
     ) {
         match event {
             libp2p::swarm::handler::ConnectionEvent::FullyNegotiatedInbound(_) => {
-                unreachable!("Bob does not support inbound substreams")
+                // TODO: Maybe warn here as Bob does not support inbound substreams?
             }
             libp2p::swarm::handler::ConnectionEvent::FullyNegotiatedOutbound(outbound) => {
                 let mut substream = outbound.protocol;
