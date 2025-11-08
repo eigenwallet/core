@@ -234,6 +234,8 @@ impl EventLoop {
                                         (swap_id, channel)
                                     }.boxed());
 
+                                    // Skip evaluation of whether we should buffer the transfer proof
+                                    // if we already acknowledged the transfer proof
                                     continue;
                                 }
                                 // TODO: Maybe we should log here?
