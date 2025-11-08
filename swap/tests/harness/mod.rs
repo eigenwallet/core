@@ -57,7 +57,7 @@ where
     let cli = Cli::default();
 
     tracing_subscriber::fmt()
-        .with_env_filter("info,swap=debug,monero_harness=debug,monero_rpc=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
+        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,monero_rpc=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
         .with_test_writer()
         .init();
 
@@ -525,7 +525,9 @@ impl BobParams {
         }
         let db = Arc::new(SqliteDatabase::open(&self.db_path, AccessMode::ReadWrite).await?);
 
-        let (event_loop, handle) = self.new_eventloop(swap_id, db.clone()).await?;
+        let (event_loop, mut handle) = self.new_eventloop(db.clone()).await?;
+
+        let swap_handle = handle.swap_handle(self.alice_peer_id, swap_id).await?;
 
         let swap = bob::Swap::from_db(
             db.clone(),
@@ -533,7 +535,7 @@ impl BobParams {
             self.bitcoin_wallet.clone(),
             self.monero_wallet.clone(),
             self.env_config,
-            handle,
+            swap_handle,
             self.monero_wallet
                 .main_wallet()
                 .await
@@ -560,9 +562,11 @@ impl BobParams {
         }
         let db = Arc::new(SqliteDatabase::open(&self.db_path, AccessMode::ReadWrite).await?);
 
-        let (event_loop, handle) = self.new_eventloop(swap_id, db.clone()).await?;
+        let (event_loop, mut handle) = self.new_eventloop(db.clone()).await?;
 
         db.insert_peer_id(swap_id, self.alice_peer_id).await?;
+
+        let swap_handle = handle.swap_handle(self.alice_peer_id, swap_id).await?;
 
         let swap = bob::Swap::new(
             db,
@@ -570,7 +574,7 @@ impl BobParams {
             self.bitcoin_wallet.clone(),
             self.monero_wallet.clone(),
             self.env_config,
-            handle,
+            swap_handle,
             self.monero_wallet
                 .main_wallet()
                 .await
@@ -587,13 +591,11 @@ impl BobParams {
 
     pub async fn new_eventloop(
         &self,
-        swap_id: Uuid,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<(cli::EventLoop, cli::EventLoopHandle)> {
         let identity = self.seed.derive_libp2p_identity();
 
         let behaviour = cli::Behaviour::new(
-            self.alice_peer_id,
             self.env_config,
             self.bitcoin_wallet.clone(),
             (identity.clone(), XmrBtcNamespace::Testnet),
@@ -601,7 +603,7 @@ impl BobParams {
         let mut swarm = swarm::cli(identity.clone(), None, behaviour).await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());
 
-        cli::EventLoop::new(swap_id, swarm, self.alice_peer_id, db.clone())
+        cli::EventLoop::new(swarm, db.clone())
     }
 }
 

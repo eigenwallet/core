@@ -80,7 +80,7 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Launch the ASB controller REPL against a local testnet ASB instance
 asb-testnet-controller:
@@ -140,3 +140,4 @@ code2prompt_single_crate crate:
 
 prepare-windows-build:
     cd dev-scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+

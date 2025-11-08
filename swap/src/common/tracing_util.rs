@@ -220,13 +220,16 @@ mod crates {
     ];
 
     pub const OUR_CRATES: &[&str] = &[
-        "swap",
+        // Library crates
         "swap_p2p",
-        "asb",
         "swap_env",
+        "swap_core",
         "swap_fs",
         "swap_serde",
         "monero_sys",
+        // Binary crates
+        "swap",
+        "asb",
         "unstoppableswap_gui_rs",
     ];
 

@@ -1,6 +1,6 @@
 use crate::cli::api::tauri_bindings::LockBitcoinDetails;
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriSwapProgressEvent};
-use crate::cli::EventLoopHandle;
+use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
 use crate::monero::MoneroAddressPool;
@@ -8,7 +8,7 @@ use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, 
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::*;
 use crate::protocol::{bob, Database};
-use anyhow::{bail, Context as AnyContext, Result};
+use anyhow::{Context as AnyContext, Result};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{ExpiredTimelocks, TxCancel, TxRefund};
@@ -90,7 +90,7 @@ pub async fn run_until(
 async fn next_state(
     swap_id: Uuid,
     state: BobState,
-    event_loop_handle: &mut EventLoopHandle,
+    event_loop_handle: &mut SwapEventLoopHandle,
     db: Arc<dyn Database + Send + Sync>,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
