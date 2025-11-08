@@ -2285,7 +2285,10 @@ impl FfiWallet {
             bail!("No ratios to distribute to");
         }
 
-        const TOLERANCE: f64 = 1e-6;
+        const PRECISION_MAGNITUDE: usize = 6;
+        const TOLERANCE: f64 = 1f64 / (PRECISION_MAGNITUDE as f64);
+        const PARTS_TOTAL: u64 = 10.pow(PRECISION_MAGNITUDE as u32);
+
         let sum: f64 = percentages.iter().sum();
         if (sum - 1.0).abs() > TOLERANCE {
             bail!("Percentages must sum to 1 (actual sum: {})", sum);
@@ -2301,12 +2304,31 @@ impl FfiWallet {
             bail!("More outputs than piconeros in balance");
         }
 
+        // Make sure there are no negative percentages
+        if percentages.iter().any(|percentage| percentage < 0f64) {
+            bail!("Encountered negative percentage");
+        }
+
+        // We convert the percentages to integer parts, which sum to 10^PRECISION_MAGNITUDE.
+        let parts: Vec<u64> = percentages
+            .iter()
+            .map(|percentage| {
+                let part = (percentage * 10f64.powi(PRECISION_MAGNITUDE as i32)).floor();
+                if part > u64::MAX as f64 {
+                    Err(anyhow!("Percentage `{percentage}` * 10^{PRECISION_MAGNITUDE} would have overflowed maximum u64 value"))
+                } else {
+                    Ok(part as u64)
+                }
+            })
+            .collect::<Result<Vec<_>>>()
+            .context("Couldn't convert percentages to integer parts")?;
+
         let mut amounts = Vec::new();
         let mut total = Amount::ZERO;
 
         // Distribute amounts according to ratios, except for the last one
-        for &percentage in &percentages[..percentages.len() - 1] {
-            let amount_pico = ((balance.as_pico() as f64) * percentage).floor() as u64;
+        for &part in &parts[..parts.len() - 1] {
+            let amount_pico = p;
             let amount = Amount::from_pico(amount_pico);
             amounts.push(amount);
             total += amount;
