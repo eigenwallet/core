@@ -2,8 +2,8 @@ use crate::cli::api::tauri_bindings::{
     ListSellersProgress, TauriBackgroundProgress, TauriBackgroundProgressHandle, TauriEmitter,
     TauriHandle,
 };
-use crate::libp2p_ext::MultiAddrExt;
 use crate::network::quote::BidQuote;
+use swap_p2p::libp2p_ext::MultiAddrExt;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::{quote, swarm};
 use crate::protocol::Database;

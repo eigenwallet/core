@@ -169,11 +169,12 @@ impl NetworkBehaviour for Behaviour {
         // If it has, dial that peer
         match self.sleep.poll_next_unpin(cx) {
             Poll::Ready(Some((peer, _))) => {
-                // Actually dial the peer
+                // Actually dial the peer. Using DialOpts::peer_id(peer).build() already
+                // enables extending addresses through behaviours in our patched libp2p.
                 Poll::Ready(ToSwarm::Dial {
                     opts: DialOpts::peer_id(peer)
-                        // TODO: Maybe use DisconnectedAndNotDialing here?
-                        .condition(PeerCondition::Disconnected)
+                        // Only dial when currently disconnected.
+                        .condition(PeerCondition::DisconnectedAndNotDialing)
                         .build(),
                 })
             }

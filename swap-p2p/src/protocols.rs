@@ -5,3 +5,4 @@ pub mod redial;
 pub mod rendezvous;
 pub mod swap_setup;
 pub mod transfer_proof;
+pub mod notice;
