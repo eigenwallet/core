@@ -1,18 +1,11 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { Theme } from "renderer/components/theme";
-import { DEFAULT_NODES } from "./defaults";
+import { DEFAULT_NODES, DEFAULT_RENDEZVOUS_POINTS } from "./defaults";
 import { Network, Blockchain } from "./types";
 
 export type DonateToDevelopmentTip = false | 0.0005 | 0.0075;
 
-const DEFAULT_RENDEZVOUS_POINTS = [
-  "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
-  "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
-  "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
-  "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
-  "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
-  "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
-];
+const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 export interface SettingsState {
   /// This is an ordered list of node urls for each network and blockchain
@@ -45,7 +38,7 @@ export interface SettingsState {
   /// The external Bitcoin refund address
   externalBitcoinRefundAddress: string;
   /// UTC timestamp (in milliseconds) when default nodes were last applied
-  lastAppliedDefaultNodes: number | null;
+  lastAppliedDefaultNodes?: number | null;
 }
 
 export enum RedeemPolicy {
@@ -117,6 +110,7 @@ const initialState: SettingsState = {
   enableMoneroTor: false, // Default to not routing Monero traffic through Tor
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
+  // TODO: Apply these regularly (like the default nodes)
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
   donateToDevelopment: false, // Default to no donation
   moneroRedeemPolicy: RedeemPolicy.Internal,
@@ -246,8 +240,8 @@ const alertsSlice = createSlice({
 
       // Check if we should apply defaults (first time or more than 2 weeks)
       if (
-        slice.lastAppliedDefaultNodes === null ||
-        now - slice.lastAppliedDefaultNodes > twoWeeksInMs
+        slice.lastAppliedDefaultNodes == null ||
+        now - slice.lastAppliedDefaultNodes > MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY
       ) {
         // Remove negative nodes from mainnet
         slice.nodes[Network.Mainnet][Blockchain.Bitcoin] = slice.nodes[
