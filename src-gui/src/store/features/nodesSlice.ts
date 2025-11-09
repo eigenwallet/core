@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-import { Blockchain } from "./settingsSlice";
+import { Blockchain } from "./types";
 
 export interface NodesSlice {
   nodes: Record<Blockchain, Record<string, boolean>>;

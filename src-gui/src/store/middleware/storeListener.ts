@@ -23,9 +23,8 @@ import {
   setFetchFiatPrices,
   setFiatCurrency,
   setUseMoneroRpcPool,
-  Blockchain,
-  Network,
 } from "store/features/settingsSlice";
+import { Blockchain, Network } from "store/features/types";
 import { fetchFeedbackMessagesViaHttp, updateRates } from "renderer/api";
 import { RootState, store } from "renderer/store/storeRenderer";
 import { swapProgressEventReceived } from "store/features/swapSlice";

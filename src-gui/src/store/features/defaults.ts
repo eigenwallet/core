@@ -1,4 +1,4 @@
-import { Network, Blockchain } from "./settingsSlice";
+import { Network, Blockchain } from "./types";
 
 // Known broken nodes to remove when applying defaults
 export const NEGATIVE_NODES_MAINNET = [

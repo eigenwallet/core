@@ -1,7 +1,7 @@
 import { ExtendedMakerStatus } from "models/apiModel";
 import { splitPeerIdFromMultiAddress } from "utils/parseUtils";
 import { CliMatches, getMatches } from "@tauri-apps/plugin-cli";
-import { Network } from "./features/settingsSlice";
+import { Network } from "./features/types";
 
 let matches: CliMatches;
 try {

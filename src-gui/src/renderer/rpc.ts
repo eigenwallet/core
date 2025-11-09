@@ -72,11 +72,8 @@ import { MoneroRecoveryResponse } from "models/rpcModel";
 import { ListSellersResponse } from "../models/tauriModel";
 import logger from "utils/logger";
 import { getNetwork, isTestnet } from "store/config";
-import {
-  Blockchain,
-  DonateToDevelopmentTip,
-  Network,
-} from "store/features/settingsSlice";
+import { DonateToDevelopmentTip } from "store/features/settingsSlice";
+import { Blockchain, Network } from "store/features/types";
 import { setStatus } from "store/features/nodesSlice";
 import { discoveredMakersByRendezvous } from "store/features/makersSlice";
 import { CliLog } from "models/cliModel";

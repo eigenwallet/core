@@ -1,6 +1,7 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { Theme } from "renderer/components/theme";
 import { DEFAULT_NODES } from "./defaults";
+import { Network, Blockchain } from "./types";
 
 export type DonateToDevelopmentTip = false | 0.0005 | 0.0075;
 
@@ -105,16 +106,6 @@ export enum FiatCurrency {
   Ves = "VES",
   Vnd = "VND",
   Zar = "ZAR",
-}
-
-export enum Network {
-  Testnet = "testnet",
-  Mainnet = "mainnet",
-}
-
-export enum Blockchain {
-  Bitcoin = "bitcoin",
-  Monero = "monero",
 }
 
 const initialState: SettingsState = {
