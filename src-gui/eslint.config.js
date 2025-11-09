@@ -13,6 +13,11 @@ export default [
     languageOptions: {
       globals: globals.browser,
     },
+    settings: {
+      react: {
+        version: "detect",
+      },
+    },
     plugins: {
       import: importPlugin,
     },

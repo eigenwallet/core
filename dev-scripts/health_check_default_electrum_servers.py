@@ -145,8 +145,8 @@ def check_server(url: str) -> Tuple[str, bool, str]:
 def main():
     # Find the files
     base_dir = Path(__file__).parent
-    rust_file = base_dir / "swap-env" / "src" / "defaults.rs"
-    ts_file = base_dir / "src-gui" / "src" / "store" / "features" / "defaults.ts"
+    rust_file = base_dir / ".." / "swap-env" / "src" / "defaults.rs"
+    ts_file = base_dir / ".." / "src-gui" / "src" / "store" / "defaults.ts"
 
     if not rust_file.exists():
         print(f"❌ Rust defaults file not found: {rust_file}")
@@ -197,13 +197,6 @@ def main():
         print(f"\n⚠️  Broken servers:")
         for url, reason in broken:
             print(f"   • {url} - {reason}")
-
-    # Check if the newly added server is working
-    new_server = "tcp://bitcoin.aranguren.org:50001"
-    if new_server in all_servers:
-        is_working = new_server in working
-        status = "✅ WORKING" if is_working else "❌ BROKEN"
-        print(f"\n🆕 Newly added server: {new_server} - {status}")
 
     sys.exit(0 if len(broken) == 0 else 1)
 

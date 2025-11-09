@@ -140,3 +140,7 @@ code2prompt_single_crate crate:
 
 prepare-windows-build:
     cd dev-scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+
+# Run the health check for the default Electrum servers
+health_check_default_electrum_servers:
+	cd dev-scripts && uv run health_check_default_electrum_servers.py
