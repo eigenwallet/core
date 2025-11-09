@@ -62,6 +62,11 @@ jobs:
         run: |
           sed -i 's/"version": "[^"]*"/"version": "${{ github.event.inputs.version }}"/' src-tauri/tauri.conf.json
 
+      - name: Update version in flatpak AppStream metadata for GUI
+        run: |
+          sed -i '/<releases>/a\
+              <release version="${{ github.event.inputs.version }}" date="'"$(date -I)"'" />' flatpak/*.appdata.xml
+
       - name: Update Cargo.lock
         run: cargo update --workspace
 
