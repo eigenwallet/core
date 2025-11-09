@@ -8,13 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + SWAP: Assume double spend safety of Monero transactions after 6 confirmations. This means we are assuming that there won't be any re-orgs deeper than 5 blocks. We believe this is a safe assumption given that there were almost no orphaned blocks over the last two weeks. Qubic (which was behind the re-orgs) has mined less than 1% of the last 1000 blocks.
+- GUI: Remove the following default Electrum servers: `tcp://electrum.blockstream.info:50001`, `tcp://electrum.coinucopia.io:50001`, `tcp://se-mma-crypto-payments-001.mullvad.net:50001`, `tcp://electrum2.bluewallet.io:50777` due to them being unreliable. Add the following new default Electrum servers: `tcp://electrum1.bluewallet.io:50001`, `tcp://electrum2.bluewallet.io:50001`, `tcp://electrum3.bluewallet.io:50001`, `ssl://btc-electrum.cakewallet.com:50002`, `tcp://bitcoin.aranguren.org:50001`.
+
 
 ## [3.2.10] - 2025-11-08
 
 - GUI + SWAP + ASB: Reduce the confirmations required to spend a Monero transaction from 22 to 15. We believe the risks of re-orgs is low again and this is safe to do. This may increase the chances of swap being successful and will reduce the time a swap takes.
 - GUI: Fix an issue where we a manual resume of a swap would be necessary if we failed to fetch certain Bitcoin transactions due to network issues.
-- GUI: Remove the following default Electrum servers: `tcp://electrum.blockstream.info:50001`, `tcp://electrum.coinucopia.io:50001`, `tcp://se-mma-crypto-payments-001.mullvad.net:50001`, `tcp://electrum2.bluewallet.io:50777` due to them being unreliable. Add the following new default Electrum servers: `tcp://electrum1.bluewallet.io:50001`, `tcp://electrum2.bluewallet.io:50001`, `tcp://electrum3.bluewallet.io:50001`, `ssl://btc-electrum.cakewallet.com:50002`, `tcp://bitcoin.aranguren.org:50001`.
-
+- 
 ## [3.2.9] - 2025-11-05
 
 - GUI: Fix an issue where an error in the UI runtime would cause a white screen to be displayed and nothing would be rendered.
