@@ -1,7 +1,7 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { Theme } from "renderer/components/theme";
-import { DEFAULT_NODES, DEFAULT_RENDEZVOUS_POINTS } from "./defaults";
-import { Network, Blockchain } from "./types";
+import { DEFAULT_NODES, DEFAULT_RENDEZVOUS_POINTS } from "../defaults";
+import { Network, Blockchain } from "../types";
 
 export type DonateToDevelopmentTip = false | 0.0005 | 0.0075;
 

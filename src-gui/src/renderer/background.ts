@@ -39,7 +39,7 @@ import {
   DEFAULT_NODES,
   NEGATIVE_NODES_MAINNET,
   NEGATIVE_NODES_TESTNET,
-} from "store/features/defaults";
+} from "store/defaults";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 
