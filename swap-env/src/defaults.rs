@@ -73,6 +73,8 @@ pub fn default_electrum_servers_mainnet() -> Vec<Url> {
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://btc-electrum.cakewallet.com:50002")
             .expect("default electrum server url to be valid"),
+        Url::parse("tcp://bitcoin.aranguren.org:50001")
+            .expect("default electrum server url to be valid"),
     ]
 }
 
@@ -87,15 +89,9 @@ pub fn default_electrum_servers_testnet() -> Vec<Url> {
         Url::parse("ssl://electrum.blockstream.info:60002")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://blockstream.info:993").expect("default electrum server url to be valid"),
-        Url::parse("ssl://testnet.qtornado.com:51002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("tcp://testnet.qtornado.com:51001")
-            .expect("default electrum server url to be valid"),
         Url::parse("tcp://testnet.aranguren.org:51001")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://testnet.aranguren.org:51002")
-            .expect("default electrum server url to be valid"),
-        Url::parse("ssl://testnet.qtornado.com:50002")
             .expect("default electrum server url to be valid"),
         Url::parse("ssl://bitcoin.devmole.eu:5010")
             .expect("default electrum server url to be valid"),
