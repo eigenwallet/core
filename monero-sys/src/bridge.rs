@@ -369,18 +369,18 @@ pub mod ffi {
 
         /// Create a new subaddress for the given account with an optional label.
         fn addSubaddress(
-            wallet: Pin<&mut Wallet>,
+            self: Pin<&mut Wallet>,
             account_index: u32,
             label: &CxxString,
-        ) -> Result<bool>;
+        ) -> Result<()>;
 
         /// Set a label for a specific subaddress.
         fn setSubaddressLabel(
-            wallet: Pin<&mut Wallet>,
+            self: Pin<&mut Wallet>,
             account_index: u32,
             address_index: u32,
             label: &CxxString,
-        ) -> Result<bool>;
+        ) -> Result<()>;
     }
 }
 

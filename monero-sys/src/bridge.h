@@ -1,10 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include <vector>
-#include <set>
-#include <algorithm>
 
 #include "../monero/src/wallet/api/wallet2_api.h"
 #include "../monero/src/wallet/api/wallet_manager.h"
@@ -333,26 +329,16 @@ namespace Monero
         return vec;
     }
 
-    inline bool addSubaddress(Wallet* wallet, uint32_t account_index, const std::string &label)
+    inline void addSubaddress(Wallet &wallet, uint32_t account_index, const std::string &label)
     {
-        try {
-            auto* sub = wallet->subaddress();
-            sub->addRow(account_index, label);
-            return true;
-        } catch(...) {
-            return false;
-        }
+        auto *sub = wallet.subaddress();
+        sub->addRow(account_index, label);
     }
 
-    inline bool setSubaddressLabel(Wallet* wallet, uint32_t account_index, uint32_t address_index, const std::string &label)
+    inline void setSubaddressLabel(Wallet &wallet, uint32_t account_index, uint32_t address_index, const std::string &label)
     {
-        try {
-            auto* sub = wallet->subaddress();
-            sub->setLabel(account_index, address_index, label);
-            return true;
-        } catch(...) {
-            return false;
-        }
+        auto *sub = wallet.subaddress();
+        sub->setLabel(account_index, address_index, label);
     }
 
     // bridge.h

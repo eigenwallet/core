@@ -614,7 +614,7 @@ impl Request for GetMoneroSubaddressesArgs {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
-        let subaddresses = wallet.subaddress_summaries(self.account_index).await;
+        let subaddresses = wallet.subaddress_summaries(self.account_index).await?;
         Ok(GetMoneroSubaddressesResponse { subaddresses })
     }
 }
@@ -646,7 +646,7 @@ impl Request for CreateMoneroSubaddressArgs {
             .await?;
 
         // Fetch summaries and return the most recent one (highest address_index)
-        let summaries = wallet.subaddress_summaries(self.account_index).await;
+        let summaries = wallet.subaddress_summaries(self.account_index).await?;
         let subaddress = summaries
             .into_iter()
             .max_by_key(|s| s.address_index)
@@ -681,11 +681,7 @@ impl Request for SetMoneroSubaddressLabelArgs {
         let wallet = wallet_manager.main_wallet().await;
 
         wallet
-            .update_subaddress_label(
-                self.account_index,
-                self.address_index,
-                self.label.clone(),
-            )
+            .update_subaddress_label(self.account_index, self.address_index, self.label.clone())
             .await?;
 
         Ok(SetMoneroSubaddressLabelResponse { success: true })

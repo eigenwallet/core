@@ -139,12 +139,18 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
-                    let subaddresses = wallet.subaddress_summaries(0).await;
-                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                        MoneroWalletUpdate::SubaddressesUpdate(GetMoneroSubaddressesResponse {
-                            subaddresses,
-                        }),
-                    ));
+                    match wallet.subaddress_summaries(0).await {
+                        Ok(subaddresses) => {
+                            tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+                                MoneroWalletUpdate::SubaddressesUpdate(
+                                    GetMoneroSubaddressesResponse { subaddresses },
+                                ),
+                            ));
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "Failed to compute subaddress summaries");
+                        }
+                    }
                 });
             }
         };

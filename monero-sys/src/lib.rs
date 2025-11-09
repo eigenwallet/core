@@ -453,7 +453,10 @@ impl WalletHandle {
     }
 
     /// Compute subaddress summaries for an account on the wallet thread.
-    pub async fn subaddress_summaries(&self, account_index: u32) -> Vec<SubaddressSummary> {
+    pub async fn subaddress_summaries(
+        &self,
+        account_index: u32,
+    ) -> anyhow::Result<Vec<SubaddressSummary>> {
         self.call(move |wallet| wallet.subaddress_summaries_sync(account_index))
             .await
     }
@@ -1636,32 +1639,14 @@ impl FfiWallet {
     }
 
     /// Compute subaddress summaries for a given account index.
-    fn subaddress_summaries_sync(&mut self, account_index: u32) -> Vec<SubaddressSummary> {
+    fn subaddress_summaries_sync(&mut self, account_index: u32) -> Result<Vec<SubaddressSummary>> {
         let history_ptr = self
             .inner
             .pinned()
             .history()
             .context("Failed to get transaction history: FFI call failed with exception");
 
-        let Ok(history_ptr) = history_ptr else {
-            tracing::error!(error=%history_ptr.unwrap_err(), "Failed to get transaction history, proceeding with empty history");
-            let size = self.num_subaddresses(account_index) as u32;
-            return (0..size)
-                .map(|idx| {
-                    let address = self.address_at(account_index, idx);
-                    let label = self.subaddress_label(account_index, idx);
-                    SubaddressSummary {
-                        account_index,
-                        address_index: idx,
-                        address,
-                        label,
-                        received: 0,
-                        tx_count: 0,
-                    }
-                })
-                .rev()
-                .collect();
-        };
+        let history_ptr = history_ptr?;
 
         let history = unsafe {
             Pin::new_unchecked(
@@ -1713,7 +1698,7 @@ impl FfiWallet {
         }
 
         // Build result list
-        let mut list: Vec<SubaddressSummary> = (0..size)
+        let list: Vec<SubaddressSummary> = (0..size)
             .map(|idx| {
                 let address = self.address_at(account_index, idx);
                 let label = self.subaddress_label(account_index, idx);
@@ -1728,7 +1713,7 @@ impl FfiWallet {
             })
             .collect();
 
-        list
+        Ok(list)
     }
 
     /// Does not actuallyt sync the wallet, use any of the refresh methods to do that.
@@ -1978,14 +1963,10 @@ impl FfiWallet {
     /// Create a new subaddress for an account with a label.
     fn add_subaddress(&mut self, account_index: u32, label: &str) -> anyhow::Result<()> {
         let_cxx_string!(label = label);
-        let success = bridge::ffi::addSubaddress(self.inner.pinned(), account_index, &label)
+        self.inner
+            .pinned()
+            .addSubaddress(account_index, &label)
             .context("Failed to add subaddress: FFI call failed with exception")?;
-
-        if !success {
-            self.check_error().context("Failed to add subaddress")?;
-            anyhow::bail!("Failed to add subaddress (no reason given)");
-        }
-
         Ok(())
     }
 
@@ -1997,20 +1978,10 @@ impl FfiWallet {
         label: &str,
     ) -> anyhow::Result<()> {
         let_cxx_string!(label = label);
-        let success = bridge::ffi::setSubaddressLabel(
-            self.inner.pinned(),
-            account_index,
-            address_index,
-            &label,
-        )
-        .context("Failed to set subaddress label: FFI call failed with exception")?;
-
-        if !success {
-            self.check_error()
-                .context("Failed to set subaddress label")?;
-            anyhow::bail!("Failed to set subaddress label (no reason given)");
-        }
-
+        self.inner
+            .pinned()
+            .setSubaddressLabel(account_index, address_index, &label)
+            .context("Failed to add subaddress: FFI call failed with exception")?;
         Ok(())
     }
 
