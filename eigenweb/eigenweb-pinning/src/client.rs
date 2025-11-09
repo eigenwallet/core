@@ -262,6 +262,8 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                                 // it means that the server cannot provide the hash.
                                 //
                                 // We therefore remove it from his [`dont_want`] set
+                                //
+                                // TODO: Infinite loop?
                                 if let Some(existing) = self.dont_want.get(&peer) {
                                     let mut set = existing.as_ref().clone();
                                     set.remove(&hash);

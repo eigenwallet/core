@@ -10,26 +10,14 @@ RUN apt-get install -y git clang cmake libsnappy-dev
 
 # Build the eigenweb-node binary
 COPY . .
-<<<<<<<< HEAD:eigenweb/eigenweb-node/Dockerfile
 RUN cargo build --release --package eigenweb-node --bin eigenweb-node
-========
-RUN cargo build --release --package rendezvous-node --bin rendezvous-node
->>>>>>>> master:libp2p-rendezvous-node/Dockerfile
 
 # Latest Debian Bookworm image as of Tue, 05 Aug 2025 15:34:08 GMT
 FROM debian:bookworm@sha256:b6507e340c43553136f5078284c8c68d86ec8262b1724dde73c325e8d3dcdeba AS runner
 
 # Copy the compiled binary from the previous stage
-<<<<<<<< HEAD:eigenweb/eigenweb-node/Dockerfile
 COPY --from=builder /build/target/release/eigenweb-node /bin/eigenweb-node
 
 EXPOSE 8888
 
 ENTRYPOINT ["eigenweb-node"]
-========
-COPY --from=builder /build/target/release/rendezvous-node /bin/rendezvous-node
-
-EXPOSE 8888
-
-ENTRYPOINT ["rendezvous-node"]
->>>>>>>> master:libp2p-rendezvous-node/Dockerfile

@@ -14,6 +14,7 @@ use crate::swarm::{create_swarm, create_swarm_with_onion, Addresses};
 use crate::tracing_util::init_tracing;
 
 pub mod behaviour;
+use crate::behaviour;
 pub mod swarm;
 pub mod tor;
 pub mod tracing_util;
