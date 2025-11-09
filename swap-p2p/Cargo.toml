@@ -13,7 +13,7 @@ swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 
 # Networking
-libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify"] }
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "identify", "ping"] }
 
 # Serialization
 asynchronous-codec = "0.7.0"

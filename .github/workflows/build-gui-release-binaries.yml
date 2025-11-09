@@ -186,8 +186,8 @@ jobs:
           gh release download "$VERSION" --pattern "*.dmg" --dir /tmp/dmgs
 
           # Calculate SHA256 checksums
-          AARCH64_DMG=$(ls /tmp/dmgs/*_aarch64.dmg)
-          X64_DMG=$(ls /tmp/dmgs/*_x64.dmg)
+          AARCH64_DMG=$(ls /tmp/dmgs/*_aarch64_darwin.dmg)
+          X64_DMG=$(ls /tmp/dmgs/*_x64_darwin.dmg)
 
           AARCH64_SHA256=$(sha256sum "$AARCH64_DMG" | awk '{print $1}')
           X64_SHA256=$(sha256sum "$X64_DMG" | awk '{print $1}')

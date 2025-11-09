@@ -1106,7 +1106,6 @@ pub async fn buy_xmr(
         .await?;
 
     let behaviour = cli::Behaviour::new(
-        seller_peer_id,
         env_config,
         bitcoin_wallet.clone(),
         (seed.derive_libp2p_identity(), namespace),
@@ -1131,9 +1130,7 @@ pub async fn buy_xmr(
         TauriSwapProgressEvent::ReceivedQuote(quote.clone()),
     );
 
-    // Now create the event loop we use for the swap
-    let (event_loop, event_loop_handle) =
-        EventLoop::new(swap_id, swarm, seller_peer_id, db.clone())?;
+    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
     let event_loop = tokio::spawn(event_loop.run().in_current_span());
 
     tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::ReceivedQuote(quote));
@@ -1161,13 +1158,14 @@ pub async fn buy_xmr(
                 }
             },
             swap_result = async {
+                let swap_event_loop_handle = event_loop_handle.swap_handle(seller_peer_id, swap_id).await?;
                 let swap = Swap::new(
                     db.clone(),
                     swap_id,
                     bitcoin_wallet.clone(),
                     monero_wallet,
                     env_config,
-                    event_loop_handle,
+                    swap_event_loop_handle,
                     monero_receive_pool.clone(),
                     bitcoin_change_address_for_spawn,
                     tx_lock_amount,
@@ -1225,7 +1223,6 @@ pub async fn resume_swap(
         .derive_libp2p_identity();
 
     let behaviour = cli::Behaviour::new(
-        seller_peer_id,
         config.env_config,
         bitcoin_wallet.clone(),
         (seed.clone(), config.namespace),
@@ -1240,20 +1237,22 @@ pub async fn resume_swap(
         swarm.add_peer_address(seller_peer_id, seller_address);
     }
 
-    let (event_loop, event_loop_handle) =
-        EventLoop::new(swap_id, swarm, seller_peer_id, db.clone())?;
+    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
 
     let monero_receive_pool = db.get_monero_address_pool(swap_id).await?;
 
     let tauri_handle = context.tauri_handle.clone();
 
+    let swap_event_loop_handle = event_loop_handle
+        .swap_handle(seller_peer_id, swap_id)
+        .await?;
     let swap = Swap::from_db(
         db.clone(),
         swap_id,
         bitcoin_wallet,
         monero_manager,
         config.env_config,
-        event_loop_handle,
+        swap_event_loop_handle,
         monero_receive_pool,
     )
     .await?

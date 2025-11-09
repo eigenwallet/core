@@ -53,35 +53,65 @@ pub async fn warn_if_outdated(current_version: &str) -> anyhow::Result<()> {
 ///     }
 /// }, None, std::time::Duration::from_secs(60));
 /// ```
-pub async fn retry<T, F, Fut, E>(
+pub async fn retry<T, F, Fut>(
     description: &str,
-    function: F,
+    mut op: F,
     max_elapsed_time: impl Into<Option<Duration>>,
     max_interval: impl Into<Option<Duration>>,
 ) -> Result<T, anyhow::Error>
 where
-    F: Fn() -> Fut,
-    Fut: Future<Output = Result<T, backoff::Error<E>>>,
-    E: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, backoff::Error<anyhow::Error>>>,
 {
-    let max_interval = max_interval.into().unwrap_or(Duration::from_secs(15));
+    static DEFAULT_MAX_INTERVAL: Duration = Duration::from_secs(15);
+    use backoff::backoff::Backoff;
 
-    let config = backoff::ExponentialBackoffBuilder::new()
+    let max_interval = max_interval.into().unwrap_or(DEFAULT_MAX_INTERVAL);
+
+    let mut backoff = backoff::ExponentialBackoffBuilder::new()
         .with_max_elapsed_time(max_elapsed_time.into())
         .with_max_interval(max_interval)
         .build();
 
-    let result = backoff::future::retry_notify(config, function, |err, wait_time: Duration| {
-        tracing::warn!(
-            error = ?err,
-            "Failed operation `{}`, retrying in {} seconds",
-            description,
-            wait_time.as_secs()
-        );
-    })
-    .await;
+    loop {
+        let err = match op().await {
+            Ok(v) => return Ok(v),
+            Err(err) => err,
+        };
 
-    result.map_err(|e| anyhow!("{}", e))
+        let (err, next) = match err {
+            backoff::Error::Permanent(err) => {
+                tracing::error!(
+                    "Failed operation `{}` with permanent error: {:#?}, we will not retry",
+                    description,
+                    err
+                );
+                return Err(err);
+            }
+            backoff::Error::Transient { err, retry_after } => {
+                match retry_after.or_else(|| backoff.next_backoff()) {
+                    Some(next) => (err, next),
+                    None => {
+                        tracing::error!(
+                            "Failed operation `{}` with error: {:#?}, no more retries left",
+                            description,
+                            err
+                        );
+                        return Err(err);
+                    }
+                }
+            }
+        };
+
+        tracing::warn!(
+            "Failed operation `{}` with error: {:#?}, retrying in {} seconds",
+            description,
+            err,
+            next.as_secs()
+        );
+
+        tokio::time::sleep(next).await;
+    }
 }
 
 /// helper macro for [`redact`]... eldrich sorcery

@@ -4,7 +4,10 @@ import { PiconeroAmount } from "../../../other/Units";
 import { FiatPiconeroAmount } from "../../../other/Units";
 import StateIndicator from "./StateIndicator";
 import humanizeDuration from "humanize-duration";
-import { GetMoneroSyncProgressResponse } from "models/tauriModel";
+import {
+  GetMoneroBalanceResponse,
+  GetMoneroSyncProgressResponse,
+} from "models/tauriModel";
 
 interface TimeEstimationResult {
   blocksLeft: number;
@@ -16,7 +19,7 @@ interface TimeEstimationResult {
 const AVG_MONERO_BLOCK_SIZE_KB = 130;
 
 function useSyncTimeEstimation(
-  syncProgress: GetMoneroSyncProgressResponse | undefined,
+  syncProgress: GetMoneroSyncProgressResponse | null,
 ): TimeEstimationResult | null {
   const poolStatus = useAppSelector((state) => state.pool.status);
   const restoreHeight = useAppSelector(
@@ -80,11 +83,8 @@ function useSyncTimeEstimation(
 }
 
 interface WalletOverviewProps {
-  balance?: {
-    unlocked_balance: string;
-    total_balance: string;
-  };
-  syncProgress?: GetMoneroSyncProgressResponse;
+  balance: GetMoneroBalanceResponse | null;
+  syncProgress: GetMoneroSyncProgressResponse | null;
 }
 
 // Component for displaying wallet address and balance
@@ -99,10 +99,11 @@ export default function WalletOverview({
   const poolStatus = useAppSelector((state) => state.pool.status);
   const timeEstimation = useSyncTimeEstimation(syncProgress);
 
-  const pendingBalance =
-    parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance);
+  const pendingBalance = balance
+    ? parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance)
+    : null;
 
-  const isSyncing = syncProgress && syncProgress.progress_percentage < 100;
+  const isSyncing = !!(syncProgress && syncProgress.progress_percentage < 100);
 
   // syncProgress.progress_percentage is not good to display
   // assuming we have an old wallet, eventually we will always only use the last few cm of the progress bar
@@ -184,18 +185,18 @@ export default function WalletOverview({
             </Typography>
             <Typography variant="h4">
               <PiconeroAmount
-                amount={parseFloat(balance.unlocked_balance)}
+                amount={balance ? parseFloat(balance.unlocked_balance) : null}
                 fixedPrecision={4}
                 disableTooltip
               />
             </Typography>
             <Typography variant="body2" color="text.secondary">
               <FiatPiconeroAmount
-                amount={parseFloat(balance.unlocked_balance)}
+                amount={balance ? parseFloat(balance.unlocked_balance) : null}
               />
             </Typography>
           </Box>
-          {pendingBalance > 0 && (
+          {pendingBalance !== null && pendingBalance > 0 && (
             <Box
               sx={{
                 display: "flex",

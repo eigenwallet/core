@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.10] - 2025-11-08
+
+- GUI + SWAP + ASB: Reduce the confirmations required to spend a Monero transaction from 22 to 15. We believe the risks of re-orgs is low again and this is safe to do. This may increase the chances of swap being successful and will reduce the time a swap takes.
+- GUI: Fix an issue where we a manual resume of a swap would be necessary if we failed to fetch certain Bitcoin transactions due to network issues.
+
+## [3.2.9] - 2025-11-05
+
+- GUI: Fix an issue where an error in the UI runtime would cause a white screen to be displayed and nothing would be rendered.
+- GUI(Linux): Fix an issue where the GUI would display a white screen on some systems (among others Fedora 43)
+
 ## [3.2.8] - 2025-11-02
 
 - ASB + CONTROLLER: Add a `registration-status` command to the controller shell. You can use it to get the registration status of the ASB at the configured rendezvous points.
@@ -727,7 +737,9 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.2.8...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.2.10...HEAD
+[3.2.10]: https://github.com/eigenwallet/core/compare/3.2.9...3.2.10
+[3.2.9]: https://github.com/eigenwallet/core/compare/3.2.8...3.2.9
 [3.2.8]: https://github.com/eigenwallet/core/compare/3.2.7...3.2.8
 [3.2.7]: https://github.com/eigenwallet/core/compare/3.2.6...3.2.7
 [3.2.6]: https://github.com/eigenwallet/core/compare/3.2.5...3.2.6
