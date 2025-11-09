@@ -11361,6 +11361,7 @@ name = "swap-p2p"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arti-client",
  "async-trait",
  "asynchronous-codec 0.7.0",
  "backoff",
@@ -11369,6 +11370,7 @@ dependencies = [
  "bmrng",
  "futures",
  "libp2p",
+ "libp2p-tor",
  "monero",
  "rand 0.8.5",
  "serde",
@@ -11380,7 +11382,9 @@ dependencies = [
  "swap-serde",
  "thiserror 1.0.69",
  "tokio",
+ "tor-rtcompat",
  "tracing",
+ "tracing-subscriber",
  "typeshare",
  "unsigned-varint 0.8.0",
  "uuid",
