@@ -2,6 +2,7 @@ use self::quote::{
     make_quote, unlocked_monero_balance_with_timeout, QuoteCacheKey, QUOTE_CACHE_TTL,
 };
 use crate::asb::{Behaviour, OutEvent};
+use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::quote::BidQuote;
@@ -10,8 +11,8 @@ use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
-use crate::{bitcoin, monero};
 use anyhow::{anyhow, Context, Result};
+use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -26,9 +27,9 @@ use std::fmt::Debug;
 use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin;
 use swap_env::env;
 use swap_feed::LatestRate;
-use tokio::fs::{write, File};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -41,7 +42,7 @@ where
 {
     swarm: libp2p::Swarm<Behaviour<LR>>,
     env_config: env::Config,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     db: Arc<dyn Database + Send + Sync>,
     latest_rate: LR,
@@ -132,7 +133,7 @@ where
     pub fn new(
         swarm: Swarm<Behaviour<LR>>,
         env_config: env::Config,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         db: Arc<dyn Database + Send + Sync>,
         latest_rate: LR,
@@ -245,7 +246,7 @@ where
                                 }
                             };
 
-                            let wallet_snapshot = match WalletSnapshot::capture(&self.bitcoin_wallet, &self.monero_wallet, &self.external_redeem_address, btc).await {
+                            let wallet_snapshot = match capture_wallet_snapshot(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
                                 Ok(wallet_snapshot) => wallet_snapshot,
                                 Err(error) => {
                                     tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
@@ -522,6 +523,17 @@ where
                             let count = self.swarm.connected_peers().count();
                             let _ = respond_to.send(count);
                         }
+                        EventLoopRequest::GetRegistrationStatus { respond_to } => {
+                            let registrations = self
+                                .swarm
+                                .behaviour()
+                                .rendezvous
+                                .as_ref()
+                                .map(|b| b.registrations())
+                                .unwrap_or_default(); // If rendezvous behaviour is disabled we report empty list
+
+                            let _ = respond_to.send(registrations);
+                        }
                     }
                 }
             }
@@ -647,24 +659,28 @@ where
         EventLoopHandle {
             swap_id,
             peer,
-            recv_encrypted_signature: Some(encrypted_signature_receiver),
-            transfer_proof_sender: Some(transfer_proof_sender),
+            recv_encrypted_signature: tokio::sync::Mutex::new(Some(encrypted_signature_receiver)),
+            transfer_proof_sender: tokio::sync::Mutex::new(Some(transfer_proof_sender)),
         }
     }
 }
 
+// We use a Mutex here to allow recv_encrypted_signature and transfer_proof_sender to be accessed concurrently
 #[derive(Debug)]
 pub struct EventLoopHandle {
     swap_id: Uuid,
     peer: PeerId,
-    recv_encrypted_signature: Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>,
+    recv_encrypted_signature:
+        tokio::sync::Mutex<Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>>,
     #[allow(clippy::type_complexity)]
-    transfer_proof_sender: Option<
-        tokio::sync::mpsc::UnboundedSender<(
-            PeerId,
-            transfer_proof::Request,
-            oneshot::Sender<Result<(), OutboundFailure>>,
-        )>,
+    transfer_proof_sender: tokio::sync::Mutex<
+        Option<
+            tokio::sync::mpsc::UnboundedSender<(
+                PeerId,
+                transfer_proof::Request,
+                oneshot::Sender<Result<(), OutboundFailure>>,
+            )>,
+        >,
     >,
 }
 
@@ -680,9 +696,16 @@ impl EventLoopHandle {
     }
 
     /// Wait for an encrypted signature from Bob
-    pub async fn recv_encrypted_signature(&mut self) -> Result<bitcoin::EncryptedSignature> {
-        let receiver = self
+    ///
+    /// This function can not be called concurrently (even though it doesn't take &self mut)
+    /// It internally acquires a Mutex. If another instance of this is already running, it will fail.
+    pub async fn recv_encrypted_signature(&self) -> Result<bitcoin::EncryptedSignature> {
+        let mut recv_encrypted_signature_guard = self
             .recv_encrypted_signature
+            .try_lock()
+            .map_err(|_| anyhow!("recv_encrypted_signature is already being called"))?;
+
+        let receiver = recv_encrypted_signature_guard
             .as_mut()
             .context("Encrypted signature was already received")?;
 
@@ -696,7 +719,7 @@ impl EventLoopHandle {
             .context("Failed to acknowledge receipt of encrypted signature")?;
 
         // Only take after successful receipt and acknowledgement
-        self.recv_encrypted_signature.take();
+        recv_encrypted_signature_guard.take();
 
         Ok(tx_redeem_encsig)
     }
@@ -709,9 +732,16 @@ impl EventLoopHandle {
     /// This will fail if
     /// 1. the transfer proof has already been sent once
     /// 2. there is an error with the bmrng channel
-    pub async fn send_transfer_proof(&mut self, msg: monero::TransferProof) -> Result<()> {
-        let sender = self
+    ///
+    /// This function can not be called concurrently (even though it doesn't take &self mut)
+    /// It internally acquires a Mutex. If another instance of this is already running, it will fail.
+    pub async fn send_transfer_proof(&self, msg: monero::TransferProof) -> Result<()> {
+        let mut transfer_proof_sender_guard = self
             .transfer_proof_sender
+            .try_lock()
+            .map_err(|_| anyhow!("send_transfer_proof is already being called"))?;
+
+        let sender = transfer_proof_sender_guard
             .as_ref()
             .context("Transfer proof was already sent")?;
 
@@ -758,10 +788,44 @@ impl EventLoopHandle {
         )
         .await?;
 
-        self.transfer_proof_sender.take();
+        transfer_proof_sender_guard.take();
 
         Ok(())
     }
+}
+
+async fn capture_wallet_snapshot(
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
+    monero_wallet: &monero::Wallets,
+    external_redeem_address: &Option<bitcoin::Address>,
+    transfer_amount: bitcoin::Amount,
+) -> Result<WalletSnapshot> {
+    let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await;
+    let total_balance = monero_wallet.main_wallet().await.total_balance().await;
+
+    tracing::info!(%unlocked_balance, %total_balance, "Capturing monero wallet snapshot");
+
+    let redeem_address = external_redeem_address
+        .clone()
+        .unwrap_or(bitcoin_wallet.new_address().await?);
+    let punish_address = external_redeem_address
+        .clone()
+        .unwrap_or(bitcoin_wallet.new_address().await?);
+
+    let redeem_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxRedeem::weight(), Some(transfer_amount))
+        .await?;
+    let punish_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
+        .await?;
+
+    Ok(WalletSnapshot::new(
+        unlocked_balance.into(),
+        redeem_address,
+        punish_address,
+        redeem_fee,
+        punish_fee,
+    ))
 }
 
 mod service {
@@ -775,6 +839,9 @@ mod service {
         },
         GetActiveConnections {
             respond_to: oneshot::Sender<usize>,
+        },
+        GetRegistrationStatus {
+            respond_to: oneshot::Sender<Vec<crate::asb::register::RegistrationReport>>,
         },
     }
 
@@ -804,6 +871,18 @@ mod service {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GetActiveConnections { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the registration status at configured rendezvous points
+        pub async fn get_registration_status(
+            &self,
+        ) -> anyhow::Result<Vec<crate::asb::register::RegistrationReport>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetRegistrationStatus { respond_to: tx })
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
@@ -1188,7 +1267,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
-            None,
+            Decimal::ZERO,
         )
         .await
         .unwrap();

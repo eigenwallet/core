@@ -8,6 +8,8 @@ import {
   TauriSwapProgressEvent,
   SendMoneroDetails,
   ContextStatus,
+  QuoteWithAddress,
+  ExportBitcoinWalletResponse,
 } from "./tauriModel";
 import {
   ContextStatusType,
@@ -16,6 +18,16 @@ import {
 } from "store/features/rpcSlice";
 
 export type TauriSwapProgressEventType = TauriSwapProgressEvent["type"];
+
+// Wrapper for QuoteWithAddress with an optional approval request
+// Approving that request will result in a swap being initiated with that maker
+export type SortableQuoteWithAddress = {
+  quote_with_address: QuoteWithAddress;
+  approval: {
+    request_id: string;
+    expiration_ts: number;
+  } | null;
+};
 
 export type TauriSwapProgressEventContent<
   T extends TauriSwapProgressEventType,
@@ -129,10 +141,6 @@ export type BobStateNameRunningSwap = Exclude<
 
 export type GetSwapInfoResponseExtRunningSwap = GetSwapInfoResponseExt & {
   state_name: BobStateNameRunningSwap;
-};
-
-export type GetSwapInfoResponseExtWithTimelock = GetSwapInfoResponseExt & {
-  timelock: ExpiredTimelocks;
 };
 
 export function isBobStateNameRunningSwap(
@@ -252,17 +260,6 @@ export function isGetSwapInfoResponseRunningSwap(
   return isBobStateNameRunningSwap(response.state_name);
 }
 
-/**
- * Type guard for GetSwapInfoResponseExt to ensure timelock is not null
- * @param response The swap info response to check
- * @returns True if the timelock exists, false otherwise
- */
-export function isGetSwapInfoResponseWithTimelock(
-  response: GetSwapInfoResponseExt,
-): response is GetSwapInfoResponseExtWithTimelock {
-  return response.timelock !== null;
-}
-
 export type PendingApprovalRequest = ApprovalRequest & {
   content: Extract<ApprovalRequest["request_status"], { state: "Pending" }>;
 };
@@ -369,9 +366,9 @@ export function isPendingPasswordApprovalEvent(
  * @returns True if funds have been locked, false otherwise
  */
 export function haveFundsBeenLocked(
-  event: TauriSwapProgressEvent | null,
+  event: TauriSwapProgressEvent | null | undefined,
 ): boolean {
-  if (event === null) {
+  if (event === null || event === undefined) {
     return false;
   }
 
@@ -387,7 +384,7 @@ export function haveFundsBeenLocked(
 }
 
 export function isContextFullyInitialized(
-  status: ResultContextStatus,
+  status: ResultContextStatus | null,
 ): boolean {
   if (status == null || status.type === ContextStatusType.Error) {
     return false;
@@ -410,4 +407,22 @@ export function isContextWithMoneroWallet(
   status: ContextStatus | null,
 ): boolean {
   return status?.monero_wallet_available ?? false;
+}
+
+export type ExportBitcoinWalletResponseExt = ExportBitcoinWalletResponse & {
+  wallet_descriptor: {
+    descriptor: string;
+  };
+};
+
+export function hasDescriptorProperty(
+  response: ExportBitcoinWalletResponse,
+): response is ExportBitcoinWalletResponseExt {
+  return (
+    typeof response.wallet_descriptor === "object" &&
+    response.wallet_descriptor !== null &&
+    "descriptor" in response.wallet_descriptor &&
+    typeof (response.wallet_descriptor as { descriptor?: unknown })
+      .descriptor === "string"
+  );
 }

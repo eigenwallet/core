@@ -24,7 +24,6 @@
     ".git/**",
     "**/node_modules/**",
     "**/dist/**",
-    "monero-seed/**",
     "monero-sys/monero_c",
     "monero-sys/monero"
   ],

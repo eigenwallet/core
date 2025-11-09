@@ -2,11 +2,12 @@ import { Box, Divider, IconButton, Paper, Typography } from "@mui/material";
 import FileCopyOutlinedIcon from "@mui/icons-material/FileCopyOutlined";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { VList, VListHandle } from "virtua";
 import { ExpandableSearchBox } from "./ExpandableSearchBox";
 
 const MIN_HEIGHT = "10rem";
+const NEAR_BOTTOM_THRESHOLD = 3;
 
 export default function ScrollablePaperTextBox({
   rows,
@@ -28,6 +29,7 @@ export default function ScrollablePaperTextBox({
   autoScroll?: boolean;
 }) {
   const virtuaEl = useRef<VListHandle | null>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
 
   function onCopy() {
     navigator.clipboard.writeText(copyValue);
@@ -41,11 +43,18 @@ export default function ScrollablePaperTextBox({
     virtuaEl.current?.scrollToIndex(0);
   }
 
+  function handleRangeChange(startIndex: number, endIndex: number) {
+    // Check if one of the last NEAR_BOTTOM_THRESHOLD elements is visible
+    const lastThreeStart = Math.max(0, rows.length - NEAR_BOTTOM_THRESHOLD);
+    const nearBottom = endIndex >= lastThreeStart;
+    setIsNearBottom(nearBottom);
+  }
+
   useEffect(() => {
-    if (autoScroll) {
+    if (autoScroll && isNearBottom) {
       scrollToBottom();
     }
-  }, [rows.length, autoScroll]);
+  }, [rows.length, autoScroll, isNearBottom]);
 
   return (
     <Paper
@@ -81,7 +90,11 @@ export default function ScrollablePaperTextBox({
           gap: "0.5rem",
         }}
       >
-        <VList ref={virtuaEl} style={{ height: "100vh", width: "100%" }}>
+        <VList
+          ref={virtuaEl}
+          style={{ height: "100vh", width: "100%" }}
+          onRangeChange={handleRangeChange}
+        >
           {rows}
         </VList>
       </Box>
@@ -95,7 +108,7 @@ export default function ScrollablePaperTextBox({
         <IconButton onClick={scrollToBottom} size="small">
           <KeyboardArrowDownIcon />
         </IconButton>
-        {searchQuery !== undefined && setSearchQuery !== undefined && (
+        {searchQuery !== null && setSearchQuery !== null && (
           <ExpandableSearchBox query={searchQuery} setQuery={setSearchQuery} />
         )}
       </Box>

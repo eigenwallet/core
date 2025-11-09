@@ -1,6 +1,6 @@
 [package]
 name = "swap-asb"
-version = "3.0.0-beta.3"
+version = "3.2.10"
 authors = ["The eigenwallet guys <hello@eigenwallet.org>", "The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "ASB (Automated Swap Backend) binary for XMR/BTC atomic swaps."
@@ -24,6 +24,7 @@ monero-sys = { path = "../monero-sys" }
 swap = { path = "../swap" }
 swap-env = { path = "../swap-env" }
 swap-feed = { path = "../swap-feed" }
+swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 
 # Async

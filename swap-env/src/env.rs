@@ -9,6 +9,9 @@ pub struct Config {
     pub bitcoin_lock_mempool_timeout: Duration,
     pub bitcoin_lock_confirmed_timeout: Duration,
     pub bitcoin_finality_confirmations: u32,
+    /// The upper bound for the number of blocks that will be mined before our
+    /// Bitcoin transaction is included in a block
+    pub bitcoin_blocks_till_confirmed_upper_bound_assumption: u32,
     pub bitcoin_avg_block_time: Duration,
     pub bitcoin_cancel_timelock: u32,
     pub bitcoin_punish_timelock: u32,
@@ -52,6 +55,9 @@ impl GetConfig for Mainnet {
             bitcoin_lock_mempool_timeout: 10.std_minutes(),
             bitcoin_lock_confirmed_timeout: 2.std_hours(),
             bitcoin_finality_confirmations: 1,
+            // We assume that a transaction that was constructed to be confirmed within one block
+            // will be confirmed within at most 6 blocks
+            bitcoin_blocks_till_confirmed_upper_bound_assumption: 6,
             bitcoin_avg_block_time: 10.std_minutes(),
             bitcoin_cancel_timelock: 72,
             bitcoin_punish_timelock: 144,
@@ -60,8 +66,8 @@ impl GetConfig for Mainnet {
             // If Alice cannot lock her Monero within this timeout,
             // she will initiate an early refund of Bobs Bitcoin
             monero_lock_retry_timeout: 10.std_minutes(),
-            monero_finality_confirmations: 22,
-            monero_double_spend_safe_confirmations: 22,
+            monero_finality_confirmations: 10,
+            monero_double_spend_safe_confirmations: 6,
             monero_network: monero::Network::Mainnet,
         }
     }
@@ -73,14 +79,15 @@ impl GetConfig for Testnet {
             bitcoin_lock_mempool_timeout: 10.std_minutes(),
             bitcoin_lock_confirmed_timeout: 1.std_hours(),
             bitcoin_finality_confirmations: 1,
+            bitcoin_blocks_till_confirmed_upper_bound_assumption: 6,
             bitcoin_avg_block_time: 10.std_minutes(),
             bitcoin_cancel_timelock: 12 * 3,
             bitcoin_punish_timelock: 24 * 3,
             bitcoin_network: bitcoin::Network::Testnet,
             monero_avg_block_time: 2.std_minutes(),
             monero_lock_retry_timeout: 10.std_minutes(),
-            monero_finality_confirmations: 22,
-            monero_double_spend_safe_confirmations: 22,
+            monero_finality_confirmations: 10,
+            monero_double_spend_safe_confirmations: 6,
             monero_network: monero::Network::Stagenet,
         }
     }
@@ -92,14 +99,15 @@ impl GetConfig for Regtest {
             bitcoin_lock_mempool_timeout: 30.std_seconds(),
             bitcoin_lock_confirmed_timeout: 5.std_minutes(),
             bitcoin_finality_confirmations: 1,
+            bitcoin_blocks_till_confirmed_upper_bound_assumption: 6,
             bitcoin_avg_block_time: 5.std_seconds(),
             bitcoin_cancel_timelock: 100,
             bitcoin_punish_timelock: 50,
             bitcoin_network: bitcoin::Network::Regtest,
             monero_avg_block_time: 1.std_seconds(),
             monero_lock_retry_timeout: 1.std_minutes(),
-            monero_finality_confirmations: 12,
-            monero_double_spend_safe_confirmations: 12,
+            monero_finality_confirmations: 10,
+            monero_double_spend_safe_confirmations: 6,
             monero_network: monero::Network::Mainnet, // yes this is strange
         }
     }

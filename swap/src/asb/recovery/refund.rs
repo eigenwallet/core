@@ -1,9 +1,10 @@
-use crate::bitcoin::{self};
 use crate::common::retry;
 use crate::monero;
+use crate::protocol::alice::swap::XmrRefundable;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
+use bitcoin_wallet::BitcoinWallet;
 use libp2p::PeerId;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -27,7 +28,7 @@ pub enum Error {
 
 pub async fn refund(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     db: Arc<dyn Database>,
 ) -> Result<AliceState> {
@@ -44,6 +45,7 @@ pub async fn refund(
         | AliceState::XmrLocked { transfer_proof, state3, .. }
         | AliceState::XmrLockTransferProofSent { transfer_proof, state3, .. }
         | AliceState::EncSigLearned { transfer_proof, state3, .. }
+        | AliceState::WaitingForCancelTimelockExpiration { transfer_proof, state3, .. }
         | AliceState::CancelTimelockExpired { transfer_proof, state3, .. }
 
         // Refund possible due to cancel transaction already being published

@@ -1,8 +1,8 @@
-use crate::asb::{LatestRate, RendezvousNode};
+use crate::asb::{register, LatestRate};
 use crate::libp2p_ext::MultiAddrExt;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::seed::Seed;
-use crate::{asb, bitcoin, cli};
+use crate::{asb, cli};
 use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::swarm::NetworkBehaviour;
@@ -11,8 +11,11 @@ use libp2p::{identity, Multiaddr, Swarm};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
+use swap_core::bitcoin;
 use swap_env::env;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
 
 #[allow(clippy::too_many_arguments)]
 pub fn asb<LR>(
@@ -40,7 +43,7 @@ where
                 .extract_peer_id()
                 .expect("Rendezvous node address must contain peer ID");
 
-            RendezvousNode::new(addr, peer_id, namespace, None)
+            register::RendezvousNode::new(addr, peer_id, namespace, None)
         })
         .collect();
 
@@ -65,7 +68,7 @@ where
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::MAX))
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 
     Ok((swarm, onion_addresses))
@@ -85,7 +88,7 @@ where
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::MAX))
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
 
     Ok(swarm)

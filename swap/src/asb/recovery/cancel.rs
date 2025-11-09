@@ -1,14 +1,15 @@
-use crate::bitcoin::{parse_rpc_error_code, RpcErrorCode, Txid, Wallet};
+use crate::bitcoin::{parse_rpc_error_code, RpcErrorCode, Txid};
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
 use anyhow::{bail, Result};
+use bitcoin_wallet::BitcoinWallet;
 use std::convert::TryInto;
 use std::sync::Arc;
 use uuid::Uuid;
 
 pub async fn cancel(
     swap_id: Uuid,
-    bitcoin_wallet: Arc<Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     db: Arc<dyn Database>,
 ) -> Result<(Txid, AliceState)> {
     let state = db.get_state(swap_id).await?.try_into()?;
@@ -23,8 +24,10 @@ pub async fn cancel(
         AliceState::XmrLockTransactionSent { monero_wallet_restore_blockheight, transfer_proof, state3,  }
         | AliceState::XmrLocked { monero_wallet_restore_blockheight, transfer_proof, state3 }
         | AliceState::XmrLockTransferProofSent { monero_wallet_restore_blockheight, transfer_proof, state3 }
+
         // in cancel mode we do not care about the fact that we could redeem, but always wait for cancellation (leading either refund or punish)
         | AliceState::EncSigLearned { monero_wallet_restore_blockheight, transfer_proof, state3, .. }
+        | AliceState::WaitingForCancelTimelockExpiration { monero_wallet_restore_blockheight, transfer_proof, state3}
         | AliceState::CancelTimelockExpired { monero_wallet_restore_blockheight, transfer_proof, state3}
         | AliceState::BtcCancelled { monero_wallet_restore_blockheight, transfer_proof, state3 }
         | AliceState::BtcRefunded { monero_wallet_restore_blockheight, transfer_proof,  state3 ,.. }

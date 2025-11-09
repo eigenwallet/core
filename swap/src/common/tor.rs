@@ -20,6 +20,14 @@ pub async fn create_tor_client(
     let state_dir = data_dir.join("state");
     let cache_dir = data_dir.join("cache");
 
+    // Workaround for https://gitlab.torproject.org/tpo/core/arti/-/issues/2224
+    // We delete guards.json (if it exists) on startup to prevent an issue where arti will not find any guards to connect to
+    // This forces new guards on every startup
+    //
+    // TODO: This is not good for privacy and should be removed as soon as this is fixed in arti itself.
+    let guards_file = state_dir.join("state").join("guards.json");
+    let _ = tokio::fs::remove_file(&guards_file).await;
+
     // The client configuration describes how to connect to the Tor network,
     // and what directories to use for storing persistent state.
     let mut config = TorClientConfigBuilder::from_directories(state_dir, cache_dir);

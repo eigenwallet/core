@@ -1,0 +1,12 @@
+[package]
+name = "swap-proptest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitcoin = { workspace = true }
+ecdsa_fun = { workspace = true }
+proptest = { workspace = true }
+
+[lints]
+workspace = true

@@ -30,6 +30,7 @@ pub static BITCOIND_IMAGE: &str =
 pub static ASB_TRACING_LOGGER_IMAGE: &str =
     "alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1";
 
+/// These are built from source
 pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
     // The context is the root of the Cargo workspace
     context: PINNED_GIT_REPOSITORY,
@@ -42,4 +43,11 @@ pub static ASB_CONTROLLER_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput
     context: PINNED_GIT_REPOSITORY,
     // The Dockerfile of the asb-controller is in the swap-controller crate
     dockerfile: "./swap-controller/Dockerfile",
+};
+
+pub static RENDEZVOUS_NODE_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {
+    // The context is the root of the Cargo workspace
+    context: PINNED_GIT_REPOSITORY,
+    // The Dockerfile of the rendezvous node is in the libp2p-rendezvous-node crate
+    dockerfile: "./libp2p-rendezvous-node/Dockerfile",
 };

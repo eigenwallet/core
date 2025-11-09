@@ -53,7 +53,6 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     // Step 0: Initializing the swap
     // These states represent the very beginning of the swap process
     // No funds have been locked
-    case "RequestingQuote":
     case "ReceivedQuote":
     case "WaitingForBtcDeposit":
     case "SwapSetupInflight":

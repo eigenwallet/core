@@ -5,14 +5,14 @@
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
-use crate::common::throttle::{throttle, Throttle};
 use anyhow::{Context, Result};
 use monero::{Address, Network};
 use monero_simple_request_rpc::SimpleRequestRpc;
 use monero_sys::WalletEventListener;
-pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+use throttle::{throttle, Throttle};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -21,7 +21,7 @@ use crate::cli::api::{
     tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle},
 };
 
-use super::{BlockHeight, TransferProof, TxHash};
+use super::{BlockHeight, TxHash, WatchRequest};
 
 /// Entrance point to the Monero blockchain.
 /// You can use this struct to open specific wallets and monitor the blockchain.
@@ -45,38 +45,17 @@ pub struct Wallets {
     wallet_database: Option<Arc<monero_sys::Database>>,
 }
 
-/// A request to watch for a transfer.
-pub struct WatchRequest {
-    pub public_view_key: super::PublicViewKey,
-    pub public_spend_key: monero::PublicKey,
-    /// The proof of the transfer.
-    pub transfer_proof: TransferProof,
-    /// The expected amount of the transfer.
-    pub expected_amount: monero::Amount,
-    /// The number of confirmations required for the transfer to be considered confirmed.
-    pub confirmation_target: u64,
-}
-
-/// Transfer a specified amount of money to a specified address.
-pub struct TransferRequest {
-    pub public_spend_key: monero::PublicKey,
-    pub public_view_key: super::PublicViewKey,
-    pub amount: monero::Amount,
-}
-
 struct TauriWalletListener {
     // one throttle wrapper per expensive update
     balance_throttle: Throttle<()>,
     history_throttle: Throttle<()>,
     sync_throttle: Throttle<()>,
-    save_throttle: Throttle<()>,
 }
 
 impl TauriWalletListener {
     const BALANCE_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const HISTORY_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
     const SYNC_UPDATE_THROTTLE: Duration = Duration::from_millis(2 * 1000);
-    const SAVE_UPDATE_THROTTLE: Duration = Duration::from_millis(60 * 1000);
 
     pub async fn new(tauri_handle: TauriHandle, wallet: Arc<Wallet>) -> Self {
         let rt_handle = tokio::runtime::Handle::current();
@@ -146,23 +125,10 @@ impl TauriWalletListener {
             }
         };
 
-        let save_job = {
-            let wallet = wallet.clone();
-            let rt = rt_handle.clone();
-            move |()| {
-                let wallet = wallet.clone();
-                let rt = rt.clone();
-                rt.spawn(async move {
-                    wallet.store(None).await;
-                });
-            }
-        };
-
         Self {
             balance_throttle: throttle(balance_job, Self::BALANCE_UPDATE_THROTTLE),
             history_throttle: throttle(history_job, Self::HISTORY_UPDATE_THROTTLE),
             sync_throttle: throttle(sync_job, Self::SYNC_UPDATE_THROTTLE),
-            save_throttle: throttle(save_job, Self::SAVE_UPDATE_THROTTLE),
         }
     }
 
@@ -177,29 +143,22 @@ impl TauriWalletListener {
     fn send_sync_progress(&self) {
         self.sync_throttle.call(());
     }
-
-    fn save_wallet(&self) {
-        self.save_throttle.call(());
-    }
 }
 
 impl WalletEventListener for TauriWalletListener {
     fn on_money_spent(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_unconfirmed_money_received(&self, _txid: &str, _amount: u64) {
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_new_block(&self, _height: u64) {
@@ -213,10 +172,8 @@ impl WalletEventListener for TauriWalletListener {
     }
 
     fn on_refreshed(&self) {
-        //self.wallet.start_refresh_thread();
         self.send_balance_update();
         self.send_history_update();
-        self.save_wallet();
     }
 
     fn on_reorg(&self, _height: u64, _blocks_detached: u64, _transfers_detached: usize) {
@@ -263,16 +220,23 @@ impl Wallets {
 
         let main_wallet = Arc::new(main_wallet);
 
+        // We always register this listener
+        // It does essential things like storing the wallet on certain events
+        let handle_listener = WalletHandleListener::new(main_wallet.clone());
+        main_wallet
+            .call(move |wallet| {
+                wallet.add_listener(Box::new(handle_listener));
+            })
+            .await;
+
+        // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
             let tauri_wallet_listener =
                 TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
-            let handle_listener = WalletHandleListener::new(main_wallet.clone());
-
             main_wallet
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
-                    wallet.add_listener(Box::new(handle_listener));
                 })
                 .await;
         }
@@ -308,22 +272,32 @@ impl Wallets {
         existing_wallet: Wallet,
         wallet_database: Option<Arc<monero_sys::Database>>,
     ) -> Result<Self> {
+        // TODO: This code is duplicated in [`Wallets::new`]. Unify it.
+
         if regtest {
             existing_wallet.unsafe_prepare_for_regtest().await;
         }
 
         let main_wallet = Arc::new(existing_wallet);
 
+        let handle_listener = WalletHandleListener::new(main_wallet.clone());
+
+        // We always register this listener.
+        // It does essential things like storing the wallet on certain events
+        main_wallet
+            .call(move |wallet| {
+                wallet.add_listener(Box::new(handle_listener));
+            })
+            .await;
+
+        // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
             let tauri_wallet_listener =
                 TauriWalletListener::new(tauri_handle, main_wallet.clone()).await;
 
-            let handle_listener = WalletHandleListener::new(main_wallet.clone());
-
             main_wallet
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
-                    wallet.add_listener(Box::new(handle_listener));
                 })
                 .await;
         }
@@ -418,6 +392,16 @@ impl Wallets {
 
         wallet.set_restore_height(blockheight).await?;
 
+        // We synchronously refresh the wallet
+        // This should be quick because we just set the restore height to the current blockheight.
+        wallet.refresh_blocking().await?;
+
+        // Now we start the refresh thread
+        // Why?
+        // Because if the user later tries to spend the funds (after a new block is mined), the wallet will not be synchronized anymore
+        // We start the refresh thread such that the wallet will keep up with the chain tip in the background.
+        wallet.start_refresh_thread().await;
+
         Ok(Arc::new(wallet))
     }
 
@@ -510,15 +494,6 @@ impl Wallets {
             db.record_wallet_access(wallet_path).await?;
         }
         Ok(())
-    }
-}
-
-impl TransferRequest {
-    pub fn address_and_amount(&self, network: Network) -> (Address, monero::Amount) {
-        (
-            Address::standard(network, self.public_spend_key, self.public_view_key.0),
-            self.amount,
-        )
     }
 }
 

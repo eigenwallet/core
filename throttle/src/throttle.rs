@@ -3,29 +3,35 @@
 
 use std::pin::Pin;
 use std::sync::{mpsc, Arc, Mutex};
-use std::time::{self, /* SystemTime, UNIX_EPOCH, */ Duration};
+use std::time::{self, Duration};
 
+/// Spawn a throttled executor that runs `closure` at most once per `delay`,
+/// while ensuring the most recent argument is eventually processed.
 pub fn throttle<F, T>(closure: F, delay: Duration) -> Throttle<T>
 where
-    F: Fn(T) -> () + Send + Sync + 'static,
+    F: Fn(T) + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
     let (sender, receiver) = mpsc::channel();
+    // The sender is wrapped so callers can enqueue work from multiple threads safely.
     let sender = Arc::new(Mutex::new(sender));
+    // Store the closure and delay in shared state so the worker thread can inspect them.
     let throttle_config = Arc::new(Mutex::new(ThrottleConfig {
         closure: Box::pin(closure),
         delay,
     }));
 
     let dup_throttle_config = throttle_config.clone();
-    let throttle = Throttle {
+
+    Throttle {
         sender: Some(sender),
         thread: Some(std::thread::spawn(move || {
             let throttle_config = dup_throttle_config;
-            let mut current_param = None; // 最后被保存为执行的参数
-            let mut closure_time = None; // 闭包最后执行时间
+            let mut current_param = None; // Holds the latest pending argument
+            let mut closure_time = None; // Tracks when the closure last executed
             loop {
                 if current_param.is_none() {
+                    // No pending work; block until we receive a new input or the channel closes.
                     let message = receiver.recv();
                     let now = time::Instant::now();
                     match message {
@@ -47,11 +53,13 @@ where
                             }
                         }
                         Err(_) => {
+                            // Channel has been closed; terminate the worker thread.
                             break;
                         }
                     }
                 } else {
-                    let message = receiver.recv_timeout((*throttle_config.lock().unwrap()).delay);
+                    // There is pending work; wait for either a timeout or a new message.
+                    let message = receiver.recv_timeout(throttle_config.lock().unwrap().delay);
                     let now = time::Instant::now();
                     match message {
                         Ok(param) => {
@@ -77,10 +85,11 @@ where
                                     if let Some(param) = current_param.take() {
                                         (throttle_config.lock().unwrap().closure)(param);
                                         current_param = None;
-                                        closure_time = None; // 超时执行为额外的执行, 不影响的下一次执行
+                                        closure_time = None; // Timeout-triggered run does not affect the next interval
                                     }
                                 }
                                 mpsc::RecvTimeoutError::Disconnected => {
+                                    // Sender dropped; exit gracefully.
                                     break;
                                 }
                             }
@@ -90,12 +99,11 @@ where
             }
         })),
         throttle_config,
-    };
-    throttle
+    }
 }
 
 struct ThrottleConfig<T> {
-    closure: Pin<Box<dyn Fn(T) -> () + Send + Sync + 'static>>,
+    closure: Pin<Box<dyn Fn(T) + Send + Sync + 'static>>,
     delay: Duration,
 }
 impl<T> Drop for ThrottleConfig<T> {
@@ -105,12 +113,15 @@ impl<T> Drop for ThrottleConfig<T> {
 }
 
 #[allow(dead_code)]
+/// Handle returned to the caller so work can be scheduled or cancelled.
 pub struct Throttle<T> {
     sender: Option<Arc<Mutex<mpsc::Sender<Option<T>>>>>,
     thread: Option<std::thread::JoinHandle<()>>,
     throttle_config: Arc<Mutex<ThrottleConfig<T>>>,
 }
+
 impl<T> Throttle<T> {
+    /// Schedule a new value for throttled execution.
     pub fn call(&self, param: T) {
         self.sender
             .as_ref()
@@ -120,6 +131,7 @@ impl<T> Throttle<T> {
             .send(Some(param))
             .unwrap();
     }
+    /// Signal the worker to stop accepting new work and exit once pending items are drained.
     pub fn terminate(&self) {
         self.sender
             .as_ref()
@@ -130,8 +142,10 @@ impl<T> Throttle<T> {
             .unwrap();
     }
 }
+
 impl<T> Drop for Throttle<T> {
     fn drop(&mut self) {
+        // Ensure the worker thread exits before the handle is dropped.
         self.terminate();
         tracing::debug!("drop Throttle {:?}", format!("{:p}", self));
     }
@@ -159,7 +173,7 @@ mod tests {
             throttle_fn.call(2);
             throttle_fn.call(3);
             std::thread::sleep(std::time::Duration::from_millis(200));
-            assert_eq!(*effect_run_times.lock().unwrap(), 2); // delay后执行最有一个参数
+            assert_eq!(*effect_run_times.lock().unwrap(), 2); // Ensures the last call within the window executes after the delay
             assert_eq!(*param.lock().unwrap(), 3);
         }
 
@@ -173,7 +187,7 @@ mod tests {
         {
             throttle_fn.call(5);
             throttle_fn.call(6);
-            throttle_fn.terminate(); // 终止最后一次执行
+            throttle_fn.terminate(); // Prevents the pending call from executing
             std::thread::sleep(std::time::Duration::from_millis(200));
             assert_eq!(*effect_run_times.lock().unwrap(), 4);
             assert_eq!(*param.lock().unwrap(), 5);

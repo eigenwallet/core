@@ -50,7 +50,7 @@ function TimelineSegment({
           opacity: isActive ? 1 : 0.3,
         }}
       >
-        {isActive && (
+        {isActive && durationOfSegment && (
           <Box
             sx={{
               position: "absolute",
@@ -112,9 +112,10 @@ function TimelineSegment({
 
 export function TimelockTimeline({
   swap,
+  timelock,
 }: {
-  // This forces the timelock to not be null
-  swap: GetSwapInfoResponseExt & { timelock: ExpiredTimelocks };
+  swap: GetSwapInfoResponseExt;
+  timelock: ExpiredTimelocks;
 }) {
   const theme = useTheme();
 
@@ -143,7 +144,7 @@ export function TimelockTimeline({
 
   const totalBlocks = swap.cancel_timelock + swap.punish_timelock;
   const absoluteBlock = getAbsoluteBlock(
-    swap.timelock,
+    timelock,
     swap.cancel_timelock,
     swap.punish_timelock,
   );

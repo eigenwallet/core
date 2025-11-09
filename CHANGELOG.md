@@ -7,37 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.1.1] - 2025-10-08
+- GUI + SWAP: Assume double spend safety of Monero transactions after 6 confirmations. This means we are assuming that there won't be any re-orgs deeper than 5 blocks. We believe this is a safe assumption given that there were almost no orphaned blocks over the last two weeks. Qubic (which was behind the re-orgs) has mined less than 1% of the last 1000 blocks.
 
-- GUI: Fix an issue where it would always say "Wait for the application to load all required components" if Tor was disabled.
+## [3.2.10] - 2025-11-08
 
-## [3.1.0] - 2025-10-07
-
+- GUI + SWAP + ASB: Reduce the confirmations required to spend a Monero transaction from 22 to 15. We believe the risks of re-orgs is low again and this is safe to do. This may increase the chances of swap being successful and will reduce the time a swap takes.
+- GUI: Fix an issue where we a manual resume of a swap would be necessary if we failed to fetch certain Bitcoin transactions due to network issues.
 - GUI: Remember acknowledged alerts and do not show them again.
 - eigenweb-node: Fix an issue where connections would timeout immediately.
 - eigenweb-node: Release a standalone eigenweb-node binary.
 
-## [3.0.7] - 2025-10-04
+## [3.2.9] - 2025-11-05
 
-## [3.0.6] - 2025-10-02
+- GUI: Fix an issue where an error in the UI runtime would cause a white screen to be displayed and nothing would be rendered.
+- GUI(Linux): Fix an issue where the GUI would display a white screen on some systems (among others Fedora 43)
 
-- GUI + SWAP + ASB: Upgrade arti (tor library) to 1.5.0. This might improve connectivity reliability.
-- ASB: Fix an issue where we would not wait between re-dials of rendezvous nodes.
-- GUI: Faster startup time by allowing parts of the application be used while other components are still initializing.
-- GUI: We now default to redeeming swaps into the internal Monero wallet, and sending Bitcoin refund into the internal Bitcoin wallet. If you want to change this behaviour go to Settings -> "Redeem Policy" and "Refund Policy".
-- GUI(Linux): Fixed an issue where the screen would be blank when launching the GUI.
-- GUI(Linux): The Linux builds are not built on Ubuntu 24.04. This mean it'll require glibc 2.39 which might not be present on some systems. If this is the case for you, please use the flatpak builds. We continue to look for a better way solution.
+## [3.2.8] - 2025-11-02
 
-## [3.0.4] - 2025-09-26
+- ASB + CONTROLLER: Add a `registration-status` command to the controller shell. You can use it to get the registration status of the ASB at the configured rendezvous points.
+- ASB + GUI + CLI + SWAP: Split high-verbosity tracing into separate hourly-rotating JSON log files per subsystem to reduce noise and aid debugging: `tracing*.log` (core things), `tracing-tor*.log` (purely tor related), `tracing-libp2p*.log` (low level networking), `tracing-monero-wallet*.log` (low level Monero wallet related). `swap-all.log` remains for non-verbose logs.
+- ASB: Fix an issue where we would not redeem the Bitcoin and force a refund even though it was still possible to do so.
+- GUI: Potentially fix issue here swaps would not be displayed
 
-- GUI: A warning will be display for makers running `<3.0.0`. Versions `2.*.*` are deprecated and do not support some essential protocols such as the new cooperative Monero redeem protocol. If you are a maker and are having issues with upgrading, please contact the developer on Matrix.
-- GUI: Clearly mark makers that have no available funds as having no available funds.
+## [3.2.7] - 2025-10-28
 
-## [3.0.3] - 2025-09-24
+## [3.2.6] - 2025-10-27
 
-- ORCHESTRATOR: Introduce a new `asb-tracing-logger` container within the `docker-compose.yml`. The `asb-tracing-logger` gives you access to the tracing (high verbosity) logs of your asb. Download the new `orchestrator` and run it. Then run `docker compose up -d`. The new `asb-tracing-logger` container will be created. Then run `docker compose logs -f --tail 100 asb-tracing-logger` to view detailed logging and see what is going on behind the scenes. The `asb` will continue printing less-verbose logs like before.
-- ASB: You can now configure your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set `maker.developer_tip` to a number between 0 and 1. Setting `maker.developer_tip` to `0.02` will donate 2% of each swap to the [donation address](https://github.com/eigenwallet/core?tab=readme-ov-file#donations) of the project. This is defined [here](https://github.com/eigenwallet/core/blob/ce4a85bfdd3b3fd6fbdf6c4c1ab0e1c3188b7fc2/swap-env/src/defaults.rs#L9) in the code. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction. Because tips are only ever sent in Monero you maintain full privacy.
-- ASB + CLI + GUI (Testnet only): Bitcoin timelocks have been tripled. This has no affect for mainnet swaps. Blocktimes are too low on testnet to be able to test reliably.
+## [3.2.5] - 2025-10-26
+
+- ASB: Fixed an issue where we would be forced to refund a swap if Bobs acknowledgement of the transfer proof did not reach us.
+- RENDEZVOUS-NODE: Fix an issue where the `--data-dir` argument was not accepted
+
+## [3.2.4] - 2025-10-26
+
+## [3.2.3] - 2025-10-26
+
+- RENDEZVOUS-NODE: Fix a spelling mistake in the Dockerfile
+
+## [3.2.2] - 2025-10-25
+
+- RENDEZVOUS-NODE: Now takes a `--data-dir` argument and has been renamed to "rendezvous-node" (previously "rendezvous-server")
+- RENDEZVOUS-NODE: Rendezvous servers now register themselves at bootstrap rendezvous points to make them discoverable.
+- ORCHESTRATOR: The orchestrator will now also add a `rendezvous-node` service to the `docker-compose.yml` file. Rendezvous nodes help with peer discovery in the network.
+- ASB + GUI + CLI: Upgrade arti-client to 1.6.0
+
+## [3.2.1] - 2025-10-21
+
+- ASB + GUI + CLI: Fix an issue where the internal Tor client would fail to choose guards. This would prevent all Tor traffic from working. We temporarily fix this by forcing new guards to be chosen on every startup. This will be reverted once the issue is fixed [upstream](https://gitlab.torproject.org/tpo/core/arti/-/issues/2079)
+- CLI: Remove the `--debug` flag
+
+## [3.2.0-rc.4] - 2025-10-17
+
+- ASB + CLI + GUI: Reduce redial interval to 30s; set idle connection timeout to 2h; increase auth and multiplex timeout to 60s
+- ASB: Explicitly retry publishing the Bitcoin punish transaction
+- GUI + ASB: Adress to `4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ`. This was done because the previous donation address was a subaddress which complicates transaction building.
+
+## [3.2.0-rc.2] - 2025-10-14
+
+- ASB: Fix an issue where the compiled binary would not know its own version
+
+## [3.2.0-rc.1] - 2025-10-14
+
+- ASB: Fixed a rare race condition where it would be possible for the Monero lock step to fail but the funds to still be transferred. This would require manual intervention to recover.
+- ASB: Periodically store the Monero wallet on certain events (receive money, spend money, refresh wallet) to avoid loss of metadata
+
+## [3.1.3] - 2025-10-11
+
+- GUI + SWAP: Fix an issue where we would fail to redeem the Monero because the wallet was not fully synchronized.
+- ASB: Fix an issue where we would sometimes create Monero transaction without ensuring we were fully synchronized
+- GUI: Fix an issue where swaps would not be displayed at all if the status of the Bitcoin timelock could not be fetched
+- Changes squashed from release 3.0.3 - 3.1.2:
+  - GUI: Fix an issue where it would always say "Wait for the application to load all required components" if Tor was disabled.
+  - GUI: Remember acknowledged alerts and do not show them again.
+  - RENDEZVOUS-SERVER: Fix an issue where connections would timeout immediately.
+  - RENDEZVOUS-SERVER: Release a standalone rendezvous server binary.
+  - GUI + SWAP + ASB: Upgrade arti (tor library) to 1.5.0. This might improve connectivity reliability.
+  - ASB: Fix an issue where we would not wait between re-dials of rendezvous nodes.
+  - GUI: Faster startup time by allowing parts of the application be used while other components are still initializing.
+  - GUI: We now default to redeeming swaps into the internal Monero wallet, and sending Bitcoin refund into the internal Bitcoin wallet. If you want to change this behaviour go to Settings -> "Redeem Policy" and "Refund Policy".
+  - GUI(Linux): Fixed an issue where the screen would be blank when launching the GUI.
+  - GUI(Linux): The Linux builds are not built on Ubuntu 24.04. This mean it'll require glibc 2.39 which might not be present on some systems. If this is the case for you, please use the flatpak builds. We continue to look for a better way solution.
+  - GUI: A warning will be display for makers running `<3.0.0`. Versions `2.*.*` are deprecated and do not support some essential protocols such as the new cooperative Monero redeem protocol. If you are a maker and are having issues with upgrading, please contact the developer on Matrix.
+  - GUI: Clearly mark makers that have no available funds as having no available funds.
+  - ORCHESTRATOR: Introduce a new `asb-tracing-logger` container within the `docker-compose.yml`. The `asb-tracing-logger` gives you access to the tracing (high verbosity) logs of your asb. Download the new `orchestrator` and run it. Then run `docker compose up -d`. The new `asb-tracing-logger` container will be created. Then run `docker compose logs -f --tail 100 asb-tracing-logger` to view detailed logging and see what is going on behind the scenes. The `asb` will continue printing less-verbose logs like before.
+  - ASB: You can now configure your maker to donate a small part of swaps to funding further development of the project. This is disabled by default. You can manually enable it if you choose to do so. Set `maker.developer_tip` to a number between 0 and 1. Setting `maker.developer_tip` to `0.02` will donate 2% of each swap to the [donation address](https://github.com/eigenwallet/core?tab=readme-ov-file#donations) of the project. This is defined [here](https://github.com/eigenwallet/core/blob/ce4a85bfdd3b3fd6fbdf6c4c1ab0e1c3188b7fc2/swap-env/src/defaults.rs#L9) in the code. The tip is sent by adding an additional output to the Monero lock transaction of a swap. This means this will not impact the availability of your UTXOs (unlocked funds) as it does not require an additonal transaction. Because tips are only ever sent in Monero you maintain full privacy.
+  - ASB + CLI + GUI (Testnet only): Bitcoin timelocks have been tripled. This has no affect for mainnet swaps. Blocktimes are too low on testnet to be able to test reliably.
+
+Note: The releases 3.0.3 - 3.1.1 were squashed and merged into 3.1.2
 
 ## [3.0.2] - 2025-09-21
 
@@ -686,7 +742,23 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.1.1...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.2.10...HEAD
+[3.2.10]: https://github.com/eigenwallet/core/compare/3.2.9...3.2.10
+[3.2.9]: https://github.com/eigenwallet/core/compare/3.2.8...3.2.9
+[3.2.8]: https://github.com/eigenwallet/core/compare/3.2.7...3.2.8
+[3.2.7]: https://github.com/eigenwallet/core/compare/3.2.6...3.2.7
+[3.2.6]: https://github.com/eigenwallet/core/compare/3.2.5...3.2.6
+[3.2.5]: https://github.com/eigenwallet/core/compare/3.2.4...3.2.5
+[3.2.4]: https://github.com/eigenwallet/core/compare/3.2.3...3.2.4
+[3.2.3]: https://github.com/eigenwallet/core/compare/3.2.2...3.2.3
+[3.2.2]: https://github.com/eigenwallet/core/compare/3.2.1...3.2.2
+[3.2.1]: https://github.com/eigenwallet/core/compare/3.2.0-rc.4...3.2.1
+[3.2.0-rc.4]: https://github.com/eigenwallet/core/compare/3.0.0-rc.3...3.2.0-rc.4
+[3.0.0-rc.3]: https://github.com/eigenwallet/core/compare/3.2.0-rc.2...3.0.0-rc.3
+[3.2.0-rc.2]: https://github.com/eigenwallet/core/compare/3.2.0-rc.1...3.2.0-rc.2
+[3.2.0-rc.1]: https://github.com/eigenwallet/core/compare/3.1.3...3.2.0-rc.1
+[3.1.3]: https://github.com/eigenwallet/core/compare/3.1.2...3.1.3
+[3.1.2]: https://github.com/eigenwallet/core/compare/3.1.1...3.1.2
 [3.1.1]: https://github.com/eigenwallet/core/compare/3.1.0...3.1.1
 [3.1.0]: https://github.com/eigenwallet/core/compare/3.0.7...3.1.0
 [3.0.7]: https://github.com/eigenwallet/core/compare/3.0.6...3.0.7

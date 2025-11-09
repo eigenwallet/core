@@ -3,18 +3,25 @@ import { Box, Typography } from "@mui/material";
 type Props = {
   children: React.ReactNode;
   light?: boolean;
+  actions?: React.ReactNode;
 };
 
-export default function MonospaceTextBox({ children, light = false }: Props) {
+export default function MonospaceTextBox({
+  children,
+  light = false,
+  actions,
+}: Props) {
   return (
     <Box
       sx={(theme) => ({
         display: "flex",
         alignItems: "center",
+        justifyContent: "space-between",
         backgroundColor: light ? "transparent" : theme.palette.grey[900],
         borderRadius: 2,
         border: light ? `1px solid ${theme.palette.grey[800]}` : "none",
         padding: theme.spacing(1),
+        gap: 1,
       })}
     >
       <Typography
@@ -25,12 +32,14 @@ export default function MonospaceTextBox({ children, light = false }: Props) {
           whiteSpace: "pre-wrap",
           fontFamily: "monospace",
           lineHeight: 1.5,
-          display: "flex",
-          alignItems: "center",
+          flex: 1,
         }}
       >
         {children}
       </Typography>
+      {actions && (
+        <Box sx={{ display: "flex", gap: 0.5, flexShrink: 0 }}>{actions}</Box>
+      )}
     </Box>
   );
 }

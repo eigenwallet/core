@@ -16,6 +16,7 @@ import {
   WithdrawBtcResponse,
   GetSwapInfoArgs,
   ExportBitcoinWalletResponse,
+  GetBitcoinAddressResponse,
   CheckMoneroNodeArgs,
   CheckSeedArgs,
   CheckSeedResponse,
@@ -47,13 +48,17 @@ import {
   MoneroNodeConfig,
   GetMoneroSeedResponse,
   ContextStatus,
+  GetSwapTimelockArgs,
+  GetSwapTimelockResponse,
 } from "models/tauriModel";
 import {
-  rpcSetBalance,
   rpcSetSwapInfo,
   approvalRequestsReplaced,
   contextInitializationFailed,
+  timelockChangeEventReceived,
 } from "store/features/rpcSlice";
+import { selectAllSwapIds } from "store/selectors";
+import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
 import {
   setMainAddress,
   setBalance,
@@ -79,7 +84,7 @@ import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 
 /// These are the official donation address for the eigenwallet/core project
 const DONATION_ADDRESS_MAINNET =
-  "8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq";
+  "4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ";
 const DONATION_ADDRESS_STAGENET =
   "56E274CJxTyVuuFG651dLURKyneoJ5LsSA5jMq4By9z9GBNYQKG8y5ejTYkcvZxarZW6if14ve8xXav2byK4aRnvNdKyVxp";
 
@@ -91,15 +96,22 @@ const DONATION_ADDRESS_STAGENET =
 /// - https://unstoppableswap.net/binarybaron.asc
 const DONATION_ADDRESS_MAINNET_SIG = `
 -----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA512
+Hash: SHA256
 
-8BR3dW2P5xu5z964Z7J9P3UT9fmzq4MLRH3qGdqHBqTAKnxv8R7B9Kd8s7r9wLdfvAKSc3ETbVRuy1uw5cX5AUic79zZMXq is our donation address (signed by binarybaron)
+4A1tNBcsxhQA7NkswREXTD1QGz8mRyA7fGnCzPyTwqzKdDFMNje7iHUbGhCetfVUZa1PTuZCoPKj8gnJuRrFYJ2R2CEzqbJ is our donation address (signed by binarybaron)
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQQ1qETX9LVbxE4YD/GZt10+FHaibgUCaJTWUAAKCRCZt10+FHai
-bsC/AQCkisePNGhApMnwJiOoF79AoSoQVmF98GIKxvLm8SHFvQEA68gb3n/Klt/v
-lYP1r+qmB2kRe52F62orp40CV2jSnAM=
-=gzXB
+iQGzBAEBCAAdFiEEBRhGD+vsHaFKFVp7RK5vCxZqrVoFAmjxV4YACgkQRK5vCxZq
+rVrFogv9F650Um1TsPlqQ+7kdobCwa7yH5uXOp1p22YaiwWGHKRU5rUSb6Ac+zI0
+3Io39VEoZufQqXqEqaiH7Q/08ABQR5r0TTPtSLNjOSEQ+ecClwv7MeF5CIXZYDdB
+AlEOnlL0CPfA24GQMhfp9lvjNiTBA2NikLARWJrc1JsLrFMK5rHesv7VHJEtm/gu
+We5eAuNOM2k3nAABTWzLiMJkH+G1amJmfkCKkBCk04inA6kZ5COUikMupyQDtsE4
+hrr/KrskMuXzGY+rjP6NhWqr/twKj819TrOxlYD4vK68cZP+jx9m+vSBE6mxgMbN
+tBVdo9xFVCVymOYQCV8BRY8ScqP+YPNV5d6BMyDH9tvHJrGqZTNQiFhVX03Tw6mg
+hccEqYP1J/TaAlFg/P4HtqsxPBZD6x3IdSxXhrJ0IjrqLpVtKyQlTZGsJuNjFWG8
+LKixaxxR7iWsyRZVCnEqCgDN8hzKZIE3Ph+kLTa4z4mTNEYyWUNeKRrFrSxKvEOK
+KM0Pp53f
+=O/zf
 -----END PGP SIGNATURE-----
 `;
 
@@ -114,19 +126,6 @@ export const PRESET_RENDEZVOUS_POINTS = [
   "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk",
 ];
 
-export async function fetchSellersAtPresetRendezvousPoints() {
-  await Promise.all(
-    PRESET_RENDEZVOUS_POINTS.map(async (rendezvousPoint) => {
-      const response = await listSellersAtRendezvousPoint([rendezvousPoint]);
-      store.dispatch(discoveredMakersByRendezvous(response.sellers));
-
-      logger.info(
-        `Discovered ${response.sellers.length} sellers at rendezvous point ${rendezvousPoint} during startup fetch`,
-      );
-    }),
-  );
-}
-
 async function invoke<ARGS, RESPONSE>(
   command: string,
   args: ARGS,
@@ -138,6 +137,19 @@ async function invoke<ARGS, RESPONSE>(
 
 async function invokeNoArgs<RESPONSE>(command: string): Promise<RESPONSE> {
   return invokeUnsafe(command) as Promise<RESPONSE>;
+}
+
+export async function fetchSellersAtPresetRendezvousPoints() {
+  await Promise.all(
+    PRESET_RENDEZVOUS_POINTS.map(async (rendezvousPoint) => {
+      const response = await listSellersAtRendezvousPoint([rendezvousPoint]);
+      store.dispatch(discoveredMakersByRendezvous(response.sellers));
+
+      logger.info(
+        `Discovered ${response.sellers.length} sellers at rendezvous point ${rendezvousPoint} during startup fetch`,
+      );
+    }),
+  );
 }
 
 export async function checkBitcoinBalance() {
@@ -159,51 +171,7 @@ export async function checkBitcoinBalance() {
     force_refresh: true,
   });
 
-  store.dispatch(rpcSetBalance(response.balance));
-}
-
-export async function cheapCheckBitcoinBalance() {
-  const response = await invoke<BalanceArgs, BalanceResponse>("get_balance", {
-    force_refresh: false,
-  });
-
-  store.dispatch(rpcSetBalance(response.balance));
-}
-
-export async function getAllSwapInfos() {
-  const response =
-    await invokeNoArgs<GetSwapInfoResponse[]>("get_swap_infos_all");
-
-  response.forEach((swapInfo) => {
-    store.dispatch(rpcSetSwapInfo(swapInfo));
-  });
-}
-
-export async function getSwapInfo(swapId: string) {
-  const response = await invoke<GetSwapInfoArgs, GetSwapInfoResponse>(
-    "get_swap_info",
-    {
-      swap_id: swapId,
-    },
-  );
-
-  store.dispatch(rpcSetSwapInfo(response));
-}
-
-export async function withdrawBtc(address: string): Promise<string> {
-  const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
-    "withdraw_btc",
-    {
-      address,
-      amount: null,
-    },
-  );
-
-  // We check the balance, this is cheap and does not sync the wallet
-  // but instead uses our local cached balance
-  await cheapCheckBitcoinBalance();
-
-  return response.txid;
+  store.dispatch(setBitcoinBalance(response.balance));
 }
 
 export async function buyXmr() {
@@ -242,7 +210,13 @@ export async function buyXmr() {
 
     address_pool.push(
       {
-        address: moneroReceiveAddress,
+        // We need to assert this as being not null even though it can be null
+        //
+        // This is correct because a LabeledMoneroAddress can actually have a null address but
+        // typeshare cannot express that yet (easily)
+        //
+        // TODO: Let typescript do its job here and not assert it
+        address: moneroReceiveAddress!,
         percentage: 1 - donationPercentage,
         label: "Your wallet",
       },
@@ -254,7 +228,13 @@ export async function buyXmr() {
     );
   } else {
     address_pool.push({
-      address: moneroReceiveAddress,
+      // We need to assert this as being not null even though it can be null
+      //
+      // This is correct because a LabeledMoneroAddress can actually have a null address but
+      // typeshare cannot express that yet (easily)
+      //
+      // TODO: Let typescript do its job here and not assert it
+      address: moneroReceiveAddress!,
       percentage: 1,
       label: "Your wallet",
     });
@@ -264,8 +244,159 @@ export async function buyXmr() {
     rendezvous_points: PRESET_RENDEZVOUS_POINTS,
     sellers,
     monero_receive_pool: address_pool,
-    bitcoin_change_address: bitcoinChangeAddress,
+    // We convert null to undefined because typescript
+    // expects undefined if the field is optional and does not accept null here
+    bitcoin_change_address: bitcoinChangeAddress ?? undefined,
   });
+}
+
+export async function initializeContext() {
+  const network = getNetwork();
+  const testnet = isTestnet();
+  const useTor = store.getState().settings.enableTor;
+
+  // Get all Bitcoin nodes without checking availability
+  // The backend ElectrumBalancer will handle load balancing and failover
+  const bitcoinNodes =
+    store.getState().settings.nodes[network][Blockchain.Bitcoin];
+
+  // For Monero nodes, determine whether to use pool or custom node
+  const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
+
+  const useMoneroTor = store.getState().settings.enableMoneroTor;
+
+  const moneroNodeUrl =
+    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
+
+  // Check the state of the Monero node
+  const moneroNodeConfig =
+    useMoneroRpcPool ||
+    moneroNodeUrl == null ||
+    !(await getMoneroNodeStatus(moneroNodeUrl, network))
+      ? { type: "Pool" as const }
+      : {
+          type: "SingleNode" as const,
+          content: {
+            url: moneroNodeUrl,
+          },
+        };
+
+  // Initialize Tauri settings
+  const tauriSettings: TauriSettings = {
+    electrum_rpc_urls: bitcoinNodes,
+    monero_node_config: moneroNodeConfig,
+    use_tor: useTor,
+    enable_monero_tor: useMoneroTor,
+  };
+
+  logger.info({ tauriSettings }, "Initializing context with settings");
+
+  try {
+    await invokeUnsafe<void>("initialize_context", {
+      settings: tauriSettings,
+      testnet,
+    });
+    logger.info("Initialized context");
+  } catch (error) {
+    throw new Error(String(error));
+  }
+}
+
+export async function updateAllNodeStatuses() {
+  const network = getNetwork();
+  const settings = store.getState().settings;
+
+  // Only check Monero nodes if we're using custom nodes (not RPC pool)
+  // Skip Bitcoin nodes since we pass all electrum servers to the backend without checking them (ElectrumBalancer handles failover)
+  if (!settings.useMoneroRpcPool) {
+    await Promise.all(
+      settings.nodes[network][Blockchain.Monero].map((node) =>
+        updateNodeStatus(node, Blockchain.Monero, network),
+      ),
+    );
+  }
+}
+
+export async function cheapCheckBitcoinBalance() {
+  const response = await invoke<BalanceArgs, BalanceResponse>("get_balance", {
+    force_refresh: false,
+  });
+
+  store.dispatch(setBitcoinBalance(response.balance));
+}
+
+export async function getBitcoinAddress() {
+  const response = await invokeNoArgs<GetBitcoinAddressResponse>(
+    "get_bitcoin_address",
+  );
+
+  return response.address;
+}
+
+export async function getAllSwapInfos() {
+  const response =
+    await invokeNoArgs<GetSwapInfoResponse[]>("get_swap_infos_all");
+
+  response.forEach((swapInfo) => {
+    store.dispatch(rpcSetSwapInfo(swapInfo));
+  });
+}
+
+export async function getSwapInfo(swapId: string) {
+  const response = await invoke<GetSwapInfoArgs, GetSwapInfoResponse>(
+    "get_swap_info",
+    {
+      swap_id: swapId,
+    },
+  );
+
+  store.dispatch(rpcSetSwapInfo(response));
+}
+
+export async function getSwapTimelock(swapId: string) {
+  const response = await invoke<GetSwapTimelockArgs, GetSwapTimelockResponse>(
+    "get_swap_timelock",
+    {
+      swap_id: swapId,
+    },
+  );
+
+  store.dispatch(
+    timelockChangeEventReceived({
+      swap_id: response.swap_id,
+      timelock: response.timelock,
+    }),
+  );
+}
+
+export async function getAllSwapTimelocks() {
+  const swapIds = selectAllSwapIds(store.getState());
+
+  await Promise.all(
+    swapIds.map(async (swapId) => {
+      try {
+        await getSwapTimelock(swapId);
+      } catch (error) {
+        logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
+      }
+    }),
+  );
+}
+
+export async function sweepBtc(address: string): Promise<string> {
+  const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
+    "withdraw_btc",
+    {
+      address,
+      amount: undefined,
+    },
+  );
+
+  // We check the balance, this is cheap and does not sync the wallet
+  // but instead uses our local cached balance
+  await cheapCheckBitcoinBalance();
+
+  return response.txid;
 }
 
 export async function resumeSwap(swapId: string) {
@@ -326,58 +457,6 @@ export async function listSellersAtRendezvousPoint(
   });
 }
 
-export async function initializeContext() {
-  const network = getNetwork();
-  const testnet = isTestnet();
-  const useTor = store.getState().settings.enableTor;
-
-  // Get all Bitcoin nodes without checking availability
-  // The backend ElectrumBalancer will handle load balancing and failover
-  const bitcoinNodes =
-    store.getState().settings.nodes[network][Blockchain.Bitcoin];
-
-  // For Monero nodes, determine whether to use pool or custom node
-  const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
-
-  const useMoneroTor = store.getState().settings.enableMoneroTor;
-
-  const moneroNodeUrl =
-    store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
-
-  // Check the state of the Monero node
-  const moneroNodeConfig =
-    useMoneroRpcPool ||
-    moneroNodeUrl == null ||
-    !(await getMoneroNodeStatus(moneroNodeUrl, network))
-      ? { type: "Pool" as const }
-      : {
-          type: "SingleNode" as const,
-          content: {
-            url: moneroNodeUrl,
-          },
-        };
-
-  // Initialize Tauri settings
-  const tauriSettings: TauriSettings = {
-    electrum_rpc_urls: bitcoinNodes,
-    monero_node_config: moneroNodeConfig,
-    use_tor: useTor,
-    enable_monero_tor: useMoneroTor,
-  };
-
-  logger.info({ tauriSettings }, "Initializing context with settings");
-
-  try {
-    await invokeUnsafe<void>("initialize_context", {
-      settings: tauriSettings,
-      testnet,
-    });
-    logger.info("Initialized context");
-  } catch (error) {
-    throw new Error(error);
-  }
-}
-
 export async function getWalletDescriptor() {
   return await invokeNoArgs<ExportBitcoinWalletResponse>(
     "get_wallet_descriptor",
@@ -433,21 +512,6 @@ async function updateNodeStatus(
   const status = await getNodeStatus(node, blockchain, network);
 
   store.dispatch(setStatus({ node, status, blockchain }));
-}
-
-export async function updateAllNodeStatuses() {
-  const network = getNetwork();
-  const settings = store.getState().settings;
-
-  // Only check Monero nodes if we're using custom nodes (not RPC pool)
-  // Skip Bitcoin nodes since we pass all electrum servers to the backend without checking them (ElectrumBalancer handles failover)
-  if (!settings.useMoneroRpcPool) {
-    await Promise.all(
-      settings.nodes[network][Blockchain.Monero].map((node) =>
-        updateNodeStatus(node, Blockchain.Monero, network),
-      ),
-    );
-  }
 }
 
 export async function getMoneroAddresses(): Promise<GetMoneroAddressesResponse> {

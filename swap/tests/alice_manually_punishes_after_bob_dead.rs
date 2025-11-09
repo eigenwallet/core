@@ -36,7 +36,7 @@ async fn alice_manually_punishes_after_bob_dead() {
         // Ensure cancel timelock is expired
         if let AliceState::XmrLockTransactionSent { state3, .. } = alice_state {
             alice_bitcoin_wallet
-                .subscribe_to(state3.tx_lock)
+                .subscribe_to(Box::new(state3.tx_lock))
                 .await
                 .wait_until_confirmed_with(state3.cancel_timelock)
                 .await?;
@@ -54,7 +54,7 @@ async fn alice_manually_punishes_after_bob_dead() {
         // Ensure punish timelock is expired
         if let AliceState::BtcCancelled { state3, .. } = alice_state {
             alice_bitcoin_wallet
-                .subscribe_to(state3.tx_cancel())
+                .subscribe_to(Box::new(state3.tx_cancel()))
                 .await
                 .wait_until_confirmed_with(state3.punish_timelock)
                 .await?;

@@ -161,6 +161,16 @@ where
             env_config: env_config(testnet),
             cmd: Command::Punish { swap_id },
         },
+        RawCommand::ManualRecovery(ManualRecovery::ExportMoneroLockWallet { swap_id }) => {
+            Arguments {
+                testnet,
+                json,
+                trace,
+                config_path: config_path(config, testnet)?,
+                env_config: env_config(testnet),
+                cmd: Command::ExportMoneroLockWallet { swap_id },
+            }
+        }
         RawCommand::ManualRecovery(ManualRecovery::SafelyAbort { swap_id }) => Arguments {
             testnet,
             json,
@@ -252,6 +262,9 @@ pub enum Command {
     },
     ExportBitcoinWallet,
     ExportMoneroWallet,
+    ExportMoneroLockWallet {
+        swap_id: Uuid,
+    },
 }
 
 #[derive(structopt::StructOpt, Debug)]
@@ -259,7 +272,7 @@ pub enum Command {
     name = "asb",
     about = "Automated Swap Backend for swapping XMR for BTC",
     author,
-    version = env!("VERGEN_GIT_DESCRIBE")
+    version = env!("CARGO_PKG_VERSION")
 )]
 pub struct RawArguments {
     #[structopt(long, help = "Swap on testnet")]
@@ -390,6 +403,16 @@ pub enum ManualRecovery {
     Punish {
         #[structopt(flatten)]
         punish_params: RecoverCommandParams,
+    },
+    #[structopt(
+        about = "Get the keys to the Monero lock wallet of a specific swap (requires the taker to have refunded first)."
+    )]
+    ExportMoneroLockWallet {
+        #[structopt(
+            long = "swap-id",
+            help = "The swap id can be retrieved using the history subcommand"
+        )]
+        swap_id: Uuid,
     },
     #[structopt(about = "Safely Abort requires the swap to be in a state prior to locking XMR.")]
     SafelyAbort {

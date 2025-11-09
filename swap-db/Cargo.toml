@@ -1,0 +1,20 @@
+[package]
+name = "swap-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Our crates
+swap-core = { path = "../swap-core" }
+swap-machine = { path = "../swap-machine" }
+swap-serde = { path = "../swap-serde" }
+
+# Crypto
+bitcoin = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+strum = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

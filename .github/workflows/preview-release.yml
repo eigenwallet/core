@@ -1,9 +1,11 @@
 name: "Create 'preview' release"
 
 on:
-  push:
-    branches:
-      - master
+  schedule:
+    # We release a preview release every day at noon UTC
+    - cron: '0 12 * * *'
+  # Allow manually triggering the workflow
+  workflow_dispatch:
 
 concurrency:
   group: preview-release

@@ -4,22 +4,29 @@ version = "0.2.0"
 edition = "2018"
 
 [dependencies]
+# Tor
+arti-client = { workspace = true }
+tor-hsservice = { workspace = true }
+tor-rtcompat = { workspace = true }
+
 # Async
+backoff = { workspace = true, features = ["tokio"] }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros", "sync", "process", "fs", "net", "io-util"] }
 
 # Libp2p
 libp2p = { workspace = true, features = ["rendezvous", "tcp", "yamux", "dns", "noise", "ping", "websocket", "tokio", "macros"] }
 libp2p-tor = { path = "../../libp2p-tor", features = ["listen-onion-service"] }
+swap-p2p = { path = "../../swap-p2p" }
 
-# Tor
-tor-hsservice = { workspace = true }
-
-# Logging
+# Tracing
 tracing = { workspace = true, features = ["attributes"] }
 tracing-subscriber = { workspace = true, default-features = false, features = ["fmt", "ansi", "env-filter", "chrono", "tracing-log", "json"] }
 
-# Other
+# Error
 anyhow = { workspace = true }
+
+# Other
 atty = "0.2"
 structopt = { workspace = true }
+swap-env = { path = "../../swap-env" }

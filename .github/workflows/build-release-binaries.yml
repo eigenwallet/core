@@ -109,7 +109,7 @@ jobs:
           target_os = triple[2].lower()
 
           os_mapping = {"linux": "Linux", "windows": "Windows", "darwin": "Darwin"}
-          
+
           if target_os not in os_mapping:
               raise ValueError(f"Unknown target OS: {target_os}")
 

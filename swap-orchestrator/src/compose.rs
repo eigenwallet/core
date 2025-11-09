@@ -35,6 +35,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub asb: T,
     pub asb_controller: T,
     pub asb_tracing_logger: T,
+    pub rendezvous_node: T,
 }
 
 pub struct OrchestratorPorts {
@@ -44,6 +45,7 @@ pub struct OrchestratorPorts {
     pub electrs: u16,
     pub asb_libp2p: u16,
     pub asb_rpc_port: u16,
+    pub rendezvous_node_port: u16,
 }
 
 impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for OrchestratorPorts {
@@ -56,6 +58,7 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
                 electrs: 50001,
                 asb_libp2p: 9939,
                 asb_rpc_port: 9944,
+                rendezvous_node_port: 8888,
             },
             (monero::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
                 monerod_rpc: 38081,
@@ -64,6 +67,7 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
                 electrs: 50001,
                 asb_libp2p: 9839,
                 asb_rpc_port: 9944,
+                rendezvous_node_port: 8888,
             },
             _ => panic!("Unsupported Bitcoin / Monero network combination"),
         }
@@ -202,6 +206,12 @@ fn build(input: OrchestratorInput) -> String {
         flag!("tail -f /asb-data/logs/tracing*.log"),
     ];
 
+    let command_rendezvous_node = command![
+        "rendezvous-node",
+        flag!("--data-dir=/rendezvous-data"),
+        flag!("--port={}", input.ports.rendezvous_node_port),
+    ];
+
     let date = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
@@ -297,23 +307,37 @@ services:
       - 'asb-data:/asb-data:ro'
     entrypoint: ''
     command: {command_asb_tracing_logger}
+  rendezvous-node:
+    container_name: rendezvous-node
+    {image_rendezvous_node}
+    restart: unless-stopped
+    volumes:
+      - 'rendezvous-data:/rendezvous-data'
+    ports:
+      - '0.0.0.0:{rendezvous_node_port}:{rendezvous_node_port}'
+    entrypoint: ''
+    command: {command_rendezvous_node}
 volumes:
   monerod-data:
   bitcoind-data:
   electrs-data:
   asb-data:
+  rendezvous-data:
 ",
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
         port_bitcoind_p2p = input.ports.bitcoind_p2p,
         electrs_port = input.ports.electrs,
         asb_port = input.ports.asb_libp2p,
+        rendezvous_node_port = input.ports.rendezvous_node_port,
         image_monerod = input.images.monerod.to_image_attribute(),
         image_electrs = input.images.electrs.to_image_attribute(),
         image_bitcoind = input.images.bitcoind.to_image_attribute(),
         image_asb = input.images.asb.to_image_attribute(),
         image_asb_controller = input.images.asb_controller.to_image_attribute(),
         image_asb_tracing_logger = input.images.asb_tracing_logger.to_image_attribute(),
+        image_rendezvous_node = input.images.rendezvous_node.to_image_attribute(),
+        command_rendezvous_node = command_rendezvous_node,
         asb_data_dir = input.directories.asb_data_dir.display(),
         asb_config_path_on_host = input.directories.asb_config_path_on_host(),
         asb_config_path_inside_container = input.directories.asb_config_path_inside_container().display(),

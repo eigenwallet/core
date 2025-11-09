@@ -57,14 +57,18 @@ build-gui-windows:
 tests:
         cargo nextest run
 
+# Run docker tests (e.g., "just docker_test happy_path_alice_developer_tip")
+docker_test test_name:
+	cargo test --package swap --test {{test_name}} -- --nocapture
+
 docker_test_happy_path:
-	cargo test --package swap --test happy_path -- --nocapture
+	just docker_test happy_path
 
 docker_test_happy_path_with_developer_tip:
-	cargo test --package swap --test happy_path_alice_developer_tip -- --nocapture
+	just docker_test happy_path_alice_developer_tip
 
-docker_test_all:
-	cargo test --package swap --test all -- --nocapture
+docker_test_refund_path:
+	just docker_test alice_refunds_after_restart_bob_refunded
 
 # Tests the Rust bindings for Monero
 test_monero_sys:
@@ -76,8 +80,12 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --trace --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
+# Launch the ASB controller REPL against a local testnet ASB instance
+asb-testnet-controller:
+	cargo run -p swap-controller --bin asb-controller -- --url http://127.0.0.1:9944
+	
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:
 	cd monero-sys && git submodule update --init --recursive --force
@@ -105,6 +113,13 @@ check_gui_eslint:
 check_gui_tsc:
 	cd src-gui && yarn run tsc --noEmit
 
+# Check for unused code in the GUI frontend
+check_gui_unused_code:
+	cd src-gui && npx knip
+
+test test_name:
+    cargo test --test {{test_name}} -- --nocapture
+
 # Run the checks for the GUI frontend
 check_gui:
 	just check_gui_eslint || true
@@ -116,7 +131,7 @@ docker-prune-network:
 
 # Install dependencies required for building monero-sys
 prepare_mac_os_brew_dependencies:
-	cd dev_scripts && chmod +x ./brew_dependencies_install.sh && ./brew_dependencies_install.sh
+	cd dev-scripts && chmod +x ./brew_dependencies_install.sh && ./brew_dependencies_install.sh
 
 # Takes a crate (e.g monero-rpc-pool) and uses code2prompt to copy to clipboard
 # E.g code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
@@ -124,4 +139,5 @@ code2prompt_single_crate crate:
 	cd {{crate}} && code2prompt . --exclude "*.lock" --exclude ".sqlx/*" --exclude "target"
 
 prepare-windows-build:
-    cd dev_scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+    cd dev-scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+

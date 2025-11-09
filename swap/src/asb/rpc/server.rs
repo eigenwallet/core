@@ -1,14 +1,17 @@
 use crate::asb::event_loop::EventLoopService;
+use crate::monero;
 use crate::protocol::Database;
-use crate::{bitcoin, monero};
 use anyhow::{Context, Result};
+use bitcoin_wallet::BitcoinWallet;
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
-    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse, Swap,
+    MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
+    RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
+    RendezvousRegistrationStatus, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -20,7 +23,7 @@ impl RpcServer {
     pub async fn start(
         host: String,
         port: u16,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         monero_wallet: Arc<monero::Wallets>,
         event_loop_service: EventLoopService,
         db: Arc<dyn Database + Send + Sync>,
@@ -54,7 +57,7 @@ impl RpcServer {
 }
 
 pub struct RpcImpl {
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
     event_loop_service: EventLoopService,
     db: Arc<dyn Database + Send + Sync>,
@@ -157,6 +160,45 @@ impl AsbApiServer for RpcImpl {
             .collect();
 
         Ok(swaps)
+    }
+
+    async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned> {
+        let regs = self
+            .event_loop_service
+            .get_registration_status()
+            .await
+            .into_json_rpc_result()?;
+
+        let registrations = regs
+            .into_iter()
+            .map(|r| RegistrationStatusItem {
+                address: r.address.to_string(),
+                connection: match r.connection {
+                    crate::asb::register::ConnectionStatus::Disconnected => {
+                        RendezvousConnectionStatus::Disconnected
+                    }
+                    crate::asb::register::ConnectionStatus::Dialling => {
+                        RendezvousConnectionStatus::Dialling
+                    }
+                    crate::asb::register::ConnectionStatus::Connected => {
+                        RendezvousConnectionStatus::Connected
+                    }
+                },
+                registration: match r.registration {
+                    crate::asb::register::RegistrationStatusReport::RegisterOnNextConnection => {
+                        RendezvousRegistrationStatus::RegisterOnNextConnection
+                    }
+                    crate::asb::register::RegistrationStatusReport::Pending => {
+                        RendezvousRegistrationStatus::Pending
+                    }
+                    crate::asb::register::RegistrationStatusReport::Registered => {
+                        RendezvousRegistrationStatus::Registered
+                    }
+                },
+            })
+            .collect();
+
+        Ok(RegistrationStatusResponse { registrations })
     }
 }
 

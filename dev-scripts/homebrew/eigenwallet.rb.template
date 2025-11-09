@@ -1,0 +1,26 @@
+cask "eigenwallet" do
+  version "VERSION_PLACEHOLDER"
+
+  on_arm do
+    sha256 "AARCH64_SHA256_PLACEHOLDER"
+    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_aarch64.dmg"
+  end
+
+  on_intel do
+    sha256 "X64_SHA256_PLACEHOLDER"
+    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_x64.dmg"
+  end
+
+  name "Eigenwallet"
+  desc "GUI for XMR<>BTC Atomic Swaps"
+  homepage "https://github.com/eigenwallet/core"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  auto_updates true
+
+  app "eigenwallet.app"
+end

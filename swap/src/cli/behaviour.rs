@@ -1,85 +1,21 @@
-use crate::bitcoin;
-use crate::monero::{Scalar, TransferProof};
-use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
-use crate::network::quote::BidQuote;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::bob;
 use crate::network::{
     cooperative_xmr_redeem_after_punish, encrypted_signature, quote, redial, transfer_proof,
 };
-use crate::protocol::bob::State2;
-use anyhow::{anyhow, Error, Result};
-use libp2p::request_response::{
-    InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
-};
+use anyhow::Result;
+use bitcoin_wallet::BitcoinWallet;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{identify, identity, ping, PeerId};
+use libp2p::{identify, identity, ping};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
+pub use swap_p2p::out_event::bob::OutEvent;
 
-#[derive(Debug)]
-pub enum OutEvent {
-    QuoteReceived {
-        id: OutboundRequestId,
-        response: BidQuote,
-    },
-    SwapSetupCompleted(Box<Result<State2>>),
-    TransferProofReceived {
-        msg: Box<transfer_proof::Request>,
-        channel: ResponseChannel<()>,
-        peer: PeerId,
-    },
-    EncryptedSignatureAcknowledged {
-        id: OutboundRequestId,
-    },
-    CooperativeXmrRedeemFulfilled {
-        id: OutboundRequestId,
-        s_a: Scalar,
-        swap_id: uuid::Uuid,
-        lock_transfer_proof: TransferProof,
-    },
-    CooperativeXmrRedeemRejected {
-        id: OutboundRequestId,
-        reason: CooperativeXmrRedeemRejectReason,
-        swap_id: uuid::Uuid,
-    },
-    Failure {
-        peer: PeerId,
-        error: Error,
-    },
-    OutboundRequestResponseFailure {
-        peer: PeerId,
-        error: OutboundFailure,
-        request_id: OutboundRequestId,
-        protocol: String,
-    },
-    InboundRequestResponseFailure {
-        peer: PeerId,
-        error: InboundFailure,
-        request_id: InboundRequestId,
-        protocol: String,
-    },
-    /// "Fallback" variant that allows the event mapping code to swallow certain
-    /// events that we don't want the caller to deal with.
-    Other,
-}
+const PROTOCOL_VERSION: &str = "/comit/xmr/btc/1.0.0";
 
-impl OutEvent {
-    pub fn unexpected_request(peer: PeerId) -> OutEvent {
-        OutEvent::Failure {
-            peer,
-            error: anyhow!("Unexpected request received"),
-        }
-    }
-
-    pub fn unexpected_response(peer: PeerId) -> OutEvent {
-        OutEvent::Failure {
-            peer,
-            error: anyhow!("Unexpected response received"),
-        }
-    }
-}
+const INITIAL_REDIAL_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_REDIAL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Bob.
 #[derive(NetworkBehaviour)]
@@ -102,16 +38,15 @@ pub struct Behaviour {
 
 impl Behaviour {
     pub fn new(
-        alice: PeerId,
         env_config: env::Config,
-        bitcoin_wallet: Arc<bitcoin::Wallet>,
+        bitcoin_wallet: Arc<dyn BitcoinWallet>,
         identify_params: (identity::Keypair, XmrBtcNamespace),
     ) -> Self {
         let agentVersion = format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), identify_params.1);
-        let protocolVersion = "/comit/xmr/btc/1.0.0".to_string();
 
-        let identifyConfig = identify::Config::new(protocolVersion, identify_params.0.public())
-            .with_agent_version(agentVersion);
+        let identifyConfig =
+            identify::Config::new(PROTOCOL_VERSION.to_string(), identify_params.0.public())
+                .with_agent_version(agentVersion);
 
         let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
@@ -121,25 +56,9 @@ impl Behaviour {
             transfer_proof: transfer_proof::bob(),
             encrypted_signature: encrypted_signature::bob(),
             cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::bob(),
-            redial: redial::Behaviour::new(
-                alice,
-                Duration::from_secs(2),
-                Duration::from_secs(5 * 60),
-            ),
+            redial: redial::Behaviour::new(INITIAL_REDIAL_INTERVAL, MAX_REDIAL_INTERVAL),
             ping: ping::Behaviour::new(pingConfig),
             identify: identify::Behaviour::new(identifyConfig),
         }
-    }
-}
-
-impl From<ping::Event> for OutEvent {
-    fn from(_: ping::Event) -> Self {
-        OutEvent::Other
-    }
-}
-
-impl From<identify::Event> for OutEvent {
-    fn from(_: identify::Event) -> Self {
-        OutEvent::Other
     }
 }
