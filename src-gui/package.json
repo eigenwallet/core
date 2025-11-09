@@ -48,7 +48,6 @@
     "virtua": "^0.33.2"
   },
   "devDependencies": {
-    "@types/react-redux": "^7.1.34",
     "@eslint/js": "^9.9.0",
     "@redux-devtools/remote": "^0.9.5",
     "@tauri-apps/cli": "^2.0.0",
@@ -60,9 +59,11 @@
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
     "@types/react-is": "^19.0.0",
+    "@types/react-redux": "^7.1.34",
     "@types/semver": "^7.5.8",
     "@vitejs/plugin-react": "^4.2.1",
     "eslint": "^9.9.0",
+    "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-react": "^7.35.0",
     "globals": "^15.9.0",
     "internal-ip": "^7.0.0",
