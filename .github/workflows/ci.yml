@@ -112,6 +112,8 @@ jobs:
           - package: swap
             test_name: happy_path_alice_developer_tip
           - package: swap
+            test_name: happy_path_alice_developer_tip_subaddress
+          - package: swap
             test_name: happy_path_restart_bob_after_xmr_locked
           - package: swap
             test_name: happy_path_restart_bob_before_xmr_locked
@@ -147,6 +149,10 @@ jobs:
             test_name: alice_empty_balance_after_started_btc_early_refund
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
+          - package: monero-tests
+            test_name: transfers
+          - package: monero-tests
+            test_name: transfers_wrong_key
 
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft

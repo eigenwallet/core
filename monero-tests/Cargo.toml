@@ -1,0 +1,17 @@
+[package]
+name = "monero-tests"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+monero-harness = { path = "../monero-harness" }
+
+monero = { workspace = true }
+
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true
