@@ -14,7 +14,6 @@ use libp2p_tor::{AddressConversion, TorTransport};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_p2p::libp2p_ext::MultiAddrExt;
-use swap_p2p::protocols::quote::background::InnerBehaviourEvent;
 use swap_p2p::protocols::{quote, rendezvous};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -63,7 +62,7 @@ fn create_transport(
 async fn main() -> Result<()> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,swap_p2p=trace,fetch_quotes=trace,libp2p_request_response=trace",
+            "info,swap_p2p=trace,fetch_quotes=trace,libp2p_request_response=trace,libp2p_swarm=debug",
         ))
         .try_init();
 
@@ -144,14 +143,10 @@ async fn main() -> Result<()> {
                     rendezvous::discovery::Event::DiscoveredPeer { peer_id, address } => {
                         swarm.add_peer_address(peer_id, address);
                         swarm.behaviour_mut().quote.send_request(&peer_id).await;
-                        println!("Discovered peer: {}", peer_id);
                     }
                 },
-                BehaviourEvent::Quote(InnerBehaviourEvent::Quote(
-                    request_response::Event::Message { peer, message },
-                )) => {
-                    println!("GOT QUOTE FROM {}: {:?}", peer, message);
-                    // panic!("GOT QUOTE FROM {}: {:?}", peer, message);
+                BehaviourEvent::Quote(quote::background::Event::QuoteReceived { peer, quote }) => {
+                    println!("==== !!!! GOT QUOTE FROM !!!! ==== {}: {:?}", peer, quote);
                 }
                 _ => {}
             },
