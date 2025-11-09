@@ -32,7 +32,7 @@ runs:
         npm install --global yarn@1
 
     - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@1.87
+      uses: dtolnay/rust-toolchain@1.88
       with:
         targets: ${{ inputs.target }}
 

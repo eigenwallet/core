@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Update Rust version to 1.88 to satisfy depenency requirements.
+
 ## [3.2.10] - 2025-11-08
 
 - GUI + SWAP + ASB: Reduce the confirmations required to spend a Monero transaction from 22 to 15. We believe the risks of re-orgs is low again and this is safe to do. This may increase the chances of swap being successful and will reduce the time a swap takes.
