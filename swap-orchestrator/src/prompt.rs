@@ -44,7 +44,7 @@ pub fn build_type() -> BuildType {
         .with_prompt("How do you want to build the Docker image for the ASB?")
         .items(&[
             "Build Docker image from source (can take >1h)",
-            "Prebuild Docker image (pinned to a specific commit with SHA256 hash)",
+            "Prebuilt Docker image (pinned to a specific commit with SHA256 hash)",
         ])
         .default(0)
         .interact()
