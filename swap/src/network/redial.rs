@@ -119,7 +119,7 @@ impl NetworkBehaviour for Behaviour {
 
         Poll::Ready(ToSwarm::Dial {
             opts: DialOpts::peer_id(self.peer)
-                .condition(PeerCondition::Disconnected)
+                .condition(PeerCondition::DisconnectedAndNotDialing)
                 .build(),
         })
     }
