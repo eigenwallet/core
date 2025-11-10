@@ -14,7 +14,7 @@ use void::Void;
 /// A [`NetworkBehaviour`] that tracks whether we are connected to the given
 /// peers and attempts to re-establish a connection with an exponential backoff
 /// if we lose the connection.
-/// 
+///
 /// TODO: Allow removing peers from the set after we are done with them.
 pub struct Behaviour {
     /// The peers we are interested in.
