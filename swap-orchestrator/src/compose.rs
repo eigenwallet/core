@@ -163,17 +163,33 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--rpc-bind-host=0.0.0.0"),
     ];
 
+    // monerod's --proxy addr:port and --tx-proxy tor,addr;port can only take numeric addr,
+    // and fail with "Exception in main! Failed to initialize p2p server." if given a hostname,
+    // so we must resolve the name ourselves. Userland is busybox.
     let command_monerod = command![
-        "monerod",
+        "sh",
+        flag!("-xc"),
+        flag!(
+            r#"
+        if {:?}; then
+            tor="$(nslookup tor | awk '/answer/,0 {{ if(/Address/) {{ print $2; exit }} }}')"
+            set -- "$@" "--proxy=$tor:{}"
+        fi
+        exec "$@""#,
+            input.want_tor,
+            input.ports.tor_socks
+        ),
+        flag!(""),
+        flag!("monerod"),
         input.networks.monero.to_flag(),
         flag!("--rpc-bind-ip=0.0.0.0"),
         flag!("--rpc-bind-port={}", input.ports.monerod_rpc),
         flag!("--data-dir=/monerod-data/"),
-        flag!(input.want_tor; "--proxy=tor:{}", input.ports.tor_socks),
         flag!("--confirm-external-bind"),
         flag!("--restricted-rpc"),
         flag!("--non-interactive"),
         flag!("--enable-dns-blocklist"),
+        // flag!(input.want_tor; "--proxy=tor:{}", input.ports.tor_socks), // the shell program above does the equivalent of this
     ];
 
     let command_bitcoind = command![
@@ -406,13 +422,13 @@ impl Display for Flags {
             .filter_map(|f| f.0.as_ref())
             .collect::<Vec<_>>();
 
-        // Put the " around each flag, join with a comma, put the whole thing in []
+        // String-escape each flag (""s, newline -> \n), join with a comma, put the whole thing in [], escape $ (which is a docker variable)
         write!(
             f,
             "[{}]",
             flags
                 .into_iter()
-                .map(|f| format!("\"{}\"", f))
+                .map(|f| format!("{:?}", f.replace('$', "$$")))
                 .collect::<Vec<_>>()
                 .join(",")
         )
