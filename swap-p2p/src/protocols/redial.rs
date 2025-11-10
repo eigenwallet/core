@@ -54,7 +54,7 @@ impl Behaviour {
 
         // If the peer is newly added, schedule a dial immediately
         if newly_added {
-            self.schedule_redial(&peer, Some(Duration::from_secs(0)));
+            self.schedule_redial(&peer, Duration::ZERO);
         }
 
         tracing::trace!("Added a new peer to the set of peers we want to contineously redial");
@@ -75,16 +75,21 @@ impl Behaviour {
         })
     }
 
-    #[tracing::instrument(level = "trace", name = "redial::schedule_redial", skip(self, peer), fields(redial_type = %self.name, peer = %peer))]
-    fn schedule_redial(&mut self, peer: &PeerId, override_next_dial_in: Option<Duration>) -> bool {
+    #[tracing::instrument(level = "trace", name = "redial::schedule_redial", skip(self, override_next_dial_in), fields(redial_type = %self.name, peer = %peer))]
+    fn schedule_redial(
+        &mut self,
+        peer: &PeerId,
+        override_next_dial_in: impl Into<Option<Duration>>,
+    ) -> bool {
         // We first check if there already is a pending scheduled redial
         // because want do not want to increment the backoff if there is
         if self.to_dial.contains_key(peer) {
             return false;
         }
 
-        // How long should we
-        let next_dial_in = override_next_dial_in.unwrap_or_else(|| {
+        // How long should we wait before we redial the peer?
+        // If an override is provided, use that, otherwise use the backoff
+        let next_dial_in = override_next_dial_in.into().unwrap_or_else(|| {
             self.get_backoff(peer)
                 .next_backoff()
                 .expect("redial backoff should never run out of attempts")
@@ -107,7 +112,6 @@ impl Behaviour {
         });
 
         tracing::trace!(
-            peer_id = %peer,
             seconds_until_next_redial = %next_dial_in.as_secs(),
             "Scheduled a redial attempt for a peer"
         );
