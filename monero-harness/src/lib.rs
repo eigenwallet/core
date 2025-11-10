@@ -23,14 +23,14 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
-use testcontainers::clients::Cli;
+pub use testcontainers::clients::Cli;
 use testcontainers::{Container, RunnableImage};
 use tokio::time;
 
 use monero::{Address, Amount};
 use monero_rpc::monerod::MonerodRpc as _;
 use monero_rpc::monerod::{self, GenerateBlocks};
-use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, WalletHandle};
+use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
 
@@ -47,6 +47,18 @@ pub struct Monero {
 }
 
 impl<'c> Monero {
+    /// Same as `new_with_sync_specified` but with sync specified as true.
+    pub async fn new(
+        cli: &'c Cli,
+        additional_wallets: Vec<&'static str>,
+    ) -> Result<(
+        Self,
+        Container<'c, image::Monerod>,
+        Vec<Container<'c, image::MoneroWalletRpc>>,
+    )> {
+        Self::new_with_sync_specified(cli, additional_wallets, true).await
+    }
+
     /// Starts a new regtest monero container setup consisting out of 1 monerod
     /// node and n wallets. The docker container and network will be prefixed
     /// with a randomly generated `prefix`. One miner wallet is started
@@ -54,9 +66,10 @@ impl<'c> Monero {
     /// monerod container name is: `prefix`_`monerod`
     /// network is: `prefix`_`monero`
     /// miner wallet container name is: `miner`
-    pub async fn new(
+    pub async fn new_with_sync_specified(
         cli: &'c Cli,
         additional_wallets: Vec<&'static str>,
+        background_synced: bool,
     ) -> Result<(
         Self,
         Container<'c, image::Monerod>,
@@ -118,7 +131,14 @@ impl<'c> Monero {
 
             let wallet_instance = tokio::time::timeout(Duration::from_secs(300), async {
                 loop {
-                    match MoneroWallet::new(wallet, daemon.clone(), prefix.clone()).await {
+                    match MoneroWallet::new_with_sync_specified(
+                        wallet,
+                        daemon.clone(),
+                        prefix.clone(),
+                        background_synced,
+                    )
+                    .await
+                    {
                         Ok(w) => break w,
                         Err(e) => {
                             tracing::warn!(
@@ -411,6 +431,16 @@ impl<'c> Monerod {
 impl MoneroWallet {
     /// Create a new wallet using monero-sys bindings connected to the provided monerod instance.
     async fn new(name: &str, daemon: Daemon, prefix: String) -> Result<Self> {
+        Self::new_with_sync_specified(name, daemon, prefix, true).await
+    }
+
+    /// Create a new wallet using monero-sys bindings connected to the provided monerod instance.
+    async fn new_with_sync_specified(
+        name: &str,
+        daemon: Daemon,
+        prefix: String,
+        background_sync: bool,
+    ) -> Result<Self> {
         // Wallet files will be stored in the system temporary directory with the prefix to avoid clashes
         let mut wallet_path = std::env::temp_dir();
         wallet_path.push(format!("{}{}", prefix, name));
@@ -421,7 +451,7 @@ impl MoneroWallet {
             wallet_path.display().to_string(),
             daemon,
             monero::Network::Mainnet,
-            true,
+            background_sync,
         )
         .await
         .context("Failed to create or open wallet")?;
@@ -451,7 +481,7 @@ impl MoneroWallet {
         tracing::debug!("Wallet connected to daemon: {}", connected);
 
         // Force a refresh first
-        self.refresh().await?;
+        // self.refresh().await?;
 
         let total = self.wallet.total_balance().await.as_pico();
         tracing::debug!(
@@ -460,6 +490,17 @@ impl MoneroWallet {
             Amount::from_pico(total)
         );
         Ok(total)
+    }
+
+    pub async fn check_tx_key(&self, txid: String, txkey: monero::PrivateKey) -> Result<TxStatus> {
+        let status = self
+            .wallet
+            .check_tx_status(txid.clone(), txkey, &self.address().await?)
+            .await?;
+
+        self.wallet.scan_transaction(txid).await?;
+
+        Ok(status)
     }
 
     pub async fn unlocked_balance(&self) -> Result<u64> {
@@ -515,10 +556,6 @@ impl MoneroWallet {
             .sweep_multi_destination(addresses, ratios)
             .await
             .context("Failed to perform sweep")
-    }
-
-    pub async fn blockchain_height(&self) -> Result<u64> {
-        self.wallet.blockchain_height().await
     }
 }
 
