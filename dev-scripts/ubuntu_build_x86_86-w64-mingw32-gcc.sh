@@ -93,7 +93,7 @@ download_if_missing() {
         echo "Already present: $dest"
     else
         echo "Downloading: $url"
-        wget -q "$url" -O "$dest"
+        wget --retry-connrefused -t 20 -nv "$url" -O "$dest"
     fi
 }
 
