@@ -122,7 +122,7 @@ fn main() {
 
     // Use stable location in target/debug/monero-depends to avoid rebuilding deps unnecessarily
     let target_dir = find_workspace_target_dir();
-    let stable_depends_dir = target_dir.join("debug").join("monero-depends");
+    let stable_depends_dir = target_dir.join("debug").join("monero-depends").join(&std::env::var("TARGET").expect("TARGET env var to be present"));
 
     let (contrib_depends_dir, target) =
         compile_dependencies(contrib_depends_dir, stable_depends_dir);
