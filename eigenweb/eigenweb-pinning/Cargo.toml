@@ -27,11 +27,13 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+arti-client = { workspace = true }
 atty = "0.2"
 libp2p = { workspace = true, features = ["cbor", "request-response", "macros", "tcp", "noise", "yamux", "tokio"] }
 libp2p-tor = { path = "../../libp2p-tor", features = ["listen-onion-service"] }
-tokio = { workspace = true, features = ["io-std", "io-util"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "fs"] }
 tor-hsservice = { workspace = true }
+tor-rtcompat = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

@@ -1,7 +1,9 @@
+use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
 use bytes::Bytes;
 use eigenweb_pinning::storage::{MemoryStorage, Storage};
 use eigenweb_pinning::UnsignedPinnedMessage;
 use libp2p::core::muxing::StreamMuxerBox;
+use libp2p::core::transport::Boxed;
 use libp2p::core::upgrade::Version;
 use libp2p::futures::StreamExt;
 use libp2p::swarm::SwarmEvent;
@@ -9,10 +11,11 @@ use libp2p::{identity, noise, yamux, Multiaddr, PeerId, SwarmBuilder, Transport}
 use libp2p_tor::{AddressConversion, TorTransport};
 use std::collections::HashMap;
 use std::error::Error;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
-use tor_hsservice::config::OnionServiceConfigBuilder;
+use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
@@ -51,41 +54,83 @@ impl Party {
     }
 }
 
-/// Create a Tor transport and set up an onion service
-async fn create_tor_transport(
-    keypair: identity::Keypair,
-) -> Result<
-    (
-        libp2p::core::transport::Boxed<(PeerId, StreamMuxerBox)>,
-        Multiaddr,
-    ),
-    Box<dyn Error>,
-> {
-    let mut transport = TorTransport::bootstrapped()
-        .await?
-        .with_address_conversion(AddressConversion::IpAndDns);
+/// Create a Tor client
+async fn create_tor_client(data_dir: &PathBuf) -> Result<TorClient<TokioRustlsRuntime>, Box<dyn Error>> {
+    let tor_dir = data_dir.join("tor");
+    let state_dir = tor_dir.join("state");
+    let cache_dir = tor_dir.join("cache");
 
-    // Derive nickname from peer id
-    let svg_cfg = OnionServiceConfigBuilder::default()
-        .nickname(
-            keypair
-                .public()
-                .to_peer_id()
-                .to_base58()
-                .to_ascii_lowercase()
-                .parse()
-                .unwrap(),
-        )
-        .num_intro_points(3)
+    // Workaround for https://gitlab.torproject.org/tpo/core/arti/-/issues/2224
+    let guards_file = state_dir.join("state").join("guards.json");
+    let _ = tokio::fs::remove_file(&guards_file).await;
+
+    let config = arti_client::config::TorClientConfigBuilder::from_directories(state_dir, cache_dir)
         .build()
-        .unwrap();
+        .expect("Valid Tor client config");
 
-    let onion_listen_address = transport.add_onion_service(svg_cfg, 999).unwrap();
+    let runtime = TokioRustlsRuntime::current().expect("Running with tokio runtime");
 
-    let auth_upgrade = noise::Config::new(&keypair)?;
+    let tor_client = TorClient::with_runtime(runtime)
+        .config(config)
+        .create_unbootstrapped_async()
+        .await?;
+
+    Ok(tor_client)
+}
+
+/// Bootstrap a Tor client
+async fn bootstrap_tor_client(
+    tor_client: Arc<TorClient<TokioRustlsRuntime>>,
+) -> Result<(), Box<dyn Error>> {
+    info!("Bootstrapping Tor client...");
+    tor_client.bootstrap().await?;
+    info!("Tor client bootstrapped successfully");
+    Ok(())
+}
+
+/// Create a transport with Tor support and optionally register an onion service
+fn create_transport_with_tor(
+    identity: &identity::Keypair,
+    tor_client: Arc<TorClient<TokioRustlsRuntime>>,
+    register_onion_service: bool,
+    port: u16,
+) -> Result<(Boxed<(PeerId, StreamMuxerBox)>, Option<Multiaddr>), Box<dyn Error>> {
+    let mut tor_transport = TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
+
+    let onion_address = if register_onion_service {
+        // Derive nickname from peer id
+        let onion_service_config = OnionServiceConfigBuilder::default()
+            .nickname(
+                identity
+                    .public()
+                    .to_peer_id()
+                    .to_base58()
+                    .to_ascii_lowercase()
+                    .parse()
+                    .expect("Peer ID to be valid nickname"),
+            )
+            .num_intro_points(3)
+            .build()
+            .expect("Valid onion service config");
+
+        match tor_transport.add_onion_service(onion_service_config, port) {
+            Ok(addr) => {
+                info!(%addr, "Onion service configured");
+                Some(addr)
+            }
+            Err(err) => {
+                error!(%err, "Failed to configure onion service");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let auth_upgrade = noise::Config::new(identity)?;
     let multiplex_upgrade = yamux::Config::default();
 
-    let transport = transport
+    let transport = tor_transport
         .boxed()
         .upgrade(Version::V1)
         .authenticate(auth_upgrade)
@@ -93,7 +138,7 @@ async fn create_tor_transport(
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
         .boxed();
 
-    Ok((transport, onion_listen_address))
+    Ok((transport, onion_address))
 }
 
 #[tokio::main]
@@ -172,14 +217,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
     let keypair = party.keypair();
+    let data_dir = std::env::temp_dir().join(format!("eigenweb-pinning-{}", party.name()));
 
     info!("Starting pinning server as {}", party.name());
-    info!("Bootstrapping Tor connection...");
+    info!("Data directory: {:?}", data_dir);
 
-    // Create the Tor transport
-    let (transport, onion_listen_address) = create_tor_transport(keypair.clone()).await?;
+    // Create and bootstrap Tor client
+    let tor_client: Arc<TorClient<TokioRustlsRuntime>> = Arc::new(create_tor_client(&data_dir).await?);
+    bootstrap_tor_client(tor_client.clone()).await?;
 
-    info!("Tor connection established!");
+    // Create transport with onion service
+    let (transport, onion_address) = create_transport_with_tor(&keypair, tor_client, true, 999)?;
+
+    if let Some(ref addr) = onion_address {
+        info!("Onion service will be available at: {}", addr);
+    }
 
     // Create the pinning server behaviour
     let storage = MemoryStorage::new();
@@ -194,9 +246,13 @@ async fn run_server(party: Party) -> Result<(), Box<dyn Error>> {
         .build();
 
     // Listen on the onion address
-    swarm.listen_on(onion_listen_address.clone())?;
-    info!("Server will listen on onion address: {}", onion_listen_address);
-    info!("Waiting for onion service to be published...");
+    if let Some(addr) = onion_address {
+        swarm.listen_on(addr.clone())?;
+        info!("Waiting for onion service to be published...");
+    } else {
+        error!("Failed to create onion service, cannot listen");
+        return Err("Failed to create onion service".into());
+    }
 
     // Event loop
     loop {
@@ -261,8 +317,10 @@ async fn run_client(
 ) -> Result<(), Box<dyn Error>> {
     let keypair = party.keypair();
     let peer_id = party.peer_id();
+    let data_dir = std::env::temp_dir().join(format!("eigenweb-pinning-{}", party.name()));
 
     info!("Starting as {}", party.name());
+    info!("Data directory: {:?}", data_dir);
 
     // Check that at least one server address is provided
     if carol_addr.is_none() && david_addr.is_none() {
@@ -282,12 +340,12 @@ async fn run_client(
     )
     .await;
 
-    info!("Bootstrapping Tor connection...");
+    // Create and bootstrap Tor client
+    let tor_client: Arc<TorClient<TokioRustlsRuntime>> = Arc::new(create_tor_client(&data_dir).await?);
+    bootstrap_tor_client(tor_client.clone()).await?;
 
-    // Create the Tor transport
-    let (transport, _onion_listen_address) = create_tor_transport(keypair.clone()).await?;
-
-    info!("Tor connection established!");
+    // Create transport (no onion service for clients)
+    let (transport, _) = create_transport_with_tor(&keypair, tor_client, false, 0)?;
 
     // Build the swarm with the Tor transport
     let mut swarm = SwarmBuilder::with_existing_identity(keypair)

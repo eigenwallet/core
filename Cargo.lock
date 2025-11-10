@@ -3278,6 +3278,7 @@ dependencies = [
 name = "eigenweb-pinning"
 version = "0.1.0"
 dependencies = [
+ "arti-client",
  "atty",
  "backoff",
  "bytes",
@@ -3290,6 +3291,7 @@ dependencies = [
  "swap-p2p",
  "tokio",
  "tor-hsservice",
+ "tor-rtcompat",
  "tracing",
  "tracing-subscriber",
  "uuid",
