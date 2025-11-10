@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT path_uuid\n            FROM trades\n            WHERE withdraw_address = ?\n            ORDER BY timestamp DESC, id DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "path_uuid",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d7fac4c408522b25a6070ce5a7b6fb5456968afcb448b9c2031326eec3d3893"
+}
