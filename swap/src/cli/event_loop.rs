@@ -517,6 +517,9 @@ impl EventLoopHandle {
         })
     }
 
+    /// Sets up a swap with the specified peer
+    ///
+    /// This will retry until the maximum elapsed time is reached. It is therefore fallible.
     pub async fn setup_swap(&mut self, peer_id: PeerId, swap: NewSwap) -> Result<State2> {
         tracing::debug!(swap = ?swap, %peer_id, "Sending swap setup request");
 
@@ -553,6 +556,9 @@ impl EventLoopHandle {
         .context("Failed to setup swap after retries")
     }
 
+    /// Requests a quote from the specified peer
+    ///
+    /// This will retry until the maximum elapsed time is reached. It is therefore fallible.
     pub async fn request_quote(&mut self, peer_id: PeerId) -> Result<BidQuote> {
         tracing::debug!(%peer_id, "Requesting quote");
 
@@ -583,6 +589,9 @@ impl EventLoopHandle {
         .context("Failed to request quote after retries")
     }
 
+    /// Requests the cooperative XMR redeem from the specified peer
+    ///
+    /// This will retry until the maximum elapsed time is reached. It is therefore fallible.
     pub async fn request_cooperative_xmr_redeem(
         &mut self,
         peer_id: PeerId,
@@ -617,6 +626,9 @@ impl EventLoopHandle {
         .context("Failed to request cooperative XMR redeem after retries")
     }
 
+    /// Sends an encrypted signature to the specified peer
+    ///
+    /// This will retry indefinitely until we succeed. It is therefore infalible.
     pub async fn send_encrypted_signature(
         &mut self,
         peer_id: PeerId,
@@ -753,7 +765,7 @@ mod retry {
 
     // Constructs a retry config that will retry indefinitely
     pub(crate) fn never_give_up(max_interval: Duration) -> backoff::ExponentialBackoff {
-        create_retry_config(None, max_interval)
+        create_retry_config(max_interval, None)
     }
 
     // Constructs a retry config that will retry for a given amount of time
@@ -761,7 +773,7 @@ mod retry {
         max_interval: Duration,
         max_elapsed_time: Duration,
     ) -> backoff::ExponentialBackoff {
-        create_retry_config(None, max_interval)
+        create_retry_config(max_interval, max_elapsed_time)
     }
 
     fn create_retry_config(
