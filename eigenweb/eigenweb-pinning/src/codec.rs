@@ -12,16 +12,16 @@ pub type Event = <Behaviour as NetworkBehaviour>::ToSwarm;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
-    Pin(PinRequest),
-    Pull(PullRequest),
-    Fetch(FetchRequest),
+    Pin(pin::Request),
+    Pull(pull::Request),
+    Fetch(fetch::Request),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
-    Pin(PinResponse),
-    Pull(PullResponse),
-    Fetch(FetchResponse),
+    Pin(Result<pin::Response, pin::Error>),
+    Pull(Result<pull::Response, pull::Error>),
+    Fetch(Result<fetch::Response, fetch::Error>),
 }
 
 pub fn client(timeout: Duration) -> Behaviour {

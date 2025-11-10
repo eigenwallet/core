@@ -1,16 +1,13 @@
 /// This file is much less complete than client.rs
 use libp2p::{
-    futures::stream::FuturesUnordered,
+    futures::{stream::FuturesUnordered, FutureExt},
     request_response::ResponseChannel,
     swarm::{FromSwarm, NetworkBehaviour},
 };
 use libp2p_identity::PeerId;
-use std::{collections::VecDeque, sync::Arc, task::Poll, time::Duration};
+use std::{sync::Arc, task::Poll, time::Duration};
 
-use crate::{
-    codec, signature::MessageHash, storage, PinRejectReason, PinRequest, PinResponse,
-    SignedPinnedMessage,
-};
+use crate::{codec, fetch, signature::MessageHash, storage, SignedPinnedMessage};
 
 pub type ToSwarm = libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<codec::Behaviour>>;
 
@@ -18,12 +15,16 @@ pub struct Behaviour<S: storage::Storage> {
     /// The inner request-response behaviour
     inner: codec::Behaviour,
 
-    to_swarm: VecDeque<ToSwarm>,
-
     /// We use this to persist data
     storage: Arc<S>,
 
-    pending_storage_pin: FuturesUnordered<
+    /// When we receive a request we usually need to do some async work on storage layer to craft a response.
+    ///
+    /// We cannot do this directly in the behaviour as we cannot call .await inside a poll() method (duh)
+    ///
+    /// We therefore call the async function and insert the returns future into one of the queues along with the response channel.
+    /// Once the future completes, we look at the result from the storage layer. Then craft and send the response to the peer.
+    inflight_pin: FuturesUnordered<
         std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -32,7 +33,7 @@ pub struct Behaviour<S: storage::Storage> {
             >,
         >,
     >,
-    pending_storage_pull: FuturesUnordered<
+    inflight_pull: FuturesUnordered<
         std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -44,7 +45,7 @@ pub struct Behaviour<S: storage::Storage> {
             >,
         >,
     >,
-    pending_storage_fetch: FuturesUnordered<
+    inflight_fetch: FuturesUnordered<
         std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -68,17 +69,36 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         Self {
             inner: codec::server(timeout),
             storage: Arc::new(storage),
-            to_swarm: VecDeque::new(),
 
-            pending_storage_pin: FuturesUnordered::new(),
-            pending_storage_pull: FuturesUnordered::new(),
-            pending_storage_fetch: FuturesUnordered::new(),
+            inflight_pin: FuturesUnordered::new(),
+            inflight_pull: FuturesUnordered::new(),
+            inflight_fetch: FuturesUnordered::new(),
         }
+    }
+
+    /// Helper function to enqueue a storage task with its response channel.
+    /// Takes a closure that receives the storage Arc and returns a future.
+    fn enqueue_storage_task<T, F, Fut>(
+        storage: Arc<S>,
+        queue: &mut FuturesUnordered<
+            std::pin::Pin<
+                Box<dyn std::future::Future<Output = (T, ResponseChannel<codec::Response>)> + Send>,
+            >,
+        >,
+        f: F,
+        channel: ResponseChannel<codec::Response>,
+    ) where
+        T: Send + 'static,
+        F: FnOnce(Arc<S>) -> Fut,
+        Fut: std::future::Future<Output = T> + Send + 'static,
+    {
+        let future = f(storage);
+        queue.push(Box::pin(future.map(|result| (result, channel))));
     }
 
     fn handle_pin_request(
         &mut self,
-        request: PinRequest,
+        request: crate::pin::Request,
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
@@ -87,44 +107,45 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
             // TODO: Ban the peer as he should not be relaying invalid signatures
             let _ = self.inner.send_response(
                 channel,
-                codec::Response::Pin(PinResponse::Rejected(PinRejectReason::MalformedMessage)),
+                codec::Response::Pin(Err(crate::pin::Error::MalformedMessage)),
             );
             return;
         }
 
-        let storage = self.storage.clone();
-        self.pending_storage_pin.push(Box::pin(async move {
-            let result = storage.pin(request.message).await;
-            (result, channel)
-        }));
+        Self::enqueue_storage_task(
+            Arc::clone(&self.storage),
+            &mut self.inflight_pin,
+            |storage| async move { storage.pin(request.message).await },
+            channel,
+        );
     }
 
     fn handle_pull_request(
         &mut self,
-        request: crate::PullRequest,
+        request: crate::pull::Request,
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let storage = self.storage.clone();
-        let hashes = request.hashes;
-        self.pending_storage_pull.push(Box::pin(async move {
-            let result = storage.get_by_receiver_and_hash(peer, hashes).await;
-            (result, channel)
-        }));
+        Self::enqueue_storage_task(
+            Arc::clone(&self.storage),
+            &mut self.inflight_pull,
+            |storage| async move { storage.get_by_receiver_and_hash(peer, request.hashes).await },
+            channel,
+        );
     }
 
     fn handle_fetch_request(
         &mut self,
-        _request: crate::FetchRequest,
+        _request: crate::fetch::Request,
         peer: PeerId,
         channel: ResponseChannel<codec::Response>,
     ) {
-        let storage = self.storage.clone();
-
-        self.pending_storage_fetch.push(Box::pin(async move {
-            let result = storage.get_hashes_involving(peer).await;
-            (result, channel)
-        }));
+        Self::enqueue_storage_task(
+            Arc::clone(&self.storage),
+            &mut self.inflight_fetch,
+            |storage| async move { storage.get_hashes_involving(peer).await },
+            channel,
+        );
     }
 
     pub fn handle_event(&mut self, event: codec::Event) {
@@ -187,78 +208,80 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
     ) -> Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
         use libp2p::futures::StreamExt;
 
-        // Poll the pending storage futures
-        {
-            while let Poll::Ready(Some((result, channel))) =
-                self.pending_storage_pin.poll_next_unpin(cx)
-            {
-                if result.is_ok() {
-                    let _ = self
-                        .inner
-                        .send_response(channel, codec::Response::Pin(PinResponse::Stored));
-                } else {
-                    // TODO: Log the error here
-                    let _ = self.inner.send_response(
-                        channel,
-                        codec::Response::Pin(PinResponse::Rejected(PinRejectReason::Other)),
-                    );
+        // Respond to inflight pin requests where the storage layer returned a result
+        while let Poll::Ready(Some((result, channel))) = self.inflight_pin.poll_next_unpin(cx) {
+            let response = match result {
+                Ok(()) => codec::Response::Pin(Ok(crate::pin::Response::Stored)),
+                Err(err) => {
+                    tracing::warn!(?err, "Storage layer returned an error while responding to a pin request. We will reject the request and notify the peer.");
+                    codec::Response::Pin(Err(crate::pin::Error::Other))
                 }
-            }
+            };
 
-            while let Poll::Ready(Some((result, channel))) =
-                self.pending_storage_pull.poll_next_unpin(cx)
-            {
-                match result {
-                    Ok(messages) => {
-                        let _ = self.inner.send_response(
-                            channel,
-                            codec::Response::Pull(crate::PullResponse { messages }),
-                        );
-                    }
-                    Err(_) => {
-                        // TODO: Log the error here
-                        let _ = self.inner.send_response(
-                            channel,
-                            codec::Response::Pull(crate::PullResponse { messages: vec![] }),
-                        );
-                    }
-                }
-            }
-
-            while let Poll::Ready(Some((result, channel))) =
-                self.pending_storage_fetch.poll_next_unpin(cx)
-            {
-                match result {
-                    Ok((incoming, outgoing)) => {
-                        let _ = self.inner.send_response(
-                            channel,
-                            codec::Response::Fetch(crate::FetchResponse { incoming, outgoing }),
-                        );
-                    }
-                    Err(_) => {
-                        // TODO: Log the error here
-                        // TODO: Return an error here instead of empty vectors
-                        let _ = self.inner.send_response(
-                            channel,
-                            codec::Response::Fetch(crate::FetchResponse {
-                                incoming: vec![],
-                                outgoing: vec![],
-                            }),
-                        );
-                    }
-                }
+            if let Err(err) = self.inner.send_response(channel, response) {
+                tracing::warn!(?err, "Failed to send response to a pin request");
             }
         }
 
-        // TODO: Is this the correct way to handle events?
-        // TODO: Will this always wake us up again ?
+        // Respond to inflight pull requests where the storage layer returned a result
+        while let Poll::Ready(Some((result, channel))) = self.inflight_pull.poll_next_unpin(cx) {
+            let response = match result {
+                Ok(messages) => codec::Response::Pull(Ok(crate::pull::Response { messages })),
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        "Storage layer returned an error while responding to a pull request"
+                    );
+                    codec::Response::Pull(Err(crate::pull::Error::StorageFailure))
+                }
+            };
+
+            if let Err(err) = self.inner.send_response(channel, response) {
+                tracing::warn!(?err, "Failed to send response to a pull request");
+            }
+        }
+
+        // Respond to inflight fetch requests where the storage layer returned a result
+        while let Poll::Ready(Some((result, channel))) = self.inflight_fetch.poll_next_unpin(cx) {
+            let response = match result {
+                Ok((incoming, outgoing)) => {
+                    codec::Response::Fetch(Ok(fetch::Response { incoming, outgoing }))
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        "Storage layer returned an error while responding to a fetch request"
+                    );
+                    codec::Response::Fetch(Err(fetch::Error::StorageFailure))
+                }
+            };
+
+            if let Err(err) = self.inner.send_response(channel, response) {
+                tracing::warn!(?err, "Failed to send response to a fetch request");
+            }
+        }
+
+        // Poll the inner request-response behaviour
+        //
+        // We use `while let` to ensure we drain all ToSwarm events in one go.
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
+                // Handle ToSwarm events from the inner behaviour ourselves in the `handle_event` method
+                // Swallow them by not forwarding them to the swarm. These events are not interesting to any behaviours above us.
                 libp2p::swarm::ToSwarm::GenerateEvent(event) => {
                     self.handle_event(event);
                 }
-                // Do we need an unreachable!() here?
-                event => self.to_swarm.push_back(event.map_out(|_| unreachable!())),
+                // Forward all other (non-GenerateEvent) ToSwarm variants to the swarm directly.
+                // These include commands like Dial, ListenOn, etc. that must reach the swarm.
+                // Returning Poll::Ready(...) causes the swarm to continue its internal loop,
+                // which may poll us again in the same tick after processing this event.
+                event => {
+                    return Poll::Ready(event.map_out(|_| {
+                        unreachable!(
+                            "we manually map `GenerateEvent` variants in the match arm above"
+                        )
+                    }))
+                }
             }
         }
 
@@ -292,6 +315,8 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
+        // We forward all swarm events to the inner behaviour.
+        // We have no use for these currently so we don't process them ourselves.
         self.inner.on_swarm_event(event)
     }
 

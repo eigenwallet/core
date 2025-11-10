@@ -1,8 +1,7 @@
 use crate::{
-    codec,
+    codec, fetch, pin, pull,
     signature::{MessageHash, SignedMessage},
-    storage, FetchResponse, PinRequest, PinResponse, PullRequest, SignedPinnedMessage,
-    UnsignedPinnedMessage,
+    storage, SignedPinnedMessage, UnsignedPinnedMessage,
 };
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use libp2p::{
@@ -64,6 +63,7 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     /// If we need the message itself, we can look it up in the storage.
     outgoing_messages: HashSet<MessageHash>,
 
+    // TODO: Combine `incoming_messages` and `outgoing_messages` into a single set with a boolean flag for incoming/outgoing?
     /// Hashes of messages we want to pull
     ///
     /// We only know the hash but do not have the full message.
@@ -259,6 +259,8 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     {
         let backoff = self
             .backoff(peer_id)
+            // TODO: This will always bump the backoff even if no errors occurred
+            // maybe we should use .current_interval instead and only call .next_backoff() if an error occurred
             .next_backoff()
             .expect("backoff should never run out of attempts")
             + wait;
@@ -324,18 +326,31 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                     response,
                 } => {
                     match response {
-                        codec::Response::Pin(PinResponse::Stored) => {
+                        // Handle Pin responses
+                        codec::Response::Pin(Ok(pin::Response::Stored)) => {
                             if let Some((peer_id, hash)) =
                                 self.inflight_pin_request.remove(&request_id)
                             {
+                                // TODO: Do we want to treat protocol errors as a reason to backoff?
                                 self.handle_successful_interaction(peer);
-
-                                // The server told us it has stored the message
-                                // It therefore now has the message and does not need it anymore
                                 self.mark_does_not_want(peer_id, hash);
                             }
                         }
-                        codec::Response::Fetch(FetchResponse { incoming, outgoing }) => {
+                        codec::Response::Pin(Err(pin_error)) => {
+                            if let Some((peer_id, hash)) =
+                                self.inflight_pin_request.remove(&request_id)
+                            {
+                                // TODO: Backoff?
+                                tracing::warn!(
+                                    ?pin_error,
+                                    ?peer_id,
+                                    ?hash,
+                                    "Server responded to our pin request with an error"
+                                );
+                            }
+                        }
+                        // Handle Fetch responses
+                        codec::Response::Fetch(Ok(fetch::Response { incoming, outgoing })) => {
                             if let Some(peer) = self.inflight_fetch_request.remove(&request_id) {
                                 self.handle_successful_interaction(peer);
 
@@ -359,15 +374,24 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                                 self.dont_want.insert(peer, Arc::new(incoming_and_outgoing));
                             }
                         }
-                        codec::Response::Pull(pull_response) => {
+                        codec::Response::Fetch(Err(fetch_error)) => {
+                            if let Some(peer) = self.inflight_fetch_request.remove(&request_id) {
+                                tracing::warn!(
+                                    ?fetch_error,
+                                    ?peer,
+                                    "Server responded to our fetch request with an error"
+                                );
+                            }
+                        }
+                        // Handle Pull responses
+                        codec::Response::Pull(Ok(pull::Response { messages })) => {
                             // TODO: This should be able to pull multiple messages at once
                             if let Some((peer, hash)) =
                                 self.inflight_pull_request.remove(&request_id)
                             {
                                 self.handle_successful_interaction(peer);
 
-                                let messages: Vec<_> = pull_response
-                                    .messages
+                                let messages: Vec<_> = messages
                                     .into_iter()
                                     // Ensure the message is intended for us
                                     .filter(|message| message.message().receiver == self.peer_id())
@@ -407,7 +431,19 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                                 }
                             }
                         }
-                        _ => {}
+                        codec::Response::Pull(Err(pull_error)) => {
+                            if let Some((peer, hash)) =
+                                self.inflight_pull_request.remove(&request_id)
+                            {
+                                // TODO: Backoff?
+                                tracing::warn!(
+                                    ?pull_error,
+                                    ?peer,
+                                    ?hash,
+                                    "Server responded to our pull request with an error"
+                                );
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -519,7 +555,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                 // TODO: Do not unwrap here
                 let message = message.unwrap().unwrap();
 
-                let request = codec::Request::Pin(PinRequest { message });
+                let request = codec::Request::Pin(pin::Request { message });
                 let outbound_request_id = self.inner.codec.send_request(&peer_id, request);
                 self.inflight_pin_request
                     .insert(outbound_request_id, (peer_id, hash));
@@ -536,7 +572,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
         while let Poll::Ready(Some((peer_id, _))) =
             self.queued_outgoing_fetch_requests.poll_next_unpin(cx)
         {
-            let request = codec::Request::Fetch(crate::FetchRequest {});
+            let request = codec::Request::Fetch(fetch::Request);
             let outbound_request_id = self.inner.codec.send_request(&peer_id, request);
             self.inflight_fetch_request
                 .insert(outbound_request_id, peer_id);
@@ -548,7 +584,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
         while let Poll::Ready(Some(((peer_id, hash), _))) =
             self.queued_outgoing_pull_requests.poll_next_unpin(cx)
         {
-            let request = codec::Request::Pull(PullRequest { hashes: vec![hash] });
+            let request = codec::Request::Pull(pull::Request { hashes: vec![hash] });
             let outbound_request_id = self.inner.codec.send_request(&peer_id, request);
             self.inflight_pull_request
                 .insert(outbound_request_id, (peer_id, hash));
@@ -690,19 +726,24 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
 
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
-                ToSwarm::GenerateEvent(InnerBehaviourEvent::Codec(inner_event)) => {
-                    self.handle_codec_event(inner_event);
-                }
-                ToSwarm::GenerateEvent(InnerBehaviourEvent::Redial(inner_event)) => {
-                    self.handle_redial_event(inner_event);
-                }
+                // We nest this to ensure we map every `GenerateEvent` variant
+                ToSwarm::GenerateEvent(event) => match event {
+                    InnerBehaviourEvent::Codec(inner_event) => {
+                        self.handle_codec_event(inner_event);
+                    }
+                    InnerBehaviourEvent::Redial(inner_event) => {
+                        self.handle_redial_event(inner_event);
+                    }
+                },
                 other => {
-                    self.inner_events
-                        .push_back(other.map_out(|_| unreachable!()));
+                    self.inner_events.push_back(
+                        other.map_out(|_| unreachable!("we manually map `GenerateEvent` variants")),
+                    );
                 }
             }
         }
 
+        // TODO: Are these popped in the correct order?
         if let Some(event) = self.inner_events.pop_front() {
             return Poll::Ready(event);
         }

@@ -25,42 +25,65 @@ pub struct UnsignedPinnedMessage {
 
 pub type SignedPinnedMessage = SignedMessage<UnsignedPinnedMessage>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PinRequest {
-    pub message: SignedPinnedMessage,
+pub mod pin {
+    use super::*;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Request {
+        pub message: SignedPinnedMessage,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum Response {
+        Stored,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum Error {
+        ResourceLimitExceeded,
+        MalformedMessage,
+        Other,
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PinResponse {
-    Stored,
-    Rejected(PinRejectReason),
+pub mod fetch {
+    use super::*;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+    pub struct Request;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Response {
+        /// Hashes of all messages where: `hash.receiver == client.peer_id`
+        pub incoming: Vec<signature::MessageHash>,
+        /// Hashes of all messages where: `hash.sender == client.peer_id`
+        pub outgoing: Vec<signature::MessageHash>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum Error {
+        StorageFailure,
+        Other,
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum PinRejectReason {
-    ResourceLimitExceeded,
-    MalformedMessage,
-    Other,
-}
+pub mod pull {
+    use super::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FetchRequest {}
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Request {
+        /// Hashes of the message the client wants to download from the server
+        pub hashes: Vec<signature::MessageHash>,
+    }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FetchResponse {
-    /// Hashes of all messages where: `hash.receiver == requester.peer_id`
-    pub incoming: Vec<signature::MessageHash>,
-    /// Hashes of all messages where: `hash.sender == requester.peer_id`
-    pub outgoing: Vec<signature::MessageHash>,
-}
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Response {
+        pub messages: Vec<SignedPinnedMessage>,
+    }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PullRequest {
-    /// Hashes of all messages we want to download
-    pub hashes: Vec<signature::MessageHash>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PullResponse {
-    pub messages: Vec<SignedPinnedMessage>,
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum Error {
+        StorageFailure,
+        Other,
+    }
 }
