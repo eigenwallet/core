@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 static REQUEST_RESPONSE_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(60);
 static EXECUTION_SETUP_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(120);
-static REQUEST_RESPONSE_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(10);
+static REQUEST_RESPONSE_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop {
@@ -478,10 +478,24 @@ pub struct EventLoopHandle {
 }
 
 impl EventLoopHandle {
-    fn create_retry_config(max_elapsed_time: Duration) -> backoff::ExponentialBackoff {
+    // Constructs a retry config that will retry indefinitely
+    fn create_retry_config_never_give_up() -> backoff::ExponentialBackoff {
+        Self::create_retry_config(None)
+    }
+
+    // Constructs a retry config that will retry for a given amount of time
+    fn create_retry_config_give_up_eventually(
+        max_elapsed_time: Duration,
+    ) -> backoff::ExponentialBackoff {
+        Self::create_retry_config(max_elapsed_time)
+    }
+
+    fn create_retry_config(
+        max_elapsed_time: impl Into<Option<Duration>>,
+    ) -> backoff::ExponentialBackoff {
         backoff::ExponentialBackoffBuilder::new()
             .with_max_elapsed_time(max_elapsed_time.into())
-            .with_max_interval(Duration::from_secs(5))
+            .with_max_interval(REQUEST_RESPONSE_MAX_RETRY_INTERVAL)
             .build()
     }
 
@@ -516,7 +530,8 @@ impl EventLoopHandle {
     pub async fn setup_swap(&mut self, peer_id: PeerId, swap: NewSwap) -> Result<State2> {
         tracing::debug!(swap = ?swap, %peer_id, "Sending swap setup request");
 
-        let backoff = Self::create_retry_config(EXECUTION_SETUP_PROTOCOL_TIMEOUT);
+        let backoff =
+            Self::create_retry_config_give_up_eventually(EXECUTION_SETUP_PROTOCOL_TIMEOUT);
 
         backoff::future::retry_notify(backoff, || async {
             match self.execution_setup_sender.send_receive((peer_id, swap.clone())).await {
@@ -551,7 +566,9 @@ impl EventLoopHandle {
     pub async fn request_quote(&mut self, peer_id: PeerId) -> Result<BidQuote> {
         tracing::debug!(%peer_id, "Requesting quote");
 
-        let backoff = Self::create_retry_config(REQUEST_RESPONSE_MAX_RETRY_INTERVAL);
+        // We want to give up eventually here
+        let backoff =
+            Self::create_retry_config_give_up_eventually(REQUEST_RESPONSE_PROTOCOL_TIMEOUT);
 
         backoff::future::retry_notify(backoff, || async {
             match self.quote_sender.send_receive(peer_id).await {
@@ -581,7 +598,9 @@ impl EventLoopHandle {
     ) -> Result<Response> {
         tracing::debug!(%peer_id, %swap_id, "Requesting cooperative XMR redeem");
 
-        let backoff = Self::create_retry_config(REQUEST_RESPONSE_MAX_RETRY_INTERVAL);
+        // We want to give up eventually here
+        let backoff =
+            Self::create_retry_config_give_up_eventually(REQUEST_RESPONSE_PROTOCOL_TIMEOUT);
 
         backoff::future::retry_notify(backoff, || async {
             match self.cooperative_xmr_redeem_sender.send_receive((peer_id, swap_id)).await {
@@ -613,10 +632,7 @@ impl EventLoopHandle {
         tracing::debug!(%peer_id, %swap_id, "Sending encrypted signature");
 
         // We will retry indefinitely until we succeed
-        let backoff = backoff::ExponentialBackoffBuilder::new()
-            .with_max_elapsed_time(None)
-            .with_max_interval(REQUEST_RESPONSE_PROTOCOL_TIMEOUT)
-            .build();
+        let backoff = Self::create_retry_config_never_give_up();
 
         backoff::future::retry_notify(backoff, || async {
             match self.encrypted_signature_sender.send_receive((peer_id, swap_id, tx_redeem_encsig.clone())).await {
