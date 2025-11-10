@@ -48,7 +48,7 @@ impl Behaviour {
     }
 
     /// Adds a peer to the set of peers to track. Returns true if the peer was newly added.
-    #[tracing::instrument(level = "trace", name = "redial::add_peer", skip(self), fields(redial_type = %self.name, peer = %peer))]
+    #[tracing::instrument(level = "trace", name = "redial::add_peer", skip(self, peer), fields(redial_type = %self.name, peer = %peer))]
     pub fn add_peer(&mut self, peer: PeerId) -> bool {
         let newly_added = self.peers.insert(peer);
 
@@ -75,7 +75,7 @@ impl Behaviour {
         })
     }
 
-    #[tracing::instrument(level = "trace", name = "redial::schedule_redial", skip(self, override_next_dial_in), fields(redial_type = %self.name, peer = %peer))]
+    #[tracing::instrument(level = "trace", name = "redial::schedule_redial", skip(self, peer, override_next_dial_in), fields(redial_type = %self.name, peer = %peer))]
     fn schedule_redial(
         &mut self,
         peer: &PeerId,
