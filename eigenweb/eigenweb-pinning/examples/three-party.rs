@@ -1,11 +1,12 @@
 use bytes::Bytes;
-use eigenweb_pinning::storage::MemoryStorage;
+use eigenweb_pinning::storage::{MemoryStorage, Storage};
 use eigenweb_pinning::UnsignedPinnedMessage;
 use libp2p::futures::StreamExt;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, Multiaddr, PeerId, SwarmBuilder};
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncBufReadExt;
 use tracing::{error, info};
@@ -71,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Initialize tracing
-    init_tracing(LevelFilter::DEBUG);
+    init_tracing(LevelFilter::TRACE);
 
     info!("Starting as {}", party.name());
     info!("Local peer id: {}", party.peer_id());
@@ -177,13 +178,13 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
     info!("Starting as {}", party.name());
 
     // Create the pinning client behaviour
-    let storage = MemoryStorage::new();
+    let storage = Arc::new(MemoryStorage::new());
     let carol_peer_id = Party::Carol.peer_id();
     let david_peer_id = Party::David.peer_id();
     let behaviour = eigenweb_pinning::client::Behaviour::new(
         keypair.clone(),
         vec![carol_peer_id, david_peer_id],
-        storage,
+        storage.clone(),
         Duration::from_secs(10),
     )
     .await;
@@ -266,13 +267,23 @@ async fn run_client(party: Party, other_party: Party) -> Result<(), Box<dyn Erro
                     SwarmEvent::NewListenAddr { address, .. } => {
                         info!("Listening on {}", address);
                     }
-                    SwarmEvent::Behaviour(eigenweb_pinning::client::Event::IncomingPinnedMessageReceived(msg)) => {
-                        let hash = msg.content_hash();
-                        all_messages.insert(hash, msg.clone());
-                        info!("Received message! Total messages: {}", all_messages.len());
-                        for msg in all_messages.values() {
-                            let content = String::from_utf8_lossy(&msg.message().encrypted_content);
-                            info!("  From {}: {}", other_name, content);
+                    SwarmEvent::Behaviour(eigenweb_pinning::client::Event::IncomingPinnedMessageReceived(hash)) => {
+                        // Fetch the message from storage using the hash
+                        match storage.get_by_hash(hash).await {
+                            Ok(Some(msg)) => {
+                                all_messages.insert(hash, msg);
+                                info!("Received message! Total messages: {}", all_messages.len());
+                                for msg in all_messages.values() {
+                                    let content = String::from_utf8_lossy(&msg.message().encrypted_content);
+                                    info!("  From {}: {}", other_name, content);
+                                }
+                            }
+                            Ok(None) => {
+                                error!("Message with hash {:?} not found in storage", hash);
+                            }
+                            Err(e) => {
+                                error!("Error fetching message from storage: {}", e);
+                            }
                         }
                     }
                     SwarmEvent::ConnectionEstablished {
@@ -348,7 +359,7 @@ fn init_tracing(level: LevelFilter) {
         .with_env_filter(build_event_filter_str(&[
             (&["eigenweb_pinning"], level),
             (&[env!("CARGO_CRATE_NAME")], level),
-            (LIBP2P_CRATES, level),
+            (LIBP2P_CRATES, LevelFilter::INFO),
         ]))
         .with_writer(std::io::stderr)
         .with_ansi(is_terminal)

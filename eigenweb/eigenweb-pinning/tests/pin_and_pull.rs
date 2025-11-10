@@ -1,13 +1,14 @@
 //! Alice pins a message for Bob on Carol's server
 //! Bob fetches the list of messages and pulls them
 use bytes::Bytes;
-use eigenweb_pinning::storage::MemoryStorage;
+use eigenweb_pinning::storage::{MemoryStorage, Storage};
 use eigenweb_pinning::UnsignedPinnedMessage;
 use libp2p::core::transport::{MemoryTransport, Transport};
 use libp2p::core::upgrade;
 use libp2p::futures::StreamExt;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identity, Multiaddr, SwarmBuilder};
+use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -32,8 +33,8 @@ async fn pin_and_fetch_message() {
 
     // Create storages
     let (alice_storage, bob_storage, carol_storage) = (
-        MemoryStorage::new(),
-        MemoryStorage::new(),
+        Arc::new(MemoryStorage::new()),
+        Arc::new(MemoryStorage::new()),
         MemoryStorage::new(),
     );
 
@@ -49,7 +50,7 @@ async fn pin_and_fetch_message() {
     let bob_behaviour = eigenweb_pinning::client::Behaviour::new(
         bob_keypair.clone(),
         vec![carol_peer_id],
-        bob_storage,
+        bob_storage.clone(),
         TIMEOUT,
     )
     .await;
@@ -94,11 +95,14 @@ async fn pin_and_fetch_message() {
             event = bob.select_next_some() => {
                 match event {
                     SwarmEvent::Behaviour(
-                        eigenweb_pinning::client::Event::IncomingPinnedMessageReceived(message),
+                        eigenweb_pinning::client::Event::IncomingPinnedMessageReceived(hash),
                     ) => {
-                        tracing::info!("Bob: received message");
-                        received_messages.push(message);
-                        break;
+                        tracing::info!("Bob: received message with hash {:?}", hash);
+                        // Fetch the message from storage
+                        if let Ok(Some(message)) = bob_storage.get_by_hash(hash).await {
+                            received_messages.push(message);
+                            break;
+                        }
                     }
                     _ => {}
                 }

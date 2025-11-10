@@ -12,6 +12,7 @@ memory = []
 libp2p = { workspace = true, features = ["cbor", "request-response", "macros"] }
 libp2p-core = { workspace = true, features = ["serde"] }
 libp2p-identity = { workspace = true, features = ["serde"] }
+swap-p2p = { path = "../../swap-p2p" }
 
 # Serialization
 bytes = { version = "1.5", features = ["serde"] }

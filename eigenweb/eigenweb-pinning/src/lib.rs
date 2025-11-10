@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 pub mod client;
 pub mod codec;
-pub mod futures_utils;
 pub mod server;
 pub mod signature;
 pub mod storage;
@@ -49,9 +48,10 @@ pub struct FetchRequest {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FetchResponse {
-    /// Hashes of all messages where:
-    ///    `hash.receiver == requester.peer_id || hash.sender == requester.peer_id`
-    pub messages: Vec<signature::MessageHash>,
+    /// Hashes of all messages where: `hash.receiver == requester.peer_id`
+    pub incoming: Vec<signature::MessageHash>,
+    /// Hashes of all messages where: `hash.sender == requester.peer_id`
+    pub outgoing: Vec<signature::MessageHash>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

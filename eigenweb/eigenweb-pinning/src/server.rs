@@ -49,7 +49,9 @@ pub struct Behaviour<S: storage::Storage> {
             Box<
                 dyn std::future::Future<
                         Output = (
-                            Result<Vec<MessageHash>, S::Error>,
+                            // First vector is for incoming messages, second vector is for outgoing messages
+                            // of the requester peer
+                            Result<(Vec<MessageHash>, Vec<MessageHash>), S::Error>,
                             ResponseChannel<codec::Response>,
                         ),
                     > + Send,
@@ -118,6 +120,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         channel: ResponseChannel<codec::Response>,
     ) {
         let storage = self.storage.clone();
+
         self.pending_storage_fetch.push(Box::pin(async move {
             let result = storage.get_hashes_involving(peer).await;
             (result, channel)
@@ -226,17 +229,21 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                 self.pending_storage_fetch.poll_next_unpin(cx)
             {
                 match result {
-                    Ok(messages) => {
+                    Ok((incoming, outgoing)) => {
                         let _ = self.inner.send_response(
                             channel,
-                            codec::Response::Fetch(crate::FetchResponse { messages }),
+                            codec::Response::Fetch(crate::FetchResponse { incoming, outgoing }),
                         );
                     }
                     Err(_) => {
                         // TODO: Log the error here
+                        // TODO: Return an error here instead of empty vectors
                         let _ = self.inner.send_response(
                             channel,
-                            codec::Response::Fetch(crate::FetchResponse { messages: vec![] }),
+                            codec::Response::Fetch(crate::FetchResponse {
+                                incoming: vec![],
+                                outgoing: vec![],
+                            }),
                         );
                     }
                 }

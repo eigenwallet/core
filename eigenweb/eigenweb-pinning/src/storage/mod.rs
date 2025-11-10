@@ -18,7 +18,7 @@ pub trait Storage: Send {
     fn get_hashes_involving(
         &self,
         peer: PeerId,
-    ) -> impl Future<Output = Result<Vec<MessageHash>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(Vec<MessageHash>, Vec<MessageHash>), Self::Error>> + Send;
     fn get_by_hashes(
         &self,
         hashes: Vec<MessageHash>,

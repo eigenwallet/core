@@ -36,15 +36,25 @@ impl Storage for MemoryStorage {
             .collect()
     }
 
-    async fn get_hashes_involving(&self, peer: PeerId) -> Result<Vec<MessageHash>, Self::Error> {
-        Ok(self
-            .messages
-            .lock()
-            .unwrap()
+    async fn get_hashes_involving(
+        &self,
+        peer: PeerId,
+    ) -> Result<(Vec<MessageHash>, Vec<MessageHash>), Self::Error> {
+        let messages = self.messages.lock().unwrap();
+
+        let incoming: Vec<MessageHash> = messages
             .iter()
-            .filter(|(_, msg)| msg.message().receiver == peer || msg.message().sender == peer)
+            .filter(|(_, msg)| msg.message().receiver == peer)
             .map(|(hash, _)| *hash)
-            .collect())
+            .collect();
+
+        let outgoing: Vec<MessageHash> = messages
+            .iter()
+            .filter(|(_, msg)| msg.message().sender == peer)
+            .map(|(hash, _)| *hash)
+            .collect();
+
+        Ok((incoming, outgoing))
     }
 
     async fn get_by_hashes(&self, hashes: Vec<MessageHash>) -> Vec<SignedPinnedMessage> {

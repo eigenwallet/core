@@ -45,11 +45,14 @@ use url::Url;
 use uuid::Uuid;
 
 /// developer_tip_ratio is a tuple of (ratio, use_subaddress)
-/// 
+///
 /// If use_subaddress is true, we will use a subaddress for the developer tip. We do this
 /// because using a subaddress changes things about the tx keys involved
-pub async fn setup_test<T, F, C>(_config: C, developer_tip_ratio: Option<(Decimal, bool)>, testfn: T)
-where
+pub async fn setup_test<T, F, C>(
+    _config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    testfn: T,
+) where
     T: Fn(TestContext) -> F,
     F: Future<Output = Result<()>>,
     C: GetConfig,
