@@ -163,22 +163,19 @@ jobs:
           set -euxo pipefail
 
           deb=$(find "$PWD" -name *.deb -print -quit)
-          read -r sum _ < <(sha256sum "$deb")
-          jq --arg deb_url "file://$deb" --arg deb_sha256 "$sum" '
-            .modules[0].sources = [
-              {
-                "type": "file",
-                "url": $deb_url,
-                "sha256": $deb_sha256
-              }
-            ]
+          jq --arg deb_path "$deb" --arg PWD "$PWD" '
+            .modules[0].sources = {
+              "type": "file",
+              "path": $deb_path
+            } |
+            .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path
           ' < flatpak/org.eigenwallet.app.json > target/manifest.json
 
           outdir=target/flatpak-repo
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak-builder build-dir --gpg-sign="$GPG_FPR" --user --install-deps-from=flathub --disable-rofiles-fuse --disable-updates --repo="$outdir" target/manifest.json
           flatpak build-update-repo --gpg-sign="$GPG_FPR" --generate-static-deltas --prune "$outdir"
-          flatpak build-bundle      --gpg-sign="$GPG_FPR" "$outdir" "$outdir/org.eigenwallet.app.flatpak" org.eigenwallet.app
+          flatpak build-bundle      --gpg-sign="$GPG_FPR" "$outdir" "$outdir/org.eigenwallet.app.flatpak" org.eigenwallet.app stable
 
           ln flatpak/index.html flatpak/*.flatpakre* src-tauri/icons/icon.png README.md "$outdir/"
           > "$outdir/.nojekyll"

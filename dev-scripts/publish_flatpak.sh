@@ -225,22 +225,15 @@ else
     echo "✅  Local build completed: $DEB_FILE"
 fi
 
-# Calculate SHA256 hash of the .deb file
-echo "🔢  Calculating SHA256 hash..."
-read -r DEB_SHA256 _ < <(sha256sum "$DEB_FILE")
-echo "   Hash: $DEB_SHA256"
-
 echo "📝  Creating manifest with local .deb..."
 
 # Modify the manifest to use the local file
-jq --arg deb_path "file://$DEB_FILE" --arg deb_hash "$DEB_SHA256" '
-    .modules[0].sources = [
-        {
-            "type": "file",
-            "url": $deb_path,
-            "sha256": $deb_hash
-        }
-    ]
+jq --arg deb_path "$DEB_FILE" --arg PWD "$PWD" '
+    .modules[0].sources[0] = {
+        "type": "file",
+        "path": $deb_path
+    } |
+    .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path
 ' "$MANIFEST_FILE" > "$TEMP_MANIFEST"
 
 MANIFEST_FILE="$TEMP_MANIFEST"
