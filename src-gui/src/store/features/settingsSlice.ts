@@ -241,7 +241,8 @@ const alertsSlice = createSlice({
       // Check if we should apply defaults (first time or more than 2 weeks)
       if (
         slice.lastAppliedDefaultNodes == null ||
-        now - slice.lastAppliedDefaultNodes > MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY
+        now - slice.lastAppliedDefaultNodes >
+          MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY
       ) {
         // Remove negative nodes from mainnet
         slice.nodes[Network.Mainnet][Blockchain.Bitcoin] = slice.nodes[
