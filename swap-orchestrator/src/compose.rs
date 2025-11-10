@@ -421,16 +421,6 @@ impl Display for Flags {
 
 pub struct Flag(pub Option<String>);
 
-impl Display for Flag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(s) = &self.0 {
-            return write!(f, "{}", s);
-        }
-
-        Ok(())
-    }
-}
-
 pub trait IntoFlag {
     /// Converts into a flag that can be used in a docker compose file
     fn to_flag(self) -> Flag;
