@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 static REQUEST_RESPONSE_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(60);
 static EXECUTION_SETUP_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(120);
+static REQUEST_RESPONSE_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(10);
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop {
@@ -550,7 +551,7 @@ impl EventLoopHandle {
     pub async fn request_quote(&mut self, peer_id: PeerId) -> Result<BidQuote> {
         tracing::debug!(%peer_id, "Requesting quote");
 
-        let backoff = Self::create_retry_config(REQUEST_RESPONSE_PROTOCOL_TIMEOUT);
+        let backoff = Self::create_retry_config(REQUEST_RESPONSE_MAX_RETRY_INTERVAL);
 
         backoff::future::retry_notify(backoff, || async {
             match self.quote_sender.send_receive(peer_id).await {
@@ -580,7 +581,7 @@ impl EventLoopHandle {
     ) -> Result<Response> {
         tracing::debug!(%peer_id, %swap_id, "Requesting cooperative XMR redeem");
 
-        let backoff = Self::create_retry_config(REQUEST_RESPONSE_PROTOCOL_TIMEOUT);
+        let backoff = Self::create_retry_config(REQUEST_RESPONSE_MAX_RETRY_INTERVAL);
 
         backoff::future::retry_notify(backoff, || async {
             match self.cooperative_xmr_redeem_sender.send_receive((peer_id, swap_id)).await {
