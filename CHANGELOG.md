@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Update Rust version to 1.88 to satisfy depenency requirements.
+- GUI + SWAP: Retry sending the encrypted signature more aggressively. This might help with an issue where we would be stuck on the "Sending encrypted signature" screen for a longer time than necessary.
+
 ## [3.2.11] - 2025-11-09
 
 - GUI + SWAP: Assume double spend safety of Monero transactions after 6 confirmations. This means we are assuming that there won't be any re-orgs deeper than 5 blocks. We believe this is a safe assumption given that there were almost no orphaned blocks over the last two weeks. Qubic (which was behind the re-orgs) has mined less than 1% of the last 1000 blocks.
