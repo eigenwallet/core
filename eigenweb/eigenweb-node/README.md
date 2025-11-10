@@ -10,11 +10,7 @@ Build the binary:
 cargo build --release
 ```
 
-<<<<<<<< HEAD:eigenweb/eigenweb-node/README.md
 Run the `eigenweb-node`:
-========
-Run the `libp2p-rendezvous-node`:
->>>>>>>> master:libp2p-rendezvous-node/README.md
 
 ```
 cargo run --release

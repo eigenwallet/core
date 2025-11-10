@@ -357,7 +357,7 @@ fn init_tracing(level: LevelFilter) {
 
     let builder = FmtSubscriber::builder()
         .with_env_filter(build_event_filter_str(&[
-            (&["eigenweb_pinning"], level),
+            (&["eigenweb_pinning", "swap_p2p"], level),
             (&[env!("CARGO_CRATE_NAME")], level),
             (LIBP2P_CRATES, LevelFilter::INFO),
         ]))

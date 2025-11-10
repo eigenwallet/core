@@ -8,7 +8,7 @@ use super::*;
 const PROTOCOL: &str = "/eigenwallet/pinning/pin/1.0.0";
 
 pub type Behaviour = request_response::cbor::Behaviour<Request, Response>;
-pub type ToSwarm = <Behaviour as NetworkBehaviour>::ToSwarm;
+pub type Event = <Behaviour as NetworkBehaviour>::ToSwarm;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {

@@ -6,7 +6,7 @@ use crate::{
 };
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use libp2p::{
-    request_response::OutboundRequestId,
+    request_response::{self, OutboundRequestId},
     swarm::{FromSwarm, NetworkBehaviour, ToSwarm},
 };
 use libp2p_identity::{Keypair, PeerId};
@@ -16,7 +16,7 @@ use std::{
     task::Poll,
     time::Duration,
 };
-use swap_p2p::futures_util::FuturesHashSet;
+use swap_p2p::{futures_util::FuturesHashSet, protocols::redial};
 use tokio::sync::mpsc;
 
 const HEARTBEAT_FETCH_INTERVAL: Duration = Duration::from_secs(5);
@@ -31,18 +31,18 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     servers: Vec<PeerId>,
 
     /// The inner request-response behaviour
-    inner: codec::Behaviour,
+    inner: InnerBehaviour,
 
     // the events from the inner behaviour which we will propagate to the swarm
     inner_events:
-        VecDeque<libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<codec::Behaviour>>>,
+        VecDeque<libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<InnerBehaviour>>>,
 
     /// A queue of events to return to the swarm
     ///
     /// We can insert events anywhere and we will process them later in order when we are polled
     /// by the swarm.
     to_swarm_events:
-        VecDeque<libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<codec::Behaviour>>>,
+        VecDeque<libp2p::swarm::ToSwarm<Event, libp2p::swarm::THandlerInEvent<InnerBehaviour>>>,
 
     /// We use this to persist data
     storage: Arc<S>,
@@ -70,6 +70,7 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     incoming_messages: HashSet<MessageHash>,
 
     /// For every server we store the set of hashes of messages that we know he has
+    // TODO: Maybe extract this to a separate struct given the ton of helper functions we have for it?
     dont_want: HashMap<PeerId, Arc<HashSet<MessageHash>>>,
 
     // TODO: We also need to store which hashes a server **cannot* provide
@@ -104,6 +105,37 @@ pub enum Event {
     IncomingPinnedMessageReceived(MessageHash),
 }
 
+/// Internal Behaviour that does two things:
+/// 1. Handles request-response interactions with the servers
+/// 2. Handles redialing of the servers
+#[derive(NetworkBehaviour)]
+pub struct InnerBehaviour {
+    codec: codec::Behaviour,
+    redial: redial::Behaviour,
+}
+
+impl InnerBehaviour {
+    const REDIAL_NAME: &'static str = "redial-pinning-servers";
+
+    fn new(
+        request_response_timeout: Duration,
+        redial_interval: Duration,
+        redial_max_interval: Duration,
+        servers: Vec<PeerId>,
+    ) -> Self {
+        let mut redial =
+            redial::Behaviour::new(Self::REDIAL_NAME, redial_interval, redial_max_interval);
+        for server in servers.iter() {
+            redial.add_peer(*server);
+        }
+
+        Self {
+            codec: codec::client(request_response_timeout),
+            redial,
+        }
+    }
+}
+
 // This is the API that will be publicly accessible
 impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     /// Inserts a message into the internal system
@@ -120,6 +152,10 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         storage: Arc<S>,
         timeout: Duration,
     ) -> Self {
+        let (message_queue_tx, message_queue_rx) = mpsc::unbounded_channel();
+
+        // Populate the outgoing messages set with the messages from the storage layer
+        // TODO: Maybe there is a cleaner way to do this?
         let peer_id = keypair.public().to_peer_id();
         let outgoing_messages_hashes: HashSet<_> = storage
             .hashes_by_sender(peer_id)
@@ -127,10 +163,13 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
             .into_iter()
             .collect();
 
-        let (message_queue_tx, message_queue_rx) = mpsc::unbounded_channel();
-
         Self {
-            inner: codec::client(timeout),
+            inner: InnerBehaviour::new(
+                timeout,
+                BACKOFF_INITIAL_INTERVAL,
+                BACKOFF_MAX_INTERVAL,
+                servers.clone(),
+            ),
             keypair,
             servers,
             storage,
@@ -218,7 +257,11 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     where
         T: Send + 'static,
     {
-        let backoff = self.backoff(peer_id).next_backoff().unwrap() + wait;
+        let backoff = self
+            .backoff(peer_id)
+            .next_backoff()
+            .expect("backoff should never run out of attempts")
+            + wait;
 
         Box::pin(async move {
             tokio::time::sleep(backoff).await;
@@ -273,10 +316,10 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         )
     }
 
-    pub fn handle_event(&mut self, event: codec::ToSwarm) {
+    pub fn handle_codec_event(&mut self, event: codec::Event) {
         match event {
-            libp2p::request_response::Event::Message { peer, message } => match message {
-                libp2p::request_response::Message::Response {
+            codec::Event::Message { peer, message } => match message {
+                request_response::Message::Response {
                     request_id,
                     response,
                 } => {
@@ -370,7 +413,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 _ => {}
             },
 
-            libp2p::request_response::Event::OutboundFailure {
+            codec::Event::OutboundFailure {
                 request_id,
                 error,
                 peer,
@@ -386,7 +429,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 let _ = self.inflight_pull_request.remove(&request_id);
                 let _ = self.inflight_fetch_request.remove(&request_id);
             }
-            libp2p::request_response::Event::InboundFailure {
+            codec::Event::InboundFailure {
                 request_id,
                 error,
                 peer,
@@ -403,10 +446,18 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
             }
         }
     }
+
+    pub fn handle_redial_event(&mut self, event: redial::Event) {
+        match event {
+            redial::Event::ScheduledRedial { peer, next_dial_in } => {
+                tracing::trace!(%peer, next_dial_in_secs = %next_dial_in.as_secs(), "Scheduling redial for server");
+            }
+        }
+    }
 }
 
 impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
-    type ConnectionHandler = <codec::Behaviour as NetworkBehaviour>::ConnectionHandler;
+    type ConnectionHandler = <InnerBehaviour as NetworkBehaviour>::ConnectionHandler;
 
     type ToSwarm = Event;
 
@@ -469,7 +520,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                 let message = message.unwrap().unwrap();
 
                 let request = codec::Request::Pin(PinRequest { message });
-                let outbound_request_id = self.inner.send_request(&peer_id, request);
+                let outbound_request_id = self.inner.codec.send_request(&peer_id, request);
                 self.inflight_pin_request
                     .insert(outbound_request_id, (peer_id, hash));
 
@@ -486,7 +537,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
             self.queued_outgoing_fetch_requests.poll_next_unpin(cx)
         {
             let request = codec::Request::Fetch(crate::FetchRequest {});
-            let outbound_request_id = self.inner.send_request(&peer_id, request);
+            let outbound_request_id = self.inner.codec.send_request(&peer_id, request);
             self.inflight_fetch_request
                 .insert(outbound_request_id, peer_id);
 
@@ -498,7 +549,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
             self.queued_outgoing_pull_requests.poll_next_unpin(cx)
         {
             let request = codec::Request::Pull(PullRequest { hashes: vec![hash] });
-            let outbound_request_id = self.inner.send_request(&peer_id, request);
+            let outbound_request_id = self.inner.codec.send_request(&peer_id, request);
             self.inflight_pull_request
                 .insert(outbound_request_id, (peer_id, hash));
 
@@ -527,6 +578,15 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                 .collect();
 
             for (server, has_dont_want_set) in servers_to_fetch {
+                // TODO:
+                // If the hearbeat interval is pretty long (which it will probably be in production), and we want to queue a fetch request as soon as possible, it will be difficult
+                // because only a single queued entry is possible at a time.
+                //
+                // Let's say the hearbeat interval is 5m and we want to fetch now. Then we will not be able to insert a new entry into the queue until 5m have passed.
+                // Even if we try to add a new queue entry, it will "fail silently" because the queue already has an entry for that peer. This is not optimal.
+                // The queue would need a way to know **how long** the current entry will take to resolve and then replace it if the new entry would resolve sooner.
+                // It is almost impossible to even insert anything into the queue because the hearbeat will be inserted as soon as possible and cannot be replaced.
+                // Maybe the future unordered is too generic here?
                 let wait_time = if has_dont_want_set {
                     HEARTBEAT_FETCH_INTERVAL
                 } else {
@@ -535,10 +595,10 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
 
                 match has_dont_want_set {
                     false => {
-                        tracing::trace!(%server, "We have no `dont_want` set for {}, queuing fetch request", server);
+                        tracing::trace!(%server, "We have no `dont_want` set for {}. We will queue a fetch request as soon as possible", server);
                     }
                     true => {
-                        tracing::trace!(%server, "We have a `dont_want` set for {} but no queued/inflight fetch request, queuing fetch request with heartbeat interval", server);
+                        tracing::trace!(%server, "We have a `dont_want` set for {} but no queued/inflight fetch request. We will queue a fetch request with heartbeat interval", server);
                     }
                 }
 
@@ -630,9 +690,11 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
 
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
-                ToSwarm::GenerateEvent(inner_event) => {
-                    tracing::trace!("Received event from inner behaviour: {:?}", inner_event);
-                    self.handle_event(inner_event);
+                ToSwarm::GenerateEvent(InnerBehaviourEvent::Codec(inner_event)) => {
+                    self.handle_codec_event(inner_event);
+                }
+                ToSwarm::GenerateEvent(InnerBehaviourEvent::Redial(inner_event)) => {
+                    self.handle_redial_event(inner_event);
                 }
                 other => {
                     self.inner_events

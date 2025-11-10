@@ -127,7 +127,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         }));
     }
 
-    pub fn handle_event(&mut self, event: codec::ToSwarm) {
+    pub fn handle_event(&mut self, event: codec::Event) {
         match event {
             libp2p::request_response::Event::Message { peer, message } => match message {
                 libp2p::request_response::Message::Request {

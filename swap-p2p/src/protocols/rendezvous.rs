@@ -212,10 +212,11 @@ pub mod register {
             let backoff = self
                 .backoffs
                 .get_mut(&peer_id)
-                .expect("Backoff should exist for all rendezvous nodes");
+                .expect("backoff should exist for all rendezvous nodes");
+
             let delay = backoff
                 .next_backoff()
-                .expect("Backoff should never run out");
+                .expect("backoff should never run out of attempts");
 
             // Create a future that sleeps and then returns the peer_id
             let future = async move {
