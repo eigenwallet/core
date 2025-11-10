@@ -21,9 +21,15 @@ use swap_core::bitcoin::EncryptedSignature;
 use swap_p2p::protocols::redial;
 use uuid::Uuid;
 
-static REQUEST_RESPONSE_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(60);
+// Timeout for the execution setup protocol within the event loop. If the behaviour does not respond within this time, we will consider the request failed.
 static EXECUTION_SETUP_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(120);
-static REQUEST_RESPONSE_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(5);
+
+// Used for retrying request-response protocol requests
+// - Sending encrypted signatures
+// - Requesting quotes
+// - Requesting cooperative XMR redeem
+static REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME: Duration = Duration::from_secs(60);
+static REQUEST_RESPONSE_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(5);
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop {
@@ -495,7 +501,7 @@ impl EventLoopHandle {
     ) -> backoff::ExponentialBackoff {
         backoff::ExponentialBackoffBuilder::new()
             .with_max_elapsed_time(max_elapsed_time.into())
-            .with_max_interval(REQUEST_RESPONSE_MAX_RETRY_INTERVAL)
+            .with_max_interval(REQUEST_RESPONSE_RETRY_MAX_INTERVAL)
             .build()
     }
 
@@ -567,8 +573,9 @@ impl EventLoopHandle {
         tracing::debug!(%peer_id, "Requesting quote");
 
         // We want to give up eventually here
-        let backoff =
-            Self::create_retry_config_give_up_eventually(REQUEST_RESPONSE_PROTOCOL_TIMEOUT);
+        let backoff = Self::create_retry_config_give_up_eventually(
+            REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME,
+        );
 
         backoff::future::retry_notify(backoff, || async {
             match self.quote_sender.send_receive(peer_id).await {
@@ -599,8 +606,9 @@ impl EventLoopHandle {
         tracing::debug!(%peer_id, %swap_id, "Requesting cooperative XMR redeem");
 
         // We want to give up eventually here
-        let backoff =
-            Self::create_retry_config_give_up_eventually(REQUEST_RESPONSE_PROTOCOL_TIMEOUT);
+        let backoff = Self::create_retry_config_give_up_eventually(
+            REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME,
+        );
 
         backoff::future::retry_notify(backoff, || async {
             match self.cooperative_xmr_redeem_sender.send_receive((peer_id, swap_id)).await {
