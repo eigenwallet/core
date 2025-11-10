@@ -506,6 +506,7 @@ fn init_tracing(level: LevelFilter) {
             (&["eigenweb_pinning", "swap_p2p"], level),
             (&[env!("CARGO_CRATE_NAME")], level),
             (LIBP2P_CRATES, LevelFilter::INFO),
+            (TOR_CRATES, LevelFilter::INFO),
         ]))
         .with_writer(std::io::stderr)
         .with_ansi(is_terminal)
@@ -538,5 +539,20 @@ const LIBP2P_CRATES: &[&str] = &[
     "libp2p_request_response",
     "libp2p_swarm",
     "libp2p_tcp",
+    "libp2p_tor",
     // "libp2p_yamux",
+];
+
+const TOR_CRATES: &[&str] = &[
+    "arti",
+    "arti_client",
+    "tor_circmgr",
+    "tor_config",
+    "tor_dirmgr",
+    "tor_guardmgr",
+    "tor_hsclient",
+    "tor_hsservice",
+    "tor_netdir",
+    "tor_proto",
+    "tor_rtcompat",
 ];
