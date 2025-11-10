@@ -48,3 +48,90 @@ Once all three parties are running and connected:
 - In Alice's terminal, type a message and press Enter to send it to Bob
 - In Bob's terminal, type a message and press Enter to send it to Alice
 - Messages are queued on Carol's server and automatically fetched by the recipients
+
+## Three-Party Tor Example
+
+The `three-party-tor.rs` example demonstrates the same messaging scenario as `three-party.rs`, but uses Tor hidden services for privacy and anonymity:
+
+- **Carol** and **David**: Pinning servers that listen on Tor hidden services (onion addresses)
+- **Alice** and **Bob**: Clients that connect to the servers via their onion addresses
+
+### Key Differences from three-party.rs
+
+1. **Tor Hidden Services**: Servers listen on onion addresses instead of TCP ports
+2. **Onion Address Configuration**: Clients specify which servers to connect to using onion addresses (ignoring peer IDs)
+3. **Optional Connections**: Clients can connect to one or both servers by omitting server addresses
+4. **Privacy**: All communication happens over the Tor network
+
+### Running the Example
+
+You need at least three terminal windows. The servers must be started first to generate their onion addresses.
+
+**Terminal 1 - Start Carol's server:**
+
+```bash
+cargo run --example three-party-tor -- --carol
+```
+
+Wait for Carol to print her onion address. It will look like:
+```
+LISTENING ON: /onion3/abcdef1234567890.onion:999
+```
+
+**Terminal 2 - Start David's server:**
+
+```bash
+cargo run --example three-party-tor -- --david
+```
+
+Wait for David to print his onion address.
+
+**Terminal 3 - Start Alice (connecting to both servers):**
+
+```bash
+cargo run --example three-party-tor -- --alice \
+  --carol-addr /onion3/abcdef1234567890.onion:999 \
+  --david-addr /onion3/xyz9876543210.onion:999
+```
+
+**Terminal 4 - Start Bob (connecting to both servers):**
+
+```bash
+cargo run --example three-party-tor -- --bob \
+  --carol-addr /onion3/abcdef1234567890.onion:999 \
+  --david-addr /onion3/xyz9876543210.onion:999
+```
+
+### Optional Server Connections
+
+Clients can connect to only one server by omitting the other:
+
+**Alice connecting to Carol only:**
+
+```bash
+cargo run --example three-party-tor -- --alice \
+  --carol-addr /onion3/abcdef1234567890.onion:999
+```
+
+**Bob connecting to David only:**
+
+```bash
+cargo run --example three-party-tor -- --bob \
+  --david-addr /onion3/xyz9876543210.onion:999
+```
+
+### Usage
+
+Once all parties are running and connected:
+
+- In Alice's terminal, type a message and press Enter to send it to Bob
+- In Bob's terminal, type a message and press Enter to send it to Alice
+- Messages are relayed through the Tor hidden services
+- All communication is private and happens over the Tor network
+
+### Notes
+
+- Tor bootstrap can take 10-30 seconds on first run
+- Onion service publication can take an additional 30-60 seconds
+- Ensure you copy the full onion addresses from the server terminals
+- At least one server address must be provided for clients to connect
