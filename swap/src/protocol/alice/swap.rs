@@ -187,7 +187,7 @@ where
                     };
 
                     let tx_key = receipt.tx_keys.get(&lock_address).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
-                    
+
                     Ok(Some((
                         monero_wallet_restore_blockheight,
                         TransferProof::new(
