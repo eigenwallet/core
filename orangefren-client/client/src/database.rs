@@ -11,7 +11,7 @@ use sqlx::{
 
 use tracing::info;
 
-use crate::{TradeId, TradeInfo};
+use crate::{PathId, TradeInfo};
 
 #[derive(Clone)]
 pub struct Database {
@@ -42,14 +42,14 @@ impl Database {
 
     async fn migrate(&self) -> Result<()> {
         sqlx::migrate!("./migrations").run(&self.pool).await?;
-        info!("Client database migration completed");
+        info!("Trades database migration completed");
         Ok(())
     }
 
     pub async fn insert_trade_info(
         &self,
         trade_info: TradeInfo,
-        trade_id: TradeId,
+        path_id: PathId,
     ) -> Result<(), anyhow::Error> {
         let now = Utc::now().to_rfc3339();
 
@@ -63,7 +63,7 @@ impl Database {
         } else {
             None
         };
-        let path_uuid = &trade_id.0.to_string();
+        let path_uuid = &path_id.0.to_string();
 
         let raw_json = trade_info.raw_json.clone();
 
@@ -99,7 +99,7 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_trades(&mut self) -> Result<Vec<(TradeId, TradeInfo)>, anyhow::Error> {
+    pub async fn get_trades(&mut self) -> Result<Vec<(PathId, TradeInfo)>, anyhow::Error> {
         let mut info = Vec::new();
         let rows = sqlx::query!(
             r#"
@@ -121,7 +121,7 @@ impl Database {
         .context("load_from_db(): failed to fetch rows")?;
 
         for row in rows {
-            let trade_id = TradeId(
+            let path_id = PathId(
                 Uuid::parse_str(&row.path_uuid)
                     .with_context(|| format!("invalid UUID in path_uuid: {}", row.path_uuid))?,
             );
@@ -136,7 +136,7 @@ impl Database {
             };
 
             info.push((
-                trade_id,
+                path_id.clone(),
                 TradeInfo {
                     from_currency: row.from_currency.clone().try_into()?,
                     to_currency: row.to_currency.clone().try_into()?,
@@ -155,7 +155,7 @@ impl Database {
     pub async fn latest_trade_id_by_withdraw_address(
         &self,
         address: monero::Address,
-    ) -> Result<TradeId, anyhow::Error> {
+    ) -> Result<PathId, anyhow::Error> {
         let address_str = address.to_string();
 
         let row = sqlx::query!(
@@ -172,7 +172,7 @@ impl Database {
         .await
         .context("Could not find the path")?;
 
-        let trade_id = TradeId(
+        let trade_id = PathId(
             Uuid::from_str(row.path_uuid.as_str()).context("Could not initialize the uuid")?,
         );
         Ok(trade_id)

@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use anyhow::Context;
-use client::Client;
+use client::{Client, TradeStatusType};
 use tokio_stream::StreamExt;
 
 use clap::Parser;
@@ -27,7 +27,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let trade_id = client
         .new_trade(
             bitcoin::Amount::from_sat(1),
-            monero::Address::from_str("53xRhkZNYwV6q1AgN7NT7ee5rZK8LsJxX2TkF2G2jyJmiSESQaVJrHW9nvP7aN9xGyCRuiJf9uL53GeRCu4ECvLA8fM8spF"
+            monero::Address::from_str("4Ag3EtLQ9MJGCPKzBWgjFMEVMhUc1DuNv16eTnZoWCYFfXXGvda4QBxXWYKeNv4B5T4G9TgDeceFa2okuspRUF866Xa5dKS"
             )
         .expect("Not a valid address"))
         .await?;
@@ -35,17 +35,25 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut updates = client.watch_status(trade_id.clone()).await;
     while let Some(status) = updates.next().await {
         tracing::info!("status: {:?}", status);
-        client.store(status).await?;
+        tracing::info!(
+            "deposit address: {}",
+            client.deposit_address(trade_id.clone()).await?
+        );
+        if status.status_type == TradeStatusType::Initial {
+            break;
+        }
     }
 
-    let mut client2 = Client::new(data_dir.clone())
+    let client2 = Client::new(data_dir.clone())
         .await
         .context("Error creating a client")?;
 
-    client2.load_from_db().await?;
+    for trade in client2.all_trades().await {
+        tracing::info!("Trades from the loaded client: {}", trade);
+    }
 
-    if let Some((info, status)) = client2.trade_state_by_id(trade_id) {
-        tracing::info!("got info {:?}, state{:?}", info, status);
+    if let Some((info, status)) = client2.trade_state_by_id(trade_id).await {
+        tracing::info!("got info {}, state{:?}", info, status);
     }
     Ok(())
 }
