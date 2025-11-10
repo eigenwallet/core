@@ -40,12 +40,12 @@ esac
 set -euo pipefail
 
 # Get the current project root (this file is in <root>/dev-scripts/ and gets called via just (just file is at <root>/justfile))
-SRC_TAURI_DIR="$(pwd)/../src-tauri"
+SRC_TAURI_DIR="$PWD/../src-tauri"
 
 # Check if src-tauri directory exists
 if [ ! -d "$SRC_TAURI_DIR" ]; then
     echo "Error: must be called from project root -> src-tauri must be subdir"
-    echo "Current directory: $(pwd)"
+    echo "Current directory: $PWD"
     exit 1
 fi
 
