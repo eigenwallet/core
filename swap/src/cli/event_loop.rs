@@ -21,15 +21,20 @@ use swap_core::bitcoin::EncryptedSignature;
 use swap_p2p::protocols::redial;
 use uuid::Uuid;
 
-// Timeout for the execution setup protocol within the event loop. If the behaviour does not respond within this time, we will consider the request failed.
-static EXECUTION_SETUP_PROTOCOL_TIMEOUT: Duration = Duration::from_secs(120);
+// Timeout for the execution setup protocol within the event loop.
+// If the behaviour does not respond within this time, we will consider the request failed.
+// Also used to give up on retries within the EventLoopHandle.
+static EXECUTION_SETUP_MAX_ELAPSED_TIME: Duration = Duration::from_secs(120);
 
-// Used for retrying request-response protocol requests
-// - Sending encrypted signatures
+// Used for deciding how long to retry request-response protocol requests where we want to give up eventually.
+//
+// This is used for:
 // - Requesting quotes
 // - Requesting cooperative XMR redeem
 static REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME: Duration = Duration::from_secs(60);
-static REQUEST_RESPONSE_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(5);
+
+// Used for deciding how long to wait at most between retries.
+static RETRY_MAX_INTERVAL: Duration = Duration::from_secs(5);
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop {
@@ -123,7 +128,7 @@ impl EventLoop {
     ) -> Result<(Self, EventLoopHandle)> {
         // We still use a timeout here because we trust our own implementation of the swap setup protocol less than the libp2p library
         let (execution_setup_sender, execution_setup_receiver) =
-            bmrng::unbounded::channel_with_timeout(EXECUTION_SETUP_PROTOCOL_TIMEOUT);
+            bmrng::unbounded::channel_with_timeout(EXECUTION_SETUP_MAX_ELAPSED_TIME);
 
         // It is okay to not have a timeout here, as timeouts are enforced by the request-response protocol
         let (encrypted_signature_sender, encrypted_signature_receiver) =
@@ -484,27 +489,6 @@ pub struct EventLoopHandle {
 }
 
 impl EventLoopHandle {
-    // Constructs a retry config that will retry indefinitely
-    fn create_retry_config_never_give_up() -> backoff::ExponentialBackoff {
-        Self::create_retry_config(None)
-    }
-
-    // Constructs a retry config that will retry for a given amount of time
-    fn create_retry_config_give_up_eventually(
-        max_elapsed_time: Duration,
-    ) -> backoff::ExponentialBackoff {
-        Self::create_retry_config(max_elapsed_time)
-    }
-
-    fn create_retry_config(
-        max_elapsed_time: impl Into<Option<Duration>>,
-    ) -> backoff::ExponentialBackoff {
-        backoff::ExponentialBackoffBuilder::new()
-            .with_max_elapsed_time(max_elapsed_time.into())
-            .with_max_interval(REQUEST_RESPONSE_RETRY_MAX_INTERVAL)
-            .build()
-    }
-
     /// Creates a SwapEventLoopHandle for a specific swap
     /// This registers the swap's transfer proof receiver with the event loop
     pub async fn swap_handle(
@@ -537,7 +521,7 @@ impl EventLoopHandle {
         tracing::debug!(swap = ?swap, %peer_id, "Sending swap setup request");
 
         let backoff =
-            Self::create_retry_config_give_up_eventually(EXECUTION_SETUP_PROTOCOL_TIMEOUT);
+            retry::give_up_eventually(RETRY_MAX_INTERVAL, EXECUTION_SETUP_MAX_ELAPSED_TIME);
 
         backoff::future::retry_notify(backoff, || async {
             match self.execution_setup_sender.send_receive((peer_id, swap.clone())).await {
@@ -573,7 +557,8 @@ impl EventLoopHandle {
         tracing::debug!(%peer_id, "Requesting quote");
 
         // We want to give up eventually here
-        let backoff = Self::create_retry_config_give_up_eventually(
+        let backoff = retry::give_up_eventually(
+            RETRY_MAX_INTERVAL,
             REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME,
         );
 
@@ -606,7 +591,8 @@ impl EventLoopHandle {
         tracing::debug!(%peer_id, %swap_id, "Requesting cooperative XMR redeem");
 
         // We want to give up eventually here
-        let backoff = Self::create_retry_config_give_up_eventually(
+        let backoff = retry::give_up_eventually(
+            RETRY_MAX_INTERVAL,
             REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME,
         );
 
@@ -640,7 +626,7 @@ impl EventLoopHandle {
         tracing::debug!(%peer_id, %swap_id, "Sending encrypted signature");
 
         // We will retry indefinitely until we succeed
-        let backoff = Self::create_retry_config_never_give_up();
+        let backoff = retry::never_give_up(RETRY_MAX_INTERVAL);
 
         backoff::future::retry_notify(backoff, || async {
             match self.encrypted_signature_sender.send_receive((peer_id, swap_id, tx_redeem_encsig.clone())).await {
@@ -760,4 +746,31 @@ async fn buffer_transfer_proof_if_needed(
     db.insert_buffered_transfer_proof(swap_id, transfer_proof)
         .await
         .context("Failed to buffer transfer proof in database")
+}
+
+mod retry {
+    use std::time::Duration;
+
+    // Constructs a retry config that will retry indefinitely
+    pub(crate) fn never_give_up(max_interval: Duration) -> backoff::ExponentialBackoff {
+        create_retry_config(None, max_interval)
+    }
+
+    // Constructs a retry config that will retry for a given amount of time
+    pub(crate) fn give_up_eventually(
+        max_interval: Duration,
+        max_elapsed_time: Duration,
+    ) -> backoff::ExponentialBackoff {
+        create_retry_config(None, max_interval)
+    }
+
+    fn create_retry_config(
+        max_interval: Duration,
+        max_elapsed_time: impl Into<Option<Duration>>,
+    ) -> backoff::ExponentialBackoff {
+        backoff::ExponentialBackoffBuilder::new()
+            .with_max_interval(max_interval)
+            .with_max_elapsed_time(max_elapsed_time.into())
+            .build()
+    }
 }
