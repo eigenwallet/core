@@ -51,7 +51,6 @@ pub struct Behaviour<S: storage::Storage> {
                 dyn std::future::Future<
                         Output = (
                             // First vector is for incoming messages, second vector is for outgoing messages
-                            // of the requester peer
                             Result<(Vec<MessageHash>, Vec<MessageHash>), S::Error>,
                             ResponseChannel<codec::Response>,
                         ),
@@ -150,8 +149,8 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
 
     pub fn handle_event(&mut self, event: codec::Event) {
         match event {
-            libp2p::request_response::Event::Message { peer, message } => match message {
-                libp2p::request_response::Message::Request {
+            codec::Event::Message { peer, message } => match message {
+                codec::Message::Request {
                     request_id: _,
                     request,
                     channel,
@@ -168,7 +167,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 },
                 _ => {}
             },
-            libp2p::request_response::Event::InboundFailure {
+            codec::Event::InboundFailure {
                 request_id,
                 error,
                 peer,
@@ -180,7 +179,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                     peer
                 );
             }
-            libp2p::request_response::Event::OutboundFailure {
+            codec::Event::OutboundFailure {
                 request_id,
                 error,
                 peer,

@@ -19,6 +19,8 @@ pub enum Request {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
+    // TODO: Maybe don't use std::Result here and use our own type?
+    // TOOD: I'd like to own all of our types in our protocol codec (as many as possible)
     Pin(Result<pin::Response, pin::Error>),
     Pull(Result<pull::Response, pull::Error>),
     Fetch(Result<fetch::Response, fetch::Error>),

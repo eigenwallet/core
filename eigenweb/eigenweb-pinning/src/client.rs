@@ -321,7 +321,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     pub fn handle_codec_event(&mut self, event: codec::Event) {
         match event {
             codec::Event::Message { peer, message } => match message {
-                request_response::Message::Response {
+                codec::Message::Response {
                     request_id,
                     response,
                 } => {
@@ -448,7 +448,6 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 }
                 _ => {}
             },
-
             codec::Event::OutboundFailure {
                 request_id,
                 error,
