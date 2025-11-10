@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+  <id>org.eigenwallet.app</id>
+  <launchable type="desktop-id">org.eigenwallet.app</launchable>
+  <name>eigenwallet GUI</name>
+  <summary>GUI for XMR&lt;&gt;BTC Atomic Swaps written in Rust</summary>
+  <description><p>GUI for XMR&lt;&gt;BTC Atomic Swaps written in Rust</p></description>
+  <metadata_license>CC0-1.0</metadata_license>
+  <icon type="stock">unstoppableswap-gui-rs</icon>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <releases>
+    <release version="3.2.11" date="2025-11-09" />
+  </releases>
+</component>
