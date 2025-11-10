@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI + SWAP: Retry sending the encrypted signature more aggressively. This might help with an issue where we would be stuck on the "Sending encrypted signature" screen for a longer time than necessary.
+- GUI + SWAP + ASB: Require 10 Monero confirmations again
 
 ## [3.2.11] - 2025-11-09
 
