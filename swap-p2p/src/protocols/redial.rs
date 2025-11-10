@@ -14,6 +14,8 @@ use void::Void;
 /// A [`NetworkBehaviour`] that tracks whether we are connected to the given
 /// peers and attempts to re-establish a connection with an exponential backoff
 /// if we lose the connection.
+/// 
+/// TODO: Allow removing peers from the set after we are done with them.
 pub struct Behaviour {
     /// The peers we are interested in.
     peers: HashSet<PeerId>,
@@ -148,6 +150,11 @@ impl NetworkBehaviour for Behaviour {
                     match event.error {
                         DialError::DialPeerConditionFalse(_) => {
                             // TODO: Can this lead to a condition where we will not redial the peer ever again? I don't think so...
+                            //
+                            // Reasoning:
+                            // We always dial with `PeerCondition::DisconnectedAndNotDialing`.
+                            // If we not disconnected, we don't need to redial.
+                            // If we are already dialing, another event will be emitted if that dial fails.
                             tracing::trace!(peer = %peer_id, dial_error = ?event.error, "A dial failure occurred for a peer we want to contineously redial, but this was due to a dial condition failure. We are not treating this as a failure. We will not schedule a redial.");
                             None
                         }
