@@ -26,11 +26,9 @@ import {
 import {
   addNode,
   addRendezvousPoint,
-  Blockchain,
   DonateToDevelopmentTip,
   FiatCurrency,
   moveUpNode,
-  Network,
   removeNode,
   removeRendezvousPoint,
   resetSettings,
@@ -48,6 +46,7 @@ import {
   RedeemPolicy,
   RefundPolicy,
 } from "store/features/settingsSlice";
+import { Blockchain, Network } from "store/types";
 import { useAppDispatch, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
 import HelpIcon from "@mui/icons-material/HelpOutline";

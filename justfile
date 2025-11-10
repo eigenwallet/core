@@ -18,6 +18,9 @@ monero_sys:
 	just update_submodules
 	cd monero-sys && cargo build
 
+undo-monero-changes:
+   cd monero-sys/monero && git restore .
+
 # Test the FFI bindings using various sanitizers, that can detect memory safety issues.
 test-ffi: test-ffi-address
 
