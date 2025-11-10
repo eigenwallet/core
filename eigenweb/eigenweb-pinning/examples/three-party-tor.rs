@@ -331,7 +331,10 @@ async fn run_client(
     // Create the pinning client behaviour
     // Note: We don't use peer IDs for server verification in this example
     let storage = Arc::new(MemoryStorage::new());
-    let server_peer_ids = vec![];  // Empty - we're connecting by onion address only
+    let server_peer_ids = vec![
+        Party::Carol.peer_id(),
+        Party::David.peer_id(),
+    ];  // Empty - we're connecting by onion address only
     let behaviour = eigenweb_pinning::client::Behaviour::new(
         keypair.clone(),
         server_peer_ids,
