@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use super::*;
 
+// TODO: Split this into multiple distinct request-response protocols?
 const PROTOCOL: &str = "/eigenwallet/pinning/pin/1.0.0";
 
 pub type Behaviour = request_response::cbor::Behaviour<Request, Response>;

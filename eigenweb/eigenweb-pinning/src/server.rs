@@ -1,7 +1,7 @@
 /// This file is much less complete than client.rs
 use libp2p::{
-    futures::{stream::FuturesUnordered, FutureExt},
-    request_response::ResponseChannel,
+    futures::{FutureExt, stream::FuturesUnordered},
+    request_response::{self, ResponseChannel},
     swarm::{FromSwarm, NetworkBehaviour},
 };
 use libp2p_identity::PeerId;
@@ -150,7 +150,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     pub fn handle_event(&mut self, event: codec::Event) {
         match event {
             codec::Event::Message { peer, message } => match message {
-                codec::Message::Request {
+                request_response::Message::Request {
                     request_id: _,
                     request,
                     channel,

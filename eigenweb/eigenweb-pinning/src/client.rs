@@ -1,11 +1,8 @@
 use crate::{
-    codec, fetch, pin, pull,
-    signature::{MessageHash, SignedMessage},
-    storage, SignedPinnedMessage, UnsignedPinnedMessage,
+    SignedPinnedMessage, UnsignedPinnedMessage, client::backoff_pool::BackoffKind, codec, fetch, pin, pull, signature::{MessageHash, SignedMessage}, storage
 };
-use backoff::{backoff::Backoff, ExponentialBackoff};
 use libp2p::{
-    request_response::{self, OutboundRequestId},
+    request_response::{Message, OutboundRequestId},
     swarm::{FromSwarm, NetworkBehaviour, ToSwarm},
 };
 use libp2p_identity::{Keypair, PeerId};
@@ -47,7 +44,7 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     storage: Arc<S>,
 
     /// Stores the backoff for each peer, as to not bombard them with requests
-    peer_backoff: HashMap<PeerId, backoff::ExponentialBackoff>,
+    backoff: backoff_pool::Pool,
 
     /// Stores the backoff for each message hash, individual delays for specific messages?
     /// TODO: Is this needed?
@@ -103,6 +100,78 @@ pub struct Behaviour<S: storage::Storage + Sync> {
 #[derive(Debug)]
 pub enum Event {
     IncomingPinnedMessageReceived(MessageHash),
+}
+
+mod backoff_pool {
+    use std::{collections::HashMap, time::Duration};
+
+    use backoff::{ExponentialBackoff, backoff::Backoff};
+    use libp2p::PeerId;
+
+    use crate::{client::{BACKOFF_INITIAL_INTERVAL, BACKOFF_MAX_INTERVAL}, signature::MessageHash};
+
+    // Stores multiple backoffs for multiple types of requests for multiple peers
+    pub struct Pool {
+        backoff: HashMap<(PeerId, BackoffKind), ExponentialBackoff>,
+    }
+
+    impl Pool {
+        pub fn new() -> Self {
+            Self {
+                backoff: HashMap::new(),
+            }
+        }
+
+        pub fn get_backoff(&mut self, peer_id: PeerId, backoff_type: BackoffKind) -> &mut ExponentialBackoff {
+            self.backoff.entry((peer_id, backoff_type)).or_insert_with(|| ExponentialBackoff {
+                initial_interval: BACKOFF_INITIAL_INTERVAL,
+                current_interval: BACKOFF_INITIAL_INTERVAL,
+                max_interval: BACKOFF_MAX_INTERVAL,
+                max_elapsed_time: None,
+                ..ExponentialBackoff::default()
+            })
+        }
+
+        /// Gives us a future that resolves after the backoff for that peer + the additional wait time has passed
+        pub fn schedule_backoff<T>(
+            &mut self,
+            peer: PeerId,
+            value: T,
+            kind: BackoffKind,
+            wait: Duration, // we add this on top of the backoff
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>
+        where
+            T: Send + 'static,
+        {
+            let backoff = self
+                .get_backoff(peer, kind)
+                .current_interval
+                + wait;
+
+            tracing::trace!(%peer, ?kind, backoff_secs = %backoff.as_secs(), "Scheduling operation with backoff");
+
+            Box::pin(async move {
+                tokio::time::sleep(backoff).await;
+                value
+            })
+        }
+
+        /// Resets the backoff for a given peer and kind
+        pub fn reset_backoff(&mut self, peer: PeerId, kind: BackoffKind) {
+            self.get_backoff(peer, kind).reset();
+        }
+
+        pub fn increase_backoff(&mut self, peer: PeerId, kind: BackoffKind) {
+            self.get_backoff(peer, kind).next_backoff().expect("backoff should never run out of attempts");
+        }
+    }
+
+    #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
+    pub enum BackoffKind {
+        Fetch,
+        Pull(MessageHash),
+        Pin(MessageHash),
+    }
 }
 
 /// Internal Behaviour that does two things:
@@ -180,7 +249,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
             inner_events: VecDeque::new(),
             to_swarm_events: VecDeque::new(),
             dont_want: HashMap::new(),
-            peer_backoff: HashMap::new(),
+            backoff: backoff_pool::Pool::new(),
 
             outgoing_messages: outgoing_messages_hashes,
             incoming_messages: HashSet::new(),
@@ -203,19 +272,6 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     /// Gives us our own peer ID
     fn peer_id(&self) -> PeerId {
         self.keypair.public().to_peer_id()
-    }
-
-    /// Backoff for a given peer
-    fn backoff(&mut self, peer_id: PeerId) -> &mut ExponentialBackoff {
-        self.peer_backoff
-            .entry(peer_id)
-            .or_insert_with(|| ExponentialBackoff {
-                initial_interval: BACKOFF_INITIAL_INTERVAL,
-                current_interval: BACKOFF_INITIAL_INTERVAL,
-                max_interval: BACKOFF_MAX_INTERVAL,
-                max_elapsed_time: None,
-                ..ExponentialBackoff::default()
-            })
     }
 
     fn dont_want_set(&mut self, peer_id: PeerId) -> &mut Arc<HashSet<MessageHash>> {
@@ -245,37 +301,6 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
 
     fn dont_want_read_only(&self, peer_id: PeerId) -> Option<Arc<HashSet<MessageHash>>> {
         self.dont_want.get(&peer_id).cloned()
-    }
-
-    /// Gives us a future that resolves after the backoff for that peer + the additional wait time has passed
-    fn schedule_backoff<T>(
-        &mut self,
-        peer_id: PeerId,
-        value: T,
-        wait: Duration, // we add this on top of the backoff
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>
-    where
-        T: Send + 'static,
-    {
-        let backoff = self
-            .backoff(peer_id)
-            // TODO: This will always bump the backoff even if no errors occurred
-            // maybe we should use .current_interval instead and only call .next_backoff() if an error occurred
-            .next_backoff()
-            .expect("backoff should never run out of attempts")
-            + wait;
-
-        Box::pin(async move {
-            tokio::time::sleep(backoff).await;
-            value
-        })
-    }
-
-    /// Call this whenever we get a successful response from a peer
-    ///
-    /// This will reset the internal backoff for that peer
-    fn handle_successful_interaction(&mut self, peer_id: PeerId) {
-        self.backoff(peer_id).reset();
     }
 
     /// Ensures we have a pending store operation for the message
@@ -321,26 +346,26 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
     pub fn handle_codec_event(&mut self, event: codec::Event) {
         match event {
             codec::Event::Message { peer, message } => match message {
-                codec::Message::Response {
+                Message::Response {
                     request_id,
                     response,
                 } => {
                     match response {
                         // Handle Pin responses
                         codec::Response::Pin(Ok(pin::Response::Stored)) => {
-                            if let Some((peer_id, hash)) =
+                            if let Some((peer, hash)) =
                                 self.inflight_pin_request.remove(&request_id)
                             {
-                                // TODO: Do we want to treat protocol errors as a reason to backoff?
-                                self.handle_successful_interaction(peer);
-                                self.mark_does_not_want(peer_id, hash);
+                                self.backoff.reset_backoff(peer, BackoffKind::Pin(hash));
+                                self.mark_does_not_want(peer, hash);
                             }
                         }
                         codec::Response::Pin(Err(pin_error)) => {
                             if let Some((peer_id, hash)) =
                                 self.inflight_pin_request.remove(&request_id)
                             {
-                                // TODO: Backoff?
+                                self.backoff.increase_backoff(peer, BackoffKind::Pin(hash));
+
                                 tracing::warn!(
                                     ?pin_error,
                                     ?peer_id,
@@ -352,7 +377,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                         // Handle Fetch responses
                         codec::Response::Fetch(Ok(fetch::Response { incoming, outgoing })) => {
                             if let Some(peer) = self.inflight_fetch_request.remove(&request_id) {
-                                self.handle_successful_interaction(peer);
+                                self.backoff.reset_backoff(peer, BackoffKind::Fetch);
 
                                 let incoming: HashSet<_> = incoming.into_iter().collect();
                                 let outgoing: HashSet<_> = outgoing.into_iter().collect();
@@ -376,6 +401,8 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                         }
                         codec::Response::Fetch(Err(fetch_error)) => {
                             if let Some(peer) = self.inflight_fetch_request.remove(&request_id) {
+                                self.backoff.increase_backoff(peer, BackoffKind::Fetch);
+
                                 tracing::warn!(
                                     ?fetch_error,
                                     ?peer,
@@ -389,7 +416,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                             if let Some((peer, hash)) =
                                 self.inflight_pull_request.remove(&request_id)
                             {
-                                self.handle_successful_interaction(peer);
+                                self.backoff.reset_backoff(peer, BackoffKind::Pull(hash));
 
                                 let messages: Vec<_> = messages
                                     .into_iter()
@@ -435,7 +462,8 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                             if let Some((peer, hash)) =
                                 self.inflight_pull_request.remove(&request_id)
                             {
-                                // TODO: Backoff?
+                                self.backoff.increase_backoff(peer, BackoffKind::Pull(hash));
+
                                 tracing::warn!(
                                     ?pull_error,
                                     ?peer,
@@ -460,9 +488,41 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                     peer
                 );
 
-                let _ = self.inflight_pin_request.remove(&request_id);
-                let _ = self.inflight_pull_request.remove(&request_id);
-                let _ = self.inflight_fetch_request.remove(&request_id);
+                // Increase the respective backoffs for the failed request
+                if let Some((peer, hash)) = self.inflight_pin_request.remove(&request_id) {
+                    tracing::warn!(
+                        ?peer,
+                        ?hash,
+                        ?error,
+                        ?request_id,
+                        "Outbound failure for pin request, increasing backoff"
+                    );
+
+                    self.backoff.increase_backoff(peer, BackoffKind::Pin(hash));
+                }
+
+                if let Some((peer, hash)) = self.inflight_pull_request.remove(&request_id) {
+                    tracing::warn!(
+                        ?peer,
+                        ?hash,
+                        ?error,
+                        ?request_id,
+                        "Outbound failure for pull request, increasing backoff"
+                    );
+
+                    self.backoff.increase_backoff(peer, BackoffKind::Pull(hash));
+                }
+
+                if let Some(peer) = self.inflight_fetch_request.remove(&request_id) {
+                    tracing::warn!(
+                        ?peer,
+                        ?error,
+                        ?request_id,
+                        "Outbound failure for fetch request, increasing backoff"
+                    );
+
+                    self.backoff.increase_backoff(peer, BackoffKind::Fetch);
+                }
             }
             codec::Event::InboundFailure {
                 request_id,
@@ -637,7 +697,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                     }
                 }
 
-                let future = self.schedule_backoff(server, (), wait_time);
+                let future = self.backoff.schedule_backoff(server, (), BackoffKind::Fetch, wait_time);
                 self.queued_outgoing_fetch_requests.insert(server, future);
             }
         }
@@ -675,7 +735,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
             for hash in hashes_to_send {
                 tracing::debug!("Queuing {:?} to be pinned at {}", hash, server);
 
-                let future = self.schedule_backoff(*server, (), Duration::ZERO);
+                let future = self.backoff.schedule_backoff(*server, (), BackoffKind::Pin(hash), Duration::ZERO);
                 self.queued_outgoing_pin_requests
                     .insert((*server, hash), future);
             }
@@ -715,7 +775,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                         tracing::info!(peer_id = %*server, %hash, "Queueing pull request");
 
                         // TODO: Extract this into a function
-                        let future = self.schedule_backoff(*server, (), Duration::ZERO);
+                        let future = self.backoff.schedule_backoff(*server, (), BackoffKind::Pull(hash), Duration::ZERO);
                         self.queued_outgoing_pull_requests
                             .insert((*server, hash), future);
                     }
