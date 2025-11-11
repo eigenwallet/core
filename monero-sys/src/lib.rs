@@ -340,13 +340,42 @@ impl WalletHandle {
         background_sync: bool,
         daemon: Daemon,
     ) -> anyhow::Result<Self> {
+        Self::open_or_create_from_seed_with_password(
+            path,
+            mnemonic,
+            None,
+            network,
+            restore_height,
+            background_sync,
+            daemon,
+        )
+        .await
+    }
+
+    pub async fn open_or_create_from_seed_with_password(
+        path: String,
+        mnemonic: String,
+        password: impl Into<Option<String>>,
+        network: monero::Network,
+        restore_height: u64,
+        background_sync: bool,
+        daemon: Daemon,
+    ) -> anyhow::Result<Self> {
+        let password = password.into();
+
         Self::open_with(path.clone(), daemon.clone(), move |manager| {
             if manager.wallet_exists(&path) {
-                manager.open_or_create_wallet(&path, None, network, background_sync, daemon.clone())
+                manager.open_or_create_wallet(
+                    &path,
+                    password.as_ref(),
+                    network,
+                    background_sync,
+                    daemon.clone(),
+                )
             } else {
                 manager.recover_wallet(
                     &path,
-                    None,
+                    password.as_deref(),
                     &mnemonic,
                     network,
                     restore_height,
