@@ -215,11 +215,17 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to Kraken
+            // Connect to Kraken and Bitfinex
             let kraken_price_updates =
                 swap_feed::connect_kraken(config.maker.price_ticker_ws_url_kraken.clone())?;
+            let bitfinex_price_updates =
+                swap_feed::connect_bitfinex(config.maker.price_ticker_ws_url_bitfinex.clone())?;
 
-            let kraken_rate = ExchangeRate::new(config.maker.ask_spread, kraken_price_updates);
+            let kraken_rate = ExchangeRate::new(
+                config.maker.ask_spread,
+                kraken_price_updates,
+                bitfinex_price_updates,
+            );
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
