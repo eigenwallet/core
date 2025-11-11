@@ -50,7 +50,7 @@ function TimelineSegment({
           opacity: isActive ? 1 : 0.3,
         }}
       >
-        {isActive && (
+        {isActive && durationOfSegment && (
           <Box
             sx={{
               position: "absolute",

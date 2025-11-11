@@ -216,6 +216,7 @@ impl Amount {
 #[typeshare]
 pub struct LabeledMoneroAddress {
     // If this is None, we will use an address of the internal Monero wallet
+    // TODO: This should be string | null but typeshare cannot do that yet
     #[typeshare(serialized_as = "string")]
     address: Option<monero::Address>,
     #[typeshare(serialized_as = "number")]

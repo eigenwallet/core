@@ -34,6 +34,12 @@ import {
   setHistory,
   setSyncProgress,
 } from "store/features/walletSlice";
+import { applyDefaultNodes } from "store/features/settingsSlice";
+import {
+  DEFAULT_NODES,
+  NEGATIVE_NODES_MAINNET,
+  NEGATIVE_NODES_TESTNET,
+} from "store/defaults";
 import { setSubaddresses } from "store/features/walletSlice";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
@@ -65,6 +71,15 @@ function setIntervalImmediate(callback: () => void, interval: number): void {
 }
 
 export async function setupBackgroundTasks(): Promise<void> {
+  // Apply default nodes on startup (removes broken nodes, adds new ones)
+  store.dispatch(
+    applyDefaultNodes({
+      defaultNodes: DEFAULT_NODES,
+      negativeNodesMainnet: NEGATIVE_NODES_MAINNET,
+      negativeNodesTestnet: NEGATIVE_NODES_TESTNET,
+    }),
+  );
+
   // Setup periodic fetch tasks
   setIntervalImmediate(updatePublicRegistry, PROVIDER_UPDATE_INTERVAL);
   setIntervalImmediate(updateAllNodeStatuses, STATUS_UPDATE_INTERVAL);

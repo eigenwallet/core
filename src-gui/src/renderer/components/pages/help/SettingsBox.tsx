@@ -26,11 +26,9 @@ import {
 import {
   addNode,
   addRendezvousPoint,
-  Blockchain,
   DonateToDevelopmentTip,
   FiatCurrency,
   moveUpNode,
-  Network,
   removeNode,
   removeRendezvousPoint,
   resetSettings,
@@ -48,6 +46,7 @@ import {
   RedeemPolicy,
   RefundPolicy,
 } from "store/features/settingsSlice";
+import { Blockchain, Network } from "store/types";
 import { useAppDispatch, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
 import HelpIcon from "@mui/icons-material/HelpOutline";
@@ -432,7 +431,7 @@ function MoneroNodeUrlSetting() {
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <ValidatedTextField
             value={moneroNodeUrl}
-            onValidatedChange={handleNodeUrlChange}
+            onValidatedChange={(value) => value && handleNodeUrlChange(value)}
             placeholder={PLACEHOLDER_MONERO_NODE_URL}
             disabled={useMoneroRpcPool}
             fullWidth
@@ -675,7 +674,7 @@ function NodeTable({
               <ValidatedTextField
                 label="Add a new node"
                 value={newNode}
-                onValidatedChange={setNewNode}
+                onValidatedChange={(value) => setNewNode(value ?? "")}
                 placeholder={placeholder}
                 fullWidth
                 isValid={isValid}
@@ -843,7 +842,9 @@ function RendezvousPointsSetting() {
                         <ValidatedTextField
                           label="Add new rendezvous point"
                           value={newPoint}
-                          onValidatedChange={setNewPoint}
+                          onValidatedChange={(value) =>
+                            setNewPoint(value ?? "")
+                          }
                           placeholder="/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa"
                           fullWidth
                           isValid={isValidMultiAddressWithPeerId}

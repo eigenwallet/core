@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # regenerate_sqlx_cache.sh
-# 
+#
 # Script to regenerate SQLx query cache for monero-rpc-pool
-# 
+#
 # This script:
 # 1. Creates a temporary SQLite database in the workspace root
 # 2. Runs all database migrations to set up the schema
@@ -25,7 +25,7 @@ set -e  # Exit on any error
 
 echo "🔄 Regenerating SQLx query cache..."
 
-WORKSPACE_ROOT="$(pwd)"
+WORKSPACE_ROOT="$PWD"
 
 # Use shared temporary database in workspace root
 TEMP_DB="$WORKSPACE_ROOT/tempdb.sqlite"
@@ -51,4 +51,4 @@ cargo sqlx prepare --workspace
 
 echo "✅ SQLx query cache regenerated successfully!"
 echo "📝 The .sqlx directory has been updated with the latest query metadata."
-echo "💡 Make sure to commit the .sqlx directory to version control." 
+echo "💡 Make sure to commit the .sqlx directory to version control."

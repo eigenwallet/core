@@ -51,8 +51,8 @@ export const walletSlice = createSlice({
       slice.state.lowestCurrentBlock = Math.min(
         // We ignore anything below 10 blocks as this may be something like wallet2
         // sending a wrong value when it hasn't initialized yet
-        slice.state.lowestCurrentBlock < 10 ||
-          slice.state.lowestCurrentBlock === null
+        slice.state.lowestCurrentBlock === null ||
+          slice.state.lowestCurrentBlock < 10
           ? Infinity
           : slice.state.lowestCurrentBlock,
         action.payload.current_block,
