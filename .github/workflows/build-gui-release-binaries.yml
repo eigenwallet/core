@@ -164,7 +164,7 @@ jobs:
 
           deb=$(find "$PWD" -name *.deb -print -quit)
           jq --arg deb_path "$deb" --arg PWD "$PWD" '
-            .modules[0].sources = {
+            .modules[0].sources[0] = {
               "type": "file",
               "path": $deb_path
             } |
