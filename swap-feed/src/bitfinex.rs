@@ -11,11 +11,11 @@ use url::Url;
 ///
 /// If the connection fails, it will automatically be re-established.
 ///
-/// price_ticker_ws_url must point to a websocket server that follows the bitfinex
+/// price_ticker_ws_url_bitfinex must point to a websocket server that follows the bitfinex
 /// price ticker protocol version 2
 /// See: https://docs.bitfinex.com/docs/ws-public
 /// See: https://docs.bitfinex.com/reference/ws-public-ticker
-pub fn connect(price_ticker_ws_url: Url) -> Result<PriceUpdates> {
+pub fn connect(price_ticker_ws_url_bitfinex: Url) -> Result<PriceUpdates> {
     let (price_update, price_update_receiver) = watch::channel(Err(Error::NotYetAvailable));
     let price_update = Arc::new(price_update);
 
@@ -32,9 +32,9 @@ pub fn connect(price_ticker_ws_url: Url) -> Result<PriceUpdates> {
             backoff,
             || {
                 let price_update = price_update.clone();
-                let price_ticker_ws_url = price_ticker_ws_url.clone();
+                let price_ticker_ws_url_bitfinex = price_ticker_ws_url_bitfinex.clone();
                 async move {
-                    let mut stream = connection::new(price_ticker_ws_url).await?;
+                    let mut stream = connection::new(price_ticker_ws_url_bitfinex).await?;
 
                     while let Some(update) = stream.try_next().await.map_err(to_backoff)? {
                         let send_result = price_update.send(Ok(update));
