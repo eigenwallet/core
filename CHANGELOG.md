@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.3.1] - 2025-11-11
 
+- GUI: Fix the Flatpak images to ensure they are kept up to date and the correct version is displayed. Also fixes an issue where a blank screen would sometimes be rendered. Big thanks to [nabijaczleweli](https://github.com/nabijaczleweli) for spending their time on this! Consider sending a Monero tip to the donation address pinned on their [Github profile](https://github.com/nabijaczleweli).
+
 ## [3.3.0] - 2025-11-10
 
 - GUI + SWAP: Retry sending the encrypted signature more aggressively. This might help with an issue where we would be stuck on the "Sending encrypted signature" screen for a longer time than necessary.
