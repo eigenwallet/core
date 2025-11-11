@@ -100,6 +100,7 @@ pub struct Maker {
     pub ask_spread: Decimal,
     pub price_ticker_ws_url_kraken: Url,
     pub price_ticker_ws_url_bitfinex: Url,
+    pub price_ticker_rest_url_kucoin: Url,
     #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
     /// Percentage (between 0.0 and 1.0) of the swap amount
@@ -227,6 +228,7 @@ pub fn query_user_for_initial_config_with_network(
             ask_spread,
             price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
             price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
+            price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
             external_bitcoin_redeem_address: None,
             developer_tip,
         },

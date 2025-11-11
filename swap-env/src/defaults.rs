@@ -40,6 +40,7 @@ pub const DEFAULT_SPREAD: f64 = 0.02f64;
 
 pub const KRAKEN_PRICE_TICKER_WS_URL: &str = "wss://ws.kraken.com";
 pub const BITFINEX_PRICE_TICKER_WS_URL: &str = "wss://api-pub.bitfinex.com/ws/2";
+pub const KUCOIN_PRICE_TICKER_REST_URL: &str = "https://api.kucoin.com/api/v1/bullet-public";
 
 pub fn default_rendezvous_points() -> Vec<Multiaddr> {
     vec![
@@ -112,6 +113,7 @@ pub struct Defaults {
     pub electrum_rpc_urls: Vec<Url>,
     pub price_ticker_ws_url_kraken: Url,
     pub price_ticker_ws_url_bitfinex: Url,
+    pub price_ticker_rest_url_kucoin: Url,
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
     pub developer_tip: Decimal,
@@ -128,6 +130,7 @@ impl GetDefaults for Mainnet {
             electrum_rpc_urls: default_electrum_servers_mainnet(),
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
+            price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
@@ -148,6 +151,7 @@ impl GetDefaults for Testnet {
             electrum_rpc_urls: default_electrum_servers_testnet(),
             price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
+            price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,

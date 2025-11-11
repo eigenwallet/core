@@ -191,6 +191,7 @@ fn main() {
                 ask_spread,
                 price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
                 price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
+                price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
                 external_bitcoin_redeem_address: None,
                 developer_tip,
             },
