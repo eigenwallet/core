@@ -110,25 +110,25 @@ impl crate::traits::LatestRate for FixedRate {
 /// Produces [`Rate`]s based on [`PriceUpdate`]s from kraken and a configured
 /// spread.
 #[derive(Debug, Clone)]
-pub struct KrakenRate {
+pub struct ExchangeRate {
     ask_spread: Decimal,
-    price_updates: crate::kraken::PriceUpdates,
+    kraken_price_updates: crate::kraken::PriceUpdates,
 }
 
-impl KrakenRate {
-    pub fn new(ask_spread: Decimal, price_updates: crate::kraken::PriceUpdates) -> Self {
+impl ExchangeRate {
+    pub fn new(ask_spread: Decimal, kraken_price_updates: crate::kraken::PriceUpdates) -> Self {
         Self {
             ask_spread,
-            price_updates,
+            kraken_price_updates,
         }
     }
 }
 
-impl crate::traits::LatestRate for KrakenRate {
+impl crate::traits::LatestRate for ExchangeRate {
     type Error = crate::kraken::Error;
 
     fn latest_rate(&mut self) -> Result<Rate, Self::Error> {
-        let update = self.price_updates.latest_update()?;
+        let update = self.kraken_price_updates.latest_update()?;
         let rate = Rate::new(update.ask, self.ask_spread);
 
         Ok(rate)
