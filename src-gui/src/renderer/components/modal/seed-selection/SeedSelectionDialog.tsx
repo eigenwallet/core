@@ -82,9 +82,12 @@ export default function SeedSelectionDialog() {
   };
 
   let isBlockheightValid = !blockheight; // Default to true if empty: optional field
-  const blockheightNum = parseInt(blockheight, 10) || undefined;
+  const blockheightNum =
+    (blockheight && parseInt(blockheight, 10)) || undefined;
   if (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0) {
     isBlockheightValid = true;
+  } else {
+    isBlockheightValid = !blockheight;
   }
 
   const Legacy = async () => {
