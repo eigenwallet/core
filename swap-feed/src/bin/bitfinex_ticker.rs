@@ -7,8 +7,8 @@ async fn main() -> Result<()> {
         tracing_subscriber::fmt().with_env_filter("debug").finish(),
     )?;
 
-    let price_ticker_ws_url = Url::parse("wss://api-pub.bitfinex.com/ws/2")?;
-    let mut ticker = swap_feed::bitfinex::connect(price_ticker_ws_url)
+    let price_ticker_ws_url_bitfinex = Url::parse("wss://api-pub.bitfinex.com/ws/2")?;
+    let mut ticker = swap_feed::bitfinex::connect(price_ticker_ws_url_bitfinex)
         .context("Failed to connect to bitfinex")?;
 
     loop {

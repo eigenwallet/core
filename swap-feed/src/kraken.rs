@@ -11,10 +11,10 @@ use url::Url;
 ///
 /// If the connection fails, it will automatically be re-established.
 ///
-/// price_ticker_ws_url must point to a websocket server that follows the kraken
+/// price_ticker_ws_url_kraken must point to a websocket server that follows the kraken
 /// price ticker protocol
 /// See: https://docs.kraken.com/websockets/
-pub fn connect(price_ticker_ws_url: Url) -> Result<PriceUpdates> {
+pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
     let (price_update, price_update_receiver) = watch::channel(Err(Error::NotYetAvailable));
     let price_update = Arc::new(price_update);
 
@@ -31,9 +31,9 @@ pub fn connect(price_ticker_ws_url: Url) -> Result<PriceUpdates> {
             backoff,
             || {
                 let price_update = price_update.clone();
-                let price_ticker_ws_url = price_ticker_ws_url.clone();
+                let price_ticker_ws_url_kraken = price_ticker_ws_url_kraken.clone();
                 async move {
-                    let mut stream = connection::new(price_ticker_ws_url).await?;
+                    let mut stream = connection::new(price_ticker_ws_url_kraken).await?;
 
                     while let Some(update) = stream.try_next().await.map_err(to_backoff)? {
                         let send_result = price_update.send(Ok(update));

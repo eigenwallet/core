@@ -186,7 +186,7 @@ fn main() {
                 min_buy_btc,
                 max_buy_btc,
                 ask_spread,
-                price_ticker_ws_url: defaults.price_ticker_ws_url,
+                price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
                 external_bitcoin_redeem_address: None,
                 developer_tip,
             },
