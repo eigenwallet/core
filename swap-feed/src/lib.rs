@@ -17,3 +17,10 @@ pub fn connect_kraken(url: url::Url) -> anyhow::Result<kraken::PriceUpdates> {
 pub fn connect_bitfinex(url: url::Url) -> anyhow::Result<bitfinex::PriceUpdates> {
     bitfinex::connect(url)
 }
+
+pub fn connect_kucoin(
+    url: url::Url,
+    client: reqwest::Client,
+) -> anyhow::Result<kucoin::PriceUpdates> {
+    kucoin::connect(url, client)
+}
