@@ -125,6 +125,7 @@ min_buy_btc = 0.001
 max_buy_btc = 0.1
 ask_spread = 0.02
 price_ticker_ws_url_kraken = "wss://ws.kraken.com/"
+price_ticker_ws_url_bitfinex = "wss://api-pub.bitfinex.com/ws/2"
 external_bitcoin_address = "bc1..."
 developer_tip = 0.02
 
@@ -137,8 +138,9 @@ Below an explanation of what each option does:
 | --- | --- |
 | `min_buy_btc` | The minimum amount of Bitcoin the asb will buy from takers, in BTC. |
 | `max_buy_btc` | The maximum amount of Bitcoin the asb will buy from takers, in BTC. |
-| `ask_spread` | The markup the asb will charge compared to the market price, as a factor. The market price is fetched via the `price_ticker_ws_url_kraken`. A value of `0.02` means the asb will charge 2% more than the market price. |
+| `ask_spread` | The markup the asb will charge compared to the market price, as a factor. The market price is fetched via the `price_ticker_ws_url_kraken` and `price_ticker_ws_url_bitfinex`. A value of `0.02` means the asb will charge 2% more than the market price. |
 | `price_ticker_ws_url_kraken` | The URL of a websocket that provides the market price. The default is the Kraken API, but you can build your own websocket server which mimics the Kraken API. |
+| `price_ticker_ws_url_bitfinex` | The URL of a websocket that provides the market price. The default is the Bitfinex API, but you can build your own websocket server which mimics the Bitfinex API. |
 | `external_bitcoin_address` | Bitcoin address used by the asb when redeeming or punishing swaps. If omitted, a new internal address is generated for each swap. |
 | `developer_tip` | Optional donation as a fraction between 0 and 1 (e.g. `0.02` = 2%). Disabled by default. Sent in Monero by adding an extra output to the Monero lock transaction, so no extra transaction and no impact on unlocked UTXOs; privacy preserved. |
 
@@ -266,6 +268,7 @@ min_buy_btc = 0.001
 max_buy_btc = 0.1
 ask_spread = 0.02
 price_ticker_ws_url_kraken = "wss://ws.kraken.com/"
+price_ticker_ws_url_bitfinex = "wss://api-pub.bitfinex.com/ws/2"
 external_bitcoin_address = "bc1..."
 
 [bitcoin]
