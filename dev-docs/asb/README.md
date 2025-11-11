@@ -112,6 +112,7 @@ min_buy_btc = 0.0001
 max_buy_btc = 0.0001
 ask_spread = 0.02
 price_ticker_ws_url_kraken = "wss://ws.kraken.com"
+price_ticker_ws_url_bitfinex = "wss://api-pub.bitfinex.com/ws/2"
 external_bitcoin_address = "bc1..."
 developer_tip = 0.02
 ```
@@ -126,8 +127,8 @@ If the option is not set, a new address from the internal wallet is used for eve
 In order to be able to trade, the ASB must define a price to be able to agree on the amounts to be swapped with a CLI.
 The `XMR<>BTC` price is currently determined by the price from the central exchange Kraken.
 Upon startup the ASB connects to the Kraken price websocket and listens on the stream for price updates.
-You can plug in a different price ticker websocket using the `price_ticker_ws_url_kraken` configuration option.
-You will have to make sure that the format returned is the same as the format used by Kraken.
+You can plug in a different price ticker websocket using the `price_ticker_ws_url_kraken` and `price_ticker_ws_url_bitfinex` configuration options.
+You will have to make sure that the format returned is the same as the format used by Kraken and Bitfinex.
 
 Currently, we use a spot-price model, i.e. the ASB dictates the price to the CLI.
 A CLI can connect to the ASB at any time and request a quote for buying XMR.
