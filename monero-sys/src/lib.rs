@@ -208,6 +208,10 @@ pub struct TransactionInfo {
     pub direction: TransactionDirection,
     #[typeshare(serialized_as = "number")]
     pub timestamp: u64,
+    /// For incoming transactions, the address that received the funds (if determinable)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<String>")]
+    pub received_address: Option<String>,
 }
 
 #[typeshare]
@@ -224,6 +228,9 @@ pub struct SubaddressSummary {
     pub received: u64,
     #[typeshare(serialized_as = "number")]
     pub tx_count: u32,
+    /// Currently spendable (confirmed/unlocked) balance for this subaddress in atomic units
+    #[typeshare(serialized_as = "number")]
+    pub unlocked_balance: u64,
 }
 
 #[typeshare]
@@ -622,6 +629,13 @@ impl WalletHandle {
     /// Get the total balance of the wallet.
     pub async fn total_balance(&self) -> monero::Amount {
         self.call(move |wallet| wallet.total_balance()).await
+    }
+
+    /// Get the current non-strict balance per subaddress for the main account (index 0).
+    /// Returns a map of subaddress index -> balance (in atomic units).
+    pub async fn balance_per_subaddress(&self) -> std::collections::HashMap<u32, u64> {
+        self.call(move |wallet| wallet.balance_per_subaddress_sync())
+            .await
     }
 
     /// Check if the wallet is synchronized.
@@ -1666,6 +1680,7 @@ impl FfiWallet {
         let size = self.num_subaddresses(account_index) as u32;
         let mut received: Vec<u64> = vec![0; size as usize];
         let mut tx_count: Vec<u32> = vec![0; size as usize];
+        let mut unlocked_balances: Vec<u64> = vec![0; size as usize];
 
         for i in 0..count {
             if let Some(tx_info) = history_handle.transaction(i) {
@@ -1676,13 +1691,13 @@ impl FfiWallet {
                     continue;
                 }
 
-                let tx_account = ffi::transactionInfoSubaddrAccount(&tx_info);
+                let tx_account = ffi::transactionInfoSubaddrAccount(tx_info.deref());
                 if tx_account != account_index {
                     continue;
                 }
 
                 let amount = tx_info.amount();
-                let indices_vec = ffi::transactionInfoSubaddrIndices(&tx_info);
+                let indices_vec = ffi::transactionInfoSubaddrIndices(tx_info.deref());
                 let indices_ref = indices_vec
                     .as_ref()
                     .expect("vector should not be null after FFI call");
@@ -1693,6 +1708,24 @@ impl FfiWallet {
                             received[idx_u32 as usize].saturating_add(amount);
                         tx_count[idx_u32 as usize] = tx_count[idx_u32 as usize].saturating_add(1);
                     }
+                }
+            }
+        }
+
+        let unlocked_indices =
+            ffi::walletUnlockedBalancePerSubaddrIndices(self.inner.pinned(), account_index, false);
+        let unlocked_amounts =
+            ffi::walletUnlockedBalancePerSubaddrAmounts(self.inner.pinned(), account_index, false);
+
+        if let (Some(indices_ref), Some(amounts_ref)) =
+            (unlocked_indices.as_ref(), unlocked_amounts.as_ref())
+        {
+            let len = std::cmp::min(indices_ref.len(), amounts_ref.len());
+            for i in 0..len {
+                let idx = unsafe { *indices_ref.get_unchecked(i) } as usize;
+                let amt = unsafe { *amounts_ref.get_unchecked(i) };
+                if idx < unlocked_balances.len() {
+                    unlocked_balances[idx] = amt;
                 }
             }
         }
@@ -1709,11 +1742,35 @@ impl FfiWallet {
                     label,
                     received: received[idx as usize],
                     tx_count: tx_count[idx as usize],
+                    unlocked_balance: unlocked_balances[idx as usize],
                 }
             })
             .collect();
 
         Ok(list)
+    }
+
+    /// Compute non-strict balances per subaddress for the main account (index 0).
+    /// Uses wallet2::balance_per_subaddress via WalletImpl bridge.
+    fn balance_per_subaddress_sync(&mut self) -> std::collections::HashMap<u32, u64> {
+        let account_index = Self::MAIN_ACCOUNT_INDEX;
+        // strict = false
+        let indices =
+            ffi::walletBalancePerSubaddrIndices(self.inner.pinned(), account_index, false);
+        let amounts =
+            ffi::walletBalancePerSubaddrAmounts(self.inner.pinned(), account_index, false);
+
+        let indices_ref = indices.as_ref().expect("indices vector not null");
+        let amounts_ref = amounts.as_ref().expect("amounts vector not null");
+
+        let mut map = std::collections::HashMap::with_capacity(indices_ref.len());
+        let len = std::cmp::min(indices_ref.len(), amounts_ref.len());
+        for i in 0..len {
+            let idx = unsafe { *indices_ref.get_unchecked(i) };
+            let amt = unsafe { *amounts_ref.get_unchecked(i) };
+            map.insert(idx, amt);
+        }
+        map
     }
 
     /// Does not actuallyt sync the wallet, use any of the refresh methods to do that.
@@ -2506,7 +2563,22 @@ impl FfiWallet {
         let mut transactions = Vec::new();
         for i in 0..count {
             if let Some(tx_info_handle) = history_handle.transaction(i) {
-                if let Some(serialized_tx) = tx_info_handle.serialize() {
+                if let Some(mut serialized_tx) = tx_info_handle.serialize() {
+                    // If incoming, attempt to resolve received address from subaddress indices
+                    if serialized_tx.direction == TransactionDirection::In {
+                        let account_index =
+                            ffi::transactionInfoSubaddrAccount(tx_info_handle.deref());
+                        let indices_vec =
+                            ffi::transactionInfoSubaddrIndices(tx_info_handle.deref());
+                        let indices_ref = indices_vec
+                            .as_ref()
+                            .expect("vector should not be null after FFI call");
+                        if !indices_ref.is_empty() {
+                            let idx_u32 = unsafe { *indices_ref.get_unchecked(0) };
+                            let addr = self.address_at(account_index, idx_u32);
+                            serialized_tx.received_address = Some(addr.to_string());
+                        }
+                    }
                     transactions.push(serialized_tx);
                 }
             }
@@ -2931,6 +3003,7 @@ impl TransactionInfoHandle {
             tx_hash,
             direction,
             timestamp,
+            received_address: None,
         })
     }
 }

@@ -343,12 +343,36 @@ pub mod ffi {
         /// Get the timestamp of the transaction.
         fn transactionInfoTimestamp(tx_info: &TransactionInfo) -> u64;
 
-        /// Get the subaddress account of a transaction.
+        /// Get the subaddress account of a transaction (free function form).
         fn transactionInfoSubaddrAccount(tx_info: &TransactionInfo) -> u32;
 
-        /// Get the subaddress indices of a transaction as a vector.
+        /// Get the subaddress indices of a transaction as a vector (free function form).
         fn transactionInfoSubaddrIndices(tx_info: &TransactionInfo) -> UniquePtr<CxxVector<u32>>;
 
+        /// Get non-strict or strict balance per subaddress for a given account (indices).
+        fn walletBalancePerSubaddrIndices(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u32>>;
+        /// Get non-strict or strict balance per subaddress for a given account (amounts).
+        fn walletBalancePerSubaddrAmounts(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u64>>;
+        /// Get non-strict or strict unlocked balance per subaddress for a given account (indices).
+        fn walletUnlockedBalancePerSubaddrIndices(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u32>>;
+        /// Get non-strict or strict unlocked balance per subaddress for a given account (amounts).
+        fn walletUnlockedBalancePerSubaddrAmounts(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u64>>;
         /// Sign a message with the wallet's private key.
         fn signMessage(
             wallet: Pin<&mut Wallet>,

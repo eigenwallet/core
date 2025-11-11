@@ -1,0 +1,30 @@
+diff --git a/src/wallet/api/wallet.h b/src/wallet/api/wallet.h
+index 0e1b63f..0000000 100644
+--- a/src/wallet/api/wallet.h
++++ b/src/wallet/api/wallet.h
+@@ -167,6 +167,9 @@ class WalletImpl : public Wallet
+     virtual bool reconnectDevice() override;
+     virtual uint64_t getBytesReceived() override;
+     virtual uint64_t getBytesSent() override;
++
++    // Expose per-subaddress balance from wallet2
++    std::map<uint32_t, uint64_t> balancePerSubaddress(uint32_t accountIndex, bool strict) const;
+ 
+     std::string getMultisigSeed(const std::string &seed_offset) const override;
+     std::pair<std::uint32_t, std::uint32_t> getSubaddressIndex(const std::string &address) const override;
+diff --git a/src/wallet/api/wallet.cpp b/src/wallet/api/wallet.cpp
+index 50a2b5a..0000000 100644
+--- a/src/wallet/api/wallet.cpp
++++ b/src/wallet/api/wallet.cpp
+@@ -1005,6 +1005,11 @@ bool WalletImpl::open(const std::string &path, const std::string &password)
+     return statusOk();
+ }
+ 
++std::map<uint32_t, uint64_t> WalletImpl::balancePerSubaddress(uint32_t accountIndex, bool strict) const
++{
++    return m_wallet->balance_per_subaddress(accountIndex, strict);
++}
++
+ bool WalletImpl::recover(const std::string &path, const std::string &seed)
+ {
+     std::string seed_offset = "";

@@ -152,7 +152,11 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                           </Button>
                         </>
                       )}
-                      <PiconeroAmount amount={s.received} />
+                      <Typography variant="body2" color="text.secondary">
+                        Unlocked Balance:{" "}
+                        <PiconeroAmount amount={s.unlocked_balance} />
+                      </Typography>
+
                       <Typography variant="body2" color="text.secondary">
                         Tx count: {s.tx_count}
                       </Typography>
