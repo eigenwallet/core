@@ -11270,6 +11270,7 @@ dependencies = [
  "bitcoin 0.32.7",
  "futures",
  "monero",
+ "reqwest 0.12.24",
  "rust_decimal",
  "serde",
  "serde_json",

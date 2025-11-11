@@ -1,5 +1,6 @@
 pub mod bitfinex;
 pub mod kraken;
+pub mod kucoin;
 pub mod rate;
 pub mod traits;
 
