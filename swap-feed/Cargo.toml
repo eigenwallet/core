@@ -8,10 +8,6 @@ description = "Price feed functionality for XMR/BTC atomic swaps"
 [lib]
 name = "swap_feed"
 
-[[bin]]
-name = "kraken_ticker"
-path = "src/bin/kraken_ticker.rs"
-
 [dependencies]
 anyhow = { workspace = true }
 backoff = { workspace = true }
