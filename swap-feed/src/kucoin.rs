@@ -132,6 +132,9 @@ fn to_backoff(e: connection::Error) -> backoff::Error<anyhow::Error> {
 mod connection {
     use super::*;
     use futures::stream::BoxStream;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::Mutex;
     use tokio_tungstenite::tungstenite;
 
     pub async fn new(
@@ -142,39 +145,61 @@ mod connection {
             .post(rest_url)
             .send()
             .await
-            .context("Failed to call the KuCoin REST API")?
+            .context(
+                "Failed to call the KuCoin REST API to acquire auth token and websocket servers",
+            )?
             .json()
             .await
             .context("KuCoin REST API returned invalid data")?;
 
-        let mut ws_url = auth
+        let (mut ws_url, ping_interval_ms) = auth
             .data
             .instance_servers
             .iter()
-            .find_map(|is| Url::parse(&is.endpoint).ok())
+            .find_map(|is| {
+                Url::parse(&is.endpoint)
+                    .ok()
+                    .map(|u| (u, is.ping_interval_ms))
+            })
             .ok_or(Error::NoWebsocketServers)?;
+        // https://www.kucoin.com/docs-new/websocket-api/base-info/introduction#3-create-connection
         ws_url.set_query(Some(&format!("token={}", auth.data.token)[..]));
-        tracing::debug!(%ws_url);
+        // The real time-out is about double pingInterval, we get the pre-halved value from the API
+        let ping_interval = Duration::from_millis(ping_interval_ms);
+        tracing::debug!(%ws_url, ?ping_interval, "KuCoin REST API returned valid websocket URL");
 
-        let (mut rate_stream, _) = tokio_tungstenite::connect_async(ws_url)
+        let (rate_stream, _) = tokio_tungstenite::connect_async(ws_url)
             .await
             .context("Failed to connect to KuCoin websocket API")?;
 
-        rate_stream
-            .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
-            .await?;
+        let (to_kucoin, rate_stream) = rate_stream.split();
+        let to_kucoin = Arc::new(Mutex::new(to_kucoin));
 
-        let stream = rate_stream.err_into().try_filter_map(parse_message).boxed();
+        let stream = rate_stream
+            .err_into()
+            .try_filter_map(move |msg| parse_message(msg, to_kucoin.clone(), ping_interval))
+            .boxed();
 
         Ok(stream)
     }
+
+    type ToKucoin = futures::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::Message,
+    >;
 
     /// Parse a websocket message into a [`wire::PriceUpdate`].
     ///
     /// Messages which are not actually ticker updates are ignored and result in
     /// `None` being returned. In the context of a [`TryStream`], these will
     /// simply be filtered out.
-    async fn parse_message(msg: tungstenite::Message) -> Result<Option<wire::PriceUpdate>, Error> {
+    async fn parse_message(
+        msg: tungstenite::Message,
+        to_kucoin: Arc<Mutex<ToKucoin>>,
+        ping_interval: Duration,
+    ) -> Result<Option<wire::PriceUpdate>, Error> {
         let msg = match msg {
             tungstenite::Message::Text(msg) => msg,
             tungstenite::Message::Close(close_frame) => {
@@ -204,10 +229,37 @@ mod connection {
             Ok(wire::Event::Welcome) => {
                 tracing::debug!("Connected to KuCoin websocket API");
 
+                to_kucoin
+                    .lock()
+                    .await
+                    .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
+                    .await?;
+                tokio::spawn(async move {
+                    let mut ping_timer = tokio::time::interval_at(
+                        tokio::time::Instant::now() + ping_interval,
+                        ping_interval,
+                    );
+                    loop {
+                        ping_timer.tick().await;
+                        tracing::debug!("Renewing KuCoin ticker server lease");
+                        to_kucoin
+                            .lock()
+                            .await
+                            .send(PING_PAYLOAD.into())
+                            .await
+                            .expect("Renewing KuCoin lease");
+                    }
+                });
+
                 return Ok(None);
             }
             Ok(wire::Event::ACK) => {
                 tracing::debug!("Subscribed to updates for ticker");
+
+                return Ok(None);
+            }
+            Ok(wire::Event::Pong) => {
+                tracing::debug!("Renewed KuCoin ticker server lease");
 
                 return Ok(None);
             }
@@ -235,6 +287,7 @@ mod connection {
 
     const SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD: &str =
         r#"{"type": "subscribe", "topic": "/market/ticker:XMR-BTC", "response": true}"#;
+    const PING_PAYLOAD: &str = r#"{"type": "ping"}"#;
 }
 
 /// KuCoin websocket API wire module.
@@ -251,6 +304,8 @@ mod connection {
 /// {"topic":"/market/ticker:XMR-BTC","type":"message","subject":"trade.ticker","data":{"bestAsk":"0.003622","bestAskSize":"0.01","bestBid":"0.003621","bestBidSize":"0.714","price":"0.003616","sequence":"1434695936","size":"0.714","time":1762893726426}}
 /// {"topic":"/market/ticker:XMR-BTC","type":"message","subject":"trade.ticker","data":{"bestAsk":"0.003622","bestAskSize":"0.01","bestBid":"0.003621","bestBidSize":"0.714","price":"0.003616","sequence":"1434695943","size":"0.714","time":1762893726426}}
 /// ```
+///
+/// We must send `{"type":"ping"}` every `pingInterval` to get `{"type":"pong","timestamp":1762983181128413}`.
 mod wire {
     use super::*;
 
@@ -268,6 +323,8 @@ mod wire {
     #[derive(Debug, Deserialize, PartialEq)]
     pub struct BulletPublicResponseDataInstanceServers {
         pub endpoint: String,
+        #[serde(rename = "pingInterval")]
+        pub ping_interval_ms: u64,
     }
 
     #[derive(Debug, Deserialize, PartialEq)]
@@ -277,6 +334,8 @@ mod wire {
         Welcome,
         #[serde(rename = "ack")]
         ACK,
+        #[serde(rename = "pong")]
+        Pong,
         #[serde(rename = "message")]
         Message { data: MessageEventData },
     }
@@ -316,56 +375,51 @@ mod wire {
         use super::*;
 
         #[test]
-        fn can_deserialize_system_info_event() {
-            let event = r#"{"event":"info","version":2,"serverId":"2307ff06-41db-4d2b-b3ce-220348811755","platform":{"status":1}}"#;
+        fn can_deserialize_welcome_event() {
+            let event = r#"{"id":"15xO8l89LYO","type":"welcome"}"#;
 
-            let event = serde_json::from_str::<ObjectEvent>(event).unwrap();
+            let event = serde_json::from_str::<Event>(event).unwrap();
 
-            assert_eq!(event, ObjectEvent::Info)
+            assert_eq!(event, Event::Welcome)
         }
 
         #[test]
         fn can_deserialize_subscribed_event() {
-            let event = r#"{"event":"subscribed","channel":"ticker","chanId":225000,"symbol":"tXMRBTC","pair":"XMRBTC"}"#;
+            let event = r#"{"type":"ack"}"#;
 
-            let event = serde_json::from_str::<ObjectEvent>(event).unwrap();
+            let event = serde_json::from_str::<Event>(event).unwrap();
 
-            assert_eq!(event, ObjectEvent::Subscribed)
+            assert_eq!(event, Event::ACK)
         }
 
         #[test]
-        fn can_deserialize_heartbeat_event() {
-            let event = r#"[225000,"hb"]"#;
+        fn can_deserialize_pong_event() {
+            let event = r#"{"type":"pong","timestamp":1762983181128413}"#;
 
-            let event = serde_json::from_str::<HeartbeatEvent>(event).unwrap();
+            let event = serde_json::from_str::<Event>(event).unwrap();
 
-            assert_eq!(event, HeartbeatEvent(225000, "hb".to_string()))
+            assert_eq!(event, Event::Pong)
         }
 
         #[test]
-        fn can_deserialize_trading_event() {
-            let message = r#"[225000,[0.003744,358.96223856,0.0037548,338.14332753,-0.0000834,-0.02175955,0.0037494,1284.13109312,0.0038328,0.0035223]]"#;
+        fn can_deserialize_message_event() {
+            let event = r#"{"topic":"/market/ticker:XMR-BTC","type":"message","subject":"trade.ticker","data":{"bestAsk":"0.003751","bestAskSize":"2.512","bestBid":"0.003748","bestBidSize":"0.208","price":"0.00375","sequence":"1437643854","size":"0.607","time":1762983159347}}"#;
 
-            let event = serde_json::from_str::<TradingEvent>(message).unwrap();
+            let event = serde_json::from_str::<Event>(event).unwrap();
 
+            let Event::Message {
+                data:
+                    MessageEventData {
+                        best_ask: PriceUpdate { ask, received: _ },
+                    },
+            } = event
+            else {
+                panic!("bad variant")
+            };
             assert_eq!(
-                event,
-                TradingEvent(
-                    225000,
-                    [
-                        0.003744,
-                        358.96223856,
-                        0.0037548,
-                        338.14332753,
-                        -0.0000834,
-                        -0.02175955,
-                        0.0037494,
-                        1284.13109312,
-                        0.0038328,
-                        0.0035223
-                    ]
-                )
-            )
+                ask,
+                bitcoin::Amount::from_str_in("0.003751", bitcoin::Denomination::Bitcoin).unwrap()
+            );
         }
     }
 }

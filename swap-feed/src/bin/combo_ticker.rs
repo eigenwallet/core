@@ -16,8 +16,17 @@ async fn main() -> Result<()> {
     let bitfinex_ticker = swap_feed::connect_bitfinex(price_ticker_ws_url_bitfinex)
         .context("Failed to connect to bitfinex")?;
 
-    let mut combo =
-        swap_feed::ExchangeRate::new(rust_decimal::Decimal::ZERO, kraken_ticker, bitfinex_ticker);
+    let price_ticker_rest_url_kucoin = Url::parse("https://api.kucoin.com/api/v1/bullet-public")?;
+    let kucoin_ticker =
+        swap_feed::kucoin::connect(price_ticker_rest_url_kucoin, reqwest::Client::new())
+            .context("Failed to connect to kucoin")?;
+
+    let mut combo = swap_feed::ExchangeRate::new(
+        rust_decimal::Decimal::ZERO,
+        kraken_ticker,
+        bitfinex_ticker,
+        kucoin_ticker,
+    );
 
     let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
     let mut prev_rate = Ok(swap_feed::Rate::ZERO);
