@@ -5,7 +5,7 @@ pub mod traits;
 
 // Re-exports for convenience
 pub use kraken::{connect, Error as KrakenError, PriceUpdates};
-pub use rate::{FixedRate, KrakenRate, Rate};
+pub use rate::{ExchangeRate, FixedRate, Rate};
 pub use traits::LatestRate;
 
 // Core functions

@@ -13,7 +13,7 @@ pub use recovery::redeem::{redeem, Finality};
 pub use recovery::refund::refund;
 pub use recovery::safely_abort::safely_abort;
 pub use recovery::{cancel, refund};
-pub use swap_feed::{FixedRate, KrakenRate, LatestRate, Rate};
+pub use swap_feed::{ExchangeRate, FixedRate, LatestRate, Rate};
 pub use swap_p2p::out_event::alice::OutEvent;
 
 #[cfg(test)]
