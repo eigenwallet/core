@@ -34,7 +34,7 @@ interface PromiseInvokeButtonProps<T> {
 
 export default function PromiseInvokeButton<T>({
   disabled = false,
-  onSuccess = null,
+  onSuccess,
   onInvoke,
   children,
   startIcon,
@@ -44,7 +44,7 @@ export default function PromiseInvokeButton<T>({
   isIconButton = false,
   isChipButton = false,
   displayErrorSnackbar = false,
-  onPendingChange = null,
+  onPendingChange,
   contextRequirement = true,
   tooltipTitle = null,
   ...rest

@@ -800,7 +800,7 @@ impl Wallet {
                             .status_of_script(&tx, false)
                             .await
                             .unwrap_or_else(|error| {
-                                tracing::warn!(%txid, "Failed to get status of script: {:#}", error);
+                                tracing::warn!(%txid, error = ?error, "Failed to get status of script");
                                 ScriptStatus::Retrying
                             });
 

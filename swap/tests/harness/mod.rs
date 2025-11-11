@@ -44,8 +44,15 @@ use tokio::time::{interval, timeout};
 use url::Url;
 use uuid::Uuid;
 
-pub async fn setup_test<T, F, C>(_config: C, developer_tip_ratio: Option<Decimal>, testfn: T)
-where
+/// developer_tip_ratio is a tuple of (ratio, use_subaddress)
+///
+/// If use_subaddress is true, we will use a subaddress for the developer tip. We do this
+/// because using a subaddress changes things about the tx keys involved
+pub async fn setup_test<T, F, C>(
+    _config: C,
+    developer_tip_ratio: Option<(Decimal, bool)>,
+    testfn: T,
+) where
     T: Fn(TestContext) -> F,
     F: Future<Output = Result<()>>,
     C: GetConfig,
@@ -57,7 +64,7 @@ where
     let cli = Cli::default();
 
     tracing_subscriber::fmt()
-        .with_env_filter("info,swap=debug,monero_harness=debug,monero_rpc=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
+        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,monero_rpc=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
         .with_test_writer()
         .init();
 
@@ -77,6 +84,7 @@ where
         .unwrap()
         .path()
         .join("developer_tip-monero-wallets");
+
     let (_, developer_tip_monero_wallet) = init_test_wallets(
         "developer_tip",
         containers.bitcoind_url.clone(),
@@ -89,16 +97,29 @@ where
         env_config,
     )
     .await;
-    let developer_tip_monero_wallet_address = developer_tip_monero_wallet
+
+    let developer_tip_monero_wallet_main_address = developer_tip_monero_wallet
         .main_wallet()
         .await
         .main_address()
         .await
         .into();
 
+    let developer_tip_monero_wallet_subaddress = developer_tip_monero_wallet
+        .main_wallet()
+        .await
+        // explicitly use a suabddress here to test the addtional tx key logic
+        .address(0, 2)
+        .await
+        .into();
+
     let developer_tip = TipConfig {
-        ratio: developer_tip_ratio.unwrap_or(Decimal::ZERO),
-        address: developer_tip_monero_wallet_address,
+        ratio: developer_tip_ratio.unwrap_or((Decimal::ZERO, false)).0,
+        address: match developer_tip_ratio {
+            Some((_, true)) => developer_tip_monero_wallet_subaddress,
+            Some((_, false)) => developer_tip_monero_wallet_main_address,
+            None => developer_tip_monero_wallet_main_address,
+        },
     };
 
     let alice_starting_balances =
@@ -525,7 +546,9 @@ impl BobParams {
         }
         let db = Arc::new(SqliteDatabase::open(&self.db_path, AccessMode::ReadWrite).await?);
 
-        let (event_loop, handle) = self.new_eventloop(swap_id, db.clone()).await?;
+        let (event_loop, mut handle) = self.new_eventloop(db.clone()).await?;
+
+        let swap_handle = handle.swap_handle(self.alice_peer_id, swap_id).await?;
 
         let swap = bob::Swap::from_db(
             db.clone(),
@@ -533,7 +556,7 @@ impl BobParams {
             self.bitcoin_wallet.clone(),
             self.monero_wallet.clone(),
             self.env_config,
-            handle,
+            swap_handle,
             self.monero_wallet
                 .main_wallet()
                 .await
@@ -560,9 +583,11 @@ impl BobParams {
         }
         let db = Arc::new(SqliteDatabase::open(&self.db_path, AccessMode::ReadWrite).await?);
 
-        let (event_loop, handle) = self.new_eventloop(swap_id, db.clone()).await?;
+        let (event_loop, mut handle) = self.new_eventloop(db.clone()).await?;
 
         db.insert_peer_id(swap_id, self.alice_peer_id).await?;
+
+        let swap_handle = handle.swap_handle(self.alice_peer_id, swap_id).await?;
 
         let swap = bob::Swap::new(
             db,
@@ -570,7 +595,7 @@ impl BobParams {
             self.bitcoin_wallet.clone(),
             self.monero_wallet.clone(),
             self.env_config,
-            handle,
+            swap_handle,
             self.monero_wallet
                 .main_wallet()
                 .await
@@ -587,13 +612,11 @@ impl BobParams {
 
     pub async fn new_eventloop(
         &self,
-        swap_id: Uuid,
         db: Arc<dyn Database + Send + Sync>,
     ) -> Result<(cli::EventLoop, cli::EventLoopHandle)> {
         let identity = self.seed.derive_libp2p_identity();
 
         let behaviour = cli::Behaviour::new(
-            self.alice_peer_id,
             self.env_config,
             self.bitcoin_wallet.clone(),
             (identity.clone(), XmrBtcNamespace::Testnet),
@@ -601,7 +624,7 @@ impl BobParams {
         let mut swarm = swarm::cli(identity.clone(), None, behaviour).await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());
 
-        cli::EventLoop::new(swap_id, swarm, self.alice_peer_id, db.clone())
+        cli::EventLoop::new(swarm, db.clone())
     }
 }
 

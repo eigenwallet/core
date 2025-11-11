@@ -1,0 +1,12 @@
+[Flatpak Ref]
+Url=%Url%
+Icon=%Url%/icon.png
+SuggestRemoteName=eigenwallet
+Homepage=%Homepage%
+GPGKey=%GPGKey%
+
+Title=eigenwallet GUI
+Name=org.eigenwallet.app
+Branch=stable
+RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+IsRuntime=false
