@@ -36,9 +36,8 @@ export default function SeedSelectionDialog() {
     SeedChoice["type"] | undefined
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
-  const [blockheight, setBlockheight] = useState<string>("");
+  const [blockheight, setBlockheight] = useState<string | undefined>();
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
-  const [isBlockheightValid, setIsBlockheightValid] = useState<boolean>(true);
   const [walletPath, setWalletPath] = useState<string>("");
 
   const approval = pendingApprovals[0];
@@ -82,17 +81,11 @@ export default function SeedSelectionDialog() {
     }
   };
 
-  const handleBlockheightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setBlockheight(val);
-
-    const num = parseInt(val, 10) || undefined;
-    if (num && !Number.isNaN(num) && num >= 0) {
-      setIsBlockheightValid(true);
-    } else {
-      setIsBlockheightValid(false);
-    }
-  };
+  let isBlockheightValid = !blockheight; // Default to true if empty: optional field
+  const blockheightNum = parseInt(blockheight, 10) || undefined;
+  if (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0) {
+    isBlockheightValid = true;
+  }
 
   const Legacy = async () => {
     if (!approval)
@@ -294,11 +287,13 @@ export default function SeedSelectionDialog() {
               }
             />
             <TextField
+              type="number"
+              inputProps={{ min: 0 }}
               label="Restore blockheight (optional)"
               value={blockheight}
-              onChange={handleBlockheightChange}
+              onChange={(e) => setBlockheight(e.target.value)}
               placeholder="Restore blockheight (optional)"
-              error={blockheight && !isBlockheightValid}
+              error={!isBlockheightValid}
               helperText={
                 blockheight && !isBlockheightValid
                   ? "Please enter a valid blockheight"
