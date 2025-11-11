@@ -13,7 +13,7 @@ pub struct Rate {
     ask_spread: Decimal,
 }
 
-const ZERO_SPREAD: Decimal = Decimal::from_parts(0, 0, 0, false, 0);
+const ZERO_SPREAD: Decimal = Decimal::ZERO;
 
 impl Rate {
     pub const ZERO: Rate = Rate {
@@ -107,29 +107,59 @@ impl crate::traits::LatestRate for FixedRate {
     }
 }
 
-/// Produces [`Rate`]s based on [`PriceUpdate`]s from kraken and a configured
-/// spread.
+/// Produces [`Rate`]s based on [`PriceUpdate`]s from kraken and bitfinex,
+/// and a configured spread.
 #[derive(Debug, Clone)]
 pub struct ExchangeRate {
     ask_spread: Decimal,
     kraken_price_updates: crate::kraken::PriceUpdates,
+    bitfinex_price_updates: crate::bitfinex::PriceUpdates,
 }
 
 impl ExchangeRate {
-    pub fn new(ask_spread: Decimal, kraken_price_updates: crate::kraken::PriceUpdates) -> Self {
+    pub fn new(
+        ask_spread: Decimal,
+        kraken_price_updates: crate::kraken::PriceUpdates,
+        bitfinex_price_updates: crate::bitfinex::PriceUpdates,
+    ) -> Self {
         Self {
             ask_spread,
             kraken_price_updates,
+            bitfinex_price_updates,
         }
     }
 }
 
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum Error {
+    #[error("Kraken error")]
+    Kraken(#[from] crate::kraken::Error),
+    #[error("Bitfinex error")]
+    Bitfinex(#[from] crate::bitfinex::Error),
+    #[error("Exchanges disagree by more than 10%")]
+    SpreadTooWide,
+}
+
 impl crate::traits::LatestRate for ExchangeRate {
-    type Error = crate::kraken::Error;
+    type Error = Error;
 
     fn latest_rate(&mut self) -> Result<Rate, Self::Error> {
-        let update = self.kraken_price_updates.latest_update()?;
-        let rate = Rate::new(update.ask, self.ask_spread);
+        let kraken_update = self.kraken_price_updates.latest_update()?;
+        let bitfinex_update = self.bitfinex_price_updates.latest_update()?;
+
+        let average_ask = (kraken_update.ask + bitfinex_update.ask) / 2;
+        let min_ask = std::cmp::min(kraken_update.ask, bitfinex_update.ask);
+        let max_ask = std::cmp::max(kraken_update.ask, bitfinex_update.ask);
+        assert!(max_ask >= min_ask, "bitcoin::Amount violates Ord");
+
+        let spread = max_ask - min_ask;
+        tracing::debug!(?kraken_update, ?bitfinex_update, %average_ask, %spread, "Computing latest XMR/BTC rate");
+
+        if spread.to_sat() > average_ask.to_sat() / 10 {
+            return Err(Error::SpreadTooWide);
+        }
+
+        let rate = Rate::new(average_ask, self.ask_spread);
 
         Ok(rate)
     }

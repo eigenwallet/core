@@ -92,7 +92,7 @@ impl PriceUpdates {
     }
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error("Rate is not yet available")]
     NotYetAvailable,

@@ -12,3 +12,7 @@ pub use traits::LatestRate;
 pub fn connect_kraken(url: url::Url) -> anyhow::Result<kraken::PriceUpdates> {
     kraken::connect(url)
 }
+
+pub fn connect_bitfinex(url: url::Url) -> anyhow::Result<bitfinex::PriceUpdates> {
+    bitfinex::connect(url)
+}
