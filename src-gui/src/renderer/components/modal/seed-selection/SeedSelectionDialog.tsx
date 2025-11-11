@@ -250,23 +250,25 @@ export default function SeedSelectionDialog() {
         )}
 
         {selectedOption === "FromSeed" && (
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Enter your seed phrase"
-            value={customSeed}
-            onChange={(e) => setCustomSeed(e.target.value)}
-            placeholder="Enter your Monero 25 words seed phrase..."
-            error={!isSeedValid && customSeed.length > 0}
-            helperText={
-              isSeedValid
-                ? "Seed is valid"
-                : customSeed.length > 0
-                  ? "Seed is invalid"
-                  : ""
-            }
-          />
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Enter your seed phrase"
+              value={customSeed}
+              onChange={(e) => setCustomSeed(e.target.value)}
+              placeholder="Enter your Monero 25 words seed phrase..."
+              error={!isSeedValid && customSeed.length > 0}
+              helperText={
+                isSeedValid
+                  ? "Seed is valid"
+                  : customSeed.length > 0
+                    ? "Seed is invalid"
+                    : ""
+              }
+            />
+          </Box>
         )}
 
         {selectedOption === "FromWalletPath" && (
