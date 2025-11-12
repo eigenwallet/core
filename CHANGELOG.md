@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI + SWAP: Fix an issue where we would fail to connect to peers if we failed on the initial attempt because previous addresses were not cached properly.
+
 ## [3.3.1] - 2025-11-11
 
 - GUI: Fix the Flatpak images to ensure they are kept up to date and the correct version is displayed. Also fixes an issue where a blank screen would sometimes be rendered. Big thanks to [nabijaczleweli](https://github.com/nabijaczleweli) for spending their time on this! Consider sending a Monero tip to the donation address pinned on their [Github profile](https://github.com/nabijaczleweli).
