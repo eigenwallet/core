@@ -229,8 +229,10 @@ pub struct SubaddressSummary {
     #[typeshare(serialized_as = "String")]
     pub address: monero::Address,
     pub label: String,
+    /// The total amount historically received from this subaddress in atomic units
     #[typeshare(serialized_as = "number")]
     pub received: u64,
+    /// The total number of transactions received into this subaddress
     #[typeshare(serialized_as = "number")]
     pub tx_count: u32,
     /// Currently spendable (confirmed/unlocked) balance for this subaddress in atomic units
@@ -1659,28 +1661,34 @@ impl FfiWallet {
     }
 
     /// Get the label for a specific subaddress.
-    pub fn subaddress_label(&self, account_index: u32, address_index: u32) -> String {
-        ffi::getSubaddressLabel(&self.inner, account_index, address_index)
-            .context("Failed to get subaddress label: FFI call failed with exception")
-            .expect("getSubaddressLabel should not fail")
-            .to_string()
+    pub fn get_subaddress_label(
+        &self,
+        account_index: u32,
+        address_index: u32,
+    ) -> anyhow::Result<String> {
+        Ok(
+            ffi::getSubaddressLabel(&self.inner, account_index, address_index)
+                .context("Failed to get subaddress label: FFI call failed with exception")?
+                .to_string(),
+        )
     }
 
     /// Compute subaddress summaries for a given account index.
-    fn subaddress_summaries_sync(&mut self, account_index: u32) -> Result<Vec<SubaddressSummary>> {
-        let history_ptr = self
+    fn subaddress_summaries_sync(
+        &mut self,
+        account_index: u32,
+    ) -> anyhow::Result<Vec<SubaddressSummary>> {
+        let mut history_ptr = self
             .inner
             .pinned()
             .history()
-            .context("Failed to get transaction history: FFI call failed with exception");
-
-        let history_ptr = history_ptr?;
+            .context("Failed to get transaction history: FFI call failed with exception")?;
 
         let history = unsafe {
             Pin::new_unchecked(
                 history_ptr
                     .as_mut()
-                    .expect("history pointer to not be null after we just checked"),
+                    .ok_or_else(|| anyhow!("Failed to get transaction history: history pointer is null"))?,
             )
         };
         let _ = history
@@ -1699,7 +1707,7 @@ impl FfiWallet {
         for i in 0..count {
             if let Some(tx_info) = history_handle.transaction(i) {
                 let Ok(direction) = tx_info.direction() else {
-                    continue;
+                    anyhow::bail!("Failed to get transaction direction at index {}", i);
                 };
                 if direction != TransactionDirection::In {
                     continue;
@@ -1722,6 +1730,8 @@ impl FfiWallet {
                         tx_count[address_index] = tx_count[address_index].saturating_add(1);
                     }
                 }
+            } else {
+                anyhow::bail!("Failed to get transaction info at index {}", i);
             }
         }
 
@@ -1744,11 +1754,12 @@ impl FfiWallet {
         }
 
         // Build result list
-        let list: Vec<SubaddressSummary> = (0..size)
+        let list = (0..size)
             .map(|address_index| {
                 let address = self.address_at(account_index, address_index);
-                let label = self.subaddress_label(account_index, address_index);
-                SubaddressSummary {
+                let label = self.get_subaddress_label(account_index, address_index)?;
+
+                Ok(SubaddressSummary {
                     account_index,
                     address_index,
                     address,
@@ -1756,9 +1767,9 @@ impl FfiWallet {
                     received: received[address_index as usize],
                     tx_count: tx_count[address_index as usize],
                     unlocked_balance: unlocked_balances[address_index as usize],
-                }
+                })
             })
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         Ok(list)
     }
