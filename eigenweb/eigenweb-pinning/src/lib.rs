@@ -49,6 +49,9 @@ pub mod pin {
 pub mod fetch {
     use super::*;
 
+    // We could add a list of hashes of peers here that we are interested in
+    // This will prevent anyone from sending us tons of messages which we are not interested in
+    // We probably also need a way to tell a server "I am interested in this peer" (Permissioned pinning)
     #[derive(Debug, Clone, Serialize, Deserialize, Default)]
     pub struct Request;
 

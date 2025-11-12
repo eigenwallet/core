@@ -18,6 +18,7 @@ use swap_p2p::{futures_util::FuturesHashSet, protocols::redial};
 use tokio::sync::mpsc;
 
 mod backoff_pool;
+mod dont_want;
 
 const HEARTBEAT_FETCH_INTERVAL: Duration = Duration::from_secs(5);
 const BACKOFF_INITIAL_INTERVAL: Duration = Duration::from_millis(50);
@@ -48,11 +49,8 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     storage: Arc<S>,
 
     /// Stores the backoff for each peer, as to not bombard them with requests
+    // TODO: Is this overkill?
     backoff: backoff_pool::Pool<BackoffKind>,
-
-    /// Stores the backoff for each message hash, individual delays for specific messages?
-    /// TODO: Is this needed?
-    // message_hash_backoff: HashMap<MessageHash, backoff::ExponentialBackoff>,
 
     /// When we want to insert a message, into the internal system
     /// it is pushed into this channel
@@ -72,7 +70,7 @@ pub struct Behaviour<S: storage::Storage + Sync> {
 
     /// For every server we store the set of hashes of messages that we know he has
     // TODO: Maybe extract this to a separate struct given the ton of helper functions we have for it?
-    dont_want: HashMap<PeerId, Arc<HashSet<MessageHash>>>,
+    dont_want: dont_want::DontWantSet<MessageHash>,
 
     // TODO: We also need to store which hashes a server **cannot* provide
     //       this means we have tried pulling
@@ -189,7 +187,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
 
             inner_events: VecDeque::new(),
             to_swarm_events: VecDeque::new(),
-            dont_want: HashMap::new(),
+            dont_want: dont_want::DontWantSet::new(),
             backoff: backoff_pool::Pool::new(BACKOFF_INITIAL_INTERVAL, BACKOFF_MAX_INTERVAL),
 
             outgoing_messages: outgoing_messages_hashes,
@@ -215,35 +213,6 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         self.keypair.public().to_peer_id()
     }
 
-    fn dont_want_set(&mut self, peer_id: PeerId) -> &mut Arc<HashSet<MessageHash>> {
-        self.dont_want
-            .entry(peer_id)
-            .or_insert_with(|| Arc::new(HashSet::new()))
-    }
-
-    fn mark_does_not_want(&mut self, peer_id: PeerId, hash: MessageHash) {
-        let mut set = self
-            .dont_want_set(peer_id)
-            .as_ref()
-            // TODO: This clone is expensive!
-            .clone();
-
-        set.insert(hash);
-
-        self.dont_want.insert(peer_id, Arc::new(set));
-    }
-
-    /// Call this whenever we definitively know a server does not have a message
-    fn mark_does_not_have(&mut self, peer_id: PeerId, hash: MessageHash) {
-        let mut set = self.dont_want_set(peer_id).as_ref().clone();
-        set.remove(&hash);
-        self.dont_want.insert(peer_id, Arc::new(set));
-    }
-
-    fn dont_want_read_only(&self, peer_id: PeerId) -> Option<Arc<HashSet<MessageHash>>> {
-        self.dont_want.get(&peer_id).cloned()
-    }
-
     /// Ensures we have a pending store operation for the message
     ///
     /// Returns true if a new operation was queued, false if a operation was already pending
@@ -258,7 +227,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
 
         // We immediately mark the message as not wanted to avoid pulling it again
         // We will remove it from our `dont_want` set again if we fail to store it
-        self.mark_does_not_want(self.peer_id(), message.content_hash());
+        self.dont_want.mark_does_not_want(self.peer_id(), message.content_hash());
 
         let storage = self.storage.clone();
         let message_clone = message.clone();
@@ -286,7 +255,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
 
     pub fn handle_codec_event(&mut self, event: codec::Event) {
         match event {
-            codec::Event::Message { peer, message } => match message {
+            codec::Event::Message { peer, message, .. } => match message {
                 Message::Response {
                     request_id,
                     response,
@@ -298,11 +267,11 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                                 self.inflight_pin_request.remove(&request_id)
                             {
                                 self.backoff.reset_backoff(peer, BackoffKind::Pin(hash));
-                                self.mark_does_not_want(peer, hash);
+                                self.dont_want.mark_does_not_want(peer, hash);
                             }
                         }
                         codec::Response::Pin(Err(pin_error)) => {
-                            if let Some((peer_id, hash)) =
+                            if let Some((peer, hash)) =
                                 self.inflight_pin_request.remove(&request_id)
                             {
                                 self.backoff.increase_backoff(peer, BackoffKind::Pin(hash));
@@ -320,24 +289,16 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                             if let Some(peer) = self.inflight_fetch_request.remove(&request_id) {
                                 self.backoff.reset_backoff(peer, BackoffKind::Fetch);
 
-                                let incoming: HashSet<_> = incoming.into_iter().collect();
-                                let outgoing: HashSet<_> = outgoing.into_iter().collect();
-
                                 tracing::trace!(%peer, ?incoming, ?outgoing, "Server told us which hashes it has after fetch");
 
                                 // Now we extend our [`incoming_messages`] set with the servers `incoming` messages
+                                // TODO: We need some sort of protection against the server giving us random hashes
                                 self.incoming_messages.extend(incoming.clone());
 
-                                // The server just told us which hashes it has.
-                                // We can therefore deduce that he is not interested in them anymore.
-                                //
+                                // The server just told us which exact hashes it has.
                                 // TODO: We replace here because fetch always returns all hashes
-                                //       but we may want to extend here instead if logic changes
-                                // TODO: Redundant clone here?
-                                let mut incoming_and_outgoing = HashSet::new();
-                                incoming_and_outgoing.extend(incoming);
-                                incoming_and_outgoing.extend(outgoing);
-                                self.dont_want.insert(peer, Arc::new(incoming_and_outgoing));
+                                //       but we may want to extend here instead if logic change
+                                self.dont_want.replace(peer, incoming.into_iter().chain(outgoing));
                             }
                         }
                         codec::Response::Fetch(Err(fetch_error)) => {
@@ -386,13 +347,13 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                                     .find(|message| message.content_hash() == hash)
                                     .is_none()
                                 {
-                                    self.mark_does_not_have(peer, hash);
+                                    self.dont_want.mark_does_not_have(peer, hash);
                                 }
 
                                 // Save all the hashes in the storage layer
                                 for message in messages.iter() {
                                     // We know the server has this message because we just pulled it from him
-                                    self.mark_does_not_want(peer, message.content_hash());
+                                    self.dont_want.mark_does_not_want(peer, message.content_hash());
 
                                     // Queue the message to be stored
                                     self.queue_store_message(message.clone());
@@ -421,6 +382,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 request_id,
                 error,
                 peer,
+                ..
             } => {
                 tracing::error!(
                     "Outbound failure for request {:?}: {:?} with peer {:?}",
@@ -469,6 +431,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 request_id,
                 error,
                 peer,
+                ..
             } => {
                 tracing::error!(
                     "Inbound failure for request {:?}: {:?} with peer {:?}",
@@ -509,7 +472,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                 match store_result {
                     Ok(()) => {
                         // We just stored the message, so we do not want it anymore
-                        self.mark_does_not_want(self.peer_id(), hash);
+                        self.dont_want.mark_does_not_want(self.peer_id(), hash);
 
                         // Inform the swarm that we just stored a new message
                         self.to_swarm_events.push_back(ToSwarm::GenerateEvent(
@@ -523,7 +486,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                         // TODO: This can lead to an infinite loop where we keep fetching the same message over and over again
                         // from the same server without backing off.
                         // Queue pull operation -> Do pull operation -> Fail to store message -> Queue pull operation ...
-                        self.mark_does_not_have(self.peer_id(), hash);
+                        self.dont_want.mark_does_not_have(self.peer_id(), hash);
                     }
                 }
             }
@@ -545,7 +508,7 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
 
             // Store in internal state
             self.outgoing_messages.insert(message_hash);
-            self.mark_does_not_want(self.peer_id(), message_hash);
+            self.dont_want.mark_does_not_want(self.peer_id(), message_hash);
 
             // Save the message in storage
             self.queue_store_message(signed_message);
@@ -706,9 +669,10 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
         peer: PeerId,
         addr: &libp2p::Multiaddr,
         role_override: libp2p::core::Endpoint,
+        port_use: libp2p::core::transport::PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         self.inner
-            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override, port_use)
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {
@@ -740,7 +704,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         for server in self.servers.clone().iter() {
             // Ensure we have a dont_want set for the server
             // We only pin a message when we know which messages the server has and can be sure he does not have it
-            let Some(dont_want) = self.dont_want_read_only(*server) else {
+            let Some(dont_want) = self.dont_want.dont_want_read_only(&server) else {
                 continue;
             };
 
@@ -788,7 +752,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         let mut result = Vec::new();
 
         // For every `incoming_messages` check if we have them, otherwise pull them
-        let our_hashes = self.dont_want_read_only(self.peer_id());
+        let our_hashes = self.dont_want.dont_want_read_only(&self.peer_id());
         let interesting_hashes: Vec<_> = self
             .incoming_messages
             .difference(our_hashes.as_ref().unwrap_or(&Default::default()))
@@ -802,7 +766,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         for hash in interesting_hashes {
             for server in self.servers.iter() {
                 // We ignore servers for which we cannot know if they have the message (no `dont_want` set)
-                let Some(dont_want) = self.dont_want_read_only(*server) else {
+                let Some(dont_want) = self.dont_want.dont_want_read_only(&server) else {
                     continue;
                 };
 
@@ -851,7 +815,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
             // Ensure we have not already queued a fetch request for this server
             .filter(|server| !self.queued_outgoing_fetch_requests.contains_key(server))
             .copied()
-            .map(|server| (server, self.dont_want.contains_key(&server)))
+            .map(|server| (server, self.dont_want.has_set(&server)))
             .collect();
 
         result
