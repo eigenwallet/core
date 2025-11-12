@@ -15,10 +15,16 @@ use uuid::Uuid;
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MESSAGE_CONTENT: &str = "Hello Bob from Alice!";
 
+/// Carol is the pinning server
+///
+/// Alice sends a message to Bob through Carol
 #[tokio::test]
 async fn pin_and_fetch_message() {
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "swap_p2p=trace,eigenweb_pinning=trace".into()),
+        )
         .try_init();
 
     // Create keypairs

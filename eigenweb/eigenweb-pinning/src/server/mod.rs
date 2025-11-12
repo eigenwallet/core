@@ -1,6 +1,6 @@
 /// This file is much less complete than client.rs
 use libp2p::{
-    futures::{FutureExt, stream::FuturesUnordered},
+    futures::{stream::FuturesUnordered, FutureExt},
     request_response::{self, ResponseChannel},
     swarm::{FromSwarm, NetworkBehaviour},
 };

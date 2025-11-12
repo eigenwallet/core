@@ -1,5 +1,7 @@
 use crate::{
-    SignedPinnedMessage, UnsignedPinnedMessage, client::backoff_pool::BackoffKind, codec, fetch, pin, pull, signature::{MessageHash, SignedMessage}, storage
+    codec, fetch, pin, pull,
+    signature::{MessageHash, SignedMessage},
+    storage, SignedPinnedMessage, UnsignedPinnedMessage,
 };
 use libp2p::{
     request_response::{Message, OutboundRequestId},
@@ -14,6 +16,8 @@ use std::{
 };
 use swap_p2p::{futures_util::FuturesHashSet, protocols::redial};
 use tokio::sync::mpsc;
+
+mod backoff_pool;
 
 const HEARTBEAT_FETCH_INTERVAL: Duration = Duration::from_secs(5);
 const BACKOFF_INITIAL_INTERVAL: Duration = Duration::from_millis(50);
@@ -44,7 +48,7 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     storage: Arc<S>,
 
     /// Stores the backoff for each peer, as to not bombard them with requests
-    backoff: backoff_pool::Pool,
+    backoff: backoff_pool::Pool<BackoffKind>,
 
     /// Stores the backoff for each message hash, individual delays for specific messages?
     /// TODO: Is this needed?
@@ -72,6 +76,7 @@ pub struct Behaviour<S: storage::Storage + Sync> {
 
     // TODO: We also need to store which hashes a server **cannot* provide
     //       this means we have tried pulling
+    //       We are already kind of doing this via our backoff pool?
     /// Queues for outgoing requests
     ///
     /// These are futures as this allows us to schedule when they should be sent
@@ -82,7 +87,8 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     queued_outgoing_pull_requests: FuturesHashSet<(PeerId, MessageHash), ()>,
 
     /// For each outbound request we make, we store the id in here
-    /// TODO: Doesn't really do anything useful as of now
+    /// This gives us a way to detect if we have a request inflight for a given peer (and hash if applicable)
+    /// TODO: We iterate over the values a lot more than over the keys, maybe we should invert this or use another data structure?
     inflight_pin_request: HashMap<OutboundRequestId, (PeerId, MessageHash)>,
     inflight_pull_request: HashMap<OutboundRequestId, (PeerId, MessageHash)>,
     inflight_fetch_request: HashMap<OutboundRequestId, PeerId>,
@@ -97,81 +103,16 @@ pub struct Behaviour<S: storage::Storage + Sync> {
     completed_storage_get: HashMap<MessageHash, Result<Option<SignedPinnedMessage>, S::Error>>,
 }
 
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
+pub enum BackoffKind {
+    Fetch,
+    Pull(MessageHash),
+    Pin(MessageHash),
+}
+
 #[derive(Debug)]
 pub enum Event {
     IncomingPinnedMessageReceived(MessageHash),
-}
-
-mod backoff_pool {
-    use std::{collections::HashMap, time::Duration};
-
-    use backoff::{ExponentialBackoff, backoff::Backoff};
-    use libp2p::PeerId;
-
-    use crate::{client::{BACKOFF_INITIAL_INTERVAL, BACKOFF_MAX_INTERVAL}, signature::MessageHash};
-
-    // Stores multiple backoffs for multiple types of requests for multiple peers
-    pub struct Pool {
-        backoff: HashMap<(PeerId, BackoffKind), ExponentialBackoff>,
-    }
-
-    impl Pool {
-        pub fn new() -> Self {
-            Self {
-                backoff: HashMap::new(),
-            }
-        }
-
-        pub fn get_backoff(&mut self, peer_id: PeerId, backoff_type: BackoffKind) -> &mut ExponentialBackoff {
-            self.backoff.entry((peer_id, backoff_type)).or_insert_with(|| ExponentialBackoff {
-                initial_interval: BACKOFF_INITIAL_INTERVAL,
-                current_interval: BACKOFF_INITIAL_INTERVAL,
-                max_interval: BACKOFF_MAX_INTERVAL,
-                max_elapsed_time: None,
-                ..ExponentialBackoff::default()
-            })
-        }
-
-        /// Gives us a future that resolves after the backoff for that peer + the additional wait time has passed
-        pub fn schedule_backoff<T>(
-            &mut self,
-            peer: PeerId,
-            value: T,
-            kind: BackoffKind,
-            wait: Duration, // we add this on top of the backoff
-        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>
-        where
-            T: Send + 'static,
-        {
-            let backoff = self
-                .get_backoff(peer, kind)
-                .current_interval
-                + wait;
-
-            tracing::trace!(%peer, ?kind, backoff_secs = %backoff.as_secs(), "Scheduling operation with backoff");
-
-            Box::pin(async move {
-                tokio::time::sleep(backoff).await;
-                value
-            })
-        }
-
-        /// Resets the backoff for a given peer and kind
-        pub fn reset_backoff(&mut self, peer: PeerId, kind: BackoffKind) {
-            self.get_backoff(peer, kind).reset();
-        }
-
-        pub fn increase_backoff(&mut self, peer: PeerId, kind: BackoffKind) {
-            self.get_backoff(peer, kind).next_backoff().expect("backoff should never run out of attempts");
-        }
-    }
-
-    #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-    pub enum BackoffKind {
-        Fetch,
-        Pull(MessageHash),
-        Pin(MessageHash),
-    }
 }
 
 /// Internal Behaviour that does two things:
@@ -184,7 +125,7 @@ pub struct InnerBehaviour {
 }
 
 impl InnerBehaviour {
-    const REDIAL_NAME: &'static str = "redial-pinning-servers";
+    const REDIAL_NAME: &'static str = "pinning-servers";
 
     fn new(
         request_response_timeout: Duration,
@@ -249,7 +190,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
             inner_events: VecDeque::new(),
             to_swarm_events: VecDeque::new(),
             dont_want: HashMap::new(),
-            backoff: backoff_pool::Pool::new(),
+            backoff: backoff_pool::Pool::new(BACKOFF_INITIAL_INTERVAL, BACKOFF_MAX_INTERVAL),
 
             outgoing_messages: outgoing_messages_hashes,
             incoming_messages: HashSet::new(),
@@ -576,8 +517,13 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
                         ));
                     }
                     Err(_) => {
+                        // We failed to store the message, so we do not have it and we want it again
+
                         // TODO: Handle errors by potentially retrying
-                        // TODO: If this fails we should remove the message from our `dont_want` set
+                        // TODO: This can lead to an infinite loop where we keep fetching the same message over and over again
+                        // from the same server without backing off.
+                        // Queue pull operation -> Do pull operation -> Fail to store message -> Queue pull operation ...
+                        self.mark_does_not_have(self.peer_id(), hash);
                     }
                 }
             }
@@ -651,136 +597,61 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
             tracing::debug!(%peer_id, %hash, %outbound_request_id, "Dispatching pull request");
         }
 
-        // Send an initial fetch request for every server for
-        // which we don't have a [`dont_want`] set yet
-        // (This means we do not know which messages he has)
-        //
-        // If we already have a [`dont_want`] set but no pending queued entry, we add one with the heartbeat interval
-        // (We know what messages he had in the past but that may have changed)
-        {
-            let servers = self.servers.clone();
-            let servers_to_fetch: Vec<_> = servers
-                .iter()
-                .filter(|server| !self.queued_outgoing_fetch_requests.contains_key(server))
-                .filter(|server| {
-                    !self
-                        .inflight_fetch_request
-                        .values()
-                        .any(|peer| *peer == **server)
-                })
-                .copied()
-                .map(|server| (server, self.dont_want.contains_key(&server)))
-                .collect();
-
-            for (server, has_dont_want_set) in servers_to_fetch {
-                // TODO:
-                // If the hearbeat interval is pretty long (which it will probably be in production), and we want to queue a fetch request as soon as possible, it will be difficult
-                // because only a single queued entry is possible at a time.
-                //
-                // Let's say the hearbeat interval is 5m and we want to fetch now. Then we will not be able to insert a new entry into the queue until 5m have passed.
-                // Even if we try to add a new queue entry, it will "fail silently" because the queue already has an entry for that peer. This is not optimal.
-                // The queue would need a way to know **how long** the current entry will take to resolve and then replace it if the new entry would resolve sooner.
-                // It is almost impossible to even insert anything into the queue because the hearbeat will be inserted as soon as possible and cannot be replaced.
-                // Maybe the future unordered is too generic here?
-                let wait_time = if has_dont_want_set {
-                    HEARTBEAT_FETCH_INTERVAL
-                } else {
-                    Duration::ZERO
-                };
-
-                match has_dont_want_set {
-                    false => {
-                        tracing::trace!(%server, "We have no `dont_want` set for {}. We will queue a fetch request as soon as possible", server);
-                    }
-                    true => {
-                        tracing::trace!(%server, "We have a `dont_want` set for {} but no queued/inflight fetch request. We will queue a fetch request with heartbeat interval", server);
-                    }
-                }
-
-                let future = self.backoff.schedule_backoff(server, (), BackoffKind::Fetch, wait_time);
-                self.queued_outgoing_fetch_requests.insert(server, future);
-            }
-        }
-
-        // Pin messages to server which where we know:
-        // - they do not have the message
-        // - we do not have an inflight pin request for the message
-        for server in self.servers.clone().iter() {
-            let dont_want = match self.dont_want_read_only(*server) {
-                Some(dont_want) => dont_want,
-                // We only pin a message when we know which messages the server has
-                None => continue,
+        // Queue all queable fetch requests
+        for (peer_id, has_dont_want_set) in self.queable_fetch_requests() {
+            // TODO:
+            // If the hearbeat interval is pretty long (which it will probably be in production), and we want to queue a fetch request as soon as possible, it will be difficult
+            // because only a single queued entry is possible at a time.
+            //
+            // Let's say the hearbeat interval is 5m and we want to fetch now. Then we will not be able to insert a new entry into the queue until 5m have passed.
+            // Even if we try to add a new queue entry, it will "fail silently" because the queue already has an entry for that peer. This is not optimal.
+            // The queue would need a way to know **how long** the current entry will take to resolve and then replace it if the new entry would resolve sooner.
+            // It is almost impossible to even insert anything into the queue because the hearbeat will be inserted as soon as possible and cannot be replaced.
+            // Maybe the future unordered is too generic here?
+            let wait_time = if has_dont_want_set {
+                HEARTBEAT_FETCH_INTERVAL
+            } else {
+                Duration::ZERO
             };
 
-            let inflight_hashes: HashSet<_> = self
-                .inflight_pin_request
-                .values()
-                .filter(|(peer, _)| *peer == *server)
-                .map(|(_, hash)| *hash)
-                .collect();
+            let (future, wait_time) =
+                self.backoff
+                    .schedule_backoff(peer_id, (), BackoffKind::Fetch, wait_time);
 
-            let hashes_to_send: Vec<_> = self
-                .outgoing_messages
-                .iter()
-                .filter(|hash| !dont_want.contains(*hash))
-                .filter(|hash| !inflight_hashes.contains(*hash))
-                .filter(|hash| {
-                    !self
-                        .queued_outgoing_pin_requests
-                        .contains_key(&(*server, **hash))
-                })
-                .copied()
-                .collect();
+            self.queued_outgoing_fetch_requests.insert(peer_id, future);
 
-            for hash in hashes_to_send {
-                tracing::debug!("Queuing {:?} to be pinned at {}", hash, server);
-
-                let future = self.backoff.schedule_backoff(*server, (), BackoffKind::Pin(hash), Duration::ZERO);
-                self.queued_outgoing_pin_requests
-                    .insert((*server, hash), future);
+            match has_dont_want_set {
+                false => {
+                    tracing::trace!(%peer_id, wait_time_secs = %wait_time.as_secs(), "Queued fetch request because we have no `dont_want` set");
+                }
+                true => {
+                    tracing::trace!(%peer_id, wait_time_secs = %wait_time.as_secs(), "Queued fetch request with heart interval");
+                }
             }
         }
 
-        // For every `incoming_messages` check if we have them, otherwise pull them
-        let our_hashes = self.dont_want_read_only(self.peer_id());
-        let interesting_hashes: Vec<_> = self
-            .incoming_messages
-            .difference(our_hashes.as_ref().unwrap_or(&Default::default()))
-            .copied()
-            .collect();
+        // Queue all queable pin messages
+        for (peer_id, hash) in self.queable_pin_requests() {
+            let (future, wait_time) =
+                self.backoff
+                    .schedule_backoff(peer_id, (), BackoffKind::Pin(hash), Duration::ZERO);
 
-        // For every interesting hash, attempt to download from all servers
-        // for which we know they have it
-        //
-        // TODO: This is not very efficient as we will download the same message from multiple servers
-        for hash in interesting_hashes {
-            let servers = self.servers.clone();
+            self.queued_outgoing_pin_requests
+                .insert((peer_id, hash), future);
 
-            for server in servers.iter() {
-                // We ignore servers for which we cannot know if they have the message (no `dont_want` set)
-                if let Some(dont_want) = self.dont_want_read_only(*server) {
-                    // Could the server have the message?
-                    let has_message = dont_want.contains(&hash);
+            tracing::debug!(%peer_id, %hash, wait_time_secs = %wait_time.as_secs(), "Queued pin request");
+        }
 
-                    // Are we already pulling this message from this server or have queued a request?
-                    let is_inflight = self
-                        .inflight_pull_request
-                        .values()
-                        .any(|v| v == &(*server, hash));
-                    let is_queued = self
-                        .queued_outgoing_pull_requests
-                        .contains_key(&(*server, hash));
+        // Queue all queable pull requests
+        for (peer_id, hash) in self.queable_pull_requests() {
+            let (future, wait_time) =
+                self.backoff
+                    .schedule_backoff(peer_id, (), BackoffKind::Pull(hash), Duration::ZERO);
 
-                    if has_message && !is_inflight && !is_queued {
-                        tracing::info!(peer_id = %*server, %hash, "Queueing pull request");
+            self.queued_outgoing_pull_requests
+                .insert((peer_id, hash), future);
 
-                        // TODO: Extract this into a function
-                        let future = self.backoff.schedule_backoff(*server, (), BackoffKind::Pull(hash), Duration::ZERO);
-                        self.queued_outgoing_pull_requests
-                            .insert((*server, hash), future);
-                    }
-                }
-            }
+            tracing::debug!(%peer_id, %hash, wait_time_secs = %wait_time.as_secs(), "Queued pull request");
         }
 
         while let Poll::Ready(event) = self.inner.poll(cx) {
@@ -852,5 +723,137 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
     ) {
         self.inner
             .on_connection_handler_event(peer_id, connection_id, event)
+    }
+}
+
+/// Logic to determine which requests should be queued
+impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
+    /// Returns a list of (server, message_hash) pairs that should be queued for pinning
+    ///
+    /// A message will be included if:
+    /// - The server doesn't already have it (not in their dont_want set)
+    /// - There is no inflight pin request for this message to this server
+    /// - There is no queued pin request for this message to this server
+    fn queable_pin_requests(&self) -> Vec<(PeerId, MessageHash)> {
+        let mut result = Vec::new();
+
+        for server in self.servers.clone().iter() {
+            // Ensure we have a dont_want set for the server
+            // We only pin a message when we know which messages the server has and can be sure he does not have it
+            let Some(dont_want) = self.dont_want_read_only(*server) else {
+                continue;
+            };
+
+            // Which hashes have we already dispatched to be pinned at this server?
+            // This means we have sent the request but not yet received a response
+            let inflight_hashes: HashSet<_> = self
+                .inflight_pin_request
+                .values()
+                .filter(|(peer, _)| *peer == *server)
+                .map(|(_, hash)| *hash)
+                .collect();
+
+            let hashes_to_send: Vec<_> = self
+                .outgoing_messages
+                .iter()
+                // Ensure the server does not have the message
+                .filter(|hash| !dont_want.contains(*hash))
+                // Ensure we have not already dispatched the message to this server
+                .filter(|hash| !inflight_hashes.contains(*hash))
+                // Ensure we have not already queued the message to be pinned to this server
+                .filter(|hash| {
+                    !self
+                        .queued_outgoing_pin_requests
+                        .contains_key(&(*server, **hash))
+                })
+                .copied()
+                .collect();
+
+            for hash in hashes_to_send {
+                result.push((*server, hash));
+            }
+        }
+
+        result
+    }
+
+    /// Returns a list of (server, message_hash) pairs that should be queued for pulling
+    ///
+    /// A message will be included if:
+    /// - We know about the message but don't have it yet (present in `incoming_messages` but not in our `dont_want` set)
+    /// - The server does have the message (present in their `dont_want` set)
+    /// - There is no inflight pull request for this message from this server
+    /// - There is no queued pull request for this message from this server
+    fn queable_pull_requests(&self) -> Vec<(PeerId, MessageHash)> {
+        let mut result = Vec::new();
+
+        // For every `incoming_messages` check if we have them, otherwise pull them
+        let our_hashes = self.dont_want_read_only(self.peer_id());
+        let interesting_hashes: Vec<_> = self
+            .incoming_messages
+            .difference(our_hashes.as_ref().unwrap_or(&Default::default()))
+            .copied()
+            .collect();
+
+        // For every interesting hash, attempt to download from all servers
+        // for which we know they have it
+        //
+        // TODO: This is not very efficient as we will download the same message from multiple servers
+        for hash in interesting_hashes {
+            for server in self.servers.iter() {
+                // We ignore servers for which we cannot know if they have the message (no `dont_want` set)
+                let Some(dont_want) = self.dont_want_read_only(*server) else {
+                    continue;
+                };
+
+                // Does the server have the message?
+                let has_message = dont_want.contains(&hash);
+
+                // Have we already dispatched a pull request for this message to this server?
+                let is_inflight = self
+                    .inflight_pull_request
+                    .values()
+                    .any(|v| v == &(*server, hash));
+
+                // Have we already queued a pull request for this message to this server?
+                let is_queued = self
+                    .queued_outgoing_pull_requests
+                    .contains_key(&(*server, hash));
+
+                if has_message && !is_inflight && !is_queued {
+                    result.push((*server, hash));
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Returns a list of (server, has_dont_want_set) pairs that should be queued for fetching
+    ///
+    /// A server will be included if:
+    /// - We have not already dispatched a fetch request for this server
+    /// - We have not already queued a fetch request for this server
+    ///
+    /// has_dont_want_set is true if we have a `dont_want` set for the server, meaning we already did an initial fetch
+    fn queable_fetch_requests(&self) -> Vec<(PeerId, bool)> {
+        let servers = self.servers.clone();
+
+        let result: Vec<_> = servers
+            .iter()
+            // Ensure we have not already dispatched a fetch request for this server
+            .filter(|server| {
+                !self
+                    .inflight_fetch_request
+                    .values()
+                    .any(|peer| *peer == **server)
+            })
+            // Ensure we have not already queued a fetch request for this server
+            .filter(|server| !self.queued_outgoing_fetch_requests.contains_key(server))
+            .copied()
+            .map(|server| (server, self.dont_want.contains_key(&server)))
+            .collect();
+
+        result
     }
 }
