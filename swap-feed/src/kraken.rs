@@ -63,7 +63,7 @@ pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
                 tracing::warn!("Rate updates incurred an unrecoverable error: {:#}", e);
 
                 // in case the retries fail permanently, let the subscribers know
-                price_update.send(Err(Error::PermanentFailure))
+                price_update.send(Err(Error::PermanentFailure(e.into())))
             }
             Ok(never) => match never {},
         }
@@ -91,12 +91,12 @@ impl PriceUpdates {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
     #[error("Rate is not yet available")]
     NotYetAvailable,
     #[error("Permanently failed to retrieve rate from Kraken")]
-    PermanentFailure,
+    PermanentFailure(Arc<anyhow::Error>),
 }
 
 type PriceUpdate = Result<wire::PriceUpdate, Error>;
