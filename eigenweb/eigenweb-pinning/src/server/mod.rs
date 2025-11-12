@@ -149,7 +149,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
 
     pub fn handle_event(&mut self, event: codec::Event) {
         match event {
-            codec::Event::Message { peer, message } => match message {
+            codec::Event::Message { peer, message, .. } => match message {
                 request_response::Message::Request {
                     request_id: _,
                     request,
@@ -171,6 +171,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 request_id,
                 error,
                 peer,
+                ..
             } => {
                 tracing::error!(
                     "Inbound failure for request {:?}: {:?} with peer {:?}",
@@ -183,6 +184,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
                 request_id,
                 error,
                 peer,
+                ..
             } => {
                 tracing::error!(
                     "Outbound failure for request {:?}: {:?} with peer {:?}",
@@ -308,9 +310,10 @@ impl<S: storage::Storage + Sync + 'static> NetworkBehaviour for Behaviour<S> {
         peer: PeerId,
         addr: &libp2p::Multiaddr,
         role_override: libp2p::core::Endpoint,
+        port_use: libp2p::core::transport::PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         self.inner
-            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override, port_use)
     }
 
     fn on_swarm_event(&mut self, event: FromSwarm) {

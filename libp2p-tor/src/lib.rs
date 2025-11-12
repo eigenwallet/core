@@ -365,7 +365,11 @@ impl Transport for TorTransport {
         false
     }
 
-    fn dial(&mut self, addr: Multiaddr) -> Result<Self::Dial, TransportError<Self::Error>> {
+    fn dial(
+        &mut self,
+        addr: Multiaddr,
+        _opts: libp2p::core::transport::DialOpts,
+    ) -> Result<Self::Dial, TransportError<Self::Error>> {
         let maybe_tor_addr = match self.conversion_mode {
             AddressConversion::DnsOnly => safe_extract(&addr),
             AddressConversion::IpAndDns => dangerous_extract(&addr),
@@ -382,17 +386,6 @@ impl Transport for TorTransport {
 
             Ok(TokioTorStream::from(stream))
         }))
-    }
-
-    fn dial_as_listener(
-        &mut self,
-        addr: Multiaddr,
-    ) -> Result<Self::Dial, TransportError<Self::Error>> {
-        self.dial(addr)
-    }
-
-    fn address_translation(&self, _listen: &Multiaddr, _observed: &Multiaddr) -> Option<Multiaddr> {
-        None
     }
 
     #[cfg(not(feature = "listen-onion-service"))]

@@ -62,8 +62,8 @@ hex = "0.4"
 jsonrpsee = { version = "0.25", default-features = false }
 
 # libp2p dependencies
-libp2p = { version = "0.53.2" }
-libp2p-core = "0.42"
+libp2p = { version = "0.56.0" }
+libp2p-core = "0.43.1"
 libp2p-identity = "0.2"
 
 monero = { version = "0.12", features = ["serde_support"] }

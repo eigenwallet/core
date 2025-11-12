@@ -50,6 +50,7 @@ pub mod register {
     use futures::future::BoxFuture;
     use futures::stream::FuturesUnordered;
     use futures::{FutureExt, StreamExt};
+    use libp2p::core::transport::PortUse;
     use libp2p::rendezvous::client::RegisterError;
     use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
     use libp2p::swarm::{
@@ -263,12 +264,14 @@ pub mod register {
             peer: PeerId,
             addr: &Multiaddr,
             role_override: libp2p::core::Endpoint,
+            port_use: PortUse,
         ) -> Result<THandler<Self>, ConnectionDenied> {
             self.inner.handle_established_outbound_connection(
                 connection_id,
                 peer,
                 addr,
                 role_override,
+                port_use,
             )
         }
 

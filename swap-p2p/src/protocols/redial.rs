@@ -4,12 +4,13 @@ use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
 use libp2p::core::Multiaddr;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
+use libp2p::core::transport::PortUse;
 use libp2p::swarm::{DialError, FromSwarm, NetworkBehaviour, ToSwarm};
 use libp2p::PeerId;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::convert::Infallible;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use void::Void;
 
 /// A [`NetworkBehaviour`] that tracks whether we are connected to the given
 /// peers and attempts to re-establish a connection with an exponential backoff
@@ -198,7 +199,7 @@ impl NetworkBehaviour for Behaviour {
     }
 
     #[tracing::instrument(level = "trace", name = "redial::poll", skip(self, cx), fields(redial_type = %self.name))]
-    fn poll(&mut self, cx: &mut Context<'_>) -> std::task::Poll<ToSwarm<Self::ToSwarm, Void>> {
+    fn poll(&mut self, cx: &mut Context<'_>) -> std::task::Poll<ToSwarm<Self::ToSwarm, Infallible>> {
         // Check if we have any event to send to the swarm
         if let Some(event) = self.to_swarm.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(event));
@@ -245,6 +246,7 @@ impl NetworkBehaviour for Behaviour {
         _peer: PeerId,
         _addr: &Multiaddr,
         _role_override: libp2p::core::Endpoint,
+        _port_use: PortUse,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         Ok(Self::ConnectionHandler {})
     }

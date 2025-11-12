@@ -17,6 +17,7 @@ macro_rules! impl_from_rr_event {
                         peer,
                         error,
                         request_id,
+                        ..
                     } => Self::InboundRequestResponseFailure {
                         peer,
                         error,
@@ -27,6 +28,7 @@ macro_rules! impl_from_rr_event {
                         peer,
                         error,
                         request_id,
+                        ..
                     } => Self::OutboundRequestResponseFailure {
                         peer,
                         error,
