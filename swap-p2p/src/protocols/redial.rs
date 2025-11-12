@@ -283,6 +283,7 @@ impl NetworkBehaviour for Behaviour {
         };
 
         // Check if we have any addresses cached for the peer
+        // TODO: Sort these by how often we were able to connect to them
         let addresses = self
             .addresses
             .get(&peer_id)
