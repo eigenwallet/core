@@ -27,6 +27,20 @@ pub struct ComposeConfig {
 }
 
 /// A service which may be added to a [`ComposeConfig`].
+/// You will then get an `Arc<Service>` back, which you can use to
+/// specify inter-service dependencies.
+///
+/// # Example
+/// ```ignore
+/// let mut compose_config = ComposeConfig::new("my-docker-compose-project")
+/// let foo = Service::new("foo", ImageSource::PullFromRegistry { ... });
+/// let foo: Arc<Service> = compose_config.add_service(foo);
+///
+/// let bar = Service::new("bar", ImageSource::PullFromRegistry { ... })
+///     .with_dependency(foo.clone());
+/// let bar: Arc<Service> = compose_config.add_service(bar);
+/// // Now bar will have `depends_on: foo` in it's generated output
+/// ```
 #[derive(Debug, Clone)]
 pub struct Service {
     name: String,

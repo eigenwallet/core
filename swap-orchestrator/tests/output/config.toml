@@ -1,0 +1,28 @@
+[data]
+dir = "/asb-data"
+
+[network]
+listen = ["/ip4/0.0.0.0/tcp/9939"]
+rendezvous_point = ["/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE", "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw", "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU", "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT", "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp", "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa", "/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X", "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk"]
+external_addresses = []
+
+[bitcoin]
+electrum_rpc_urls = ["tcp://electrs:50001"]
+target_block = 1
+network = "Mainnet"
+use_mempool_space_fee_estimation = true
+
+[monero]
+daemon_url = "http://monerod:18081/"
+network = "Mainnet"
+
+[tor]
+register_hidden_service = true
+hidden_service_num_intro_points = 5
+
+[maker]
+min_buy_btc = 0.002
+max_buy_btc = 0.02
+ask_spread = 0.02
+price_ticker_ws_url = "wss://ws.kraken.com/"
+developer_tip = 0.01
