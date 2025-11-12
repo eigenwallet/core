@@ -353,13 +353,17 @@ pub mod ffi {
         /// Get the subaddress indices of a transaction as a vector (free function form).
         fn transactionInfoSubaddrIndices(tx_info: &TransactionInfo) -> UniquePtr<CxxVector<u32>>;
 
-        /// Get non-strict or strict balance per subaddress for a given account (indices).
+        /// Get subaddress indices for a given account with balance.
+        /// strict: If true, only includes confirmed and unlocked balance.
+        ///         If false, pending and unconfirmed transactions are also included.
         fn walletBalancePerSubaddrIndices(
             wallet: Pin<&mut Wallet>,
             account_index: u32,
             strict: bool,
         ) -> UniquePtr<CxxVector<u32>>;
-        /// Get non-strict or strict balance per subaddress for a given account (amounts).
+        /// Get balance amounts received by subaddresses by a given account.
+        /// strict: If true, only includes confirmed and unlocked balance.
+        ///         If false, pending and unconfirmed transactions are also included.
         fn walletBalancePerSubaddrAmounts(
             wallet: Pin<&mut Wallet>,
             account_index: u32,

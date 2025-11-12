@@ -644,6 +644,8 @@ impl WalletHandle {
 
     /// Get the current non-strict balance per subaddress for the main account (index 0).
     /// Returns a map of subaddress index -> balance (in atomic units).
+    /// strict: If true, only includes confirmed and unlocked balance.
+    ///         If false, pending and unconfirmed transactions are also included.
     pub async fn balance_per_subaddress(&self) -> std::collections::HashMap<u32, u64> {
         self.call(move |wallet| wallet.balance_per_subaddress_sync())
             .await
@@ -1714,11 +1716,10 @@ impl FfiWallet {
                     .as_ref()
                     .expect("vector should not be null after FFI call");
                 for j in 0..indices_ref.len() {
-                    let idx_u32 = unsafe { *indices_ref.get_unchecked(j) };
-                    if (idx_u32 as usize) < received.len() {
-                        received[idx_u32 as usize] =
-                            received[idx_u32 as usize].saturating_add(amount);
-                        tx_count[idx_u32 as usize] = tx_count[idx_u32 as usize].saturating_add(1);
+                    let address_index = unsafe { *indices_ref.get_unchecked(j) } as usize;
+                    if (address_index) < received.len() {
+                        received[address_index] = received[address_index].saturating_add(amount);
+                        tx_count[address_index] = tx_count[address_index].saturating_add(1);
                     }
                 }
             }
@@ -1734,27 +1735,27 @@ impl FfiWallet {
         {
             let len = std::cmp::min(indices_ref.len(), amounts_ref.len());
             for i in 0..len {
-                let idx = unsafe { *indices_ref.get_unchecked(i) } as usize;
-                let amt = unsafe { *amounts_ref.get_unchecked(i) };
-                if idx < unlocked_balances.len() {
-                    unlocked_balances[idx] = amt;
+                let address_index = unsafe { *indices_ref.get_unchecked(i) } as usize;
+                let amount = unsafe { *amounts_ref.get_unchecked(i) };
+                if address_index < unlocked_balances.len() {
+                    unlocked_balances[address_index] = amount;
                 }
             }
         }
 
         // Build result list
         let list: Vec<SubaddressSummary> = (0..size)
-            .map(|idx| {
-                let address = self.address_at(account_index, idx);
-                let label = self.subaddress_label(account_index, idx);
+            .map(|address_index| {
+                let address = self.address_at(account_index, address_index);
+                let label = self.subaddress_label(account_index, address_index);
                 SubaddressSummary {
                     account_index,
-                    address_index: idx,
+                    address_index,
                     address,
                     label,
-                    received: received[idx as usize],
-                    tx_count: tx_count[idx as usize],
-                    unlocked_balance: unlocked_balances[idx as usize],
+                    received: received[address_index as usize],
+                    tx_count: tx_count[address_index as usize],
+                    unlocked_balance: unlocked_balances[address_index as usize],
                 }
             })
             .collect();
@@ -1764,9 +1765,10 @@ impl FfiWallet {
 
     /// Compute non-strict balances per subaddress for the main account (index 0).
     /// Uses wallet2::balance_per_subaddress via WalletImpl bridge.
+    /// strict: If true, only includes confirmed and unlocked balance.
+    ///         If false, pending and unconfirmed transactions are also included.
     fn balance_per_subaddress_sync(&mut self) -> std::collections::HashMap<u32, u64> {
         let account_index = Self::MAIN_ACCOUNT_INDEX;
-        // strict = false
         let indices =
             ffi::walletBalancePerSubaddrIndices(self.inner.pinned(), account_index, false);
         let amounts =

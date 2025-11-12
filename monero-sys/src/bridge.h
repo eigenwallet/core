@@ -323,6 +323,11 @@ namespace Monero
         return transactionInfoSubaddrIndices(tx_info);
     }
 
+    /**
+     * Get subaddress indices for a given account with balance.
+     * strict: If true, only includes confirmed and unlocked balance.
+     *         If false, pending and unconfirmed transactions are also included.
+     */
     inline std::unique_ptr<std::vector<uint32_t>> walletBalancePerSubaddrIndices(Wallet &wallet, uint32_t account_index, bool strict)
     {
         auto *impl = dynamic_cast<WalletImpl*>(&wallet);
@@ -335,6 +340,11 @@ namespace Monero
         return indices;
     }
 
+    /*
+     * Get balance amounts received by subaddresses by a given account.
+     * strict: If true, only includes confirmed and unlocked balance.
+     *          If false, pending and unconfirmed transactions are also included.
+     */
     inline std::unique_ptr<std::vector<uint64_t>> walletBalancePerSubaddrAmounts(Wallet &wallet, uint32_t account_index, bool strict)
     {
         auto *impl = dynamic_cast<WalletImpl*>(&wallet);
