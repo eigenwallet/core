@@ -135,34 +135,54 @@ impl ExchangeRate {
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum Error {
-    #[error("Kraken error")]
-    Kraken(#[from] crate::kraken::Error),
-    #[error("Bitfinex error")]
-    Bitfinex(#[from] crate::bitfinex::Error),
-    #[error("KuCoin error")]
-    KuCoin(#[from] crate::kucoin::Error),
+    #[error("All exchanges failed (Kraken: {0}, Bitfinex: {1}, KuCoin: {2})")]
+    AllExchanges(
+        crate::kraken::Error,
+        crate::bitfinex::Error,
+        crate::kucoin::Error,
+    ),
     #[error("Exchanges disagree by more than 10%")]
     SpreadTooWide,
 }
+
+const MAX_INTEREXCHANGE_SPREAD: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 10%
 
 impl crate::traits::LatestRate for ExchangeRate {
     type Error = Error;
 
     fn latest_rate(&mut self) -> Result<Rate, Self::Error> {
-        let kraken_update = self.kraken_price_updates.latest_update()?;
-        let bitfinex_update = self.bitfinex_price_updates.latest_update()?;
-        let kucoin_update = self.kucoin_price_updates.latest_update()?;
+        let kraken_update = self.kraken_price_updates.latest_update();
+        let bitfinex_update = self.bitfinex_price_updates.latest_update();
+        let kucoin_update = self.kucoin_price_updates.latest_update();
+        if kraken_update.is_err() && bitfinex_update.is_err() && kucoin_update.is_err() {
+            return Err(Error::AllExchanges(
+                kraken_update.unwrap_err(),
+                bitfinex_update.unwrap_err(),
+                kucoin_update.unwrap_err(),
+            ));
+        }
+        let degraded = kraken_update.is_err() || bitfinex_update.is_err() || kucoin_update.is_err();
 
-        let asks = [kraken_update.ask, bitfinex_update.ask, kucoin_update.ask];
-        let average_ask = asks.into_iter().sum::<bitcoin::Amount>() / (asks.len() as u64);
+        let asks: Vec<_> = [
+            kraken_update.as_ref().ok().map(|u| u.ask),
+            bitfinex_update.as_ref().ok().map(|u| u.ask),
+            kucoin_update.as_ref().ok().map(|u| u.ask),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        assert!(!asks.is_empty());
+        let average_ask = asks.iter().copied().sum::<bitcoin::Amount>() / (asks.len() as u64);
         let min_ask = asks.iter().min().expect(">0 asks");
         let max_ask = asks.iter().max().expect(">0 asks");
         assert!(*max_ask >= *min_ask, "bitcoin::Amount violates Ord");
 
         let spread = *max_ask - *min_ask;
-        tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, "Computing latest XMR/BTC rate"););
+        tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
 
-        if spread.to_sat() > average_ask.to_sat() / 10 {
+        if Decimal::from(spread.to_sat())
+            > Decimal::from(average_ask.to_sat()) * MAX_INTEREXCHANGE_SPREAD
+        {
             return Err(Error::SpreadTooWide);
         }
 
