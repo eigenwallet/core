@@ -66,7 +66,8 @@ export default function SubaddressesModal({ open, onClose }: Props) {
             variant="contained"
             disabled={isCreating}
             onInvoke={createAddress}
-            onEnded={() => {
+            displayErrorSnackbar={true}
+            onComplete={() => {
               setNewLabel("");
               setIsCreating(false);
             }}
@@ -108,7 +109,8 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                             size="small"
                             variant="contained"
                             onInvoke={() => editAddressLabel(s)}
-                            onEnded={() => {
+                            displayErrorSnackbar={true}
+                            onComplete={() => {
                               setEditingKey(undefined);
                               setEditLabel("");
                             }}
