@@ -148,7 +148,7 @@ export default function SeedSelectionDialog() {
     selectedOption === "FromSeed"
       ? customSeed.trim().length === 0 ||
       !isSeedValid ||
-      (blockheightInput && !isBlockheightValid)
+      isBlockheightInputFailed
       : selectedOption === "FromWalletPath"
         ? !walletPath
         : false;
