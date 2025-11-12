@@ -58,11 +58,6 @@ impl Database {
         let from_network = trade_info.from_network.as_str().to_string();
         let to_network = trade_info.to_network.as_str().to_string();
         let withdraw_address = trade_info.withdraw_address.to_string();
-        let deposit_address = if let Some(address) = trade_info.deposit_address {
-            Some(address.to_string())
-        } else {
-            None
-        };
         let path_uuid = &path_id.0.to_string();
 
         let raw_json = trade_info.raw_json.clone();
@@ -77,10 +72,9 @@ impl Database {
                 to_currency,
                 to_network,
                 withdraw_address,
-                deposit_address,
                 raw_json
                 ) values (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?
                 );
             "#,
             path_uuid,
@@ -90,7 +84,6 @@ impl Database {
             to_currency,
             to_network,
             withdraw_address,
-            deposit_address,
             raw_json
         )
         .execute(&self.pool)

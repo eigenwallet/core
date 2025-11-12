@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Ancestors, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -73,6 +73,7 @@ pub struct TradeInfo {
     to_currency: Currency,
     from_network: Currency,
     to_network: Currency,
+    //TODO: put the path id in the TradeInfo,
     withdraw_address: monero::Address,
     deposit_address: Option<bitcoin::Address>,
     raw_json: String,
@@ -186,11 +187,6 @@ impl Client {
             .await
             .context("Error creating the trade")?;
 
-        {
-            let mut map = self.trades.lock().await;
-            map.insert(path_id.clone(), (trade_info.clone(), Vec::new()));
-        }
-
         self.db
             .insert_trade_info(trade_info, path_id.clone())
             .await
@@ -199,30 +195,31 @@ impl Client {
         Ok(path_id)
     }
 
-    pub async fn trade_state_by_id(
+    pub async fn last_trade_state_by_id(
         &self,
-        trade_id: PathId,
-    ) -> Option<(TradeInfo, Vec<TradeStatus>)> {
+        path_id: PathId,
+    ) -> Result<(TradeInfo, Vec<TradeStatus>), anyhow::Error> {
         let map = self.trades.lock().await;
-        map.get(&trade_id).cloned()
+        if let Some(trade) = map.get(&path_id).cloned() {
+            Ok(trade)
+        } else {
+            anyhow::bail!("No trades found for id")
+        }
     }
 
     pub async fn deposit_address(
         &mut self,
         trade_id: PathId,
     ) -> Result<bitcoin::Address, anyhow::Error> {
-        if let Some(trade_state) = self.trade_state_by_id(trade_id).await {
-            if let Some(address) = trade_state.0.deposit_address {
-                Ok(address)
-            } else {
-                anyhow::bail!("No address in the path response");
-            }
+        let trade_state = self.last_trade_state_by_id(trade_id).await?;
+        if let Some(address) = trade_state.0.deposit_address {
+            Ok(address)
         } else {
-            anyhow::bail!("No states for a given trade_id");
+            anyhow::bail!("No address in the path response");
         }
     }
 
-    async fn wait_until_created(&self, trade_id: PathId) -> Result<TradeInfo, anyhow::Error> {
+    async fn wait_until_created(&self, path_id: PathId) -> Result<TradeInfo, anyhow::Error> {
         let delay = Duration::from_millis(250);
         let deadline = Instant::now() + Duration::from_secs(60);
 
@@ -230,7 +227,7 @@ impl Client {
             let path_response =
                 generated_client::apis::default_api::api_eigenwallet_get_path_path_uuid_post(
                     &self.config,
-                    &trade_id.0.to_string(),
+                    &path_id.0.to_string(),
                 )
                 .await
                 .context("Error getting path response")?;
@@ -251,6 +248,11 @@ impl Client {
                         .get_trade_info(path_response)
                         .await
                         .context("Could not get trade info")?;
+
+                    {
+                        let mut map = self.trades.lock().await;
+                        map.insert(path_id.clone(), (trade_info.clone(), Vec::new()));
+                    }
 
                     return Ok(trade_info);
                 }
@@ -292,6 +294,7 @@ impl Client {
                         last_trade.withdrawal_address.as_str(),
                     )?,
                     deposit_address: bitcoin_addr,
+                    //path_id: path_response.path_uuid
                     raw_json: raw_json,
                 };
 
@@ -303,7 +306,7 @@ impl Client {
         }
     }
 
-    async fn get_trade_status(&self, trade_id: PathId) -> Result<TradeStatus, anyhow::Error> {
+    async fn fetch_trade_status(&self, trade_id: PathId) -> Result<TradeStatus, anyhow::Error> {
         let path_response =
             generated_client::apis::default_api::api_eigenwallet_get_path_path_uuid_post(
                 &self.config,
@@ -336,14 +339,25 @@ impl Client {
         }
     }
 
-    pub async fn watch_status(&self, trade_id: PathId) -> ReceiverStream<TradeStatus> {
+    pub async fn recover_trade_by_withdraw_address(
+        &self,
+        address: monero::Address,
+    ) -> Result<(TradeInfo, ReceiverStream<TradeStatus>), anyhow::Error> {
+        let path_id = self.db.latest_trade_id_by_withdraw_address(address).await?;
+        let trade = self.wait_until_created(path_id.clone()).await?;
+        let stream = self.watch_status(path_id).await;
+
+        Ok((trade, stream))
+    }
+
+    pub async fn watch_status(&self, path_id: PathId) -> ReceiverStream<TradeStatus> {
         let (tx, rx) = mpsc::channel(32);
         let client = self.clone();
-        let trade_id_cloned = trade_id;
+        let path_id_cloned = path_id;
 
         tokio::spawn(async move {
             loop {
-                let status = match client.get_trade_status(trade_id_cloned.clone()).await {
+                let status = match client.fetch_trade_status(path_id_cloned.clone()).await {
                     Ok(s) => s,
                     Err(e) => {
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -363,7 +377,7 @@ impl Client {
                 };
 
                 if client
-                    .store(status.clone(), trade_id_cloned.clone())
+                    .store(status.clone(), path_id_cloned.clone())
                     .await
                     .is_err()
                 {
