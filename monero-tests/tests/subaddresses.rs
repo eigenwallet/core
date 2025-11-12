@@ -35,6 +35,10 @@ async fn subaddress_methods_and_balances() -> anyhow::Result<()> {
     let alice_sa2 = alice.address_at(0, 2).await?;
 
     tracing::info!(addr1=%alice_sa1, addr2=%alice_sa2, "Created subaddresses");
+    assert_ne!(
+        alice_sa1, alice_sa2,
+        "Subaddresses index 1 and 2 should be distinct"
+    );
 
     // Send funds to both subaddresses in a single transaction
     tracing::info!("Sending funds to Alice's subaddresses via sweep_multi");
@@ -69,7 +73,7 @@ async fn subaddress_methods_and_balances() -> anyhow::Result<()> {
         .check_tx_key(tx_receipt.txid.clone(), *sa2_txkey)
         .await?;
 
-    // Optional: refresh to ensure any pending state is applied
+    // refresh to ensure any pending state is applied
     alice.refresh().await?;
 
     // Verify per-subaddress balances reflect received funds
