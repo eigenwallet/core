@@ -204,13 +204,13 @@ mod connection {
             tungstenite::Message::Text(msg) => msg,
             tungstenite::Message::Close(close_frame) => {
                 if let Some(tungstenite::protocol::CloseFrame { code, reason }) = close_frame {
-                    tracing::debug!(
+                    tracing::error!(
                         "KuCoin rate stream was closed with code {} and reason: {}",
                         code,
                         reason
                     );
                 } else {
-                    tracing::debug!("KuCoin rate stream was closed without code and reason");
+                    tracing::error!("KuCoin rate stream was closed without code and reason");
                 }
 
                 return Err(Error::ConnectionClosed);

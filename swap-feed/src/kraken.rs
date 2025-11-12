@@ -153,13 +153,13 @@ mod connection {
             tungstenite::Message::Text(msg) => msg,
             tungstenite::Message::Close(close_frame) => {
                 if let Some(tungstenite::protocol::CloseFrame { code, reason }) = close_frame {
-                    tracing::debug!(
+                    tracing::error!(
                         "Kraken rate stream was closed with code {} and reason: {}",
                         code,
                         reason
                     );
                 } else {
-                    tracing::debug!("Kraken rate stream was closed without code and reason");
+                    tracing::error!("Kraken rate stream was closed without code and reason");
                 }
 
                 return Err(Error::ConnectionClosed);
