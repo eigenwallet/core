@@ -56,20 +56,10 @@ fn setup_wizard(
 ) -> Result<(Config, ComposeConfig)> {
     // If we already have a valid config, just use it and deduce the monero/bitcoin settings
     if let Some(Ok(config)) = existing_config {
-        // If the config points to our local electrs node, we must have previously created it
-        let create_full_bitcoin_node = config
-            .bitcoin
-            .electrum_rpc_urls
-            .iter()
-            .any(|url| url.as_str().contains("tcp://electrs:"));
-        // Same for monero
-        let create_full_monero_node = config
-            .monero
-            .daemon_url
-            .as_ref()
-            .is_some_and(|url| url.as_str().contains("http://monerod:"));
+        let create_full_bitcoin_node = crate::util::should_create_full_bitcoin_node(&config);
+        let create_full_monero_node = crate::util::should_create_full_monero_node(&config);
 
-        let name = compose_name(config.bitcoin.network, config.monero.network)?;
+        let name = crate::util::compose_name(config.bitcoin.network, config.monero.network)?;
         let mut compose = ComposeConfig::new(name);
         crate::docker::containers::add_maker_services(
             &mut compose,
@@ -138,7 +128,7 @@ fn setup_wizard(
     let create_full_bitcoin_node = matches!(electrum_node_type, ElectrumServerType::Included);
     let create_full_monero_node = matches!(monero_node_type, MoneroNodeType::Included);
 
-    let mut compose = ComposeConfig::new(compose_name(bitcoin_network, monero_network)?);
+    let mut compose = ComposeConfig::new(crate::util::compose_name(bitcoin_network, monero_network)?);
     let (asb_data, compose_electrs_url, compose_monerd_rpc_url) = add_maker_services(
         &mut compose,
         bitcoin_network,
@@ -196,23 +186,4 @@ fn setup_wizard(
     };
 
     Ok((config, compose))
-}
-
-fn compose_name(
-    bitcoin_network: bitcoin::Network,
-    monero_network: monero::Network,
-) -> Result<String> {
-    let monero_network_str = match monero_network {
-        monero::Network::Mainnet => "mainnet",
-        monero::Network::Stagenet => "stagenet",
-        _ => bail!("unknown monero network"),
-    };
-    let bitcoin_network_str = match bitcoin_network {
-        bitcoin::Network::Bitcoin => "bitcoin",
-        bitcoin::Network::Testnet => "testnet",
-        _ => bail!("unknown bitcoin network"),
-    };
-    Ok(format!(
-        "bitcoin_{bitcoin_network_str}_monero_{monero_network_str}"
-    ))
 }

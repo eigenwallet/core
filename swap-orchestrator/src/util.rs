@@ -45,6 +45,46 @@ pub async fn probe_maker_config() -> Option<anyhow::Result<Config>> {
     }
 }
 
+/// Determine whether we should create a full Bitcoin node in the docker compose.
+/// Returns true if the config points to the local electrs node.
+pub fn should_create_full_bitcoin_node(config: &Config) -> bool {
+    config
+        .bitcoin
+        .electrum_rpc_urls
+        .iter()
+        .any(|url| url.as_str().contains("tcp://electrs:"))
+}
+
+/// Determine whether we should create a full Monero node in the docker compose.
+/// Returns true if the config points to the local monerod node.
+pub fn should_create_full_monero_node(config: &Config) -> bool {
+    config
+        .monero
+        .daemon_url
+        .as_ref()
+        .is_some_and(|url| url.as_str().contains("http://monerod:"))
+}
+
+/// Generate the docker compose project name based on the Bitcoin and Monero networks.
+pub fn compose_name(
+    bitcoin_network: bitcoin::Network,
+    monero_network: monero::Network,
+) -> Result<String> {
+    let monero_network_str = match monero_network {
+        monero::Network::Mainnet => "mainnet",
+        monero::Network::Stagenet => "stagenet",
+        _ => anyhow::bail!("unknown monero network"),
+    };
+    let bitcoin_network_str = match bitcoin_network {
+        bitcoin::Network::Bitcoin => "bitcoin",
+        bitcoin::Network::Testnet => "testnet",
+        _ => anyhow::bail!("unknown bitcoin network"),
+    };
+    Ok(format!(
+        "bitcoin_{bitcoin_network_str}_monero_{monero_network_str}"
+    ))
+}
+
 #[allow(async_fn_in_trait)]
 pub trait CommandExt {
     async fn exec_piped(&mut self) -> anyhow::Result<std::process::ExitStatus>;
