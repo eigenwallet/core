@@ -362,7 +362,7 @@ where
 
     let top = format!("┌{}", "─".repeat(line_width.saturating_sub(1)));
     let bottom = format!("└{}", "─".repeat(line_width.saturating_sub(1)));
-    println!("");
+    println!();
     println!("{}", border.apply_to(&top));
     for l in collected {
         println!("{} {}", border.apply_to("│"), content.apply_to(l));

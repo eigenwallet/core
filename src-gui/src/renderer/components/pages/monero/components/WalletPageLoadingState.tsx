@@ -71,8 +71,8 @@ export default function WalletPageLoadingState() {
       </Skeleton>
 
       <Box sx={{ display: "flex", flexDirection: "row", gap: 2, mb: 2 }}>
-        {Array.from({ length: 2 }).map((_) => (
-          <Skeleton variant="rounded" sx={{ borderRadius: "100px" }}>
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Skeleton key={i} variant="rounded" sx={{ borderRadius: "100px" }}>
             <Chip label="Loading..." variant="button" />
           </Skeleton>
         ))}

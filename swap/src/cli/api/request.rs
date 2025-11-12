@@ -244,7 +244,6 @@ pub struct GetSwapInfoResponse {
     pub btc_refund_address: String,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
-    pub timelock: Option<ExpiredTimelocks>,
     pub monero_receive_pool: MoneroAddressPool,
 }
 
@@ -253,6 +252,30 @@ impl Request for GetSwapInfoArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         get_swap_info(self, ctx).await
+    }
+}
+
+// GetSwapTimelock
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetSwapTimelockArgs {
+    #[typeshare(serialized_as = "string")]
+    pub swap_id: Uuid,
+}
+
+#[typeshare]
+#[derive(Serialize)]
+pub struct GetSwapTimelockResponse {
+    #[typeshare(serialized_as = "string")]
+    pub swap_id: Uuid,
+    pub timelock: Option<ExpiredTimelocks>,
+}
+
+impl Request for GetSwapTimelockArgs {
+    type Response = GetSwapTimelockResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        get_swap_timelock(self, ctx).await
     }
 }
 
@@ -276,6 +299,30 @@ impl Request for BalanceArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         get_balance(self, ctx).await
+    }
+}
+
+// GetBitcoinAddress
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetBitcoinAddressArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GetBitcoinAddressResponse {
+    #[typeshare(serialized_as = "string")]
+    #[serde(with = "swap_serde::bitcoin::address_serde")]
+    pub address: bitcoin::Address,
+}
+
+impl Request for GetBitcoinAddressArgs {
+    type Response = GetBitcoinAddressResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let bitcoin_wallet = ctx.try_get_bitcoin_wallet().await?;
+        let address = bitcoin_wallet.new_address().await?;
+
+        Ok(GetBitcoinAddressResponse { address })
     }
 }
 
@@ -802,7 +849,6 @@ pub async fn get_swap_info(
     args: GetSwapInfoArgs,
     context: Arc<Context>,
 ) -> Result<GetSwapInfoResponse> {
-    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
     let db = context.try_get_db().await?;
 
     let state = db.get_state(args.swap_id).await?;
@@ -866,14 +912,6 @@ pub async fn get_swap_info(
         })
         .with_context(|| "Did not find SwapSetupCompleted state for swap")?;
 
-    let timelock = match swap_state.expired_timelocks(bitcoin_wallet.clone()).await {
-        Ok(timelock) => timelock,
-        Err(err) => {
-            error!(swap_id = %args.swap_id, error = ?err, "Failed to fetch expired timelock status");
-            None
-        }
-    };
-
     let monero_receive_pool = db.get_monero_address_pool(args.swap_id).await?;
 
     Ok(GetSwapInfoResponse {
@@ -894,8 +932,26 @@ pub async fn get_swap_info(
         btc_refund_address: btc_refund_address.to_string(),
         cancel_timelock,
         punish_timelock,
-        timelock,
         monero_receive_pool,
+    })
+}
+
+#[tracing::instrument(fields(method = "get_swap_timelock"), skip(context))]
+pub async fn get_swap_timelock(
+    args: GetSwapTimelockArgs,
+    context: Arc<Context>,
+) -> Result<GetSwapTimelockResponse> {
+    let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
+    let db = context.try_get_db().await?;
+
+    let state = db.get_state(args.swap_id).await?;
+    let swap_state: BobState = state.try_into()?;
+
+    let timelock = swap_state.expired_timelocks(bitcoin_wallet.clone()).await?;
+
+    Ok(GetSwapTimelockResponse {
+        swap_id: args.swap_id,
+        timelock,
     })
 }
 
@@ -1050,7 +1106,6 @@ pub async fn buy_xmr(
         .await?;
 
     let behaviour = cli::Behaviour::new(
-        seller_peer_id,
         env_config,
         bitcoin_wallet.clone(),
         (seed.derive_libp2p_identity(), namespace),
@@ -1075,9 +1130,7 @@ pub async fn buy_xmr(
         TauriSwapProgressEvent::ReceivedQuote(quote.clone()),
     );
 
-    // Now create the event loop we use for the swap
-    let (event_loop, event_loop_handle) =
-        EventLoop::new(swap_id, swarm, seller_peer_id, db.clone())?;
+    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
     let event_loop = tokio::spawn(event_loop.run().in_current_span());
 
     tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::ReceivedQuote(quote));
@@ -1105,13 +1158,14 @@ pub async fn buy_xmr(
                 }
             },
             swap_result = async {
+                let swap_event_loop_handle = event_loop_handle.swap_handle(seller_peer_id, swap_id).await?;
                 let swap = Swap::new(
                     db.clone(),
                     swap_id,
                     bitcoin_wallet.clone(),
                     monero_wallet,
                     env_config,
-                    event_loop_handle,
+                    swap_event_loop_handle,
                     monero_receive_pool.clone(),
                     bitcoin_change_address_for_spawn,
                     tx_lock_amount,
@@ -1169,7 +1223,6 @@ pub async fn resume_swap(
         .derive_libp2p_identity();
 
     let behaviour = cli::Behaviour::new(
-        seller_peer_id,
         config.env_config,
         bitcoin_wallet.clone(),
         (seed.clone(), config.namespace),
@@ -1184,20 +1237,22 @@ pub async fn resume_swap(
         swarm.add_peer_address(seller_peer_id, seller_address);
     }
 
-    let (event_loop, event_loop_handle) =
-        EventLoop::new(swap_id, swarm, seller_peer_id, db.clone())?;
+    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
 
     let monero_receive_pool = db.get_monero_address_pool(swap_id).await?;
 
     let tauri_handle = context.tauri_handle.clone();
 
+    let swap_event_loop_handle = event_loop_handle
+        .swap_handle(seller_peer_id, swap_id)
+        .await?;
     let swap = Swap::from_db(
         db.clone(),
         swap_id,
         bitcoin_wallet,
         monero_manager,
         config.env_config,
-        event_loop_handle,
+        swap_event_loop_handle,
         monero_receive_pool,
     )
     .await?

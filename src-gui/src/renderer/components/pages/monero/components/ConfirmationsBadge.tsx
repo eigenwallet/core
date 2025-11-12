@@ -13,7 +13,7 @@ export default function ConfirmationsBadge({
     return (
       <Chip
         icon={<AutoAwesomeIcon />}
-        label="Published"
+        label="Unconfirmed"
         color="secondary"
         size="small"
       />

@@ -8,11 +8,11 @@ use swap::cli::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
             CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse,
-            ExportBitcoinWalletArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs,
-            GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
-            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSyncProgressArgs,
-            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
-            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs,
+            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
+            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
+            GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
+            GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
             SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
@@ -35,6 +35,7 @@ macro_rules! generate_command_handlers {
     () => {
         tauri::generate_handler![
             get_balance,
+            get_bitcoin_address,
             get_monero_addresses,
             get_swap_info,
             get_swap_infos_all,
@@ -173,7 +174,6 @@ pub async fn initialize_context(
         })
         .with_monero(settings.monero_node_config)
         .with_json(false)
-        .with_debug(true)
         .with_tor(settings.use_tor)
         .with_enable_monero_tor(settings.enable_monero_tor)
         .with_tauri(tauri_handle.clone())
@@ -436,6 +436,7 @@ tauri_command!(send_monero, SendMoneroArgs);
 tauri_command!(change_monero_node, ChangeMoneroNodeArgs);
 
 // These commands require no arguments
+tauri_command!(get_bitcoin_address, GetBitcoinAddressArgs, no_args);
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
 tauri_command!(suspend_current_swap, SuspendCurrentSwapArgs, no_args);
 tauri_command!(get_swap_info, GetSwapInfoArgs);

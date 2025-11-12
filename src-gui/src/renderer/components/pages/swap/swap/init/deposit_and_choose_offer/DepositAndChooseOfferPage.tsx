@@ -107,8 +107,8 @@ export default function DepositAndChooseOfferPage({
                   return (
                     <MakerOfferItem
                       key={startIndex + index}
-                      quoteWithAddress={quote}
-                      requestId={quote.request_id}
+                      quoteWithAddress={quote.quote_with_address}
+                      requestId={quote.approval?.request_id}
                     />
                   );
                 })}

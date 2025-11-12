@@ -101,8 +101,7 @@ jobs:
             exit 1
           fi
 
-          export GNUPGHOME="$(mktemp -d)"
-          chmod 700 "$GNUPGHOME"
+          export GNUPGHOME="$(umask 077; mktemp -d)"
 
           # Allow loopback pinentry when passphrase is provided
           echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
@@ -152,21 +151,97 @@ jobs:
           # Find all .asc signature files we just created
           find target/${{ matrix.target }}/release/bundle -type f -name "*.asc" -print0 | while IFS= read -r -d '' sig_file; do
             echo "Uploading signature: $sig_file"
-            # Get just the filename for the asset name
-            asset_name=$(basename "$sig_file")
-
             gh release upload "${{ github.event.release.tag_name }}" \
               "$sig_file" \
               --clobber
           done
 
-      - name: upload to crabnebula release (not for previews)
+      - name: Upload flatpak release
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && matrix.target == 'x86_64-unknown-linux-gnu' }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          deb=$(find "$PWD" -name *.deb -print -quit)
+          jq --arg deb_path "$deb" --arg PWD "$PWD" '
+            .modules[0].sources[0] = {
+              "type": "file",
+              "path": $deb_path
+            } |
+            .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path
+          ' < flatpak/org.eigenwallet.app.json > target/manifest.json
+
+          outdir=target/flatpak-repo
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak-builder build-dir --gpg-sign="$GPG_FPR" --user --install-deps-from=flathub --disable-rofiles-fuse --disable-updates --repo="$outdir" target/manifest.json
+          flatpak build-update-repo --gpg-sign="$GPG_FPR" --generate-static-deltas --prune "$outdir"
+          flatpak build-bundle      --gpg-sign="$GPG_FPR" "$outdir" "$outdir/org.eigenwallet.app.flatpak" org.eigenwallet.app stable
+
+          ln flatpak/index.html flatpak/*.flatpakre* src-tauri/icons/icon.png README.md "$outdir/"
+          > "$outdir/.nojekyll"
+
+          IFS=/ read -r user repo <<< "$GITHUB_REPOSITORY"
+          sed -e "s|%Url%|https://$user.github.io/$repo|"              \
+              -e "s|%Homepage%|https://github.com/$GITHUB_REPOSITORY|" \
+              -e "s|%GPGKey%|$(gpg --export "$GPG_FPR" | base64 -w0)|" \
+              -i "$outdir"/*.flatpakre*
+
+          git -C "$outdir" init
+          git -C "$outdir" add .
+          git -C "$outdir" config user.name "${{ secrets.BOTTY_NAME }}"
+          git -C "$outdir" config user.email ${{ secrets.BOTTY_EMAIL }}
+          git -C "$outdir" commit -m "Build Flatpak repository from $GITHUB_REF_NAME ($GITHUB_SHA)"
+          git fetch -f "$outdir" HEAD:gh-pages
+          git push -f origin gh-pages
+
+      - name: Upload to crabnebula release (not for previews)
         if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') }}
         uses: crabnebula-dev/cloud-release@v0
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework tauri
           api-key: ${{ secrets.CN_API_KEY }}
           args: --target ${{ matrix.target }}
+
+  generate-homebrew-formula:
+    needs: [build_gui]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download DMG files and generate formula
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ github.event.release.tag_name }}"
+
+          # Download the DMG files
+          gh release download "$VERSION" --pattern "*.dmg" --dir /tmp/dmgs
+
+          # Calculate SHA256 checksums
+          AARCH64_DMG=/tmp/dmgs/*_aarch64_darwin.dmg
+          X64_DMG=/tmp/dmgs/*_x64_darwin.dmg
+
+          AARCH64_SHA256=$(sha256sum "$AARCH64_DMG" | awk '{print $1}')
+          X64_SHA256=$(sha256sum "$X64_DMG" | awk '{print $1}')
+
+          echo "aarch64 SHA256: $AARCH64_SHA256"
+          echo "x64 SHA256: $X64_SHA256"
+
+          # Generate the Homebrew formula from template
+          sed -e "s/VERSION_PLACEHOLDER/$VERSION/g"               \
+              -e "s/AARCH64_SHA256_PLACEHOLDER/$AARCH64_SHA256/g" \
+              -e "s/X64_SHA256_PLACEHOLDER/$X64_SHA256/g"         \
+              dev-scripts/homebrew/eigenwallet.rb.template | tee eigenwallet.rb
+
+      - name: Upload Homebrew formula to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTTY_GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            eigenwallet.rb \
+            --clobber
 
   publish:
     # don't publish previews to crabnebula

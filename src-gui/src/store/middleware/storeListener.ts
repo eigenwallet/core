@@ -2,10 +2,13 @@ import { createListenerMiddleware } from "@reduxjs/toolkit";
 import { throttle, debounce } from "lodash";
 import {
   getAllSwapInfos,
+  getAllSwapTimelocks,
   checkBitcoinBalance,
+  getBitcoinAddress,
   updateAllNodeStatuses,
   fetchSellersAtPresetRendezvousPoints,
   getSwapInfo,
+  getSwapTimelock,
   initializeMoneroWallet,
   changeMoneroNode,
   getCurrentMoneroNodeConfig,
@@ -20,9 +23,8 @@ import {
   setFetchFiatPrices,
   setFiatCurrency,
   setUseMoneroRpcPool,
-  Blockchain,
-  Network,
 } from "store/features/settingsSlice";
+import { Blockchain, Network } from "store/types";
 import { fetchFeedbackMessagesViaHttp, updateRates } from "renderer/api";
 import { RootState, store } from "renderer/store/storeRenderer";
 import { swapProgressEventReceived } from "store/features/swapSlice";
@@ -30,6 +32,7 @@ import {
   addFeedbackId,
   setConversation,
 } from "store/features/conversationsSlice";
+import { setBitcoinAddress } from "store/features/bitcoinWalletSlice";
 
 // Create a Map to store throttled functions per swap_id
 const throttledGetSwapInfoFunctions = new Map<
@@ -44,7 +47,12 @@ const getThrottledSwapInfoUpdater = (swapId: string) => {
     // but will wait for 3 seconds of quiet during rapid calls (using debounce)
     const debouncedGetSwapInfo = debounce(() => {
       logger.debug(`Executing getSwapInfo for swap ${swapId}`);
-      getSwapInfo(swapId);
+      getSwapInfo(swapId).catch((error) => {
+        logger.debug(`Failed to fetch swap info for swap ${swapId}: ${error}`);
+      });
+      getSwapTimelock(swapId).catch((error) => {
+        logger.debug(`Failed to fetch timelock for swap ${swapId}: ${error}`);
+      });
     }, 3000); // 3 seconds debounce for rapid calls
 
     const throttledFunction = throttle(debouncedGetSwapInfo, 2000, {
@@ -86,15 +94,21 @@ export function createMainListeners() {
 
       if (!status) return;
 
-      // If the Bitcoin wallet just came available, check the Bitcoin balance
+      // If the Bitcoin wallet just came available, check the Bitcoin balance and get address
       if (
         status.bitcoin_wallet_available &&
         !previousContextStatus?.bitcoin_wallet_available
       ) {
         logger.info(
-          "Bitcoin wallet just became available, checking balance...",
+          "Bitcoin wallet just became available, checking balance and getting address...",
         );
         await checkBitcoinBalance();
+        try {
+          const address = await getBitcoinAddress();
+          store.dispatch(setBitcoinAddress(address));
+        } catch (error) {
+          logger.error("Failed to fetch Bitcoin address", error);
+        }
       }
 
       // If the Monero wallet just came available, initialize the Monero wallet
@@ -123,6 +137,7 @@ export function createMainListeners() {
           "Database & Bitcoin wallet just became available, fetching swap infos...",
         );
         await getAllSwapInfos();
+        await getAllSwapTimelocks();
       }
 
       // If the database just became availiable, fetch sellers at preset rendezvous points

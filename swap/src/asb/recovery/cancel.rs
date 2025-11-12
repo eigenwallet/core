@@ -24,8 +24,10 @@ pub async fn cancel(
         AliceState::XmrLockTransactionSent { monero_wallet_restore_blockheight, transfer_proof, state3,  }
         | AliceState::XmrLocked { monero_wallet_restore_blockheight, transfer_proof, state3 }
         | AliceState::XmrLockTransferProofSent { monero_wallet_restore_blockheight, transfer_proof, state3 }
+
         // in cancel mode we do not care about the fact that we could redeem, but always wait for cancellation (leading either refund or punish)
         | AliceState::EncSigLearned { monero_wallet_restore_blockheight, transfer_proof, state3, .. }
+        | AliceState::WaitingForCancelTimelockExpiration { monero_wallet_restore_blockheight, transfer_proof, state3}
         | AliceState::CancelTimelockExpired { monero_wallet_restore_blockheight, transfer_proof, state3}
         | AliceState::BtcCancelled { monero_wallet_restore_blockheight, transfer_proof, state3 }
         | AliceState::BtcRefunded { monero_wallet_restore_blockheight, transfer_proof,  state3 ,.. }

@@ -1,15 +1,23 @@
-import { Box, Typography, Paper, Button, Slide } from "@mui/material";
+import {
+  Box,
+  Typography,
+  Paper,
+  Button,
+  Slide,
+  SlideProps,
+} from "@mui/material";
 import CardSelectionGroup from "renderer/components/inputs/CardSelection/CardSelectionGroup";
 import CardSelectionOption from "renderer/components/inputs/CardSelection/CardSelectionOption";
 import SlideTemplate from "./SlideTemplate";
 import imagePath from "assets/currencyFetching.svg";
+import { IntroSlideProps } from "./SlideTypes";
 
 const FiatPricePreferenceSlide = ({
   handleContinue,
   handlePrevious,
   showFiat,
   onChange,
-}: slideProps & {
+}: IntroSlideProps & {
   showFiat: boolean;
   onChange: (value: string) => void;
 }) => {

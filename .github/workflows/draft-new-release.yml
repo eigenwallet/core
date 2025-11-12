@@ -34,21 +34,38 @@ jobs:
           git config user.name "${{ secrets.BOTTY_NAME }}"
           git config user.email ${{ secrets.BOTTY_EMAIL }}
 
-      - name: Bump version in Cargo.toml
+      - name: Bump version in swap/Cargo.toml
         uses: thomaseizinger/set-crate-version@1.0.0
         with:
           version: ${{ github.event.inputs.version }}
           manifest: swap/Cargo.toml
 
-      - name: Bump version in Cargo.toml for GUI
+      - name: Bump version in src-tauri/Cargo.toml
         uses: thomaseizinger/set-crate-version@1.0.0
         with:
           version: ${{ github.event.inputs.version }}
           manifest: src-tauri/Cargo.toml
 
+      - name: Bump version in swap-asb/Cargo.toml
+        uses: thomaseizinger/set-crate-version@1.0.0
+        with:
+          version: ${{ github.event.inputs.version }}
+          manifest: swap-asb/Cargo.toml
+
+      - name: Bump version in swap-controller/Cargo.toml
+        uses: thomaseizinger/set-crate-version@1.0.0
+        with:
+          version: ${{ github.event.inputs.version }}
+          manifest: swap-controller/Cargo.toml
+
       - name: Update version in tauri.conf.json for GUI
         run: |
           sed -i 's/"version": "[^"]*"/"version": "${{ github.event.inputs.version }}"/' src-tauri/tauri.conf.json
+
+      - name: Update version in flatpak AppStream metadata for GUI
+        run: |
+          sed -i '/<releases>/a\
+              <release version="${{ github.event.inputs.version }}" date="'"$(date -I)"'" />' flatpak/*.appdata.xml
 
       - name: Update Cargo.lock
         run: cargo update --workspace
@@ -57,13 +74,13 @@ jobs:
         id: make-commit
         env:
           DPRINT_VERSION: "0.50.0"
-          RUST_TOOLCHAIN: "1.87.0"
+          RUST_TOOLCHAIN: "1.88.0"
         run: |
           rustup component add rustfmt --toolchain "$RUST_TOOLCHAIN-x86_64-unknown-linux-gnu"
           curl -fsSL https://dprint.dev/install.sh | sh -s $DPRINT_VERSION
           /home/runner/.dprint/bin/dprint fmt
 
-          git add CHANGELOG.md Cargo.lock swap/Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json
+          git add CHANGELOG.md Cargo.lock swap/Cargo.toml src-tauri/Cargo.toml swap-asb/Cargo.toml swap-controller/Cargo.toml src-tauri/tauri.conf.json
           git commit --message "Prepare release ${{ github.event.inputs.version }}"
 
           echo "commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT

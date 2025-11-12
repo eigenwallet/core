@@ -3,11 +3,11 @@ import { TauriEvent } from "models/tauriModel";
 import {
   contextStatusEventReceived,
   contextInitializationFailed,
-  rpcSetBalance,
   timelockChangeEventReceived,
   approvalEventReceived,
   backgroundProgressEventReceived,
 } from "store/features/rpcSlice";
+import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
 import { receivedCliLog } from "store/features/logsSlice";
 import { poolStatusReceived } from "store/features/poolSlice";
 import { swapProgressEventReceived } from "store/features/swapSlice";
@@ -21,6 +21,7 @@ import {
 import {
   checkContextStatus,
   getSwapInfo,
+  getSwapTimelock,
   initializeContext,
   listSellersAtRendezvousPoint,
   refreshApprovals,
@@ -33,6 +34,12 @@ import {
   setHistory,
   setSyncProgress,
 } from "store/features/walletSlice";
+import { applyDefaultNodes } from "store/features/settingsSlice";
+import {
+  DEFAULT_NODES,
+  NEGATIVE_NODES_MAINNET,
+  NEGATIVE_NODES_TESTNET,
+} from "store/defaults";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 
@@ -63,6 +70,15 @@ function setIntervalImmediate(callback: () => void, interval: number): void {
 }
 
 export async function setupBackgroundTasks(): Promise<void> {
+  // Apply default nodes on startup (removes broken nodes, adds new ones)
+  store.dispatch(
+    applyDefaultNodes({
+      defaultNodes: DEFAULT_NODES,
+      negativeNodesMainnet: NEGATIVE_NODES_MAINNET,
+      negativeNodesTestnet: NEGATIVE_NODES_TESTNET,
+    }),
+  );
+
   // Setup periodic fetch tasks
   setIntervalImmediate(updatePublicRegistry, PROVIDER_UPDATE_INTERVAL);
   setIntervalImmediate(updateAllNodeStatuses, STATUS_UPDATE_INTERVAL);
@@ -118,16 +134,36 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
       break;
 
     case "BalanceChange":
-      store.dispatch(rpcSetBalance(eventData.balance));
+      store.dispatch(setBitcoinBalance(eventData.balance));
       break;
 
     case "SwapDatabaseStateUpdate":
-      getSwapInfo(eventData.swap_id);
+      getSwapInfo(eventData.swap_id).catch((error) => {
+        logger.debug(
+          `Failed to fetch swap info for swap ${eventData.swap_id}: ${error}`,
+        );
+      });
+      getSwapTimelock(eventData.swap_id).catch((error) => {
+        logger.debug(
+          `Failed to fetch timelock for swap ${eventData.swap_id}: ${error}`,
+        );
+      });
 
       // This is ugly but it's the best we can do for now
       // Sometimes we are too quick to fetch the swap info and the new state is not yet reflected
       // in the database. So we wait a bit before fetching the new state
-      setTimeout(() => getSwapInfo(eventData.swap_id), 3000);
+      setTimeout(() => {
+        getSwapInfo(eventData.swap_id).catch((error) => {
+          logger.debug(
+            `Failed to fetch swap info for swap ${eventData.swap_id}: ${error}`,
+          );
+        });
+        getSwapTimelock(eventData.swap_id).catch((error) => {
+          logger.debug(
+            `Failed to fetch timelock for swap ${eventData.swap_id}: ${error}`,
+          );
+        });
+      }, 3000);
       break;
 
     case "TimelockChange":

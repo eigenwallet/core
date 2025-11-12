@@ -7,6 +7,8 @@ use libp2p::noise;
 use libp2p::{identity, yamux, PeerId, Transport};
 use std::time::Duration;
 
+const AUTH_AND_MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// "Completes" a transport by applying the authentication and multiplexing
 /// upgrades.
 ///
@@ -27,7 +29,7 @@ where
         .upgrade(Version::V1)
         .authenticate(auth_upgrade)
         .multiplex(multiplex_upgrade)
-        .timeout(Duration::from_secs(20))
+        .timeout(AUTH_AND_MULTIPLEX_TIMEOUT)
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
         .boxed();
 

@@ -44,10 +44,16 @@ Run the command below to start the wizard. It’ll guide you through a bunch of 
 ./orchestrator
 ```
 
+To build the images, run this command. Also run this after upgrading the `orchestrator` and re-generating `docker-compose.yml`:
+
+```bash
+docker compose build --no-cache # --no-cache fixes a git caching issue (error: tag clobbered)
+```
+
 To start the environment, run a command [such as](https://docs.docker.com/reference/cli/docker/compose/up/):
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 To view logs, run commands [such as](https://docs.docker.com/reference/cli/docker/compose/logs/):
