@@ -1,6 +1,6 @@
 [build]
 target-dir = "target"
- 
+
 # Cross-compilation support for armv7
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"

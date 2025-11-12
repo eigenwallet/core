@@ -15,10 +15,17 @@ use void::Void;
 /// peers and attempts to re-establish a connection with an exponential backoff
 /// if we lose the connection.
 ///
+/// Note: Make sure that when using this as an inner behaviour for a `NetworkBehaviour` that you
+/// call all the NetworkBehaviour methods (including `handle_pending_outbound_connection`) to ensure
+/// that the addresses are cached correctly.
 /// TODO: Allow removing peers from the set after we are done with them.
 pub struct Behaviour {
     /// The peers we are interested in.
     peers: HashSet<PeerId>,
+    /// Store address for all peers (even those we are not interested in)
+    /// because we might be interested in them later on
+    // TODO: Sort these by how often we were able to connect to them
+    addresses: HashMap<PeerId, HashSet<Multiaddr>>,
     /// Tracks sleep timers for each peer waiting to redial.
     /// Futures in here yield the PeerId and when a Future completes we dial that peer
     to_dial: FuturesHashSet<PeerId, ()>,
@@ -38,6 +45,7 @@ impl Behaviour {
     pub fn new(name: &'static str, interval: Duration, max_interval: Duration) -> Self {
         Self {
             peers: HashSet::default(),
+            addresses: HashMap::default(),
             to_dial: FuturesHashSet::new(),
             backoff: HashMap::new(),
             initial_interval: interval,
@@ -55,9 +63,9 @@ impl Behaviour {
         // If the peer is newly added, schedule a dial immediately
         if newly_added {
             self.schedule_redial(&peer, Duration::ZERO);
-        }
 
-        tracing::trace!("Added a new peer to the set of peers we want to contineously redial");
+            tracing::trace!("Added a new peer to the set of peers we want to contineously redial");
+        }
 
         newly_added
     }
@@ -138,12 +146,24 @@ impl NetworkBehaviour for Behaviour {
 
     #[tracing::instrument(level = "trace", name = "redial::on_swarm_event", skip(self, event), fields(redial_type = %self.name))]
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-        // Check if the event was for either:
-        // - a failed dial
-        // - a closed connection
-        //
-        // We will then schedule a redial for the peer
         let peer_to_redial = match event {
+            // Check if we discovered a new address for some peer
+            FromSwarm::NewExternalAddrOfPeer(event) => {
+                // TOOD: Ensure that if the address contains a peer id it matches the peer id in the event
+                self.addresses
+                    .entry(event.peer_id)
+                    .or_default()
+                    .insert(event.addr.clone());
+
+                tracing::trace!(peer = %event.peer_id, address = %event.addr, "Cached an address for a peer");
+
+                None
+            }
+            // Check if the event was for either:
+            // - a failed dial
+            // - a closed connection
+            //
+            // We will then schedule a redial for the peer
             FromSwarm::ConnectionClosed(event) if self.peers.contains(&event.peer_id) => {
                 tracing::trace!(peer = %event.peer_id, "A connection was closed for a peer we want to contineously redial. We will schedule a redial.");
 
@@ -247,6 +267,32 @@ impl NetworkBehaviour for Behaviour {
         _role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         Ok(Self::ConnectionHandler {})
+    }
+
+    #[tracing::instrument(level = "trace", name = "redial::handle_pending_outbound_connection", skip(self, _connection_id, _addresses, _effective_role), fields(redial_type = %self.name))]
+    fn handle_pending_outbound_connection(
+        &mut self,
+        _connection_id: libp2p::swarm::ConnectionId,
+        maybe_peer: Option<PeerId>,
+        _addresses: &[Multiaddr],
+        _effective_role: libp2p::core::Endpoint,
+    ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+        // If we don't know the peer id, we cannot contribute any addresses
+        let Some(peer_id) = maybe_peer else {
+            return Ok(vec![]);
+        };
+
+        // Check if we have any addresses cached for the peer
+        // TODO: Sort these by how often we were able to connect to them
+        let addresses = self
+            .addresses
+            .get(&peer_id)
+            .map(|addrs| addrs.iter().cloned().collect())
+            .unwrap_or_default();
+
+        tracing::trace!(peer = %peer_id, addresses = ?addresses, "Contributing our cached addresses for a peer to the dial attempt");
+
+        Ok(addresses)
     }
 }
 
