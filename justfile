@@ -106,7 +106,7 @@ fmt:
 	dprint fmt
 
 generate-sqlx-cache:
-	./regenerate_sqlx_cache.sh
+	./dev-scripts/regenerate_sqlx_cache.sh
 
 # Run eslint for the GUI frontend
 check_gui_eslint:
