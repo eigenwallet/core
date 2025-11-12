@@ -278,7 +278,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
 
                                 tracing::warn!(
                                     ?pin_error,
-                                    ?peer_id,
+                                    ?peer,
                                     ?hash,
                                     "Server responded to our pin request with an error"
                                 );
@@ -704,7 +704,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         for server in self.servers.clone().iter() {
             // Ensure we have a dont_want set for the server
             // We only pin a message when we know which messages the server has and can be sure he does not have it
-            let Some(dont_want) = self.dont_want.dont_want_read_only(&server) else {
+            let Some(dont_want) = self.dont_want.read_only_set(&server) else {
                 continue;
             };
 
@@ -752,7 +752,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         let mut result = Vec::new();
 
         // For every `incoming_messages` check if we have them, otherwise pull them
-        let our_hashes = self.dont_want.dont_want_read_only(&self.peer_id());
+        let our_hashes = self.dont_want.read_only_set(&self.peer_id());
         let interesting_hashes: Vec<_> = self
             .incoming_messages
             .difference(our_hashes.as_ref().unwrap_or(&Default::default()))
@@ -766,7 +766,7 @@ impl<S: storage::Storage + Sync + 'static> Behaviour<S> {
         for hash in interesting_hashes {
             for server in self.servers.iter() {
                 // We ignore servers for which we cannot know if they have the message (no `dont_want` set)
-                let Some(dont_want) = self.dont_want.dont_want_read_only(&server) else {
+                let Some(dont_want) = self.dont_want.read_only_set(&server) else {
                     continue;
                 };
 

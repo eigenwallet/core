@@ -11,7 +11,7 @@ impl<H: Hash + Eq + Clone> DontWantSet<H> {
 
     /// Call this whenever we definitely know a server has a message or we definitely know he does not want it 
     pub fn mark_does_not_want(&mut self, peer_id: PeerId, hash: H) {
-        let mut set = self.dont_want_set_or_default(peer_id).as_ref().clone();
+        let mut set = self.set_or_default(peer_id).as_ref().clone();
         set.insert(hash);
         self.0.insert(peer_id, Arc::new(set));
     }
@@ -25,7 +25,7 @@ impl<H: Hash + Eq + Clone> DontWantSet<H> {
             return;
         }
 
-        let mut set = self.dont_want_set_or_default(peer_id).as_ref().clone();
+        let mut set = self.set_or_default(peer_id).as_ref().clone();
         set.remove(&hash);
         self.0.insert(peer_id, Arc::new(set));
     }
@@ -34,7 +34,7 @@ impl<H: Hash + Eq + Clone> DontWantSet<H> {
         self.0.insert(peer_id, Arc::new(hashes.into_iter().collect()));
     }
 
-    pub fn dont_want_read_only(&self, peer_id: &PeerId) -> Option<Arc<HashSet<H>>> {
+    pub fn read_only_set(&self, peer_id: &PeerId) -> Option<Arc<HashSet<H>>> {
         self.0.get(peer_id).cloned()
     }
 
@@ -42,7 +42,7 @@ impl<H: Hash + Eq + Clone> DontWantSet<H> {
         self.0.contains_key(peer_id)
     }
 
-    fn dont_want_set_or_default(&mut self, peer_id: PeerId) -> &mut Arc<HashSet<H>> {
+    fn set_or_default(&mut self, peer_id: PeerId) -> &mut Arc<HashSet<H>> {
         self.0.entry(peer_id).or_insert_with(|| Arc::new(HashSet::new()))
     }
 }
