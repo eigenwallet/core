@@ -104,7 +104,7 @@ export default function SeedSelectionDialog() {
 
   const isBlockheightValid = parseBlockHeightInput(blockheightInput) !== false;
   const isBlockheightInputFailed =
-    blockheightInput !== undefined && isBlockheightValid === false;
+    blockheightInput && isBlockheightValid === false;
 
   const Legacy = async () => {
     if (!approval)
