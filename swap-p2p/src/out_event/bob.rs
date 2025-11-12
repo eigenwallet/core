@@ -6,6 +6,7 @@ use libp2p::{
     PeerId,
 };
 
+use crate::protocols::redial;
 use crate::protocols::{
     cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote,
     transfer_proof,
@@ -17,7 +18,11 @@ pub enum OutEvent {
         id: OutboundRequestId,
         response: BidQuote,
     },
-    SwapSetupCompleted(Box<anyhow::Result<swap_machine::bob::State2>>),
+    SwapSetupCompleted {
+        peer: PeerId,
+        swap_id: uuid::Uuid,
+        result: Box<anyhow::Result<swap_machine::bob::State2>>,
+    },
     TransferProofReceived {
         msg: Box<transfer_proof::Request>,
         channel: ResponseChannel<()>,
@@ -53,6 +58,7 @@ pub enum OutEvent {
         request_id: InboundRequestId,
         protocol: String,
     },
+    Redial(redial::Event),
     /// "Fallback" variant that allows the event mapping code to swallow certain
     /// events that we don't want the caller to deal with.
     Other,

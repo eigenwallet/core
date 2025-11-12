@@ -1,0 +1,140 @@
+diff --git a/src/wallet/api/pending_transaction.cpp b/src/wallet/api/pending_transaction.cpp
+index 2dd118ea3..0972089d1 100644
+--- a/src/wallet/api/pending_transaction.cpp
++++ b/src/wallet/api/pending_transaction.cpp
+@@ -78,6 +78,103 @@ std::vector<std::string> PendingTransactionImpl::txid() const
+     return txid;
+ }
+ 
++// This function returns **all** tx keys for the transaction with the given tx hash in the [`PendingTransaction`].
++// A [`PendingTransaction`] can contain multiple transactions. A single transaction can have multiple tx keys.
++std::vector<std::tuple<std::string, std::string, std::string>> PendingTransactionImpl::txKeys(const std::string &tx_hash) const
++{
++    std::vector<std::tuple<std::string, std::string, std::string>> keys;
++
++    for (const auto &ptx : m_pending_tx)
++    {
++        const std::string current_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx.tx));
++        
++        if (current_tx_hash != tx_hash) 
++        {
++            continue;
++        }
++
++        const std::string main_tx_key = epee::string_tools::pod_to_hex(unwrap(unwrap(ptx.tx_key)));
++
++        if (ptx.tx.vout.size() != ptx.construction_data.splitted_dsts.size()) {
++            throw std::runtime_error(
++                "Number of outputs in transaction " 
++                + current_tx_hash 
++                + " (" + std::to_string(ptx.tx.vout.size()) + ")"
++                + " does not match number of destinations (" 
++                + std::to_string(ptx.construction_data.splitted_dsts.size()) + ")");
++        }
++
++        // Prepare change-derivation data for change detection
++        const crypto::public_key tx_pub_key = cryptonote::get_tx_pub_key_from_extra(ptx.tx);
++        const crypto::secret_key &view_secret_key = m_wallet.m_wallet->get_account().get_keys().m_view_secret_key;
++        crypto::key_derivation change_derivation;
++        if (!crypto::generate_key_derivation(tx_pub_key, view_secret_key, change_derivation)) {
++            throw std::runtime_error("Failed to generate change derivation");
++        }
++        const crypto::public_key change_spend_pub = ptx.construction_data.change_dts.addr.m_spend_public_key;
++
++        for (size_t i = 0; i < ptx.tx.vout.size(); i++) {
++            const cryptonote::tx_out tx_output = ptx.tx.vout[i];
++            const cryptonote::tx_destination_entry dest_entry = ptx.construction_data.splitted_dsts[i];
++
++            crypto::public_key out_pk;
++            if (!cryptonote::get_output_public_key(ptx.tx.vout[i], out_pk)) {
++                throw std::runtime_error("Unable to get output public key from transaction out");
++            }
++
++            // Detect change outputs by checking if the output public key matches our private view key.
++            crypto::public_key expected_change_pk;
++            if (!crypto::derive_public_key(change_derivation, i, change_spend_pub, expected_change_pk)) {
++                throw std::runtime_error("Failed to derive change public key");
++            }
++            // If it's a change output, skip it. Otherwise look for the tx key.
++            if (expected_change_pk == out_pk) {
++                continue;
++            }
++
++            std::vector<crypto::secret_key> keys_to_try = ptx.additional_tx_keys;
++            keys_to_try.push_back(ptx.tx_key);
++
++            bool found_key = false;
++            crypto::secret_key matched_key = crypto::null_skey;
++
++            for (const auto &candidate_key: keys_to_try) {
++                // compute derivation from recipient view pubkey and our tx secret key
++                crypto::key_derivation derivation;
++                if (!crypto::generate_key_derivation(dest_entry.addr.m_view_public_key, candidate_key, derivation)) {
++                    throw std::runtime_error("Failed to generate key derivation for output " + std::to_string(i));
++                }
++
++                // derive expected output public key and compare. We check if the K^0 we derive matches the expected one.
++                crypto::public_key expected_out_pk;
++                if (!crypto::derive_public_key(derivation, i, dest_entry.addr.m_spend_public_key, expected_out_pk)) {
++                    throw std::runtime_error("Failed to derive public key for output " + std::to_string(i));
++                }
++
++                if (expected_out_pk == out_pk) {
++                    found_key = true;
++                    matched_key = candidate_key;
++                    break;
++                }
++            }
++
++            if (!found_key || matched_key == crypto::null_skey) {
++                throw std::runtime_error("No matching tx key found for output");
++            }
++
++            // push (txid, destination address (human-readable), hex(tx_secret_key))
++            const std::string dest_addr_str = dest_entry.address(m_wallet.m_wallet->nettype(), crypto::null_hash);
++            keys.emplace_back(
++                current_tx_hash,
++                dest_addr_str,
++                epee::string_tools::pod_to_hex(unwrap(unwrap(matched_key)))
++            );
++        }
++    }
++
++    return keys;
++}
++
+ bool PendingTransactionImpl::commit(const std::string &filename, bool overwrite)
+ {
+ 
+diff --git a/src/wallet/api/pending_transaction.h b/src/wallet/api/pending_transaction.h
+index c5f4328a8..0377eb79c 100644
+--- a/src/wallet/api/pending_transaction.h
++++ b/src/wallet/api/pending_transaction.h
+@@ -33,6 +33,7 @@
+ 
+ #include <string>
+ #include <vector>
++#include <tuple>
+ 
+ 
+ namespace Monero {
+@@ -50,6 +51,7 @@ public:
+     uint64_t dust() const override;
+     uint64_t fee() const override;
+     std::vector<std::string> txid() const override;
++    std::vector<std::tuple<std::string, std::string, std::string>> txKeys(const std::string &tx_hash) const override;
+     uint64_t txCount() const override;
+     std::vector<uint32_t> subaddrAccount() const override;
+     std::vector<std::set<uint32_t>> subaddrIndices() const override;
+diff --git a/src/wallet/api/wallet2_api.h b/src/wallet/api/wallet2_api.h
+index ca807ac87..29a89f273 100644
+--- a/src/wallet/api/wallet2_api.h
++++ b/src/wallet/api/wallet2_api.h
+@@ -131,6 +131,7 @@ struct PendingTransaction
+     virtual uint64_t dust() const = 0;
+     virtual uint64_t fee() const = 0;
+     virtual std::vector<std::string> txid() const = 0;
++    virtual std::vector<std::tuple<std::string, std::string, std::string>> txKeys(const std::string &tx_hash) const = 0;
+     /*!
+      * \brief txCount - number of transactions current transaction will be splitted to
+      * \return

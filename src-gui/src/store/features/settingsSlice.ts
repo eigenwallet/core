@@ -1,16 +1,11 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { Theme } from "renderer/components/theme";
+import { DEFAULT_NODES, DEFAULT_RENDEZVOUS_POINTS } from "../defaults";
+import { Network, Blockchain } from "../types";
 
 export type DonateToDevelopmentTip = false | 0.0005 | 0.0075;
 
-const DEFAULT_RENDEZVOUS_POINTS = [
-  "/dns4/discover.unstoppableswap.net/tcp/8888/p2p/12D3KooWA6cnqJpVnreBVnoro8midDL9Lpzmg8oJPoAGi7YYaamE",
-  "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw",
-  "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU",
-  "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT",
-  "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp",
-  "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa",
-];
+const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 export interface SettingsState {
   /// This is an ordered list of node urls for each network and blockchain
@@ -42,6 +37,8 @@ export interface SettingsState {
   externalMoneroRedeemAddress: string;
   /// The external Bitcoin refund address
   externalBitcoinRefundAddress: string;
+  /// UTC timestamp (in milliseconds) when default nodes were last applied
+  lastAppliedDefaultNodes?: number | null;
 }
 
 export enum RedeemPolicy {
@@ -104,53 +101,8 @@ export enum FiatCurrency {
   Zar = "ZAR",
 }
 
-export enum Network {
-  Testnet = "testnet",
-  Mainnet = "mainnet",
-}
-
-export enum Blockchain {
-  Bitcoin = "bitcoin",
-  Monero = "monero",
-}
-
 const initialState: SettingsState = {
-  nodes: {
-    [Network.Testnet]: {
-      [Blockchain.Bitcoin]: [
-        "ssl://ax101.blockeng.ch:60002",
-        "ssl://blackie.c3-soft.com:57006",
-        "ssl://v22019051929289916.bestsrv.de:50002",
-        "tcp://v22019051929289916.bestsrv.de:50001",
-        "tcp://electrum.blockstream.info:60001",
-        "ssl://electrum.blockstream.info:60002",
-        "ssl://blockstream.info:993",
-        "tcp://blockstream.info:143",
-        "ssl://testnet.qtornado.com:51002",
-        "tcp://testnet.qtornado.com:51001",
-        "tcp://testnet.aranguren.org:51001",
-        "ssl://testnet.aranguren.org:51002",
-        "ssl://testnet.qtornado.com:50002",
-        "ssl://bitcoin.devmole.eu:5010",
-        "tcp://bitcoin.devmole.eu:5000",
-      ],
-      [Blockchain.Monero]: [],
-    },
-    [Network.Mainnet]: {
-      [Blockchain.Bitcoin]: [
-        "ssl://electrum.blockstream.info:50002",
-        "tcp://electrum.blockstream.info:50001",
-        "ssl://bitcoin.stackwallet.com:50002",
-        "ssl://b.1209k.com:50002",
-        "tcp://electrum.coinucopia.io:50001",
-        "ssl://mainnet.foundationdevices.com:50002",
-        "tcp://bitcoin.lu.ke:50001",
-        "tcp://se-mma-crypto-payments-001.mullvad.net:50001",
-        "ssl://electrum.coinfinity.co:50002",
-      ],
-      [Blockchain.Monero]: [],
-    },
-  },
+  nodes: DEFAULT_NODES,
   theme: Theme.Dark,
   fetchFiatPrices: false,
   fiatCurrency: FiatCurrency.Usd,
@@ -158,12 +110,14 @@ const initialState: SettingsState = {
   enableMoneroTor: false, // Default to not routing Monero traffic through Tor
   useMoneroRpcPool: true, // Default to using RPC pool
   userHasSeenIntroduction: false,
+  // TODO: Apply these regularly (like the default nodes)
   rendezvousPoints: DEFAULT_RENDEZVOUS_POINTS,
   donateToDevelopment: false, // Default to no donation
   moneroRedeemPolicy: RedeemPolicy.Internal,
   bitcoinRefundPolicy: RefundPolicy.Internal,
   externalMoneroRedeemAddress: "",
   externalBitcoinRefundAddress: "",
+  lastAppliedDefaultNodes: null,
 };
 
 const alertsSlice = createSlice({
@@ -273,6 +227,63 @@ const alertsSlice = createSlice({
     setBitcoinRefundAddress(slice, action: PayloadAction<string>) {
       slice.externalBitcoinRefundAddress = action.payload;
     },
+    applyDefaultNodes(
+      slice,
+      action: PayloadAction<{
+        defaultNodes: Record<Network, Record<Blockchain, string[]>>;
+        negativeNodesMainnet: string[];
+        negativeNodesTestnet: string[];
+      }>,
+    ) {
+      const now = Date.now();
+      const twoWeeksInMs = 14 * 24 * 60 * 60 * 1000;
+
+      // Check if we should apply defaults (first time or more than 2 weeks)
+      if (
+        slice.lastAppliedDefaultNodes == null ||
+        now - slice.lastAppliedDefaultNodes >
+          MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY
+      ) {
+        // Remove negative nodes from mainnet
+        slice.nodes[Network.Mainnet][Blockchain.Bitcoin] = slice.nodes[
+          Network.Mainnet
+        ][Blockchain.Bitcoin].filter(
+          (node) => !action.payload.negativeNodesMainnet.includes(node),
+        );
+
+        // Remove negative nodes from testnet
+        slice.nodes[Network.Testnet][Blockchain.Bitcoin] = slice.nodes[
+          Network.Testnet
+        ][Blockchain.Bitcoin].filter(
+          (node) => !action.payload.negativeNodesTestnet.includes(node),
+        );
+
+        // Add new default nodes if they don't exist (mainnet)
+        action.payload.defaultNodes[Network.Mainnet][
+          Blockchain.Bitcoin
+        ].forEach((node) => {
+          if (
+            !slice.nodes[Network.Mainnet][Blockchain.Bitcoin].includes(node)
+          ) {
+            slice.nodes[Network.Mainnet][Blockchain.Bitcoin].push(node);
+          }
+        });
+
+        // Add new default nodes if they don't exist (testnet)
+        action.payload.defaultNodes[Network.Testnet][
+          Blockchain.Bitcoin
+        ].forEach((node) => {
+          if (
+            !slice.nodes[Network.Testnet][Blockchain.Bitcoin].includes(node)
+          ) {
+            slice.nodes[Network.Testnet][Blockchain.Bitcoin].push(node);
+          }
+        });
+
+        // Update the timestamp
+        slice.lastAppliedDefaultNodes = now;
+      }
+    },
   },
 });
 
@@ -295,6 +306,7 @@ export const {
   setBitcoinRefundPolicy,
   setMoneroRedeemAddress,
   setBitcoinRefundAddress,
+  applyDefaultNodes,
 } = alertsSlice.actions;
 
 export default alertsSlice.reducer;

@@ -9,7 +9,7 @@ export default function TruncatedText({
   ellipsis?: string;
   truncateMiddle?: boolean;
 }) {
-  let finalChildren = children ?? "";
+  const finalChildren = children ?? "";
 
   const truncatedText =
     finalChildren.length > limit

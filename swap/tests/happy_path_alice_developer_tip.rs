@@ -10,7 +10,7 @@ use tokio::join;
 async fn happy_path_alice_developer_tip() {
     harness::setup_test(
         SlowCancelConfig,
-        Some(Decimal::from_f32_retain(0.1).unwrap()),
+        Some((Decimal::from_f32_retain(0.1).unwrap(), false)),
         |mut ctx| async move {
             let (bob_swap, _) = ctx.bob_swap().await;
             let bob_swap = tokio::spawn(bob::run(bob_swap));

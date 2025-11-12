@@ -1,9 +1,10 @@
-import { Link, Typography } from "@mui/material";
+import { Link, SlideProps, Typography } from "@mui/material";
 import SlideTemplate from "./SlideTemplate";
 import imagePath from "assets/mockHistoryPage.svg";
 import ExternalLink from "renderer/components/other/ExternalLink";
+import { IntroSlideProps } from "./SlideTypes";
 
-export default function Slide05_KeepAnEyeOnYourSwaps(props: slideProps) {
+export default function Slide05_KeepAnEyeOnYourSwaps(props: IntroSlideProps) {
   return (
     <SlideTemplate
       title="Monitor Your Swaps"

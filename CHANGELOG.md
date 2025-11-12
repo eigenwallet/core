@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.1] - 2025-11-11
+
+- GUI: Fix the Flatpak images to ensure they are kept up to date and the correct version is displayed. Also fixes an issue where a blank screen would sometimes be rendered. Big thanks to [nabijaczleweli](https://github.com/nabijaczleweli) for spending their time on this! Consider sending a Monero tip to the donation address pinned on their [Github profile](https://github.com/nabijaczleweli).
+
+## [3.3.0] - 2025-11-10
+
+- GUI + SWAP: Retry sending the encrypted signature more aggressively. This might help with an issue where we would be stuck on the "Sending encrypted signature" screen for a longer time than necessary.
+- GUI + SWAP + ASB: Require 10 Monero confirmations again
+
+## [3.2.11] - 2025-11-09
+
+- GUI + SWAP: Assume double spend safety of Monero transactions after 6 confirmations. This means we are assuming that there won't be any re-orgs deeper than 5 blocks. We believe this is a safe assumption given that there were almost no orphaned blocks over the last two weeks. Qubic (which was behind the re-orgs) has mined less than 1% of the last 1000 blocks.
+- GUI: Remove the following default Electrum servers: `tcp://electrum.blockstream.info:50001`, `tcp://electrum.coinucopia.io:50001`, `tcp://se-mma-crypto-payments-001.mullvad.net:50001`, `tcp://electrum2.bluewallet.io:50777` due to them being unreliable. Add the following new default Electrum servers: `tcp://electrum1.bluewallet.io:50001`, `tcp://electrum2.bluewallet.io:50001`, `tcp://electrum3.bluewallet.io:50001`, `ssl://btc-electrum.cakewallet.com:50002`, `tcp://bitcoin.aranguren.org:50001`.
+
+## [3.2.10] - 2025-11-08
+
+- GUI + SWAP + ASB: Reduce the confirmations required to spend a Monero transaction from 22 to 15. We believe the risks of re-orgs is low again and this is safe to do. This may increase the chances of swap being successful and will reduce the time a swap takes.
+- GUI: Fix an issue where we a manual resume of a swap would be necessary if we failed to fetch certain Bitcoin transactions due to network issues.
+-
+
+## [3.2.9] - 2025-11-05
+
+- GUI: Fix an issue where an error in the UI runtime would cause a white screen to be displayed and nothing would be rendered.
+- GUI(Linux): Fix an issue where the GUI would display a white screen on some systems (among others Fedora 43)
+
 ## [3.2.8] - 2025-11-02
 
 - ASB + CONTROLLER: Add a `registration-status` command to the controller shell. You can use it to get the registration status of the ASB at the configured rendezvous points.
@@ -727,7 +752,12 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.2.8...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.3.1...HEAD
+[3.3.1]: https://github.com/eigenwallet/core/compare/3.3.0...3.3.1
+[3.3.0]: https://github.com/eigenwallet/core/compare/3.2.11...3.3.0
+[3.2.11]: https://github.com/eigenwallet/core/compare/3.2.10...3.2.11
+[3.2.10]: https://github.com/eigenwallet/core/compare/3.2.9...3.2.10
+[3.2.9]: https://github.com/eigenwallet/core/compare/3.2.8...3.2.9
 [3.2.8]: https://github.com/eigenwallet/core/compare/3.2.7...3.2.8
 [3.2.7]: https://github.com/eigenwallet/core/compare/3.2.6...3.2.7
 [3.2.6]: https://github.com/eigenwallet/core/compare/3.2.5...3.2.6

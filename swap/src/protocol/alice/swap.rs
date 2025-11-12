@@ -164,12 +164,12 @@ where
                         .context("Failed to get Monero wallet block height")
                         .map_err(backoff::Error::transient)?;
 
-                    let (address, amount) = state3
+                    let (lock_address, amount) = state3
                         .lock_xmr_transfer_request()
                         .address_and_amount(env_config.monero_network);
 
                     let destinations =
-                        build_transfer_destinations(address, amount, developer_tip.clone())?;
+                        build_transfer_destinations(lock_address, amount, developer_tip.clone())?;
 
                     // Lock the Monero
                     let receipt = monero_wallet
@@ -186,12 +186,13 @@ where
                         )));
                     };
 
+                    let tx_key = receipt.tx_keys.get(&lock_address).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
+
                     Ok(Some((
                         monero_wallet_restore_blockheight,
                         TransferProof::new(
                             monero::TxHash(receipt.txid),
-                            monero::PrivateKey::from_str(&receipt.tx_key)
-                                .expect("tx key to be valid private key"),
+                            *tx_key,
                         ),
                     )))
                 },

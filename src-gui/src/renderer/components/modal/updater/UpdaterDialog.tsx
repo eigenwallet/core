@@ -49,7 +49,7 @@ function LinearProgressWithLabel(
         }}
       >
         <Typography variant="body2" color="textSecondary">
-          {props.label || `${Math.round(props.value)}%`}
+          {props.label || `${Math.round(props.value ?? 0)}%`}
         </Typography>
       </Box>
     </Box>
@@ -84,6 +84,8 @@ export default function UpdaterDialog() {
   }
 
   async function handleInstall() {
+    if (!availableUpdate) return;
+
     try {
       await availableUpdate.downloadAndInstall((event: DownloadEvent) => {
         if (event.event === "Started") {
@@ -92,10 +94,13 @@ export default function UpdaterDialog() {
             downloadedBytes: 0,
           });
         } else if (event.event === "Progress") {
-          setDownloadProgress((prev) => ({
-            ...prev,
-            downloadedBytes: prev.downloadedBytes + event.data.chunkLength,
-          }));
+          setDownloadProgress((prev) => {
+            if (!prev) return null;
+            return {
+              contentLength: prev.contentLength,
+              downloadedBytes: prev.downloadedBytes + event.data.chunkLength,
+            };
+          });
         }
       });
 
@@ -110,12 +115,13 @@ export default function UpdaterDialog() {
 
   const isDownloading = downloadProgress !== null;
 
-  const progress = isDownloading
-    ? Math.round(
-        (downloadProgress.downloadedBytes / downloadProgress.contentLength) *
-          100,
-      )
-    : 0;
+  const progress =
+    isDownloading && downloadProgress.contentLength
+      ? Math.round(
+          (downloadProgress.downloadedBytes / downloadProgress.contentLength) *
+            100,
+        )
+      : 0;
 
   return (
     <Dialog

@@ -18,6 +18,9 @@ monero_sys:
 	just update_submodules
 	cd monero-sys && cargo build
 
+undo-monero-changes:
+   cd monero-sys/monero && git restore .
+
 # Test the FFI bindings using various sanitizers, that can detect memory safety issues.
 test-ffi: test-ffi-address
 
@@ -80,7 +83,7 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$PWD/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Launch the ASB controller REPL against a local testnet ASB instance
 asb-testnet-controller:
@@ -113,6 +116,10 @@ check_gui_eslint:
 check_gui_tsc:
 	cd src-gui && yarn run tsc --noEmit
 
+# Check for unused code in the GUI frontend
+check_gui_unused_code:
+	cd src-gui && npx knip
+
 test test_name:
     cargo test --test {{test_name}} -- --nocapture
 
@@ -136,3 +143,4 @@ code2prompt_single_crate crate:
 
 prepare-windows-build:
     cd dev-scripts && ./ubuntu_build_x86_86-w64-mingw32-gcc.sh
+

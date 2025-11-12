@@ -20,10 +20,9 @@ export default function SendSuccessContent({
 }) {
   const address = successDetails?.address;
   const amount = successDetails?.amount_sent;
-  const explorerUrl = getMoneroTxExplorerUrl(
-    successDetails?.tx_hash,
-    isTestnet(),
-  );
+  const explorerUrl = successDetails?.tx_hash
+    ? getMoneroTxExplorerUrl(successDetails.tx_hash, isTestnet())
+    : null;
 
   return (
     <Box
@@ -79,7 +78,7 @@ export default function SendSuccessContent({
           </Typography>
           <Typography variant="body1" color="text.primary">
             <MonospaceTextBox>
-              {address.slice(0, 8)} ... {address.slice(-8)}
+              {address ? `${address.slice(0, 8)}...${address.slice(-8)}` : "?"}
             </MonospaceTextBox>
           </Typography>
         </Box>
@@ -98,8 +97,13 @@ export default function SendSuccessContent({
         <Button
           color="primary"
           size="small"
+          disabled={explorerUrl == null}
           endIcon={<ArrowOutwardIcon />}
-          onClick={() => open(explorerUrl)}
+          onClick={() => {
+            if (explorerUrl != null) {
+              open(explorerUrl);
+            }
+          }}
         >
           View on Explorer
         </Button>

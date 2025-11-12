@@ -71,9 +71,9 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "patches/eigenwallet_0002_wallet2_increase_rpc_retries.patch"
     ),
     embedded_patch!(
-        "eigenwallet_0003_pendingTransaction_getTxKey",
+        "eigenwallet_0003_pending_transaction_tx_keys",
         "Adds txKeys() to PendingTransaction in wallet2_api.h",
-        "patches/eigenwallet_0003_pendingTransaction_getTxKey.patch"
+        "patches/eigenwallet_0003_pending_transaction_tx_keys.patch"
     ),
 ];
 

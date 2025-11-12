@@ -3,12 +3,12 @@ cask "eigenwallet" do
 
   on_arm do
     sha256 "AARCH64_SHA256_PLACEHOLDER"
-    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_aarch64.dmg"
+    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_aarch64_darwin.dmg"
   end
 
   on_intel do
     sha256 "X64_SHA256_PLACEHOLDER"
-    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_x64.dmg"
+    url "https://github.com/eigenwallet/core/releases/download/#{version}/eigenwallet_#{version}_x64_darwin.dmg"
   end
 
   name "Eigenwallet"
