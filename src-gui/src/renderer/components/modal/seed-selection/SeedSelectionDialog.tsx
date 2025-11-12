@@ -297,8 +297,11 @@ export default function SeedSelectionDialog() {
               }
             />
             <TextField
-              type="number"
-              inputProps={{ min: 0 }}
+              type="text"
+              inputProps={{
+                inputmode: "numeric",
+                pattern: "[0-9]*",
+              }}
               label="Restore blockheight (optional)"
               value={blockheightInput}
               onChange={(e) => setBlockheight(e.target.value)}
