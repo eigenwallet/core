@@ -15,9 +15,12 @@ use crate::{
 // Important: don't add slashes or anything here
 // Todo: find better way to do that
 const MONEROD_DATA: &str = "monerod-data";
-const BITCOIN_DATA: &str = "bitcoin-data";
+const BITCOIN_DATA: &str = "bitcoind-data";
 const ELECTRS_DATA: &str = "electrs-data";
 const ASB_DATA: &str = "asb-data";
+const RENDEZVOUS_DATA: &str = "rendezvous-data";
+
+const ROOT_USER: &str = "root";
 
 /// Add all the services/volumes to the compose config.
 /// Returns urls for the electrum rpc and monero rpc endpoints.
@@ -53,6 +56,7 @@ pub fn add_maker_services(
     );
     let asb_controller = asb_controller(compose, asb_rpc_port, asb.clone());
     let asb_tracing_logger = asb_tracing_logger(compose, asb, asb_data.clone());
+    let rendezvous = rendezvous_node(compose);
 
     let electrum_rpc_url: Url = format!(
         "tcp://{electrs_name}:{electrs_port}",
@@ -102,7 +106,8 @@ pub fn monerod(
         Service::new("monerod", ImageSource::from_registry(images::MONEROD_IMAGE))
             .with_enabled(enabled)
             .with_mount(Mount::volume(&monerod_data))
-            .with_exposed_port(monerod_rpc_port)
+            .with_unexposed_port(monerod_rpc_port)
+            .with_user(ROOT_USER)
             .with_command(monerod_command);
     let monerod_service = compose.add_service(monerod_service);
 
@@ -141,8 +146,9 @@ pub fn bitcoind(
         ImageSource::from_registry(images::BITCOIND_IMAGE),
     )
     .with_mount(Mount::volume(&bitcoind_data))
-    .with_exposed_port(rpc_port)
-    .with_exposed_port(p2p_port)
+    .with_unexposed_port(rpc_port)
+    .with_unexposed_port(p2p_port)
+    .with_user(ROOT_USER)
     .with_command(bitcoind_command)
     .with_enabled(enabled);
 
@@ -184,9 +190,11 @@ pub fn electrs(
     );
     let service = Service::new("electrs", ImageSource::from_registry(images::ELECTRS_IMAGE))
         .with_dependency(bitcoind.clone())
-        .with_exposed_port(port)
-        .with_command(command)
+        .with_mount(Mount::volume(&bitcoind_data))
         .with_mount(Mount::volume(&electrs_data))
+        .with_unexposed_port(port)
+        .with_user(ROOT_USER)
+        .with_command(command)
         .with_enabled(enabled);
 
     let service = compose.add_service(service);
@@ -290,7 +298,31 @@ pub fn asb_tracing_logger(
         ImageSource::from_registry(images::ASB_TRACING_LOGGER_IMAGE),
     )
     .with_dependency(asb)
-    .with_mount(Mount::volume(&asb_data))
+    .with_mount(Mount::volume(&asb_data).read_only())
+    .with_command(command);
+
+    compose.add_service(service)
+}
+
+pub fn rendezvous_node(compose: &mut ComposeConfig) -> Arc<Service> {
+    let rendezvous_data = compose.add_volume(RENDEZVOUS_DATA);
+    let port = 8888;
+
+    let command = command![
+        "rendezvous-node",
+        flag!("--data-dir={}", rendezvous_data.as_root_dir().display()),
+        flag!("--port={port}")
+    ];
+
+    let service = Service::new(
+        "rendezvous-node",
+        ImageSource::from_source(
+            PINNED_GIT_REPOSITORY.parse().expect("valid url"),
+            "./libp2p-rendezvous-node/Dockerfile",
+        ),
+    )
+    .with_mount(Mount::volume(&rendezvous_data))
+    .with_exposed_port(port)
     .with_command(command);
 
     compose.add_service(service)

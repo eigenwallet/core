@@ -23,23 +23,23 @@ services:
     restart: unless-stopped
     user: root
     volumes:
-      - 'monerod-data:/monerod-data/'
+      - 'monerod-data:/monerod-data'
     expose:
       - 18081
     entrypoint: ''
-    command: ["monerod","--rpc-bind-ip=0.0.0.0","--rpc-bind-port=18081","--data-dir=/monerod-data/","--confirm-external-bind","--restricted-rpc","--non-interactive","--enable-dns-blocklist"]
+    command: ["monerod","--rpc-bind-ip=0.0.0.0","--rpc-bind-port=18081","--data-dir=/monerod-data","--confirm-external-bind","--restricted-rpc","--non-interactive","--enable-dns-blocklist"]
   bitcoind:
     container_name: bitcoind
     image: getumbrel/bitcoind@sha256:c565266ea302c9ab2fc490f04ff14e584210cde3d0d991b8309157e5dfae9e8d
     restart: unless-stopped
     volumes:
-      - 'bitcoind-data:/bitcoind-data/'
+      - 'bitcoind-data:/bitcoind-data'
     expose:
       - 8332
       - 8333
     user: root
     entrypoint: ''
-    command: ["bitcoind","-chain=main","-rpcallowip=0.0.0.0/0","-rpcbind=0.0.0.0:8332","-bind=0.0.0.0:8333","-datadir=/bitcoind-data/","-dbcache=16384","-server=1","-prune=0","-txindex=1"]
+    command: ["bitcoind","-chain=main","-rpcallowip=0.0.0.0/0","-rpcbind=0.0.0.0:8332","-bind=0.0.0.0:8333","-datadir=/bitcoind-data","-dbcache=16384","-server=1","-prune=0","-txindex=1"]
   electrs:
     container_name: electrs
     image: getumbrel/electrs@sha256:622657fbdc7331a69f5b3444e6f87867d51ac27d90c399c8bf25d9aab020052b
@@ -53,16 +53,17 @@ services:
     expose:
       - 50001
     entrypoint: ''
-    command: ["electrs","--network=bitcoin","--daemon-dir=/bitcoind-data/","--db-dir=/electrs-data/db","--daemon-rpc-addr=bitcoind:8332","--daemon-p2p-addr=bitcoind:8333","--electrum-rpc-addr=0.0.0.0:50001","--log-filters=INFO"]
+    command: ["electrs","--network=bitcoin","--daemon-dir=/bitcoind-data","--db-dir=/electrs-data/db","--daemon-rpc-addr=bitcoind:8332","--daemon-p2p-addr=bitcoind:8333","--electrum-rpc-addr=0.0.0.0:50001","--log-filters=INFO"]
   asb:
     container_name: asb
     build: { context: "https://github.com/eigenwallet/core.git#833fc0ab24e40555d53f05e6e04728460dab5988", dockerfile: "./swap-asb/Dockerfile" }
     restart: unless-stopped
     depends_on:
       - electrs
+      - monerod
     volumes:
-      - './config.toml:/asb-data/config.toml'
       - 'asb-data:/asb-data'
+      - './config.toml:/asb-data/config.toml'
     ports:
       - '0.0.0.0:9939:9939'
     entrypoint: ''

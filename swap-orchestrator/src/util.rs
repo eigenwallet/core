@@ -76,12 +76,12 @@ pub fn compose_name(
         _ => anyhow::bail!("unknown monero network"),
     };
     let bitcoin_network_str = match bitcoin_network {
-        bitcoin::Network::Bitcoin => "bitcoin",
+        bitcoin::Network::Bitcoin => "mainnet",
         bitcoin::Network::Testnet => "testnet",
         _ => anyhow::bail!("unknown bitcoin network"),
     };
     Ok(format!(
-        "bitcoin_{bitcoin_network_str}_monero_{monero_network_str}"
+        "{bitcoin_network_str}_monero_{monero_network_str}_bitcoin"
     ))
 }
 
