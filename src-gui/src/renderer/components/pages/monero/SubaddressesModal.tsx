@@ -11,16 +11,17 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import type { SubaddressSummary } from "models/tauriModel";
 import { useState } from "react";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import { PiconeroAmount } from "renderer/components/other/Units";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import {
   createMoneroSubaddress,
-  getMoneroSubAddresses,
   setMoneroSubaddressLabel,
+  updateMoneroSubaddresses,
 } from "renderer/rpc";
-import { setSubaddresses } from "store/features/walletSlice";
-import { useAppDispatch, useAppSelector } from "store/hooks";
+import { useAppSelector } from "store/hooks";
 
 interface Props {
   open: boolean;
@@ -28,12 +29,26 @@ interface Props {
 }
 
 export default function SubaddressesModal({ open, onClose }: Props) {
-  const dispatch = useAppDispatch();
   const subaddresses = useAppSelector((s) => s.wallet.state.subaddresses);
   const [newLabel, setNewLabel] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [editingKey, setEditingKey] = useState<number | undefined>();
   const [editLabel, setEditLabel] = useState("");
+
+  const createAddress = async () => {
+    setIsCreating(true);
+    await createMoneroSubaddress(newLabel.trim());
+    return await updateMoneroSubaddresses();
+  };
+
+  const editAddressLabel = async (s: SubaddressSummary) => {
+    await setMoneroSubaddressLabel(
+      s.account_index,
+      s.address_index,
+      editLabel.trim(),
+    );
+    return await updateMoneroSubaddresses();
+  };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -47,23 +62,17 @@ export default function SubaddressesModal({ open, onClose }: Props) {
             onChange={(e) => setNewLabel(e.target.value)}
             sx={{ flex: 1, maxWidth: 400 }}
           />
-          <Button
+          <PromiseInvokeButton
             variant="contained"
             disabled={isCreating}
-            onClick={async () => {
-              try {
-                setIsCreating(true);
-                await createMoneroSubaddress(newLabel.trim());
-                const subs = await getMoneroSubAddresses();
-                dispatch(setSubaddresses(subs));
-                setNewLabel("");
-              } finally {
-                setIsCreating(false);
-              }
+            onInvoke={createAddress}
+            onEnded={() => {
+              setNewLabel("");
+              setIsCreating(false);
             }}
           >
             Generate Address
-          </Button>
+          </PromiseInvokeButton>
         </Box>
         {subaddresses.length === 0 ? (
           <Typography color="text.secondary">
@@ -95,23 +104,17 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                             value={editLabel}
                             onChange={(e) => setEditLabel(e.target.value)}
                           />
-                          <Button
+                          <PromiseInvokeButton
                             size="small"
                             variant="contained"
-                            onClick={async () => {
-                              await setMoneroSubaddressLabel(
-                                s.account_index,
-                                s.address_index,
-                                editLabel.trim(),
-                              );
-                              const subs = await getMoneroSubAddresses();
-                              dispatch(setSubaddresses(subs));
+                            onInvoke={() => editAddressLabel(s)}
+                            onEnded={() => {
                               setEditingKey(undefined);
                               setEditLabel("");
                             }}
                           >
                             Save
-                          </Button>
+                          </PromiseInvokeButton>
                           <Button
                             size="small"
                             onClick={() => {

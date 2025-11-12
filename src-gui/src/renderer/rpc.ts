@@ -72,6 +72,7 @@ import {
   setSyncProgress,
   setHistory,
   setRestoreHeight,
+  setSubaddresses,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
 import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
@@ -775,4 +776,9 @@ export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
         };
 
   return moneroNodeConfig;
+}
+
+export async function updateMoneroSubaddresses() {
+  const subaddresses = await getMoneroSubAddresses();
+  store.dispatch(setSubaddresses(subaddresses));
 }
