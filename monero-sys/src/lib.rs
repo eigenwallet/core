@@ -1685,11 +1685,9 @@ impl FfiWallet {
             .context("Failed to get transaction history: FFI call failed with exception")?;
 
         let history = unsafe {
-            Pin::new_unchecked(
-                history_ptr
-                    .as_mut()
-                    .ok_or_else(|| anyhow!("Failed to get transaction history: history pointer is null"))?,
-            )
+            Pin::new_unchecked(history_ptr.as_mut().ok_or_else(|| {
+                anyhow!("Failed to get transaction history: history pointer is null")
+            })?)
         };
         let _ = history
             .refresh()
@@ -1791,9 +1789,9 @@ impl FfiWallet {
         let mut map = std::collections::HashMap::with_capacity(indices_ref.len());
         let len = std::cmp::min(indices_ref.len(), amounts_ref.len());
         for i in 0..len {
-            let idx = unsafe { *indices_ref.get_unchecked(i) };
-            let amt = unsafe { *amounts_ref.get_unchecked(i) };
-            map.insert(idx, amt);
+            let address_index = unsafe { *indices_ref.get_unchecked(i) };
+            let amount = unsafe { *amounts_ref.get_unchecked(i) };
+            map.insert(address_index, amount);
         }
         map
     }
@@ -2608,9 +2606,9 @@ impl FfiWallet {
                             .as_ref()
                             .expect("vector should not be null after FFI call");
                         if !indices_ref.is_empty() {
-                            let idx_u32 = unsafe { *indices_ref.get_unchecked(0) };
-                            let addr = self.address_at(account_index, idx_u32);
-                            serialized_tx.received_address = Some(addr.to_string());
+                            let address_index = unsafe { *indices_ref.get_unchecked(0) };
+                            let address = self.address_at(account_index, address_index);
+                            serialized_tx.received_address = Some(address.to_string());
                         }
                     }
                     transactions.push(serialized_tx);
