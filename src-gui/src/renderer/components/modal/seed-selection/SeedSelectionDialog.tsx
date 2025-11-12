@@ -30,13 +30,34 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import SearchIcon from "@mui/icons-material/Search";
 
+function parseBlockHeightInput(
+  blockheightInput: string | undefined,
+): number | null | false {
+  if (!blockheightInput) {
+    return null;
+  }
+
+  const blockheightNum = parseInt(blockheightInput, 10);
+
+  if (
+    blockheightInput === "0" ||
+    (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0)
+  ) {
+    return blockheightNum;
+  }
+
+  return false;
+}
+
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
   const [selectedOption, setSelectedOption] = useState<
     SeedChoice["type"] | undefined
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
-  const [blockheightInput, setBlockheight] = useState<string | undefined>();
+  const [blockheightInput, setBlockheightInput] = useState<
+    string | undefined
+  >();
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
   const [walletPath, setWalletPath] = useState<string>("");
 
@@ -81,21 +102,9 @@ export default function SeedSelectionDialog() {
     }
   };
 
-  let isBlockheightValid = true; // Default to true if empty: optional field
-
-  if (blockheightInput) {
-    const blockheightNum =
-      (blockheightInput && parseInt(blockheightInput, 10)) || undefined;
-
-    if (
-      blockheightInput === "0" ||
-      (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0)
-    ) {
-      isBlockheightValid = true;
-    } else {
-      isBlockheightValid = false;
-    }
-  }
+  const isBlockheightValid = parseBlockHeightInput(blockheightInput) !== false;
+  const isBlockheightInputFailed =
+    blockheightInput !== undefined && isBlockheightValid === false;
 
   const Legacy = async () => {
     if (!approval)
@@ -118,8 +127,8 @@ export default function SeedSelectionDialog() {
             type: "FromSeed",
             content: {
               seed: customSeed,
-              ...(blockheightInput && {
-                restore_height: parseInt(blockheightInput, 10),
+              ...(isBlockheightValid && {
+                restore_height: parseBlockHeightInput(blockheightInput),
               }),
             },
           }
@@ -304,13 +313,13 @@ export default function SeedSelectionDialog() {
               }}
               label="Restore blockheight (optional)"
               value={blockheightInput}
-              onChange={(e) => setBlockheight(e.target.value)}
-              placeholder="Restore blockheight (optional)"
-              error={!isBlockheightValid}
+              onChange={(e) => setBlockheightInput(e.target.value)}
+              placeholder="Enter restore blockheight, leave empty to scan from the blockchain start"
+              error={isBlockheightInputFailed}
               helperText={
-                blockheightInput && !isBlockheightValid
+                isBlockheightInputFailed
                   ? "Please enter a valid blockheight"
-                  : blockheightInput
+                  : isBlockheightValid
                     ? "Valid blockheight"
                     : ""
               }
