@@ -33,7 +33,11 @@ async fn main() -> Result<()> {
     loop {
         timer.tick().await;
         let rate = combo.latest_rate();
-        if rate != prev_rate {
+        if rate.as_ref().map_err(|e| e.to_string())
+            != prev_rate
+                .as_ref()
+                .map_err(|e: &swap_feed::rate::Error| e.to_string())
+        {
             tracing::debug!(?rate);
             prev_rate = rate;
         }

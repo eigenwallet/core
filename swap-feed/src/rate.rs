@@ -133,7 +133,7 @@ impl ExchangeRate {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
     #[error("All exchanges failed (Kraken: {0}, Bitfinex: {1}, KuCoin: {2})")]
     AllExchanges(
