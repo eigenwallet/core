@@ -147,6 +147,8 @@ jobs:
             test_name: alice_empty_balance_after_started_btc_early_refund
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
+          - package: swap-orchestrator
+            test_name: produces_expected_compose_config
 
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
