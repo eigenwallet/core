@@ -139,7 +139,7 @@ Below an explanation of what each option does:
 | --- | --- |
 | `min_buy_btc` | The minimum amount of Bitcoin the asb will buy from takers, in BTC. |
 | `max_buy_btc` | The maximum amount of Bitcoin the asb will buy from takers, in BTC. |
-| `ask_spread` | The markup the asb will charge compared to the market price, as a factor. The market price is fetched via the `price_ticker_ws_url_kraken`, `price_ticker_ws_url_bitfinex`, and `price_ticker_rest_url_kucoin`. A value of `0.02` means the asb will charge 2% more than the market price. |
+| `ask_spread` | The markup the asb will charge compared to the market price, as a factor. The market price is fetched via the `price_ticker_ws_url_kraken`, `price_ticker_ws_url_bitfinex`, and `price_ticker_rest_url_kucoin`: the market price is considered to be the arithmetic mean of these tickers. If one or two are not available, the mean of the remaining ones is used. A value of `0.02` means the asb will charge 2% more than the market price. |
 | `price_ticker_ws_url_kraken` | The URL of a websocket that provides the market price. The default is the Kraken API, but you can build your own websocket server which mimics the Kraken API. |
 | `price_ticker_ws_url_bitfinex` | The URL of a websocket that provides the market price. The default is the Bitfinex API, but you can build your own websocket server which mimics the Bitfinex API. |
 | `price_ticker_rest_url_kucoin` | The URL of a REST API that provides the market price. The default is the KuCoin API, but you can build your own REST + websocket servers which mimics the KuCoin API. |
