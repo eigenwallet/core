@@ -18,6 +18,7 @@ import {
   SwapHoriz as SwapIcon,
   Restore as RestoreIcon,
   MoreHoriz as MoreHorizIcon,
+  LockOutline as LockOutlineIcon,
 } from "@mui/icons-material";
 import { useState } from "react";
 import { setMoneroRestoreHeight } from "renderer/rpc";
@@ -25,6 +26,7 @@ import SendTransactionModal from "../SendTransactionModal";
 import { useNavigate } from "react-router-dom";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import SetRestoreHeightModal from "../SetRestoreHeightModal";
+import SetPasswordModal from "../SetPasswordModal";
 import SeedPhraseButton from "../SeedPhraseButton";
 import SeedPhraseModal from "../SeedPhraseModal";
 import DfxButton from "./DFXWidget";
@@ -46,6 +48,7 @@ export default function WalletActionButtons({
 
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [restoreHeightDialogOpen, setRestoreHeightDialogOpen] = useState(false);
+  const [setPasswordDialogOpen, setSetPasswordDialogOpen] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState<
     [GetMoneroSeedResponse, GetRestoreHeightResponse] | null
   >(null);
@@ -65,6 +68,10 @@ export default function WalletActionButtons({
       <SetRestoreHeightModal
         open={restoreHeightDialogOpen}
         onClose={() => setRestoreHeightDialogOpen(false)}
+      />
+      <SetPasswordModal
+        open={setPasswordDialogOpen}
+        onClose={() => setSetPasswordDialogOpen(false)}
       />
       <SeedPhraseModal onClose={() => setSeedPhrase(null)} seed={seedPhrase} />
       <SendTransactionModal
@@ -121,6 +128,17 @@ export default function WalletActionButtons({
               onMenuClose={handleMenuClose}
               onSeedPhraseSuccess={setSeedPhrase}
             />
+            <MenuItem
+              onClick={() => {
+                setSetPasswordDialogOpen(true);
+                handleMenuClose();
+              }}
+            >
+              <ListItemIcon>
+                <LockOutlineIcon />
+              </ListItemIcon>
+              <Typography>Change Password</Typography>
+            </MenuItem>
           </Menu>
         </Box>
       </Box>

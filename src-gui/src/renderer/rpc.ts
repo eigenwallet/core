@@ -50,6 +50,8 @@ import {
   ContextStatus,
   GetSwapTimelockArgs,
   GetSwapTimelockResponse,
+  SetMoneroWalletPasswordResponse,
+  SetMoneroWalletPasswordArgs,
 } from "models/tauriModel";
 import {
   rpcSetSwapInfo,
@@ -530,6 +532,15 @@ export async function setMoneroRestoreHeight(
   return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
     "set_monero_restore_height",
     args,
+  );
+}
+
+export async function setMoneroWalletPassword(
+  password: string,
+): Promise<SetMoneroWalletPasswordResponse> {
+  return await invoke<SetMoneroWalletPasswordArgs, SetMoneroWalletPasswordResponse>(
+    "set_monero_wallet_password",
+    { password },
   );
 }
 

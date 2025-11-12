@@ -683,6 +683,34 @@ impl Request for SetRestoreHeightArgs {
     }
 }
 
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetMoneroWalletPasswordArgs {
+    pub password: String,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetMoneroWalletPasswordResponse {
+    pub success: bool,
+}
+
+impl Request for SetMoneroWalletPasswordArgs {
+    type Response = SetMoneroWalletPasswordResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        let success = wallet.set_password(self.password).await?;
+        if success {
+            wallet.store_in_current_file().await?;
+        }
+
+        Ok(SetMoneroWalletPasswordResponse { success })
+    }
+}
+
 // New request type for Monero balance
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]

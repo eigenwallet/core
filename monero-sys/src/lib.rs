@@ -630,6 +630,13 @@ impl WalletHandle {
         Ok(())
     }
 
+    /// Set the restore height of the wallet.
+    pub async fn set_password(&self, password: String) -> anyhow::Result<bool> {
+        self.call(move |wallet| wallet.set_password(&password))
+            .await
+            .context("Failed to set password: FFI call failed with exception")
+    }
+
     /// Get the restore height of the wallet.
     pub async fn get_restore_height(&self) -> anyhow::Result<u64> {
         self.call(move |wallet| wallet.get_restore_height())
@@ -1769,6 +1776,11 @@ impl FfiWallet {
         self.inner
             .pinned()
             .getBlockchainHeightByDate(year, month, day)
+    }
+
+    pub fn set_password(&mut self, password: &str) -> Result<bool, Exception> {
+        let_cxx_string!(password = password);
+        self.inner.pinned().setPassword(&password)
     }
 
     /// Rescan the blockchain asynchronously.

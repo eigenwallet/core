@@ -236,6 +236,8 @@ pub mod ffi {
 
         fn getBlockchainHeightByDate(self: &Wallet, year: u16, month: u8, day: u8) -> Result<u64>;
 
+        fn setPassword(self: Pin<&mut Wallet>, password: &CxxString) -> Result<bool>;
+
         /// Rescan the blockchain asynchronously.
         fn rescanBlockchainAsync(self: Pin<&mut Wallet>);
 
