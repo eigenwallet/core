@@ -36,7 +36,7 @@ export default function SeedSelectionDialog() {
     SeedChoice["type"] | undefined
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
-  const [blockheight, setBlockheight] = useState<string | undefined>();
+  const [blockheightInput, setBlockheight] = useState<string | undefined>();
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
   const [walletPath, setWalletPath] = useState<string>("");
 
@@ -81,13 +81,20 @@ export default function SeedSelectionDialog() {
     }
   };
 
-  let isBlockheightValid = !blockheight; // Default to true if empty: optional field
-  const blockheightNum =
-    (blockheight && parseInt(blockheight, 10)) || undefined;
-  if (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0) {
-    isBlockheightValid = true;
-  } else {
-    isBlockheightValid = !blockheight;
+  let isBlockheightValid = true; // Default to true if empty: optional field
+
+  if (blockheightInput) {
+    const blockheightNum =
+      (blockheightInput && parseInt(blockheightInput, 10)) || undefined;
+
+    if (
+      blockheightInput === "0" ||
+      (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0)
+    ) {
+      isBlockheightValid = true;
+    } else {
+      isBlockheightValid = false;
+    }
   }
 
   const Legacy = async () => {
@@ -111,8 +118,8 @@ export default function SeedSelectionDialog() {
             type: "FromSeed",
             content: {
               seed: customSeed,
-              ...(blockheight && {
-                restore_height: parseInt(blockheight, 10),
+              ...(blockheightInput && {
+                restore_height: parseInt(blockheightInput, 10),
               }),
             },
           }
@@ -132,7 +139,7 @@ export default function SeedSelectionDialog() {
     selectedOption === "FromSeed"
       ? customSeed.trim().length === 0 ||
       !isSeedValid ||
-      (blockheight && !isBlockheightValid)
+      (blockheightInput && !isBlockheightValid)
       : selectedOption === "FromWalletPath"
         ? !walletPath
         : false;
@@ -293,14 +300,14 @@ export default function SeedSelectionDialog() {
               type="number"
               inputProps={{ min: 0 }}
               label="Restore blockheight (optional)"
-              value={blockheight}
+              value={blockheightInput}
               onChange={(e) => setBlockheight(e.target.value)}
               placeholder="Restore blockheight (optional)"
               error={!isBlockheightValid}
               helperText={
-                blockheight && !isBlockheightValid
+                blockheightInput && !isBlockheightValid
                   ? "Please enter a valid blockheight"
-                  : blockheight
+                  : blockheightInput
                     ? "Valid blockheight"
                     : ""
               }
