@@ -162,6 +162,7 @@ where
         _peer: PeerId,
         _addr: &Multiaddr,
         _role_override: libp2p::core::Endpoint,
+        _port_use: libp2p::core::transport::PortUse,
     ) -> std::result::Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         // A new outbound connection has been established (probably to a rendezvous node because we dont dial Bob)
         // We still return a handler, because we dont want to close the connection

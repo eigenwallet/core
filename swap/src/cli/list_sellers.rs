@@ -829,7 +829,7 @@ impl EventLoop {
                         }
                         SwarmEvent::Behaviour(OutEvent::Quote(quote_response)) => {
                             match quote_response {
-                                request_response::Event::Message { peer, message } => {
+                                request_response::Event::Message { peer, message, .. } => {
                                     match message {
                                         request_response::Message::Response { response, .. } => {
                                             if let Some(state) = self.peer_states.remove(&peer) {
@@ -869,13 +869,13 @@ impl EventLoop {
                         }
                         SwarmEvent::Behaviour(OutEvent::Identify(event)) => {
                             match *event {
-                                identify::Event::Received { peer_id, info } => {
+                                identify::Event::Received { peer_id, info, .. } => {
                                     if let Some(state) = self.peer_states.remove(&peer_id) {
                                         let new_state = state.apply_version(info.agent_version);
                                         self.peer_states.insert(peer_id, new_state);
                                     }
                                 }
-                                identify::Event::Error { peer_id, error } => {
+                                identify::Event::Error { peer_id, error, .. } => {
                                     tracing::trace!(%peer_id, error = %error, "Error when identifying peer");
 
                                     if let Some(state) = self.peer_states.remove(&peer_id) {

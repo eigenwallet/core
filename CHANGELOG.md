@@ -31,7 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - GUI + SWAP + ASB: Reduce the confirmations required to spend a Monero transaction from 22 to 15. We believe the risks of re-orgs is low again and this is safe to do. This may increase the chances of swap being successful and will reduce the time a swap takes.
 - GUI: Fix an issue where we a manual resume of a swap would be necessary if we failed to fetch certain Bitcoin transactions due to network issues.
--
 
 ## [3.2.9] - 2025-11-05
 
@@ -495,8 +494,8 @@ _Some of these CHANGELOG entires have beeb merged from 2.0.3 - 2.4.3 into this r
 
 ### Changed
 
-- The ASB to no longer work as a rendezvous server.
-  The ASB can still register with rendezvous server as usual.
+- The ASB to no longer work as an eigenweb-node.
+  The ASB can still register with eigenweb-node as usual.
 
 ### Fixed
 

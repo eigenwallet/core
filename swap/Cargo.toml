@@ -79,7 +79,7 @@ reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "s
 rust_decimal = { version = "1", features = ["serde-float"] }
 rust_decimal_macros = "1"
 semver = "1.0"
-structopt = "0.3"
+structopt = { workspace = true }
 swap-controller-api = { path = "../swap-controller-api" }
 swap-core = { path = "../swap-core" }
 swap-db = { path = "../swap-db" }
