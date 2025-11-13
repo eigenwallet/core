@@ -269,7 +269,7 @@ impl NetworkBehaviour for Behaviour {
         Ok(Self::ConnectionHandler {})
     }
 
-    #[tracing::instrument(level = "trace", name = "redial::handle_pending_outbound_connection", skip(self, _connection_id, _addresses, _effective_role), fields(redial_type = %self.name))]
+    #[tracing::instrument(level = "trace", name = "redial::handle_pending_outbound_connection", skip(self, _connection_id, _addresses, maybe_peer, _effective_role), fields(redial_type = %self.name))]
     fn handle_pending_outbound_connection(
         &mut self,
         _connection_id: libp2p::swarm::ConnectionId,
@@ -282,6 +282,11 @@ impl NetworkBehaviour for Behaviour {
             return Ok(vec![]);
         };
 
+        // TODO: Uncomment this if we only want to contribute addresses for peers we are instructed to redial
+        // if !self.peers.contains(&peer_id) {
+        //     return Ok(vec![]);
+        // }
+
         // Check if we have any addresses cached for the peer
         // TODO: Sort these by how often we were able to connect to them
         let addresses = self
@@ -290,7 +295,7 @@ impl NetworkBehaviour for Behaviour {
             .map(|addrs| addrs.iter().cloned().collect())
             .unwrap_or_default();
 
-        tracing::trace!(peer = %peer_id, addresses = ?addresses, "Contributing our cached addresses for a peer to the dial attempt");
+        tracing::trace!(peer = %peer_id, contributed_addresses = ?addresses, "Contributing our cached addresses for a peer to the dial attempt");
 
         Ok(addresses)
     }
