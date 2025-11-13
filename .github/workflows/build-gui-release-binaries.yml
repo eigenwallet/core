@@ -189,7 +189,7 @@ jobs:
           git -C "$outdir" init
           git -C "$outdir" add .
           git -C "$outdir" config user.name "${{ secrets.BOTTY_NAME }}"
-          git -C "$outdir" config user.email ${{ secrets.BOTTY_EMAIL }}
+          git -C "$outdir" config user.email "${{ secrets.BOTTY_EMAIL }}"
           git -C "$outdir" commit -m "Build Flatpak repository from $GITHUB_REF_NAME ($GITHUB_SHA)"
           git fetch -f "$outdir" HEAD:gh-pages
           git push -f origin gh-pages
