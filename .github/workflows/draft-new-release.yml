@@ -62,6 +62,11 @@ jobs:
         run: |
           sed -i 's/"version": "[^"]*"/"version": "${{ github.event.inputs.version }}"/' src-tauri/tauri.conf.json
 
+      - name: Update version in flatpak AppStream metadata for GUI
+        run: |
+          sed -i '/<releases>/a\
+              <release version="${{ github.event.inputs.version }}" date="'"$(date -I)"'" />' flatpak/*.appdata.xml
+
       - name: Update Cargo.lock
         run: cargo update --workspace
 
@@ -69,7 +74,7 @@ jobs:
         id: make-commit
         env:
           DPRINT_VERSION: "0.50.0"
-          RUST_TOOLCHAIN: "1.87.0"
+          RUST_TOOLCHAIN: "1.88.0"
         run: |
           rustup component add rustfmt --toolchain "$RUST_TOOLCHAIN-x86_64-unknown-linux-gnu"
           curl -fsSL https://dprint.dev/install.sh | sh -s $DPRINT_VERSION

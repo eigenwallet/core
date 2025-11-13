@@ -67,7 +67,7 @@ impl GetConfig for Mainnet {
             // she will initiate an early refund of Bobs Bitcoin
             monero_lock_retry_timeout: 10.std_minutes(),
             monero_finality_confirmations: 10,
-            monero_double_spend_safe_confirmations: 6,
+            monero_double_spend_safe_confirmations: 10,
             monero_network: monero::Network::Mainnet,
         }
     }
@@ -87,7 +87,7 @@ impl GetConfig for Testnet {
             monero_avg_block_time: 2.std_minutes(),
             monero_lock_retry_timeout: 10.std_minutes(),
             monero_finality_confirmations: 10,
-            monero_double_spend_safe_confirmations: 6,
+            monero_double_spend_safe_confirmations: 10,
             monero_network: monero::Network::Stagenet,
         }
     }
@@ -107,7 +107,7 @@ impl GetConfig for Regtest {
             monero_avg_block_time: 1.std_seconds(),
             monero_lock_retry_timeout: 1.std_minutes(),
             monero_finality_confirmations: 10,
-            monero_double_spend_safe_confirmations: 6,
+            monero_double_spend_safe_confirmations: 10,
             monero_network: monero::Network::Mainnet, // yes this is strange
         }
     }
