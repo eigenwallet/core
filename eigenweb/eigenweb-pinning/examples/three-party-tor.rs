@@ -334,7 +334,8 @@ async fn run_client(
     let server_peer_ids = vec![
         Party::Carol.peer_id(),
         Party::David.peer_id(),
-    ];  // Empty - we're connecting by onion address only
+    ];
+
     let behaviour = eigenweb_pinning::client::Behaviour::new(
         keypair.clone(),
         server_peer_ids,
@@ -361,6 +362,7 @@ async fn run_client(
     // Connect to the servers
     if let Some(addr) = &carol_addr {
         info!("Dialing Carol's server at {}", addr);
+        swarm.add_peer_address(Party::Carol.peer_id(), addr.clone());
         swarm.dial(addr.clone())?;
     } else {
         info!("Not connecting to Carol's server (no address provided)");
@@ -368,6 +370,7 @@ async fn run_client(
 
     if let Some(addr) = &david_addr {
         info!("Dialing David's server at {}", addr);
+        swarm.add_peer_address(Party::David.peer_id(), addr.clone());
         swarm.dial(addr.clone())?;
     } else {
         info!("Not connecting to David's server (no address provided)");
