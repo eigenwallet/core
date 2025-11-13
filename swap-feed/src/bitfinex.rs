@@ -59,15 +59,11 @@ pub fn connect(price_ticker_ws_url_bitfinex: Url) -> Result<PriceUpdates> {
         )
         .await;
 
-        match result {
-            Err(e) => {
-                tracing::warn!("Rate updates incurred an unrecoverable error: {:#}", e);
+        let err = result.expect_err("Stream can't end successfully");
+        tracing::warn!("Rate updates incurred an unrecoverable error: {:#}", err);
 
-                // in case the retries fail permanently, let the subscribers know
-                price_update.send(Err(Error::PermanentFailure(e.into())))
-            }
-            Ok(never) => match never {},
-        }
+        // in case the retries fail permanently, let the subscribers know
+        price_update.send(Err(Error::PermanentFailure(err.into())))
     });
 
     Ok(PriceUpdates {
