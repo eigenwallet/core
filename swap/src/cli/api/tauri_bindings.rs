@@ -1,4 +1,4 @@
-use super::request::BalanceResponse;
+use super::request::{BalanceResponse, GetMoneroSubaddressesResponse};
 use crate::cli::api::request::{
     GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse,
 };
@@ -46,6 +46,7 @@ pub enum MoneroWalletUpdate {
     BalanceChange(GetMoneroBalanceResponse),
     SyncProgress(GetMoneroSyncProgressResponse),
     HistoryUpdate(GetMoneroHistoryResponse),
+    SubaddressesUpdate(GetMoneroSubaddressesResponse),
 }
 
 #[typeshare]

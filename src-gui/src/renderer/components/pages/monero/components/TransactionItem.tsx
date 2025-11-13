@@ -99,9 +99,22 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
               disableTooltip
             />
           </Typography>
+          {isIncoming && (
+            <Typography variant="caption" sx={{ gridArea: "2 / 2" }}>
+              <FiatPiconeroAmount amount={transaction.amount} />
+            </Typography>
+          )}
           <Typography variant="caption" sx={{ gridArea: "2 / 2" }}>
             <FiatPiconeroAmount amount={transaction.amount} />
           </Typography>
+          {isIncoming && transaction.received_address && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={transaction.received_address}
+              sx={{ gridArea: "3 / 2", maxWidth: 360 }}
+            />
+          )}
         </Box>
       </Box>
       <Box
