@@ -18,6 +18,9 @@ monero_sys:
 	just update_submodules
 	cd monero-sys && cargo build
 
+undo-monero-changes:
+   cd monero-sys/monero && git restore .
+
 # Test the FFI bindings using various sanitizers, that can detect memory safety issues.
 test-ffi: test-ffi-address
 
@@ -80,12 +83,12 @@ swap:
 
 # Run the asb on testnet
 asb-testnet:
-	ASB_DEV_ADDR_OUTPUT_PATH="$(pwd)/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
+	ASB_DEV_ADDR_OUTPUT_PATH="$PWD/src-gui/.env.development" cargo run -p swap-asb --bin asb -- --testnet --trace start --rpc-bind-port 9944 --rpc-bind-host 0.0.0.0
 
 # Launch the ASB controller REPL against a local testnet ASB instance
 asb-testnet-controller:
 	cargo run -p swap-controller --bin asb-controller -- --url http://127.0.0.1:9944
-	
+
 # Updates our submodules (currently only Monero C++ codebase)
 update_submodules:
 	cd monero-sys && git submodule update --init --recursive --force
@@ -103,7 +106,7 @@ fmt:
 	dprint fmt
 
 generate-sqlx-cache:
-	./regenerate_sqlx_cache.sh
+	./dev-scripts/regenerate_sqlx_cache.sh
 
 # Run eslint for the GUI frontend
 check_gui_eslint:

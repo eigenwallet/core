@@ -706,7 +706,7 @@ pub mod discovery {
             rendezvous_nodes: Vec<PeerId>,
             namespace: rendezvous::Namespace,
         ) -> Self {
-            let mut redial = redial::Behaviour::new(REDIAL_INITIAL_INTERVAL, REDIAL_MAX_INTERVAL);
+            let mut redial = redial::Behaviour::new("rendezvous-server-for-discovery", REDIAL_INITIAL_INTERVAL, REDIAL_MAX_INTERVAL);
             let rendezvous = libp2p::rendezvous::client::Behaviour::new(identity);
 
             let mut rendezvous_nodes_backoffs = HashMap::new();
@@ -903,6 +903,25 @@ pub mod discovery {
                     }
                 }
             }
+        }
+        
+        fn handle_pending_inbound_connection(
+            &mut self,
+            connection_id: libp2p::swarm::ConnectionId,
+            local_addr: &Multiaddr,
+            remote_addr: &Multiaddr,
+        ) -> Result<(), libp2p::swarm::ConnectionDenied> {
+            self.inner.handle_pending_inbound_connection(connection_id, local_addr, remote_addr)
+        }
+        
+        fn handle_pending_outbound_connection(
+            &mut self,
+            connection_id: libp2p::swarm::ConnectionId,
+            maybe_peer: Option<PeerId>,
+            addresses: &[Multiaddr],
+            effective_role: libp2p::core::Endpoint,
+        ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+            self.inner.handle_pending_outbound_connection(connection_id, maybe_peer, addresses, effective_role)
         }
     }
 }
