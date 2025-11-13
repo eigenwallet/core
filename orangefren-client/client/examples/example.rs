@@ -53,15 +53,18 @@ async fn main() -> Result<(), anyhow::Error> {
         tracing::info!("Trades from the loaded client: {}", trade);
     }
 
-    let (info, mut updates2) = client2.recover_trade_by_withdraw_address(address).await?;
+    let (recovered_info, recovered_path_id) =
+        client2.recover_trade_by_withdraw_address(address).await?;
 
-    tracing::info!("got info {}", info);
+    tracing::info!("recovered info {}", recovered_info);
+
+    let mut updates2 = client2.watch_status(recovered_path_id.clone()).await;
 
     while let Some(status) = updates2.next().await {
         tracing::info!("status: {:?}", status);
         tracing::info!(
             "deposit address: {}",
-            client2.deposit_address(trade_id.clone()).await?
+            client2.deposit_address(recovered_path_id.clone()).await?
         );
     }
     Ok(())

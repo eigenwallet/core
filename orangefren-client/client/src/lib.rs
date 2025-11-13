@@ -69,14 +69,13 @@ pub struct PathId(Uuid);
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct TradeInfo {
-    from_currency: Currency,
-    to_currency: Currency,
-    from_network: Currency,
-    to_network: Currency,
-    //TODO: put the path id in the TradeInfo,
-    withdraw_address: monero::Address,
-    deposit_address: Option<bitcoin::Address>,
-    raw_json: String,
+    pub from_currency: Currency,
+    pub to_currency: Currency,
+    pub from_network: Currency,
+    pub to_network: Currency,
+    pub withdraw_address: monero::Address,
+    pub deposit_address: Option<bitcoin::Address>,
+    pub raw_json: String,
 }
 
 impl fmt::Display for TradeInfo {
@@ -342,12 +341,11 @@ impl Client {
     pub async fn recover_trade_by_withdraw_address(
         &self,
         address: monero::Address,
-    ) -> Result<(TradeInfo, ReceiverStream<TradeStatus>), anyhow::Error> {
+    ) -> Result<(TradeInfo, PathId), anyhow::Error> {
         let path_id = self.db.latest_trade_id_by_withdraw_address(address).await?;
         let trade = self.wait_until_created(path_id.clone()).await?;
-        let stream = self.watch_status(path_id).await;
 
-        Ok((trade, stream))
+        Ok((trade, path_id))
     }
 
     pub async fn watch_status(&self, path_id: PathId) -> ReceiverStream<TradeStatus> {
