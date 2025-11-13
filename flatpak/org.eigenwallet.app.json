@@ -1,6 +1,5 @@
 {
   "id": "org.eigenwallet.app",
-  "branch": "stable",
   "runtime": "org.gnome.Platform",
   "runtime-version": "47",
   "sdk": "org.gnome.Sdk",
