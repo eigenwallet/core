@@ -173,54 +173,6 @@ pub mod background {
         type ConnectionHandler = <InnerBehaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler;
         type ToSwarm = Event;
 
-        fn handle_pending_outbound_connection(
-            &mut self,
-            connection_id: libp2p::swarm::ConnectionId,
-            maybe_peer: Option<PeerId>,
-            addresses: &[Multiaddr],
-            effective_role: libp2p::core::Endpoint,
-        ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
-            self.inner.handle_pending_outbound_connection(
-                connection_id,
-                maybe_peer,
-                addresses,
-                effective_role,
-            )
-        }
-
-        fn handle_established_inbound_connection(
-            &mut self,
-            connection_id: ConnectionId,
-            peer: PeerId,
-            local_addr: &Multiaddr,
-            remote_addr: &Multiaddr,
-        ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
-            self.inner.handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
-        }
-
-        fn handle_established_outbound_connection(
-            &mut self,
-            connection_id: ConnectionId,
-            peer: PeerId,
-            addr: &Multiaddr,
-            role_override: Endpoint,
-        ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
-            self.inner.handle_established_outbound_connection(connection_id, peer, addr, role_override)
-        }
-
-        fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-            self.inner.on_swarm_event(event)
-        }
-
-        fn on_connection_handler_event(
-            &mut self,
-            peer_id: PeerId,
-            connection_id: ConnectionId,
-            event: THandlerOutEvent<Self>,
-        ) {
-            self.inner.on_connection_handler_event(peer_id, connection_id, event)
-        }
-
         fn poll(
             &mut self,
             cx: &mut std::task::Context<'_>,
@@ -275,6 +227,63 @@ pub mod background {
             }
 
             Poll::Pending
+        }
+
+        fn handle_pending_outbound_connection(
+            &mut self,
+            connection_id: libp2p::swarm::ConnectionId,
+            maybe_peer: Option<PeerId>,
+            addresses: &[Multiaddr],
+            effective_role: libp2p::core::Endpoint,
+        ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+            self.inner.handle_pending_outbound_connection(
+                connection_id,
+                maybe_peer,
+                addresses,
+                effective_role,
+            )
+        }
+
+        fn handle_established_inbound_connection(
+            &mut self,
+            connection_id: ConnectionId,
+            peer: PeerId,
+            local_addr: &Multiaddr,
+            remote_addr: &Multiaddr,
+        ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
+            self.inner.handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
+        }
+
+        fn handle_established_outbound_connection(
+            &mut self,
+            connection_id: ConnectionId,
+            peer: PeerId,
+            addr: &Multiaddr,
+            role_override: Endpoint,
+        ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
+            self.inner.handle_established_outbound_connection(connection_id, peer, addr, role_override)
+        }
+
+        fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
+            self.inner.on_swarm_event(event)
+        }
+
+        fn on_connection_handler_event(
+            &mut self,
+            peer_id: PeerId,
+            connection_id: ConnectionId,
+            event: THandlerOutEvent<Self>,
+        ) {
+            self.inner.on_connection_handler_event(peer_id, connection_id, event)
+        }
+        
+        fn handle_pending_inbound_connection(
+            &mut self,
+            connection_id: ConnectionId,
+            local_addr: &Multiaddr,
+            remote_addr: &Multiaddr,
+        ) -> Result<(), ConnectionDenied> {
+            self.inner.handle_pending_inbound_connection(connection_id, local_addr, remote_addr)
         }
     }
 }
