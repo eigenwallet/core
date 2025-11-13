@@ -36,7 +36,12 @@ pub fn connect(price_ticker_ws_url_bitfinex: Url) -> Result<PriceUpdates> {
                 async move {
                     let mut stream = connection::new(price_ticker_ws_url_bitfinex).await?;
 
-                    while let Some(update) = stream.try_next().await.map_err(to_backoff)? {
+                    while let Some(update) = stream
+                        .try_next()
+                        .await
+                        .map_err(anyhow::Error::from)
+                        .map_err(backoff::Error::transient)?
+                    {
                         let send_result = price_update.send(Ok(update));
 
                         if send_result.is_err() {
@@ -97,22 +102,6 @@ pub enum Error {
 }
 
 type PriceUpdate = Result<wire::PriceUpdate, Error>;
-
-/// Maps a [`connection::Error`] to a backoff error, effectively defining our
-/// retry strategy.
-fn to_backoff(e: connection::Error) -> backoff::Error<anyhow::Error> {
-    use backoff::Error::*;
-
-    match e {
-        // Connection closures and websocket errors will be retried
-        connection::Error::ConnectionClosed => backoff::Error::transient(anyhow::Error::from(e)),
-        connection::Error::WebSocket(_) => backoff::Error::transient(anyhow::Error::from(e)),
-
-        // Failures while parsing a message are permanent because they most likely present a
-        // programmer error
-        connection::Error::Parse(_) => Permanent(anyhow::Error::from(e)),
-    }
-}
 
 /// Bitfinex websocket connection module.
 ///
