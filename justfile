@@ -125,7 +125,7 @@ test test_name:
 
 # Run the checks for the GUI frontend
 check_gui:
-	just check_gui_eslint || true
+	just check_gui_eslint
 	just check_gui_tsc
 
 # Sometimes you have to prune the docker network to get the integration tests to work
