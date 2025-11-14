@@ -36,7 +36,7 @@ pub struct Behaviour {
     /// Maximum interval for backoff.
     max_interval: Duration,
     /// A queue of events to be sent to the swarm.
-    to_swarm: VecDeque<Event>,
+    to_swarm: VecDeque<ToSwarm<Event, Void>>,
     /// An identifier for this redial behaviour instance (for logging/tracing).
     name: &'static str,
 }
@@ -66,6 +66,27 @@ impl Behaviour {
 
             tracing::trace!("Added a new peer to the set of peers we want to contineously redial");
         }
+
+        newly_added
+    }
+
+    /// Adds a peer to the set of peers to track with a specific address. Returns true if the peer was newly added.
+    #[tracing::instrument(level = "trace", name = "redial::add_peer_with_address", skip(self, peer, address), fields(redial_type = %self.name, peer = %peer, address = %address))]
+    pub fn add_peer_with_address(&mut self, peer: PeerId, address: Multiaddr) -> bool {
+        let newly_added = self.peers.insert(peer);
+
+        // If the peer is newly added, schedule a dial immediately
+        if newly_added {
+            self.schedule_redial(&peer, Duration::ZERO);
+
+            tracing::trace!(?address, "Added a new peer to the set of peers we want to contineously redial with a specific address");
+        }
+
+        self.to_swarm.push_back(ToSwarm::NewExternalAddrOfPeer {
+            peer_id: peer,
+            address: address.clone(),
+        });
+        self.insert_address(&peer, address);
 
         newly_added
     }
@@ -114,10 +135,10 @@ impl Behaviour {
         // TODO: We could make this a production assert if we want to be more strict
         debug_assert!(did_queue_new_dial);
 
-        self.to_swarm.push_back(Event::ScheduledRedial {
+        self.to_swarm.push_back(ToSwarm::GenerateEvent(Event::ScheduledRedial {
             peer: peer.clone(),
             next_dial_in,
-        });
+        }));
 
         tracing::trace!(
             seconds_until_next_redial = %next_dial_in.as_secs(),
@@ -129,6 +150,10 @@ impl Behaviour {
 
     pub fn has_pending_redial(&self, peer: &PeerId) -> bool {
         self.to_dial.contains_key(peer)
+    }
+
+    pub fn insert_address(&mut self, peer: &PeerId, address: Multiaddr) {
+        self.addresses.entry(peer.clone()).or_default().insert(address);
     }
 }
 
@@ -150,10 +175,7 @@ impl NetworkBehaviour for Behaviour {
             // Check if we discovered a new address for some peer
             FromSwarm::NewExternalAddrOfPeer(event) => {
                 // TOOD: Ensure that if the address contains a peer id it matches the peer id in the event
-                self.addresses
-                    .entry(event.peer_id)
-                    .or_default()
-                    .insert(event.addr.clone());
+                self.insert_address(&event.peer_id, event.addr.clone());
 
                 tracing::trace!(peer = %event.peer_id, address = %event.addr, "Cached an address for a peer");
 
@@ -221,7 +243,7 @@ impl NetworkBehaviour for Behaviour {
     fn poll(&mut self, cx: &mut Context<'_>) -> std::task::Poll<ToSwarm<Self::ToSwarm, Void>> {
         // Check if we have any event to send to the swarm
         if let Some(event) = self.to_swarm.pop_front() {
-            return Poll::Ready(ToSwarm::GenerateEvent(event));
+            return Poll::Ready(event);
         }
 
         // Check if any peer's sleep timer has completed
@@ -311,5 +333,76 @@ impl From<Event> for out_event::alice::OutEvent {
     fn from(_event: Event) -> Self {
         // TODO: Once this is used by Alice, convert this to a proper event
         out_event::alice::OutEvent::Other
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::init_tracing;
+    use futures::task::noop_waker;
+    use libp2p::identity;
+    use libp2p::swarm::ToSwarm;
+
+    #[tokio::test]
+    async fn add_peer_schedules_immediate_redial_event() {
+        // Arrange
+        let mut behaviour =
+            Behaviour::new("test", Duration::from_millis(10), Duration::from_secs(1));
+        let peer = identity::Keypair::generate_ed25519().public().to_peer_id();
+
+        // Act
+        let added = behaviour.add_peer(peer);
+
+        // Assert basic state
+        assert!(added, "peer should be newly added");
+        assert!(
+            behaviour.has_pending_redial(&peer),
+            "pending redial should be scheduled"
+        );
+
+        // Poll the behaviour directly until we see both:
+        // - a ScheduledRedial event for this peer with next_dial_in == 0
+        // - a Dial command targeting this peer
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let mut saw_scheduled_redial = false;
+        let mut saw_dial = false;
+
+        // Give the behaviour up to 50ms to emit both events.
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(50);
+
+        while !(saw_scheduled_redial && saw_dial) {
+            if tokio::time::Instant::now() >= deadline {
+                panic!(
+                    "behaviour did not emit ScheduledRedial and Dial events for peer {} in time",
+                    peer
+                );
+            }
+
+            match behaviour.poll(&mut cx) {
+                Poll::Ready(ToSwarm::GenerateEvent(Event::ScheduledRedial {
+                    peer: p,
+                    next_dial_in,
+                })) => {
+                    assert_eq!(p, peer, "ScheduledRedial event should be for the correct peer");
+                    assert_eq!(
+                        next_dial_in,
+                        Duration::ZERO,
+                        "ScheduledRedial should be immediate"
+                    );
+                    saw_scheduled_redial = true;
+                }
+                Poll::Ready(ToSwarm::Dial { opts }) => {
+                    let dial_peer =
+                        opts.get_peer_id().expect("dial opts should always contain a peer id");
+                    assert_eq!(dial_peer, peer, "Dial should be for the correct peer");
+                    saw_dial = true;
+                }
+                Poll::Ready(_) => {}
+                Poll::Pending => { tokio::time::sleep(Duration::from_millis(1)).await; }
+            }
+        }
     }
 }
