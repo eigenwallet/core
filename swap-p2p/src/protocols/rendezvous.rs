@@ -550,7 +550,9 @@ pub mod register {
             let handle = tokio::spawn(async move {
                 loop {
                     if let SwarmEvent::Behaviour(InnerBehaviourEvent::Rendezvous(
-                        rendezvous::client::Event::Registered { rendezvous_node, .. },
+                        rendezvous::client::Event::Registered {
+                            rendezvous_node, ..
+                        },
                     )) = asb.select_next_some().await
                     {
                         registrations

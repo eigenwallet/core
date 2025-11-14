@@ -135,10 +135,11 @@ impl Behaviour {
         // TODO: We could make this a production assert if we want to be more strict
         debug_assert!(did_queue_new_dial);
 
-        self.to_swarm.push_back(ToSwarm::GenerateEvent(Event::ScheduledRedial {
-            peer: peer.clone(),
-            next_dial_in,
-        }));
+        self.to_swarm
+            .push_back(ToSwarm::GenerateEvent(Event::ScheduledRedial {
+                peer: peer.clone(),
+                next_dial_in,
+            }));
 
         tracing::trace!(
             seconds_until_next_redial = %next_dial_in.as_secs(),
@@ -153,7 +154,10 @@ impl Behaviour {
     }
 
     pub fn insert_address(&mut self, peer: &PeerId, address: Multiaddr) {
-        self.addresses.entry(peer.clone()).or_default().insert(address);
+        self.addresses
+            .entry(peer.clone())
+            .or_default()
+            .insert(address);
     }
 }
 
@@ -339,69 +343,78 @@ impl From<Event> for out_event::alice::OutEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::init_tracing;
     use futures::task::noop_waker;
     use libp2p::identity;
-    use libp2p::swarm::ToSwarm;
+    use libp2p::swarm::{ConnectionId, DialFailure, ToSwarm};
 
     #[tokio::test]
-    async fn add_peer_schedules_immediate_redial_event() {
-        // Arrange
+    async fn add_peer_schedules_immediate_redial_event_and_another_dial_after_failure() {
         let mut behaviour =
             Behaviour::new("test", Duration::from_millis(10), Duration::from_secs(1));
+
         let peer = identity::Keypair::generate_ed25519().public().to_peer_id();
 
-        // Act
+        // Add the peer
         let added = behaviour.add_peer(peer);
-
-        // Assert basic state
         assert!(added, "peer should be newly added");
         assert!(
             behaviour.has_pending_redial(&peer),
             "pending redial should be scheduled"
         );
 
-        // Poll the behaviour directly until we see both:
-        // - a ScheduledRedial event for this peer with next_dial_in == 0
-        // - a Dial command targeting this peer
+        // Poll the behaviour directly until we see a Dial command targeting this peer
         let waker = noop_waker();
         let mut cx = Context::from_waker(&waker);
-
-        let mut saw_scheduled_redial = false;
-        let mut saw_dial = false;
-
-        // Give the behaviour up to 50ms to emit both events.
         let deadline = tokio::time::Instant::now() + Duration::from_millis(50);
 
-        while !(saw_scheduled_redial && saw_dial) {
+        // Wait for initial dial event
+        loop {
             if tokio::time::Instant::now() >= deadline {
                 panic!(
-                    "behaviour did not emit ScheduledRedial and Dial events for peer {} in time",
+                    "behaviour did not emit Dial event for peer {} in time",
                     peer
                 );
             }
 
             match behaviour.poll(&mut cx) {
-                Poll::Ready(ToSwarm::GenerateEvent(Event::ScheduledRedial {
-                    peer: p,
-                    next_dial_in,
-                })) => {
-                    assert_eq!(p, peer, "ScheduledRedial event should be for the correct peer");
-                    assert_eq!(
-                        next_dial_in,
-                        Duration::ZERO,
-                        "ScheduledRedial should be immediate"
-                    );
-                    saw_scheduled_redial = true;
-                }
                 Poll::Ready(ToSwarm::Dial { opts }) => {
-                    let dial_peer =
-                        opts.get_peer_id().expect("dial opts should always contain a peer id");
+                    let dial_peer = opts
+                        .get_peer_id()
+                        .expect("dial opts should always contain a peer id");
                     assert_eq!(dial_peer, peer, "Dial should be for the correct peer");
-                    saw_dial = true;
+                    break;
                 }
                 Poll::Ready(_) => {}
-                Poll::Pending => { tokio::time::sleep(Duration::from_millis(1)).await; }
+                Poll::Pending => {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        }
+
+        // Mock a dial failure
+        behaviour.on_swarm_event(FromSwarm::DialFailure(DialFailure {
+            peer_id: Some(peer),
+            error: &DialError::Aborted,
+            connection_id: ConnectionId::new_unchecked(0),
+        }));
+
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                panic!("behaviour did not emit Dial event for peer {} in time after a mocked dial failure", peer);
+            }
+
+            match behaviour.poll(&mut cx) {
+                Poll::Ready(ToSwarm::Dial { opts }) => {
+                    let dial_peer = opts
+                        .get_peer_id()
+                        .expect("dial opts should always contain a peer id");
+                    assert_eq!(dial_peer, peer, "Dial should be for the correct peer");
+                    break;
+                }
+                Poll::Ready(_) => {}
+                Poll::Pending => {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
             }
         }
     }
