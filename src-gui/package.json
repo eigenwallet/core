@@ -13,7 +13,9 @@
     "prebuild": "yarn run gen-bindings",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "eslint": "eslint src",
+    "tsc": "tsc --noEmit"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
