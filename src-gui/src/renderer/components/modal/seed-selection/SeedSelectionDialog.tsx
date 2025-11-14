@@ -30,12 +30,34 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import SearchIcon from "@mui/icons-material/Search";
 
+function parseBlockHeightInput(
+  blockheightInput: string | undefined,
+): number | null | false {
+  if (!blockheightInput) {
+    return null;
+  }
+
+  const blockheightNum = parseInt(blockheightInput, 10);
+
+  if (
+    blockheightInput === "0" ||
+    (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0)
+  ) {
+    return blockheightNum;
+  }
+
+  return false;
+}
+
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
   const [selectedOption, setSelectedOption] = useState<
     SeedChoice["type"] | undefined
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
+  const [blockheightInput, setBlockheightInput] = useState<
+    string | undefined
+  >();
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
   const [walletPath, setWalletPath] = useState<string>("");
 
@@ -80,6 +102,10 @@ export default function SeedSelectionDialog() {
     }
   };
 
+  const isBlockheightValid = parseBlockHeightInput(blockheightInput) !== false;
+  const isBlockheightInputFailed =
+    blockheightInput && isBlockheightValid === false;
+
   const Legacy = async () => {
     if (!approval)
       throw new Error("No approval request found for seed selection");
@@ -97,7 +123,15 @@ export default function SeedSelectionDialog() {
       selectedOption === "RandomSeed"
         ? { type: "RandomSeed" }
         : selectedOption === "FromSeed"
-          ? { type: "FromSeed", content: { seed: customSeed } }
+          ? {
+            type: "FromSeed",
+            content: {
+              seed: customSeed,
+              ...(isBlockheightValid && {
+                restore_height: parseBlockHeightInput(blockheightInput),
+              }),
+            },
+          }
           : { type: "FromWalletPath", content: { wallet_path: walletPath } };
 
     await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
@@ -109,9 +143,12 @@ export default function SeedSelectionDialog() {
 
   // Disable the button if the user is restoring from a seed and the seed is invalid
   // or if selecting wallet path and no path is selected
+  // or if blockheight is provided but invalid
   const isDisabled =
     selectedOption === "FromSeed"
-      ? customSeed.trim().length === 0 || !isSeedValid
+      ? customSeed.trim().length === 0 ||
+      !isSeedValid ||
+      isBlockheightInputFailed
       : selectedOption === "FromWalletPath"
         ? !walletPath
         : false;
@@ -250,23 +287,44 @@ export default function SeedSelectionDialog() {
         )}
 
         {selectedOption === "FromSeed" && (
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Enter your seed phrase"
-            value={customSeed}
-            onChange={(e) => setCustomSeed(e.target.value)}
-            placeholder="Enter your Monero 25 words seed phrase..."
-            error={!isSeedValid && customSeed.length > 0}
-            helperText={
-              isSeedValid
-                ? "Seed is valid"
-                : customSeed.length > 0
-                  ? "Seed is invalid"
-                  : ""
-            }
-          />
+          <>
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Enter your seed phrase"
+              value={customSeed}
+              onChange={(e) => setCustomSeed(e.target.value)}
+              placeholder="Enter your Monero 25 words seed phrase..."
+              error={!isSeedValid && customSeed.length > 0}
+              helperText={
+                isSeedValid
+                  ? "Seed is valid"
+                  : customSeed.length > 0
+                    ? "Seed is invalid"
+                    : ""
+              }
+            />
+            <TextField
+              type="text"
+              inputProps={{
+                inputmode: "numeric",
+                pattern: "[0-9]*",
+              }}
+              label="Restore blockheight (optional)"
+              value={blockheightInput}
+              onChange={(e) => setBlockheightInput(e.target.value)}
+              placeholder="Enter restore blockheight, leave empty to scan from the blockchain start"
+              error={isBlockheightInputFailed}
+              helperText={
+                isBlockheightInputFailed
+                  ? "Please enter a valid blockheight"
+                  : isBlockheightValid
+                    ? "Valid blockheight"
+                    : ""
+              }
+            />
+          </>
         )}
 
         {selectedOption === "FromWalletPath" && (
