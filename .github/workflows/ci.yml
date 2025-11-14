@@ -28,6 +28,20 @@ jobs:
       - name: Run clippy with all features enabled
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+  gui_lint:
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' || !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
+        with:
+          host: ubuntu-22.04
+
+      - name: Run GUI lint checks
+        run: just check_gui
+
   sqlx_test:
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
