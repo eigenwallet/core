@@ -908,13 +908,18 @@ mod wallet {
                     }
 
                     let wallet = match seed_choice {
-                        SeedChoice::RandomSeed => {
+                        SeedChoice::RandomSeed { password } => {
                             // Create wallet with Unix timestamp as name
                             let wallet_path = new_wallet_path(&eigenwallet_wallets_dir)
                                 .context("Failed to determine path for new wallet")?;
 
-                            monero::Wallet::open_or_create(
+                            monero::Wallet::open_or_create_with_password(
                                 wallet_path.display().to_string(),
+                                if password.is_empty() {
+                                    None
+                                } else {
+                                    Some(password)
+                                },
                                 daemon.clone(),
                                 env_config.monero_network,
                                 true,
@@ -922,14 +927,22 @@ mod wallet {
                             .await
                             .context("Failed to create wallet from random seed")?
                         }
-                        SeedChoice::FromSeed { seed: mnemonic } => {
+                        SeedChoice::FromSeed {
+                            seed: mnemonic,
+                            password,
+                        } => {
                             // Create wallet from provided seed
                             let wallet_path = new_wallet_path(&eigenwallet_wallets_dir)
                                 .context("Failed to determine path for new wallet")?;
 
-                            monero::Wallet::open_or_create_from_seed(
+                            monero::Wallet::open_or_create_from_seed_with_password(
                                 wallet_path.display().to_string(),
                                 mnemonic,
+                                if password.is_empty() {
+                                    None
+                                } else {
+                                    Some(password)
+                                },
                                 env_config.monero_network,
                                 0,
                                 true,
