@@ -181,11 +181,14 @@ fn main() {
                 .to_string(),
         ) // This is needed for libsodium.a to be found on mingw-w64
         .build_arg("-Wno-dev") // Disable warnings we can't fix anyway
-        .build_arg(match (is_github_actions, is_docker_build) {
-            (true, _) => "-j1",
-            (_, true) => "-j1",
-            (_, _) => "-j4",
-        })
+        .build_arg(format!(
+            "-j{}",
+            if is_github_actions || is_docker_build {
+                1
+            } else {
+                num_cpus::get()
+            }
+        ))
         .build_arg("-I.")
         .build();
 

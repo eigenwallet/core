@@ -23,6 +23,7 @@ throttle = { path = "../throttle" }
 
 [build-dependencies]
 cmake = "0.1.54"
+num_cpus = "1.17"
 cxx-build = "1.0.137"
 diffy = "0.4.2"
 fs_extra = "1.3.0"

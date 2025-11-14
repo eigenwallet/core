@@ -6873,6 +6873,7 @@ dependencies = [
  "fs_extra",
  "futures",
  "monero",
+ "num_cpus",
  "quickcheck",
  "quickcheck_macros",
  "serde",
