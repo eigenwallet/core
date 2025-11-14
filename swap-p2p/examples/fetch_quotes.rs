@@ -11,6 +11,8 @@ use libp2p::{dns, tcp};
 use libp2p::{identify, noise, ping, request_response};
 use libp2p::{identity, yamux, Multiaddr, PeerId, SwarmBuilder, Transport};
 use libp2p_tor::{AddressConversion, TorTransport};
+use swap_p2p::protocols::quote::BidQuote;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_p2p::libp2p_ext::MultiAddrExt;
@@ -115,16 +117,6 @@ async fn main() -> Result<()> {
         .build();
 
     for rendezvous_node_addr in rendezvous_nodes {
-        tracing::trace!(
-            "Dialing rendezvous node address: {:?}",
-            rendezvous_node_addr
-        );
-
-        swarm.dial(rendezvous_node_addr.clone()).expect(&format!(
-            "Failed to dial rendezvous node address {:?}",
-            rendezvous_node_addr
-        ));
-
         swarm.add_peer_address(
             rendezvous_node_addr
                 .extract_peer_id()
@@ -133,6 +125,8 @@ async fn main() -> Result<()> {
         );
     }
 
+    let mut all_quotes: HashMap<PeerId, VecDeque<BidQuote>> = HashMap::new();
+
     loop {
         let event = swarm.select_next_some().await;
         // println!("Event: {:?}", event);
@@ -140,13 +134,23 @@ async fn main() -> Result<()> {
         match event {
             libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
                 BehaviourEvent::Rendezvous(event) => match event {
-                    rendezvous::discovery::Event::DiscoveredPeer { peer_id, address } => {
-                        swarm.add_peer_address(peer_id, address);
-                        swarm.behaviour_mut().quote.send_request(&peer_id).await;
+                    rendezvous::discovery::Event::DiscoveredPeer { peer_id, address: _ } => {
                     }
                 },
                 BehaviourEvent::Quote(quote::background::Event::QuoteReceived { peer, quote }) => {
+                    all_quotes.entry(peer).or_default().push_back(quote);
+                    println!("================");
+                    println!("================");
+                    println!("================");
                     println!("==== !!!! GOT QUOTE FROM !!!! ==== {}: {:?}", peer, quote);
+                    println!("All quotes:");
+                    for (peer, quotes) in all_quotes.iter() {
+                        println!("- {peer}:");
+                        for quote in quotes.iter() {
+                            println!("  - {:?}", quote);
+                        }
+                        println!("================");
+                    }
                 }
                 _ => {}
             },
