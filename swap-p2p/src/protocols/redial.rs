@@ -205,7 +205,7 @@ impl NetworkBehaviour for Behaviour {
                             // We always dial with `PeerCondition::DisconnectedAndNotDialing`.
                             // If we not disconnected, we don't need to redial.
                             // If we are already dialing, another event will be emitted if that dial fails.
-                            tracing::trace!(peer = %peer_id, dial_error = ?event.error, "A dial failure occurred for a peer we want to contineously redial, but this was due to a dial condition failure. We are not treating this as a failure. We will not schedule a redial.");
+                            // tracing::trace!(peer = %peer_id, dial_error = ?event.error, "A dial failure occurred for a peer we want to contineously redial, but this was due to a dial condition failure. We are not treating this as a failure. We will not schedule a redial.");
                             None
                         }
                         _ => {

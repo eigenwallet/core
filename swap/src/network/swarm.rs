@@ -1,6 +1,6 @@
 use crate::asb::{register, LatestRate};
-use crate::libp2p_ext::MultiAddrExt;
 use crate::network::rendezvous::XmrBtcNamespace;
+use swap_p2p::libp2p_ext::MultiAddrExt;
 use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
