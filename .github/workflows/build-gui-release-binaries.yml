@@ -168,7 +168,8 @@ jobs:
               "type": "file",
               "path": $deb_path
             } |
-            .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path
+            .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path |
+            .modules[0].sources[2].path = $PWD + "/" + .modules[0].sources[2].path
           ' < flatpak/org.eigenwallet.app.json > target/manifest.json
 
           outdir=target/flatpak-repo
