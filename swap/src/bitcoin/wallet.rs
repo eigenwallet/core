@@ -20,7 +20,7 @@ use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Txid};
-use bitcoin::{ScriptBuf, Weight};
+use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
 use moka;
@@ -1261,7 +1261,7 @@ where
         }
     }
 
-    pub async fn sign_and_finalize(&self, mut psbt: bitcoin::psbt::Psbt) -> Result<Transaction> {
+    pub async fn sign_and_finalize(&self, mut psbt: Psbt) -> Result<Transaction> {
         // Acquire the wallet lock once here for efficiency within the non-finalized block
         let wallet_guard = self.wallet.lock().await;
 
@@ -2087,7 +2087,7 @@ impl bitcoin_wallet::BitcoinWallet for Wallet {
         amount: Amount,
         spending_fee: Amount,
         change_override: Option<Address>,
-    ) -> Result<bitcoin::psbt::Psbt> {
+    ) -> Result<Psbt> {
         Wallet::send_to_address(self, address, amount, spending_fee, change_override).await
     }
 
@@ -2096,18 +2096,15 @@ impl bitcoin_wallet::BitcoinWallet for Wallet {
         address: Address,
         amount: Amount,
         change_override: Option<Address>,
-    ) -> Result<bitcoin::psbt::Psbt> {
+    ) -> Result<Psbt> {
         Wallet::send_to_address_dynamic_fee(self, address, amount, change_override).await
     }
 
-    async fn sweep_balance_to_address_dynamic_fee(
-        &self,
-        address: Address,
-    ) -> Result<bitcoin::psbt::Psbt> {
+    async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
         Wallet::sweep_balance_to_address_dynamic_fee(self, address).await
     }
 
-    async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction> {
+    async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
@@ -2892,27 +2889,27 @@ mod tests {
     use super::*;
     use crate::bitcoin::{PublicKey, TxLock};
     use crate::tracing_ext::capture_logs;
-    use async_trait::async_trait;
-    use bdk::bitcoin::psbt::Psbt;
     use bitcoin::address::NetworkUnchecked;
     use bitcoin::hashes::Hash;
+    use bitcoin::Psbt;
     use bitcoin_wallet::BitcoinWallet;
     use proptest::prelude::*;
     use tracing::level_filters::LevelFilter;
 
     // Implement BitcoinWallet trait for a stub wallet and panic when the function is not implemented
-    #[async_trait]
+    #[async_trait::async_trait]
+    #[allow(unused)]
     impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         async fn balance(&self) -> Result<Amount> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn balance_info(&self) -> Result<Balance> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn new_address(&self) -> Result<Address> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn send_to_address(
@@ -2922,7 +2919,7 @@ mod tests {
             spending_fee: Amount,
             change_override: Option<Address>,
         ) -> Result<Psbt> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn send_to_address_dynamic_fee(
@@ -2930,22 +2927,16 @@ mod tests {
             address: Address,
             amount: Amount,
             change_override: Option<Address>,
-        ) -> Result<bitcoin::psbt::Psbt> {
-            unimplemented!("stub method called erroniosly")
+        ) -> Result<Psbt> {
+            unimplemented!("stub method called erroneously")
         }
 
-        async fn sweep_balance_to_address_dynamic_fee(
-            &self,
-            address: Address,
-        ) -> Result<bitcoin::psbt::Psbt> {
-            unimplemented!("stub method called erroniosly")
+        async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
+            unimplemented!("stub method called erroneously")
         }
 
-        async fn sign_and_finalize(
-            &self,
-            psbt: bitcoin::psbt::Psbt,
-        ) -> Result<bitcoin::Transaction> {
-            unimplemented!("stub method called erroniosly")
+        async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
+            unimplemented!("stub method called erroneously")
         }
 
         async fn broadcast(
@@ -2953,30 +2944,30 @@ mod tests {
             transaction: bitcoin::Transaction,
             kind: &str,
         ) -> Result<(Txid, Subscription)> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn sync(&self) -> Result<()> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn get_raw_transaction(
             &self,
             txid: Txid,
         ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn estimate_fee(
@@ -2984,19 +2975,19 @@ mod tests {
             weight: Weight,
             transfer_amount: Option<Amount>,
         ) -> Result<Amount> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         fn network(&self) -> Network {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         fn finality_confirmations(&self) -> u32 {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
 
         async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
-            unimplemented!("stub method called erroniosly")
+            unimplemented!("stub method called erroneously")
         }
     }
 
@@ -3382,7 +3373,7 @@ TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=00000000000
 
     proptest::proptest! {
         #[test]
-        fn funding_never_fails_with_insufficient_funds(funding_amount in 3000u32.., num_utxos in 1..5u8, sats_per_vb in 1u64..500u64, key in crate::proptest::bitcoin::extended_priv_key(), alice in crate::proptest::ecdsa_fun::point(), bob in crate::proptest::ecdsa_fun::point()) {
+        fn funding_never_fails_with_insufficient_funds(funding_amount in 3000u32.., num_utxos in 1..5u8, sats_per_vb in 1u64..500u64, key in swap_proptest::bitcoin::extended_priv_key(), alice in swap_proptest::ecdsa_fun::point(), bob in swap_proptest::ecdsa_fun::point()) {
             proptest::prop_assume!(alice != bob);
 
             tokio::runtime::Runtime::new().unwrap().block_on(async move {
@@ -3663,11 +3654,14 @@ TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=00000000000
 
 #[cfg(test)]
 mod swap_core_bitcoin_tests {
-    use super::TestWalletBuilder;
+    use super::*;
     use crate::monero::TransferProof;
+    use ::bitcoin::hashes::Hash;
+    use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
     use bitcoin::secp256k1;
     use curve25519_dalek::scalar::Scalar;
     use ecdsa_fun::fun::marker::{NonZero, Public};
+    use ecdsa_fun::fun::Point;
     use monero::PrivateKey;
     use rand::rngs::OsRng;
     use std::matches;
@@ -3766,8 +3760,8 @@ mod swap_core_bitcoin_tests {
             &mut OsRng,
             btc_amount,
             xmr_amount,
-            config.bitcoin_cancel_timelock,
-            config.bitcoin_punish_timelock,
+            CancelTimelock::new(config.bitcoin_cancel_timelock),
+            PunishTimelock::new(config.bitcoin_punish_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
             spending_fee,
@@ -3871,8 +3865,8 @@ mod swap_core_bitcoin_tests {
             &mut OsRng,
             btc_amount,
             xmr_amount,
-            config.bitcoin_cancel_timelock,
-            config.bitcoin_punish_timelock,
+            CancelTimelock::new(config.bitcoin_cancel_timelock),
+            PunishTimelock::new(config.bitcoin_punish_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
             spending_fee,
@@ -3973,9 +3967,9 @@ mod swap_core_bitcoin_tests {
 
 #[cfg(test)]
 mod swap_core_bitcoin_lock_tests {
-    use super::TestWalletBuilder;
+    use super::*;
     use crate::bitcoin::Amount;
-    use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
+    use bitcoin::Psbt;
     use swap_core::bitcoin::*;
 
     // Basic setup function for tests
@@ -4045,12 +4039,12 @@ mod swap_core_bitcoin_lock_tests {
 
     proptest::proptest! {
         #[test]
-        fn estimated_tx_lock_script_size_never_changes(a in crate::proptest::ecdsa_fun::point(), b in crate::proptest::ecdsa_fun::point()) {
+        fn estimated_tx_lock_script_size_never_changes(a in swap_proptest::ecdsa_fun::point(), b in swap_proptest::ecdsa_fun::point()) {
             proptest::prop_assume!(a != b);
 
             let computed_size = build_shared_output_descriptor(a, b).unwrap().script_pubkey().len();
 
-            assert_eq!(computed_size, SCRIPT_SIZE);
+            assert_eq!(computed_size, TxLock::script_size());
         }
     }
 
@@ -4061,7 +4055,7 @@ mod swap_core_bitcoin_lock_tests {
         wallet: &dyn bitcoin_wallet::BitcoinWallet,
         amount: Amount,
         spending_fee: Amount,
-    ) -> PartiallySignedTransaction {
+    ) -> Psbt {
         let change = wallet.new_address().await.unwrap();
         TxLock::new(wallet, amount, spending_fee, A, B, change)
             .await

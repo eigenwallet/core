@@ -100,7 +100,6 @@ impl SecretKey {
 pub struct PublicKey(Point);
 
 impl PublicKey {
-    #[cfg(test)]
     pub fn random() -> Self {
         Self(Point::random(&mut rand::thread_rng()))
     }

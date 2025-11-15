@@ -11120,6 +11120,7 @@ dependencies = [
  "swap-fs",
  "swap-machine",
  "swap-p2p",
+ "swap-proptest",
  "swap-serde",
  "tauri",
  "tempfile",
@@ -11363,6 +11364,16 @@ dependencies = [
  "unsigned-varint 0.8.0",
  "uuid",
  "void",
+]
+
+[[package]]
+name = "swap-proptest"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.32.7",
+ "ecdsa_fun",
+ "proptest",
+ "tokio",
 ]
 
 [[package]]

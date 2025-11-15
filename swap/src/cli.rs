@@ -10,18 +10,15 @@ pub mod watcher;
 pub use behaviour::{Behaviour, OutEvent};
 pub use cancel_and_refund::{cancel, cancel_and_refund, refund};
 pub use event_loop::{EventLoop, EventLoopHandle, SwapEventLoopHandle};
-pub use list_sellers::{list_sellers, SellerStatus};
+pub use list_sellers::{list_sellers, QuoteWithAddress, SellerStatus};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asb;
-    use crate::asb::rendezvous::RendezvousNode;
     use crate::cli::list_sellers::{QuoteWithAddress, SellerStatus};
     use crate::network::quote;
     use crate::network::quote::BidQuote;
     use crate::network::rendezvous::XmrBtcNamespace;
-    use crate::network::test::{new_swarm, SwarmExt};
     use futures::StreamExt;
     use libp2p::core::Endpoint;
     use libp2p::multiaddr::Protocol;
@@ -33,6 +30,8 @@ mod tests {
     use std::collections::HashSet;
     use std::task::Poll;
     use std::time::Duration;
+    use swap_p2p::protocols::rendezvous::register::RendezvousNode;
+    use swap_p2p::test::{new_swarm, SwarmExt};
 
     // Test-only struct for compatibility
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -117,7 +116,7 @@ mod tests {
         let mut asb = new_swarm(|identity| {
             let rendezvous_node =
                 RendezvousNode::new(rendezvous_address, rendezvous_peer_id, namespace, None);
-            let rendezvous = asb::rendezvous::Behaviour::new(identity, vec![rendezvous_node]);
+            let rendezvous = crate::asb::register::Behaviour::new(identity, vec![rendezvous_node]);
 
             StaticQuoteAsbBehaviour {
                 inner: StaticQuoteAsbBehaviourInner {
@@ -160,7 +159,7 @@ mod tests {
 
     #[derive(libp2p::swarm::NetworkBehaviour)]
     struct StaticQuoteAsbBehaviourInner {
-        rendezvous: asb::rendezvous::Behaviour,
+        rendezvous: crate::asb::register::Behaviour,
         quote: quote::Behaviour,
     }
 

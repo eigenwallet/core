@@ -22,6 +22,7 @@ members = [
   "swap-machine",
   "swap-orchestrator",
   "swap-p2p",
+  "swap-proptest",
   "swap-serde",
   "throttle",
 ]
