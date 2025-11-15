@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.3.4] - 2025-11-14
-
 - GUI: Allow changing the password of a Monero wallet (thanks to @nabijaczleweli)
 - GUI: Fix an issue where the list of Electrum servers would display all servers as being unreachable (thanks to @nabijaczleweli)
 - ASB: Fix an issue where we would not properly reconnect to rendezvous servers which could negatively impact peer discovery
