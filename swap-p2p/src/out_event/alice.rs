@@ -101,3 +101,16 @@ impl From<libp2p::rendezvous::client::Event> for OutEvent {
         OutEvent::Rendezvous(e)
     }
 }
+
+impl From<crate::protocols::rendezvous::register::InnerBehaviourEvent> for OutEvent {
+    fn from(e: crate::protocols::rendezvous::register::InnerBehaviourEvent) -> Self {
+        match e {
+            crate::protocols::rendezvous::register::InnerBehaviourEvent::Rendezvous(ev) => {
+                OutEvent::from(ev)
+            }
+            crate::protocols::rendezvous::register::InnerBehaviourEvent::Redial(_) => {
+                OutEvent::Other
+            }
+        }
+    }
+}
