@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 mod cancel;
 mod early_refund;
 mod lock;

@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::bitcoin::{self, CancelTimelock, PunishTimelock};
 use crate::bitcoin::{
     build_shared_output_descriptor, Address, Amount, PublicKey, Transaction, TxLock,
