@@ -6837,7 +6837,7 @@ dependencies = [
 [[package]]
 name = "monero-seed"
 version = "0.1.0"
-source = "git+https://github.com/monero-oxide/monero-wallet-util.git#c6ac8cbfca7aa8002ac0afee9e9e3a3620aba852"
+source = "git+https://github.com/monero-oxide/monero-wallet-util.git#9f2669a3af09126ded8d4292e4b944245d1b978e"
 dependencies = [
  "curve25519-dalek 4.1.3",
  "rand_core 0.6.4",
