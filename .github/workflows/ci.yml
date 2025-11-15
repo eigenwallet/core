@@ -53,6 +53,9 @@ jobs:
         with:
           host: ubuntu-22.04
 
+      - name: Run GUI generate bindings
+        run: just bindings
+
       - name: Run GUI tsc checks
         run: just check_gui_tsc
 
