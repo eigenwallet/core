@@ -177,9 +177,6 @@ impl AsbApiServer for RpcImpl {
                     crate::asb::register::ConnectionStatus::Disconnected => {
                         RendezvousConnectionStatus::Disconnected
                     }
-                    crate::asb::register::ConnectionStatus::Dialling => {
-                        RendezvousConnectionStatus::Dialling
-                    }
                     crate::asb::register::ConnectionStatus::Connected => {
                         RendezvousConnectionStatus::Connected
                     }

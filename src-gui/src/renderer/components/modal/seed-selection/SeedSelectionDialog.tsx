@@ -19,6 +19,7 @@ import {
   Card,
   CardContent,
 } from "@mui/material";
+import NewPasswordInput from "renderer/components/other/NewPasswordInput";
 import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
@@ -37,6 +38,8 @@ export default function SeedSelectionDialog() {
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
+  const [password, setPassword] = useState<string>("");
+  const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
   const [walletPath, setWalletPath] = useState<string>("");
 
   const approval = pendingApprovals[0];
@@ -95,9 +98,9 @@ export default function SeedSelectionDialog() {
 
     const seedChoice: SeedChoice =
       selectedOption === "RandomSeed"
-        ? { type: "RandomSeed" }
+        ? { type: "RandomSeed", content: { password } }
         : selectedOption === "FromSeed"
-          ? { type: "FromSeed", content: { seed: customSeed } }
+          ? { type: "FromSeed", content: { seed: customSeed, password } }
           : { type: "FromWalletPath", content: { wallet_path: walletPath } };
 
     await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
@@ -107,14 +110,17 @@ export default function SeedSelectionDialog() {
     return null;
   }
 
-  // Disable the button if the user is restoring from a seed and the seed is invalid
-  // or if selecting wallet path and no path is selected
+  // Disable the button if the user is restoring from a seed and the seed is invalid,
+  // if selecting wallet path and no path is selected,
+  // or if setting a password and they don't match
   const isDisabled =
     selectedOption === "FromSeed"
-      ? customSeed.trim().length === 0 || !isSeedValid
+      ? customSeed.trim().length === 0 || !isSeedValid || !isPasswordValid
       : selectedOption === "FromWalletPath"
         ? !walletPath
-        : false;
+        : selectedOption === "RandomSeed"
+          ? !isPasswordValid
+          : false;
 
   return (
     <Dialog
@@ -232,6 +238,13 @@ export default function SeedSelectionDialog() {
 
         {selectedOption === "RandomSeed" && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <NewPasswordInput
+              password={password}
+              setPassword={setPassword}
+              isPasswordValid={isPasswordValid}
+              setIsPasswordValid={setIsPasswordValid}
+            />
+
             <Typography
               variant="body2"
               color="text.secondary"
@@ -250,23 +263,34 @@ export default function SeedSelectionDialog() {
         )}
 
         {selectedOption === "FromSeed" && (
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Enter your seed phrase"
-            value={customSeed}
-            onChange={(e) => setCustomSeed(e.target.value)}
-            placeholder="Enter your Monero 25 words seed phrase..."
-            error={!isSeedValid && customSeed.length > 0}
-            helperText={
-              isSeedValid
-                ? "Seed is valid"
-                : customSeed.length > 0
-                  ? "Seed is invalid"
-                  : ""
-            }
-          />
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <TextField
+              fullWidth
+              multiline
+              autoFocus
+              rows={3}
+              label="Enter your seed phrase"
+              value={customSeed}
+              onChange={(e) => setCustomSeed(e.target.value)}
+              placeholder="Enter your Monero 25 words seed phrase..."
+              error={!isSeedValid && customSeed.length > 0}
+              helperText={
+                isSeedValid
+                  ? "Seed is valid"
+                  : customSeed.length > 0
+                    ? "Seed is invalid"
+                    : ""
+              }
+            />
+
+            <NewPasswordInput
+              password={password}
+              setPassword={setPassword}
+              isPasswordValid={isPasswordValid}
+              setIsPasswordValid={setIsPasswordValid}
+              autoFocus={false}
+            />
+          </Box>
         )}
 
         {selectedOption === "FromWalletPath" && (

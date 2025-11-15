@@ -14,7 +14,8 @@ use swap::cli::{
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
             GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
-            SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            SendMoneroArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
+            SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
         ContextBuilder,
@@ -68,6 +69,7 @@ macro_rules! generate_command_handlers {
             set_monero_restore_height,
             reject_approval_request,
             get_restore_height,
+            set_monero_wallet_password,
             dfx_authenticate,
             change_monero_node,
             get_context_status
@@ -447,6 +449,7 @@ tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
 tauri_command!(get_current_swap, GetCurrentSwapArgs, no_args);
 tauri_command!(set_monero_restore_height, SetRestoreHeightArgs);
 tauri_command!(get_restore_height, GetRestoreHeightArgs, no_args);
+tauri_command!(set_monero_wallet_password, SetMoneroWalletPasswordArgs);
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
