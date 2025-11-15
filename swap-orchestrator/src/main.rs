@@ -16,6 +16,7 @@ use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
 use url::Url;
 
 fn main() {
+    let want_tor = prompt::tor_for_daemons();
     let (bitcoin_network, monero_network) = prompt::network();
 
     let defaults = match (bitcoin_network, monero_network) {
@@ -44,6 +45,7 @@ fn main() {
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
+            tor: OrchestratorImage::Registry(images::TOR_IMAGE.to_string()),
             // TODO: Allow pre-built images here
             asb: OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.clone()),
             // TODO: Allow pre-built images here
@@ -60,6 +62,7 @@ fn main() {
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
         },
+        want_tor,
     };
 
     // If the config file already exists and be de-serialized,

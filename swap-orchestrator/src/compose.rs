@@ -16,6 +16,7 @@ pub struct OrchestratorInput {
     pub networks: OrchestratorNetworks<monero::Network, bitcoin::Network>,
     pub images: OrchestratorImages<OrchestratorImage>,
     pub directories: OrchestratorDirectories,
+    pub want_tor: bool,
 }
 
 pub struct OrchestratorDirectories {
@@ -32,6 +33,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub monerod: T,
     pub electrs: T,
     pub bitcoind: T,
+    pub tor: T,
     pub asb: T,
     pub asb_controller: T,
     pub asb_tracing_logger: T,
@@ -43,6 +45,7 @@ pub struct OrchestratorPorts {
     pub bitcoind_rpc: u16,
     pub bitcoind_p2p: u16,
     pub electrs: u16,
+    pub tor_socks: u16,
     pub asb_libp2p: u16,
     pub asb_rpc_port: u16,
     pub rendezvous_node_port: u16,
@@ -56,6 +59,7 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
                 bitcoind_rpc: 8332,
                 bitcoind_p2p: 8333,
                 electrs: 50001,
+                tor_socks: 9050,
                 asb_libp2p: 9939,
                 asb_rpc_port: 9944,
                 rendezvous_node_port: 8888,
@@ -65,6 +69,7 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
                 bitcoind_rpc: 18332,
                 bitcoind_p2p: 18333,
                 electrs: 50001,
+                tor_socks: 9050,
                 asb_libp2p: 9839,
                 asb_rpc_port: 9944,
                 rendezvous_node_port: 8888,
@@ -125,6 +130,9 @@ macro_rules! flag {
     ($flag:expr, $($args:expr),*) => {
         flag!(format!($flag, $($args),*))
     };
+    ($want:expr; $flag:expr, $($args:expr),*) => {
+        Flag(if $want { Some(format!($flag, $($args),*)) } else { None })
+    };
 }
 
 macro_rules! command {
@@ -155,8 +163,24 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--rpc-bind-host=0.0.0.0"),
     ];
 
+    // monerod's --proxy addr:port and --tx-proxy tor,addr;port can only take numeric addr,
+    // and fail with "Exception in main! Failed to initialize p2p server." if given a hostname,
+    // so we must resolve the name ourselves. Userland is busybox.
     let command_monerod = command![
-        "monerod",
+        "sh",
+        flag!("-xc"),
+        flag!(
+            r#"
+        if {:?}; then
+            tor="$(nslookup tor | awk '/answer/,0 {{ if(/Address/) {{ print $2; exit }} }}')"
+            set -- "$@" "--proxy=$tor:{}"
+        fi
+        exec "$@""#,
+            input.want_tor,
+            input.ports.tor_socks
+        ),
+        flag!(""),
+        flag!("monerod"),
         input.networks.monero.to_flag(),
         flag!("--rpc-bind-ip=0.0.0.0"),
         flag!("--rpc-bind-port={}", input.ports.monerod_rpc),
@@ -165,6 +189,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("--restricted-rpc"),
         flag!("--non-interactive"),
         flag!("--enable-dns-blocklist"),
+        // flag!(input.want_tor; "--proxy=tor:{}", input.ports.tor_socks), // the shell program above does the equivalent of this
     ];
 
     let command_bitcoind = command![
@@ -174,6 +199,7 @@ fn build(input: OrchestratorInput) -> String {
         flag!("-rpcbind=0.0.0.0:{}", input.ports.bitcoind_rpc),
         flag!("-bind=0.0.0.0:{}", input.ports.bitcoind_p2p),
         flag!("-datadir=/bitcoind-data/"),
+        flag!(input.want_tor; "-proxy=tor:{}", input.ports.tor_socks),
         flag!("-dbcache=16384"),
         // These are required for electrs
         // See: See: https://github.com/romanz/electrs/blob/master/doc/config.md#bitcoind-configuration
@@ -203,7 +229,7 @@ fn build(input: OrchestratorInput) -> String {
     let command_asb_tracing_logger = command![
         "sh",
         flag!("-c"),
-        flag!("tail -f /asb-data/logs/tracing*.log"),
+        flag!("exec tail -f /asb-data/logs/tracing*.log"),
     ];
 
     let command_rendezvous_node = command![
@@ -216,6 +242,36 @@ fn build(input: OrchestratorInput) -> String {
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
 
+    let (tor_segment, tor_volume) = if input.want_tor {
+        // This image comes with an empty /etc/tor/, so this is the entire config
+        let command_tor = command![
+            "tor",
+            flag!("SocksPort"),
+            flag!("0.0.0.0:{}", input.ports.tor_socks),
+            flag!("DataDirectory"),
+            flag!("/var/lib/tor"),
+        ];
+
+        let tor_segment = format!(
+            "\
+  tor:
+    container_name: tor
+    {image_tor}
+    restart: unless-stopped
+    volumes:
+      - 'tor-data:/var/lib/tor/'
+    expose:
+      - {port_tor_socks}
+    entrypoint: ''
+    command: {command_tor}\
+",
+            port_tor_socks = input.ports.tor_socks,
+            image_tor = input.images.tor.to_image_attribute(),
+        );
+        (tor_segment, "tor-data:")
+    } else {
+        (String::new(), "")
+    };
     let compose_str = format!(
         "\
 # This file was auto-generated by `orchestrator` on {date}
@@ -232,7 +288,7 @@ fn build(input: OrchestratorInput) -> String {
 #
 # After updating the `orchestrator` binary, re-generate the compose file by running `orchestrator` again.
 #
-# The used images for `bitcoind`, `monerod`, `electrs` are pinned to specific hashes which prevents them from being altered by the Docker registry.
+# The used images for `bitcoind`, `monerod`, `electrs`, `tor` are pinned to specific hashes which prevents them from being altered by the Docker registry.
 #
 # Please check for new releases regularly. Breaking network changes are rare, but they do happen from time to time.
 name: {project_name}
@@ -274,6 +330,7 @@ services:
       - {electrs_port}
     entrypoint: ''
     command: {command_electrs}
+  {tor_segment}
   asb:
     container_name: asb
     {image_asb}
@@ -323,6 +380,7 @@ volumes:
   electrs-data:
   asb-data:
   rendezvous-data:
+  {tor_volume}
 ",
         port_monerod_rpc = input.ports.monerod_rpc,
         port_bitcoind_rpc = input.ports.bitcoind_rpc,
@@ -364,13 +422,13 @@ impl Display for Flags {
             .filter_map(|f| f.0.as_ref())
             .collect::<Vec<_>>();
 
-        // Put the " around each flag, join with a comma, put the whole thing in []
+        // String-escape each flag (""s, newline -> \n), join with a comma, put the whole thing in [], escape $ (which is a docker variable)
         write!(
             f,
             "[{}]",
             flags
                 .into_iter()
-                .map(|f| format!("\"{}\"", f))
+                .map(|f| format!("{:?}", f.replace('$', "$$")))
                 .collect::<Vec<_>>()
                 .join(",")
         )
@@ -378,16 +436,6 @@ impl Display for Flags {
 }
 
 pub struct Flag(pub Option<String>);
-
-impl Display for Flag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(s) = &self.0 {
-            return write!(f, "{}", s);
-        }
-
-        Ok(())
-    }
-}
 
 pub trait IntoFlag {
     /// Converts into a flag that can be used in a docker compose file

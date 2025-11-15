@@ -38,13 +38,27 @@ pub fn network() -> (bitcoin::Network, monero::Network) {
     }
 }
 
+pub fn tor_for_daemons() -> bool {
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Should we sync both Monero and Bitcoin nodes entirely over Tor?")
+        .items(&[
+            "Yes, sync both chains over Tor (slow)",
+            "No, sync both chains over clearnet (faster, but less private)",
+        ])
+        .default(1)
+        .interact()
+        .expect("Failed to select tor usage");
+
+    selection == 0
+}
+
 #[allow(dead_code)] // will be used in the future
 pub fn build_type() -> BuildType {
     let build_type = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("How do you want to build the Docker image for the ASB?")
         .items(&[
             "Build Docker image from source (can take >1h)",
-            "Prebuild Docker image (pinned to a specific commit with SHA256 hash)",
+            "Prebuilt Docker image (pinned to a specific commit with SHA256 hash)",
         ])
         .default(0)
         .interact()
