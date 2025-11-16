@@ -1,9 +1,5 @@
-use crate::bitcoin::{parse_rpc_error_code, Address, Amount, RpcErrorCode, Transaction};
-use crate::cli::api::tauri_bindings::{
-    TauriBackgroundProgress, TauriBitcoinFullScanProgress, TauriBitcoinSyncProgress, TauriEmitter,
-    TauriHandle,
-};
-use crate::seed::Seed;
+use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
+use crate::{bitcoin_address, parse_rpc_error_code, BitcoinWallet, BlockHeight, RpcErrorCode};
 use anyhow::{anyhow, bail, Context, Result};
 use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
 use bdk_chain::CheckPoint;
@@ -15,11 +11,12 @@ use bdk_wallet::export::FullyNodedExport;
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
 use bdk_wallet::KeychainKind;
-use bdk_wallet::SignOptions;
 use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
+#[allow(deprecated)]
+use bitcoin::bip32::ExtendedPrivKey;
 use bitcoin::bip32::Xpriv;
-use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Txid};
+use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Address, Amount, Transaction, Txid};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
@@ -36,19 +33,78 @@ use std::sync::Arc;
 use std::sync::Mutex as SyncMutex;
 use std::time::Duration;
 use std::time::Instant;
-use swap_core::bitcoin::bitcoin_address::revalidate_network;
-use swap_core::bitcoin::BlockHeight;
 use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
 use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug_span, Instrument};
 
+type TauriHandle = Arc<Box<dyn BitcoinTauriHandle>>;
+pub trait BitcoinTauriHandle: Send + Sync {
+    /// let progress_handle = tauri_handle.new_background_process_with_initial_progress(
+    ///     TauriBackgroundProgress::FullScanningBitcoinWallet,
+    ///     TauriBitcoinFullScanProgress::Unknown,
+    /// );
+    fn start_full_scan(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>>;
+
+    /// let background_process_handle = self
+    ///     .tauri_handle
+    ///     .new_background_process_with_initial_progress(
+    ///         TauriBackgroundProgress::SyncingBitcoinWallet,
+    ///         TauriBitcoinSyncProgress::Unknown,
+    ///     );
+    fn start_sync(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>>;
+}
+pub trait BitcoinTauriBackgroundTask: Send + Sync {
+    /// progress_handle_clone.update(TauriBitcoinFullScanProgress::Known {
+    ///     current_index: consumed,
+    ///     assumed_total: total,
+    /// });
+    /// or
+    /// background_process_handle_clone
+    ///     .update(TauriBitcoinSyncProgress::Known { consumed, total });
+    fn update(&self, consumed: u64, total: u64);
+
+    /// background_process_handle.finish();
+    fn finish(&self);
+}
+
+struct NoBitcoinTauri;
+impl Into<TauriHandle> for NoBitcoinTauri {
+    fn into(self) -> TauriHandle {
+        Arc::new(Box::new(NoBitcoinTauri))
+    }
+}
+impl BitcoinTauriHandle for NoBitcoinTauri {
+    fn start_full_scan(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>> {
+        Arc::new(Box::new(NoBitcoinTauri))
+    }
+    fn start_sync(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>> {
+        self.start_full_scan()
+    }
+}
+impl BitcoinTauriBackgroundTask for NoBitcoinTauri {
+    fn update(&self, _: u64, _: u64) {}
+    fn finish(&self) {}
+}
+
+pub trait BitcoinWalletSeed {
+    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<ExtendedPrivKey>;
+
+    /// Same as `derive_extended_private_key`, but using the legacy BDK API.
+    ///
+    /// This is only used for the migration path from the old wallet format to the new one.
+    fn derive_extended_private_key_legacy(
+        &self,
+        network: bdk::bitcoin::Network,
+    ) -> Result<bdk::bitcoin::util::bip32::ExtendedPrivKey>;
+}
+
 /// We allow transaction fees of up to 20% of the transferred amount to ensure
 /// that lock transactions can always be published, even when fees are high.
-const MAX_RELATIVE_TX_FEE: Decimal = dec!(0.20);
-const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
-const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
-const DUST_AMOUNT: Amount = Amount::from_sat(546);
+pub const MAX_RELATIVE_TX_FEE: Decimal = dec!(0.20);
+pub const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
+pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
+pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 
 /// This is our wrapper around a bdk wallet and a corresponding
 /// bdk electrum client.
@@ -80,7 +136,7 @@ pub struct Wallet<Persister = Connection, C = Client> {
     /// (used for fee estimation).
     target_block: u32,
     /// The Tauri handle
-    tauri_handle: Option<TauriHandle>,
+    tauri_handle: TauriHandle,
 }
 
 /// This is our wrapper around a bdk electrum client.
@@ -114,7 +170,7 @@ pub struct Client {
     ),
     derive(Clone)
 )]
-pub struct WalletConfig {
+pub struct WalletConfig<Seed: BitcoinWalletSeed> {
     seed: Seed,
     network: Network,
     electrum_rpc_urls: Vec<String>,
@@ -122,13 +178,13 @@ pub struct WalletConfig {
     finality_confirmations: u32,
     target_block: u32,
     sync_interval: Duration,
-    #[builder(default)]
-    tauri_handle: Option<TauriHandle>,
+    #[builder(default = "NoBitcoinTauri.into()")]
+    tauri_handle: TauriHandle,
     #[builder(default = "true")]
     use_mempool_space_fee_estimation: bool,
 }
 
-impl WalletBuilder {
+impl<Seed: BitcoinWalletSeed> WalletBuilder<Seed> {
     /// Asynchronously builds the `Wallet<Connection>` using the configured parameters.
     /// This method contains the core logic for wallet initialization, including
     /// database setup, key derivation, and potential migration from older wallet formats.
@@ -237,10 +293,6 @@ pub enum PersisterConfig {
     InMemorySqlite,
 }
 
-pub use bitcoin_wallet::primitives::{
-    Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable,
-};
-
 /// A caching wrapper around EstimateFeeRate implementations.
 ///
 /// Uses Moka cache with TTL (Time To Live) expiration for both fee rate estimates
@@ -338,7 +390,7 @@ impl Wallet {
     async fn get_pre_1_0_bdk_wallet_export(
         data_dir: impl AsRef<Path>,
         network: Network,
-        seed: &Seed,
+        seed: &impl BitcoinWalletSeed,
     ) -> Result<Option<pre_1_0_0_bdk::Export>> {
         // Construct the directory in which the old (<1.0 bdk) wallet was stored
         let wallet_parent_dir = data_dir.as_ref().join(Self::WALLET_PARENT_DIR_NAME);
@@ -379,7 +431,7 @@ impl Wallet {
     /// This is a private API so we allow too many arguments.
     #[allow(clippy::too_many_arguments)]
     pub async fn with_sqlite(
-        seed: &Seed,
+        seed: &impl BitcoinWalletSeed,
         network: Network,
         electrum_rpc_urls: &[String],
         data_dir: impl AsRef<Path>,
@@ -387,7 +439,7 @@ impl Wallet {
         target_block: u32,
         sync_interval: Duration,
         env_config: swap_env::env::Config,
-        tauri_handle: Option<TauriHandle>,
+        tauri_handle: TauriHandle,
     ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>> {
         // Construct the private key, directory and wallet file for the new (>= 1.0.0) bdk wallet
         let xprivkey = seed.derive_extended_private_key(env_config.bitcoin_network)?;
@@ -442,15 +494,14 @@ impl Wallet {
 
     /// Create a new wallet, persisted to an in-memory sqlite database.
     /// Should only be used for testing.
-    #[cfg(test)]
     pub async fn with_sqlite_in_memory(
-        seed: &Seed,
+        seed: &impl BitcoinWalletSeed,
         network: Network,
         electrum_rpc_urls: &[String],
         finality_confirmations: u32,
         target_block: u32,
         sync_interval: Duration,
-        tauri_handle: Option<TauriHandle>,
+        tauri_handle: TauriHandle,
     ) -> Result<Wallet<bdk_wallet::rusqlite::Connection, Client>> {
         Self::create_new(
             seed.derive_extended_private_key(network)?,
@@ -482,7 +533,7 @@ impl Wallet {
         finality_confirmations: u32,
         target_block: u32,
         old_wallet: Option<pre_1_0_0_bdk::Export>,
-        tauri_handle: Option<TauriHandle>,
+        tauri_handle: TauriHandle,
         use_mempool_space_fee_estimation: bool,
     ) -> Result<Wallet<Persister, Client>>
     where
@@ -521,19 +572,13 @@ impl Wallet {
 
         tracing::info!("Starting initial Bitcoin wallet scan. This might take a while...");
 
-        let progress_handle = tauri_handle.new_background_process_with_initial_progress(
-            TauriBackgroundProgress::FullScanningBitcoinWallet,
-            TauriBitcoinFullScanProgress::Unknown,
-        );
+        let progress_handle = tauri_handle.start_full_scan();
 
         let progress_handle_clone = progress_handle.clone();
 
-        let callback = sync_ext::InnerSyncCallback::new(move |consumed, total| {
-            progress_handle_clone.update(TauriBitcoinFullScanProgress::Known {
-                current_index: consumed,
-                assumed_total: total,
-            });
-        }).chain(sync_ext::InnerSyncCallback::new(move |consumed, total| {
+        let callback = InnerSyncCallback::new(move |consumed, total| {
+            progress_handle_clone.update(consumed,total);
+        }).chain(InnerSyncCallback::new(move |consumed, total| {
             tracing::debug!(
                 "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
                 consumed,
@@ -603,7 +648,7 @@ impl Wallet {
         mut persister: Persister,
         finality_confirmations: u32,
         target_block: u32,
-        tauri_handle: Option<TauriHandle>,
+        tauri_handle: TauriHandle,
         use_mempool_space_fee_estimation: bool,
     ) -> Result<Wallet<Persister, Client>>
     where
@@ -1023,19 +1068,13 @@ impl Wallet {
     /// Perform a single sync of the wallet with the blockchain
     /// and emit progress events to the UI.
     async fn sync_once(&self) -> Result<()> {
-        let background_process_handle = self
-            .tauri_handle
-            .new_background_process_with_initial_progress(
-                TauriBackgroundProgress::SyncingBitcoinWallet,
-                TauriBitcoinSyncProgress::Unknown,
-            );
+        let background_process_handle = self.tauri_handle.start_sync();
 
         let background_process_handle_clone = background_process_handle.clone();
 
         // We want to update the UI as often as possible
         let tauri_callback = sync_ext::InnerSyncCallback::new(move |consumed, total| {
-            background_process_handle_clone
-                .update(TauriBitcoinSyncProgress::Known { consumed, total });
+            background_process_handle_clone.update(consumed, total);
         });
 
         // We throttle the tracing logging to 10% increments
@@ -1265,7 +1304,7 @@ where
         // Acquire the wallet lock once here for efficiency within the non-finalized block
         let wallet_guard = self.wallet.lock().await;
 
-        let finalized = wallet_guard.sign(&mut psbt, SignOptions::default())?;
+        let finalized = wallet_guard.sign(&mut psbt, Default::default())?;
 
         if !finalized {
             bail!("PSBT is not finalized")
@@ -1315,12 +1354,11 @@ where
         change_override: Option<Address>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
-        let address =
-            swap_core::bitcoin::bitcoin_address::revalidate_network(address, self.network)?;
+        let address = bitcoin_address::revalidate_network(address, self.network)?;
 
         change_override
             .as_ref()
-            .map(|a| revalidate_network(a.clone(), self.network))
+            .map(|a| bitcoin_address::revalidate_network(a.clone(), self.network))
             .transpose()
             .context("Change address is not on the correct network")?;
 
@@ -1375,14 +1413,11 @@ where
         change_override: Option<Address>,
     ) -> Result<PartiallySignedTransaction> {
         // Check address and change address for network equality.
-        let address =
-            swap_core::bitcoin::bitcoin_address::revalidate_network(address, self.network)?;
+        let address = bitcoin_address::revalidate_network(address, self.network)?;
 
         change_override
             .as_ref()
-            .map(|a| {
-                swap_core::bitcoin::bitcoin_address::revalidate_network(a.clone(), self.network)
-            })
+            .map(|a| bitcoin_address::revalidate_network(a.clone(), self.network))
             .transpose()
             .context("Change address is not on the correct network")?;
 
@@ -2068,7 +2103,7 @@ impl SyncRequestBuilderFactory {
 }
 
 #[async_trait::async_trait]
-impl bitcoin_wallet::BitcoinWallet for Wallet {
+impl BitcoinWallet for Wallet {
     async fn balance(&self) -> Result<Amount> {
         Wallet::balance(self).await
     }
@@ -2112,7 +2147,7 @@ impl bitcoin_wallet::BitcoinWallet for Wallet {
         &self,
         transaction: bitcoin::Transaction,
         kind: &str,
-    ) -> Result<(Txid, bitcoin_wallet::Subscription)> {
+    ) -> Result<(Txid, Subscription)> {
         Wallet::broadcast(self, transaction, kind).await
     }
 
@@ -2120,24 +2155,15 @@ impl bitcoin_wallet::BitcoinWallet for Wallet {
         Wallet::sync(self).await
     }
 
-    async fn subscribe_to(
-        &self,
-        tx: Box<dyn bitcoin_wallet::Watchable>,
-    ) -> bitcoin_wallet::Subscription {
+    async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
         Wallet::subscribe_to(self, tx).await
     }
 
-    async fn status_of_script(
-        &self,
-        tx: &dyn bitcoin_wallet::Watchable,
-    ) -> Result<bitcoin_wallet::primitives::ScriptStatus> {
+    async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
         Wallet::status_of_script(self, tx).await
     }
 
-    async fn get_raw_transaction(
-        &self,
-        txid: Txid,
-    ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
+    async fn get_raw_transaction(&self, txid: Txid) -> Result<Option<std::sync::Arc<Transaction>>> {
         Wallet::get_raw_transaction(self, txid).await
     }
 
@@ -2388,7 +2414,7 @@ mod sync_ext {
     }
 }
 
-fn trace_status_change(txid: Txid, old: Option<ScriptStatus>, new: ScriptStatus) -> ScriptStatus {
+pub fn trace_status_change(txid: Txid, old: Option<ScriptStatus>, new: ScriptStatus) -> ScriptStatus {
     match (old, new) {
         (None, new_status) => {
             tracing::debug!(%txid, status = %new_status, "Found relevant Bitcoin transaction");
@@ -2422,7 +2448,7 @@ fn trace_status_change(txid: Txid, old: Option<ScriptStatus>, new: ScriptStatus)
 /// - We never go below the minimum relay fee rate (from the fee estimation source)
 ///
 /// We also add a constant safety margin to the fee
-fn estimate_fee(
+pub fn estimate_fee(
     weight: Weight,
     transfer_amount: Option<Amount>,
     fee_rate_estimation: FeeRate,
@@ -2732,14 +2758,13 @@ impl<T> IntoArcMutex<T> for T {
     }
 }
 
-#[cfg(test)]
+/// For tests
 #[derive(Clone)]
 pub struct StaticFeeRate {
     fee_rate: FeeRate,
     min_relay_fee: bitcoin::Amount,
 }
 
-#[cfg(test)]
 impl StaticFeeRate {
     pub fn new(fee_rate: FeeRate, min_relay_fee: bitcoin::Amount) -> Self {
         Self {
@@ -2749,7 +2774,6 @@ impl StaticFeeRate {
     }
 }
 
-#[cfg(test)]
 impl EstimateFeeRate for StaticFeeRate {
     async fn estimate_feerate(&self, _target_block: u32) -> Result<FeeRate> {
         Ok(self.fee_rate)
@@ -2760,7 +2784,6 @@ impl EstimateFeeRate for StaticFeeRate {
     }
 }
 
-#[cfg(test)]
 #[derive(Debug)]
 pub struct TestWalletBuilder {
     utxo_amount: u64,
@@ -2770,7 +2793,6 @@ pub struct TestWalletBuilder {
     num_utxos: u8,
 }
 
-#[cfg(test)]
 impl TestWalletBuilder {
     /// Creates a new, funded wallet with sane default fees.
     ///
@@ -2847,7 +2869,7 @@ impl TestWalletBuilder {
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(None), // We don't use mempool client in tests
             persister: persister.into_arc_mutex_async(),
-            tauri_handle: None,
+            tauri_handle: NoBitcoinTauri.into(),
             network: Network::Regtest,
             finality_confirmations: 1,
             target_block: 1,
@@ -2884,1190 +2906,97 @@ impl TestWalletBuilder {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bitcoin::{PublicKey, TxLock};
-    use crate::tracing_ext::capture_logs;
-    use bitcoin::address::NetworkUnchecked;
-    use bitcoin::hashes::Hash;
-    use bitcoin::Psbt;
-    use bitcoin_wallet::BitcoinWallet;
-    use proptest::prelude::*;
-    use tracing::level_filters::LevelFilter;
-
-    // Implement BitcoinWallet trait for a stub wallet and panic when the function is not implemented
-    #[async_trait::async_trait]
-    #[allow(unused)]
-    impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
-        async fn balance(&self) -> Result<Amount> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn balance_info(&self) -> Result<Balance> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn new_address(&self) -> Result<Address> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn send_to_address(
-            &self,
-            address: Address,
-            amount: Amount,
-            spending_fee: Amount,
-            change_override: Option<Address>,
-        ) -> Result<Psbt> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn send_to_address_dynamic_fee(
-            &self,
-            address: Address,
-            amount: Amount,
-            change_override: Option<Address>,
-        ) -> Result<Psbt> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn broadcast(
-            &self,
-            transaction: bitcoin::Transaction,
-            kind: &str,
-        ) -> Result<(Txid, Subscription)> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn sync(&self) -> Result<()> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn get_raw_transaction(
-            &self,
-            txid: Txid,
-        ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn estimate_fee(
-            &self,
-            weight: Weight,
-            transfer_amount: Option<Amount>,
-        ) -> Result<Amount> {
-            unimplemented!("stub method called erroneously")
-        }
-
-        fn network(&self) -> Network {
-            unimplemented!("stub method called erroneously")
-        }
-
-        fn finality_confirmations(&self) -> u32 {
-            unimplemented!("stub method called erroneously")
-        }
-
-        async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
-            unimplemented!("stub method called erroneously")
-        }
+/// Implement BitcoinWallet trait for a stub wallet and panic when the function is not implemented
+#[async_trait::async_trait]
+#[allow(unused)]
+impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
+    async fn balance(&self) -> Result<Amount> {
+        unimplemented!("stub method called erroneously")
     }
 
-    #[test]
-    fn given_depth_0_should_meet_confirmation_target_one() {
-        let script = ScriptStatus::Confirmed(Confirmed { depth: 0 });
-
-        let confirmed = script.is_confirmed_with(1_u32);
-
-        assert!(confirmed)
+    async fn balance_info(&self) -> Result<Balance> {
+        unimplemented!("stub method called erroneously")
     }
 
-    #[test]
-    fn given_confirmations_1_should_meet_confirmation_target_one() {
-        let script = ScriptStatus::from_confirmations(1);
-
-        let confirmed = script.is_confirmed_with(1_u32);
-
-        assert!(confirmed)
+    async fn new_address(&self) -> Result<Address> {
+        unimplemented!("stub method called erroneously")
     }
 
-    #[test]
-    fn given_inclusion_after_lastest_known_block_at_least_depth_0() {
-        let included_in = 10;
-        let latest_block = 9;
-
-        let confirmed = Confirmed::from_inclusion_and_latest_block(included_in, latest_block);
-
-        assert_eq!(confirmed.depth, 0)
-    }
-
-    #[test]
-    fn given_depth_0_should_return_0_blocks_left_until_1() {
-        let script = ScriptStatus::Confirmed(Confirmed { depth: 0 });
-
-        let blocks_left = script.blocks_left_until(1_u32);
-
-        assert_eq!(blocks_left, 0)
-    }
-
-    #[test]
-    fn given_depth_1_should_return_0_blocks_left_until_1() {
-        let script = ScriptStatus::Confirmed(Confirmed { depth: 1 });
-
-        let blocks_left = script.blocks_left_until(1_u32);
-
-        assert_eq!(blocks_left, 0)
-    }
-
-    #[test]
-    fn given_depth_0_should_return_1_blocks_left_until_2() {
-        let script = ScriptStatus::Confirmed(Confirmed { depth: 0 });
-
-        let blocks_left = script.blocks_left_until(2_u32);
-
-        assert_eq!(blocks_left, 1)
-    }
-
-    #[test]
-    fn given_one_BTC_and_100k_sats_per_vb_fees_should_not_hit_max() {
-        // 400 weight = 100 vbyte
-        let weight = Weight::from_wu(400);
-        let amount = bitcoin::Amount::from_sat(100_000_000);
-
-        let sat_per_vb = 100;
-        let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-        let relay_fee = FeeRate::from_sat_per_vb(1).unwrap();
-        let is_fee = estimate_fee(weight, Some(amount), fee_rate, relay_fee).unwrap();
-
-        // weight / 4.0 *  sat_per_vb
-        let should_fee = bitcoin::Amount::from_sat(10_000);
-        assert_eq!(is_fee, should_fee);
-    }
-
-    #[test]
-    fn given_1BTC_and_1_sat_per_vb_fees_and_100ksat_min_relay_fee_should_hit_min() {
-        // 400 weight = 100 vbyte
-        let weight = Weight::from_wu(400);
-        let amount = bitcoin::Amount::from_sat(100_000_000);
-
-        let sat_per_vb = 1;
-        let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-        let relay_fee = FeeRate::from_sat_per_vb(250_000).unwrap(); // 100k sats for 400 weight units
-        let is_fee = estimate_fee(weight, Some(amount), fee_rate, relay_fee).unwrap();
-
-        // The function now uses the higher of fee_rate and relay_fee, then multiplies by weight
-        // relay_fee (250_000 sat/vb) is higher than fee_rate (1 sat/vb)
-        // 250_000 sat/vb * 100 vbytes = 25_000_000 sats, but this exceeds the relative max (20% of 1 BTC = 20M sats)
-        // So it should fall back to the relative max: 20% of 100M = 20M sats
-        let should_fee = bitcoin::Amount::from_sat(20_000_000);
-        assert_eq!(is_fee, should_fee);
-    }
-
-    #[test]
-    fn given_1mio_sat_and_1k_sats_per_vb_fees_should_hit_absolute_max() {
-        // 400 weight = 100 vbyte
-        let weight = Weight::from_wu(400);
-        let amount = bitcoin::Amount::from_sat(1_000_000);
-
-        let sat_per_vb = 1_000;
-        let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-        let relay_fee = FeeRate::from_sat_per_vb(1).unwrap();
-        let is_fee = estimate_fee(weight, Some(amount), fee_rate, relay_fee).unwrap();
-
-        // fee_rate (1000 sat/vb) * 100 vbytes = 100_000 sats
-        // This equals exactly our MAX_ABSOLUTE_TX_FEE
-        assert_eq!(is_fee, MAX_ABSOLUTE_TX_FEE);
-    }
-
-    #[test]
-    fn given_1BTC_and_4mio_sats_per_vb_fees_should_hit_total_max() {
-        // Even if we send 1BTC we don't want to pay 0.2BTC in fees. This would be
-        // $1,650 at the moment.
-        let weight = Weight::from_wu(400);
-        let amount = bitcoin::Amount::from_sat(100_000_000);
-
-        let sat_per_vb = 4_000_000;
-        let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-        let relay_fee = FeeRate::from_sat_per_vb(1).unwrap();
-        let is_fee = estimate_fee(weight, Some(amount), fee_rate, relay_fee).unwrap();
-
-        // With such a high fee rate (4M sat/vb), the calculated fee would be enormous
-        // But it gets capped by the relative maximum (20% of transfer amount)
-        // 20% of 100M sats = 20M sats
-        let relative_max = bitcoin::Amount::from_sat(20_000_000);
-        assert_eq!(is_fee, relative_max);
-    }
-
-    proptest! {
-        #[test]
-        fn given_randon_amount_random_fee_and_random_relay_rate_but_fix_weight_does_not_error(
-            amount in 547u64..,
-            sat_per_vb in 1u64..100_000_000,
-            relay_fee in 0u64..100_000_000u64
-        ) {
-            let weight = Weight::from_wu(400);
-            let amount = bitcoin::Amount::from_sat(amount);
-
-            let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-            let relay_fee = FeeRate::from_sat_per_vb(relay_fee.min(1_000_000)).unwrap();
-            let _is_fee = estimate_fee(weight, Some(amount), fee_rate, relay_fee).unwrap();
-
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn given_amount_in_range_fix_fee_fix_relay_rate_fix_weight_fee_always_smaller_max(
-            amount in 1u64..100_000_000,
-        ) {
-            let weight = Weight::from_wu(400);
-            let amount = bitcoin::Amount::from_sat(amount);
-
-            let sat_per_vb = 100;
-            let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-            let relay_fee = FeeRate::from_sat_per_vb(1).unwrap();
-            let is_fee = estimate_fee(weight, Some(amount), fee_rate, relay_fee).unwrap();
-
-            // weight / 4 * 100 = 10,000 sats which is always lower than MAX_ABSOLUTE_TX_FEE
-            assert!(is_fee <= MAX_ABSOLUTE_TX_FEE);
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn given_amount_high_fix_fee_fix_relay_rate_fix_weight_fee_always_max(
-            amount in 100_000_000u64..,
-        ) {
-            let weight = Weight::from_wu(400);
-            let amount = bitcoin::Amount::from_sat(amount);
-
-            let sat_per_vb = 1_000;
-            let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-            let relay_fee = FeeRate::from_sat_per_vb(1).unwrap();
-            let is_fee = estimate_fee(weight, Some(amount), fee_rate, relay_fee).unwrap();
-
-            // weight / 4 * 1_000 = 100_000 sats which hits our MAX_ABSOLUTE_TX_FEE
-            assert_eq!(is_fee, MAX_ABSOLUTE_TX_FEE);
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn given_fee_above_max_should_always_errors(
-            sat_per_vb in 100_000_000u64..(u64::MAX / 250),
-        ) {
-            let weight = Weight::from_wu(400);
-            let amount = bitcoin::Amount::from_sat(547u64);
-
-            let fee_rate = FeeRate::from_sat_per_vb(sat_per_vb).unwrap();
-
-            let relay_fee = FeeRate::from_sat_per_vb(1).unwrap();
-            assert!(estimate_fee(weight, Some(amount), fee_rate, relay_fee).is_err());
-
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn given_relay_fee_above_max_should_always_errors(
-            relay_fee in 100_000_000u64..
-        ) {
-            let weight = Weight::from_wu(400);
-            let amount = bitcoin::Amount::from_sat(547u64);
-
-            let fee_rate = FeeRate::from_sat_per_vb(1).unwrap();
-
-            let relay_fee = FeeRate::from_sat_per_vb(relay_fee.min(1_000_000)).unwrap();
-            // The function now has a sanity check that errors if fee rates > 100M sat/vb
-            // Since we're capping relay_fee at 1M, it should not error
-            // Instead, it should succeed and return a reasonable fee
-            assert!(estimate_fee(weight, Some(amount), fee_rate, relay_fee).is_ok());
-        }
-    }
-
-    #[tokio::test]
-    async fn given_no_balance_returns_amount_0() {
-        let wallet = TestWalletBuilder::new(0).with_fees(1, 1).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
-
-        assert_eq!(amount, Amount::ZERO);
-    }
-
-    #[tokio::test]
-    async fn given_balance_below_min_relay_fee_returns_amount_0() {
-        let wallet = TestWalletBuilder::new(1000).with_fees(1, 1).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
-
-        // The wallet can still create a transaction even if the balance is below the min relay fee
-        // because BDK's transaction builder will use whatever fee rate is possible
-        // The actual behavior is that it returns a small amount (like 846 sats in this case)
-        // rather than 0, so we just check that it's a reasonable small amount
-        assert!(amount.to_sat() < 1000);
-    }
-
-    #[tokio::test]
-    async fn given_balance_above_relay_fee_returns_amount_greater_0() {
-        let wallet = TestWalletBuilder::new(10_000).build().await;
-        let (amount, _fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
-
-        assert!(amount.to_sat() > 0);
-    }
-
-    #[tokio::test]
-    async fn given_balance_below_dust_returns_amount_0_but_with_sensible_fee() {
-        let wallet = TestWalletBuilder::new(0).build().await;
-        let (amount, fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
-
-        assert_eq!(amount, Amount::ZERO);
-        assert!(fee.to_sat() > 0);
-    }
-
-    /// This test ensures that the relevant script output of the transaction
-    /// created out of the PSBT is at index 0. This is important because
-    /// subscriptions to the transaction are on index `0` when broadcasting the
-    /// transaction.
-    #[tokio::test]
-    async fn given_amounts_with_change_outputs_when_signing_tx_then_output_index_0_is_ensured_for_script(
-    ) {
-        // This value is somewhat arbitrary but the indexation problem usually occurred
-        // on the first or second value (i.e. 547, 548) We keep the test
-        // iterations relatively low because these tests are expensive.
-        let above_dust = 547;
-        let balance = 2000;
-
-        // We don't care about fees in this test, thus use a zero fee rate
-        let wallet = TestWalletBuilder::new(balance)
-            .with_zero_fees()
-            .build()
-            .await;
-
-        // sorting is only relevant for amounts that have a change output
-        // if the change output is below dust it will be dropped by the BDK
-        for amount in above_dust..(balance - (above_dust - 1)) {
-            let (A, B) = (PublicKey::random(), PublicKey::random());
-            let change = wallet.new_address().await.unwrap();
-            let spending_fee = Amount::from_sat(300); // Use a fixed fee for testing
-            let txlock = TxLock::new(
-                &wallet,
-                bitcoin::Amount::from_sat(amount),
-                spending_fee,
-                A,
-                B,
-                change,
-            )
-            .await
-            .unwrap();
-            let txlock_output = txlock.script_pubkey();
-
-            let tx = wallet.sign_and_finalize(txlock.into()).await.unwrap();
-            let tx_output = tx.output[0].script_pubkey.clone();
-
-            assert_eq!(
-                tx_output, txlock_output,
-                "Output {:?} index mismatch for amount {} and balance {}",
-                tx.output, amount, balance
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn can_override_change_address() {
-        let wallet = TestWalletBuilder::new(50_000).build().await;
-        let custom_change = "bcrt1q08pfqpsyrt7acllzyjm8q5qsz5capvyahm49rw"
-            .parse::<Address<NetworkUnchecked>>()
-            .unwrap()
-            .assume_checked();
-
-        let spending_fee = Amount::from_sat(1000); // Use a fixed spending fee
-        let psbt = wallet
-            .send_to_address(
-                wallet.new_address().await.unwrap(),
-                Amount::from_sat(10_000),
-                spending_fee,
-                Some(custom_change.clone()),
-            )
-            .await
-            .unwrap();
-        let transaction = wallet.sign_and_finalize(psbt).await.unwrap();
-
-        match transaction.output.as_slice() {
-            [first, change] => {
-                assert_eq!(first.value, Amount::from_sat(10_000));
-                assert_eq!(change.script_pubkey, custom_change.script_pubkey());
-            }
-            _ => panic!("expected exactly two outputs"),
-        }
-    }
-
-    #[test]
-    fn printing_status_change_doesnt_spam_on_same_status() {
-        let writer = capture_logs(LevelFilter::TRACE);
-
-        let inner = bitcoin::hashes::sha256d::Hash::all_zeros();
-        let tx = Txid::from_raw_hash(inner);
-        let mut old = None;
-        old = Some(trace_status_change(tx, old, ScriptStatus::Unseen));
-        old = Some(trace_status_change(tx, old, ScriptStatus::InMempool));
-        old = Some(trace_status_change(tx, old, ScriptStatus::InMempool));
-        old = Some(trace_status_change(tx, old, ScriptStatus::InMempool));
-        old = Some(trace_status_change(tx, old, ScriptStatus::InMempool));
-        old = Some(trace_status_change(tx, old, ScriptStatus::InMempool));
-        old = Some(trace_status_change(tx, old, ScriptStatus::InMempool));
-        old = Some(trace_status_change(
-            tx,
-            old,
-            ScriptStatus::Confirmed(Confirmed { depth: 0 }),
-        ));
-        old = Some(trace_status_change(
-            tx,
-            old,
-            ScriptStatus::Confirmed(Confirmed { depth: 1 }),
-        ));
-        old = Some(trace_status_change(
-            tx,
-            old,
-            ScriptStatus::Confirmed(Confirmed { depth: 1 }),
-        ));
-        old = Some(trace_status_change(
-            tx,
-            old,
-            ScriptStatus::Confirmed(Confirmed { depth: 2 }),
-        ));
-        trace_status_change(tx, old, ScriptStatus::Confirmed(Confirmed { depth: 2 }));
-
-        assert_eq!(
-            writer.captured(),
-            r"DEBUG swap::bitcoin::wallet: Found relevant Bitcoin transaction txid=0000000000000000000000000000000000000000000000000000000000000000 status=unseen
-TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=0000000000000000000000000000000000000000000000000000000000000000 new_status=in mempool old_status=unseen
-TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=0000000000000000000000000000000000000000000000000000000000000000 new_status=confirmed with 1 blocks old_status=in mempool
-TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=0000000000000000000000000000000000000000000000000000000000000000 new_status=confirmed with 2 blocks old_status=confirmed with 1 blocks
-TRACE swap::bitcoin::wallet: Bitcoin transaction status changed txid=0000000000000000000000000000000000000000000000000000000000000000 new_status=confirmed with 3 blocks old_status=confirmed with 2 blocks
-"
-        )
-    }
-
-    proptest::proptest! {
-        #[test]
-        fn funding_never_fails_with_insufficient_funds(funding_amount in 3000u32.., num_utxos in 1..5u8, sats_per_vb in 1u64..500u64, key in swap_proptest::bitcoin::extended_priv_key(), alice in swap_proptest::ecdsa_fun::point(), bob in swap_proptest::ecdsa_fun::point()) {
-            proptest::prop_assume!(alice != bob);
-
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
-                let wallet = TestWalletBuilder::new(funding_amount as u64)
-                    .with_key(key)
-                    .with_num_utxos(num_utxos)
-                    .with_fees(sats_per_vb, 1)
-                    .build()
-                    .await;
-
-                let (amount, spending_fee) = wallet.max_giveable(TxLock::script_size()).await.unwrap();
-                let psbt: PartiallySignedTransaction = TxLock::new(&wallet, amount, spending_fee, PublicKey::from(alice), PublicKey::from(bob), wallet.new_address().await.unwrap()).await.unwrap().into();
-                let result = wallet.sign_and_finalize(psbt).await;
-
-                result.expect("transaction to be signed");
-            });
-        }
-    }
-
-    mod cached_fee_estimator_tests {
-        use super::*;
-        use std::sync::atomic::{AtomicU32, Ordering};
-        use std::sync::Arc;
-        use tokio::time::{sleep, Duration};
-
-        /// Mock fee estimator that tracks how many times methods are called
-        #[derive(Clone)]
-        struct MockFeeEstimator {
-            estimate_calls: Arc<AtomicU32>,
-            min_relay_calls: Arc<AtomicU32>,
-            fee_rate: FeeRate,
-            min_relay_fee: FeeRate,
-            delay: Duration,
-        }
-
-        impl MockFeeEstimator {
-            fn new(fee_rate: FeeRate, min_relay_fee: FeeRate) -> Self {
-                Self {
-                    estimate_calls: Arc::new(AtomicU32::new(0)),
-                    min_relay_calls: Arc::new(AtomicU32::new(0)),
-                    fee_rate,
-                    min_relay_fee,
-                    delay: Duration::from_millis(0),
-                }
-            }
-
-            fn with_delay(mut self, delay: Duration) -> Self {
-                self.delay = delay;
-                self
-            }
-
-            fn estimate_call_count(&self) -> u32 {
-                self.estimate_calls.load(Ordering::SeqCst)
-            }
-
-            fn min_relay_call_count(&self) -> u32 {
-                self.min_relay_calls.load(Ordering::SeqCst)
-            }
-        }
-
-        impl EstimateFeeRate for MockFeeEstimator {
-            async fn estimate_feerate(&self, _target_block: u32) -> Result<FeeRate> {
-                self.estimate_calls.fetch_add(1, Ordering::SeqCst);
-                if !self.delay.is_zero() {
-                    sleep(self.delay).await;
-                }
-                Ok(self.fee_rate)
-            }
-
-            async fn min_relay_fee(&self) -> Result<FeeRate> {
-                self.min_relay_calls.fetch_add(1, Ordering::SeqCst);
-                if !self.delay.is_zero() {
-                    sleep(self.delay).await;
-                }
-                Ok(self.min_relay_fee)
-            }
-        }
-
-        #[tokio::test]
-        async fn caches_fee_rate_estimates() {
-            let mock = MockFeeEstimator::new(
-                FeeRate::from_sat_per_vb(50).unwrap(),
-                FeeRate::from_sat_per_vb(1).unwrap(),
-            );
-            let cached = CachedFeeEstimator::new(mock.clone());
-
-            // First call should hit the underlying estimator
-            let fee1 = cached.estimate_feerate(6).await.unwrap();
-            assert_eq!(fee1, FeeRate::from_sat_per_vb(50).unwrap());
-            assert_eq!(mock.estimate_call_count(), 1);
-
-            // Second call with same target should use cache
-            let fee2 = cached.estimate_feerate(6).await.unwrap();
-            assert_eq!(fee2, FeeRate::from_sat_per_vb(50).unwrap());
-            assert_eq!(mock.estimate_call_count(), 1); // Still 1, not 2
-
-            // Different target should hit the underlying estimator again
-            let fee3 = cached.estimate_feerate(12).await.unwrap();
-            assert_eq!(fee3, FeeRate::from_sat_per_vb(50).unwrap());
-            assert_eq!(mock.estimate_call_count(), 2);
-        }
-
-        #[tokio::test]
-        async fn caches_min_relay_fee() {
-            let mock = MockFeeEstimator::new(
-                FeeRate::from_sat_per_vb(50).unwrap(),
-                FeeRate::from_sat_per_vb(1).unwrap(),
-            );
-            let cached = CachedFeeEstimator::new(mock.clone());
-
-            // First call should hit the underlying estimator
-            let fee1 = cached.min_relay_fee().await.unwrap();
-            assert_eq!(fee1, FeeRate::from_sat_per_vb(1).unwrap());
-            assert_eq!(mock.min_relay_call_count(), 1);
-
-            // Second call should use cache
-            let fee2 = cached.min_relay_fee().await.unwrap();
-            assert_eq!(fee2, FeeRate::from_sat_per_vb(1).unwrap());
-            assert_eq!(mock.min_relay_call_count(), 1); // Still 1, not 2
-        }
-
-        #[tokio::test]
-        async fn concurrent_requests_dont_duplicate_calls() {
-            let mock = MockFeeEstimator::new(
-                FeeRate::from_sat_per_vb(25).unwrap(),
-                FeeRate::from_sat_per_vb(1).unwrap(),
-            )
-            .with_delay(Duration::from_millis(50)); // Add delay to simulate network call
-
-            let cached = CachedFeeEstimator::new(mock.clone());
-
-            // First, make one call to populate the cache
-            let _initial = cached.estimate_feerate(6).await.unwrap();
-            assert_eq!(mock.estimate_call_count(), 1);
-
-            // Now make multiple concurrent requests for the same target
-            // These should all hit the cache
-            let handles: Vec<_> = (0..5)
-                .map(|_| {
-                    let cached = cached.clone();
-                    tokio::spawn(async move { cached.estimate_feerate(6).await })
-                })
-                .collect();
-
-            // Wait for all requests to complete
-            let results: Vec<_> = futures::future::join_all(handles).await;
-
-            // All should succeed with the same value
-            for result in results {
-                let fee = result.unwrap().unwrap();
-                assert_eq!(fee, FeeRate::from_sat_per_vb(25).unwrap());
-            }
-
-            // The underlying estimator should still only have been called once
-            // since all subsequent requests should hit the cache
-            assert_eq!(
-                mock.estimate_call_count(),
-                1,
-                "Expected exactly 1 call, got {}",
-                mock.estimate_call_count()
-            );
-        }
-
-        #[tokio::test]
-        async fn different_target_blocks_cached_separately() {
-            let mock = MockFeeEstimator::new(
-                FeeRate::from_sat_per_vb(30).unwrap(),
-                FeeRate::from_sat_per_vb(1).unwrap(),
-            );
-            let cached = CachedFeeEstimator::new(mock.clone());
-
-            // Request different target blocks
-            let _fee1 = cached.estimate_feerate(1).await.unwrap();
-            let _fee2 = cached.estimate_feerate(6).await.unwrap();
-            let _fee3 = cached.estimate_feerate(12).await.unwrap();
-
-            assert_eq!(mock.estimate_call_count(), 3);
-
-            // Request same targets again - should use cache
-            let _fee1_cached = cached.estimate_feerate(1).await.unwrap();
-            let _fee2_cached = cached.estimate_feerate(6).await.unwrap();
-            let _fee3_cached = cached.estimate_feerate(12).await.unwrap();
-
-            assert_eq!(mock.estimate_call_count(), 3); // Still 3, no additional calls
-        }
-
-        #[tokio::test]
-        async fn cache_respects_ttl() {
-            let mock = MockFeeEstimator::new(
-                FeeRate::from_sat_per_vb(40).unwrap(),
-                FeeRate::from_sat_per_vb(1).unwrap(),
-            );
-            let cached = CachedFeeEstimator::new(mock.clone());
-
-            // First call
-            let _fee1 = cached.estimate_feerate(6).await.unwrap();
-            assert_eq!(mock.estimate_call_count(), 1);
-
-            // Wait for cache to expire (2 minutes + small buffer)
-            // Note: In a real test environment, you might want to use a shorter TTL
-            // or mock the time. For now, we'll just verify the cache works within TTL.
-
-            // Immediate second call should use cache
-            let _fee2 = cached.estimate_feerate(6).await.unwrap();
-            assert_eq!(mock.estimate_call_count(), 1);
-        }
-
-        #[tokio::test]
-        async fn error_propagation() {
-            #[derive(Clone)]
-            struct FailingEstimator;
-
-            impl EstimateFeeRate for FailingEstimator {
-                async fn estimate_feerate(&self, _target_block: u32) -> Result<FeeRate> {
-                    Err(anyhow::anyhow!("Network error"))
-                }
-
-                async fn min_relay_fee(&self) -> Result<FeeRate> {
-                    Err(anyhow::anyhow!("Network error"))
-                }
-            }
-
-            let cached = CachedFeeEstimator::new(FailingEstimator);
-
-            // Errors should be propagated, not cached
-            let result1 = cached.estimate_feerate(6).await;
-            assert!(result1.is_err());
-            assert!(result1.unwrap_err().to_string().contains("Network error"));
-
-            let result2 = cached.min_relay_fee().await;
-            assert!(result2.is_err());
-            assert!(result2.unwrap_err().to_string().contains("Network error"));
-        }
-
-        #[tokio::test]
-        async fn cache_capacity_limits() {
-            let mock = MockFeeEstimator::new(
-                FeeRate::from_sat_per_vb(35).unwrap(),
-                FeeRate::from_sat_per_vb(1).unwrap(),
-            );
-            let cached = CachedFeeEstimator::new(mock.clone());
-
-            // Fill cache beyond capacity (MAX_CACHE_SIZE = 10)
-            for target in 1..=15 {
-                let _fee = cached.estimate_feerate(target).await.unwrap();
-            }
-
-            assert_eq!(mock.estimate_call_count(), 15);
-
-            // Request some of the earlier targets - some might have been evicted
-            // Due to LRU eviction, the earliest entries might be gone
-            let _fee = cached.estimate_feerate(1).await.unwrap();
-
-            // The exact behavior depends on Moka's eviction policy,
-            // but we should see that the cache is working within its limits
-            assert!(mock.estimate_call_count() >= 15);
-        }
-
-        #[tokio::test]
-        async fn clone_shares_cache() {
-            let mock = MockFeeEstimator::new(
-                FeeRate::from_sat_per_vb(45).unwrap(),
-                FeeRate::from_sat_per_vb(1).unwrap(),
-            );
-            let cached1 = CachedFeeEstimator::new(mock.clone());
-            let cached2 = cached1.clone();
-
-            // First estimator makes a call
-            let _fee1 = cached1.estimate_feerate(6).await.unwrap();
-            assert_eq!(mock.estimate_call_count(), 1);
-
-            // Second estimator should use the shared cache
-            let _fee2 = cached2.estimate_feerate(6).await.unwrap();
-            assert_eq!(mock.estimate_call_count(), 1); // Still 1, cache was shared
-        }
-    }
-}
-
-#[cfg(test)]
-mod swap_core_bitcoin_tests {
-    use super::*;
-    use crate::monero::TransferProof;
-    use ::bitcoin::hashes::Hash;
-    use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
-    use bitcoin::secp256k1;
-    use curve25519_dalek::scalar::Scalar;
-    use ecdsa_fun::fun::marker::{NonZero, Public};
-    use ecdsa_fun::fun::Point;
-    use monero::PrivateKey;
-    use rand::rngs::OsRng;
-    use std::matches;
-    use swap_core::bitcoin::*;
-    use swap_env::env::{GetConfig, Regtest};
-    use swap_machine::{alice, bob};
-    use uuid::Uuid;
-
-    #[test]
-    fn lock_confirmations_le_to_cancel_timelock_no_timelock_expired() {
-        let tx_lock_status = ScriptStatus::from_confirmations(4);
-        let tx_cancel_status = ScriptStatus::Unseen;
-
-        let expired_timelock = current_epoch(
-            CancelTimelock::new(5),
-            PunishTimelock::new(5),
-            tx_lock_status,
-            tx_cancel_status,
-        );
-
-        assert!(matches!(expired_timelock, ExpiredTimelocks::None { .. }));
-    }
-
-    #[test]
-    fn lock_confirmations_ge_to_cancel_timelock_cancel_timelock_expired() {
-        let tx_lock_status = ScriptStatus::from_confirmations(5);
-        let tx_cancel_status = ScriptStatus::Unseen;
-
-        let expired_timelock = current_epoch(
-            CancelTimelock::new(5),
-            PunishTimelock::new(5),
-            tx_lock_status,
-            tx_cancel_status,
-        );
-
-        assert!(matches!(expired_timelock, ExpiredTimelocks::Cancel { .. }));
-    }
-
-    #[test]
-    fn cancel_confirmations_ge_to_punish_timelock_punish_timelock_expired() {
-        let tx_lock_status = ScriptStatus::from_confirmations(10);
-        let tx_cancel_status = ScriptStatus::from_confirmations(5);
-
-        let expired_timelock = current_epoch(
-            CancelTimelock::new(5),
-            PunishTimelock::new(5),
-            tx_lock_status,
-            tx_cancel_status,
-        );
-
-        assert_eq!(expired_timelock, ExpiredTimelocks::Punish)
-    }
-
-    #[tokio::test]
-    async fn calculate_transaction_weights() {
-        let alice_wallet = TestWalletBuilder::new(Amount::ONE_BTC.to_sat())
-            .build()
-            .await;
-        let bob_wallet = TestWalletBuilder::new(Amount::ONE_BTC.to_sat())
-            .build()
-            .await;
-        let spending_fee = Amount::from_sat(1_000);
-        let btc_amount = Amount::from_sat(500_000);
-        let xmr_amount = crate::monero::Amount::from_piconero(10000);
-
-        let tx_redeem_fee = alice_wallet
-            .estimate_fee(TxRedeem::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-        let tx_punish_fee = alice_wallet
-            .estimate_fee(TxPunish::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-        let tx_lock_fee = alice_wallet
-            .estimate_fee(TxLock::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-
-        let redeem_address = alice_wallet.new_address().await.unwrap();
-        let punish_address = alice_wallet.new_address().await.unwrap();
-
-        let config = Regtest::get_config();
-        let alice_state0 = alice::State0::new(
-            btc_amount,
-            xmr_amount,
-            config,
-            redeem_address,
-            punish_address,
-            tx_redeem_fee,
-            tx_punish_fee,
-            &mut OsRng,
-        );
-
-        let bob_state0 = bob::State0::new(
-            Uuid::new_v4(),
-            &mut OsRng,
-            btc_amount,
-            xmr_amount,
-            CancelTimelock::new(config.bitcoin_cancel_timelock),
-            PunishTimelock::new(config.bitcoin_punish_timelock),
-            bob_wallet.new_address().await.unwrap(),
-            config.monero_finality_confirmations,
-            spending_fee,
-            spending_fee,
-            tx_lock_fee,
-        );
-
-        let message0 = bob_state0.next_message();
-
-        let (_, alice_state1) = alice_state0.receive(message0).unwrap();
-        let alice_message1 = alice_state1.next_message();
-
-        let bob_state1 = bob_state0
-            .receive(&bob_wallet, alice_message1)
-            .await
-            .unwrap();
-        let bob_message2 = bob_state1.next_message();
-
-        let alice_state2 = alice_state1.receive(bob_message2).unwrap();
-        let alice_message3 = alice_state2.next_message();
-
-        let bob_state2 = bob_state1.receive(alice_message3).unwrap();
-        let bob_message4 = bob_state2.next_message();
-
-        let alice_state3 = alice_state2.receive(bob_message4).unwrap();
-
-        let (bob_state3, _tx_lock) = bob_state2.lock_btc().await.unwrap();
-        let bob_state4 = bob_state3.xmr_locked(
-            crate::monero::BlockHeight { height: 0 },
-            // We use bogus values here, because they're irrelevant to this test
-            TransferProof::new(
-                crate::monero::TxHash("foo".into()),
-                PrivateKey::from_scalar(Scalar::one()),
-            ),
-        );
-        let encrypted_signature = bob_state4.tx_redeem_encsig();
-        let bob_state6 = bob_state4.cancel();
-
-        let cancel_transaction = alice_state3.signed_cancel_transaction().unwrap();
-        let punish_transaction = alice_state3.signed_punish_transaction().unwrap();
-        let redeem_transaction = alice_state3
-            .signed_redeem_transaction(encrypted_signature)
-            .unwrap();
-        let refund_transaction = bob_state6.signed_refund_transaction().unwrap();
-
-        assert_weight(redeem_transaction, TxRedeem::weight().to_wu(), "TxRedeem");
-        assert_weight(cancel_transaction, TxCancel::weight().to_wu(), "TxCancel");
-        assert_weight(punish_transaction, TxPunish::weight().to_wu(), "TxPunish");
-        assert_weight(refund_transaction, TxRefund::weight().to_wu(), "TxRefund");
-
-        // Test TxEarlyRefund transaction
-        let early_refund_transaction = alice_state3
-            .signed_early_refund_transaction()
-            .unwrap()
-            .unwrap();
-        assert_weight(
-            early_refund_transaction,
-            TxEarlyRefund::weight() as u64,
-            "TxEarlyRefund",
-        );
-    }
-
-    #[tokio::test]
-    async fn tx_early_refund_can_be_constructed_and_signed() {
-        let alice_wallet = TestWalletBuilder::new(Amount::ONE_BTC.to_sat())
-            .build()
-            .await;
-        let bob_wallet = TestWalletBuilder::new(Amount::ONE_BTC.to_sat())
-            .build()
-            .await;
-        let spending_fee = Amount::from_sat(1_000);
-        let btc_amount = Amount::from_sat(500_000);
-        let xmr_amount = crate::monero::Amount::from_piconero(10000);
-
-        let tx_redeem_fee = alice_wallet
-            .estimate_fee(TxRedeem::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-        let tx_punish_fee = alice_wallet
-            .estimate_fee(TxPunish::weight(), Some(btc_amount))
-            .await
-            .unwrap();
-
-        let refund_address = alice_wallet.new_address().await.unwrap();
-        let punish_address = alice_wallet.new_address().await.unwrap();
-
-        let config = Regtest::get_config();
-        let alice_state0 = alice::State0::new(
-            btc_amount,
-            xmr_amount,
-            config,
-            refund_address.clone(),
-            punish_address,
-            tx_redeem_fee,
-            tx_punish_fee,
-            &mut OsRng,
-        );
-
-        let bob_state0 = bob::State0::new(
-            Uuid::new_v4(),
-            &mut OsRng,
-            btc_amount,
-            xmr_amount,
-            CancelTimelock::new(config.bitcoin_cancel_timelock),
-            PunishTimelock::new(config.bitcoin_punish_timelock),
-            bob_wallet.new_address().await.unwrap(),
-            config.monero_finality_confirmations,
-            spending_fee,
-            spending_fee,
-            spending_fee,
-        );
-
-        // Complete the state machine up to State3
-        let message0 = bob_state0.next_message();
-        let (_, alice_state1) = alice_state0.receive(message0).unwrap();
-        let alice_message1 = alice_state1.next_message();
-
-        let bob_state1 = bob_state0
-            .receive(&bob_wallet, alice_message1)
-            .await
-            .unwrap();
-        let bob_message2 = bob_state1.next_message();
-
-        let alice_state2 = alice_state1.receive(bob_message2).unwrap();
-        let alice_message3 = alice_state2.next_message();
-
-        let bob_state2 = bob_state1.receive(alice_message3).unwrap();
-        let bob_message4 = bob_state2.next_message();
-
-        let alice_state3 = alice_state2.receive(bob_message4).unwrap();
-
-        // Test TxEarlyRefund construction
-        let tx_early_refund = alice_state3.tx_early_refund();
-
-        // Verify basic properties
-        assert_eq!(tx_early_refund.txid(), tx_early_refund.txid()); // Should be deterministic
-        assert!(tx_early_refund.digest() != Sighash::all_zeros()); // Should have valid digest
-
-        // Test that it can be signed and completed
-        let early_refund_transaction = alice_state3
-            .signed_early_refund_transaction()
-            .unwrap()
-            .unwrap();
-
-        // Verify the transaction has expected structure
-        assert_eq!(early_refund_transaction.input.len(), 1); // One input from lock tx
-        assert_eq!(early_refund_transaction.output.len(), 1); // One output to refund address
-        assert_eq!(
-            early_refund_transaction.output[0].script_pubkey,
-            refund_address.script_pubkey()
-        );
-
-        // Verify the input is spending the lock transaction
-        assert_eq!(
-            early_refund_transaction.input[0].previous_output,
-            alice_state3.tx_lock.as_outpoint()
-        );
-
-        // Verify the amount is correct (lock amount minus fee)
-        let expected_amount = alice_state3.tx_lock.lock_amount() - alice_state3.tx_refund_fee;
-        assert_eq!(early_refund_transaction.output[0].value, expected_amount);
-    }
-
-    #[test]
-    fn tx_early_refund_has_correct_weight() {
-        // TxEarlyRefund should have the same weight as other similar transactions
-        assert_eq!(TxEarlyRefund::weight(), 548);
-
-        // It should be the same as TxRedeem and TxRefund weights since they have similar structure
-        assert_eq!(TxEarlyRefund::weight() as u64, TxRedeem::weight().to_wu());
-        assert_eq!(TxEarlyRefund::weight() as u64, TxRefund::weight().to_wu());
-    }
-
-    // Weights fluctuate because of the length of the signatures. Valid ecdsa
-    // signatures can have 68, 69, 70, 71, or 72 bytes. Since most of our
-    // transactions have 2 signatures the weight can be up to 8 bytes less than
-    // the static weight (4 bytes per signature).
-    fn assert_weight(transaction: Transaction, expected_weight: u64, tx_name: &str) {
-        let is_weight = transaction.weight();
-
-        assert!(
-            expected_weight - is_weight.to_wu() <= 8,
-            "{} to have weight {}, but was {}. Transaction: {:#?}",
-            tx_name,
-            expected_weight,
-            is_weight,
-            transaction
-        )
-    }
-
-    #[test]
-    fn compare_point_hex() {
-        // secp256kfun Point and secp256k1 PublicKey should have the same bytes and hex representation
-        let secp = secp256k1::Secp256k1::default();
-        let keypair = secp256k1::Keypair::new(&secp, &mut OsRng);
-
-        let pubkey = keypair.public_key();
-        let point: Point<_, Public, NonZero> = Point::from_bytes(pubkey.serialize()).unwrap();
-
-        assert_eq!(pubkey.to_string(), point.to_string());
-    }
-}
-
-#[cfg(test)]
-mod swap_core_bitcoin_lock_tests {
-    use super::*;
-    use crate::bitcoin::Amount;
-    use bitcoin::Psbt;
-    use swap_core::bitcoin::*;
-
-    // Basic setup function for tests
-    async fn setup() -> (
-        PublicKey,
-        PublicKey,
-        Wallet<bdk_wallet::rusqlite::Connection, crate::bitcoin::wallet::StaticFeeRate>,
-    ) {
-        let (A, B) = alice_and_bob();
-        let wallet = TestWalletBuilder::new(100_000).build().await;
-        (A, B, wallet)
-    }
-
-    #[tokio::test]
-    async fn given_bob_sends_good_psbt_when_reconstructing_then_succeeeds() {
-        let (A, B, wallet) = setup().await;
-        let agreed_amount = Amount::from_sat(10000);
-        let spending_fee = Amount::from_sat(1000);
-
-        let psbt = bob_make_psbt(A, B, &wallet, agreed_amount, spending_fee).await;
-        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
-
-        result.expect("PSBT to be valid");
-    }
-
-    #[tokio::test]
-    async fn bob_can_fund_without_a_change_output() {
-        let (A, B, _) = setup().await;
-        let amount = 10_000;
-        let agreed_amount = Amount::from_sat(amount);
-        let spending_fee = Amount::from_sat(300);
-        let wallet = TestWalletBuilder::new(amount + 300).build().await;
-
-        let psbt = bob_make_psbt(A, B, &wallet, agreed_amount, spending_fee).await;
-        assert_eq!(
-            psbt.unsigned_tx.output.len(),
-            1,
-            "Expected no change output"
-        );
-    }
-
-    #[tokio::test]
-    async fn given_bob_is_sending_less_than_agreed_when_reconstructing_txlock_then_fails() {
-        let (A, B, wallet) = setup().await;
-        let agreed_amount = Amount::from_sat(10000);
-        let spending_fee = Amount::from_sat(1000);
-
-        let bad_amount = Amount::from_sat(5000);
-        let psbt = bob_make_psbt(A, B, &wallet, bad_amount, spending_fee).await;
-        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
-
-        result.expect_err("PSBT to be invalid");
-    }
-
-    #[tokio::test]
-    async fn given_bob_is_sending_to_a_bad_output_reconstructing_txlock_then_fails() {
-        let (A, B, wallet) = setup().await;
-        let agreed_amount = Amount::from_sat(10000);
-        let spending_fee = Amount::from_sat(1000);
-
-        let E = eve();
-        let psbt = bob_make_psbt(E, B, &wallet, agreed_amount, spending_fee).await;
-        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
-
-        result.expect_err("PSBT to be invalid");
-    }
-
-    proptest::proptest! {
-        #[test]
-        fn estimated_tx_lock_script_size_never_changes(a in swap_proptest::ecdsa_fun::point(), b in swap_proptest::ecdsa_fun::point()) {
-            proptest::prop_assume!(a != b);
-
-            let computed_size = build_shared_output_descriptor(a, b).unwrap().script_pubkey().len();
-
-            assert_eq!(computed_size, TxLock::script_size());
-        }
-    }
-
-    // Helper function for testing PSBT creation by Bob
-    async fn bob_make_psbt(
-        A: PublicKey,
-        B: PublicKey,
-        wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    async fn send_to_address(
+        &self,
+        address: Address,
         amount: Amount,
         spending_fee: Amount,
-    ) -> Psbt {
-        let change = wallet.new_address().await.unwrap();
-        TxLock::new(wallet, amount, spending_fee, A, B, change)
-            .await
-            .unwrap()
-            .into()
+        change_override: Option<Address>,
+    ) -> Result<Psbt> {
+        unimplemented!("stub method called erroneously")
     }
 
-    fn alice_and_bob() -> (PublicKey, PublicKey) {
-        (PublicKey::random(), PublicKey::random())
+    async fn send_to_address_dynamic_fee(
+        &self,
+        address: Address,
+        amount: Amount,
+        change_override: Option<Address>,
+    ) -> Result<Psbt> {
+        unimplemented!("stub method called erroneously")
     }
 
-    fn eve() -> PublicKey {
-        PublicKey::random()
+    async fn sweep_balance_to_address_dynamic_fee(&self, address: Address) -> Result<Psbt> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn broadcast(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn sync(&self) -> Result<()> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn status_of_script(&self, tx: &dyn Watchable) -> Result<ScriptStatus> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn get_raw_transaction(
+        &self,
+        txid: Txid,
+    ) -> Result<Option<std::sync::Arc<bitcoin::Transaction>>> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn estimate_fee(
+        &self,
+        weight: Weight,
+        transfer_amount: Option<Amount>,
+    ) -> Result<Amount> {
+        unimplemented!("stub method called erroneously")
+    }
+
+    fn network(&self) -> Network {
+        unimplemented!("stub method called erroneously")
+    }
+
+    fn finality_confirmations(&self) -> u32 {
+        unimplemented!("stub method called erroneously")
+    }
+
+    async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport> {
+        unimplemented!("stub method called erroneously")
     }
 }

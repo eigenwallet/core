@@ -13,7 +13,6 @@ bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
 curve25519-dalek = { workspace = true }
 ecdsa_fun = { workspace = true }
-electrum-pool = { path = "../electrum-pool" }
 monero = { workspace = true }
 sha2 = { workspace = true }
 
@@ -35,8 +34,12 @@ rand = { workspace = true }
 rand_chacha = { workspace = true }
 
 [dev-dependencies]
+proptest = "1"
+futures = { workspace = true }
 serde_cbor = { workspace = true }
 swap-env = { path = "../swap-env" }
+swap-proptest = { path = "../swap-proptest" }
+tracing-ext = { path = "../tracing-ext" }
 tokio = { workspace = true }
 uuid = { workspace = true }
 
