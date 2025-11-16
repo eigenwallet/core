@@ -9,9 +9,10 @@ use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
-use crate::{bitcoin, common, monero};
+use crate::{common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
+use bitcoin_wallet as bitcoin;
 use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
 use std::fmt;
@@ -889,12 +890,12 @@ mod wallet {
         env_config: EnvConfig,
         bitcoin_target_block: u16,
         tauri_handle_option: Option<TauriHandle>,
-    ) -> Result<bitcoin::Wallet<bdk_wallet::rusqlite::Connection, bitcoin::wallet::Client>> {
-        let mut builder = bitcoin::wallet::WalletBuilder::default()
+    ) -> Result<bitcoin::Wallet<bdk_wallet::rusqlite::Connection, bitcoin::Client>> {
+        let mut builder = bitcoin::WalletBuilder::<Seed>::default()
             .seed(seed.clone())
             .network(env_config.bitcoin_network)
             .electrum_rpc_urls(electrum_rpc_urls)
-            .persister(bitcoin::wallet::PersisterConfig::SqliteFile {
+            .persister(bitcoin::PersisterConfig::SqliteFile {
                 data_dir: data_dir.to_path_buf(),
             })
             .finality_confirmations(env_config.bitcoin_finality_confirmations)

@@ -2414,7 +2414,11 @@ mod sync_ext {
     }
 }
 
-pub fn trace_status_change(txid: Txid, old: Option<ScriptStatus>, new: ScriptStatus) -> ScriptStatus {
+pub fn trace_status_change(
+    txid: Txid,
+    old: Option<ScriptStatus>,
+    new: ScriptStatus,
+) -> ScriptStatus {
     match (old, new) {
         (None, new_status) => {
             tracing::debug!(%txid, status = %new_status, "Found relevant Bitcoin transaction");

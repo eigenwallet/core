@@ -7,20 +7,17 @@ edition = "2024"
 anyhow = { workspace = true }
 
 # Bitcoin stuff
-bdk_electrum = { workspace = true }
 bdk_wallet = { workspace = true, features = ["rusqlite"] }
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
 curve25519-dalek = { workspace = true }
 ecdsa_fun = { workspace = true }
-electrum-pool = { path = "../electrum-pool" }
 monero = { workspace = true }
 sha2 = { workspace = true }
 
 # Serialization
 rust_decimal = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 swap-serde = { path = "../swap-serde" }
 typeshare = { workspace = true }
 
@@ -35,7 +32,13 @@ rand = { workspace = true }
 rand_chacha = { workspace = true }
 
 [dev-dependencies]
+futures = { workspace = true }
+proptest = "1"
 serde_cbor = { workspace = true }
+serde_json = { workspace = true }
+swap-proptest = { path = "../swap-proptest" }
+tokio = { workspace = true }
+tracing-ext = { path = "../tracing-ext" }
 
 [lints]
 workspace = true

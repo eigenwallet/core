@@ -1,11 +1,11 @@
 use super::api::tauri_bindings::{BackgroundRefundProgress, TauriBackgroundProgress, TauriEmitter};
 use super::api::SwapLock;
 use super::cancel_and_refund;
-use crate::bitcoin::Wallet;
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::protocol::bob::BobState;
 use crate::protocol::{Database, State};
 use anyhow::{Context, Result};
+use bitcoin_wallet::Wallet;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

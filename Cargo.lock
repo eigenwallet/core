@@ -10983,14 +10983,14 @@ name = "swap-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bdk_electrum",
  "bdk_wallet",
  "bitcoin 0.32.7",
  "bitcoin-wallet",
  "curve25519-dalek-ng",
  "ecdsa_fun",
- "electrum-pool",
+ "futures",
  "monero",
+ "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rust_decimal",
@@ -10998,9 +10998,12 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "sha2",
+ "swap-proptest",
  "swap-serde",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
+ "tracing-ext",
  "typeshare",
 ]
 

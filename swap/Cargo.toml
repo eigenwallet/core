@@ -107,12 +107,12 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
 mockito = "1.4"
-tracing-ext = { path = "../tracing-ext" }
 monero-harness = { path = "../monero-harness" }
 proptest = "1"
 swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
 tempfile = "3"
 testcontainers = "0.15"
+tracing-ext = { path = "../tracing-ext" }
 
 [build-dependencies]
 anyhow = { workspace = true }

@@ -9,7 +9,7 @@ pub mod primitives;
 pub use crate::primitives::{ScriptStatus, Subscription, Watchable};
 use anyhow::Result;
 use bdk_wallet::{export::FullyNodedExport, Balance};
-use bitcoin::{Address, Amount, Network, Psbt, Txid, Weight};
+pub use bitcoin::{Address, Amount, Network, Psbt, Txid, Weight};
 
 #[async_trait::async_trait]
 pub trait BitcoinWallet: Send + Sync {

@@ -286,15 +286,15 @@ pub struct NotThreeWitnesses(usize);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_wallet::*;
     use crate::bitcoin::{PublicKey, TxLock};
-    use tracing_ext::capture_logs;
     use bitcoin::address::NetworkUnchecked;
     use bitcoin::hashes::Hash;
     use bitcoin::*;
+    use bitcoin_wallet::primitives::*;
+    use bitcoin_wallet::*;
     use proptest::prelude::*;
     use tracing::level_filters::LevelFilter;
-    use bitcoin_wallet::primitives::*;
+    use tracing_ext::capture_logs;
 
     #[test]
     fn given_depth_0_should_meet_confirmation_target_one() {

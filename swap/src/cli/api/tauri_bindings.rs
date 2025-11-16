@@ -450,6 +450,61 @@ impl TauriHandle {
     }
 }
 
+struct BitcoinTauriHandle(TauriHandle);
+
+impl Into<Arc<Box<dyn bitcoin_wallet::BitcoinTauriHandle>>> for TauriHandle {
+    fn into(self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriHandle>> {
+        Arc::new(Box::new(BitcoinTauriHandle(self)))
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriHandle for BitcoinTauriHandle {
+    fn start_full_scan(&self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriBackgroundTask>> {
+        Arc::new(Box::new(
+            self.0.new_background_process_with_initial_progress(
+                TauriBackgroundProgress::FullScanningBitcoinWallet,
+                TauriBitcoinFullScanProgress::Unknown,
+            ),
+        ))
+    }
+
+    fn start_sync(&self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriBackgroundTask>> {
+        Arc::new(Box::new(
+            self.0.new_background_process_with_initial_progress(
+                TauriBackgroundProgress::SyncingBitcoinWallet,
+                TauriBitcoinSyncProgress::Unknown,
+            ),
+        ))
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriBackgroundTask
+    for TauriBackgroundProgressHandle<TauriBitcoinFullScanProgress>
+{
+    fn update(&self, consumed: u64, total: u64) {
+        self.update(TauriBitcoinFullScanProgress::Known {
+            current_index: consumed,
+            assumed_total: total,
+        });
+    }
+
+    fn finish(&self) {
+        TauriBackgroundProgressHandle::finish(self)
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriBackgroundTask
+    for TauriBackgroundProgressHandle<TauriBitcoinSyncProgress>
+{
+    fn update(&self, consumed: u64, total: u64) {
+        self.update(TauriBitcoinSyncProgress::Known { consumed, total });
+    }
+
+    fn finish(&self) {
+        TauriBackgroundProgressHandle::finish(self)
+    }
+}
+
 impl Display for ApprovalRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.request {

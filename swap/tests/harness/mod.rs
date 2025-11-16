@@ -14,11 +14,11 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
 
+use bitcoin_wallet as bitcoin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use swap::asb::FixedRate;
-use swap::bitcoin::{CancelTimelock, PunishTimelock};
 use swap::cli::api;
 use swap::database::{AccessMode, SqliteDatabase};
 use swap::monero::wallet::no_listener;
@@ -29,7 +29,8 @@ use swap::protocol::alice::{AliceState, Swap, TipConfig};
 use swap::protocol::bob::BobState;
 use swap::protocol::{alice, bob, Database};
 use swap::seed::Seed;
-use swap::{asb, bitcoin, cli, monero};
+use swap::{asb, cli, monero};
+use swap_core::bitcoin::{CancelTimelock, PunishTimelock};
 use swap_env::env;
 use swap_env::env::{Config, GetConfig};
 use swap_fs::ensure_directory_exists;
@@ -416,11 +417,11 @@ async fn init_test_wallets(
         Url::parse(&input).unwrap()
     };
 
-    let btc_wallet = swap::bitcoin::wallet::WalletBuilder::default()
+    let btc_wallet = bitcoin_wallet::WalletBuilder::<Seed>::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)
         .electrum_rpc_urls(vec![electrum_rpc_url.as_str().to_string()])
-        .persister(swap::bitcoin::wallet::PersisterConfig::InMemorySqlite)
+        .persister(bitcoin_wallet::PersisterConfig::InMemorySqlite)
         .finality_confirmations(1_u32)
         .target_block(1_u32)
         .sync_interval(Duration::from_secs(3)) // high sync interval to speed up tests

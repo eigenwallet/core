@@ -127,9 +127,9 @@ impl ExpiredTimelocks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_wallet::*;
     use crate::bitcoin::*;
     use bitcoin::secp256k1;
+    use bitcoin_wallet::*;
     use ecdsa_fun::fun::marker::{NonZero, Public};
     use ecdsa_fun::fun::Point;
     use rand::rngs::OsRng;
