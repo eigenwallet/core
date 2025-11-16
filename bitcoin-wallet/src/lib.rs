@@ -1,3 +1,9 @@
+mod core;
+mod wallet;
+
+pub use core::*;
+pub use wallet::*;
+
 pub mod primitives;
 
 pub use crate::primitives::{ScriptStatus, Subscription, Watchable};

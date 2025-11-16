@@ -230,6 +230,7 @@ mod crates {
         "swap_serde",
         "swap_feed",
         "monero_sys",
+        "tracing_ext",
         // Binary crates
         "swap",
         "asb",

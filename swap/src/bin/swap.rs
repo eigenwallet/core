@@ -47,7 +47,7 @@ mod tests {
     use swap::cli::api::request::determine_btc_to_swap;
     use swap::cli::QuoteWithAddress;
     use swap::network::quote::BidQuote;
-    use swap::tracing_ext::capture_logs;
+    use tracing_ext::capture_logs;
     use tracing::level_filters::LevelFilter;
 
     const SWAP_ID: &str = "ea030832-3be9-454f-bb98-5ea9a788406b";

@@ -25,6 +25,7 @@ members = [
   "swap-proptest",
   "swap-serde",
   "throttle",
+  "tracing-ext",
 ]
 
 [workspace.dependencies]

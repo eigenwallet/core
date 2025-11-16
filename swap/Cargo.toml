@@ -14,9 +14,7 @@ tauri = ["dep:tauri"]
 [dependencies]
 # Bitcoin Dev Kit
 bdk = { workspace = true }
-bdk_chain = { workspace = true }
-bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }
-bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
+bdk_wallet = { workspace = true }
 bitcoin = { workspace = true }
 
 # Bitcoin Wallet
@@ -47,7 +45,6 @@ rand = { workspace = true }
 # Other stuff
 bmrng = { workspace = true }
 config = { version = "0.14", default-features = false, features = ["toml"] }
-derive_builder = "0.20.2"
 electrum-pool = { path = "../electrum-pool" }
 jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
@@ -61,7 +58,6 @@ proptest = "1"
 regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
-rust_decimal_macros = "1"
 semver = { workspace = true }
 structopt = "0.3"
 swap-controller-api = { path = "../swap-controller-api" }
@@ -111,6 +107,7 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
 mockito = "1.4"
+tracing-ext = { path = "../tracing-ext" }
 monero-harness = { path = "../monero-harness" }
 proptest = "1"
 swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
