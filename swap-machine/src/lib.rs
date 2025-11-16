@@ -5,14 +5,14 @@ pub mod common;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin_wallet::*;
-    use swap_core::monero::TransferProof;
-    use swap_core::bitcoin::*;
     use ::bitcoin::hashes::Hash;
     use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
+    use bitcoin_wallet::*;
     use curve25519_dalek::scalar::Scalar;
     use monero::PrivateKey;
     use rand::rngs::OsRng;
+    use swap_core::bitcoin::*;
+    use swap_core::monero::TransferProof;
     use swap_env::env::{GetConfig, Regtest};
     use uuid::Uuid;
 
