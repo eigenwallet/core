@@ -7,14 +7,15 @@ use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use url::Url;
 
-/// Connect to Kraken websocket API for a constant stream of rate updates.
+/// Connect to Bitfinex websocket API for a constant stream of rate updates.
 ///
 /// If the connection fails, it will automatically be re-established.
 ///
-/// price_ticker_ws_url_kraken must point to a websocket server that follows the kraken
-/// price ticker protocol
-/// See: https://docs.kraken.com/websockets/
-pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
+/// price_ticker_ws_url_bitfinex must point to a websocket server that follows the bitfinex
+/// price ticker protocol version 2
+/// See: https://docs.bitfinex.com/docs/ws-public
+/// See: https://docs.bitfinex.com/reference/ws-public-ticker
+pub fn connect(price_ticker_ws_url_bitfinex: Url) -> Result<PriceUpdates> {
     let (price_update, price_update_receiver) = watch::channel(Err(Error::NotYetAvailable));
     let price_update = Arc::new(price_update);
 
@@ -31,9 +32,9 @@ pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
             backoff,
             || {
                 let price_update = price_update.clone();
-                let price_ticker_ws_url_kraken = price_ticker_ws_url_kraken.clone();
+                let price_ticker_ws_url_bitfinex = price_ticker_ws_url_bitfinex.clone();
                 async move {
-                    let mut stream = connection::new(price_ticker_ws_url_kraken).await?;
+                    let mut stream = connection::new(price_ticker_ws_url_bitfinex).await?;
 
                     while let Some(update) = stream
                         .try_next()
@@ -55,7 +56,7 @@ pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
             },
             |error, next: Duration| {
                 tracing::info!(
-                    "Kraken websocket connection failed, retrying in {}ms. Error {:#}",
+                    "Bitfinex websocket connection failed, retrying in {}ms. Error {:#}",
                     next.as_millis(),
                     error
                 );
@@ -96,28 +97,27 @@ impl PriceUpdates {
 pub enum Error {
     #[error("Rate is not yet available")]
     NotYetAvailable,
-    #[error("Permanently failed to retrieve rate from Kraken")]
+    #[error("Permanently failed to retrieve rate from Bitfinex")]
     PermanentFailure(Arc<anyhow::Error>),
 }
 
 type PriceUpdate = Result<(Instant, wire::PriceUpdate), Error>;
 
-/// Kraken websocket connection module.
+/// Bitfinex websocket connection module.
 ///
-/// Responsible for establishing a connection to the Kraken websocket API and
+/// Responsible for establishing a connection to the Bitfinex websocket API and
 /// transforming the received websocket frames into a stream of rate updates.
 /// The connection may fail in which case it is simply terminated and the stream
 /// ends.
 mod connection {
     use super::*;
-    use crate::kraken::wire;
     use futures::stream::BoxStream;
     use tokio_tungstenite::tungstenite;
 
     pub async fn new(ws_url: Url) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
         let (mut rate_stream, _) = tokio_tungstenite::connect_async(ws_url)
             .await
-            .context("Failed to connect to Kraken websocket API")?;
+            .context("Failed to connect to Bitfinex websocket API")?;
 
         rate_stream
             .send(SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD.into())
@@ -139,19 +139,19 @@ mod connection {
             tungstenite::Message::Close(close_frame) => {
                 if let Some(tungstenite::protocol::CloseFrame { code, reason }) = close_frame {
                     tracing::error!(
-                        "Kraken rate stream was closed with code {} and reason: {}",
+                        "Bitfinex rate stream was closed with code {} and reason: {}",
                         code,
                         reason
                     );
                 } else {
-                    tracing::error!("Kraken rate stream was closed without code and reason");
+                    tracing::error!("Bitfinex rate stream was closed without code and reason");
                 }
 
                 return Err(Error::ConnectionClosed);
             }
             msg => {
                 tracing::trace!(
-                    "Kraken rate stream returned non text message that will be ignored: {}",
+                    "Bitfinex rate stream returned non text message that will be ignored: {}",
                     msg
                 );
 
@@ -159,27 +159,29 @@ mod connection {
             }
         };
 
-        let update = match serde_json::from_str::<wire::Event>(&msg) {
-            Ok(wire::Event::SystemStatus) => {
-                tracing::debug!("Connected to Kraken websocket API");
+        let update = match serde_json::from_str::<wire::ObjectEvent>(&msg) {
+            Ok(wire::ObjectEvent::Info) => {
+                tracing::debug!("Connected to Bitfinex websocket API");
 
                 return Ok(None);
             }
-            Ok(wire::Event::SubscriptionStatus) => {
+            Ok(wire::ObjectEvent::Subscribed) => {
                 tracing::debug!("Subscribed to updates for ticker");
 
                 return Ok(None);
             }
-            Ok(wire::Event::Heartbeat) => {
-                return Ok(None);
-            }
-            // if the message is not an event, it is a ticker update or an unknown event
-            Err(_) => match serde_json::from_str::<wire::PriceUpdate>(&msg) {
-                Ok(ticker) => ticker,
-                Err(error) => {
-                    tracing::warn!(%msg, "Failed to deserialize message as ticker update. Error {:#}", error);
+            // if the message is not an object-wrapped event, it is a heartbeat, ticker update, or something unknown
+            Err(_) => match serde_json::from_str::<wire::HeartbeatEvent>(&msg) {
+                Ok(_) => {
                     return Ok(None);
                 }
+                Err(_) => match serde_json::from_str::<wire::PriceUpdate>(&msg) {
+                    Ok(ticker) => ticker,
+                    Err(error) => {
+                        tracing::warn!(%msg, "Failed to deserialize message as ticker update. Error {:#}", error);
+                        return Ok(None);
+                    }
+                },
             },
         };
 
@@ -188,7 +190,7 @@ mod connection {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
-        #[error("The Kraken server closed the websocket connection")]
+        #[error("The Bitfinex server closed the websocket connection")]
         ConnectionClosed,
         #[error("Failed to read message from websocket stream")]
         WebSocket(#[from] tungstenite::Error),
@@ -196,98 +198,64 @@ mod connection {
         Parse(#[from] wire::Error),
     }
 
-    const SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD: &str = r#"
-    { "event": "subscribe",
-      "pair": [ "XMR/XBT" ],
-      "subscription": {
-        "name": "ticker"
-      }
-    }"#;
+    const SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD: &str =
+        r#"{"event": "subscribe", "channel": "ticker", "symbol": "tXMRBTC"}"#;
 }
 
-/// Kraken websocket API wire module.
+/// Bitfinex websocket API wire module.
 ///
 /// Responsible for parsing websocket text messages to events and rate updates.
+///
+/// https://docs.bitfinex.com/reference/ws-public-ticker
+/// ```
+/// $ websocat wss://api-pub.bitfinex.com/ws/2
+/// {"event":"info","version":2,"serverId":"2307ff06-41db-4d2b-b3ce-220348811755","platform":{"status":1}}
+/// {"event": "subscribe", "channel": "ticker", "symbol": "tXMRBTC" }
+/// {"event":"subscribed","channel":"ticker","chanId":225000,"symbol":"tXMRBTC","pair":"XMRBTC"}
+/// [225000,[0.003744,358.96223856,0.0037548,338.14332753,-0.0000834,-0.02175955,0.0037494,1284.13109312,0.0038328,0.0035223]]
+/// [225000,"hb"]
+/// ```
+/// `[chanId,[BID,BID_SIZE,ASK,ASK_SIZE,DAILY_CHANGE,DAILY_CHANGE_RELATIVE,LAST_PRICE,VOLUME,HIGH,LOW]]`
 mod wire {
     use super::*;
-    use bitcoin::amount::ParseAmountError;
-    use serde_json::Value;
 
-    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    #[derive(Debug, Deserialize, PartialEq)]
     #[serde(tag = "event")]
-    pub enum Event {
-        #[serde(rename = "systemStatus")]
-        SystemStatus,
-        #[serde(rename = "heartbeat")]
-        Heartbeat,
-        #[serde(rename = "subscriptionStatus")]
-        SubscriptionStatus,
+    pub enum ObjectEvent {
+        #[serde(rename = "info")]
+        Info,
+        #[serde(rename = "subscribed")]
+        Subscribed,
     }
 
-    #[derive(Clone, Debug, thiserror::Error)]
-    pub enum Error {
-        #[error("Data field is missing")]
-        DataFieldMissing,
-        #[error("Ask Rate Element is of unexpected type")]
-        UnexpectedAskRateElementType,
-        #[error("Ask Rate Element is missing")]
-        MissingAskRateElementType,
-        #[error("Failed to parse Bitcoin amount")]
-        BitcoinParseAmount(#[from] ParseAmountError),
-    }
+    #[derive(Debug, Deserialize, PartialEq)]
+    pub struct HeartbeatEvent(u64, pub String);
 
-    /// Represents an update within the price ticker.
+    #[derive(Debug, Deserialize, PartialEq)]
+    pub struct TradingEvent(u64, [f64; 10]);
+
     #[derive(Clone, Debug, Deserialize)]
-    #[serde(try_from = "TickerUpdate")]
+    #[serde(try_from = "TradingEvent")]
     pub struct PriceUpdate {
         pub ask: bitcoin::Amount,
     }
 
-    #[derive(Debug, Deserialize)]
-    #[serde(transparent)]
-    pub struct TickerUpdate(Vec<TickerField>);
-
-    #[allow(unused)]
-    #[derive(Debug, Deserialize)]
-    #[serde(untagged)]
-    pub enum TickerField {
-        Data(TickerData),
-        Metadata(Value),
+    #[derive(Debug, thiserror::Error)]
+    pub enum Error {
+        #[error("Failed to parse JSON message")]
+        JsonParseError(#[from] serde_json::Error),
+        #[error("Failed to parse Bitcoin amount")]
+        BitcoinParseAmount(#[from] bitcoin::amount::ParseAmountError),
     }
 
-    #[derive(Debug, Deserialize)]
-    pub struct TickerData {
-        #[serde(rename = "a")]
-        ask: Vec<RateElement>,
-    }
-
-    #[allow(unused)]
-    #[derive(Debug, Deserialize)]
-    #[serde(untagged)]
-    pub enum RateElement {
-        Text(String),
-        Number(u64),
-    }
-
-    impl TryFrom<TickerUpdate> for PriceUpdate {
+    impl TryFrom<TradingEvent> for PriceUpdate {
         type Error = Error;
 
-        fn try_from(value: TickerUpdate) -> Result<Self, Error> {
-            let data = value
-                .0
-                .iter()
-                .find_map(|field| match field {
-                    TickerField::Data(data) => Some(data),
-                    TickerField::Metadata(_) => None,
-                })
-                .ok_or(Error::DataFieldMissing)?;
-            let ask = data.ask.first().ok_or(Error::MissingAskRateElementType)?;
-            let ask = match ask {
-                RateElement::Text(ask) => {
-                    bitcoin::Amount::from_str_in(ask, ::bitcoin::Denomination::Bitcoin)?
-                }
-                _ => return Err(Error::UnexpectedAskRateElementType),
-            };
+        fn try_from(value: TradingEvent) -> Result<Self, Error> {
+            let [_bid, _bid_size, ask, _ask_size, _daily_change, _daily_change_relative, _last_price, _volume, _high, _low] =
+                value.1;
+
+            let ask = bitcoin::Amount::from_btc(ask)?;
 
             Ok(PriceUpdate { ask })
         }
@@ -298,28 +266,56 @@ mod wire {
         use super::*;
 
         #[test]
-        fn can_deserialize_system_status_event() {
-            let event = r#"{"connectionID":14859574189081089471,"event":"systemStatus","status":"online","version":"1.8.1"}"#;
+        fn can_deserialize_system_info_event() {
+            let event = r#"{"event":"info","version":2,"serverId":"2307ff06-41db-4d2b-b3ce-220348811755","platform":{"status":1}}"#;
 
-            let event = serde_json::from_str::<Event>(event).unwrap();
+            let event = serde_json::from_str::<ObjectEvent>(event).unwrap();
 
-            assert_eq!(event, Event::SystemStatus)
+            assert_eq!(event, ObjectEvent::Info)
         }
 
         #[test]
-        fn can_deserialize_subscription_status_event() {
-            let event = r#"{"channelID":980,"channelName":"ticker","event":"subscriptionStatus","pair":"XMR/XBT","status":"subscribed","subscription":{"name":"ticker"}}"#;
+        fn can_deserialize_subscribed_event() {
+            let event = r#"{"event":"subscribed","channel":"ticker","chanId":225000,"symbol":"tXMRBTC","pair":"XMRBTC"}"#;
 
-            let event = serde_json::from_str::<Event>(event).unwrap();
+            let event = serde_json::from_str::<ObjectEvent>(event).unwrap();
 
-            assert_eq!(event, Event::SubscriptionStatus)
+            assert_eq!(event, ObjectEvent::Subscribed)
         }
 
         #[test]
-        fn deserialize_ticker_update() {
-            let message = r#"[980,{"a":["0.00440700",7,"7.35318535"],"b":["0.00440200",7,"7.57416678"],"c":["0.00440700","0.22579000"],"v":["273.75489000","4049.91233351"],"p":["0.00446205","0.00441699"],"t":[123,1310],"l":["0.00439400","0.00429900"],"h":["0.00450000","0.00450000"],"o":["0.00449100","0.00433700"]},"ticker","XMR/XBT"]"#;
+        fn can_deserialize_heartbeat_event() {
+            let event = r#"[225000,"hb"]"#;
 
-            let _ = serde_json::from_str::<TickerUpdate>(message).unwrap();
+            let event = serde_json::from_str::<HeartbeatEvent>(event).unwrap();
+
+            assert_eq!(event, HeartbeatEvent(225000, "hb".to_string()))
+        }
+
+        #[test]
+        fn can_deserialize_trading_event() {
+            let message = r#"[225000,[0.003744,358.96223856,0.0037548,338.14332753,-0.0000834,-0.02175955,0.0037494,1284.13109312,0.0038328,0.0035223]]"#;
+
+            let event = serde_json::from_str::<TradingEvent>(message).unwrap();
+
+            assert_eq!(
+                event,
+                TradingEvent(
+                    225000,
+                    [
+                        0.003744,
+                        358.96223856,
+                        0.0037548,
+                        338.14332753,
+                        -0.0000834,
+                        -0.02175955,
+                        0.0037494,
+                        1284.13109312,
+                        0.0038328,
+                        0.0035223
+                    ]
+                )
+            )
         }
     }
 }

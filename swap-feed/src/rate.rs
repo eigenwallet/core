@@ -3,6 +3,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
+use std::time::{Duration, Instant};
 
 /// Represents the rate at which we are willing to trade 1 XMR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,7 +14,7 @@ pub struct Rate {
     ask_spread: Decimal,
 }
 
-const ZERO_SPREAD: Decimal = Decimal::from_parts(0, 0, 0, false, 0);
+const ZERO_SPREAD: Decimal = Decimal::ZERO;
 
 impl Rate {
     pub const ZERO: Rate = Rate {
@@ -107,29 +108,99 @@ impl crate::traits::LatestRate for FixedRate {
     }
 }
 
-/// Produces [`Rate`]s based on [`PriceUpdate`]s from kraken and a configured
-/// spread.
+/// Produces [`Rate`]s based on [`PriceUpdate`]s from kraken and bitfinex,
+/// and a configured spread.
 #[derive(Debug, Clone)]
-pub struct KrakenRate {
+pub struct ExchangeRate {
     ask_spread: Decimal,
-    price_updates: crate::kraken::PriceUpdates,
+    kraken_price_updates: crate::kraken::PriceUpdates,
+    bitfinex_price_updates: crate::bitfinex::PriceUpdates,
+    kucoin_price_updates: crate::kucoin::PriceUpdates,
 }
 
-impl KrakenRate {
-    pub fn new(ask_spread: Decimal, price_updates: crate::kraken::PriceUpdates) -> Self {
+impl ExchangeRate {
+    pub fn new(
+        ask_spread: Decimal,
+        kraken_price_updates: crate::kraken::PriceUpdates,
+        bitfinex_price_updates: crate::bitfinex::PriceUpdates,
+        kucoin_price_updates: crate::kucoin::PriceUpdates,
+    ) -> Self {
         Self {
             ask_spread,
-            price_updates,
+            kraken_price_updates,
+            bitfinex_price_updates,
+            kucoin_price_updates,
         }
     }
 }
 
-impl crate::traits::LatestRate for KrakenRate {
-    type Error = crate::kraken::Error;
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum Error {
+    #[error("All exchanges failed (Kraken: {0}, Bitfinex: {1}, KuCoin: {2})")]
+    AllExchanges(
+        crate::kraken::Error,
+        crate::bitfinex::Error,
+        crate::kucoin::Error,
+    ),
+    #[error("All exchange data is stale by >10 minutes")]
+    AllStaleData,
+    #[error("Exchanges disagree by more than 10%")]
+    SpreadTooWide,
+}
+
+const MAX_INTEREXCHANGE_SPREAD: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 10%
+const MAX_UPDATE_AGE: Duration = Duration::from_secs(10 * 60); // 10 minutes
+
+impl crate::traits::LatestRate for ExchangeRate {
+    type Error = Error;
 
     fn latest_rate(&mut self) -> Result<Rate, Self::Error> {
-        let update = self.price_updates.latest_update()?;
-        let rate = Rate::new(update.ask, self.ask_spread);
+        let kraken_update = self.kraken_price_updates.latest_update();
+        let bitfinex_update = self.bitfinex_price_updates.latest_update();
+        let kucoin_update = self.kucoin_price_updates.latest_update();
+        if kraken_update.is_err() && bitfinex_update.is_err() && kucoin_update.is_err() {
+            return Err(Error::AllExchanges(
+                kraken_update.unwrap_err(),
+                bitfinex_update.unwrap_err(),
+                kucoin_update.unwrap_err(),
+            ));
+        }
+
+        let now = Instant::now();
+        let kraken_update = kraken_update.map(|(ts, u)| (now - ts, u.ask));
+        let bitfinex_update = bitfinex_update.map(|(ts, u)| (now - ts, u.ask));
+        let kucoin_update = kucoin_update.map(|(ts, u)| (now - ts, u.ask));
+        let asks: Vec<_> = [
+            kraken_update.as_ref().ok(),
+            bitfinex_update.as_ref().ok(),
+            kucoin_update.as_ref().ok(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|(age, _)| *age <= MAX_UPDATE_AGE)
+        .map(|(_, ask)| ask)
+        .copied()
+        .collect();
+        if asks.is_empty() {
+            return Err(Error::AllStaleData);
+        }
+        let degraded = asks.len() < 3;
+
+        let average_ask = asks.iter().copied().sum::<bitcoin::Amount>() / (asks.len() as u64);
+        let min_ask = asks.iter().min().expect(">0 asks");
+        let max_ask = asks.iter().max().expect(">0 asks");
+        assert!(*max_ask >= *min_ask, "bitcoin::Amount violates Ord");
+
+        let spread = *max_ask - *min_ask;
+        tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+
+        if Decimal::from(spread.to_sat())
+            > Decimal::from(average_ask.to_sat()) * MAX_INTEREXCHANGE_SPREAD
+        {
+            return Err(Error::SpreadTooWide);
+        }
+
+        let rate = Rate::new(average_ask, self.ask_spread);
 
         Ok(rate)
     }
