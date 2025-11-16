@@ -44,6 +44,19 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
+    parse_args_and_custom(raw_args, apply_defaults).await
+}
+
+type JsonTestnetData = (bool, bool, Option<PathBuf>);
+async fn parse_args_and_custom<I, T, Hcc>(
+    raw_args: I,
+    handle_cli_command: fn(CliCommand, Arc<Context>, JsonTestnetData) -> Hcc,
+) -> Result<ParseResult>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+    Hcc: std::future::Future<Output = Result<()>>,
+{
     let args = match Arguments::clap().get_matches_from_safe(raw_args) {
         Ok(matches) => Arguments::from_clap(&matches),
         Err(clap::Error {
@@ -54,12 +67,22 @@ where
         Err(e) => anyhow::bail!(e),
     };
 
-    let json = args.json;
-    let is_testnet = args.testnet;
-    let data = args.data;
-
     let context = Arc::new(Context::new_without_tauri_handle());
-    match args.cmd {
+    handle_cli_command(
+        args.cmd,
+        context.clone(),
+        (args.json, args.testnet, args.data),
+    )
+    .await?;
+    Ok(ParseResult::Success(context))
+}
+
+async fn apply_defaults(
+    cli_cmd: CliCommand,
+    context: Arc<Context>,
+    (json, is_testnet, data): JsonTestnetData,
+) -> Result<()> {
+    match cli_cmd {
         CliCommand::BuyXmr {
             seller: Seller { seller },
             bitcoin,
@@ -95,7 +118,7 @@ where
                 bitcoin_change_address,
                 monero_receive_pool,
             }
-            .request(context.clone())
+            .request(context)
             .await?;
         }
         CliCommand::History => {
@@ -105,7 +128,7 @@ where
                 .build(context.clone())
                 .await?;
 
-            GetHistoryArgs {}.request(context.clone()).await?;
+            GetHistoryArgs {}.request(context).await?;
         }
         CliCommand::Logs {
             logs_dir,
@@ -123,7 +146,7 @@ where
                 redact,
                 swap_id,
             }
-            .request(context.clone())
+            .request(context)
             .await?;
         }
         CliCommand::Config => {
@@ -133,7 +156,7 @@ where
                 .build(context.clone())
                 .await?;
 
-            GetConfigArgs {}.request(context.clone()).await?;
+            GetConfigArgs {}.request(context).await?;
         }
         CliCommand::Balance { bitcoin } => {
             ContextBuilder::new(is_testnet)
@@ -146,7 +169,7 @@ where
             BalanceArgs {
                 force_refresh: true,
             }
-            .request(context.clone())
+            .request(context)
             .await?;
         }
         CliCommand::WithdrawBtc {
@@ -163,9 +186,7 @@ where
                 .build(context.clone())
                 .await?;
 
-            WithdrawBtcArgs { amount, address }
-                .request(context.clone())
-                .await?;
+            WithdrawBtcArgs { amount, address }.request(context).await?;
         }
         CliCommand::Resume {
             swap_id: SwapId { swap_id },
@@ -182,7 +203,7 @@ where
                 .build(context.clone())
                 .await?;
 
-            ResumeSwapArgs { swap_id }.request(context.clone()).await?;
+            ResumeSwapArgs { swap_id }.request(context).await?;
         }
         CliCommand::CancelAndRefund {
             swap_id: SwapId { swap_id },
@@ -195,9 +216,7 @@ where
                 .build(context.clone())
                 .await?;
 
-            CancelAndRefundArgs { swap_id }
-                .request(context.clone())
-                .await?;
+            CancelAndRefundArgs { swap_id }.request(context).await?;
         }
         CliCommand::ListSellers {
             rendezvous_point,
@@ -213,7 +232,7 @@ where
             ListSellersArgs {
                 rendezvous_points: vec![rendezvous_point],
             }
-            .request(context.clone())
+            .request(context)
             .await?;
         }
         CliCommand::ExportBitcoinWallet { bitcoin } => {
@@ -224,7 +243,7 @@ where
                 .build(context.clone())
                 .await?;
 
-            ExportBitcoinWalletArgs {}.request(context.clone()).await?;
+            ExportBitcoinWalletArgs {}.request(context).await?;
         }
         CliCommand::MoneroRecovery {
             swap_id: SwapId { swap_id },
@@ -235,12 +254,10 @@ where
                 .build(context.clone())
                 .await?;
 
-            MoneroRecoveryArgs { swap_id }
-                .request(context.clone())
-                .await?;
+            MoneroRecoveryArgs { swap_id }.request(context).await?;
         }
     }
-    Ok(ParseResult::Success(context))
+    Ok(())
 }
 
 #[derive(structopt::StructOpt, Debug)]
