@@ -25,6 +25,7 @@ use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
+use bitcoin_wallet as bitcoin;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
 use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
@@ -32,12 +33,12 @@ use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{open_db, AccessMode};
+use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
 use swap::protocol::alice::{run, AliceState, TipConfig};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
-use swap::{bitcoin, monero};
 use swap_env::config::{
     initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
 };
@@ -578,7 +579,7 @@ async fn init_bitcoin_wallet(
 ) -> Result<bitcoin::Wallet> {
     tracing::debug!("Opening Bitcoin wallet");
 
-    let wallet = bitcoin::wallet::WalletBuilder::default()
+    let wallet = bitcoin::WalletBuilder::<Seed>::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)
         .electrum_rpc_urls(
@@ -589,7 +590,7 @@ async fn init_bitcoin_wallet(
                 .map(|url| url.as_str().to_string())
                 .collect::<Vec<String>>(),
         )
-        .persister(bitcoin::wallet::PersisterConfig::SqliteFile {
+        .persister(bitcoin::PersisterConfig::SqliteFile {
             data_dir: config.data.dir.clone(),
         })
         .finality_confirmations(env_config.bitcoin_finality_confirmations)

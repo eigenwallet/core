@@ -10932,6 +10932,7 @@ version = "3.5.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
+ "bitcoin-wallet",
  "comfy-table",
  "libp2p",
  "monero-rpc-pool",
