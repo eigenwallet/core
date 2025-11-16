@@ -19,6 +19,7 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
 # Workspace dependencies
+bitcoin-wallet = { path = "../bitcoin-wallet" }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-sys = { path = "../monero-sys" }
 swap = { path = "../swap" }
