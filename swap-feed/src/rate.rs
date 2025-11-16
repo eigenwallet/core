@@ -3,6 +3,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
+use std::time::{Duration, Instant};
 
 /// Represents the rate at which we are willing to trade 1 XMR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,11 +142,14 @@ pub enum Error {
         crate::bitfinex::Error,
         crate::kucoin::Error,
     ),
+    #[error("All exchange data is stale by >10 minutes")]
+    AllStaleData,
     #[error("Exchanges disagree by more than 10%")]
     SpreadTooWide,
 }
 
 const MAX_INTEREXCHANGE_SPREAD: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 10%
+const MAX_UPDATE_AGE: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
 impl crate::traits::LatestRate for ExchangeRate {
     type Error = Error;
@@ -161,17 +165,27 @@ impl crate::traits::LatestRate for ExchangeRate {
                 kucoin_update.unwrap_err(),
             ));
         }
-        let degraded = kraken_update.is_err() || bitfinex_update.is_err() || kucoin_update.is_err();
 
+        let now = Instant::now();
+        let kraken_update = kraken_update.map(|(ts, u)| (now - ts, u.ask));
+        let bitfinex_update = bitfinex_update.map(|(ts, u)| (now - ts, u.ask));
+        let kucoin_update = kucoin_update.map(|(ts, u)| (now - ts, u.ask));
         let asks: Vec<_> = [
-            kraken_update.as_ref().ok().map(|u| u.ask),
-            bitfinex_update.as_ref().ok().map(|u| u.ask),
-            kucoin_update.as_ref().ok().map(|u| u.ask),
+            kraken_update.as_ref().ok(),
+            bitfinex_update.as_ref().ok(),
+            kucoin_update.as_ref().ok(),
         ]
         .into_iter()
         .flatten()
+        .filter(|(age, _)| *age <= MAX_UPDATE_AGE)
+        .map(|(_, ask)| ask)
+        .copied()
         .collect();
-        assert!(!asks.is_empty());
+        if asks.is_empty() {
+            return Err(Error::AllStaleData);
+        }
+        let degraded = asks.len() < 3;
+
         let average_ask = asks.iter().copied().sum::<bitcoin::Amount>() / (asks.len() as u64);
         let min_ask = asks.iter().min().expect(">0 asks");
         let max_ask = asks.iter().max().expect(">0 asks");
