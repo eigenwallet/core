@@ -491,7 +491,6 @@ mod tests {
     use super::*;
 
     use crate::cli::api::api_test::*;
-    use crate::cli::api::Config;
     use swap_serde::monero::address::MoneroAddressNetworkMismatch;
 
     const BINARY_NAME: &str = "swap";

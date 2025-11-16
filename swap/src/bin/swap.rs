@@ -132,7 +132,7 @@ mod tests {
 
         let (.., amount, fees) = determine_btc_to_swap(
             quote_with_max(0.01),
-            async { panic!("should not request new address when initial balance  is > 0") },
+            async { panic!("should not request new address when initial balance is > 0") },
             || async { Ok(Amount::from_btc(0.005)?) },
             givable.into_max_giveable_fn(),
             || async { Ok(()) },
@@ -356,8 +356,7 @@ mod tests {
             approval_always,
         )
         .await
-        .err()
-        .unwrap()
+        .unwrap_err()
         .to_string();
 
         assert_eq!("Received quote of 0", determination_error);
