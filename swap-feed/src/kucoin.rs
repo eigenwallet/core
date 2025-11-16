@@ -3,7 +3,7 @@ use futures::{SinkExt, StreamExt, TryStreamExt};
 use serde::Deserialize;
 use std::convert::{Infallible, TryFrom};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use url::Url;
 
@@ -45,7 +45,7 @@ pub fn connect(price_ticker_rest_url_kucoin: Url, client: reqwest::Client) -> Re
                         .map_err(anyhow::Error::from)
                         .map_err(backoff::Error::transient)?
                     {
-                        let send_result = price_update.send(Ok(update));
+                        let send_result = price_update.send(Ok((Instant::now(), update)));
 
                         if send_result.is_err() {
                             return Err(backoff::Error::Permanent(anyhow!(
@@ -104,7 +104,7 @@ pub enum Error {
     PermanentFailure(Arc<anyhow::Error>),
 }
 
-type PriceUpdate = Result<wire::PriceUpdate, Error>;
+type PriceUpdate = Result<(Instant, wire::PriceUpdate), Error>;
 
 /// KuCoin websocket connection module.
 ///
