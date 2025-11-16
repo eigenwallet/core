@@ -13,7 +13,7 @@ async fn monero_transfers() -> anyhow::Result<()> {
 
     let cli = Cli::default();
     let wallets = vec!["alice", "bob"];
-    // Disbale background sync for these wallet -- this way we _have_ to use the transfer proof to discover the transactions.
+    // Disable background sync for these wallet -- this way we _have_ to use the transfer proof to discover the transactions.
     let (monero, _container, _wallet_conainers) =
         monero_harness::Monero::new_with_sync_specified(&cli, wallets, false).await?;
 

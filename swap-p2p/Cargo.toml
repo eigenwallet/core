@@ -13,6 +13,7 @@ swap-machine = { path = "../swap-machine" }
 swap-serde = { path = "../swap-serde" }
 
 # Networking
+async-trait = { workspace = true }
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "identify", "ping"] }
 
 # Serialization
@@ -43,7 +44,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio"] }
 
 [lints]

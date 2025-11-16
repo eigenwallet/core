@@ -706,7 +706,7 @@ impl TauriHandle {
 ///
 /// ```
 /// // For Tor bootstrap progress
-/// use self::{TauriHandle, TauriBackgroundProgress, TorBootstrapStatus};
+/// use swap::cli::api::tauri_bindings::{TauriHandle, TauriEmitter, TauriBackgroundProgress, TorBootstrapStatus};
 ///
 /// // In a real scenario, tauri_handle would be properly initialized.
 /// // For this example, we'll use Option<TauriHandle>::None,

@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::bitcoin;
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{secp256k1, ScriptBuf};

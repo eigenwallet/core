@@ -1,4 +1,3 @@
-use anyhow::bail;
 use monero_harness::Cli;
 
 /// Verify that checking a transaction with a wrong/random transfer key fails.

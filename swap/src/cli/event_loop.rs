@@ -116,12 +116,6 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    fn swap_peer_id(&self, swap_id: &Uuid) -> Option<PeerId> {
-        self.registered_swap_handlers
-            .get(swap_id)
-            .map(|(peer_id, _)| *peer_id)
-    }
-
     pub fn new(
         swarm: Swarm<Behaviour>,
         db: Arc<dyn Database + Send + Sync>,

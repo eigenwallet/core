@@ -14,6 +14,7 @@ fn test_orchestrator_spec_generation() {
             electrs: 60001,
             asb_libp2p: 9839,
             asb_rpc_port: 9944,
+            rendezvous_node_port: 8888,
         },
         networks: OrchestratorNetworks {
             monero: monero::Network::Stagenet,
@@ -23,6 +24,9 @@ fn test_orchestrator_spec_generation() {
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
+            rendezvous_node: OrchestratorImage::Build(
+                images::RENDEZVOUS_NODE_IMAGE_FROM_SOURCE.clone(),
+            ),
             asb: OrchestratorImage::Build(images::ASB_IMAGE_FROM_SOURCE.clone()),
             asb_controller: OrchestratorImage::Build(
                 images::ASB_CONTROLLER_IMAGE_FROM_SOURCE.clone(),

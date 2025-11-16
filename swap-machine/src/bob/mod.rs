@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
 use anyhow::{anyhow, bail, Context, Result};
 use bitcoin_wallet::primitives::Subscription;

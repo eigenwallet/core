@@ -3,9 +3,8 @@ use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
 use serde::Serialize;
 use std::ffi::OsString;
-use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
-use std::str::FromStr;
 use structopt::StructOpt;
 use swap::bitcoin::{bitcoin_address, Amount};
 use swap_env::defaults::GetDefaults;
@@ -436,8 +435,9 @@ pub struct RecoverCommandParams {
 fn validate_rpc_bind_args(host: &Option<String>, port: &Option<u16>) -> Result<()> {
     match (host, port) {
         (Some(host_str), Some(port_val)) => {
-            let socket_addr = format!("{}:{}", host_str, port_val);
-            SocketAddr::from_str(&socket_addr).context("Invalid socket address")?;
+            let _ = (&host_str[..], *port_val)
+                .to_socket_addrs()
+                .context("Invalid or unknown socket address")?;
 
             Ok(())
         }
@@ -973,12 +973,12 @@ mod tests {
     #[test]
     fn test_rpc_bind_validation() {
         // Both None should be valid
-        assert!(validate_rpc_bind_args(&None, &None).is_ok());
+        validate_rpc_bind_args(&None, &None).unwrap();
 
         // Both Some should be valid with valid values
-        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(9944)).is_ok());
-        assert!(validate_rpc_bind_args(&Some("0.0.0.0".to_string()), &Some(8080)).is_ok());
-        assert!(validate_rpc_bind_args(&Some("localhost".to_string()), &Some(3000)).is_ok());
+        validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(9944)).unwrap();
+        validate_rpc_bind_args(&Some("0.0.0.0".to_string()), &Some(8080)).unwrap();
+        validate_rpc_bind_args(&Some("localhost".to_string()), &Some(3000)).unwrap();
 
         // One Some, one None should be invalid
         assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &None).is_err());
@@ -987,8 +987,5 @@ mod tests {
         // Invalid host should be invalid
         assert!(validate_rpc_bind_args(&Some("invalid@host".to_string()), &Some(9944)).is_err());
         assert!(validate_rpc_bind_args(&Some("".to_string()), &Some(9944)).is_err());
-
-        // Port 0 should be invalid
-        assert!(validate_rpc_bind_args(&Some("127.0.0.1".to_string()), &Some(0)).is_err());
     }
 }

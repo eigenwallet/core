@@ -1,6 +1,6 @@
 use monero_sys::{Daemon, WalletHandle};
 
-const STAGENET_REMOTE_NODE: &str = "node.sethforprivacy.com:38089";
+const STAGENET_REMOTE_NODE: &str = "http://node.sethforprivacy.com:38089";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn main() {

@@ -1,4 +1,4 @@
-use crate::network::rendezvous;
+pub use crate::network::rendezvous;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::alice;
 use crate::network::transport::authenticate_and_multiplex;

@@ -17,4 +17,4 @@ pub use swap_feed::{FixedRate, KrakenRate, LatestRate, Rate};
 pub use swap_p2p::out_event::alice::OutEvent;
 
 #[cfg(test)]
-pub use network::rendezvous;
+pub use crate::network::rendezvous;

@@ -1,6 +1,5 @@
 //! Run an XMR/BTC swap in the role of Alice.
 //! Alice holds XMR and wishes receive BTC.
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 

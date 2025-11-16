@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::bitcoin::{self, Address, Amount, PunishTimelock, Transaction, TxCancel, Txid};
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{secp256k1, sighash::SegwitV0Sighash as Sighash, EcdsaSighashType};

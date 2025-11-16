@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::bitcoin::{
     verify_encsig, verify_sig, Address, Amount, EmptyWitnessStack, EncryptedSignature, NoInputs,
     NotThreeWitnesses, PublicKey, SecretKey, TooManyInputs, Transaction, TxLock,
