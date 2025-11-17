@@ -47,6 +47,7 @@ impl XmrBtcNamespace {
 
 /// A behaviour that periodically re-registers at multiple rendezvous points as a client
 pub mod register {
+    use crate::behaviour_util::BackoffTracker;
     use crate::protocols::redial;
 
     use super::*;
@@ -82,7 +83,7 @@ pub mod register {
     pub struct Behaviour {
         inner: InnerBehaviour,
         rendezvous_nodes: Vec<RendezvousNode>,
-        backoffs: HashMap<PeerId, ExponentialBackoff>,
+        backoffs: BackoffTracker,
     }
 
     #[derive(NetworkBehaviour)]
@@ -178,7 +179,11 @@ pub mod register {
                 .filter(|node| node.peer_id != our_peer_id)
                 .collect();
 
-            let mut backoffs = HashMap::new();
+            let backoffs = BackoffTracker::new(
+                Self::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
+                Self::RENDEZVOUS_RETRY_MAX_INTERVAL,
+                1.1f64,
+            );
 
             let mut redial = redial::Behaviour::new(
                 Self::REDIAL_IDENTIFIER,
@@ -189,20 +194,6 @@ pub mod register {
             // Initialize backoff for each rendezvous node
             for node in &rendezvous_nodes {
                 redial.add_peer_with_address(node.peer_id, node.address.clone());
-
-                backoffs.insert(
-                    node.peer_id,
-                    ExponentialBackoff {
-                        // Never give up
-                        max_elapsed_time: None,
-                        // We retry aggressively. We begin with 50ms and increase by 10% per retry.
-                        multiplier: 1.1f64,
-                        initial_interval: Self::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
-                        current_interval: Self::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
-                        max_interval: Self::RENDEZVOUS_RETRY_MAX_INTERVAL,
-                        ..ExponentialBackoff::default()
-                    },
-                );
             }
 
             Self {
@@ -245,9 +236,7 @@ pub mod register {
                         rendezvous_node.set_connection(ConnectionStatus::Connected);
 
                         // Reset backoff on successful connection
-                        if let Some(backoff) = self.backoffs.get_mut(&peer_id) {
-                            backoff.reset();
-                        }
+                        self.backoffs.reset(&peer_id);
 
                         if let RegistrationStatus::RegisterOnNextConnection =
                             rendezvous_node.registration_status
@@ -594,7 +583,7 @@ pub mod discovery {
         time::Duration,
     };
 
-    use crate::{behaviour_util::ConnectionTracker, futures_util::FuturesHashSet, protocols::redial};
+    use crate::{behaviour_util::{BackoffTracker, ConnectionTracker}, futures_util::FuturesHashSet, protocols::redial};
 
     static REDIAL_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
     static REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(10);
@@ -619,7 +608,7 @@ pub mod discovery {
         connection_tracker: ConnectionTracker,
 
         // Backoff for each rendezvous node for discovery
-        backoff: HashMap<PeerId, ExponentialBackoff>,
+        backoff: BackoffTracker,
 
         // Queue of discovery requests to send to a rendezvous node
         // once the future resolves, the peer id is removed from the queue and a discovery request is sent
@@ -656,23 +645,15 @@ pub mod discovery {
             );
             let rendezvous = libp2p::rendezvous::client::Behaviour::new(identity);
 
-            let mut rendezvous_nodes_backoffs = HashMap::new();
+            let backoff = BackoffTracker::new(
+                DISCOVERY_INITIAL_INTERVAL,
+                DISCOVERY_MAX_INTERVAL,
+                DISCOVERY_MULTIPLIER,
+            );
             let mut to_discover = FuturesHashSet::new();
 
             // Initialize backoff for each rendezvous node
             for node in &rendezvous_nodes {
-                rendezvous_nodes_backoffs.insert(
-                    node.clone(),
-                    ExponentialBackoff {
-                        initial_interval: DISCOVERY_INITIAL_INTERVAL,
-                        current_interval: DISCOVERY_INITIAL_INTERVAL,
-                        max_interval: DISCOVERY_MAX_INTERVAL,
-                        multiplier: DISCOVERY_MULTIPLIER,
-                        max_elapsed_time: None,
-                        ..ExponentialBackoff::default()
-                    },
-                );
-
                 // We initially schedule a discovery request for each rendezvous node
                 to_discover.insert(node.clone(), future::ready(()).boxed());
 
@@ -683,7 +664,7 @@ pub mod discovery {
             Self {
                 inner: InnerBehaviour { rendezvous, redial },
                 discovered: HashSet::new(),
-                backoff: rendezvous_nodes_backoffs,
+                backoff,
                 pending_to_discover: to_discover,
                 to_discover: VecDeque::new(),
                 connection_tracker: ConnectionTracker::new(),
@@ -802,8 +783,7 @@ pub mod discovery {
                             ) => {
                                 let backoff = self
                                     .backoff
-                                    .get_mut(&rendezvous_node)
-                                    .expect("all rendezvous nodes should have a backoff")
+                                    .get_backoff(&rendezvous_node)
                                     .next_backoff()
                                     .expect("backoff should never run out");
 

@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
+use backoff::backoff::Backoff;
 use libp2p::{
     swarm::{ConnectionId, FromSwarm},
     PeerId,
 };
+use backoff::ExponentialBackoff;
 
 /// Used inside of a Behaviour to track connections to peers
 pub struct ConnectionTracker {
@@ -40,6 +43,45 @@ impl ConnectionTracker {
                     });
             }
             _ => {}
+        }
+    }
+}
+
+/// Tracker for per-peer exponential backoff state.
+pub struct BackoffTracker {
+    backoffs: HashMap<PeerId, ExponentialBackoff>,
+    initial_interval: Duration,
+    max_interval: Duration,
+    multiplier: f64,
+}
+
+impl BackoffTracker {
+    pub fn new(initial: Duration, max: Duration, multiplier: f64) -> Self {
+        Self {
+            backoffs: HashMap::new(),
+            initial_interval: initial,
+            max_interval: max,
+            multiplier,
+        }
+    }
+
+    /// Get the backoff for a given peer.
+    pub fn get_backoff(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
+        self.backoffs.entry(*peer).or_insert_with(|| ExponentialBackoff {
+            initial_interval: self.initial_interval,
+            current_interval: self.initial_interval,
+            max_interval: self.max_interval,
+            multiplier: self.multiplier,
+            // Never give up
+            max_elapsed_time: None,
+            ..ExponentialBackoff::default()
+        })
+    }
+
+    /// Reset the backoff state the given peer.
+    pub fn reset(&mut self, peer: &PeerId) {
+        if let Some(b) = self.backoffs.get_mut(peer) {
+            b.reset();
         }
     }
 }

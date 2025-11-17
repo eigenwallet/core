@@ -1,3 +1,4 @@
+use crate::behaviour_util::BackoffTracker;
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use backoff::backoff::Backoff;
@@ -18,7 +19,10 @@ use void::Void;
 /// Note: Make sure that when using this as an inner behaviour for a `NetworkBehaviour` that you
 /// call all the NetworkBehaviour methods (including `handle_pending_outbound_connection`) to ensure
 /// that the addresses are cached correctly.
-/// TODO: Allow removing peers from the set after we are done with them.
+/// 
+// TODO: Allow removing peers from the set after we are done with them.
+// TODO: Use the ConnectionTracker from the behaviour_util module to track connections internally because
+// currently we might force multiple connections to the same peer which is not really necessary.
 pub struct Behaviour {
     /// The peers we are interested in.
     peers: HashSet<PeerId>,
@@ -30,11 +34,8 @@ pub struct Behaviour {
     /// Futures in here yield the PeerId and when a Future completes we dial that peer
     to_dial: FuturesHashSet<PeerId, ()>,
     /// Tracks the current backoff state for each peer.
-    backoff: HashMap<PeerId, ExponentialBackoff>,
-    /// Initial interval for backoff.
-    initial_interval: Duration,
-    /// Maximum interval for backoff.
-    max_interval: Duration,
+    // TODO: We should allow allow different backoff policies for different peers
+    backoff: BackoffTracker,
     /// A queue of events to be sent to the swarm.
     to_swarm: VecDeque<ToSwarm<Event, Void>>,
     /// An identifier for this redial behaviour instance (for logging/tracing).
@@ -47,9 +48,11 @@ impl Behaviour {
             peers: HashSet::default(),
             addresses: HashMap::default(),
             to_dial: FuturesHashSet::new(),
-            backoff: HashMap::new(),
-            initial_interval: interval,
-            max_interval,
+            backoff: BackoffTracker::new(
+                interval,
+                max_interval,
+                ExponentialBackoff::default().multiplier,
+            ),
             to_swarm: VecDeque::new(),
             name,
         }
@@ -91,18 +94,7 @@ impl Behaviour {
         newly_added
     }
 
-    fn get_backoff(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
-        self.backoff.entry(*peer).or_insert_with(|| {
-            ExponentialBackoff {
-                initial_interval: self.initial_interval,
-                current_interval: self.initial_interval,
-                max_interval: self.max_interval,
-                // We never give up on re-dialling
-                max_elapsed_time: None,
-                ..ExponentialBackoff::default()
-            }
-        })
-    }
+    
 
     #[tracing::instrument(level = "trace", name = "redial::schedule_redial", skip(self, peer, override_next_dial_in), fields(redial_type = %self.name, peer = %peer))]
     fn schedule_redial(
@@ -119,7 +111,8 @@ impl Behaviour {
         // How long should we wait before we redial the peer?
         // If an override is provided, use that, otherwise use the backoff
         let next_dial_in = override_next_dial_in.into().unwrap_or_else(|| {
-            self.get_backoff(peer)
+            self.backoff
+                .get_backoff(peer)
                 .next_backoff()
                 .expect("redial backoff should never run out of attempts")
         });
@@ -232,9 +225,7 @@ impl NetworkBehaviour for Behaviour {
 
         // Reset the backoff state for the peer if needed
         if let Some(peer) = peer_to_reset {
-            if let Some(backoff) = self.backoff.get_mut(&peer) {
-                backoff.reset();
-            }
+            self.backoff.reset(&peer);
         }
 
         // Schedule a redial if needed
