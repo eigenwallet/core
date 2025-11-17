@@ -238,54 +238,63 @@ pub mod background {
                 })
                 .collect();
 
-            let inner_poll = self.inner.poll(cx);
-
-            if let Poll::Ready(ToSwarm::GenerateEvent(event)) = inner_poll {
-                match event {
-                    InnerBehaviourEvent::Notice(notice::Event::SupportsProtocol { peer }) => {
-                        self.does_not_support.remove(&peer);
-                    }
-                    InnerBehaviourEvent::Quote(quote::request_response::Event::Message {
-                        peer,
-                        message,
-                    }) => {
-                        if let quote::request_response::Message::Response { response, .. } = message
-                        {
-                            self.to_swarm.push_back(Event::QuoteReceived {
+            while let Poll::Ready(ready_to_swarm) = self.inner.poll(cx) {
+                match ready_to_swarm {
+                    ToSwarm::GenerateEvent(event) => {
+                        match event {
+                            InnerBehaviourEvent::Notice(notice::Event::SupportsProtocol { peer }) => {
+                                self.does_not_support.remove(&peer);
+                            }
+                            InnerBehaviourEvent::Quote(quote::request_response::Event::Message {
                                 peer,
-                                quote: response,
-                            });
+                                message,
+                            }) => {
+                                if let quote::request_response::Message::Response { response, .. } = message
+                                {
+                                    self.to_swarm.push_back(Event::QuoteReceived {
+                                        peer,
+                                        quote: response,
+                                    });
 
-                            // We got a successful response, so we reset the backoff
-                            self.get_backoff(&peer).reset();
+                                    // We got a successful response, so we reset the backoff
+                                    self.get_backoff(&peer).reset();
 
-                            // Schedule a new quote request after backoff
-                            self.schedule_quote_request_after(peer, QUOTE_INTERVAL);
-                        }
-                    }
-                    InnerBehaviourEvent::Quote(
-                        quote::request_response::Event::OutboundFailure {
-                            peer,
-                            request_id,
-                            error,
-                        },
-                    ) => {
-                        // We got an outbound failure, so we increment the backoff
-                        self.get_backoff(&peer)
-                            .next_backoff()
-                            .expect("backoff should never run out of attempts");
+                                    // Schedule a new quote request after backoff
+                                    self.schedule_quote_request_after(peer, QUOTE_INTERVAL);
+                                }
+                            }
+                            InnerBehaviourEvent::Quote(
+                                quote::request_response::Event::OutboundFailure {
+                                    peer,
+                                    request_id,
+                                    error,
+                                },
+                            ) => {
+                                // We got an outbound failure, so we increment the backoff
+                                self.get_backoff(&peer)
+                                    .next_backoff()
+                                    .expect("backoff should never run out of attempts");
 
-                        if let OutboundFailure::UnsupportedProtocols = error {
-                            self.does_not_support.insert(peer);
-                        } else if !self.does_not_support.contains(&peer) { // only schedule if we are not sure that the peer does not support the protocol
-                            // We schedule a new quote request
-                            let next_request_in = self.schedule_quote_request_with_backoff(peer);
+                                if let OutboundFailure::UnsupportedProtocols = error {
+                                    tracing::trace!(%peer, %request_id, %error, "Peer does not support the protocol, adding to does_not_support set");
 
-                            tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
+                                    self.does_not_support.insert(peer);
+
+                                // Only schedule a new quote request if we are not sure that the peer does not support the protocol
+                                } else if !self.does_not_support.contains(&peer) {
+                                    // We schedule a new quote request
+                                    let next_request_in = self.schedule_quote_request_with_backoff(peer);
+
+                                    tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
+                                }
+                            }
+                            other => {
+                                println!("quote::background::InnerBehaviourEvent: {:?}", other);
+                            }
                         }
                     }
                     _ => {
-                        // Ignore other events
+                        return Poll::Ready(ready_to_swarm.map_out(|_| unreachable!("we handle all generate events in the arm above")));
                     }
                 }
             }
@@ -344,6 +353,17 @@ pub mod background {
 
         fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
             self.connection_tracker.handle_swarm_event(event);
+
+            match event {
+                FromSwarm::ConnectionEstablished(connection_established) => {
+                    // When we connected to a peer where we are not certain that they do not support the protocol, we schedule a quote request
+                    if !self.does_not_support.contains(&connection_established.peer_id) {
+                        self.schedule_quote_request_with_backoff(connection_established.peer_id);
+                    }
+                },
+                _ => { }
+            }
+
             self.inner.on_swarm_event(event)
         }
 

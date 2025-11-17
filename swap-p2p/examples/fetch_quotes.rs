@@ -150,11 +150,11 @@ async fn main() -> Result<()> {
                         }
                         println!("================");
                     }
+                    // panic!("Got quote from peer, stopping");
                 }
                 _ => {}
             },
             libp2p::swarm::SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                println!("CONNECTION ESTABLISHED WITH {}", peer_id);
             }
             _ => {}
         }
