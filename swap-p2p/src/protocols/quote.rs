@@ -125,6 +125,11 @@ pub mod background {
 
     const QUOTE_INTERVAL: Duration = Duration::from_secs(5);
 
+    // TODO: Track which peers support our protocol based on:
+    // 1. The notice behaviour / identify protocol
+    // 2. OutboundFailure::UnsupportedProtocols errors
+    //
+    // We should initially assume all peers support our protocol.
     pub struct Behaviour {
         inner: InnerBehaviour,
 
