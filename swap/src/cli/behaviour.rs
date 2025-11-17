@@ -1,7 +1,7 @@
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::bob;
 use crate::network::{
-    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, redial, transfer_proof,
+    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, transfer_proof, redial
 };
 use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;

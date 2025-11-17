@@ -154,8 +154,6 @@ impl ConnectionHandler for NoticeProtocolSupportConnectionHandler {
             Self::OutboundOpenInfo,
         >,
     ) {
-        println!("Connection event: {:?}", event);
-
         if let libp2p::swarm::handler::ConnectionEvent::RemoteProtocolsChange(protocols) = event {
             if let ProtocolsChange::Added(protocols) = protocols {
                 for protocol in protocols {

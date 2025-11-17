@@ -4,8 +4,8 @@ pub use swap_p2p::protocols::quote;
 pub use swap_p2p::protocols::rendezvous;
 pub use swap_p2p::protocols::swap_setup;
 pub use swap_p2p::protocols::transfer_proof;
+pub use swap_p2p::protocols::redial;
 
-pub mod redial;
 pub mod swarm;
 pub mod transport;
 

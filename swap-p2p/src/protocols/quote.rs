@@ -106,15 +106,13 @@ crate::impl_from_rr_event!(OutEvent, out_event::bob::OutEvent, PROTOCOL);
 pub mod background {
     use backoff::{backoff::Backoff, ExponentialBackoff};
     use libp2p::{
-        core::Endpoint,
-        swarm::{
+        Multiaddr, PeerId, StreamProtocol, core::Endpoint, request_response::OutboundFailure, swarm::{
             ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent,
             THandlerOutEvent, ToSwarm,
-        },
-        Multiaddr, PeerId, StreamProtocol,
+        }
     };
 
-    use std::{collections::{HashMap, VecDeque}, task::Poll, time::Duration};
+    use std::{collections::{HashMap, HashSet, VecDeque}, task::Poll, time::Duration};
 
     use super::BidQuote;
     use crate::{
@@ -136,6 +134,8 @@ pub mod background {
         /// Track connected peers
         connection_tracker: ConnectionTracker,
 
+        does_not_support: HashSet<PeerId>,
+
         /// Peers to dispatch a quote request to as soon as we are connected to them
         to_dispatch: VecDeque<PeerId>,
         /// Peers to request a quote from once the future resolves
@@ -156,6 +156,7 @@ pub mod background {
                     notice: notice::Behaviour::new(StreamProtocol::new(quote::PROTOCOL)),
                 },
                 connection_tracker: ConnectionTracker::new(),
+                does_not_support: HashSet::new(),
                 to_dispatch: VecDeque::new(),
                 to_request: FuturesHashSet::new(),
                 backoff: HashMap::new(),
@@ -189,10 +190,6 @@ pub mod background {
             let duration = self.get_backoff(&peer).current_interval;
 
             self.schedule_quote_request_after(peer, duration)
-        }
-
-        fn schedule_quote_request_immediately(&mut self, peer: PeerId) {
-            self.schedule_quote_request_after(peer, Duration::ZERO);
         }
     }
 
@@ -246,8 +243,7 @@ pub mod background {
             if let Poll::Ready(ToSwarm::GenerateEvent(event)) = inner_poll {
                 match event {
                     InnerBehaviourEvent::Notice(notice::Event::SupportsProtocol { peer }) => {
-                        tracing::trace!(%peer, "Queuing quote request to peer after noticing that they support the quote protocol");
-                        self.schedule_quote_request_immediately(peer);
+                        self.does_not_support.remove(&peer);
                     }
                     InnerBehaviourEvent::Quote(quote::request_response::Event::Message {
                         peer,
@@ -279,10 +275,14 @@ pub mod background {
                             .next_backoff()
                             .expect("backoff should never run out of attempts");
 
-                        // We schedule a new quote request
-                        let next_request_in = self.schedule_quote_request_with_backoff(peer);
+                        if let OutboundFailure::UnsupportedProtocols = error {
+                            self.does_not_support.insert(peer);
+                        } else if !self.does_not_support.contains(&peer) { // only schedule if we are not sure that the peer does not support the protocol
+                            // We schedule a new quote request
+                            let next_request_in = self.schedule_quote_request_with_backoff(peer);
 
-                        tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
+                            tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
+                        }
                     }
                     _ => {
                         // Ignore other events

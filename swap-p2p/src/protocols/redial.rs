@@ -1,4 +1,4 @@
-use crate::behaviour_util::BackoffTracker;
+use crate::behaviour_util::{BackoffTracker, ConnectionTracker};
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use backoff::backoff::Backoff;
@@ -25,22 +25,30 @@ use void::Void;
 // currently we might force multiple connections to the same peer which is not really necessary.
 // TODO: Allow specifying a min_connection per peer which will instruct this behaviour to maintain multiple connections per peer.
 pub struct Behaviour {
+    /// An identifier for this redial behaviour instance (for logging/tracing).
+    name: &'static str,
+
     /// The peers we are interested in.
     peers: HashSet<PeerId>,
+
+    connections: ConnectionTracker,
+
     /// Store address for all peers (even those we are not interested in)
     /// because we might be interested in them later on
     // TODO: Sort these by how often we were able to connect to them
     addresses: HashMap<PeerId, HashSet<Multiaddr>>,
+
     /// Tracks sleep timers for each peer waiting to redial.
     /// Futures in here yield the PeerId and when a Future completes we dial that peer
     to_dial: FuturesHashSet<PeerId, ()>,
+
     /// Tracks the current backoff state for each peer.
     // TODO: We should allow allow different backoff policies for different peers
     backoff: BackoffTracker,
+
     /// A queue of events to be sent to the swarm.
     to_swarm: VecDeque<ToSwarm<Event, Void>>,
-    /// An identifier for this redial behaviour instance (for logging/tracing).
-    name: &'static str,
+
 }
 
 impl Behaviour {
@@ -49,6 +57,7 @@ impl Behaviour {
             peers: HashSet::default(),
             addresses: HashMap::default(),
             to_dial: FuturesHashSet::new(),
+            connections: ConnectionTracker::new(),
             backoff: BackoffTracker::new(
                 interval,
                 max_interval,
@@ -94,8 +103,6 @@ impl Behaviour {
 
         newly_added
     }
-
-    
 
     #[tracing::instrument(level = "trace", name = "redial::schedule_redial", skip(self, peer, override_next_dial_in), fields(redial_type = %self.name, peer = %peer))]
     fn schedule_redial(
@@ -169,6 +176,8 @@ impl NetworkBehaviour for Behaviour {
 
     #[tracing::instrument(level = "trace", name = "redial::on_swarm_event", skip(self, event), fields(redial_type = %self.name))]
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
+        self.connections.handle_swarm_event(event);
+
         let peer_to_redial = match event {
             // Check if we discovered a new address for some peer
             FromSwarm::NewExternalAddrOfPeer(event) => {
@@ -183,14 +192,14 @@ impl NetworkBehaviour for Behaviour {
             // - a failed dial
             // - a closed connection
             //
-            // We will then schedule a redial for the peer
-            FromSwarm::ConnectionClosed(event) if self.peers.contains(&event.peer_id) => {
-                tracing::trace!(peer = %event.peer_id, "A connection was closed for a peer we want to contineously redial. We will schedule a redial.");
+            // We will then schedule a redial for the peer. We only do this if we are not already connected to the peer.
+            FromSwarm::ConnectionClosed(event) if self.peers.contains(&event.peer_id) && !self.connections.is_connected(&event.peer_id) => {
+                tracing::trace!(peer = %event.peer_id, "Connection closed. We will schedule a redial for this peer.");
 
                 Some(event.peer_id)
             }
             FromSwarm::DialFailure(event) => match event.peer_id {
-                Some(peer_id) if self.peers.contains(&peer_id) => {
+                Some(peer_id) if self.peers.contains(&peer_id) && !self.connections.is_connected(&peer_id) => {
                     match event.error {
                         DialError::DialPeerConditionFalse(_) => {
                             // TODO: Can this lead to a condition where we will not redial the peer ever again? I don't think so...
@@ -203,7 +212,7 @@ impl NetworkBehaviour for Behaviour {
                             None
                         }
                         _ => {
-                            tracing::trace!(peer = %peer_id, dial_error = ?event.error, "A dial failure occurred for a peer we want to contineously redial. We will schedule a redial.");
+                            tracing::trace!(peer = %peer_id, dial_error = ?event.error, "Dial failure occurred. We will schedule a redial for this peer.");
                             Some(peer_id)
                         }
                     }
@@ -245,7 +254,7 @@ impl NetworkBehaviour for Behaviour {
         // Check if any peer's sleep timer has completed
         // If it has, dial that peer
         if let Poll::Ready(Some((peer, _))) = self.to_dial.poll_next_unpin(cx) {
-            tracing::trace!(peer = %peer, "Instructing swarm to redial a peer we want to contineously redial after the sleep timer completed");
+            tracing::trace!(peer = %peer, "Instructing swarm to redial a peer");
 
             // Actually dial the peer
             return Poll::Ready(ToSwarm::Dial {
@@ -313,7 +322,7 @@ impl NetworkBehaviour for Behaviour {
             .map(|addrs| addrs.iter().cloned().collect())
             .unwrap_or_default();
 
-        tracing::trace!(peer = %peer_id, contributed_addresses = ?addresses, "Contributing our cached addresses for a peer to the dial attempt");
+        // tracing::trace!(peer = %peer_id, contributed_addresses = ?addresses, "Contributing our cached addresses for a peer to the dial attempt");
 
         Ok(addresses)
     }

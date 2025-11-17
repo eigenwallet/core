@@ -51,8 +51,6 @@ pub mod register {
     use crate::protocols::redial;
 
     use super::*;
-    use backoff::backoff::Backoff;
-    use backoff::ExponentialBackoff;
     use futures::FutureExt;
     use libp2p::rendezvous::client::RegisterError;
     use libp2p::swarm::{
@@ -60,7 +58,6 @@ pub mod register {
         THandlerOutEvent, ToSwarm,
     };
     use libp2p::{identity, rendezvous, Multiaddr, PeerId};
-    use std::collections::HashMap;
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use std::time::Duration;
