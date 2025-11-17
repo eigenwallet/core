@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ORCHESTRATOR + ASB: Support for tunneling both the Bitcoin and Monero node over Tor has been added (thanks to @nabijaczleweli)
+
 ## [3.3.6] - 2025-11-17
 
 - GUI: Fix an issue where the user would have to keep resuming if we failed to check the status of a Bitcoin timelock before we waited for the Monero lock transaction to be confirmed.
