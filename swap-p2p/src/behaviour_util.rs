@@ -47,7 +47,7 @@ impl ConnectionTracker {
     }
 }
 
-/// Tracker for per-peer exponential backoff state.
+/// Used inside of a Behaviour to track exponential backoff states for each peer.
 pub struct BackoffTracker {
     backoffs: HashMap<PeerId, ExponentialBackoff>,
     initial_interval: Duration,
@@ -66,7 +66,7 @@ impl BackoffTracker {
     }
 
     /// Get the backoff for a given peer.
-    pub fn get_backoff(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
+    pub fn get(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
         self.backoffs.entry(*peer).or_insert_with(|| ExponentialBackoff {
             initial_interval: self.initial_interval,
             current_interval: self.initial_interval,

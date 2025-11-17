@@ -783,7 +783,7 @@ pub mod discovery {
                             ) => {
                                 let backoff = self
                                     .backoff
-                                    .get_backoff(&rendezvous_node)
+                                    .get(&rendezvous_node)
                                     .next_backoff()
                                     .expect("backoff should never run out");
 

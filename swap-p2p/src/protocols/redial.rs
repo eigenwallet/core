@@ -23,6 +23,7 @@ use void::Void;
 // TODO: Allow removing peers from the set after we are done with them.
 // TODO: Use the ConnectionTracker from the behaviour_util module to track connections internally because
 // currently we might force multiple connections to the same peer which is not really necessary.
+// TODO: Allow specifying a min_connection per peer which will instruct this behaviour to maintain multiple connections per peer.
 pub struct Behaviour {
     /// The peers we are interested in.
     peers: HashSet<PeerId>,
@@ -112,7 +113,7 @@ impl Behaviour {
         // If an override is provided, use that, otherwise use the backoff
         let next_dial_in = override_next_dial_in.into().unwrap_or_else(|| {
             self.backoff
-                .get_backoff(peer)
+                .get(peer)
                 .next_backoff()
                 .expect("redial backoff should never run out of attempts")
         });
