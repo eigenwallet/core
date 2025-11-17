@@ -210,6 +210,20 @@ pub use swap_lock::{PendingTaskList, SwapLock};
 
 mod context {
     use super::*;
+    use crate::cli::EventLoopHandle;
+
+    /// Combined state for the EventLoop and its background task
+    /// These must always exist together
+    pub struct EventLoopState {
+        pub handle: EventLoopHandle,
+        pub task: JoinHandle<()>,
+    }
+
+    impl EventLoopState {
+        pub fn new(handle: EventLoopHandle, task: JoinHandle<()>) -> Self {
+            Self { handle, task }
+        }
+    }
 
     /// Holds shared data for different parts of the CLI.
     ///
@@ -229,6 +243,7 @@ mod context {
         pub(super) tor_client: Arc<RwLock<Option<Arc<TorClient<TokioRustlsRuntime>>>>>,
         #[allow(dead_code)]
         pub(super) monero_rpc_pool_handle: Arc<RwLock<Option<Arc<monero_rpc_pool::PoolHandle>>>>,
+        pub(super) event_loop_state: Arc<RwLock<Option<EventLoopState>>>,
     }
 
     impl Context {
@@ -252,6 +267,7 @@ mod context {
                 monero_manager: Arc::new(RwLock::new(None)),
                 tor_client: Arc::new(RwLock::new(None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
+                event_loop_state: Arc::new(RwLock::new(None)),
             }
         }
 
@@ -309,6 +325,16 @@ mod context {
                 .context("Tor client not initialized")
         }
 
+        /// Get the event loop handle, returning an error if not initialized
+        pub async fn try_get_event_loop_handle(&self) -> Result<EventLoopHandle> {
+            self.event_loop_state
+                .read()
+                .await
+                .as_ref()
+                .map(|state| state.handle.clone())
+                .context("Event loop not initialized")
+        }
+
         pub async fn for_harness(
             seed: Seed,
             env_config: EnvConfig,
@@ -331,6 +357,7 @@ mod context {
                 tauri_handle: None,
                 tor_client: Arc::new(RwLock::new(None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
+                event_loop_state: Arc::new(RwLock::new(None)),
             }
         }
 
@@ -405,6 +432,7 @@ pub use context::Context;
 
 mod builder {
     use super::*;
+    use crate::cli::api::context::EventLoopState;
 
     /// A conveniant builder struct for [`Context`].
     #[must_use = "ContextBuilder must be built to be useful"]
@@ -671,6 +699,17 @@ mod builder {
 
             let wallet_database = Some(Arc::new(wallet_database));
 
+            // Initialize config
+            *context.config.write().await = Some(Config {
+                namespace: XmrBtcNamespace::from_is_testnet(self.is_testnet),
+                env_config,
+                seed: seed.clone().into(),
+                json: self.json,
+                is_testnet: self.is_testnet,
+                data_dir: data_dir.clone(),
+                log_dir: log_dir.clone(),
+            });
+
             // Initialize Monero wallet manager
             async {
                 let manager = Arc::new(
@@ -692,17 +731,6 @@ mod builder {
                 Ok::<_, Error>(())
             }
             .await?;
-
-            // Initialize config
-            *context.config.write().await = Some(Config {
-                namespace: XmrBtcNamespace::from_is_testnet(self.is_testnet),
-                env_config,
-                seed: seed.clone().into(),
-                json: self.json,
-                is_testnet: self.is_testnet,
-                data_dir: data_dir.clone(),
-                log_dir: log_dir.clone(),
-            });
 
             // Initialize swap database
             let db = async {
@@ -776,6 +804,36 @@ mod builder {
                     );
                     tokio::spawn(watcher.run());
                 }
+            }
+
+            // Initialize persistent EventLoop
+            if let Some(wallet) = bitcoin_wallet.clone() {
+                let namespace = XmrBtcNamespace::from_is_testnet(self.is_testnet);
+                let tor_client_for_swarm = unbootstrapped_tor_client.clone();
+                let db_for_swarm = db.clone();
+
+                let behaviour = crate::cli::Behaviour::new(
+                    env_config,
+                    wallet.clone(),
+                    seed.derive_libp2p_identity(),
+                    namespace,
+                    Vec::new(),
+                );
+
+                let swarm = crate::network::swarm::cli(
+                    seed.derive_libp2p_identity(),
+                    tor_client_for_swarm,
+                    behaviour,
+                )
+                .await?;
+
+                let (event_loop, event_loop_handle) = crate::cli::EventLoop::new(swarm, db_for_swarm)?;
+                let event_loop_task = tokio::spawn(event_loop.run());
+
+                *context.event_loop_state.write().await = Some(EventLoopState::new(
+                    event_loop_handle,
+                    event_loop_task,
+                ));
             }
 
             // Wait for Tor client to fully bootstrap

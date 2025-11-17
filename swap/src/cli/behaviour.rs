@@ -1,12 +1,12 @@
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::bob;
 use crate::network::{
-    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, transfer_proof, redial
+    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, quotes, transfer_proof, redial, rendezvous
 };
 use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{identify, identity, ping};
+use libp2p::{identify, identity, ping, PeerId};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
@@ -22,7 +22,10 @@ const MAX_REDIAL_INTERVAL: Duration = Duration::from_secs(30);
 #[behaviour(to_swarm = "OutEvent")]
 #[allow(missing_debug_implementations)]
 pub struct Behaviour {
-    pub quote: quote::Behaviour,
+    pub direct_quote: quote::Behaviour,
+    pub quotes: quotes::Behaviour,
+    pub discovery: rendezvous::discovery::Behaviour,
+
     pub swap_setup: bob::Behaviour,
     pub transfer_proof: transfer_proof::Behaviour,
     pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
@@ -40,25 +43,28 @@ impl Behaviour {
     pub fn new(
         env_config: env::Config,
         bitcoin_wallet: Arc<dyn BitcoinWallet>,
-        identify_params: (identity::Keypair, XmrBtcNamespace),
+        identity: identity::Keypair,
+        namespace: XmrBtcNamespace,
+        rendezvous_nodes: Vec<PeerId>,
     ) -> Self {
-        let agentVersion = format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), identify_params.1);
-
+        let agentVersion = format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
         let identifyConfig =
-            identify::Config::new(PROTOCOL_VERSION.to_string(), identify_params.0.public())
+            identify::Config::new(PROTOCOL_VERSION.to_string(), identity.public())
                 .with_agent_version(agentVersion);
 
         let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
         Self {
-            quote: quote::cli(),
+            direct_quote: quote::cli(),
+            quotes: quotes::Behaviour::new(identity.clone(), rendezvous_nodes.clone(), namespace.into()),
+            discovery: rendezvous::discovery::Behaviour::new(identity, rendezvous_nodes, namespace.into()),
             swap_setup: bob::Behaviour::new(env_config, bitcoin_wallet),
             transfer_proof: transfer_proof::bob(),
             encrypted_signature: encrypted_signature::bob(),
             cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::bob(),
             redial: redial::Behaviour::new(
                 // This redial behaviour is responsible for redialing all Alice peers during swaps
-                "multi-alice-redialer",
+                "makers",
                 INITIAL_REDIAL_INTERVAL,
                 MAX_REDIAL_INTERVAL,
             ),

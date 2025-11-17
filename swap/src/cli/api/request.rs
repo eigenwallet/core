@@ -1133,33 +1133,21 @@ pub async fn buy_xmr(
     db.insert_address(seller_peer_id, seller_multiaddr.clone())
         .await?;
 
-    let behaviour = cli::Behaviour::new(
-        env_config,
-        bitcoin_wallet.clone(),
-        (seed.derive_libp2p_identity(), namespace),
-    );
-
-    let mut swarm = swarm::cli(
-        seed.derive_libp2p_identity(),
-        tor_client_for_swarm,
-        behaviour,
-    )
-    .await?;
-
-    swarm.add_peer_address(seller_peer_id, seller_multiaddr.clone());
-
     db.insert_monero_address_pool(swap_id, monero_receive_pool.clone())
         .await?;
 
-    tracing::debug!(peer_id = %swarm.local_peer_id(), "Network layer initialized");
+    // Get the existing event loop handle from context
+    let mut event_loop_handle = context.try_get_event_loop_handle().await?;
+
+    // Add the seller's address to the swarm
+    event_loop_handle
+        .add_peer_address(seller_peer_id, seller_multiaddr.clone())
+        .await?;
 
     tauri_handle.emit_swap_progress_event(
         swap_id,
         TauriSwapProgressEvent::ReceivedQuote(quote.clone()),
     );
-
-    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
-    let event_loop = tokio::spawn(event_loop.run().in_current_span());
 
     tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::ReceivedQuote(quote));
 
@@ -1175,16 +1163,6 @@ pub async fn buy_xmr(
                 bail!("Shutdown signal received");
             },
 
-            event_loop_result = event_loop => {
-                match event_loop_result {
-                    Ok(_) => {
-                        tracing::debug!(%swap_id, "EventLoop completed")
-                    }
-                    Err(error) => {
-                        tracing::error!(%swap_id, "EventLoop failed: {:#}", error)
-                    }
-                }
-            },
             swap_result = async {
                 let swap_event_loop_handle = event_loop_handle.swap_handle(seller_peer_id, swap_id).await?;
                 let swap = Swap::new(
@@ -1244,28 +1222,13 @@ pub async fn resume_swap(
     let seller_peer_id = db.get_peer_id(swap_id).await?;
     let seller_addresses = db.get_addresses(seller_peer_id).await?;
 
-    let seed = config
-        .seed
-        .as_ref()
-        .context("Could not get seed")?
-        .derive_libp2p_identity();
+    let mut event_loop_handle = context.try_get_event_loop_handle().await?;
 
-    let behaviour = cli::Behaviour::new(
-        config.env_config,
-        bitcoin_wallet.clone(),
-        (seed.clone(), config.namespace),
-    );
-    let mut swarm = swarm::cli(seed.clone(), tor_client, behaviour).await?;
-    let our_peer_id = swarm.local_peer_id();
-
-    tracing::debug!(peer_id = %our_peer_id, "Network layer initialized");
-
-    // Fetch the seller's addresses from the database and add them to the swarm
     for seller_address in seller_addresses {
-        swarm.add_peer_address(seller_peer_id, seller_address);
+        event_loop_handle
+            .add_peer_address(seller_peer_id, seller_address)
+            .await?;
     }
-
-    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
 
     let monero_receive_pool = db.get_monero_address_pool(swap_id).await?;
 
@@ -1292,7 +1255,6 @@ pub async fn resume_swap(
 
     context.tasks.clone().spawn(
         async move {
-            let handle = tokio::spawn(event_loop.run().in_current_span());
             tokio::select! {
                 biased;
                 _ = context.swap_lock.listen_for_swap_force_suspension() => {
@@ -1304,16 +1266,6 @@ pub async fn resume_swap(
                     bail!("Shutdown signal received");
                 },
 
-                event_loop_result = handle => {
-                    match event_loop_result {
-                        Ok(_) => {
-                            tracing::debug!(%swap_id, "EventLoop completed during swap resume")
-                        }
-                        Err(error) => {
-                            tracing::error!(%swap_id, "EventLoop failed during swap resume: {:#}", error)
-                        }
-                    }
-                },
                 swap_result = bob::run(swap) => {
                     match swap_result {
                         Ok(state) => {
