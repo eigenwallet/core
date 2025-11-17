@@ -2081,6 +2081,12 @@ impl Request for OrangefrenDemoTradeArgs {
         
         let mut updates = client.watch_status(trade_id.clone()).await;
         tracing::info!("Watching status updates...");
+
+        tracing::info!("Loading all trades from database...");
+        let all_trades = client.all_trades().await;
+        for trade in all_trades {
+            tracing::info!("Loaded trade: {}", trade);
+        }
         
         while let Some(status) = updates.next().await {
             tracing::info!(

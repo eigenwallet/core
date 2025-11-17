@@ -202,8 +202,7 @@ impl Client {
 
         self.db
             .insert_trade_info(trade_info, path_id.clone())
-            .await
-            .context("Could not insert trade info into the db")?;
+            .await?;
 
         Ok(path_id)
     }

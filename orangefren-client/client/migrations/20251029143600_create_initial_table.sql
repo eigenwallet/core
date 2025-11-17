@@ -7,7 +7,7 @@ CREATE TABLE trades (
     to_currency TEXT NOT NULL,
     to_network TEXT NOT NULL,
     withdraw_address TEXT NOT NULL,
-    deposit_address TEXT,
+    deposit_address TEXT NOT NULL,
     raw_json TEXT NOT NULL
 );
 

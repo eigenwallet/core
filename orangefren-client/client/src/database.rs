@@ -58,6 +58,7 @@ impl Database {
         let from_network = trade_info.from_network.as_str().to_string();
         let to_network = trade_info.to_network.as_str().to_string();
         let withdraw_address = trade_info.withdraw_address.to_string();
+        let deposit_address = trade_info.deposit_address.to_string();
         let path_uuid = &path_id.id.to_string();
 
         let raw_json = trade_info.raw_json.clone();
@@ -72,9 +73,10 @@ impl Database {
                 to_currency,
                 to_network,
                 withdraw_address,
+                deposit_address,
                 raw_json
                 ) values (
-                ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?
                 );
             "#,
             path_uuid,
@@ -84,10 +86,12 @@ impl Database {
             to_currency,
             to_network,
             withdraw_address,
+            deposit_address,
             raw_json
         )
         .execute(&self.pool)
-        .await?;
+        .await
+        .context("insert_trade_info(): failed to insert trade info")?;
 
         Ok(())
     }
@@ -119,12 +123,9 @@ impl Database {
                     .with_context(|| format!("invalid UUID in path_uuid: {}", row.path_uuid))?,
             };
 
-            let deposit_address = match row.deposit_address {
-                Some(address) => bitcoin::Address::from_str(address.as_str())
-                    .context("Could not parse bitcoin address")?
-                    .assume_checked(),
-                None => anyhow::bail!("No address in the path response"),
-            };
+            let deposit_address = bitcoin::Address::from_str(row.deposit_address.as_str())
+                .context("Could not parse bitcoin address")?
+                .assume_checked();
 
             info.push((
                 path_id.clone(),
