@@ -398,6 +398,7 @@ fn main() {
         .include("src") // Include the bridge.h file
         .include("monero/src") // Includes the monero headers
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
+        .include("monero/external")
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
         .include(
             contrib_depends_dir
