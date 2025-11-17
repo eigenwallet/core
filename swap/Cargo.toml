@@ -30,6 +30,7 @@ big-bytes = "1"
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
 bmrng = { workspace = true }
+orangefren_client = { path = "../orangefren-client/client" }
 comfy-table = "7.1"
 config = { version = "0.14", default-features = false, features = ["toml"] }
 conquer-once = "0.4"

@@ -1,6 +1,9 @@
 pub mod database;
 
+use typeshare::typeshare;
+
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt;
@@ -19,7 +22,9 @@ use tracing;
 pub use database::Database;
 pub use generated_client;
 
-#[derive(Debug, Error)]
+#[typeshare]
+#[derive(Debug, Clone, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "content")]
 pub enum OrangeFrenError {
     #[error("unknown currency symbol: {0}")]
     UnknownCurrency(String),
@@ -27,7 +32,8 @@ pub enum OrangeFrenError {
     PathCreateError(String),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[typeshare]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum TradeStatusType {
     Queued,
     Initial,
@@ -56,25 +62,36 @@ impl From<generated_client::models::trade_state::Type> for TradeStatusType {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[typeshare]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TradeStatus {
     pub status_type: TradeStatusType,
     pub is_terminal: bool,
     pub description: String,
+    #[typeshare(serialized_as = "number")]
+    #[serde(with = "duration_as_secs")]
     pub valid_for: Duration,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
-pub struct PathId(Uuid);
+#[typeshare]
+#[derive(PartialEq, Eq, Hash, Clone, Debug, Serialize, Deserialize)]
+pub struct PathId {
+    #[typeshare(serialized_as = "String")]
+    pub id: Uuid,
+}
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+#[typeshare]
+#[derive(PartialEq, Eq, Hash, Clone, Debug, Serialize, Deserialize)]
 pub struct TradeInfo {
     pub from_currency: Currency,
     pub to_currency: Currency,
     pub from_network: Currency,
     pub to_network: Currency,
+    #[typeshare(serialized_as = "String")]
     pub withdraw_address: monero::Address,
-    pub deposit_address: Option<bitcoin::Address>,
+    #[typeshare(serialized_as = "String")]
+    #[serde(with = "swap_serde::bitcoin::address_serde")]
+    pub deposit_address: bitcoin::Address,
     pub raw_json: String,
 }
 
@@ -88,10 +105,7 @@ impl fmt::Display for TradeInfo {
         )?;
         writeln!(f, "  to:   {:?} on {:?}", self.to_currency, self.to_network)?;
         writeln!(f, "  withdraw → {}", self.withdraw_address)?;
-        match &self.deposit_address {
-            Some(addr) => writeln!(f, "  deposit  → {}", addr)?,
-            None => writeln!(f, "  deposit  → (none)")?,
-        }
+        writeln!(f, "  deposit  → {}", self.deposit_address)?;
         Ok(())
     }
 }
@@ -179,7 +193,7 @@ impl Client {
         tracing::info!("Got uuid: {}", path_uuid);
 
         let path_uuid = Uuid::from_str(path_uuid.as_str()).context("Error parsing uuid")?;
-        let path_id = PathId(path_uuid);
+        let path_id = PathId { id: path_uuid };
 
         let trade_info = self
             .wait_until_created(path_id.clone())
@@ -211,11 +225,7 @@ impl Client {
         trade_id: PathId,
     ) -> Result<bitcoin::Address, anyhow::Error> {
         let trade_state = self.last_trade_state_by_id(trade_id).await?;
-        if let Some(address) = trade_state.0.deposit_address {
-            Ok(address)
-        } else {
-            anyhow::bail!("No address in the path response");
-        }
+        Ok(trade_state.0.deposit_address)
     }
 
     async fn wait_until_created(&self, path_id: PathId) -> Result<TradeInfo, anyhow::Error> {
@@ -226,7 +236,7 @@ impl Client {
             let path_response =
                 generated_client::apis::default_api::api_eigenwallet_get_path_path_uuid_post(
                     &self.config,
-                    &path_id.0.to_string(),
+                    &path_id.id.to_string(),
                 )
                 .await
                 .context("Error getting path response")?;
@@ -272,14 +282,12 @@ impl Client {
                 let last_trade = trades.last().context("Last trade not found")?;
 
                 tracing::info!("bitcoin addr: {}", last_trade.deposit_address);
-                let bitcoin_addr = if last_trade.deposit_address != "None" {
-                    Some(
-                        bitcoin::Address::from_str(last_trade.deposit_address.as_str())
-                            .context("Could not parse bitcoin address")?
-                            .assume_checked(),
-                    )
+                let deposit_address = if last_trade.deposit_address != "None" {
+                    bitcoin::Address::from_str(last_trade.deposit_address.as_str())
+                        .context("Could not parse bitcoin address")?
+                        .assume_checked()
                 } else {
-                    None
+                    anyhow::bail!("No address in the path response");
                 };
 
                 let raw_json = serde_json::to_string(&path_response).context("Serde error")?;
@@ -292,8 +300,7 @@ impl Client {
                     withdraw_address: monero::Address::from_str(
                         last_trade.withdrawal_address.as_str(),
                     )?,
-                    deposit_address: bitcoin_addr,
-                    //path_id: path_response.path_uuid
+                    deposit_address: deposit_address,
                     raw_json: raw_json,
                 };
 
@@ -309,7 +316,7 @@ impl Client {
         let path_response =
             generated_client::apis::default_api::api_eigenwallet_get_path_path_uuid_post(
                 &self.config,
-                &trade_id.0.to_string(),
+                &trade_id.id.to_string(),
             )
             .await
             .context("Error getting path responce")?;
@@ -424,7 +431,8 @@ impl Client {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[typeshare]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Currency {
     Xmr,
     Btc,
@@ -458,5 +466,26 @@ impl TryFrom<String> for Currency {
             "BTC" => Ok(Currency::Btc),
             other => Err(OrangeFrenError::UnknownCurrency(other.to_string())),
         }
+    }
+}
+
+// Custom serde helper for Duration serialization
+mod duration_as_secs {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(duration.as_secs())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let secs = u64::deserialize(deserializer)?;
+        Ok(Duration::from_secs(secs))
     }
 }

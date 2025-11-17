@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 tauri-build = { version = "2.*", features = ["config-json5"] }
 
 [dependencies]
+orangefren_client = { path = "../orangefren-client/client" }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 swap = { path = "../swap", features = [ "tauri" ] }
 dfx-swiss-sdk = { workspace = true }

@@ -47,6 +47,8 @@ import {
   MoneroNodeConfig,
   GetMoneroSeedResponse,
   ContextStatus,
+  OrangefrenDemoTradeArgs,
+  OrangefrenDemoTradeResponse,
 } from "models/tauriModel";
 import {
   rpcSetBalance,
@@ -682,4 +684,11 @@ export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
         };
 
   return moneroNodeConfig;
+}
+
+export async function orangefrenDemoTrade(): Promise<string> {
+  const response = await invokeNoArgs<OrangefrenDemoTradeResponse>(
+    "orangefren_demo_trade",
+  );
+  return response.trade_id;
 }

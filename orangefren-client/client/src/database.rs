@@ -58,7 +58,7 @@ impl Database {
         let from_network = trade_info.from_network.as_str().to_string();
         let to_network = trade_info.to_network.as_str().to_string();
         let withdraw_address = trade_info.withdraw_address.to_string();
-        let path_uuid = &path_id.0.to_string();
+        let path_uuid = &path_id.id.to_string();
 
         let raw_json = trade_info.raw_json.clone();
 
@@ -114,10 +114,10 @@ impl Database {
         .context("load_from_db(): failed to fetch rows")?;
 
         for row in rows {
-            let path_id = PathId(
-                Uuid::parse_str(&row.path_uuid)
+            let path_id = PathId {
+                id: Uuid::parse_str(&row.path_uuid)
                     .with_context(|| format!("invalid UUID in path_uuid: {}", row.path_uuid))?,
-            );
+            };
 
             let deposit_address_option = match row.deposit_address {
                 Some(address) => Some(
@@ -165,9 +165,9 @@ impl Database {
         .await
         .context("Could not find the path")?;
 
-        let trade_id = PathId(
-            Uuid::from_str(row.path_uuid.as_str()).context("Could not initialize the uuid")?,
-        );
+        let trade_id = PathId {
+            id: Uuid::from_str(row.path_uuid.as_str()).context("Could not initialize the uuid")?,
+        };
         Ok(trade_id)
     }
 }

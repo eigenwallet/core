@@ -1,5 +1,5 @@
 [package]
-name = "client"
+name = "orangefren_client"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,6 +7,8 @@ edition = "2024"
 generated-client = { path = "../generated-client" }
 monero = { workspace = true }
 serde = { workspace = true }
+typeshare = { workspace = true }
+swap-serde = { path = "../../swap-serde" }
 thiserror = { workspace = true }
 bitcoin = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }

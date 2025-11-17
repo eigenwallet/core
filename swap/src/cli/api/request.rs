@@ -2028,3 +2028,86 @@ pub async fn change_monero_node(
 
     Ok(ChangeMoneroNodeResponse { success: true })
 }
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrangefrenDemoTradeArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OrangefrenDemoTradeResponse {
+    #[typeshare(serialized_as = "String")]
+    pub trade_id: String,
+}
+
+impl Request for OrangefrenDemoTradeArgs {
+    type Response = OrangefrenDemoTradeResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        tracing::info!("Starting orangefren demo trade");
+        
+        let data_dir = ctx
+            .config
+            .read()
+            .await
+            .as_ref()
+            .context("Context not initialized")?
+            .data_dir
+            .clone()
+            .join("orangefren");
+        
+        tracing::info!("Using data directory: {}", data_dir.display());
+        
+        let monero_manager = ctx.try_get_monero_manager().await?;
+        let wallet = monero_manager.main_wallet().await;
+        let address = wallet.main_address().await;
+        
+        tracing::info!("Using Monero address: {}", address);
+        
+        let mut client = orangefren_client::Client::new(data_dir)
+            .await
+            .context("Failed to create orangefren client")?;
+        
+        tracing::info!("Created orangefren client");
+        
+        let amount = bitcoin::Amount::from_sat(1000); //Example amount
+        tracing::info!("Creating new trade");
+        
+        let trade_id = client
+            .new_trade(amount, address)
+            .await?;
+        
+        tracing::info!("Trade created with ID: {:?}", trade_id);
+        
+        let mut updates = client.watch_status(trade_id.clone()).await;
+        tracing::info!("Watching status updates...");
+        
+        while let Some(status) = updates.next().await {
+            tracing::info!(
+                "Trade status: {:?} - {} (terminal: {})",
+                status.status_type,
+                status.description,
+                status.is_terminal
+            );
+            
+            // Try to get deposit address
+            match client.deposit_address(trade_id.clone()).await {
+                Ok(addr) => {
+                    tracing::info!("Deposit address: {}", addr);
+                }
+                Err(e) => {
+                    tracing::warn!("Could not get deposit address: {}", e);
+                }
+            }
+            
+            if status.is_terminal {
+                tracing::info!("Trade reached terminal state, stopping watch");
+                break;
+            }
+        }
+        
+        Ok(OrangefrenDemoTradeResponse {
+            trade_id: format!("{:?}", trade_id),
+        })
+    }
+}
