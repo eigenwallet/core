@@ -119,13 +119,11 @@ impl Database {
                     .with_context(|| format!("invalid UUID in path_uuid: {}", row.path_uuid))?,
             };
 
-            let deposit_address_option = match row.deposit_address {
-                Some(address) => Some(
-                    bitcoin::Address::from_str(address.as_str())
-                        .context("Could not parse bitcoin address")?
-                        .assume_checked(),
-                ),
-                None => None,
+            let deposit_address = match row.deposit_address {
+                Some(address) => bitcoin::Address::from_str(address.as_str())
+                    .context("Could not parse bitcoin address")?
+                    .assume_checked(),
+                None => anyhow::bail!("No address in the path response"),
             };
 
             info.push((
@@ -136,7 +134,7 @@ impl Database {
                     from_network: row.from_network.clone().try_into()?,
                     to_network: row.to_network.clone().try_into()?,
                     withdraw_address: monero::Address::from_str(row.withdraw_address.as_str())?,
-                    deposit_address: deposit_address_option,
+                    deposit_address: deposit_address,
                     raw_json: row.raw_json,
                 },
             ));
