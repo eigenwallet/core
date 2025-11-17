@@ -2,6 +2,7 @@ import { Typography, Box, Paper } from "@mui/material";
 import { TransactionInfo } from "models/tauriModel";
 import _ from "lodash";
 import dayjs from "dayjs";
+import { useMemo } from "react";
 import TransactionItem from "./TransactionItem";
 
 interface TransactionHistoryProps {
@@ -27,15 +28,20 @@ export default function TransactionHistory({
   const transactions = history.transactions;
 
   // Group transactions by date using dayjs and lodash
-  const transactionGroups: TransactionGroup[] = _(transactions)
-    .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD")) // Convert Unix timestamp to date string
-    .map((txs, dateKey) => ({
-      date: dateKey,
-      displayDate: dayjs(dateKey).format("MMMM D, YYYY"), // Human-readable format
-      transactions: _.orderBy(txs, ["timestamp"], ["desc"]), // Sort transactions within group by newest first
-    }))
-    .orderBy(["date"], ["desc"]) // Sort groups by newest date first
-    .value();
+  // Memoize this expensive computation to avoid recalculating on every render
+  const transactionGroups: TransactionGroup[] = useMemo(
+    () =>
+      _(transactions)
+        .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD")) // Convert Unix timestamp to date string
+        .map((txs, dateKey) => ({
+          date: dateKey,
+          displayDate: dayjs(dateKey).format("MMMM D, YYYY"), // Human-readable format
+          transactions: _.orderBy(txs, ["timestamp"], ["desc"]), // Sort transactions within group by newest first
+        }))
+        .orderBy(["date"], ["desc"]) // Sort groups by newest date first
+        .value(),
+    [transactions],
+  );
 
   return (
     <Box>

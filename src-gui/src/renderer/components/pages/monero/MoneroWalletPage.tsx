@@ -10,6 +10,15 @@ import {
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import WalletPageLoadingState from "./components/WalletPageLoadingState";
 
+const walletPageSx = {
+  maxWidth: 800,
+  mx: "auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+  pb: 2,
+};
+
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
   const { mainAddress, balance, syncProgress, history } = useAppSelector(
@@ -27,16 +36,7 @@ export default function MoneroWalletPage() {
   }
 
   return (
-    <Box
-      sx={{
-        maxWidth: 800,
-        mx: "auto",
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-        pb: 2,
-      }}
-    >
+    <Box sx={walletPageSx}>
       <WalletOverview balance={balance} syncProgress={syncProgress} />
       <ActionableMonospaceTextBox
         content={mainAddress}

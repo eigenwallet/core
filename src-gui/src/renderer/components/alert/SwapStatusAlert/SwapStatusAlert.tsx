@@ -231,6 +231,18 @@ export function StateAlert({
 // See: swap-env/src/env.rs
 const UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD = 72 - 4;
 
+const alertSx = {
+  "& .alert-message-flex-grow": {
+    flexGrow: 1,
+  },
+};
+
+const alertContentSx = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 1,
+};
+
 /**
  * Main component for displaying the swap status alert.
  * @param swap - The swap information.
@@ -273,11 +285,7 @@ export default function SwapStatusAlert({
       severity="warning"
       variant="filled"
       classes={{ message: "alert-message-flex-grow" }}
-      sx={{
-        "& .alert-message-flex-grow": {
-          flexGrow: 1,
-        },
-      }}
+      sx={alertSx}
     >
       <AlertTitle>
         {isRunning ? (
@@ -292,13 +300,7 @@ export default function SwapStatusAlert({
           </>
         )}
       </AlertTitle>
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 1,
-        }}
-      >
+      <Box sx={alertContentSx}>
         <StateAlert swap={swap} timelock={timelock} isRunning={isRunning} />
         {timelock && <TimelockTimeline swap={swap} timelock={timelock} />}
       </Box>

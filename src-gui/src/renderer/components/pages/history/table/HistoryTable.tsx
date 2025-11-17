@@ -13,16 +13,21 @@ import {
 import { useSwapInfosSortedByDate } from "../../../../../store/hooks";
 import HistoryRow from "./HistoryRow";
 
+const historyTableContainerSx = {
+  paddingTop: 1,
+  paddingBottom: 1,
+};
+
+const emptyTableCellSx = {
+  textAlign: "center",
+  py: 4,
+};
+
 export default function HistoryTable() {
   const swapSortedByDate = useSwapInfosSortedByDate();
 
   return (
-    <Box
-      sx={{
-        paddingTop: 1,
-        paddingBottom: 1,
-      }}
-    >
+    <Box sx={historyTableContainerSx}>
       <TableContainer component={Paper}>
         <Table>
           {swapSortedByDate.length > 0 && (
@@ -40,7 +45,7 @@ export default function HistoryTable() {
             {swapSortedByDate.length === 0 ? (
               <>
                 <TableRow>
-                  <TableCell colSpan={5} sx={{ textAlign: "center", py: 4 }}>
+                  <TableCell colSpan={5} sx={emptyTableCellSx}>
                     <Typography
                       variant="h6"
                       color="text.secondary"

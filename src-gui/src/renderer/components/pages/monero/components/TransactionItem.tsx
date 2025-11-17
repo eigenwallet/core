@@ -21,7 +21,7 @@ import { getMoneroTxExplorerUrl } from "utils/conversionUtils";
 import { isTestnet } from "store/config";
 import { open } from "@tauri-apps/plugin-shell";
 import dayjs from "dayjs";
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 
 interface TransactionItemProps {
   transaction: TransactionInfo;
@@ -29,16 +29,40 @@ interface TransactionItemProps {
 
 export default function TransactionItem({ transaction }: TransactionItemProps) {
   const isIncoming = transaction.direction === TransactionDirection.In;
-  const displayDate = dayjs(transaction.timestamp * 1000).format(
-    "MMM DD YYYY, HH:mm",
+  const displayDate = useMemo(
+    () => dayjs(transaction.timestamp * 1000).format("MMM DD YYYY, HH:mm"),
+    [transaction.timestamp],
   );
 
-  const amountStyles = isIncoming
-    ? { color: "success.tint" }
-    : { color: "error.tint" };
+  // Memoize amountStyles to avoid creating new object on every render
+  const amountStyles = useMemo(
+    () => (isIncoming ? { color: "success.tint" } : { color: "error.tint" }),
+    [isIncoming],
+  );
 
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
+
+  const handleMenuOpen = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      setMenuAnchorEl(event.currentTarget);
+    },
+    [],
+  );
+
+  const handleMenuClose = useCallback(() => {
+    setMenuAnchorEl(null);
+  }, []);
+
+  const handleCopyTxId = useCallback(() => {
+    navigator.clipboard.writeText(transaction.tx_hash);
+    setMenuAnchorEl(null);
+  }, [transaction.tx_hash]);
+
+  const handleViewExplorer = useCallback(() => {
+    open(getMoneroTxExplorerUrl(transaction.tx_hash, isTestnet()));
+    setMenuAnchorEl(null);
+  }, [transaction.tx_hash]);
 
   return (
     <Box
@@ -120,32 +144,18 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
           {displayDate}
         </Typography>
         <ConfirmationsBadge confirmations={transaction.confirmations} />
-        <IconButton
-          onClick={(event) => {
-            setMenuAnchorEl(event.currentTarget);
-          }}
-        >
+        <IconButton onClick={handleMenuOpen}>
           <MoreVertIcon />
         </IconButton>
         <Menu
           anchorEl={menuAnchorEl}
           open={menuOpen}
-          onClose={() => setMenuAnchorEl(null)}
+          onClose={handleMenuClose}
         >
-          <MenuItem
-            onClick={() => {
-              navigator.clipboard.writeText(transaction.tx_hash);
-              setMenuAnchorEl(null);
-            }}
-          >
+          <MenuItem onClick={handleCopyTxId}>
             <Typography>Copy Transaction ID</Typography>
           </MenuItem>
-          <MenuItem
-            onClick={() => {
-              open(getMoneroTxExplorerUrl(transaction.tx_hash, isTestnet()));
-              setMenuAnchorEl(null);
-            }}
-          >
+          <MenuItem onClick={handleViewExplorer}>
             <Typography>View on Explorer</Typography>
           </MenuItem>
         </Menu>

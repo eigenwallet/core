@@ -21,19 +21,59 @@ import { getBitcoinTxExplorerUrl } from "utils/conversionUtils";
 import SwapLogFileOpenButton from "./SwapLogFileOpenButton";
 import ExportLogsButton from "./ExportLogsButton";
 
+const expandedContainerSx = {
+  display: "grid",
+  padding: 1,
+  gap: 1,
+};
+
+const makerAddressContainerSx = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 1,
+};
+
+const poolContainerSx = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 1,
+};
+
+const poolItemSx = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 0.5,
+  padding: 1,
+  border: 1,
+  borderColor: "divider",
+  borderRadius: 1,
+  backgroundColor: (theme: any) => theme.palette.action.hover,
+};
+
+const poolLabelSx = (theme: any) => ({
+  fontWeight: 600,
+  color: theme.palette.text.primary,
+});
+
+const poolAddressSx = {
+  fontFamily: "monospace",
+  color: (theme: any) => theme.palette.text.secondary,
+  wordBreak: "break-all",
+};
+
+const actionsContainerSx = {
+  display: "flex",
+  flexDirection: "row",
+  gap: 1,
+};
+
 export default function HistoryRowExpanded({
   swap,
 }: {
   swap: GetSwapInfoResponse;
 }) {
   return (
-    <Box
-      sx={{
-        display: "grid",
-        padding: 1,
-        gap: 1,
-      }}
-    >
+    <Box sx={expandedContainerSx}>
       <TableContainer>
         <Table>
           <TableBody>
@@ -79,13 +119,7 @@ export default function HistoryRowExpanded({
             <TableRow>
               <TableCell>Maker Address</TableCell>
               <TableCell>
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1,
-                  }}
-                >
+                <Box sx={makerAddressContainerSx}>
                   {swap.seller.addresses.map((addr) => (
                     <ActionableMonospaceTextBox
                       key={addr}
@@ -111,38 +145,13 @@ export default function HistoryRowExpanded({
             <TableRow>
               <TableCell>Monero receive pool</TableCell>
               <TableCell>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                <Box sx={poolContainerSx}>
                   {swap.monero_receive_pool.map((pool, index) => (
-                    <Box
-                      key={index}
-                      sx={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 0.5,
-                        padding: 1,
-                        border: 1,
-                        borderColor: "divider",
-                        borderRadius: 1,
-                        backgroundColor: (theme) => theme.palette.action.hover,
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        sx={(theme) => ({
-                          fontWeight: 600,
-                          color: theme.palette.text.primary,
-                        })}
-                      >
+                    <Box key={index} sx={poolItemSx}>
+                      <Typography variant="body2" sx={poolLabelSx}>
                         {pool.label} ({pool.percentage * 100}%)
                       </Typography>
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontFamily: "monospace",
-                          color: (theme) => theme.palette.text.secondary,
-                          wordBreak: "break-all",
-                        }}
-                      >
+                      <Typography variant="caption" sx={poolAddressSx}>
                         {pool.address}
                       </Typography>
                     </Box>
@@ -153,13 +162,7 @@ export default function HistoryRowExpanded({
           </TableBody>
         </Table>
       </TableContainer>
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "row",
-          gap: 1,
-        }}
-      >
+      <Box sx={actionsContainerSx}>
         <SwapLogFileOpenButton
           swapId={swap.swap_id}
           variant="outlined"

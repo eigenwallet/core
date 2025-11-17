@@ -9,6 +9,7 @@ import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
+import { useCallback } from "react";
 
 export default function MakerOfferItem({
   quoteWithAddress,
@@ -19,6 +20,13 @@ export default function MakerOfferItem({
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
   const isOutOfLiquidity = quote.max_quantity == 0;
+
+  const handleInvoke = useCallback(() => {
+    if (!requestId) {
+      throw new Error("Request ID is required");
+    }
+    return resolveApproval(requestId, true as unknown as object);
+  }, [requestId]);
 
   return (
     <Paper
@@ -111,12 +119,7 @@ export default function MakerOfferItem({
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <PromiseInvokeButton
           variant="contained"
-          onInvoke={() => {
-            if (!requestId) {
-              throw new Error("Request ID is required");
-            }
-            return resolveApproval(requestId, true as unknown as object);
-          }}
+          onInvoke={handleInvoke}
           displayErrorSnackbar
           disabled={!requestId}
           tooltipTitle={

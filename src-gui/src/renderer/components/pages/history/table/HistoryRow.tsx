@@ -3,7 +3,7 @@ import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import { GetSwapInfoResponse } from "models/tauriModel";
-import { useState } from "react";
+import { useState, memo, useCallback } from "react";
 import TruncatedText from "renderer/components/other/TruncatedText";
 import { PiconeroAmount, SatsAmount } from "../../../other/Units";
 import HistoryRowActions from "./HistoryRowActions";
@@ -13,7 +13,13 @@ import {
   GetSwapInfoResponseExt,
 } from "models/tauriModelExt";
 
-function AmountTransfer({
+const amountTransferSx = {
+  display: "flex",
+  alignItems: "center",
+  gap: 1,
+};
+
+const AmountTransfer = memo(function AmountTransfer({
   btcAmount,
   xmrAmount,
 }: {
@@ -21,28 +27,26 @@ function AmountTransfer({
   btcAmount: number;
 }) {
   return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1,
-      }}
-    >
+    <Box sx={amountTransferSx}>
       <SatsAmount amount={btcAmount} />
       <ArrowForwardIcon />
       <PiconeroAmount amount={xmrAmount} />
     </Box>
   );
-}
+});
 
 export default function HistoryRow(swap: GetSwapInfoResponseExt) {
   const [expanded, setExpanded] = useState(false);
+
+  const handleToggleExpanded = useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
 
   return (
     <>
       <TableRow>
         <TableCell>
-          <IconButton size="small" onClick={() => setExpanded(!expanded)}>
+          <IconButton size="small" onClick={handleToggleExpanded}>
             {expanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
           </IconButton>
         </TableCell>

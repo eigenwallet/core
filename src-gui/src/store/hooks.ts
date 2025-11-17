@@ -46,13 +46,14 @@ export function useResumeableSwapsCount(
 ) {
   const saneSwapInfos = useSaneSwapInfos();
 
-  return useAppSelector(
-    (state) =>
+  return useMemo(
+    () =>
       saneSwapInfos.filter(
         (swapInfo: GetSwapInfoResponseExt) =>
           !swapInfo.completed &&
           (additionalFilter == null || additionalFilter(swapInfo)),
       ).length,
+    [saneSwapInfos, additionalFilter],
   );
 }
 
@@ -165,31 +166,38 @@ export function useAllMakers() {
 /// Excluding those who are in a state where it's better to hide them from the user
 export function useSaneSwapInfos() {
   const swapInfos = useAppSelector(selectAllSwapInfos);
-  return swapInfos.filter((swap) => {
-    // We hide swaps that are in the SwapSetupCompleted state
-    // This is because they are probably ones where:
-    // 1. The user force stopped the swap while we were waiting for their confirmation of the offer
-    // 2. We where therefore unable to transition to SafelyAborted
-    if (swap.state_name === BobStateName.SwapSetupCompleted) {
-      return false;
-    }
+  return useMemo(
+    () =>
+      swapInfos.filter((swap) => {
+        // We hide swaps that are in the SwapSetupCompleted state
+        // This is because they are probably ones where:
+        // 1. The user force stopped the swap while we were waiting for their confirmation of the offer
+        // 2. We where therefore unable to transition to SafelyAborted
+        if (swap.state_name === BobStateName.SwapSetupCompleted) {
+          return false;
+        }
 
-    // We hide swaps that were safely aborted
-    // No funds were locked. Cannot be resumed.
-    // Wouldn't be beneficial to show them to the user
-    if (swap.state_name === BobStateName.SafelyAborted) {
-      return false;
-    }
+        // We hide swaps that were safely aborted
+        // No funds were locked. Cannot be resumed.
+        // Wouldn't be beneficial to show them to the user
+        if (swap.state_name === BobStateName.SafelyAborted) {
+          return false;
+        }
 
-    return true;
-  });
+        return true;
+      }),
+    [swapInfos],
+  );
 }
 
 /// This hook returns the swap infos sorted by date
 export function useSwapInfosSortedByDate() {
   const swapInfos = useSaneSwapInfos();
 
-  return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
+  return useMemo(
+    () => sortBy(swapInfos, (swap) => -parseDateString(swap.start_date)),
+    [swapInfos],
+  );
 }
 
 export function useRates<T>(selector: (rates: RatesState) => T): T {
@@ -213,27 +221,42 @@ export function usePendingApprovals(): PendingApprovalRequest[] {
 
 export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalRequest[] {
   const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c));
+  return useMemo(
+    () => approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c)),
+    [approvals],
+  );
 }
 
 export function usePendingSendMoneroApproval(): PendingSendMoneroApprovalRequest[] {
   const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSendMoneroApprovalEvent(c));
+  return useMemo(
+    () => approvals.filter((c) => isPendingSendMoneroApprovalEvent(c)),
+    [approvals],
+  );
 }
 
 export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {
   const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSelectMakerApprovalEvent(c));
+  return useMemo(
+    () => approvals.filter((c) => isPendingSelectMakerApprovalEvent(c)),
+    [approvals],
+  );
 }
 
 export function usePendingSeedSelectionApproval(): PendingSeedSelectionApprovalRequest[] {
   const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c));
+  return useMemo(
+    () => approvals.filter((c) => isPendingSeedSelectionApprovalEvent(c)),
+    [approvals],
+  );
 }
 
 export function usePendingPasswordApproval(): PendingPasswordApprovalRequest[] {
   const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingPasswordApprovalEvent(c));
+  return useMemo(
+    () => approvals.filter((c) => isPendingPasswordApprovalEvent(c)),
+    [approvals],
+  );
 }
 
 /// Returns all the pending background processes
@@ -299,16 +322,27 @@ export function useConservativeBitcoinSyncProgress(): TauriBitcoinSyncProgress |
  * @returns The number of unread staff messages.
  */
 export function useUnreadMessagesCount(feedbackId: string): number {
-  const { conversationsMap, seenMessagesSet } = useAppSelector((state) => ({
-    conversationsMap: state.conversations.conversations,
-    // Convert seenMessages array to a Set for efficient lookup
-    seenMessagesSet: new Set(state.conversations.seenMessages),
-  }));
+  const conversationsMap = useAppSelector(
+    (state) => state.conversations.conversations,
+  );
+  const seenMessages = useAppSelector(
+    (state) => state.conversations.seenMessages,
+  );
+
+  // Memoize Set creation to avoid recreating on every render
+  const seenMessagesSet = useMemo(
+    () => new Set(seenMessages),
+    [seenMessages],
+  );
 
   const messages = conversationsMap[feedbackId] || [];
 
-  const unreadStaffMessages = messages.filter(
-    (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
+  const unreadStaffMessages = useMemo(
+    () =>
+      messages.filter(
+        (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
+      ),
+    [messages, seenMessagesSet],
   );
 
   return unreadStaffMessages.length;
@@ -319,21 +353,30 @@ export function useUnreadMessagesCount(feedbackId: string): number {
  * @returns The total number of unread staff messages.
  */
 export function useTotalUnreadMessagesCount(): number {
-  const { conversationsMap, seenMessagesSet } = useAppSelector((state) => ({
-    conversationsMap: state.conversations.conversations,
-    seenMessagesSet: new Set(state.conversations.seenMessages),
-  }));
+  const conversationsMap = useAppSelector(
+    (state) => state.conversations.conversations,
+  );
+  const seenMessages = useAppSelector(
+    (state) => state.conversations.seenMessages,
+  );
 
-  let totalUnreadCount = 0;
-  for (const feedbackId in conversationsMap) {
-    const messages = conversationsMap[feedbackId] || [];
-    const unreadStaffMessages = messages.filter(
-      (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
-    );
-    totalUnreadCount += unreadStaffMessages.length;
-  }
+  // Memoize Set creation to avoid recreating on every render
+  const seenMessagesSet = useMemo(
+    () => new Set(seenMessages),
+    [seenMessages],
+  );
 
-  return totalUnreadCount;
+  return useMemo(() => {
+    let totalUnreadCount = 0;
+    for (const feedbackId in conversationsMap) {
+      const messages = conversationsMap[feedbackId] || [];
+      const unreadStaffMessages = messages.filter(
+        (msg) => msg.is_from_staff && !seenMessagesSet.has(msg.id.toString()),
+      );
+      totalUnreadCount += unreadStaffMessages.length;
+    }
+    return totalUnreadCount;
+  }, [conversationsMap, seenMessagesSet]);
 }
 
 /// Returns all the alerts that have not been acknowledged

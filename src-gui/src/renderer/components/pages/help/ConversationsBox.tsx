@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -50,12 +50,14 @@ import { Theme } from "renderer/components/theme";
 function useSortedFeedbackIds() {
   const ids = useAppSelector((s) => s.conversations.knownFeedbackIds || []);
   const conv = useAppSelector((s) => s.conversations.conversations);
-  const seen = useAppSelector((s) => new Set(s.conversations.seenMessages));
+  const seenMessages = useAppSelector((s) => s.conversations.seenMessages);
+  // Memoize Set creation to avoid recreating on every render
+  const seen = useMemo(() => new Set(seenMessages), [seenMessages]);
   return useMemo(() => {
     const arr = ids.map((id) => {
       const msgs = conv[id] || [];
       const unread = msgs.filter(
-        (m) => m.is_from_staff && !seen.has(m.id.toString()),
+        (m) => m.is_from_staff && !seen.has(m.id.toString())
       ).length;
       const latest = msgs.reduce((d, m) => {
         try {
@@ -71,7 +73,7 @@ function useSortedFeedbackIds() {
     });
     arr.sort(
       (a, b) =>
-        b.latest - a.latest || (b.unread > 0 ? 1 : 0) - (a.unread > 0 ? 1 : 0),
+        b.latest - a.latest || (b.unread > 0 ? 1 : 0) - (a.unread > 0 ? 1 : 0)
     );
     return arr.map((x) => x.id);
   }, [ids, conv, seen]);
@@ -173,9 +175,14 @@ function ConversationRow({
   onOpen: (id: string) => void;
 }) {
   const msgs = useAppSelector(
-    (s) => s.conversations.conversations[feedbackId] || [],
+    (s) => s.conversations.conversations[feedbackId] || []
   );
   const unread = useUnreadMessagesCount(feedbackId);
+
+  const handleOpen = useCallback(() => {
+    onOpen(feedbackId);
+  }, [onOpen, feedbackId]);
+
   const sorted = useMemo(
     () =>
       [...msgs].sort((a, b) => {
@@ -193,7 +200,7 @@ function ConversationRow({
           return 0;
         }
       }),
-    [msgs],
+    [msgs]
   );
   const lastMsg = sorted[0];
   const time = lastMsg ? formatDateTime(lastMsg.created_at) : "-";
@@ -220,7 +227,7 @@ function ConversationRow({
             <span>
               <IconButton
                 size="small"
-                onClick={() => onOpen(feedbackId)}
+                onClick={handleOpen}
                 disabled={!hasStaff}
               >
                 <ChatIcon />
@@ -245,7 +252,7 @@ function ConversationModal({
 }) {
   const dispatch = useAppDispatch();
   const msgs = useAppSelector(
-    (s) => s.conversations.conversations[feedbackId] || [],
+    (s) => s.conversations.conversations[feedbackId] || []
   );
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -279,7 +286,7 @@ function ConversationModal({
           return 0;
         }
       }),
-    [msgs],
+    [msgs]
   );
 
   const sendMessage = async () => {
@@ -359,6 +366,36 @@ function ConversationModal({
   );
 }
 
+// Attachment item component
+function AttachmentItem({
+  attachment,
+}: {
+  attachment: { key: string; content: string };
+}) {
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      alert(
+        `Attachment Key: ${attachment.key}\n\nContent:\n${attachment.content}`
+      );
+    },
+    [attachment.key, attachment.content]
+  );
+
+  const listItemSx = { paddingTop: 0.5, paddingBottom: 0.5 };
+
+  return (
+    <ListItem sx={listItemSx}>
+      <ListItemIcon>
+        <AttachmentIcon />
+      </ListItemIcon>
+      <Link href="#" onClick={handleClick}>
+        {attachment.key}
+      </Link>
+    </ListItem>
+  );
+}
+
 // Message bubble component
 function MessageBubble({ message }: { message: Message }) {
   const isStaff = message.is_from_staff;
@@ -397,22 +434,7 @@ function MessageBubble({ message }: { message: Message }) {
         {attachments.length > 0 && (
           <List sx={{ marginTop: 1, marginBottom: 1, paddingLeft: 2 }}>
             {attachments.map((att, idx) => (
-              <ListItem key={idx} sx={{ paddingTop: 0.5, paddingBottom: 0.5 }}>
-                <ListItemIcon>
-                  <AttachmentIcon />
-                </ListItemIcon>
-                <Link
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    alert(
-                      `Attachment Key: ${att.key}\n\nContent:\n${att.content}`,
-                    );
-                  }}
-                >
-                  {att.key}
-                </Link>
-              </ListItem>
+              <AttachmentItem key={idx} attachment={att} />
             ))}
           </List>
         )}

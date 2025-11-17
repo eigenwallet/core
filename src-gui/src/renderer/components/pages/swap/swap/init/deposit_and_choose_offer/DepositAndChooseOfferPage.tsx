@@ -5,7 +5,7 @@ import { usePendingSelectMakerApproval } from "store/hooks";
 import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { sortApprovalsAndKnownQuotes } from "utils/sortUtils";
 
 export default function DepositAndChooseOfferPage({
@@ -17,23 +17,32 @@ export default function DepositAndChooseOfferPage({
   const [currentPage, setCurrentPage] = useState(1);
   const offersPerPage = 3;
 
-  const makerOffers = sortApprovalsAndKnownQuotes(
-    pendingSelectMakerApprovals,
-    known_quotes,
+  // Memoize sorting to avoid recalculating on every render
+  const makerOffers = useMemo(
+    () => sortApprovalsAndKnownQuotes(pendingSelectMakerApprovals, known_quotes),
+    [pendingSelectMakerApprovals, known_quotes],
   );
 
-  // Pagination calculations
-  const totalPages = Math.ceil(makerOffers.length / offersPerPage);
-  const startIndex = (currentPage - 1) * offersPerPage;
-  const endIndex = startIndex + offersPerPage;
-  const paginatedOffers = makerOffers.slice(startIndex, endIndex);
+  // Memoize pagination calculations
+  const { totalPages, startIndex, endIndex, paginatedOffers } = useMemo(() => {
+    const total = Math.ceil(makerOffers.length / offersPerPage);
+    const start = (currentPage - 1) * offersPerPage;
+    const end = start + offersPerPage;
+    const paginated = makerOffers.slice(start, end);
+    return {
+      totalPages: total,
+      startIndex: start,
+      endIndex: end,
+      paginatedOffers: paginated,
+    };
+  }, [makerOffers, currentPage, offersPerPage]);
 
-  const handlePageChange = (
-    event: React.ChangeEvent<unknown>,
-    value: number,
-  ) => {
-    setCurrentPage(value);
-  };
+  const handlePageChange = useCallback(
+    (event: React.ChangeEvent<unknown>, value: number) => {
+      setCurrentPage(value);
+    },
+    [],
+  );
 
   return (
     <Box

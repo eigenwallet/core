@@ -15,7 +15,7 @@ import GlobalSnackbarProvider from "./snackbar/GlobalSnackbarProvider";
 import UpdaterDialog from "./modal/updater/UpdaterDialog";
 import { useSettings } from "store/hooks";
 import { Theme as ThemeEnum, themes } from "./theme";
-import { useEffect } from "react";
+import { useEffect, useMemo, memo } from "react";
 import { setupBackgroundTasks } from "renderer/background";
 import "@fontsource/roboto";
 import FeedbackPage from "./pages/feedback/FeedbackPage";
@@ -43,9 +43,10 @@ export default function App() {
   }, []);
 
   const theme = useSettings((s) => s.theme);
-  const currentTheme = themes[theme] || themes[ThemeEnum.Dark];
-
-  console.log("Current theme:", { theme, currentTheme });
+  const currentTheme = useMemo(
+    () => themes[theme] || themes[ThemeEnum.Dark],
+    [theme]
+  );
 
   return (
     <ErrorBoundary>
@@ -71,16 +72,16 @@ export default function App() {
   );
 }
 
-function InnerContent() {
+const innerContentSx = {
+  padding: 4,
+  marginLeft: drawerWidth,
+  maxHeight: `100vh`,
+  flex: 1,
+};
+
+const InnerContent = memo(function InnerContent() {
   return (
-    <Box
-      sx={{
-        padding: 4,
-        marginLeft: drawerWidth,
-        maxHeight: `100vh`,
-        flex: 1,
-      }}
-    >
+    <Box sx={innerContentSx}>
       <Routes>
         <Route
           path="/"
@@ -141,4 +142,4 @@ function InnerContent() {
       </Routes>
     </Box>
   );
-}
+});
