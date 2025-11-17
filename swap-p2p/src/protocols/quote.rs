@@ -104,27 +104,37 @@ crate::impl_from_rr_event!(OutEvent, out_event::bob::OutEvent, PROTOCOL);
 
 /// Behaviour that listens for peers that support the protocol and then periodically requests a quote from them.
 pub mod background {
-    use backoff::{ExponentialBackoff, backoff::Backoff};
-    use futures::future;
-    use libp2p::{Multiaddr, PeerId, StreamProtocol, core::Endpoint, swarm::{ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent, THandlerOutEvent, ToSwarm}};
+    use backoff::{backoff::Backoff, ExponentialBackoff};
+    use libp2p::{
+        core::Endpoint,
+        swarm::{
+            ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent,
+            THandlerOutEvent, ToSwarm,
+        },
+        Multiaddr, PeerId, StreamProtocol,
+    };
 
-    use std::{collections::{HashMap, HashSet, VecDeque}, task::Poll, time::Duration};
+    use std::{collections::{HashMap, VecDeque}, task::Poll, time::Duration};
 
-    use crate::{futures_util::FuturesHashSet, protocols::{notice, quote}};
     use super::BidQuote;
+    use crate::{
+        behaviour_util::ConnectionTracker,
+        futures_util::FuturesHashSet,
+        protocols::{notice, quote},
+    };
+
+    const QUOTE_INTERVAL: Duration = Duration::from_secs(5);
 
     pub struct Behaviour {
         inner: InnerBehaviour,
 
         /// Track connected peers
-        connected_peers: HashSet<PeerId>,
+        connection_tracker: ConnectionTracker,
 
         /// Peers to dispatch a quote request to as soon as we are connected to them
         to_dispatch: VecDeque<PeerId>,
         /// Peers to request a quote from once the future resolves
         to_request: FuturesHashSet<PeerId, ()>,
-        /// Channel to receive new peers from outside the behaviour
-        to_request_tx_rx: (tokio::sync::mpsc::Sender<PeerId>, tokio::sync::mpsc::Receiver<PeerId>),
 
         /// Store backoffs for each peer
         backoff: HashMap<PeerId, ExponentialBackoff>,
@@ -135,50 +145,49 @@ pub mod background {
 
     impl Behaviour {
         pub fn new() -> Self {
-            // TODO: Make unbounded
-            let (to_request_tx, to_request_rx) = tokio::sync::mpsc::channel(100);
-
             Self {
                 inner: InnerBehaviour {
                     quote: quote::cli(),
                     notice: notice::Behaviour::new(StreamProtocol::new(quote::PROTOCOL)),
                 },
-                connected_peers: HashSet::new(),
+                connection_tracker: ConnectionTracker::new(),
                 to_dispatch: VecDeque::new(),
                 to_request: FuturesHashSet::new(),
-                to_request_tx_rx: (to_request_tx, to_request_rx),
                 backoff: HashMap::new(),
                 to_swarm: VecDeque::new(),
             }
         }
 
-        pub async fn send_request(&mut self, peer: &PeerId) {
-            let _ = self.to_request_tx_rx.0.send(*peer).await;
+        fn is_connected(&self, peer_id: &PeerId) -> bool {
+            self.connection_tracker.is_connected(peer_id)
         }
 
         pub fn get_backoff(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
-            self.backoff.entry(*peer).or_insert_with(|| {
-                ExponentialBackoff {
+            self.backoff
+                .entry(*peer)
+                .or_insert_with(|| ExponentialBackoff {
                     initial_interval: Duration::from_secs(1),
                     current_interval: Duration::from_secs(1),
                     max_interval: Duration::from_secs(10),
                     max_elapsed_time: None,
                     ..ExponentialBackoff::default()
-                }
-            })
+                })
         }
 
-        fn schedule_quote_request(&mut self, peer: PeerId) -> Duration {
-            let backoff = self.get_backoff(&peer);
-            let next_request_in = backoff.current_interval;
-            
-            self.to_request.insert(peer, Box::pin(tokio::time::sleep(next_request_in)));
-            
-            next_request_in
+        fn schedule_quote_request_after(&mut self, peer: PeerId, duration: Duration) -> Duration {
+            self.to_request
+                .insert(peer, Box::pin(tokio::time::sleep(duration)));
+            duration
+        }
+
+        fn schedule_quote_request_with_backoff(&mut self, peer: PeerId) -> Duration {
+            let duration = self.get_backoff(&peer).current_interval;
+
+            self.schedule_quote_request_after(peer, duration)
         }
 
         fn schedule_quote_request_immediately(&mut self, peer: PeerId) {
-            self.to_request.insert(peer, Box::pin(future::ready(())));
+            self.schedule_quote_request_after(peer, Duration::ZERO);
         }
     }
 
@@ -190,44 +199,42 @@ pub mod background {
 
     #[derive(Debug)]
     pub enum Event {
-        QuoteReceived {
-            peer: PeerId,
-            quote: BidQuote,
-        },
-    } 
+        QuoteReceived { peer: PeerId, quote: BidQuote },
+    }
 
     impl libp2p::swarm::NetworkBehaviour for Behaviour {
-        type ConnectionHandler = <InnerBehaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler;
+        type ConnectionHandler =
+            <InnerBehaviour as libp2p::swarm::NetworkBehaviour>::ConnectionHandler;
         type ToSwarm = Event;
 
         fn poll(
             &mut self,
             cx: &mut std::task::Context<'_>,
         ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-            while let Poll::Ready(Some(peer)) = self.to_request_tx_rx.1.poll_recv(cx) {
-                tracing::trace!(%peer, "Queueing quote request to peer which we got from outside the behaviour");
-                self.schedule_quote_request(peer);
-            }
-
             while let Poll::Ready(Some((peer, ()))) = self.to_request.poll_next_unpin(cx) {
                 self.to_dispatch.push_back(peer);
             }
 
             // Only dispatch to connected peers, keep non-connected ones in queue
-            self.to_dispatch.retain(|peer| {
-                if self.connected_peers.contains(peer) {
-                    let outbound_request_id = self.inner.quote.send_request(peer, ());
-                    tracing::trace!(
-                        %peer,
-                        %outbound_request_id,
-                        "Dispatching outgoing quote request to peer"
-                    );
+            // Take ownership of the queue to avoid borrow checker issues
+            let to_dispatch = std::mem::take(&mut self.to_dispatch);
+            self.to_dispatch = to_dispatch
+                .into_iter()
+                .filter(|peer| {
+                    if self.is_connected(peer) {
+                        let outbound_request_id = self.inner.quote.send_request(peer, ());
+                        tracing::trace!(
+                            %peer,
+                            %outbound_request_id,
+                            "Dispatching outgoing quote request to peer"
+                        );
 
-                    false
-                } else {
-                    true
-                }
-            });
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect();
 
             let inner_poll = self.inner.poll(cx);
 
@@ -236,26 +243,44 @@ pub mod background {
                     InnerBehaviourEvent::Notice(notice::Event::SupportsProtocol { peer }) => {
                         tracing::trace!(%peer, "Queuing quote request to peer after noticing that they support the quote protocol");
                         self.schedule_quote_request_immediately(peer);
-                    },
-                    InnerBehaviourEvent::Quote(quote::request_response::Event::Message { peer, message }) => {
-                        if let quote::request_response::Message::Response { response, .. } = message {
-                            static QUOTE_INTERVAL: Duration = Duration::from_secs(5);
+                    }
+                    InnerBehaviourEvent::Quote(quote::request_response::Event::Message {
+                        peer,
+                        message,
+                    }) => {
+                        if let quote::request_response::Message::Response { response, .. } = message
+                        {
+                            self.to_swarm.push_back(Event::QuoteReceived {
+                                peer,
+                                quote: response,
+                            });
 
+                            // We got a successful response, so we reset the backoff
                             self.get_backoff(&peer).reset();
-                            self.to_swarm.push_back(Event::QuoteReceived { peer, quote: response });
 
-                            self.to_request.insert(peer, Box::pin(tokio::time::sleep(QUOTE_INTERVAL.clone())));
+                            // Schedule a new quote request after backoff
+                            self.schedule_quote_request_after(peer, QUOTE_INTERVAL);
                         }
-                    },
-                    InnerBehaviourEvent::Quote(quote::request_response::Event::OutboundFailure { peer, request_id, error }) => {
-                        self.get_backoff(&peer).next_backoff().expect("backoff should never run out of attempts");
-                        
-                        let next_request_in = self.schedule_quote_request(peer);
+                    }
+                    InnerBehaviourEvent::Quote(
+                        quote::request_response::Event::OutboundFailure {
+                            peer,
+                            request_id,
+                            error,
+                        },
+                    ) => {
+                        // We got an outbound failure, so we increment the backoff
+                        self.get_backoff(&peer)
+                            .next_backoff()
+                            .expect("backoff should never run out of attempts");
+
+                        // We schedule a new quote request
+                        let next_request_in = self.schedule_quote_request_with_backoff(peer);
 
                         tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
-                    },
-                    other => {
-                        // return Poll::Ready(ToSwarm::GenerateEvent(other));
+                    }
+                    _ => {
+                        // Ignore other events
                     }
                 }
             }
@@ -289,7 +314,12 @@ pub mod background {
             local_addr: &Multiaddr,
             remote_addr: &Multiaddr,
         ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
-            self.inner.handle_established_inbound_connection(connection_id, peer, local_addr, remote_addr)
+            self.inner.handle_established_inbound_connection(
+                connection_id,
+                peer,
+                local_addr,
+                remote_addr,
+            )
         }
 
         fn handle_established_outbound_connection(
@@ -299,22 +329,16 @@ pub mod background {
             addr: &Multiaddr,
             role_override: Endpoint,
         ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
-            self.inner.handle_established_outbound_connection(connection_id, peer, addr, role_override)
+            self.inner.handle_established_outbound_connection(
+                connection_id,
+                peer,
+                addr,
+                role_override,
+            )
         }
 
         fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-            match event {
-                FromSwarm::ConnectionEstablished(connection_established) => {
-                    self.connected_peers.insert(connection_established.peer_id);
-                },
-                FromSwarm::ConnectionClosed(connection_closed) => {
-                    self.connected_peers.remove(&connection_closed.peer_id);
-                },
-                FromSwarm::DialFailure(_) => {
-                    // TODO: Do  we need to handle this?
-                }
-                _ => {}
-            }
+            self.connection_tracker.handle_swarm_event(event);
             self.inner.on_swarm_event(event)
         }
 
@@ -324,16 +348,18 @@ pub mod background {
             connection_id: ConnectionId,
             event: THandlerOutEvent<Self>,
         ) {
-            self.inner.on_connection_handler_event(peer_id, connection_id, event)
+            self.inner
+                .on_connection_handler_event(peer_id, connection_id, event)
         }
-        
+
         fn handle_pending_inbound_connection(
             &mut self,
             connection_id: ConnectionId,
             local_addr: &Multiaddr,
             remote_addr: &Multiaddr,
         ) -> Result<(), ConnectionDenied> {
-            self.inner.handle_pending_inbound_connection(connection_id, local_addr, remote_addr)
+            self.inner
+                .handle_pending_inbound_connection(connection_id, local_addr, remote_addr)
         }
     }
 }

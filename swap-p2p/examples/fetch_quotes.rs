@@ -11,11 +11,11 @@ use libp2p::{dns, tcp};
 use libp2p::{identify, noise, ping, request_response};
 use libp2p::{identity, yamux, Multiaddr, PeerId, SwarmBuilder, Transport};
 use libp2p_tor::{AddressConversion, TorTransport};
-use swap_p2p::protocols::quote::BidQuote;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_p2p::libp2p_ext::MultiAddrExt;
+use swap_p2p::protocols::quote::BidQuote;
 use swap_p2p::protocols::{quote, rendezvous};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -134,8 +134,7 @@ async fn main() -> Result<()> {
         match event {
             libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
                 BehaviourEvent::Rendezvous(event) => match event {
-                    rendezvous::discovery::Event::DiscoveredPeer { peer_id, address: _ } => {
-                    }
+                    rendezvous::discovery::Event::DiscoveredPeer { peer_id } => {}
                 },
                 BehaviourEvent::Quote(quote::background::Event::QuoteReceived { peer, quote }) => {
                     all_quotes.entry(peer).or_default().push_back(quote);

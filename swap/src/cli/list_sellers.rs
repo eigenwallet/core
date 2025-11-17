@@ -3,7 +3,6 @@ use crate::cli::api::tauri_bindings::{
     TauriHandle,
 };
 use crate::network::quote::BidQuote;
-use swap_p2p::libp2p_ext::MultiAddrExt;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::{quote, swarm};
 use crate::protocol::Database;
@@ -22,6 +21,7 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
+use swap_p2p::libp2p_ext::MultiAddrExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use typeshare::typeshare;
 

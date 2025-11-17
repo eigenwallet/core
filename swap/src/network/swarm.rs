@@ -1,6 +1,5 @@
 use crate::asb::{register, LatestRate};
 use crate::network::rendezvous::XmrBtcNamespace;
-use swap_p2p::libp2p_ext::MultiAddrExt;
 use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
@@ -13,6 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
+use swap_p2p::libp2p_ext::MultiAddrExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
