@@ -110,8 +110,8 @@ pub struct PasswordRequestDetails {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "content")]
 pub enum SeedChoice {
-    RandomSeed,
-    FromSeed { seed: String },
+    RandomSeed { password: String },
+    FromSeed { seed: String, password: String },
     FromWalletPath { wallet_path: String },
     Legacy,
 }

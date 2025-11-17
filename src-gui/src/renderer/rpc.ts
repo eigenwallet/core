@@ -57,6 +57,8 @@ import {
   ContextStatus,
   GetSwapTimelockArgs,
   GetSwapTimelockResponse,
+  SetMoneroWalletPasswordResponse,
+  SetMoneroWalletPasswordArgs,
 } from "models/tauriModel";
 import {
   rpcSetSwapInfo,
@@ -301,15 +303,21 @@ export async function updateAllNodeStatuses() {
   const network = getNetwork();
   const settings = store.getState().settings;
 
-  // Only check Monero nodes if we're using custom nodes (not RPC pool)
-  // Skip Bitcoin nodes since we pass all electrum servers to the backend without checking them (ElectrumBalancer handles failover)
-  if (!settings.useMoneroRpcPool) {
-    await Promise.all(
-      settings.nodes[network][Blockchain.Monero].map((node) =>
-        updateNodeStatus(node, Blockchain.Monero, network),
-      ),
-    );
-  }
+  // We pass all electrum servers to the backend without checking them (ElectrumBalancer handles failover),
+  // but check these anyway since the status appears in the GUI.
+  // Only check Monero nodes if we're using custom nodes (not RPC pool).
+  await Promise.all(
+    (settings.useMoneroRpcPool
+      ? [Blockchain.Bitcoin]
+      : [Blockchain.Bitcoin, Blockchain.Monero]
+    )
+      .map((blockchain) =>
+        settings.nodes[network][blockchain].map((node) =>
+          updateNodeStatus(node, blockchain, network),
+        ),
+      )
+      .flat(),
+  );
 }
 
 export async function cheapCheckBitcoinBalance() {
@@ -538,6 +546,15 @@ export async function setMoneroRestoreHeight(
   return await invoke<SetRestoreHeightArgs, SetRestoreHeightResponse>(
     "set_monero_restore_height",
     args,
+  );
+}
+
+export async function setMoneroWalletPassword(
+  password: string,
+): Promise<SetMoneroWalletPasswordResponse> {
+  return await invoke<SetMoneroWalletPasswordArgs, SetMoneroWalletPasswordResponse>(
+    "set_monero_wallet_password",
+    { password },
   );
 }
 

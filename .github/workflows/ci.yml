@@ -28,6 +28,37 @@ jobs:
       - name: Run clippy with all features enabled
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+  gui_eslint:
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' || !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
+        with:
+          host: ubuntu-22.04
+
+      - name: Run GUI eslint checks
+        run: just check_gui_eslint
+
+  gui_tsc:
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' || !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup build environment (cli tools, dependencies)
+        uses: ./.github/actions/setup-build-environment
+        with:
+          host: ubuntu-22.04
+
+      - name: Run GUI generate bindings
+        run: just bindings
+
+      - name: Run GUI tsc checks
+        run: just check_gui_tsc
+
   sqlx_test:
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
