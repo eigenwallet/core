@@ -15,10 +15,17 @@ use void::Void;
 /// peers and attempts to re-establish a connection with an exponential backoff
 /// if we lose the connection.
 ///
+/// Note: Make sure that when using this as an inner behaviour for a `NetworkBehaviour` that you
+/// call all the NetworkBehaviour methods (including `handle_pending_outbound_connection`) to ensure
+/// that the addresses are cached correctly.
 /// TODO: Allow removing peers from the set after we are done with them.
 pub struct Behaviour {
     /// The peers we are interested in.
     peers: HashSet<PeerId>,
+    /// Store address for all peers (even those we are not interested in)
+    /// because we might be interested in them later on
+    // TODO: Sort these by how often we were able to connect to them
+    addresses: HashMap<PeerId, HashSet<Multiaddr>>,
     /// Tracks sleep timers for each peer waiting to redial.
     /// Futures in here yield the PeerId and when a Future completes we dial that peer
     to_dial: FuturesHashSet<PeerId, ()>,
@@ -29,7 +36,7 @@ pub struct Behaviour {
     /// Maximum interval for backoff.
     max_interval: Duration,
     /// A queue of events to be sent to the swarm.
-    to_swarm: VecDeque<Event>,
+    to_swarm: VecDeque<ToSwarm<Event, Void>>,
     /// An identifier for this redial behaviour instance (for logging/tracing).
     name: &'static str,
 }
@@ -38,6 +45,7 @@ impl Behaviour {
     pub fn new(name: &'static str, interval: Duration, max_interval: Duration) -> Self {
         Self {
             peers: HashSet::default(),
+            addresses: HashMap::default(),
             to_dial: FuturesHashSet::new(),
             backoff: HashMap::new(),
             initial_interval: interval,
@@ -55,9 +63,30 @@ impl Behaviour {
         // If the peer is newly added, schedule a dial immediately
         if newly_added {
             self.schedule_redial(&peer, Duration::ZERO);
+
+            tracing::trace!("Added a new peer to the set of peers we want to contineously redial");
         }
 
-        tracing::trace!("Added a new peer to the set of peers we want to contineously redial");
+        newly_added
+    }
+
+    /// Adds a peer to the set of peers to track with a specific address. Returns true if the peer was newly added.
+    #[tracing::instrument(level = "trace", name = "redial::add_peer_with_address", skip(self, peer, address), fields(redial_type = %self.name, peer = %peer, address = %address))]
+    pub fn add_peer_with_address(&mut self, peer: PeerId, address: Multiaddr) -> bool {
+        let newly_added = self.peers.insert(peer);
+
+        // If the peer is newly added, schedule a dial immediately
+        if newly_added {
+            self.schedule_redial(&peer, Duration::ZERO);
+
+            tracing::trace!(?address, "Added a new peer to the set of peers we want to contineously redial with a specific address");
+        }
+
+        self.to_swarm.push_back(ToSwarm::NewExternalAddrOfPeer {
+            peer_id: peer,
+            address: address.clone(),
+        });
+        self.insert_address(&peer, address);
 
         newly_added
     }
@@ -106,10 +135,11 @@ impl Behaviour {
         // TODO: We could make this a production assert if we want to be more strict
         debug_assert!(did_queue_new_dial);
 
-        self.to_swarm.push_back(Event::ScheduledRedial {
-            peer: peer.clone(),
-            next_dial_in,
-        });
+        self.to_swarm
+            .push_back(ToSwarm::GenerateEvent(Event::ScheduledRedial {
+                peer: peer.clone(),
+                next_dial_in,
+            }));
 
         tracing::trace!(
             seconds_until_next_redial = %next_dial_in.as_secs(),
@@ -121,6 +151,13 @@ impl Behaviour {
 
     pub fn has_pending_redial(&self, peer: &PeerId) -> bool {
         self.to_dial.contains_key(peer)
+    }
+
+    pub fn insert_address(&mut self, peer: &PeerId, address: Multiaddr) {
+        self.addresses
+            .entry(peer.clone())
+            .or_default()
+            .insert(address);
     }
 }
 
@@ -138,12 +175,21 @@ impl NetworkBehaviour for Behaviour {
 
     #[tracing::instrument(level = "trace", name = "redial::on_swarm_event", skip(self, event), fields(redial_type = %self.name))]
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-        // Check if the event was for either:
-        // - a failed dial
-        // - a closed connection
-        //
-        // We will then schedule a redial for the peer
         let peer_to_redial = match event {
+            // Check if we discovered a new address for some peer
+            FromSwarm::NewExternalAddrOfPeer(event) => {
+                // TOOD: Ensure that if the address contains a peer id it matches the peer id in the event
+                self.insert_address(&event.peer_id, event.addr.clone());
+
+                tracing::trace!(peer = %event.peer_id, address = %event.addr, "Cached an address for a peer");
+
+                None
+            }
+            // Check if the event was for either:
+            // - a failed dial
+            // - a closed connection
+            //
+            // We will then schedule a redial for the peer
             FromSwarm::ConnectionClosed(event) if self.peers.contains(&event.peer_id) => {
                 tracing::trace!(peer = %event.peer_id, "A connection was closed for a peer we want to contineously redial. We will schedule a redial.");
 
@@ -201,7 +247,7 @@ impl NetworkBehaviour for Behaviour {
     fn poll(&mut self, cx: &mut Context<'_>) -> std::task::Poll<ToSwarm<Self::ToSwarm, Void>> {
         // Check if we have any event to send to the swarm
         if let Some(event) = self.to_swarm.pop_front() {
-            return Poll::Ready(ToSwarm::GenerateEvent(event));
+            return Poll::Ready(event);
         }
 
         // Check if any peer's sleep timer has completed
@@ -248,6 +294,37 @@ impl NetworkBehaviour for Behaviour {
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         Ok(Self::ConnectionHandler {})
     }
+
+    #[tracing::instrument(level = "trace", name = "redial::handle_pending_outbound_connection", skip(self, _connection_id, _addresses, maybe_peer, _effective_role), fields(redial_type = %self.name))]
+    fn handle_pending_outbound_connection(
+        &mut self,
+        _connection_id: libp2p::swarm::ConnectionId,
+        maybe_peer: Option<PeerId>,
+        _addresses: &[Multiaddr],
+        _effective_role: libp2p::core::Endpoint,
+    ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+        // If we don't know the peer id, we cannot contribute any addresses
+        let Some(peer_id) = maybe_peer else {
+            return Ok(vec![]);
+        };
+
+        // TODO: Uncomment this if we only want to contribute addresses for peers we are instructed to redial
+        // if !self.peers.contains(&peer_id) {
+        //     return Ok(vec![]);
+        // }
+
+        // Check if we have any addresses cached for the peer
+        // TODO: Sort these by how often we were able to connect to them
+        let addresses = self
+            .addresses
+            .get(&peer_id)
+            .map(|addrs| addrs.iter().cloned().collect())
+            .unwrap_or_default();
+
+        tracing::trace!(peer = %peer_id, contributed_addresses = ?addresses, "Contributing our cached addresses for a peer to the dial attempt");
+
+        Ok(addresses)
+    }
 }
 
 impl From<Event> for out_event::bob::OutEvent {
@@ -260,5 +337,85 @@ impl From<Event> for out_event::alice::OutEvent {
     fn from(_event: Event) -> Self {
         // TODO: Once this is used by Alice, convert this to a proper event
         out_event::alice::OutEvent::Other
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::task::noop_waker;
+    use libp2p::identity;
+    use libp2p::swarm::{ConnectionId, DialFailure, ToSwarm};
+
+    #[tokio::test]
+    async fn add_peer_schedules_immediate_redial_event_and_another_dial_after_failure() {
+        let mut behaviour =
+            Behaviour::new("test", Duration::from_millis(10), Duration::from_secs(1));
+
+        let peer = identity::Keypair::generate_ed25519().public().to_peer_id();
+
+        // Add the peer
+        let added = behaviour.add_peer(peer);
+        assert!(added, "peer should be newly added");
+        assert!(
+            behaviour.has_pending_redial(&peer),
+            "pending redial should be scheduled"
+        );
+
+        // Poll the behaviour directly until we see a Dial command targeting this peer
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(50);
+
+        // Wait for initial dial event
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                panic!(
+                    "behaviour did not emit Dial event for peer {} in time",
+                    peer
+                );
+            }
+
+            match behaviour.poll(&mut cx) {
+                Poll::Ready(ToSwarm::Dial { opts }) => {
+                    let dial_peer = opts
+                        .get_peer_id()
+                        .expect("dial opts should always contain a peer id");
+                    assert_eq!(dial_peer, peer, "Dial should be for the correct peer");
+                    break;
+                }
+                Poll::Ready(_) => {}
+                Poll::Pending => {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        }
+
+        // Mock a dial failure
+        behaviour.on_swarm_event(FromSwarm::DialFailure(DialFailure {
+            peer_id: Some(peer),
+            error: &DialError::Aborted,
+            connection_id: ConnectionId::new_unchecked(0),
+        }));
+
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                panic!("behaviour did not emit Dial event for peer {} in time after a mocked dial failure", peer);
+            }
+
+            match behaviour.poll(&mut cx) {
+                Poll::Ready(ToSwarm::Dial { opts }) => {
+                    let dial_peer = opts
+                        .get_peer_id()
+                        .expect("dial opts should always contain a peer id");
+                    assert_eq!(dial_peer, peer, "Dial should be for the correct peer");
+                    break;
+                }
+                Poll::Ready(_) => {}
+                Poll::Pending => {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+        }
     }
 }

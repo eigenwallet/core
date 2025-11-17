@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ORCHESTRATOR + ASB: Support for tunneling both the Bitcoin and Monero node over Tor has been added (thanks to @nabijaczleweli)
+
+## [3.3.6] - 2025-11-17
+
+- GUI: Fix an issue where the user would have to keep resuming if we failed to check the status of a Bitcoin timelock before we waited for the Monero lock transaction to be confirmed.
+
+## [3.3.5] - 2025-11-15
+
+- GUI: Allow changing the password of a Monero wallet (thanks to @nabijaczleweli)
+- GUI: Fix an issue where the list of Electrum servers would display all servers as being unreachable (thanks to @nabijaczleweli)
+- ASB: Fix an issue where we would not properly reconnect to rendezvous servers which could negatively impact peer discovery
+
+## [3.3.3] - 2025-11-13
+
+## [3.3.2] - 2025-11-13
+
+- GUI + SWAP: Fix an issue where we would fail to connect to peers if we failed on the initial attempt because previous addresses were not cached properly.
+
+## [3.3.1] - 2025-11-11
+
+- GUI: Fix the Flatpak images to ensure they are kept up to date and the correct version is displayed. Also fixes an issue where a blank screen would sometimes be rendered. Big thanks to [nabijaczleweli](https://github.com/nabijaczleweli) for spending their time on this! Consider sending a Monero tip to the donation address pinned on their [Github profile](https://github.com/nabijaczleweli).
+
 ## [3.3.0] - 2025-11-10
 
 - GUI + SWAP: Retry sending the encrypted signature more aggressively. This might help with an issue where we would be stuck on the "Sending encrypted signature" screen for a longer time than necessary.
@@ -748,7 +770,13 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.3.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.3.6...HEAD
+[3.3.6]: https://github.com/eigenwallet/core/compare/3.3.5...3.3.6
+[3.3.5]: https://github.com/eigenwallet/core/compare/3.3.4...3.3.5
+[3.3.4]: https://github.com/eigenwallet/core/compare/3.3.3...3.3.4
+[3.3.3]: https://github.com/eigenwallet/core/compare/3.3.2...3.3.3
+[3.3.2]: https://github.com/eigenwallet/core/compare/3.3.1...3.3.2
+[3.3.1]: https://github.com/eigenwallet/core/compare/3.3.0...3.3.1
 [3.3.0]: https://github.com/eigenwallet/core/compare/3.2.11...3.3.0
 [3.2.11]: https://github.com/eigenwallet/core/compare/3.2.10...3.2.11
 [3.2.10]: https://github.com/eigenwallet/core/compare/3.2.9...3.2.10

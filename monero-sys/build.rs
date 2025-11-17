@@ -77,6 +77,24 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
     ),
 ];
 
+/// Find the workspace target directory from OUT_DIR
+///
+/// OUT_DIR is something like: /path/to/workspace/target/debug/build/monero-sys-abc123/out
+/// We want to extract: /path/to/workspace/target
+fn find_workspace_target_dir() -> std::path::PathBuf {
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
+    let out_path = Path::new(&out_dir);
+
+    // Walk up from OUT_DIR to find "target" directory
+    for ancestor in out_path.ancestors() {
+        if ancestor.ends_with("target") {
+            return ancestor.to_path_buf();
+        }
+    }
+
+    panic!("Could not find target directory from OUT_DIR: {}", out_dir);
+}
+
 fn main() {
     let is_github_actions: bool = std::env::var("GITHUB_ACTIONS").is_ok();
     let is_docker_build: bool = std::env::var("DOCKER_BUILD").is_ok();
@@ -102,10 +120,15 @@ fn main() {
         .expect("current directory to be accessible")
         .join(MONERO_DEPENDS_DIR);
 
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
-    let out_dir = Path::new(&out_dir);
+    // Use stable location in target/debug/monero-depends to avoid rebuilding deps unnecessarily
+    let target_dir = find_workspace_target_dir();
+    let stable_depends_dir = target_dir
+        .join("debug")
+        .join("monero-depends")
+        .join(&std::env::var("TARGET").expect("TARGET env var to be present"));
+
     let (contrib_depends_dir, target) =
-        compile_dependencies(contrib_depends_dir, out_dir.join("depends"));
+        compile_dependencies(contrib_depends_dir, stable_depends_dir);
 
     // Build with the monero library all dependencies required
     let mut config = Config::new(MONERO_CPP_DIR);

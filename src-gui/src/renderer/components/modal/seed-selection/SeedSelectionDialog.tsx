@@ -19,6 +19,7 @@ import {
   Card,
   CardContent,
 } from "@mui/material";
+import NewPasswordInput from "renderer/components/other/NewPasswordInput";
 import { useState, useEffect } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
@@ -59,6 +60,8 @@ export default function SeedSelectionDialog() {
     string | undefined
   >();
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
+  const [password, setPassword] = useState<string>("");
+  const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
   const [walletPath, setWalletPath] = useState<string>("");
 
   const approval = pendingApprovals[0];
@@ -121,7 +124,7 @@ export default function SeedSelectionDialog() {
 
     const seedChoice: SeedChoice =
       selectedOption === "RandomSeed"
-        ? { type: "RandomSeed" }
+        ? { type: "RandomSeed", content: { password } }
         : selectedOption === "FromSeed"
           ? {
             type: "FromSeed",
@@ -129,6 +132,7 @@ export default function SeedSelectionDialog() {
               seed: customSeed,
               ...(isBlockheightValid && {
                 restore_height: parseBlockHeightInput(blockheightInput),
+                password,
               }),
             },
           }
@@ -142,16 +146,20 @@ export default function SeedSelectionDialog() {
   }
 
   // Disable the button if the user is restoring from a seed and the seed is invalid
-  // or if selecting wallet path and no path is selected
-  // or if blockheight is provided but invalid
+  // or if selecting wallet path and no path is selected,
+  // or if blockheight is provided but invalid,
+  // or if setting a password and they don't match
   const isDisabled =
     selectedOption === "FromSeed"
       ? customSeed.trim().length === 0 ||
       !isSeedValid ||
-      isBlockheightInputFailed
+      isBlockheightInputFailed ||
+      !isPasswordValid
       : selectedOption === "FromWalletPath"
         ? !walletPath
-        : false;
+        : selectedOption === "RandomSeed"
+          ? !isPasswordValid
+          : false;
 
   return (
     <Dialog
@@ -269,6 +277,13 @@ export default function SeedSelectionDialog() {
 
         {selectedOption === "RandomSeed" && (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <NewPasswordInput
+              password={password}
+              setPassword={setPassword}
+              isPasswordValid={isPasswordValid}
+              setIsPasswordValid={setIsPasswordValid}
+            />
+
             <Typography
               variant="body2"
               color="text.secondary"
@@ -287,10 +302,11 @@ export default function SeedSelectionDialog() {
         )}
 
         {selectedOption === "FromSeed" && (
-          <>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
             <TextField
               fullWidth
               multiline
+              autoFocus
               rows={3}
               label="Enter your seed phrase"
               value={customSeed}
@@ -305,6 +321,15 @@ export default function SeedSelectionDialog() {
                     : ""
               }
             />
+
+            <NewPasswordInput
+              password={password}
+              setPassword={setPassword}
+              isPasswordValid={isPasswordValid}
+              setIsPasswordValid={setIsPasswordValid}
+              autoFocus={false}
+            />
+
             <TextField
               type="text"
               inputProps={{
@@ -324,7 +349,7 @@ export default function SeedSelectionDialog() {
                     : ""
               }
             />
-          </>
+          </Box>
         )}
 
         {selectedOption === "FromWalletPath" && (

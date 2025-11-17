@@ -5,6 +5,7 @@ use libp2p::rendezvous;
 use libp2p::swarm::SwarmEvent;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
+use swap_p2p::protocols::rendezvous::register;
 use tokio::fs;
 use tokio::fs::{DirBuilder, OpenOptions};
 use tokio::io::AsyncWriteExt;
@@ -106,20 +107,22 @@ async fn main() -> Result<()> {
                 tracing::info!(peer=%enquirer, "Discovery served");
             }
             SwarmEvent::Behaviour(behaviour::BehaviourEvent::Register(
-                rendezvous::client::Event::Registered {
+                register::InnerBehaviourEvent::Rendezvous(rendezvous::client::Event::Registered {
                     rendezvous_node,
                     ttl,
                     namespace,
-                },
+                }),
             )) => {
                 tracing::info!(%rendezvous_node, %namespace, ttl, "Registered at rendezvous point");
             }
             SwarmEvent::Behaviour(behaviour::BehaviourEvent::Register(
-                rendezvous::client::Event::RegisterFailed {
-                    rendezvous_node,
-                    namespace,
-                    error,
-                },
+                register::InnerBehaviourEvent::Rendezvous(
+                    rendezvous::client::Event::RegisterFailed {
+                        rendezvous_node,
+                        namespace,
+                        error,
+                    },
+                ),
             )) => {
                 tracing::warn!(%rendezvous_node, %namespace, ?error, "Failed to register at rendezvous point");
             }
