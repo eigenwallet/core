@@ -60,7 +60,7 @@ import {
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
 import { selectAllSwapIds } from "store/selectors";
-import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
+import { setBitcoinAddress, setBitcoinBalance } from "store/features/bitcoinWalletSlice";
 import {
   setMainAddress,
   setBalance,
@@ -587,6 +587,19 @@ export async function getMoneroSeedAndRestoreHeight(): Promise<
 }
 
 // Wallet management functions that handle Redux dispatching
+export async function initializeBitcoinWallet() {
+  try {
+    await Promise.all([
+      checkBitcoinBalance(),
+      getBitcoinAddress().then((address) => {
+        store.dispatch(setBitcoinAddress(address));
+      })
+    ]);
+  } catch (err) {
+    console.error("Failed to fetch Bitcoin wallet data:", err);
+  }
+}
+
 export async function initializeMoneroWallet() {
   try {
     await Promise.all([

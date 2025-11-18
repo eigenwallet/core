@@ -3,8 +3,7 @@ import { throttle, debounce } from "lodash";
 import {
   getAllSwapInfos,
   getAllSwapTimelocks,
-  checkBitcoinBalance,
-  getBitcoinAddress,
+  initializeBitcoinWallet,
   updateAllNodeStatuses,
   fetchSellersAtPresetRendezvousPoints,
   getSwapInfo,
@@ -102,13 +101,7 @@ export function createMainListeners() {
         logger.info(
           "Bitcoin wallet just became available, checking balance and getting address...",
         );
-        await checkBitcoinBalance();
-        try {
-          const address = await getBitcoinAddress();
-          store.dispatch(setBitcoinAddress(address));
-        } catch (error) {
-          logger.error("Failed to fetch Bitcoin address", error);
-        }
+        await initializeBitcoinWallet();
       }
 
       // If the Monero wallet just came available, initialize the Monero wallet
