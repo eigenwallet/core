@@ -620,8 +620,8 @@ impl BobParams {
             self.env_config,
             self.bitcoin_wallet.clone(),
             identity.clone(),
-             XmrBtcNamespace::Testnet,
-             Vec::new(),
+            XmrBtcNamespace::Testnet,
+            Vec::new(),
         );
         let mut swarm = swarm::cli(identity.clone(), None, behaviour).await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());

@@ -1,7 +1,8 @@
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::bob;
 use crate::network::{
-    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, quotes, transfer_proof, redial, rendezvous
+    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, quotes, redial, rendezvous,
+    transfer_proof,
 };
 use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;
@@ -22,15 +23,23 @@ const MAX_REDIAL_INTERVAL: Duration = Duration::from_secs(30);
 #[behaviour(to_swarm = "OutEvent")]
 #[allow(missing_debug_implementations)]
 pub struct Behaviour {
+    /// Fetch a quote from a specifc peer, usually before starting a swap
     pub direct_quote: quote::Behaviour,
+    /// Periodically request quotes from any peers that might offer them
     pub quotes: quotes::Behaviour,
+    /// Periodically discover peers via rendezvous nodes
     pub discovery: rendezvous::discovery::Behaviour,
 
+    /// Requires to actually do swaps
     pub swap_setup: bob::Behaviour,
     pub transfer_proof: transfer_proof::Behaviour,
     pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
     pub encrypted_signature: encrypted_signature::Behaviour,
+
+    /// Allows us to keep connections to specific peers alive
     pub redial: redial::Behaviour,
+
+    /// Identify is used to share supported protocols, addresses and useragents
     pub identify: identify::Behaviour,
 
     /// Ping behaviour that ensures that the underlying network connection is
@@ -48,16 +57,23 @@ impl Behaviour {
         rendezvous_nodes: Vec<PeerId>,
     ) -> Self {
         let agentVersion = format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
-        let identifyConfig =
-            identify::Config::new(PROTOCOL_VERSION.to_string(), identity.public())
-                .with_agent_version(agentVersion);
+        let identifyConfig = identify::Config::new(PROTOCOL_VERSION.to_string(), identity.public())
+            .with_agent_version(agentVersion);
 
         let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
         Self {
             direct_quote: quote::cli(),
-            quotes: quotes::Behaviour::new(identity.clone(), rendezvous_nodes.clone(), namespace.into()),
-            discovery: rendezvous::discovery::Behaviour::new(identity, rendezvous_nodes, namespace.into()),
+            quotes: quotes::Behaviour::new(
+                identity.clone(),
+                rendezvous_nodes.clone(),
+                namespace.into(),
+            ),
+            discovery: rendezvous::discovery::Behaviour::new(
+                identity,
+                rendezvous_nodes,
+                namespace.into(),
+            ),
             swap_setup: bob::Behaviour::new(env_config, bitcoin_wallet),
             transfer_proof: transfer_proof::bob(),
             encrypted_signature: encrypted_signature::bob(),

@@ -154,8 +154,7 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             },
-            libp2p::swarm::SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-            }
+            libp2p::swarm::SwarmEvent::ConnectionEstablished { peer_id, .. } => {}
             _ => {}
         }
     }

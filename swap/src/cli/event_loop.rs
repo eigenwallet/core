@@ -514,7 +514,11 @@ pub struct EventLoopHandle {
 
 impl EventLoopHandle {
     /// Adds a peer address to the swarm
-    pub async fn add_peer_address(&mut self, peer_id: PeerId, addr: libp2p::Multiaddr) -> Result<()> {
+    pub async fn add_peer_address(
+        &mut self,
+        peer_id: PeerId,
+        addr: libp2p::Multiaddr,
+    ) -> Result<()> {
         self.add_peer_address_sender
             .send_receive((peer_id, addr))
             .await

@@ -19,7 +19,7 @@ use void::Void;
 /// Note: Make sure that when using this as an inner behaviour for a `NetworkBehaviour` that you
 /// call all the NetworkBehaviour methods (including `handle_pending_outbound_connection`) to ensure
 /// that the addresses are cached correctly.
-/// 
+///
 // TODO: Allow removing peers from the set after we are done with them.
 // TODO: Use the ConnectionTracker from the behaviour_util module to track connections internally because
 // currently we might force multiple connections to the same peer which is not really necessary.
@@ -48,7 +48,6 @@ pub struct Behaviour {
 
     /// A queue of events to be sent to the swarm.
     to_swarm: VecDeque<ToSwarm<Event, Void>>,
-
 }
 
 impl Behaviour {
@@ -193,13 +192,19 @@ impl NetworkBehaviour for Behaviour {
             // - a closed connection
             //
             // We will then schedule a redial for the peer. We only do this if we are not already connected to the peer.
-            FromSwarm::ConnectionClosed(event) if self.peers.contains(&event.peer_id) && !self.connections.is_connected(&event.peer_id) => {
+            FromSwarm::ConnectionClosed(event)
+                if self.peers.contains(&event.peer_id)
+                    && !self.connections.is_connected(&event.peer_id) =>
+            {
                 tracing::trace!(peer = %event.peer_id, "Connection closed. We will schedule a redial for this peer.");
 
                 Some(event.peer_id)
             }
             FromSwarm::DialFailure(event) => match event.peer_id {
-                Some(peer_id) if self.peers.contains(&peer_id) && !self.connections.is_connected(&peer_id) => {
+                Some(peer_id)
+                    if self.peers.contains(&peer_id)
+                        && !self.connections.is_connected(&peer_id) =>
+                {
                     match event.error {
                         DialError::DialPeerConditionFalse(_) => {
                             // TODO: Can this lead to a condition where we will not redial the peer ever again? I don't think so...

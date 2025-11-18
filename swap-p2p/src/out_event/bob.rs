@@ -6,11 +6,11 @@ use libp2p::{
     PeerId,
 };
 
-use crate::protocols::{quote, redial, rendezvous};
 use crate::protocols::{
     cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote,
     transfer_proof,
 };
+use crate::protocols::{quote, redial, rendezvous};
 
 #[derive(Debug)]
 pub enum OutEvent {

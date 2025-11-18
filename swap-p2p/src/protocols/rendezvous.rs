@@ -580,7 +580,11 @@ pub mod discovery {
         time::Duration,
     };
 
-    use crate::{behaviour_util::{BackoffTracker, ConnectionTracker}, futures_util::FuturesHashSet, protocols::redial};
+    use crate::{
+        behaviour_util::{BackoffTracker, ConnectionTracker},
+        futures_util::FuturesHashSet,
+        protocols::redial,
+    };
 
     static REDIAL_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
     static REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(10);

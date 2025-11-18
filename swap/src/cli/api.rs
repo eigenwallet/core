@@ -827,13 +827,12 @@ mod builder {
                 )
                 .await?;
 
-                let (event_loop, event_loop_handle) = crate::cli::EventLoop::new(swarm, db_for_swarm)?;
+                let (event_loop, event_loop_handle) =
+                    crate::cli::EventLoop::new(swarm, db_for_swarm)?;
                 let event_loop_task = tokio::spawn(event_loop.run());
 
-                *context.event_loop_state.write().await = Some(EventLoopState::new(
-                    event_loop_handle,
-                    event_loop_task,
-                ));
+                *context.event_loop_state.write().await =
+                    Some(EventLoopState::new(event_loop_handle, event_loop_task));
             }
 
             // Wait for Tor client to fully bootstrap
