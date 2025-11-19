@@ -2,7 +2,6 @@ use crate::cli::api::tauri_bindings::{
     ListSellersProgress, TauriBackgroundProgress, TauriBackgroundProgressHandle, TauriEmitter,
     TauriHandle,
 };
-use crate::libp2p_ext::MultiAddrExt;
 use crate::network::quote::BidQuote;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::{quote, swarm};
@@ -22,6 +21,7 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
+use swap_p2p::libp2p_ext::MultiAddrExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 use typeshare::typeshare;
 
@@ -82,7 +82,7 @@ pub async fn list_sellers_init(
             // Build a fresh swarm and event loop for every call so the closure can be invoked multiple times.
             let behaviour = Behaviour {
                 rendezvous: rendezvous::client::Behaviour::new(identity.clone()),
-                quote: quote::cli(),
+                quote: quote::bob(),
                 ping: ping::Behaviour::new(
                     ping::Config::new().with_timeout(Duration::from_secs(60)),
                 ),

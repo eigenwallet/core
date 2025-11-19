@@ -47,11 +47,10 @@ impl XmrBtcNamespace {
 
 /// A behaviour that periodically re-registers at multiple rendezvous points as a client
 pub mod register {
+    use crate::behaviour_util::BackoffTracker;
     use crate::protocols::redial;
 
     use super::*;
-    use backoff::backoff::Backoff;
-    use backoff::ExponentialBackoff;
     use futures::FutureExt;
     use libp2p::rendezvous::client::RegisterError;
     use libp2p::swarm::{
@@ -59,11 +58,11 @@ pub mod register {
         THandlerOutEvent, ToSwarm,
     };
     use libp2p::{identity, rendezvous, Multiaddr, PeerId};
-    use std::collections::HashMap;
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use std::time::Duration;
 
+    // TODO: We should use the ConnectionTracker from the behaviour_util module instead of this enum
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum ConnectionStatus {
         Disconnected,
@@ -81,7 +80,7 @@ pub mod register {
     pub struct Behaviour {
         inner: InnerBehaviour,
         rendezvous_nodes: Vec<RendezvousNode>,
-        backoffs: HashMap<PeerId, ExponentialBackoff>,
+        backoffs: BackoffTracker,
     }
 
     #[derive(NetworkBehaviour)]
@@ -177,7 +176,11 @@ pub mod register {
                 .filter(|node| node.peer_id != our_peer_id)
                 .collect();
 
-            let mut backoffs = HashMap::new();
+            let backoffs = BackoffTracker::new(
+                Self::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
+                Self::RENDEZVOUS_RETRY_MAX_INTERVAL,
+                1.1f64,
+            );
 
             let mut redial = redial::Behaviour::new(
                 Self::REDIAL_IDENTIFIER,
@@ -188,20 +191,6 @@ pub mod register {
             // Initialize backoff for each rendezvous node
             for node in &rendezvous_nodes {
                 redial.add_peer_with_address(node.peer_id, node.address.clone());
-
-                backoffs.insert(
-                    node.peer_id,
-                    ExponentialBackoff {
-                        // Never give up
-                        max_elapsed_time: None,
-                        // We retry aggressively. We begin with 50ms and increase by 10% per retry.
-                        multiplier: 1.1f64,
-                        initial_interval: Self::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
-                        current_interval: Self::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
-                        max_interval: Self::RENDEZVOUS_RETRY_MAX_INTERVAL,
-                        ..ExponentialBackoff::default()
-                    },
-                );
             }
 
             Self {
@@ -244,9 +233,7 @@ pub mod register {
                         rendezvous_node.set_connection(ConnectionStatus::Connected);
 
                         // Reset backoff on successful connection
-                        if let Some(backoff) = self.backoffs.get_mut(&peer_id) {
-                            backoff.reset();
-                        }
+                        self.backoffs.reset(&peer_id);
 
                         if let RegistrationStatus::RegisterOnNextConnection =
                             rendezvous_node.registration_status
@@ -571,5 +558,452 @@ pub mod register {
                 .unwrap()
                 .unwrap();
         }
+    }
+}
+
+/// A behaviour that periodically discovers other peers at a given rendezvous point
+///
+/// The behaviour also internally attempts to dial any newly discovered peers
+/// It uses the `redial` behaviour internally to do this
+pub mod discovery {
+    use backoff::{backoff::Backoff};
+    use futures::future::{self};
+    use futures::FutureExt;
+    use libp2p::{
+        identity, rendezvous,
+        swarm::{NetworkBehaviour, THandlerInEvent, ToSwarm},
+        Multiaddr, PeerId,
+    };
+    use std::{
+        collections::{HashSet, VecDeque},
+        task::Poll,
+        time::Duration,
+    };
+
+    use crate::{
+        behaviour_util::{BackoffTracker, ConnectionTracker},
+        futures_util::FuturesHashSet,
+        protocols::redial,
+    };
+
+    static REDIAL_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
+    static REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(10);
+
+    // How to we retry failed discovery requests
+    static DISCOVERY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
+    static DISCOVERY_MAX_INTERVAL: Duration = Duration::from_secs(60 * 3);
+    static DISCOVERY_MULTIPLIER: f64 = 1.25;
+
+    // How often we wait after a successful discovery request to send another discovery request
+    static DISCOVERY_INTERVAL: Duration = Duration::from_secs(10);
+
+    pub struct Behaviour {
+        inner: InnerBehaviour,
+        namespace: rendezvous::Namespace,
+
+        // Set of all (peer_id, address) pairs that we have discovered over the lifetime of the behaviour
+        // This is also used to avoid notifying the swarm about the same pair multiple times
+        discovered: HashSet<(PeerId, Multiaddr)>,
+
+        // Track all the connections internally
+        connection_tracker: ConnectionTracker,
+
+        // Backoff for each rendezvous node for discovery
+        backoff: BackoffTracker,
+
+        // Queue of discovery requests to send to a rendezvous node
+        // once the future resolves, the peer id is removed from the queue and a discovery request is sent
+        pending_to_discover: FuturesHashSet<PeerId, ()>,
+
+        // Queue of peers to send a request to as soon as we are connected to them
+        to_discover: VecDeque<PeerId>,
+
+        // Queue of events to be sent to the swarm
+        to_swarm: VecDeque<ToSwarm<Event, THandlerInEvent<Self>>>,
+    }
+
+    #[derive(NetworkBehaviour)]
+    pub struct InnerBehaviour {
+        rendezvous: libp2p::rendezvous::client::Behaviour,
+        redial: redial::Behaviour,
+    }
+
+    #[derive(Debug)]
+    pub enum Event {
+        DiscoveredPeer { peer_id: PeerId },
+    }
+
+    impl Behaviour {
+        pub fn new(
+            identity: identity::Keypair,
+            rendezvous_nodes: Vec<PeerId>,
+            namespace: rendezvous::Namespace,
+        ) -> Self {
+            let mut redial = redial::Behaviour::new(
+                "rendezvous-server-for-discovery",
+                REDIAL_INITIAL_INTERVAL,
+                REDIAL_MAX_INTERVAL,
+            );
+            let rendezvous = libp2p::rendezvous::client::Behaviour::new(identity);
+
+            let backoff = BackoffTracker::new(
+                DISCOVERY_INITIAL_INTERVAL,
+                DISCOVERY_MAX_INTERVAL,
+                DISCOVERY_MULTIPLIER,
+            );
+            let mut to_discover = FuturesHashSet::new();
+
+            // Initialize backoff for each rendezvous node
+            for node in &rendezvous_nodes {
+                // We initially schedule a discovery request for each rendezvous node
+                to_discover.insert(node.clone(), future::ready(()).boxed());
+
+                // We instruct the redial behaviour to dial rendezvous nodes periodically
+                redial.add_peer(node.clone());
+            }
+
+            Self {
+                inner: InnerBehaviour { rendezvous, redial },
+                discovered: HashSet::new(),
+                backoff,
+                pending_to_discover: to_discover,
+                to_discover: VecDeque::new(),
+                connection_tracker: ConnectionTracker::new(),
+                namespace,
+                to_swarm: VecDeque::new(),
+            }
+        }
+    }
+
+    impl NetworkBehaviour for Behaviour {
+        // We use a dummy connection handler here as we don't need low level connection handling
+        // This is handled by the rendezvous behaviour
+        type ConnectionHandler = <InnerBehaviour as NetworkBehaviour>::ConnectionHandler;
+
+        type ToSwarm = Event;
+
+        fn poll(
+            &mut self,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<
+            libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>,
+        > {
+            loop {
+                // Check if we have any events to send to the swarm
+                if let Some(event) = self.to_swarm.pop_front() {
+                    return Poll::Ready(event);
+                }
+
+                // Check if we should send a discovery request to a rendezvous node
+                while let Poll::Ready(Some((peer_id, _))) =
+                    self.pending_to_discover.poll_next_unpin(cx)
+                {
+                    self.to_discover.push_back(peer_id);
+                }
+
+                // Take ownership of the queue to avoid borrow checker issues
+                let to_discover = std::mem::take(&mut self.to_discover);
+                self.to_discover = to_discover
+                    .into_iter()
+                    .filter(|peer| {
+                        // If we are not connected to the peer, keep it in the queue
+                        if !self.connection_tracker.is_connected(peer) {
+                            return true;
+                        }
+
+                        // If we are connected to the peer, send a discovery request
+                        self.inner.rendezvous.discover(
+                            Some(self.namespace.clone()),
+                            None,
+                            None,
+                            peer.clone(),
+                        );
+
+                        false
+                    })
+                    .collect();
+
+                match self.inner.poll(cx) {
+                    Poll::Ready(ToSwarm::GenerateEvent(event)) => {
+                        match event {
+                            InnerBehaviourEvent::Rendezvous(
+                                libp2p::rendezvous::client::Event::Discovered {
+                                    rendezvous_node,
+                                    registrations,
+                                    ..
+                                },
+                            ) => {
+                                tracing::trace!(
+                                    ?rendezvous_node,
+                                    num_registrations = %registrations.len(),
+                                    "Discovered peers at rendezvous node"
+                                );
+
+                                for registration in registrations {
+                                    for address in registration.record.addresses() {
+                                        let peer_id = registration.record.peer_id();
+
+                                        if self.discovered.insert((peer_id, address.clone())) {
+                                            self.to_swarm.push_back(
+                                                ToSwarm::NewExternalAddrOfPeer {
+                                                    peer_id,
+                                                    address: address.clone(),
+                                                },
+                                            );
+                                            self.to_swarm.push_back(ToSwarm::GenerateEvent(
+                                                Event::DiscoveredPeer { peer_id },
+                                            ));
+                                        }
+
+                                        self.pending_to_discover.insert(
+                                            rendezvous_node,
+                                            tokio::time::sleep(DISCOVERY_INTERVAL).boxed(),
+                                        );
+
+                                        tracing::trace!(
+                                            ?rendezvous_node,
+                                            ?peer_id,
+                                            ?address,
+                                            "Discovered peer at rendezvous node"
+                                        );
+                                    }
+                                }
+                                continue;
+                            }
+                            InnerBehaviourEvent::Rendezvous(
+                                libp2p::rendezvous::client::Event::DiscoverFailed {
+                                    rendezvous_node,
+                                    error,
+                                    namespace: _,
+                                },
+                            ) => {
+                                let backoff = self
+                                    .backoff
+                                    .get(&rendezvous_node)
+                                    .next_backoff()
+                                    .expect("backoff should never run out");
+
+                                self.pending_to_discover
+                                    .insert(rendezvous_node, tokio::time::sleep(backoff).boxed());
+
+                                tracing::error!(
+                                    ?rendezvous_node,
+                                    ?error,
+                                    seconds_until_next_discovery_attempt = %backoff.as_secs(),
+                                    "Failed to discover peers at rendezvous node, scheduling retry after backoff"
+                                );
+                                continue;
+                            }
+                            _ => continue,
+                        }
+                    }
+                    Poll::Ready(other) => {
+                        self.to_swarm.push_back(other.map_out(|_| unreachable!()));
+                        continue;
+                    }
+                    Poll::Pending => {
+                        return Poll::Pending;
+                    }
+                }
+            }
+        }
+
+        fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
+            self.connection_tracker.handle_swarm_event(event);
+            self.inner.on_swarm_event(event);
+        }
+
+        fn handle_established_inbound_connection(
+            &mut self,
+            connection_id: libp2p::swarm::ConnectionId,
+            peer: PeerId,
+            local_addr: &libp2p::Multiaddr,
+            remote_addr: &libp2p::Multiaddr,
+        ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+            self.inner.handle_established_inbound_connection(
+                connection_id,
+                peer,
+                local_addr,
+                remote_addr,
+            )
+        }
+
+        fn handle_established_outbound_connection(
+            &mut self,
+            connection_id: libp2p::swarm::ConnectionId,
+            peer: PeerId,
+            addr: &libp2p::Multiaddr,
+            role_override: libp2p::core::Endpoint,
+        ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
+            self.inner.handle_established_outbound_connection(
+                connection_id,
+                peer,
+                addr,
+                role_override,
+            )
+        }
+
+        fn on_connection_handler_event(
+            &mut self,
+            peer_id: PeerId,
+            connection_id: libp2p::swarm::ConnectionId,
+            event: libp2p::swarm::THandlerOutEvent<Self>,
+        ) {
+            self.inner
+                .on_connection_handler_event(peer_id, connection_id, event);
+        }
+
+        fn handle_pending_inbound_connection(
+            &mut self,
+            connection_id: libp2p::swarm::ConnectionId,
+            local_addr: &Multiaddr,
+            remote_addr: &Multiaddr,
+        ) -> Result<(), libp2p::swarm::ConnectionDenied> {
+            self.inner
+                .handle_pending_inbound_connection(connection_id, local_addr, remote_addr)
+        }
+
+        fn handle_pending_outbound_connection(
+            &mut self,
+            connection_id: libp2p::swarm::ConnectionId,
+            maybe_peer: Option<PeerId>,
+            addresses: &[Multiaddr],
+            effective_role: libp2p::core::Endpoint,
+        ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+            self.inner.handle_pending_outbound_connection(
+                connection_id,
+                maybe_peer,
+                addresses,
+                effective_role,
+            )
+        }
+    }
+}
+
+// TODO: Rework these tests, they are ugly
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::{new_swarm, SwarmExt};
+    use futures::StreamExt;
+    use libp2p::rendezvous;
+    use libp2p::swarm::SwarmEvent;
+    use std::sync::Once;
+    use std::time::Duration;
+
+    static INIT_TRACING: Once = Once::new();
+
+    fn init_tracing() {
+        INIT_TRACING.call_once(|| {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+                .try_init();
+        });
+    }
+
+    // Helper to spawn a background poller for a swarm that just drains events.
+    fn spawn_drain_swarm<B>(mut swarm: libp2p::Swarm<B>)
+    where
+        B: libp2p::swarm::NetworkBehaviour + Send + 'static,
+        <B as libp2p::swarm::NetworkBehaviour>::ToSwarm: std::fmt::Debug,
+    {
+        tokio::spawn(async move {
+            loop {
+                let _ = swarm.next().await;
+            }
+        });
+    }
+
+    #[tokio::test]
+    async fn register_and_discover_together() {
+        init_tracing();
+
+        // Rendezvous server
+        let mut rendezvous_server =
+            new_swarm(
+                |_| rendezvous::server::Behaviour::new(rendezvous::server::Config::default()),
+            );
+        let server_addr = rendezvous_server.listen_on_random_memory_address().await;
+        let server_id = *rendezvous_server.local_peer_id();
+
+        // Registering client (adds an external address so it can be discovered)
+        let mut registrar = new_swarm(|identity| {
+            register::Behaviour::new(
+                identity,
+                vec![register::RendezvousNode::new(
+                    &server_addr,
+                    server_id,
+                    XmrBtcNamespace::Testnet,
+                    Some(10),
+                )],
+            )
+        });
+        registrar.listen_on_random_memory_address().await;
+        let registrar_id = *registrar.local_peer_id();
+
+        // Discovery client using our wrapper behaviour
+        let mut discoverer = new_swarm(|identity| {
+            discovery::Behaviour::new(identity, vec![server_id], XmrBtcNamespace::Testnet.into())
+        });
+
+        // First connect registrar to server to ensure it can register promptly.
+        registrar.block_on_connection(&mut rendezvous_server).await;
+        // Then connect discoverer to the rendezvous server without poking inner behaviours.
+        discoverer.block_on_connection(&mut rendezvous_server).await;
+
+        // Drive server in background and observe registrar until it registers once.
+        spawn_drain_swarm(rendezvous_server);
+        let (tx_reg, rx_reg) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let mut registrar = registrar;
+            let mut sent = false;
+            let mut tx_opt = Some(tx_reg);
+            loop {
+                match registrar.select_next_some().await {
+                    SwarmEvent::Behaviour(register::InnerBehaviourEvent::Rendezvous(
+                        rendezvous::client::Event::Registered { .. },
+                    )) if !sent => {
+                        if let Some(sender) = tx_opt.take() {
+                            let _ = sender.send(());
+                        }
+                        sent = true;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(30), rx_reg)
+            .await
+            .expect("registrar did not register in time")
+            .ok();
+
+        // Now wait until discovery wrapper discovers registrar and dials it.
+        let _ = tokio::time::timeout(Duration::from_secs(60), async {
+            let mut saw_discovery = false;
+            let mut saw_address = false;
+
+            loop {
+                match discoverer.select_next_some().await {
+                    SwarmEvent::Behaviour(discovery::Event::DiscoveredPeer { peer_id })
+                        if peer_id == registrar_id =>
+                    {
+                        saw_discovery = true;
+                    }
+                    SwarmEvent::NewExternalAddrOfPeer { peer_id, .. }
+                        if peer_id == registrar_id =>
+                    {
+                        saw_address = true;
+                    }
+                    SwarmEvent::ConnectionEstablished { peer_id, .. }
+                        if peer_id == registrar_id && saw_discovery && saw_address =>
+                    {
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("discovery and direct connection to registrar timed out");
     }
 }

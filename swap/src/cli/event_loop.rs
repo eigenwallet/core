@@ -113,6 +113,12 @@ pub struct EventLoop {
     ///
     /// The future will yield the swap_id and the response channel which are used to send an acknowledgement to Alice.
     pending_transfer_proof_acks: FuturesUnordered<BoxFuture<'static, (Uuid, ResponseChannel<()>)>>,
+
+    /// Queue for adding peer addresses to the swarm
+    add_peer_address_requests:
+        bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, libp2p::Multiaddr), ()>,
+
+    cached_quotes_sender: tokio::sync::watch::Sender<Vec<(PeerId, BidQuote)>>,
 }
 
 impl EventLoop {
@@ -138,6 +144,9 @@ impl EventLoop {
             bmrng::unbounded::channel();
         let (queued_transfer_proof_sender, queued_transfer_proof_receiver) =
             bmrng::unbounded::channel();
+        let (add_peer_address_sender, add_peer_address_receiver) = bmrng::unbounded::channel();
+
+        let (cached_quotes_sender, cached_quotes_receiver) = tokio::sync::watch::channel(Vec::new());
 
         let event_loop = EventLoop {
             swarm,
@@ -153,6 +162,8 @@ impl EventLoop {
             inflight_encrypted_signature_requests: HashMap::default(),
             inflight_cooperative_xmr_redeem_requests: HashMap::default(),
             pending_transfer_proof_acks: FuturesUnordered::new(),
+            add_peer_address_requests: add_peer_address_receiver.into(),
+            cached_quotes_sender,
         };
 
         let handle = EventLoopHandle {
@@ -161,6 +172,8 @@ impl EventLoop {
             cooperative_xmr_redeem_sender,
             quote_sender,
             queued_transfer_proof_sender,
+            add_peer_address_sender,
+            cached_quotes_receiver,
         };
 
         Ok((event_loop, handle))
@@ -351,13 +364,23 @@ impl EventLoop {
                                 "Scheduled redial for peer"
                             );
                         }
+                        SwarmEvent::Behaviour(OutEvent::BackgroundQuoteReceived { peer, quote }) => {
+                            tracing::trace!(
+                                %peer,
+                                ?quote,
+                                "Received background quote"
+                            );
+                        }
+                        SwarmEvent::Behaviour(OutEvent::CachedQuotes { quotes }) => {
+                            let _ = self.cached_quotes_sender.send(quotes);
+                        }
                         _ => {}
                     }
                 },
 
                 // Handle to-be-sent outgoing requests for all our network protocols.
                 Some((peer_id, responder)) = self.quote_requests.next().fuse() => {
-                    let outbound_request_id = self.swarm.behaviour_mut().quote.send_request(&peer_id, ());
+                    let outbound_request_id = self.swarm.behaviour_mut().direct_quote.send_request(&peer_id, ());
                     self.inflight_quote_requests.insert(outbound_request_id, responder);
 
                     tracing::trace!(
@@ -438,6 +461,12 @@ impl EventLoop {
                     // Acknowledge the registration
                     let _ = responder.respond(());
                 },
+
+                Some(((peer_id, addr), responder)) = self.add_peer_address_requests.next().fuse() => {
+                    tracing::trace!(%peer_id, %addr, "Adding peer address to swarm");
+                    self.swarm.add_peer_address(peer_id, addr);
+                    let _ = responder.respond(());
+                },
             }
         }
     }
@@ -486,9 +515,27 @@ pub struct EventLoopHandle {
         ),
         (),
     >,
+
+    /// Channel for adding peer addresses to the swarm
+    add_peer_address_sender:
+        bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
+
+    cached_quotes_receiver: tokio::sync::watch::Receiver<Vec<(PeerId, BidQuote)>>,
 }
 
 impl EventLoopHandle {
+    /// Adds a peer address to the swarm
+    pub async fn add_peer_address(
+        &mut self,
+        peer_id: PeerId,
+        addr: libp2p::Multiaddr,
+    ) -> Result<()> {
+        self.add_peer_address_sender
+            .send_receive((peer_id, addr))
+            .await
+            .context("Failed to add peer address to swarm")
+    }
+
     /// Creates a SwapEventLoopHandle for a specific swap
     /// This registers the swap's transfer proof receiver with the event loop
     pub async fn swap_handle(

@@ -122,7 +122,7 @@ mod tests {
             StaticQuoteAsbBehaviour {
                 inner: StaticQuoteAsbBehaviourInner {
                     rendezvous,
-                    quote: quote::asb(),
+                    quote: quote::alice(),
                 },
                 static_quote,
                 registered: false,
