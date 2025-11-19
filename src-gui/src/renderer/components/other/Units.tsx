@@ -88,11 +88,46 @@ export function FiatPiconeroAmount({
   );
 }
 
+export function FiatSatsAmount({
+  amount,
+  fixedPrecision = 2,
+}: {
+  amount: Amount;
+  fixedPrecision?: number;
+}) {
+  const btcPrice = useAppSelector((state) => state.rates.btcPrice);
+  const [fetchFiatPrices, fiatCurrency] = useSettings((settings) => [
+    settings.fetchFiatPrices,
+    settings.fiatCurrency,
+  ]);
+
+  if (
+    !fetchFiatPrices ||
+    fiatCurrency == null ||
+    amount == null ||
+    btcPrice == null
+  ) {
+    return null;
+  }
+
+  return (
+    <span>
+      {(satsToBtc(amount) * btcPrice).toFixed(fixedPrecision)} {fiatCurrency}
+    </span>
+  );
+}
+
 AmountWithUnit.defaultProps = {
   exchangeRate: null,
 };
 
-export function BitcoinAmount({ amount }: { amount: Amount }) {
+export function BitcoinAmount({
+  amount,
+  disableTooltip = false,
+}: {
+  amount: Amount;
+  disableTooltip?: boolean;
+}) {
   const btcRate = useAppSelector((state) => state.rates.btcPrice);
 
   return (
@@ -101,6 +136,7 @@ export function BitcoinAmount({ amount }: { amount: Amount }) {
       unit="BTC"
       fixedPrecision={6}
       exchangeRate={btcRate}
+      disableTooltip={disableTooltip}
     />
   );
 }
@@ -184,9 +220,15 @@ export function MoneroSatsExchangeRate({
   return <MoneroBitcoinExchangeRate rate={btc} displayMarkup={displayMarkup} />;
 }
 
-export function SatsAmount({ amount }: { amount: Amount }) {
+export function SatsAmount({
+  amount,
+  disableTooltip = false,
+}: {
+  amount: Amount;
+  disableTooltip?: boolean;
+}) {
   const btcAmount = amount == null ? null : satsToBtc(amount);
-  return <BitcoinAmount amount={btcAmount} />;
+  return <BitcoinAmount amount={btcAmount} disableTooltip={disableTooltip} />;
 }
 
 export function PiconeroAmount({

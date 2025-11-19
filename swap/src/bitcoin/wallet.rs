@@ -27,6 +27,7 @@ use moka;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -42,6 +43,7 @@ use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
 use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug_span, Instrument};
+use typeshare::typeshare;
 
 /// We allow transaction fees of up to 20% of the transferred amount to ensure
 /// that lock transactions can always be published, even when fees are high.
@@ -49,6 +51,27 @@ const MAX_RELATIVE_TX_FEE: Decimal = dec!(0.20);
 const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
 const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
 const DUST_AMOUNT: Amount = Amount::from_sat(546);
+
+/// Serialisation matches [`monero_sys::TransactionInfo`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct TransactionInfo {
+    pub fee: Amount,
+    pub amount: Amount,
+    #[typeshare(serialized_as = "number")]
+    pub confirmations: u32,
+    pub tx_hash: String,
+    pub direction: TransactionDirection,
+    #[typeshare(serialized_as = "number")]
+    pub timestamp: u64,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TransactionDirection {
+    In,
+    Out,
+}
 
 /// This is our wrapper around a bdk wallet and a corresponding
 /// bdk electrum client.
@@ -1302,6 +1325,46 @@ where
         wallet.persist(&mut persister)?;
 
         Ok(address)
+    }
+
+    /// Get list
+    pub async fn history(&self) -> Vec<TransactionInfo> {
+        let wallet = self.wallet.lock().await;
+        let current_height = wallet.latest_checkpoint().height();
+
+        let mut history: Vec<_> = wallet
+            .transactions()
+            .flat_map(|tx| wallet.tx_details(tx.tx_node.txid))
+            .map(|txd| {
+                let (timestamp, confirmations) = match txd.chain_position {
+                    bdk_chain::ChainPosition::Confirmed { anchor, .. } => (
+                        anchor.confirmation_time,
+                        current_height + 1 - anchor.block_id.height,
+                    ),
+                    bdk_chain::ChainPosition::Unconfirmed {
+                        first_seen,
+                        last_seen,
+                    } => (last_seen.or(first_seen).unwrap_or(0), 0),
+                };
+                TransactionInfo {
+                    fee: txd.fee.unwrap_or(Amount::ZERO),
+                    amount: txd.balance_delta.unsigned_abs(),
+                    confirmations,
+                    tx_hash: txd.txid.to_string(),
+                    direction: match txd.balance_delta.is_positive() {
+                        true => TransactionDirection::In,
+                        false => TransactionDirection::Out,
+                    },
+                    timestamp,
+                }
+            })
+            .collect();
+        history.sort_unstable_by(|ti1, ti2| {
+            ti1.confirmations
+                .cmp(&ti2.confirmations)
+                .then_with(|| ti1.tx_hash.cmp(&ti2.tx_hash))
+        });
+        history
     }
 
     /// Builds a partially signed transaction that sends

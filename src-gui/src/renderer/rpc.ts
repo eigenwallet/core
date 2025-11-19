@@ -60,7 +60,11 @@ import {
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
 import { selectAllSwapIds } from "store/selectors";
-import { setBitcoinAddress, setBitcoinBalance } from "store/features/bitcoinWalletSlice";
+import {
+  setBitcoinAddress,
+  setBitcoinBalance,
+  setBitcoinHistory,
+} from "store/features/bitcoinWalletSlice";
 import {
   setMainAddress,
   setBalance,
@@ -161,6 +165,7 @@ export async function checkBitcoinBalance() {
   });
 
   store.dispatch(setBitcoinBalance(response.balance));
+  store.dispatch(setBitcoinHistory(response.transactions));
 }
 
 export async function buyXmr() {
@@ -318,6 +323,7 @@ export async function cheapCheckBitcoinBalance() {
   });
 
   store.dispatch(setBitcoinBalance(response.balance));
+  store.dispatch(setBitcoinHistory(response.transactions));
 }
 
 export async function getBitcoinAddress() {
@@ -593,7 +599,7 @@ export async function initializeBitcoinWallet() {
       checkBitcoinBalance(),
       getBitcoinAddress().then((address) => {
         store.dispatch(setBitcoinAddress(address));
-      })
+      }),
     ]);
   } catch (err) {
     console.error("Failed to fetch Bitcoin wallet data:", err);

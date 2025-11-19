@@ -482,9 +482,14 @@ pub trait TauriEmitter {
         }));
     }
 
-    fn emit_balance_update_event(&self, new_balance: bitcoin::Amount) {
+    fn emit_balance_update_event(
+        &self,
+        balance: bitcoin::Amount,
+        transactions: Vec<crate::bitcoin::TransactionInfo>,
+    ) {
         self.emit_unified_event(TauriEvent::BalanceChange(BalanceResponse {
-            balance: new_balance,
+            balance,
+            transactions,
         }));
     }
 

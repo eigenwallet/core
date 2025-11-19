@@ -43,7 +43,10 @@ export default function MoneroWalletPage() {
         displayCopyIcon={true}
       />
       <WalletActionButtons balance={balance} />
-      <TransactionHistory history={history} />
+      <TransactionHistory
+        currency="monero"
+        transactions={history && history.transactions}
+      />
     </Box>
   );
 }

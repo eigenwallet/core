@@ -3,10 +3,12 @@ import { useAppSelector } from "store/hooks";
 import WalletOverview from "./components/WalletOverview";
 import WalletActionButtons from "./components/WalletActionButtons";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
+import { TransactionHistory } from "renderer/components/pages/monero/components";
 
 export default function WalletPage() {
-  const walletBalance = useAppSelector((state) => state.bitcoinWallet.balance);
-  const bitcoinAddress = useAppSelector((state) => state.bitcoinWallet.address);
+  const { balance, address, history } = useAppSelector(
+    (state) => state.bitcoinWallet,
+  );
 
   return (
     <Box
@@ -19,14 +21,12 @@ export default function WalletPage() {
         pb: 2,
       }}
     >
-      <WalletOverview balance={walletBalance} />
-      {bitcoinAddress && (
-        <ActionableMonospaceTextBox
-          content={bitcoinAddress}
-          displayCopyIcon={true}
-        />
+      <WalletOverview balance={balance} />
+      {address && (
+        <ActionableMonospaceTextBox content={address} displayCopyIcon={true} />
       )}
       <WalletActionButtons />
+      <TransactionHistory currency="bitcoin" transactions={history} />
     </Box>
   );
 }

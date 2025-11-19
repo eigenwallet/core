@@ -293,6 +293,7 @@ pub struct BalanceResponse {
     #[typeshare(serialized_as = "number")]
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub balance: bitcoin::Amount,
+    pub transactions: Vec<wallet::TransactionInfo>,
 }
 
 impl Request for BalanceArgs {
@@ -1460,22 +1461,24 @@ pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<
         bitcoin_wallet.sync().await?;
     }
 
-    let bitcoin_balance = bitcoin_wallet.balance().await?;
+    let balance = bitcoin_wallet.balance().await?;
+    let transactions = bitcoin_wallet.history().await;
 
     if force_refresh {
         tracing::info!(
-            balance = %bitcoin_balance,
+            %balance,
             "Checked Bitcoin balance",
         );
     } else {
         tracing::debug!(
-            balance = %bitcoin_balance,
+            %balance,
             "Current Bitcoin balance as of last sync",
         );
     }
 
     Ok(BalanceResponse {
-        balance: bitcoin_balance,
+        balance,
+        transactions,
     })
 }
 

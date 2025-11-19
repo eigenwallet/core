@@ -4,6 +4,7 @@ import {
   getAllSwapInfos,
   getAllSwapTimelocks,
   initializeBitcoinWallet,
+  checkBitcoinBalance,
   updateAllNodeStatuses,
   fetchSellersAtPresetRendezvousPoints,
   getSwapInfo,
@@ -31,7 +32,6 @@ import {
   addFeedbackId,
   setConversation,
 } from "store/features/conversationsSlice";
-import { setBitcoinAddress } from "store/features/bitcoinWalletSlice";
 
 // Create a Map to store throttled functions per swap_id
 const throttledGetSwapInfoFunctions = new Map<
