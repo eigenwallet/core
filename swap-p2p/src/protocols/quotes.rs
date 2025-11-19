@@ -315,21 +315,6 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
     }
 }
 
-impl From<Event> for out_event::bob::OutEvent {
-    fn from(event: Event) -> Self {
-        match event {
-            Event::QuoteReceived { peer, quote } => Self::BackgroundQuoteReceived { peer, quote },
-            Event::DoesNotSupportProtocol { .. } => Self::Other,
-        }
-    }
-}
-
-impl From<Event> for out_event::alice::OutEvent {
-    fn from(_: Event) -> Self {
-        unreachable!("Alice should not use the quotes behaviour");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

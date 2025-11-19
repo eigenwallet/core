@@ -100,7 +100,10 @@ impl Behaviour {
         if newly_added {
             self.schedule_redial(&peer, Duration::ZERO);
 
-            tracing::trace!(?address, "Started tracking peer and added a specific address");
+            tracing::trace!(
+                ?address,
+                "Started tracking peer and added a specific address"
+            );
         }
 
         self.to_swarm.push_back(ToSwarm::NewExternalAddrOfPeer {
@@ -241,8 +244,6 @@ impl NetworkBehaviour for Behaviour {
         // We will then reset the backoff state for the peer
         let peer_to_reset = match event {
             FromSwarm::ConnectionEstablished(e) if self.peers.contains(&e.peer_id) => {
-                tracing::trace!(peer = %e.peer_id, "A connection was established for a peer we want to contineously redial, resetting backoff state");
-
                 Some(e.peer_id)
             }
             _ => None,
@@ -269,9 +270,6 @@ impl NetworkBehaviour for Behaviour {
         // Check if any peer's sleep timer has completed
         // If it has, dial that peer
         if let Poll::Ready(Some((peer, _))) = self.to_dial.poll_next_unpin(cx) {
-            tracing::trace!(peer = %peer, "Instructing swarm to redial a peer");
-
-            // Actually dial the peer
             return Poll::Ready(ToSwarm::Dial {
                 opts: DialOpts::peer_id(peer)
                     .condition(PeerCondition::DisconnectedAndNotDialing)

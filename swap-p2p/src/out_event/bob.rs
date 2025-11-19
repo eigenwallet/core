@@ -18,10 +18,6 @@ pub enum OutEvent {
         id: OutboundRequestId,
         response: BidQuote,
     },
-    BackgroundQuoteReceived {
-        peer: PeerId,
-        quote: BidQuote,
-    },
     CachedQuotes {
         quotes: Vec<(PeerId, Multiaddr, BidQuote)>,
     },
