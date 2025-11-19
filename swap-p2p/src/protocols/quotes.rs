@@ -26,7 +26,7 @@ use std::{
 
 const QUOTE_INTERVAL: Duration = Duration::from_secs(5);
 const REDIAL_INTERVAL: Duration = Duration::from_secs(1);
-const REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(10);
+const REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(3);
 
 // We initially assume all peers support our protocol.
 pub struct Behaviour {

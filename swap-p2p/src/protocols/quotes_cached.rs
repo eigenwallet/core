@@ -1,6 +1,7 @@
 use crate::futures_util::FuturesHashSet;
 use crate::protocols::quote::BidQuote;
 use crate::protocols::quotes;
+use libp2p::core::ConnectedPoint;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
     THandlerOutEvent, ToSwarm,
@@ -16,8 +17,15 @@ const CACHED_QUOTE_EXPIRY: Duration = Duration::from_secs(120);
 
 pub struct Behaviour {
     inner: quotes::Behaviour,
+
+    // For each peer, cache the address we last connected to them at
+    addresses: HashMap<PeerId, Multiaddr>,
+
+    // Caches quotes
     cache: HashMap<PeerId, BidQuote>,
     expiry: FuturesHashSet<PeerId, ()>,
+
+    // Queue of events to be sent to the swarm
     to_swarm: VecDeque<Event>,
 }
 
@@ -26,6 +34,7 @@ impl Behaviour {
     ) -> Self {
         Self {
             inner: quotes::Behaviour::new(),
+            addresses: HashMap::new(),
             cache: HashMap::new(),
             expiry: FuturesHashSet::new(),
             to_swarm: VecDeque::new(),
@@ -33,7 +42,15 @@ impl Behaviour {
     }
 
     fn emit_cached_quotes(&mut self) {
-        let quotes = self.cache.clone().into_iter().collect();
+        // Attach the address we last connected to the peer at to the quote
+        // Ignores those peers where we don't have an address cached (should never happen)
+        let quotes = self.cache
+            .iter()
+            .filter_map(|(peer_id, quote)| {
+                self.addresses.get(peer_id).map(|addr| (*peer_id, addr.clone(), quote.clone()))
+            })
+            .collect();
+
         self.to_swarm
             .push_back(Event::CachedQuotes { quotes });
     }
@@ -41,7 +58,8 @@ impl Behaviour {
 
 #[derive(Debug)]
 pub enum Event {
-    CachedQuotes { quotes: Vec<(PeerId, BidQuote)> },
+    // TODO: This should somehow also send a addr with this
+    CachedQuotes { quotes: Vec<(PeerId, Multiaddr, BidQuote)> },
 }
 
 impl NetworkBehaviour for Behaviour {
@@ -62,6 +80,7 @@ impl NetworkBehaviour for Behaviour {
                 ToSwarm::GenerateEvent(event) => {
                     match event {
                         quotes::Event::QuoteReceived { peer, quote } => {
+                            println!("GOT QUOTE FROM {peer}: {quote:?}");
                             self.cache.insert(peer, quote);
                             self.expiry.replace(
                                 peer,
@@ -69,7 +88,7 @@ impl NetworkBehaviour for Behaviour {
                             );
                             self.emit_cached_quotes();
                         },
-                        quotes::Event::DoesNotSupportProtocol { peer } => {
+                        quotes::Event::DoesNotSupportProtocol { peer: _ } => {
                             // Don't care about this
                         },
                     }
@@ -146,6 +165,16 @@ impl NetworkBehaviour for Behaviour {
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
         self.inner.on_swarm_event(event);
+
+        match event {
+            FromSwarm::ConnectionEstablished(connection_established) => {
+                // If we connected to a peer as a dialer, cache the address we connected to them at
+                if let ConnectedPoint::Dialer { address, .. } = connection_established.endpoint {
+                    self.addresses.insert(connection_established.peer_id, address.clone());
+                }
+            },
+            _ => {},
+        }
     }
 
     fn on_connection_handler_event(

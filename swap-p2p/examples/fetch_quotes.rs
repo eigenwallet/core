@@ -140,8 +140,8 @@ async fn main() -> Result<()> {
                     println!("================");
                     println!("==== !!!! GOT CACHED QUOTES SNAPSHOT !!!! ====");
                     println!("All quotes:");
-                    for (peer, quote) in quotes {
-                        println!("- {peer}:");
+                    for (peer, addr, quote) in quotes {
+                        println!("- {peer} @ {addr}:");
                         println!("  - {:?}", quote);
                         println!("================");
                     }

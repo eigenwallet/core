@@ -3,14 +3,14 @@ use libp2p::{
     request_response::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
-    PeerId,
+    Multiaddr, PeerId,
 };
 
 use crate::protocols::{
     cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote,
     transfer_proof,
 };
-use crate::protocols::{quote, redial, rendezvous};
+use crate::protocols::{redial, rendezvous};
 
 #[derive(Debug)]
 pub enum OutEvent {
@@ -23,7 +23,7 @@ pub enum OutEvent {
         quote: BidQuote,
     },
     CachedQuotes {
-        quotes: Vec<(PeerId, BidQuote)>,
+        quotes: Vec<(PeerId, Multiaddr, BidQuote)>,
     },
     SwapSetupCompleted {
         peer: PeerId,
