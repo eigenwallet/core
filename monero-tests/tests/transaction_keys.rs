@@ -1,4 +1,3 @@
-use anyhow::Context;
 use monero_harness::Cli;
 
 /// Create a transaction with transaction proofs, and verify them.
@@ -52,11 +51,11 @@ async fn monero_transfers() -> anyhow::Result<()> {
     alice
         .check_tx_key(
             proof.txid.clone(),
-            proof.tx_keys.get(alice.address().await?),
+            *proof.tx_keys.get(&alice.address().await?).unwrap(),
         )
         .await?;
 
-    assert_eq!(alice.sweep(bob.address().await?).await?.tx_keys.len(), 1);
+    assert_eq!(alice.sweep(&bob.address().await?).await?.tx_keys.len(), 1);
 
     Ok(())
 }

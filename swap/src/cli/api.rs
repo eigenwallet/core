@@ -1145,7 +1145,7 @@ pub mod api_test {
         pub async fn default(
             is_testnet: bool,
             data_dir: Option<PathBuf>,
-            debug: bool,
+            _debug: bool,
             json: bool,
         ) -> Self {
             let data_dir = data::data_dir_from(data_dir, is_testnet).unwrap();
