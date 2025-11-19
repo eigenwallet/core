@@ -525,15 +525,16 @@ pub struct EventLoopHandle {
 
 impl EventLoopHandle {
     /// Adds a peer address to the swarm
-    pub async fn add_peer_address(
+    pub async fn queue_peer_address(
         &mut self,
         peer_id: PeerId,
         addr: libp2p::Multiaddr,
     ) -> Result<()> {
         self.add_peer_address_sender
-            .send_receive((peer_id, addr))
-            .await
-            .context("Failed to add peer address to swarm")
+            .send((peer_id, addr))
+            .context("Failed to queue peer address into event loop")?;
+
+        Ok(())
     }
 
     /// Creates a SwapEventLoopHandle for a specific swap
@@ -554,7 +555,7 @@ impl EventLoopHandle {
         // We use `send(...) instead of send_receive(...)` because the event loop needs to be running for this to respond
         self.queued_transfer_proof_sender
             .send((swap_id, peer_id, transfer_proof_sender))
-            .context("Failed to register transfer proof sender with event loop")?;
+            .context("Failed to queue transfer proof sender into event loop")?;
 
         Ok(SwapEventLoopHandle {
             handle: self.clone(),

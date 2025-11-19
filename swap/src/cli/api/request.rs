@@ -1138,10 +1138,9 @@ pub async fn buy_xmr(
 
     // Get the existing event loop handle from context
     let mut event_loop_handle = context.try_get_event_loop_handle().await?;
-
     // Add the seller's address to the swarm
     event_loop_handle
-        .add_peer_address(seller_peer_id, seller_multiaddr.clone())
+        .queue_peer_address(seller_peer_id, seller_multiaddr.clone())
         .await?;
 
     tauri_handle.emit_swap_progress_event(
@@ -1226,7 +1225,7 @@ pub async fn resume_swap(
 
     for seller_address in seller_addresses {
         event_loop_handle
-            .add_peer_address(seller_peer_id, seller_address)
+            .queue_peer_address(seller_peer_id, seller_address)
             .await?;
     }
 
