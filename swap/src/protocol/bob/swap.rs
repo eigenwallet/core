@@ -394,17 +394,10 @@ async fn next_state(
                 },
             );
 
-            // Check if the cancel timelock has expired
-            // If it has, we have to cancel the swap
-            if state
-                .expired_timelock(&*bitcoin_wallet)
-                .await?
-                .cancel_timelock_expired()
-            {
-                return Ok(BobState::CancelTimelockExpired(
-                    state.cancel(monero_wallet_restore_blockheight),
-                ));
-            };
+            // TODO: We could explicitly check for the status of the timelock here
+            // It is not strictly necessary thought, because:
+            // 1. We race the timelock expiry against the confirmation of the Monero lock transaction below. This means we cannot get stuck in this state.
+            // 2. We explicitly check for the status of the timelock in the next state (BobState::XmrLocked) before sending the encrypted signature.
 
             let tx_early_refund = state.construct_tx_early_refund();
 
@@ -424,6 +417,7 @@ async fn next_state(
                 env_config.monero_double_spend_safe_confirmations,
             );
 
+            // TODO: We should retry here
             let watch_future = monero_wallet.wait_until_confirmed(
                 watch_request,
                 Some(move |(confirmations, target_confirmations)| {
@@ -440,14 +434,16 @@ async fn next_state(
             );
 
             select! {
-                // Wait for the Monero lock transaction to be confirmed with only 2 confirmations (early reveal)
+                // Wait for the Monero lock transaction to be confirmed with as many confirmations we we deem "double spend safe"
                 received_xmr = watch_future => {
                     match received_xmr {
                         Ok(()) =>
                             BobState::XmrLocked(state.xmr_locked(monero_wallet_restore_blockheight, lock_transfer_proof_clone_for_state)),
                         Err(err) if err.to_string().contains("amount mismatch") => {
                             // Alice locked insufficient Monero
-                            tracing::warn!(%err, "Insufficient Monero have been locked!");
+                            // TODO: We should transition into something like Alice::WaitingForCancelTimelockExpiration here
+                            tracing::warn!(%err, "Insufficient Monero have been locked! We will not proceed and instead wait for a refund");
+
                             tracing::info!(timelock = %state.cancel_timelock, "Waiting for cancel timelock to expire");
 
                             // We wait for the cancel timelock to expire before we cancel the swap
@@ -458,6 +454,8 @@ async fn next_state(
                         },
                         Err(err) => {
                             tracing::error!(%err, "Failed to wait for Monero lock transaction to be confirmed");
+
+                            // TODO: We should retry here
                             Err(err)?
                         }
                     }

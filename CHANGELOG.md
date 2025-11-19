@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix an issue where the user would have to keep resuming if we failed to check the status of a Bitcoin timelock before we waited for the Monero lock transaction to be confirmed.
+
 ## [3.3.5] - 2025-11-15
 
 - GUI: Allow changing the password of a Monero wallet (thanks to @nabijaczleweli)
