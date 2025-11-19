@@ -15,7 +15,8 @@ use crate::{
     out_event,
     protocols::{
         notice,
-        quote::{self, BidQuote}, redial,
+        quote::{self, BidQuote},
+        redial,
     },
 };
 use std::{
@@ -23,10 +24,6 @@ use std::{
     task::Poll,
     time::Duration,
 };
-
-const QUOTE_INTERVAL: Duration = Duration::from_secs(5);
-const REDIAL_INTERVAL: Duration = Duration::from_secs(1);
-const REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(3);
 
 // We initially assume all peers support our protocol.
 pub struct Behaviour {
@@ -51,13 +48,16 @@ pub struct Behaviour {
 }
 
 impl Behaviour {
-    pub fn new(
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
             inner: InnerBehaviour {
                 quote: quote::bob(),
                 notice: notice::Behaviour::new(StreamProtocol::new(quote::PROTOCOL)),
-                redial: redial::Behaviour::new("quotes", REDIAL_INTERVAL, REDIAL_MAX_INTERVAL),
+                redial: redial::Behaviour::new(
+                    "quotes",
+                    crate::defaults::QUOTE_REDIAL_INTERVAL,
+                    crate::defaults::QUOTE_REDIAL_MAX_INTERVAL,
+                ),
             },
             connection_tracker: ConnectionTracker::new(),
             does_not_support: HashSet::new(),
@@ -73,12 +73,13 @@ impl Behaviour {
     }
 
     pub fn get_backoff(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
+        // TODO: Use the backoff tracker here
         self.backoff
             .entry(*peer)
             .or_insert_with(|| ExponentialBackoff {
-                initial_interval: Duration::from_secs(1),
-                current_interval: Duration::from_secs(1),
-                max_interval: Duration::from_secs(10),
+                initial_interval: crate::defaults::QUOTE_REDIAL_INTERVAL,
+                current_interval: crate::defaults::QUOTE_REDIAL_INTERVAL,
+                max_interval: crate::defaults::QUOTE_REDIAL_MAX_INTERVAL,
                 max_elapsed_time: None,
                 ..ExponentialBackoff::default()
             })
@@ -110,7 +111,8 @@ impl Behaviour {
 
         self.does_not_support.insert(peer);
         self.inner.redial.remove_peer(&peer);
-        self.to_swarm.push_back(Event::DoesNotSupportProtocol { peer });
+        self.to_swarm
+            .push_back(Event::DoesNotSupportProtocol { peer });
     }
 }
 
@@ -181,7 +183,10 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                                 self.get_backoff(&peer).reset();
 
                                 // Schedule a new quote request after backoff
-                                self.schedule_quote_request_after(peer, QUOTE_INTERVAL);
+                                self.schedule_quote_request_after(
+                                    peer,
+                                    crate::defaults::QUOTE_INTERVAL,
+                                );
                             }
                         }
                         InnerBehaviourEvent::Quote(request_response::Event::OutboundFailure {
@@ -436,11 +441,16 @@ mod tests {
             }
         }
 
-        assert!(connection_closed, "Bob should have noticed connection closed");
+        assert!(
+            connection_closed,
+            "Bob should have noticed connection closed"
+        );
     }
 
     /// Ensures that Alice responds with a zero quote when requested.
-    async fn serve_quotes(mut alice: Swarm<quote::Behaviour>) -> (PeerId, Multiaddr, JoinHandle<()>) {
+    async fn serve_quotes(
+        mut alice: Swarm<quote::Behaviour>,
+    ) -> (PeerId, Multiaddr, JoinHandle<()>) {
         let alice_peer_id = *alice.local_peer_id();
         let alice_addr = alice.listen_on_random_memory_address().await;
 

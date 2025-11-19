@@ -32,7 +32,7 @@ pub fn alice() -> Behaviour {
             StreamProtocol::new(EncryptedSignatureProtocol.as_ref()),
             request_response::ProtocolSupport::Inbound,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default().with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
     )
 }
 
@@ -42,7 +42,7 @@ pub fn bob() -> Behaviour {
             StreamProtocol::new(EncryptedSignatureProtocol.as_ref()),
             request_response::ProtocolSupport::Outbound,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default().with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
     )
 }
 

@@ -9,11 +9,8 @@ use libp2p::swarm::{
 use libp2p::{Multiaddr, PeerId};
 use std::collections::{HashMap, VecDeque};
 use std::task::{Context, Poll};
-use std::time::Duration;
 
 use crate::out_event;
-
-const CACHED_QUOTE_EXPIRY: Duration = Duration::from_secs(120);
 
 pub struct Behaviour {
     inner: quotes::Behaviour,
@@ -30,8 +27,7 @@ pub struct Behaviour {
 }
 
 impl Behaviour {
-    pub fn new(
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
             inner: quotes::Behaviour::new(),
             addresses: HashMap::new(),
@@ -44,22 +40,26 @@ impl Behaviour {
     fn emit_cached_quotes(&mut self) {
         // Attach the address we last connected to the peer at to the quote
         // Ignores those peers where we don't have an address cached (should never happen)
-        let quotes = self.cache
+        let quotes = self
+            .cache
             .iter()
             .filter_map(|(peer_id, quote)| {
-                self.addresses.get(peer_id).map(|addr| (*peer_id, addr.clone(), quote.clone()))
+                self.addresses
+                    .get(peer_id)
+                    .map(|addr| (*peer_id, addr.clone(), quote.clone()))
             })
             .collect();
 
-        self.to_swarm
-            .push_back(Event::CachedQuotes { quotes });
+        self.to_swarm.push_back(Event::CachedQuotes { quotes });
     }
 }
 
 #[derive(Debug)]
 pub enum Event {
     // TODO: This should somehow also send a addr with this
-    CachedQuotes { quotes: Vec<(PeerId, Multiaddr, BidQuote)> },
+    CachedQuotes {
+        quotes: Vec<(PeerId, Multiaddr, BidQuote)>,
+    },
 }
 
 impl NetworkBehaviour for Behaviour {
@@ -84,13 +84,13 @@ impl NetworkBehaviour for Behaviour {
                             self.cache.insert(peer, quote);
                             self.expiry.replace(
                                 peer,
-                                Box::pin(tokio::time::sleep(CACHED_QUOTE_EXPIRY)),
+                                Box::pin(tokio::time::sleep(crate::defaults::CACHED_QUOTE_EXPIRY)),
                             );
                             self.emit_cached_quotes();
-                        },
+                        }
                         quotes::Event::DoesNotSupportProtocol { peer: _ } => {
                             // Don't care about this
-                        },
+                        }
                     }
                 }
                 _ => {
@@ -130,12 +130,8 @@ impl NetworkBehaviour for Behaviour {
         addr: &Multiaddr,
         role_override: libp2p::core::Endpoint,
     ) -> Result<THandler<Self>, ConnectionDenied> {
-        self.inner.handle_established_outbound_connection(
-            connection_id,
-            peer,
-            addr,
-            role_override,
-        )
+        self.inner
+            .handle_established_outbound_connection(connection_id, peer, addr, role_override)
     }
 
     fn handle_pending_inbound_connection(
@@ -170,10 +166,11 @@ impl NetworkBehaviour for Behaviour {
             FromSwarm::ConnectionEstablished(connection_established) => {
                 // If we connected to a peer as a dialer, cache the address we connected to them at
                 if let ConnectedPoint::Dialer { address, .. } = connection_established.endpoint {
-                    self.addresses.insert(connection_established.peer_id, address.clone());
+                    self.addresses
+                        .insert(connection_established.peer_id, address.clone());
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
 

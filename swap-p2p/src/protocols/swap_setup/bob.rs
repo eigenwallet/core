@@ -154,12 +154,6 @@ impl NetworkBehaviour for Behaviour {
                 connection_id,
                 ..
             }) => {
-                tracing::trace!(
-                    peer = %peer_id,
-                    connection_id = %connection_id,
-                    "A swap setup connection handler has died",
-                );
-
                 self.dead_connection_handlers_mut(peer_id)
                     .push_back(connection_id);
             }
@@ -330,7 +324,7 @@ impl Handler {
         Self {
             env_config,
             outbound_stream: OptionFuture::from(None),
-            timeout: Duration::from_secs(120),
+            timeout: crate::defaults::NEGOTIATION_TIMEOUT,
             new_swaps: VecDeque::default(),
             bitcoin_wallet,
             // TODO: This will keep ALL connections alive indefinitely

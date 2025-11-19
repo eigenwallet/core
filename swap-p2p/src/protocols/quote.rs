@@ -61,7 +61,8 @@ pub struct ZeroQuoteReceived;
 pub fn alice() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
     )
 }
 
@@ -72,7 +73,8 @@ pub fn alice() -> Behaviour {
 pub fn bob() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
     )
 }
 

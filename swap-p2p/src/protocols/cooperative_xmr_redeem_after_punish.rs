@@ -55,7 +55,7 @@ pub fn alice() -> Behaviour {
             StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
             ProtocolSupport::Inbound,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default().with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
     )
 }
 
@@ -65,7 +65,7 @@ pub fn bob() -> Behaviour {
             StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
             ProtocolSupport::Outbound,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default().with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
     )
 }
 

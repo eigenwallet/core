@@ -255,8 +255,8 @@ impl<LR> Handler<LR> {
             env_config,
             latest_rate,
             resume_only,
-            negotiation_timeout: Duration::from_secs(120),
-            keep_alive_until: Some(Instant::now() + Duration::from_secs(30)),
+            negotiation_timeout: crate::defaults::NEGOTIATION_TIMEOUT,
+            keep_alive_until: Some(Instant::now() + crate::defaults::SWAP_SETUP_KEEP_ALIVE),
         }
     }
 }
@@ -299,10 +299,11 @@ where
 
                 let mut substream = substream.protocol;
 
-                let (sender, receiver) = bmrng::channel_with_timeout::<
-                    bitcoin::Amount,
-                    WalletSnapshot,
-                >(1, Duration::from_secs(60));
+                let (sender, receiver) =
+                    bmrng::channel_with_timeout::<bitcoin::Amount, WalletSnapshot>(
+                        1,
+                        crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT,
+                    );
 
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;

@@ -34,7 +34,7 @@ where
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
         .boxed();
 
-    const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
+    const IDLE_CONNECTION_TIMEOUT: Duration = crate::defaults::IDLE_CONNECTION_TIMEOUT;
 
     SwarmBuilder::with_existing_identity(identity)
         .with_tokio()

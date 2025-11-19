@@ -1,9 +1,4 @@
 //! A behaviour that emits a Event to the Swarm when it notices that a specific peer supports a specific protocol.
-
-// emits something like { SupportsProtocol(protocol: StreamProtocol, peer: PeerId) }
-// uses its connectionhandler to listen for ConnectionEvent::RemoteProtocolsChange
-// constructor takes a single StreamProtocol
-
 use std::collections::VecDeque;
 
 use libp2p::{
@@ -34,9 +29,9 @@ impl NetworkBehaviour for Behaviour {
     fn handle_established_inbound_connection(
         &mut self,
         _connection_id: libp2p::swarm::ConnectionId,
-        peer: libp2p::PeerId,
-        local_addr: &libp2p::Multiaddr,
-        remote_addr: &libp2p::Multiaddr,
+        _peer: libp2p::PeerId,
+        _local_addr: &libp2p::Multiaddr,
+        _remote_addr: &libp2p::Multiaddr,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         Ok(NoticeProtocolSupportConnectionHandler::new(
             self.interesting_protocol.clone(),
@@ -46,16 +41,16 @@ impl NetworkBehaviour for Behaviour {
     fn handle_established_outbound_connection(
         &mut self,
         _connection_id: libp2p::swarm::ConnectionId,
-        peer: libp2p::PeerId,
-        addr: &libp2p::Multiaddr,
-        role_override: libp2p::core::Endpoint,
+        _peer: libp2p::PeerId,
+        _addr: &libp2p::Multiaddr,
+        _role_override: libp2p::core::Endpoint,
     ) -> Result<libp2p::swarm::THandler<Self>, libp2p::swarm::ConnectionDenied> {
         Ok(NoticeProtocolSupportConnectionHandler::new(
             self.interesting_protocol.clone(),
         ))
     }
 
-    fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
+    fn on_swarm_event(&mut self, _event: libp2p::swarm::FromSwarm) {
         // nothing to do here
     }
 
@@ -63,7 +58,7 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         peer_id: libp2p::PeerId,
         _connection_id: libp2p::swarm::ConnectionId,
-        event: libp2p::swarm::THandlerOutEvent<Self>,
+        _event: libp2p::swarm::THandlerOutEvent<Self>,
     ) {
         self.to_swarm
             .push_back(Event::SupportsProtocol { peer: peer_id });
@@ -71,7 +66,7 @@ impl NetworkBehaviour for Behaviour {
 
     fn poll(
         &mut self,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>>
     {
         if let Some(event) = self.to_swarm.pop_front() {
@@ -124,7 +119,7 @@ impl ConnectionHandler for NoticeProtocolSupportConnectionHandler {
 
     fn poll(
         &mut self,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<
         libp2p::swarm::ConnectionHandlerEvent<
             Self::OutboundProtocol,
