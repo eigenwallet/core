@@ -48,6 +48,47 @@ impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = <quotes::Behaviour as NetworkBehaviour>::ConnectionHandler;
     type ToSwarm = Event;
 
+    fn poll(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        while let Poll::Ready(Some((peer, ()))) = self.expiry.poll_next_unpin(cx) {
+            self.cache.remove(&peer);
+            self.emit_cached_quotes();
+        }
+
+        while let Poll::Ready(event) = self.inner.poll(cx) {
+            match event {
+                ToSwarm::GenerateEvent(event) => {
+                    match event {
+                        quotes::Event::QuoteReceived { peer, quote } => {
+                            self.cache.insert(peer, quote);
+                            self.expiry.replace(
+                                peer,
+                                Box::pin(tokio::time::sleep(CACHED_QUOTE_EXPIRY)),
+                            );
+                            self.emit_cached_quotes();
+                        },
+                        quotes::Event::DoesNotSupportProtocol { peer } => {
+                            // Don't care about this
+                        },
+                    }
+                }
+                _ => {
+                    return Poll::Ready(event.map_out(|_| {
+                        unreachable!("we handle all generate events in the arm above")
+                    }));
+                }
+            }
+        }
+
+        if let Some(event) = self.to_swarm.pop_front() {
+            return Poll::Ready(ToSwarm::GenerateEvent(event));
+        }
+
+        Poll::Pending
+    }
+
     fn handle_established_inbound_connection(
         &mut self,
         connection_id: ConnectionId,
@@ -115,41 +156,6 @@ impl NetworkBehaviour for Behaviour {
     ) {
         self.inner
             .on_connection_handler_event(peer_id, connection_id, event);
-    }
-
-    fn poll(
-        &mut self,
-        cx: &mut Context<'_>,
-    ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        while let Poll::Ready(Some((peer, ()))) = self.expiry.poll_next_unpin(cx) {
-            self.cache.remove(&peer);
-            self.emit_cached_quotes();
-        }
-
-        while let Poll::Ready(event) = self.inner.poll(cx) {
-            match event {
-                ToSwarm::GenerateEvent(quotes::Event::QuoteReceived { peer, quote }) => {
-                    self.cache.insert(peer, quote);
-
-                    self.expiry.insert(
-                        peer,
-                        Box::pin(tokio::time::sleep(CACHED_QUOTE_EXPIRY)),
-                    );
-                    self.emit_cached_quotes();
-                }
-                _ => {
-                    return Poll::Ready(event.map_out(|_| {
-                        unreachable!("we handle all generate events in the arm above")
-                    }));
-                }
-            }
-        }
-
-        if let Some(event) = self.to_swarm.pop_front() {
-            return Poll::Ready(ToSwarm::GenerateEvent(event));
-        }
-
-        Poll::Pending
     }
 }
 

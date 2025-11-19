@@ -1,7 +1,6 @@
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use libp2p::{
     core::Endpoint,
-    identity,
     request_response::{self, OutboundFailure},
     swarm::{
         ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent,
@@ -16,7 +15,7 @@ use crate::{
     out_event,
     protocols::{
         notice,
-        quote::{self, BidQuote},
+        quote::{self, BidQuote}, redial,
     },
 };
 use std::{
@@ -26,12 +25,10 @@ use std::{
 };
 
 const QUOTE_INTERVAL: Duration = Duration::from_secs(5);
+const REDIAL_INTERVAL: Duration = Duration::from_secs(1);
+const REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(10);
 
-// TODO: Track which peers support our protocol based on:
-// 1. The notice behaviour / identify protocol
-// 2. OutboundFailure::UnsupportedProtocols errors
-//
-// We should initially assume all peers support our protocol.
+// We initially assume all peers support our protocol.
 pub struct Behaviour {
     inner: InnerBehaviour,
 
@@ -60,6 +57,7 @@ impl Behaviour {
             inner: InnerBehaviour {
                 quote: quote::bob(),
                 notice: notice::Behaviour::new(StreamProtocol::new(quote::PROTOCOL)),
+                redial: redial::Behaviour::new("quotes", REDIAL_INTERVAL, REDIAL_MAX_INTERVAL),
             },
             connection_tracker: ConnectionTracker::new(),
             does_not_support: HashSet::new(),
@@ -87,6 +85,7 @@ impl Behaviour {
     }
 
     fn schedule_quote_request_after(&mut self, peer: PeerId, duration: Duration) -> Duration {
+        // TODO: Handle if there already was a future for this peer
         self.to_request
             .insert(peer, Box::pin(tokio::time::sleep(duration)));
         duration
@@ -97,17 +96,35 @@ impl Behaviour {
 
         self.schedule_quote_request_after(peer, duration)
     }
+
+    // Called whenever we hear about a new peer, this can be called multiple times for the same peer
+    fn handle_discovered_peer(&mut self, peer: PeerId) {
+        // Instruct to redial unless we know that the peer does not support the protocol
+        if !self.does_not_support.contains(&peer) {
+            self.inner.redial.add_peer(peer);
+        }
+    }
+
+    fn handle_does_not_support_protocol(&mut self, peer: PeerId) {
+        tracing::trace!(%peer, "Peer does not support the quote protocol");
+
+        self.does_not_support.insert(peer);
+        self.inner.redial.remove_peer(&peer);
+        self.to_swarm.push_back(Event::DoesNotSupportProtocol { peer });
+    }
 }
 
 #[derive(NetworkBehaviour)]
 pub struct InnerBehaviour {
     quote: quote::Behaviour,
     notice: notice::Behaviour,
+    redial: redial::Behaviour,
 }
 
 #[derive(Debug)]
 pub enum Event {
     QuoteReceived { peer: PeerId, quote: BidQuote },
+    DoesNotSupportProtocol { peer: PeerId },
 }
 
 impl libp2p::swarm::NetworkBehaviour for Behaviour {
@@ -178,9 +195,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                                 .expect("backoff should never run out of attempts");
 
                             if let OutboundFailure::UnsupportedProtocols = error {
-                                tracing::trace!(%peer, %request_id, %error, "Peer does not support the protocol, adding to does_not_support set");
-
-                                self.does_not_support.insert(peer);
+                                self.handle_does_not_support_protocol(peer);
 
                             // Only schedule a new quote request if we are not sure that the peer does not support the protocol
                             } else if !self.does_not_support.contains(&peer) {
@@ -191,8 +206,8 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                                 tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
                             }
                         }
-                        other => {
-                            tracing::trace!("quote::background::InnerBehaviourEvent: {:?}", other);
+                        _other => {
+                            // TODO: Do we need to handle other events?
                         }
                     }
                 }
@@ -223,6 +238,9 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                 {
                     self.schedule_quote_request_with_backoff(connection_established.peer_id);
                 }
+            }
+            FromSwarm::NewExternalAddrOfPeer(event) => {
+                self.handle_discovered_peer(event.peer_id);
             }
             _ => {}
         }
@@ -296,6 +314,7 @@ impl From<Event> for out_event::bob::OutEvent {
     fn from(event: Event) -> Self {
         match event {
             Event::QuoteReceived { peer, quote } => Self::BackgroundQuoteReceived { peer, quote },
+            Event::DoesNotSupportProtocol { .. } => Self::Other,
         }
     }
 }
@@ -303,5 +322,145 @@ impl From<Event> for out_event::bob::OutEvent {
 impl From<Event> for out_event::alice::OutEvent {
     fn from(_: Event) -> Self {
         unreachable!("Alice should not use the quotes behaviour");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::{new_swarm, SwarmExt};
+    use futures::StreamExt;
+    use libp2p::swarm::{Swarm, SwarmEvent};
+    use tokio::task::JoinHandle;
+
+    #[tokio::test]
+    async fn receive_quote_from_alice() {
+        // Create the swarm for Bob
+        let mut bob = new_swarm(|_| Behaviour::new());
+
+        // Create the swarm for Alice
+        // Let her listen on a random memory address
+        // Let her respond to requests
+        let alice = new_swarm(|_| quote::alice());
+        let (alice_peer_id, alice_addr, alice_handle) = serve_quotes(alice).await;
+
+        // Tell Bob about Alice's address
+        // This should be enough to get the `quotes` behaviour to dial Alice
+        bob.add_peer_address(alice_peer_id, alice_addr);
+
+        let bob_handle = tokio::spawn(async move {
+            loop {
+                if let SwarmEvent::Behaviour(Event::QuoteReceived { peer, quote }) =
+                    bob.select_next_some().await
+                {
+                    if peer == alice_peer_id && quote == quote::BidQuote::ZERO {
+                        return;
+                    }
+                }
+            }
+        });
+
+        tokio::select! {
+            _ = bob_handle => {}
+            _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                panic!("Test timed out");
+            }
+        }
+
+        alice_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn receive_does_not_support_protocol_from_alice() {
+        // Create the swarm for Bob
+        let mut bob = new_swarm(|_| Behaviour::new());
+
+        // Use quote::bob() so Alice doesn't support inbound requests
+        let mut alice = new_swarm(|_| quote::bob());
+        let alice_peer_id = *alice.local_peer_id();
+        let alice_addr = alice.listen_on_random_memory_address().await;
+
+        // Let Alice run but she doesn't need to do anything
+        let alice_handle = tokio::spawn(async move {
+            loop {
+                alice.select_next_some().await;
+            }
+        });
+
+        // Tell Bob about Alice's address
+        bob.add_peer_address(alice_peer_id, alice_addr);
+
+        // Wait for DoesNotSupportProtocol
+        let timeout = tokio::time::sleep(Duration::from_secs(5));
+        tokio::pin!(timeout);
+
+        loop {
+            tokio::select! {
+                event = bob.select_next_some() => {
+                    if let SwarmEvent::Behaviour(Event::DoesNotSupportProtocol { peer }) = event {
+                        if peer == alice_peer_id {
+                            break;
+                        }
+                    }
+                }
+                _ = &mut timeout => {
+                    panic!("Timeout waiting for DoesNotSupportProtocol");
+                }
+            }
+        }
+
+        // Kill Alice which should kill the connection
+        // Bob should not attempt to redial Alice because he has noticed that she does not support the protocol
+        alice_handle.abort();
+
+        let mut connection_closed = false;
+        let timeout = tokio::time::sleep(Duration::from_secs(5));
+        tokio::pin!(timeout);
+
+        loop {
+            tokio::select! {
+                event = bob.select_next_some() => {
+                     match event {
+                        SwarmEvent::ConnectionClosed { peer_id, .. } if peer_id == alice_peer_id => {
+                            connection_closed = true;
+                        }
+                        SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id), .. } if peer_id == alice_peer_id => {
+                            panic!("Bob attempted to redial Alice!");
+                        }
+                        _ => {}
+                     }
+                }
+                _ = &mut timeout => {
+                    break;
+                }
+            }
+        }
+
+        assert!(connection_closed, "Bob should have noticed connection closed");
+    }
+
+    /// Ensures that Alice responds with a zero quote when requested.
+    async fn serve_quotes(mut alice: Swarm<quote::Behaviour>) -> (PeerId, Multiaddr, JoinHandle<()>) {
+        let alice_peer_id = *alice.local_peer_id();
+        let alice_addr = alice.listen_on_random_memory_address().await;
+
+        let alice_handle = tokio::spawn(async move {
+            loop {
+                match alice.select_next_some().await {
+                    SwarmEvent::Behaviour(libp2p::request_response::Event::Message {
+                        message: libp2p::request_response::Message::Request { channel, .. },
+                        ..
+                    }) => {
+                        alice
+                            .behaviour_mut()
+                            .send_response(channel, quote::BidQuote::ZERO)
+                            .unwrap();
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        (alice_peer_id, alice_addr, alice_handle)
     }
 }

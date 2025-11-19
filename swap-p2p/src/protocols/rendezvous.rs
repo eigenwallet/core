@@ -566,7 +566,7 @@ pub mod register {
 /// The behaviour also internally attempts to dial any newly discovered peers
 /// It uses the `redial` behaviour internally to do this
 pub mod discovery {
-    use backoff::{backoff::Backoff, ExponentialBackoff};
+    use backoff::{backoff::Backoff};
     use futures::future::{self};
     use futures::FutureExt;
     use libp2p::{
@@ -575,7 +575,7 @@ pub mod discovery {
         Multiaddr, PeerId,
     };
     use std::{
-        collections::{HashMap, HashSet, VecDeque},
+        collections::{HashSet, VecDeque},
         task::Poll,
         time::Duration,
     };
@@ -744,11 +744,6 @@ pub mod discovery {
                                         let peer_id = registration.record.peer_id();
 
                                         if self.discovered.insert((peer_id, address.clone())) {
-                                            // TODO: Do we need to redial every peer we discover?
-                                            self.inner
-                                                .redial
-                                                .add_peer_with_address(peer_id, address.clone());
-
                                             self.to_swarm.push_back(
                                                 ToSwarm::NewExternalAddrOfPeer {
                                                     peer_id,

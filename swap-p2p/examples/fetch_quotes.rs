@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use swap_p2p::protocols::quote::BidQuote;
-use swap_p2p::protocols::{quote, rendezvous};
+use swap_p2p::protocols::{quote, quotes_cached, rendezvous};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 const USE_TOR: bool = true;
@@ -26,7 +26,7 @@ struct Behaviour {
     rendezvous: rendezvous::discovery::Behaviour,
     ping: ping::Behaviour,
     identify: identify::Behaviour,
-    quote: quote::background::Behaviour,
+    quote: quotes_cached::Behaviour,
 }
 
 fn create_transport(
@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
             "fetch_quotes/1.0.0".to_string(),
             identity.public(),
         )),
-        quote: quote::background::Behaviour::new(),
+        quote: quotes_cached::Behaviour::new(),
     };
 
     let transport = create_transport(&identity, tor_client_opt)?;
@@ -125,8 +125,6 @@ async fn main() -> Result<()> {
         );
     }
 
-    let mut all_quotes: HashMap<PeerId, VecDeque<BidQuote>> = HashMap::new();
-
     loop {
         let event = swarm.select_next_some().await;
         // println!("Event: {:?}", event);
@@ -136,18 +134,15 @@ async fn main() -> Result<()> {
                 BehaviourEvent::Rendezvous(event) => match event {
                     rendezvous::discovery::Event::DiscoveredPeer { peer_id } => {}
                 },
-                BehaviourEvent::Quote(quote::background::Event::QuoteReceived { peer, quote }) => {
-                    all_quotes.entry(peer).or_default().push_back(quote);
+                BehaviourEvent::Quote(quotes_cached::Event::CachedQuotes { quotes }) => {
                     println!("================");
                     println!("================");
                     println!("================");
-                    println!("==== !!!! GOT QUOTE FROM !!!! ==== {}: {:?}", peer, quote);
+                    println!("==== !!!! GOT CACHED QUOTES SNAPSHOT !!!! ====");
                     println!("All quotes:");
-                    for (peer, quotes) in all_quotes.iter() {
+                    for (peer, quote) in quotes {
                         println!("- {peer}:");
-                        for quote in quotes.iter() {
-                            println!("  - {:?}", quote);
-                        }
+                        println!("  - {:?}", quote);
                         println!("================");
                     }
                     // panic!("Got quote from peer, stopping");

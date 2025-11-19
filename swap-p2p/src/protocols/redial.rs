@@ -76,10 +76,23 @@ impl Behaviour {
         if newly_added {
             self.schedule_redial(&peer, Duration::ZERO);
 
-            tracing::trace!("Added a new peer to the set of peers we want to contineously redial");
+            tracing::trace!("Started tracking peer");
         }
 
         newly_added
+    }
+
+    /// Removes a peer from the set of peers to track. Returns true if the peer was removed.
+    #[tracing::instrument(level = "trace", name = "redial::remove_peer", skip(self, peer), fields(redial_type = %self.name, peer = %peer))]
+    pub fn remove_peer(&mut self, peer: &PeerId) -> bool {
+        if self.peers.remove(peer) {
+            self.to_dial.remove(peer);
+
+            tracing::trace!("Stopped tracking peer");
+            return true;
+        }
+
+        false
     }
 
     /// Adds a peer to the set of peers to track with a specific address. Returns true if the peer was newly added.
@@ -91,14 +104,13 @@ impl Behaviour {
         if newly_added {
             self.schedule_redial(&peer, Duration::ZERO);
 
-            tracing::trace!(?address, "Added a new peer to the set of peers we want to contineously redial with a specific address");
+            tracing::trace!(?address, "Started tracking peer and added a specific address");
         }
 
         self.to_swarm.push_back(ToSwarm::NewExternalAddrOfPeer {
             peer_id: peer,
             address: address.clone(),
         });
-        self.insert_address(&peer, address);
 
         newly_added
     }
@@ -163,6 +175,8 @@ impl Behaviour {
 
 #[derive(Debug)]
 pub enum Event {
+    // TODO: This should emit useful events like Connected, Disconnected, etc. for the peers we are interested in.
+    // This could prevent having to use the ConnectionTracker in parent behaviours (essentiually duplicating the code here)
     ScheduledRedial {
         peer: PeerId,
         next_dial_in: Duration,

@@ -29,10 +29,10 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
     }
 
     /// Insert a new future with the given key.
-    /// If a future with the same key already exists, it is aborted and replaced.
-    pub fn insert(&mut self, key: K, future: BoxFuture<'static, V>) {
-        if let Some(handle) = self.handles.get(&key) {
-            handle.abort();
+    /// If a future with the same key already exists, it returns false and does NOT replace it.
+    pub fn insert(&mut self, key: K, future: BoxFuture<'static, V>) -> bool {
+        if self.handles.contains_key(&key) {
+            return false;
         }
 
         let (handle, registration) = AbortHandle::new_pair();
@@ -46,6 +46,23 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
 
         let abortable = Abortable::new(Box::pin(wrapped), registration);
         self.futures.push(Box::pin(abortable));
+        true
+    }
+
+    /// Removes a future with the given key, aborting it if it exists.
+    pub fn remove(&mut self, key: &K) -> bool {
+        if let Some(handle) = self.handles.remove(key) {
+            handle.abort();
+            return true;
+        }
+        false
+    }
+
+    /// Insert a new future with the given key.
+    /// If a future with the same key already exists, it is aborted and replaced.
+    pub fn replace(&mut self, key: K, future: BoxFuture<'static, V>) {
+        self.remove(&key);
+        self.insert(key, future);
     }
 
     /// Poll for the next completed future.
