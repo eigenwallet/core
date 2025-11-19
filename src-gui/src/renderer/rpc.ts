@@ -6,7 +6,6 @@ import {
   GetLogsArgs,
   GetLogsResponse,
   GetSwapInfoResponse,
-  ListSellersArgs,
   MoneroRecoveryArgs,
   ResumeSwapArgs,
   ResumeSwapResponse,
@@ -69,7 +68,6 @@ import {
 import { store } from "./store/storeRenderer";
 import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
 import { MoneroRecoveryResponse } from "models/rpcModel";
-import { ListSellersResponse } from "../models/tauriModel";
 import logger from "utils/logger";
 import { getNetwork, isTestnet } from "store/config";
 import { Blockchain, Network } from "store/types";
@@ -123,19 +121,6 @@ async function invoke<ARGS, RESPONSE>(
 
 async function invokeNoArgs<RESPONSE>(command: string): Promise<RESPONSE> {
   return invokeUnsafe(command) as Promise<RESPONSE>;
-}
-
-export async function fetchSellersAtPresetRendezvousPoints() {
-  await Promise.all(
-    DEFAULT_RENDEZVOUS_POINTS.map(async (rendezvousPoint) => {
-      const response = await listSellersAtRendezvousPoint([rendezvousPoint]);
-      store.dispatch(discoveredMakersByRendezvous(response.sellers));
-
-      logger.info(
-        `Discovered ${response.sellers.length} sellers at rendezvous point ${rendezvousPoint} during startup fetch`,
-      );
-    }),
-  );
 }
 
 export async function checkBitcoinBalance() {
@@ -445,15 +430,6 @@ export async function redactLogs(
   });
 
   return parseLogsFromString(response.text);
-}
-
-export async function listSellersAtRendezvousPoint(
-  rendezvousPointAddresses: string[],
-): Promise<ListSellersResponse> {
-  throw new Error("deprecated");
-  return await invoke<ListSellersArgs, ListSellersResponse>("list_sellers", {
-    rendezvous_points: rendezvousPointAddresses,
-  });
 }
 
 export async function getWalletDescriptor() {

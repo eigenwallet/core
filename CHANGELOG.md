@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- SWAP: Removed the `list-sellers` CLI command.
+
 ## [3.3.4] - 2025-11-14
 
 - GUI: Allow changing the password of a Monero wallet (thanks to @nabijaczleweli)

@@ -23,7 +23,6 @@ import {
   getSwapInfo,
   getSwapTimelock,
   initializeContext,
-  listSellersAtRendezvousPoint,
   refreshApprovals,
   updateAllNodeStatuses,
 } from "./rpc";
@@ -84,11 +83,6 @@ export async function setupBackgroundTasks(): Promise<void> {
   setIntervalImmediate(updateAllNodeStatuses, STATUS_UPDATE_INTERVAL);
   setIntervalImmediate(updateRates, UPDATE_RATE_INTERVAL);
   setIntervalImmediate(fetchAllConversations, FETCH_CONVERSATIONS_INTERVAL);
-  setIntervalImmediate(
-    () =>
-      listSellersAtRendezvousPoint(store.getState().settings.rendezvousPoints),
-    DISCOVER_PEERS_INTERVAL,
-  );
   setIntervalImmediate(refreshApprovals, FETCH_PENDING_APPROVALS_INTERVAL);
 
   // Fetch all alerts

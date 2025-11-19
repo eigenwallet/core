@@ -1,4 +1,3 @@
-use libp2p::{Multiaddr, PeerId};
 use std::collections::HashMap;
 use std::io::Write;
 use std::result::Result;
@@ -13,7 +12,7 @@ use swap::cli::{
             GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
             GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            GetSwapInfoArgs, GetSwapInfosAllArgs, MoneroRecoveryArgs, RedactArgs,
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
             SendMoneroArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
             SuspendCurrentSwapArgs, WithdrawBtcArgs,
@@ -47,7 +46,6 @@ macro_rules! generate_command_handlers {
             get_history,
             monero_recovery,
             get_logs,
-            list_sellers,
             suspend_current_swap,
             cancel_and_refund,
             initialize_context,
@@ -435,7 +433,6 @@ tauri_command!(resume_swap, ResumeSwapArgs);
 tauri_command!(withdraw_btc, WithdrawBtcArgs);
 tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);
-tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
 tauri_command!(redact, RedactArgs);
 tauri_command!(send_monero, SendMoneroArgs);

@@ -5,8 +5,8 @@ use crate::cli::api::tauri_bindings::{
     TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
-use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
-use crate::cli::{list_sellers as list_sellers_impl, SellerStatus};
+use crate::cli::list_sellers::{QuoteWithAddress, UnreachableSeller};
+use crate::cli::SellerStatus;
 use crate::common::{get_logs, redact};
 use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::monero::MoneroAddressPool;
@@ -170,30 +170,6 @@ impl Request for WithdrawBtcArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         withdraw_btc(self, ctx).await
-    }
-}
-
-// ListSellers
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ListSellersArgs {
-    /// The rendezvous points to search for sellers
-    /// The address must contain a peer ID
-    #[typeshare(serialized_as = "Vec<string>")]
-    pub rendezvous_points: Vec<Multiaddr>,
-}
-
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct ListSellersResponse {
-    sellers: Vec<SellerStatus>,
-}
-
-impl Request for ListSellersArgs {
-    type Response = ListSellersResponse;
-
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        list_sellers(self, ctx).await
     }
 }
 
@@ -1406,75 +1382,6 @@ pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<
     })
 }
 
-#[tracing::instrument(fields(method = "list_sellers"), skip(context))]
-pub async fn list_sellers(
-    list_sellers: ListSellersArgs,
-    context: Arc<Context>,
-) -> Result<ListSellersResponse> {
-    let ListSellersArgs { rendezvous_points } = list_sellers;
-    let rendezvous_nodes: Vec<_> = rendezvous_points
-        .iter()
-        .filter_map(|rendezvous_point| rendezvous_point.split_peer_id())
-        .collect();
-
-    let config = context.try_get_config().await?;
-    let db = context.try_get_db().await?;
-    let tor_client = context.tor_client.read().await.clone();
-    let tauri_handle = context.tauri_handle.clone();
-
-    let identity = config
-        .seed
-        .as_ref()
-        .context("Cannot extract seed")?
-        .derive_libp2p_identity();
-
-    let sellers = list_sellers_impl(
-        rendezvous_nodes,
-        config.namespace,
-        tor_client,
-        identity,
-        Some(db.clone()),
-        tauri_handle,
-    )
-    .await?;
-
-    for seller in &sellers {
-        match seller {
-            SellerStatus::Online(QuoteWithAddress {
-                quote,
-                multiaddr,
-                peer_id,
-                version,
-            }) => {
-                tracing::trace!(
-                    status = "Online",
-                    price = %quote.price.to_string(),
-                    min_quantity = %quote.min_quantity.to_string(),
-                    max_quantity = %quote.max_quantity.to_string(),
-                    address = %multiaddr.clone().to_string(),
-                    peer_id = %peer_id,
-                    version = %version,
-                    "Fetched peer status"
-                );
-
-                // Add the peer as known to the database
-                // This'll allow us to later request a quote again
-                // without having to re-discover the peer at the rendezvous point
-                db.insert_address(*peer_id, multiaddr.clone()).await?;
-            }
-            SellerStatus::Unreachable(UnreachableSeller { peer_id }) => {
-                tracing::trace!(
-                    status = "Unreachable",
-                    peer_id = %peer_id.to_string(),
-                    "Fetched peer status"
-                );
-            }
-        }
-    }
-
-    Ok(ListSellersResponse { sellers })
-}
-
 #[tracing::instrument(fields(method = "export_bitcoin_wallet"), skip(context))]
 pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::Value> {
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
@@ -1527,49 +1434,6 @@ pub async fn monero_recovery(
 pub async fn get_current_swap(context: Arc<Context>) -> Result<GetCurrentSwapResponse> {
     let swap_id = context.swap_lock.get_current_swap_id().await;
     Ok(GetCurrentSwapResponse { swap_id })
-}
-
-pub async fn fetch_quotes_task(
-    rendezvous_points: Vec<Multiaddr>,
-    namespace: XmrBtcNamespace,
-    sellers: Vec<Multiaddr>,
-    identity: identity::Keypair,
-    db: Option<Arc<dyn Database + Send + Sync>>,
-    tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
-    tauri_handle: Option<TauriHandle>,
-) -> Result<(
-    tokio::task::JoinHandle<()>,
-    ::tokio::sync::watch::Receiver<Vec<SellerStatus>>,
-)> {
-    let (tx, rx) = ::tokio::sync::watch::channel(Vec::new());
-
-    let rendezvous_nodes: Vec<_> = rendezvous_points
-        .iter()
-        .filter_map(|addr| addr.split_peer_id())
-        .collect();
-
-    let fetch_fn = list_sellers_init(
-        rendezvous_nodes,
-        namespace,
-        tor_client,
-        identity,
-        db,
-        tauri_handle,
-        Some(tx.clone()),
-        sellers,
-    )
-    .await?;
-
-    let handle = tokio::task::spawn(async move {
-        loop {
-            let sellers = fetch_fn().await;
-            let _ = tx.send(sellers);
-
-            tokio::time::sleep(std::time::Duration::from_secs(90)).await;
-        }
-    });
-
-    Ok((handle, rx))
 }
 
 // TODO: Let this take a refresh interval as an argument

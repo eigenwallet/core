@@ -1,6 +1,6 @@
 use crate::cli::api::request::{
     BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs,
-    GetHistoryArgs, ListSellersArgs, MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
+    GetHistoryArgs, MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
 };
 use crate::cli::api::Context;
 use crate::monero::{self, MoneroAddressPool};
@@ -221,26 +221,6 @@ where
 
             Ok(context)
         }
-        CliCommand::ListSellers {
-            rendezvous_point,
-            tor,
-        } => {
-            let context = Arc::new(Context::new_without_tauri_handle());
-            ContextBuilder::new(is_testnet)
-                .with_tor(tor.enable_tor)
-                .with_data_dir(data)
-                .with_json(json)
-                .build(context.clone())
-                .await?;
-
-            ListSellersArgs {
-                rendezvous_points: vec![rendezvous_point],
-            }
-            .request(context.clone())
-            .await?;
-
-            Ok(context)
-        }
         CliCommand::ExportBitcoinWallet { bitcoin } => {
             let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
@@ -405,17 +385,6 @@ enum CliCommand {
 
         #[structopt(flatten)]
         bitcoin: Bitcoin,
-    },
-    /// Discover and list sellers (i.e. ASB providers)
-    ListSellers {
-        #[structopt(
-            long,
-            help = "Address of the rendezvous point you want to use to discover ASBs"
-        )]
-        rendezvous_point: Multiaddr,
-
-        #[structopt(flatten)]
-        tor: Tor,
     },
     /// Print the internal bitcoin wallet descriptor
     ExportBitcoinWallet {
