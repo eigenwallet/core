@@ -1,5 +1,5 @@
 use libp2p::rendezvous::Namespace;
-use std::{fmt, time::Duration};
+use std::fmt;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum XmrBtcNamespace {

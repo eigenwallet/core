@@ -1,4 +1,4 @@
-use backoff::{backoff::Backoff, ExponentialBackoff};
+use backoff::backoff::Backoff;
 use libp2p::{
     core::Endpoint,
     request_response::{self, OutboundFailure},
@@ -10,9 +10,8 @@ use libp2p::{
 };
 
 use crate::{
-    behaviour_util::ConnectionTracker,
+    behaviour_util::{BackoffTracker, ConnectionTracker},
     futures_util::FuturesHashSet,
-    out_event,
     protocols::{
         notice,
         quote::{self, BidQuote},
@@ -20,7 +19,7 @@ use crate::{
     },
 };
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     task::Poll,
     time::Duration,
 };
@@ -41,7 +40,7 @@ pub struct Behaviour {
     to_request: FuturesHashSet<PeerId, ()>,
 
     /// Store backoffs for each peer
-    backoff: HashMap<PeerId, ExponentialBackoff>,
+    backoff: BackoffTracker,
 
     // Queue of events to be sent to the swarm
     to_swarm: VecDeque<Event>,
@@ -63,26 +62,17 @@ impl Behaviour {
             does_not_support: HashSet::new(),
             to_dispatch: VecDeque::new(),
             to_request: FuturesHashSet::new(),
-            backoff: HashMap::new(),
+            backoff: BackoffTracker::new(
+                crate::defaults::QUOTE_REDIAL_INTERVAL,
+                crate::defaults::QUOTE_REDIAL_MAX_INTERVAL,
+                1.5,
+            ),
             to_swarm: VecDeque::new(),
         }
     }
 
     fn is_connected(&self, peer_id: &PeerId) -> bool {
         self.connection_tracker.is_connected(peer_id)
-    }
-
-    pub fn get_backoff(&mut self, peer: &PeerId) -> &mut ExponentialBackoff {
-        // TODO: Use the backoff tracker here
-        self.backoff
-            .entry(*peer)
-            .or_insert_with(|| ExponentialBackoff {
-                initial_interval: crate::defaults::QUOTE_REDIAL_INTERVAL,
-                current_interval: crate::defaults::QUOTE_REDIAL_INTERVAL,
-                max_interval: crate::defaults::QUOTE_REDIAL_MAX_INTERVAL,
-                max_elapsed_time: None,
-                ..ExponentialBackoff::default()
-            })
     }
 
     fn schedule_quote_request_after(&mut self, peer: PeerId, duration: Duration) -> Duration {
@@ -93,7 +83,7 @@ impl Behaviour {
     }
 
     fn schedule_quote_request_with_backoff(&mut self, peer: PeerId) -> Duration {
-        let duration = self.get_backoff(&peer).current_interval;
+        let duration = self.backoff.get(&peer).current_interval;
 
         self.schedule_quote_request_after(peer, duration)
     }
@@ -180,7 +170,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                                 });
 
                                 // We got a successful response, so we reset the backoff
-                                self.get_backoff(&peer).reset();
+                                self.backoff.reset(&peer);
 
                                 // Schedule a new quote request after backoff
                                 self.schedule_quote_request_after(
@@ -195,7 +185,8 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                             error,
                         }) => {
                             // We got an outbound failure, so we increment the backoff
-                            self.get_backoff(&peer)
+                            self.backoff
+                                .get(&peer)
                                 .next_backoff()
                                 .expect("backoff should never run out of attempts");
 
