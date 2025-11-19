@@ -66,6 +66,10 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 }
             }
         }
+        Cmd::PeerId => {
+            let response = client.peer_id().await?;
+            println!("Your Peer ID is: {}", response.peer_id);
+        }
         Cmd::ActiveConnections => {
             let response = client.active_connections().await?;
             println!("Connected to {} peers", response.connections);

@@ -29,6 +29,8 @@ pub enum Cmd {
     MoneroSeed,
     /// Get external multiaddresses
     Multiaddresses,
+    /// Get peer ID
+    PeerId,
     /// Get active connection count
     ActiveConnections,
     /// Get list of swaps

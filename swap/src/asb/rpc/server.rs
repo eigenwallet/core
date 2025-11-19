@@ -10,8 +10,8 @@ use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap,
+    PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse,
+    RendezvousConnectionStatus, RendezvousRegistrationStatus, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -129,6 +129,18 @@ impl AsbApiServer for RpcImpl {
         let multiaddresses = addresses.iter().map(|addr| addr.to_string()).collect();
 
         Ok(MultiaddressesResponse { multiaddresses })
+    }
+
+    async fn peer_id(&self) -> Result<PeerIdResponse, ErrorObjectOwned> {
+        let (peer_id, _) = self
+            .event_loop_service
+            .get_multiaddresses()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(PeerIdResponse {
+            peer_id: peer_id.to_string(),
+        })
     }
 
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned> {

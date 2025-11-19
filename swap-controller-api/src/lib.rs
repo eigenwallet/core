@@ -29,6 +29,11 @@ pub struct MultiaddressesResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PeerIdResponse {
+    pub peer_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ActiveConnectionsResponse {
     pub connections: usize,
 }
@@ -87,6 +92,8 @@ pub trait AsbApi {
     async fn monero_seed(&self) -> Result<MoneroSeedResponse, ErrorObjectOwned>;
     #[method(name = "multiaddresses")]
     async fn multiaddresses(&self) -> Result<MultiaddressesResponse, ErrorObjectOwned>;
+    #[method(name = "peer_id")]
+    async fn peer_id(&self) -> Result<PeerIdResponse, ErrorObjectOwned>;
     #[method(name = "active_connections")]
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
     #[method(name = "get_swaps")]
