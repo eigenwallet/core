@@ -17,7 +17,6 @@ use crate::{
     protocols::{
         notice,
         quote::{self, BidQuote},
-        rendezvous,
     },
 };
 use std::{
@@ -39,6 +38,7 @@ pub struct Behaviour {
     /// Track connected peers
     connection_tracker: ConnectionTracker,
 
+    /// Peers which have explictly told us that they do not support our protocol
     does_not_support: HashSet<PeerId>,
 
     /// Peers to dispatch a quote request to as soon as we are connected to them
@@ -55,18 +55,11 @@ pub struct Behaviour {
 
 impl Behaviour {
     pub fn new(
-        identity: identity::Keypair,
-        rendezvous_nodes: Vec<PeerId>,
-        namespace: libp2p::rendezvous::Namespace,
     ) -> Self {
-        let discovery =
-            rendezvous::discovery::Behaviour::new(identity, rendezvous_nodes, namespace);
-
         Self {
             inner: InnerBehaviour {
-                quote: quote::cli(),
+                quote: quote::bob(),
                 notice: notice::Behaviour::new(StreamProtocol::new(quote::PROTOCOL)),
-                discovery,
             },
             connection_tracker: ConnectionTracker::new(),
             does_not_support: HashSet::new(),
@@ -110,7 +103,6 @@ impl Behaviour {
 pub struct InnerBehaviour {
     quote: quote::Behaviour,
     notice: notice::Behaviour,
-    discovery: rendezvous::discovery::Behaviour,
 }
 
 #[derive(Debug)]
@@ -200,7 +192,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                             }
                         }
                         other => {
-                            println!("quote::background::InnerBehaviourEvent: {:?}", other);
+                            tracing::trace!("quote::background::InnerBehaviourEvent: {:?}", other);
                         }
                     }
                 }
@@ -217,6 +209,25 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
         }
 
         Poll::Pending
+    }
+
+    fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
+        self.connection_tracker.handle_swarm_event(event);
+
+        match event {
+            FromSwarm::ConnectionEstablished(connection_established) => {
+                // When we connected to a peer where we are not certain that they do not support the protocol, we schedule a quote request
+                if !self
+                    .does_not_support
+                    .contains(&connection_established.peer_id)
+                {
+                    self.schedule_quote_request_with_backoff(connection_established.peer_id);
+                }
+            }
+            _ => {}
+        }
+
+        self.inner.on_swarm_event(event)
     }
 
     fn handle_pending_outbound_connection(
@@ -258,25 +269,6 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
     ) -> Result<libp2p::swarm::THandler<Self>, ConnectionDenied> {
         self.inner
             .handle_established_outbound_connection(connection_id, peer, addr, role_override)
-    }
-
-    fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-        self.connection_tracker.handle_swarm_event(event);
-
-        match event {
-            FromSwarm::ConnectionEstablished(connection_established) => {
-                // When we connected to a peer where we are not certain that they do not support the protocol, we schedule a quote request
-                if !self
-                    .does_not_support
-                    .contains(&connection_established.peer_id)
-                {
-                    self.schedule_quote_request_with_backoff(connection_established.peer_id);
-                }
-            }
-            _ => {}
-        }
-
-        self.inner.on_swarm_event(event)
     }
 
     fn on_connection_handler_event(

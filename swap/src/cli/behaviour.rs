@@ -1,8 +1,8 @@
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::bob;
 use crate::network::{
-    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, quotes, redial, rendezvous,
-    transfer_proof,
+    cooperative_xmr_redeem_after_punish, encrypted_signature, quote, quotes_cached, redial,
+    rendezvous, transfer_proof,
 };
 use anyhow::Result;
 use bitcoin_wallet::BitcoinWallet;
@@ -26,7 +26,7 @@ pub struct Behaviour {
     /// Fetch a quote from a specifc peer, usually before starting a swap
     pub direct_quote: quote::Behaviour,
     /// Periodically request quotes from any peers that might offer them
-    pub quotes: quotes::Behaviour,
+    pub quotes: quotes_cached::Behaviour,
     /// Periodically discover peers via rendezvous nodes
     pub discovery: rendezvous::discovery::Behaviour,
 
@@ -56,30 +56,27 @@ impl Behaviour {
         namespace: XmrBtcNamespace,
         rendezvous_nodes: Vec<PeerId>,
     ) -> Self {
-        let agentVersion = format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
         let identifyConfig = identify::Config::new(PROTOCOL_VERSION.to_string(), identity.public())
-            .with_agent_version(agentVersion);
+            .with_agent_version(agent_version(namespace));
 
         let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
         Self {
-            direct_quote: quote::cli(),
-            quotes: quotes::Behaviour::new(
-                identity.clone(),
-                rendezvous_nodes.clone(),
-                namespace.into(),
-            ),
+            direct_quote: quote::bob(),
+            quotes: quotes_cached::Behaviour::new(),
+
             discovery: rendezvous::discovery::Behaviour::new(
                 identity,
                 rendezvous_nodes,
                 namespace.into(),
             ),
+
             swap_setup: bob::Behaviour::new(env_config, bitcoin_wallet),
             transfer_proof: transfer_proof::bob(),
             encrypted_signature: encrypted_signature::bob(),
             cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::bob(),
+
             redial: redial::Behaviour::new(
-                // This redial behaviour is responsible for redialing all Alice peers during swaps
                 "makers",
                 INITIAL_REDIAL_INTERVAL,
                 MAX_REDIAL_INTERVAL,
@@ -88,4 +85,8 @@ impl Behaviour {
             identify: identify::Behaviour::new(identifyConfig),
         }
     }
+}
+
+fn agent_version(namespace: XmrBtcNamespace) -> String {
+    format!("cli/{} ({})", env!("CARGO_PKG_VERSION"), namespace)
 }

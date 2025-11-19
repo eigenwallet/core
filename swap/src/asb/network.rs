@@ -152,7 +152,7 @@ pub mod behaviour {
 
             Self {
                 rendezvous: Toggle::from(behaviour),
-                quote: quote::asb(),
+                quote: quote::alice(),
                 swap_setup: alice::Behaviour::new(
                     min_buy,
                     max_buy,

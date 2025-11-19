@@ -58,7 +58,7 @@ pub struct ZeroQuoteReceived;
 ///
 /// The ASB is always listening and only supports inbound connections, i.e.
 /// handing out quotes.
-pub fn asb() -> Behaviour {
+pub fn alice() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
         request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
@@ -69,7 +69,7 @@ pub fn asb() -> Behaviour {
 ///
 /// The CLI is always dialing and only supports outbound connections, i.e.
 /// requesting quotes.
-pub fn cli() -> Behaviour {
+pub fn bob() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
         request_response::Config::default().with_request_timeout(Duration::from_secs(60)),

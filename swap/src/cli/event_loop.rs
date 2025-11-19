@@ -117,6 +117,8 @@ pub struct EventLoop {
     /// Queue for adding peer addresses to the swarm
     add_peer_address_requests:
         bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, libp2p::Multiaddr), ()>,
+
+    cached_quotes_sender: tokio::sync::watch::Sender<Vec<(PeerId, BidQuote)>>,
 }
 
 impl EventLoop {
@@ -144,6 +146,8 @@ impl EventLoop {
             bmrng::unbounded::channel();
         let (add_peer_address_sender, add_peer_address_receiver) = bmrng::unbounded::channel();
 
+        let (cached_quotes_sender, cached_quotes_receiver) = tokio::sync::watch::channel(Vec::new());
+
         let event_loop = EventLoop {
             swarm,
             db,
@@ -159,6 +163,7 @@ impl EventLoop {
             inflight_cooperative_xmr_redeem_requests: HashMap::default(),
             pending_transfer_proof_acks: FuturesUnordered::new(),
             add_peer_address_requests: add_peer_address_receiver.into(),
+            cached_quotes_sender,
         };
 
         let handle = EventLoopHandle {
@@ -168,6 +173,7 @@ impl EventLoop {
             quote_sender,
             queued_transfer_proof_sender,
             add_peer_address_sender,
+            cached_quotes_receiver,
         };
 
         Ok((event_loop, handle))
@@ -365,6 +371,9 @@ impl EventLoop {
                                 "Received background quote"
                             );
                         }
+                        SwarmEvent::Behaviour(OutEvent::CachedQuotes { quotes }) => {
+                            let _ = self.cached_quotes_sender.send(quotes);
+                        }
                         _ => {}
                     }
                 },
@@ -510,6 +519,8 @@ pub struct EventLoopHandle {
     /// Channel for adding peer addresses to the swarm
     add_peer_address_sender:
         bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
+
+    cached_quotes_receiver: tokio::sync::watch::Receiver<Vec<(PeerId, BidQuote)>>,
 }
 
 impl EventLoopHandle {

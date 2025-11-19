@@ -82,7 +82,7 @@ pub async fn list_sellers_init(
             // Build a fresh swarm and event loop for every call so the closure can be invoked multiple times.
             let behaviour = Behaviour {
                 rendezvous: rendezvous::client::Behaviour::new(identity.clone()),
-                quote: quote::cli(),
+                quote: quote::bob(),
                 ping: ping::Behaviour::new(
                     ping::Config::new().with_timeout(Duration::from_secs(60)),
                 ),

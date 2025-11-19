@@ -1,66 +1,83 @@
-use libp2p::futures::future::BoxFuture;
+use libp2p::futures::future::{self, AbortHandle, Abortable, BoxFuture};
 use libp2p::futures::stream::{FuturesUnordered, StreamExt};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::task::{Context, Poll};
 
 /// A collection of futures with associated keys that can be checked for presence
 /// before completion.
 ///
-/// This combines a HashSet for key tracking with FuturesUnordered for efficient polling.
+/// This combines a HashMap for key tracking and cancellation with FuturesUnordered for efficient polling.
 /// The key is provided during insertion; the future only needs to yield the value.
+/// If a future with the same key is inserted, the previous one is aborted/replaced.
 pub struct FuturesHashSet<K, V> {
-    keys: HashSet<K>,
-    futures: FuturesUnordered<BoxFuture<'static, (K, V)>>,
+    futures: FuturesUnordered<BoxFuture<'static, Result<(K, V), future::Aborted>>>,
+    handles: HashMap<K, AbortHandle>,
 }
 
 impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
     pub fn new() -> Self {
         Self {
-            keys: HashSet::new(),
             futures: FuturesUnordered::new(),
+            handles: HashMap::new(),
         }
     }
 
     /// Check if a future with the given key is already pending
     pub fn contains_key(&self, key: &K) -> bool {
-        self.keys.contains(key)
+        self.handles.contains_key(key)
     }
 
     /// Insert a new future with the given key.
-    /// The future should yield V; the key will be paired with it when it completes.
-    /// Returns true if the key was newly inserted, false if it was already present.
-    /// If false is returned, the future is not added.
-    pub fn insert(&mut self, key: K, future: BoxFuture<'static, V>) -> bool {
-        if self.keys.insert(key.clone()) {
-            let key_clone = key;
-            let wrapped = async move {
-                let value = future.await;
-                (key_clone, value)
-            };
-            self.futures.push(Box::pin(wrapped));
-            true
-        } else {
-            false
+    /// If a future with the same key already exists, it is aborted and replaced.
+    pub fn insert(&mut self, key: K, future: BoxFuture<'static, V>) {
+        if let Some(handle) = self.handles.get(&key) {
+            handle.abort();
         }
+
+        let (handle, registration) = AbortHandle::new_pair();
+        self.handles.insert(key.clone(), handle);
+
+        let key_clone = key;
+        let wrapped = async move {
+            let value = future.await;
+            (key_clone, value)
+        };
+
+        let abortable = Abortable::new(Box::pin(wrapped), registration);
+        self.futures.push(Box::pin(abortable));
     }
 
     /// Poll for the next completed future.
     /// When a future completes, its key is automatically removed from the tracking set.
     pub fn poll_next_unpin(&mut self, cx: &mut Context) -> Poll<Option<(K, V)>> {
-        match self.futures.poll_next_unpin(cx) {
-            Poll::Ready(Some((k, v))) => {
-                self.keys.remove(&k);
-                Poll::Ready(Some((k, v)))
+        loop {
+            match self.futures.poll_next_unpin(cx) {
+                Poll::Ready(Some(Ok((k, v)))) => {
+                    // We only return the value if it matches the currently active handle for this key.
+                    // However, since we abort old handles, they shouldn't return Ok.
+                    // We remove the key from handles as it is now completed.
+                    if self.handles.contains_key(&k) {
+                        self.handles.remove(&k);
+                        return Poll::Ready(Some((k, v)));
+                    }
+                    // If the key is not in handles, it might have been removed or race condition?
+                    // But if it returned Ok, it wasn't aborted.
+                    // Safe to return.
+                    return Poll::Ready(Some((k, v)));
+                }
+                Poll::Ready(Some(Err(future::Aborted))) => {
+                    // Future was aborted, ignore and continue polling
+                    continue;
+                }
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Pending => return Poll::Pending,
             }
-            other => other,
         }
     }
 
     pub fn len(&self) -> usize {
-        assert_eq!(self.keys.len(), self.futures.len());
-
-        self.keys.len()
+        self.handles.len()
     }
 }
 

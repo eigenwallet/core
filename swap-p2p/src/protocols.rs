@@ -3,6 +3,7 @@ pub mod encrypted_signature;
 pub mod notice;
 pub mod quote;
 pub mod quotes;
+pub mod quotes_cached;
 pub mod redial;
 pub mod rendezvous;
 pub mod swap_setup;

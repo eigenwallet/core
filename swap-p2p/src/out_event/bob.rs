@@ -22,6 +22,9 @@ pub enum OutEvent {
         peer: PeerId,
         quote: BidQuote,
     },
+    CachedQuotes {
+        quotes: Vec<(PeerId, BidQuote)>,
+    },
     SwapSetupCompleted {
         peer: PeerId,
         swap_id: uuid::Uuid,
