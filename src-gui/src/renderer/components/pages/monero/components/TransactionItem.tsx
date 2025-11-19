@@ -21,8 +21,10 @@ import {
   FiatSatsAmount,
   PiconeroAmount,
   SatsAmount,
+  PiconeroAmountArgs,
 } from "renderer/components/other/Units";
 import ConfirmationsBadge from "./ConfirmationsBadge";
+import TransactionDetailsDialog from "./TransactionDetailsDialog";
 import {
   getMoneroTxExplorerUrl,
   getBitcoinTxExplorerUrl,
@@ -52,12 +54,9 @@ export default function TransactionItem({
 
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchorEl);
+  const [showDetails, setShowDetails] = useState(false);
 
-  const UnitAmount =
-    currency == "monero"
-      ? PiconeroAmount
-      : (args: { amount: Amount }) =>
-          SatsAmount({ disableTooltip: true, ...args });
+  const UnitAmount = currency == "monero" ? PiconeroAmount : SatsAmount;
   const FiatUnitAmount =
     currency == "monero" ? FiatPiconeroAmount : FiatSatsAmount;
   const getExplorerUrl =
@@ -72,6 +71,12 @@ export default function TransactionItem({
         justifyContent: "space-between",
       }}
     >
+      <TransactionDetailsDialog
+        open={showDetails}
+        onClose={() => setShowDetails(false)}
+        transaction={transaction}
+        UnitAmount={UnitAmount}
+      />
       <Box
         sx={{
           display: "flex",
@@ -165,11 +170,19 @@ export default function TransactionItem({
           </MenuItem>
           <MenuItem
             onClick={() => {
-              open(getMoneroTxExplorerUrl(transaction.tx_hash, isTestnet()));
+              open(getExplorerUrl(transaction.tx_hash, isTestnet()));
               setMenuAnchorEl(null);
             }}
           >
             <Typography>View on Explorer</Typography>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setShowDetails(true);
+              setMenuAnchorEl(null);
+            }}
+          >
+            <Typography>Details</Typography>
           </MenuItem>
         </Menu>
       </Box>

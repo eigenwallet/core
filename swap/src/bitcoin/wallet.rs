@@ -20,7 +20,7 @@ use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Txid};
-use bitcoin::{Psbt, ScriptBuf, Weight};
+use bitcoin::{OutPoint, Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
 use moka;
@@ -64,6 +64,7 @@ pub struct TransactionInfo {
     pub direction: TransactionDirection,
     #[typeshare(serialized_as = "number")]
     pub timestamp: u64,
+    pub splits: TransactionSplits,
 }
 
 #[typeshare]
@@ -71,6 +72,15 @@ pub struct TransactionInfo {
 pub enum TransactionDirection {
     In,
     Out,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct TransactionSplits {
+    #[typeshare(serialized_as = "[string, number][]")]
+    inputs: Vec<(String, Amount)>,
+    #[typeshare(serialized_as = "[string, number][]")]
+    outputs: Vec<(String, Amount)>,
 }
 
 /// This is our wrapper around a bdk wallet and a corresponding
@@ -1327,7 +1337,6 @@ where
         Ok(address)
     }
 
-    /// Get list
     pub async fn history(&self) -> Vec<TransactionInfo> {
         let wallet = self.wallet.lock().await;
         let current_height = wallet.latest_checkpoint().height();
@@ -1356,6 +1365,37 @@ where
                         false => TransactionDirection::Out,
                     },
                     timestamp,
+                    splits: TransactionSplits {
+                        inputs: txd
+                            .tx
+                            .input
+                            .iter()
+                            .map(|i| {
+                                (
+                                    i.previous_output.to_string(),
+                                    wallet
+                                        .get_tx(i.previous_output.txid)
+                                        .and_then(|tx| {
+                                            tx.tx_node
+                                                .tx
+                                                .output
+                                                .get(i.previous_output.vout as usize)
+                                                .map(|txo| txo.value)
+                                        })
+                                        .unwrap_or_default(),
+                                )
+                            })
+                            .collect(),
+                        outputs: txd
+                            .tx
+                            .output
+                            .iter()
+                            .enumerate()
+                            .map(|(vout, o)| {
+                                (OutPoint::new(txd.txid, vout as _).to_string(), o.value)
+                            })
+                            .collect(),
+                    },
                 }
             })
             .collect();

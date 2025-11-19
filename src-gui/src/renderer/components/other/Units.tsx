@@ -231,19 +231,20 @@ export function SatsAmount({
   return <BitcoinAmount amount={btcAmount} disableTooltip={disableTooltip} />;
 }
 
+export interface PiconeroAmountArgs {
+  amount: Amount;
+  fixedPrecision?: number;
+  labelStyles?: SxProps;
+  amountStyles?: SxProps;
+  disableTooltip?: boolean;
+}
 export function PiconeroAmount({
   amount,
   fixedPrecision = 8,
   labelStyles,
   amountStyles,
   disableTooltip = false,
-}: {
-  amount: Amount;
-  fixedPrecision?: number;
-  labelStyles?: SxProps;
-  amountStyles?: SxProps;
-  disableTooltip?: boolean;
-}) {
+}: PiconeroAmountArgs) {
   return (
     <MoneroAmount
       amount={amount == null ? null : piconerosToXmr(amount)}
