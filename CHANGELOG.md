@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB + CONTROLLER: Add the `peer-id` command to the controller shell which can be used to obtain the Peer ID of your ASB instance.
+
 ## [3.3.7] - 2025-11-19
 
 - ORCHESTRATOR + ASB: Support for tunneling both the Bitcoin and Monero node over Tor has been added (thanks to @nabijaczleweli)
