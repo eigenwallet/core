@@ -12,6 +12,7 @@ fn test_orchestrator_spec_generation() {
             bitcoind_rpc: 18332,
             bitcoind_p2p: 18333,
             electrs: 60001,
+            tor_socks: 9050,
             asb_libp2p: 9839,
             asb_rpc_port: 9944,
             rendezvous_node_port: 8888,
@@ -24,6 +25,7 @@ fn test_orchestrator_spec_generation() {
             monerod: OrchestratorImage::Registry(images::MONEROD_IMAGE.to_string()),
             electrs: OrchestratorImage::Registry(images::ELECTRS_IMAGE.to_string()),
             bitcoind: OrchestratorImage::Registry(images::BITCOIND_IMAGE.to_string()),
+            tor: OrchestratorImage::Registry(images::TOR_IMAGE.to_string()),
             rendezvous_node: OrchestratorImage::Build(
                 images::RENDEZVOUS_NODE_IMAGE_FROM_SOURCE.clone(),
             ),
@@ -38,6 +40,7 @@ fn test_orchestrator_spec_generation() {
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
         },
+        want_tor: false,
     };
 
     let spec = input.to_spec();
