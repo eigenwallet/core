@@ -544,10 +544,10 @@ export async function setMoneroRestoreHeight(
 export async function setMoneroWalletPassword(
   password: string,
 ): Promise<SetMoneroWalletPasswordResponse> {
-  return await invoke<SetMoneroWalletPasswordArgs, SetMoneroWalletPasswordResponse>(
-    "set_monero_wallet_password",
-    { password },
-  );
+  return await invoke<
+    SetMoneroWalletPasswordArgs,
+    SetMoneroWalletPasswordResponse
+  >("set_monero_wallet_password", { password });
 }
 
 export async function getMoneroHistory(): Promise<GetMoneroHistoryResponse> {

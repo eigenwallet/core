@@ -30,7 +30,7 @@ mod tests {
     use std::collections::HashSet;
     use std::task::Poll;
     use std::time::Duration;
-    use swap_p2p::protocols::rendezvous::register::RendezvousNode;
+    use swap_p2p::protocols::rendezvous::register::{InnerBehaviourEvent, RendezvousNode};
     use swap_p2p::test::{new_swarm, SwarmExt};
 
     // Test-only struct for compatibility
@@ -225,7 +225,10 @@ mod tests {
             match self.inner.poll(cx) {
                 Poll::Ready(ToSwarm::GenerateEvent(event)) => match event {
                     StaticQuoteAsbBehaviourInnerEvent::Rendezvous(rendezvous_event) => {
-                        if let rendezvous::client::Event::Registered { .. } = rendezvous_event {
+                        if let InnerBehaviourEvent::Rendezvous(
+                            rendezvous::client::Event::Registered { .. },
+                        ) = &rendezvous_event
+                        {
                             self.registered = true;
                         }
 
