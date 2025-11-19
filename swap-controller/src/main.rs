@@ -68,6 +68,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::PeerId => {
             let response = client.peer_id().await?;
+            println!("Peer IDs are used to identify peers within the P2P network.");
+            println!("They are effectively the hash of your public key and are used for end-to-end encryption of network traffic.");
+            println!();
             println!("Your Peer ID is: {}", response.peer_id);
         }
         Cmd::ActiveConnections => {
