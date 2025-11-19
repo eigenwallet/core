@@ -19,10 +19,6 @@ use void::Void;
 /// Note: Make sure that when using this as an inner behaviour for a `NetworkBehaviour` that you
 /// call all the NetworkBehaviour methods (including `handle_pending_outbound_connection`) to ensure
 /// that the addresses are cached correctly.
-///
-// TODO: Allow removing peers from the set after we are done with them.
-// TODO: Use the ConnectionTracker from the behaviour_util module to track connections internally because
-// currently we might force multiple connections to the same peer which is not really necessary.
 // TODO: Allow specifying a min_connection per peer which will instruct this behaviour to maintain multiple connections per peer.
 pub struct Behaviour {
     /// An identifier for this redial behaviour instance (for logging/tracing).

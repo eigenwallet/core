@@ -880,6 +880,7 @@ pub mod discovery {
     }
 }
 
+// TODO: Rework these tests, they are ugly
 #[cfg(test)]
 mod tests {
     use super::*;
