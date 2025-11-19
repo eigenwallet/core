@@ -90,7 +90,6 @@ where
                 .await?;
 
             BuyXmrArgs {
-                rendezvous_points: vec![],
                 sellers: vec![seller],
                 bitcoin_change_address,
                 monero_receive_pool,

@@ -13,9 +13,11 @@ use crate::{bitcoin, common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
 use futures::future::try_join_all;
+use libp2p::{Multiaddr, PeerId};
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
@@ -445,6 +447,7 @@ mod builder {
         tor: bool,
         enable_monero_tor: bool,
         tauri_handle: Option<TauriHandle>,
+        rendezvous_points: Vec<(PeerId, Vec<Multiaddr>)>,
     }
 
     impl ContextBuilder {
@@ -468,6 +471,7 @@ mod builder {
                 tor: false,
                 enable_monero_tor: false,
                 tauri_handle: None,
+                rendezvous_points: Vec::new(),
             }
         }
 
@@ -517,6 +521,14 @@ mod builder {
         /// Whether to route Monero wallet traffic through Tor (default false)
         pub fn with_enable_monero_tor(mut self, enable_monero_tor: bool) -> Self {
             self.enable_monero_tor = enable_monero_tor;
+            self
+        }
+
+        pub fn with_rendezvous_points(
+            mut self,
+            rendezvous_points: Vec<(PeerId, Vec<Multiaddr>)>,
+        ) -> Self {
+            self.rendezvous_points = rendezvous_points;
             self
         }
 
@@ -812,12 +824,16 @@ mod builder {
                 let tor_client_for_swarm = unbootstrapped_tor_client.clone();
                 let db_for_swarm = db.clone();
 
+                let rendezvous_points = self.rendezvous_points;
+                let rendezvous_peer_ids: Vec<PeerId> =
+                    rendezvous_points.iter().map(|(p, _)| *p).collect();
+
                 let behaviour = crate::cli::Behaviour::new(
                     env_config,
                     wallet.clone(),
                     seed.derive_libp2p_identity(),
                     namespace,
-                    Vec::new(),
+                    rendezvous_peer_ids,
                 );
 
                 let swarm = crate::network::swarm::cli(
@@ -827,8 +843,17 @@ mod builder {
                 )
                 .await?;
 
-                let (event_loop, event_loop_handle) =
+                let (event_loop, mut event_loop_handle) =
                     crate::cli::EventLoop::new(swarm, db_for_swarm)?;
+
+                for (peer_id, addrs) in rendezvous_points {
+                    for addr in addrs {
+                        if let Err(e) = event_loop_handle.queue_peer_address(peer_id, addr).await {
+                            tracing::warn!("Failed to add rendezvous point address: {}", e);
+                        }
+                    }
+                }
+
                 let event_loop_task = tokio::spawn(event_loop.run());
 
                 *context.event_loop_state.write().await =

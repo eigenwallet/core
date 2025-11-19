@@ -13973,11 +13973,13 @@ version = "3.3.4"
 dependencies = [
  "anyhow",
  "dfx-swiss-sdk",
+ "libp2p",
  "monero-rpc-pool",
  "rustls 0.23.35",
  "serde",
  "serde_json",
  "swap",
+ "swap-p2p",
  "tauri",
  "tauri-build",
  "tauri-plugin-cli",

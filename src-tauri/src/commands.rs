@@ -1,3 +1,4 @@
+use libp2p::{Multiaddr, PeerId};
 use std::collections::HashMap;
 use std::io::Write;
 use std::result::Result;
@@ -169,6 +170,8 @@ pub async fn initialize_context(
     let tauri_handle = state.handle.clone();
 
     // Now populate the context in the background
+    let rendezvous_points =
+        swap_p2p::libp2p_ext::parse_strings_to_multiaddresses(&settings.rendezvous_points);
     let context_result = ContextBuilder::new(testnet)
         .with_bitcoin(Bitcoin {
             bitcoin_electrum_rpc_urls: settings.electrum_rpc_urls.clone(),
@@ -178,6 +181,7 @@ pub async fn initialize_context(
         .with_json(false)
         .with_tor(settings.use_tor)
         .with_enable_monero_tor(settings.enable_monero_tor)
+        .with_rendezvous_points(rendezvous_points)
         .with_tauri(tauri_handle.clone())
         .build(state.context())
         .await;

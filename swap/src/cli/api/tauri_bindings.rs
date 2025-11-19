@@ -1014,6 +1014,8 @@ pub struct TauriSettings {
     pub use_tor: bool,
     /// Whether to route Monero wallet traffic through Tor
     pub enable_monero_tor: bool,
+    /// The list of rendezvous points to connect to
+    pub rendezvous_points: Vec<String>,
 }
 
 #[typeshare]

@@ -3,7 +3,6 @@ import {
   BalanceArgs,
   BalanceResponse,
   BuyXmrArgs,
-  BuyXmrResponse,
   GetLogsArgs,
   GetLogsResponse,
   GetSwapInfoResponse,
@@ -56,7 +55,6 @@ import {
 import {
   rpcSetSwapInfo,
   approvalRequestsReplaced,
-  contextInitializationFailed,
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
 import { selectAllSwapIds } from "store/selectors";
@@ -74,7 +72,6 @@ import { MoneroRecoveryResponse } from "models/rpcModel";
 import { ListSellersResponse } from "../models/tauriModel";
 import logger from "utils/logger";
 import { getNetwork, isTestnet } from "store/config";
-import { DonateToDevelopmentTip } from "store/features/settingsSlice";
 import { Blockchain, Network } from "store/types";
 import { setStatus } from "store/features/nodesSlice";
 import { discoveredMakersByRendezvous } from "store/features/makersSlice";
@@ -229,8 +226,7 @@ export async function buyXmr() {
     });
   }
 
-  await invoke<BuyXmrArgs, BuyXmrResponse>("buy_xmr", {
-    rendezvous_points: DEFAULT_RENDEZVOUS_POINTS,
+  await invoke<BuyXmrArgs, void>("buy_xmr", {
     sellers,
     monero_receive_pool: address_pool,
     // We convert null to undefined because typescript
@@ -253,6 +249,12 @@ export async function initializeContext() {
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
 
   const useMoneroTor = store.getState().settings.enableMoneroTor;
+  const rendezvousPoints = Array.from(
+    new Set([
+      ...store.getState().settings.rendezvousPoints,
+      ...DEFAULT_RENDEZVOUS_POINTS,
+    ]),
+  );
 
   const moneroNodeUrl =
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
@@ -276,6 +278,7 @@ export async function initializeContext() {
     monero_node_config: moneroNodeConfig,
     use_tor: useTor,
     enable_monero_tor: useMoneroTor,
+    rendezvous_points: rendezvousPoints,
   };
 
   logger.info({ tauriSettings }, "Initializing context with settings");
@@ -447,6 +450,7 @@ export async function redactLogs(
 export async function listSellersAtRendezvousPoint(
   rendezvousPointAddresses: string[],
 ): Promise<ListSellersResponse> {
+  throw new Error("deprecated");
   return await invoke<ListSellersArgs, ListSellersResponse>("list_sellers", {
     rendezvous_points: rendezvousPointAddresses,
   });
@@ -544,10 +548,10 @@ export async function setMoneroRestoreHeight(
 export async function setMoneroWalletPassword(
   password: string,
 ): Promise<SetMoneroWalletPasswordResponse> {
-  return await invoke<SetMoneroWalletPasswordArgs, SetMoneroWalletPasswordResponse>(
-    "set_monero_wallet_password",
-    { password },
-  );
+  return await invoke<
+    SetMoneroWalletPasswordArgs,
+    SetMoneroWalletPasswordResponse
+  >("set_monero_wallet_password", { password });
 }
 
 export async function getMoneroHistory(): Promise<GetMoneroHistoryResponse> {

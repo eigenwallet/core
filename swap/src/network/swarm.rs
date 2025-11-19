@@ -15,7 +15,8 @@ use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
+// We keep connections open for 15 minutes
+const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 15);
 
 #[allow(clippy::too_many_arguments)]
 pub fn asb<LR>(

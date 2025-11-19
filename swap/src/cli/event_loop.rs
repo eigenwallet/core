@@ -118,7 +118,7 @@ pub struct EventLoop {
     add_peer_address_requests:
         bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, libp2p::Multiaddr), ()>,
 
-    cached_quotes_sender: tokio::sync::watch::Sender<Vec<(PeerId, BidQuote)>>,
+    cached_quotes_sender: tokio::sync::watch::Sender<Vec<(PeerId, libp2p::Multiaddr, BidQuote)>>,
 }
 
 impl EventLoop {
@@ -146,7 +146,9 @@ impl EventLoop {
             bmrng::unbounded::channel();
         let (add_peer_address_sender, add_peer_address_receiver) = bmrng::unbounded::channel();
 
-        let (cached_quotes_sender, cached_quotes_receiver) = tokio::sync::watch::channel(Vec::new());
+        // TODO: We should probably differentiate between empty and none
+        let (cached_quotes_sender, cached_quotes_receiver) =
+            tokio::sync::watch::channel(Vec::new());
 
         let event_loop = EventLoop {
             swarm,
@@ -364,14 +366,12 @@ impl EventLoop {
                                 "Scheduled redial for peer"
                             );
                         }
-                        SwarmEvent::Behaviour(OutEvent::BackgroundQuoteReceived { peer, quote }) => {
-                            tracing::trace!(
-                                %peer,
-                                ?quote,
-                                "Received background quote"
-                            );
-                        }
                         SwarmEvent::Behaviour(OutEvent::CachedQuotes { quotes }) => {
+                            tracing::trace!(
+                                ?quotes,
+                                "Received cached quotes"
+                            );
+
                             let _ = self.cached_quotes_sender.send(quotes);
                         }
                         _ => {}
@@ -520,10 +520,17 @@ pub struct EventLoopHandle {
     add_peer_address_sender:
         bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
 
-    cached_quotes_receiver: tokio::sync::watch::Receiver<Vec<(PeerId, BidQuote)>>,
+    cached_quotes_receiver:
+        tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote)>>,
 }
 
 impl EventLoopHandle {
+    pub fn cached_quotes(
+        &self,
+    ) -> tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote)>> {
+        self.cached_quotes_receiver.clone()
+    }
+
     /// Adds a peer address to the swarm
     pub async fn queue_peer_address(
         &mut self,

@@ -1,6 +1,8 @@
 // TODO: Move this to swap-p2p
 use libp2p::multiaddr::Protocol;
 use libp2p::{Multiaddr, PeerId};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 pub trait MultiAddrExt {
     fn extract_peer_id(&self) -> Option<PeerId>;
@@ -22,4 +24,18 @@ impl MultiAddrExt for Multiaddr {
         let address = self.clone();
         Some((peer_id, address))
     }
+}
+
+pub fn parse_strings_to_multiaddresses(addresses: &[String]) -> Vec<(PeerId, Vec<Multiaddr>)> {
+    let mut map: HashMap<PeerId, Vec<Multiaddr>> = HashMap::new();
+
+    for addr_str in addresses {
+        if let Ok(multiaddr) = Multiaddr::from_str(addr_str) {
+            if let Some(peer_id) = multiaddr.extract_peer_id() {
+                map.entry(peer_id).or_default().push(multiaddr);
+            }
+        }
+    }
+
+    map.into_iter().collect()
 }
