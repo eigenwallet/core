@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::out_event;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
