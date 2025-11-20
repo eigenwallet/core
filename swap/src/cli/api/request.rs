@@ -174,6 +174,9 @@ pub struct WithdrawBtcResponse {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub amount: bitcoin::Amount,
     pub txid: String,
+    #[typeshare(serialized_as = "string")]
+    #[serde(with = "swap_serde::bitcoin::address_serde")]
+    pub address: bitcoin::Address,
 }
 
 impl Request for WithdrawBtcArgs {
@@ -721,9 +724,9 @@ pub struct GetMoneroBalanceArgs;
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GetMoneroBalanceResponse {
-    #[typeshare(serialized_as = "string")]
+    #[typeshare(serialized_as = "number")]
     pub total_balance: crate::monero::Amount,
-    #[typeshare(serialized_as = "string")]
+    #[typeshare(serialized_as = "number")]
     pub unlocked_balance: crate::monero::Amount,
 }
 
@@ -765,7 +768,9 @@ pub enum SendMoneroAmount {
 pub struct SendMoneroResponse {
     pub tx_hash: String,
     pub address: String,
+    #[typeshare(serialized_as = "number")]
     pub amount_sent: crate::monero::Amount,
+    #[typeshare(serialized_as = "number")]
     pub fee: crate::monero::Amount,
 }
 
@@ -1418,7 +1423,7 @@ pub async fn withdraw_btc(
     let (withdraw_tx_unsigned, amount) = match amount {
         Some(amount) => {
             let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address_dynamic_fee(address, amount, None)
+                .send_to_address_dynamic_fee(address.clone(), amount, None)
                 .await?;
 
             (withdraw_tx_unsigned, amount)
@@ -1429,7 +1434,7 @@ pub async fn withdraw_btc(
                 .await?;
 
             let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address(address, max_giveable, spending_fee, None)
+                .send_to_address(address.clone(), max_giveable, spending_fee, None)
                 .await?;
 
             (withdraw_tx_unsigned, max_giveable)
@@ -1449,6 +1454,7 @@ pub async fn withdraw_btc(
     Ok(WithdrawBtcResponse {
         txid: txid.to_string(),
         amount,
+        address,
     })
 }
 

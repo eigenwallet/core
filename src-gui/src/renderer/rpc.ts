@@ -384,12 +384,15 @@ export async function getAllSwapTimelocks() {
   );
 }
 
-export async function sweepBtc(address: string): Promise<string> {
+export async function withdrawBtc(
+  address: string,
+  amount: number | undefined,
+): Promise<WithdrawBtcResponse> {
   const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
     "withdraw_btc",
     {
       address,
-      amount: undefined,
+      amount,
     },
   );
 
@@ -397,7 +400,7 @@ export async function sweepBtc(address: string): Promise<string> {
   // but instead uses our local cached balance
   await cheapCheckBitcoinBalance();
 
-  return response.txid;
+  return response;
 }
 
 export async function resumeSwap(swapId: string) {

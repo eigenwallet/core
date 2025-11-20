@@ -341,8 +341,7 @@ pub mod bitcoin_address {
         expected_network: bitcoin::Network,
     ) -> Result<Address> {
         address
-            .as_unchecked()
-            .clone()
+            .into_unchecked()
             .require_network(expected_network)
             .context("bitcoin address network mismatch")
     }

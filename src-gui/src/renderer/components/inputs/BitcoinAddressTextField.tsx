@@ -3,22 +3,22 @@ import { useEffect } from "react";
 import { isTestnet } from "store/config";
 import { isBtcAddressValid } from "utils/conversionUtils";
 
-type BitcoinAddressTextFieldProps = {
+type BitcoinAddressTextFieldProps = TextFieldProps & {
   address: string;
   onAddressChange: (address: string) => void;
-  helperText: string;
   onAddressValidityChange?: (valid: boolean) => void;
+  helperText?: string;
   allowEmpty?: boolean;
 };
 
 export default function BitcoinAddressTextField({
   address,
   onAddressChange,
+  onAddressValidityChange,
   helperText,
   allowEmpty = true,
-  onAddressValidityChange,
   ...props
-}: BitcoinAddressTextFieldProps & TextFieldProps) {
+}: BitcoinAddressTextFieldProps) {
   const placeholder = isTestnet() ? "tb1q4aelwalu..." : "bc18ociqZ9mZ...";
 
   function errorText() {
