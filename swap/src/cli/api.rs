@@ -849,9 +849,21 @@ mod builder {
 
                 for (peer_id, addrs) in rendezvous_points {
                     for addr in addrs {
-                        if let Err(e) = event_loop_handle.queue_peer_address(peer_id, addr).await {
-                            tracing::warn!("Failed to add rendezvous point address: {}", e);
-                        }
+                        event_loop_handle
+                            .queue_peer_address(peer_id, addr)
+                            .await
+                            .expect("adding a peer address will only fail if the event loop is dropped");
+                    }
+                }
+
+                for (peer_id, addrs) in db.get_all_peer_addresses().await.context(
+                    "Failed to retrieve peer addresses from database to insert into swarm",
+                )? {
+                    for addr in addrs {
+                        event_loop_handle
+                            .queue_peer_address(peer_id, addr)
+                            .await
+                            .expect("adding a peer address will only fail if the event loop is dropped");
                     }
                 }
 
