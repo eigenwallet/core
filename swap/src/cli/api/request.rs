@@ -2031,20 +2031,25 @@ pub async fn change_monero_node(
 
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct OrangefrenDemoTradeArgs;
+pub struct IntercambioTradeArgs {
+    #[typeshare(serialized_as = "number")]
+    pub btc_amount_sats: u64,
+}
 
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
-pub struct OrangefrenDemoTradeResponse {
+pub struct IntercambioTradeResponse {
     #[typeshare(serialized_as = "String")]
-    pub trade_id: String,
+    pub deposit_address: String,
+    #[typeshare(serialized_as = "number")]
+    pub xmr_amount: f64,
 }
 
-impl Request for OrangefrenDemoTradeArgs {
-    type Response = OrangefrenDemoTradeResponse;
+impl Request for IntercambioTradeArgs {
+    type Response = IntercambioTradeResponse;
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        tracing::info!("Starting orangefren demo trade");
+        tracing::info!("Starting intercambio trade");
         
         let data_dir = ctx
             .config
@@ -2054,7 +2059,7 @@ impl Request for OrangefrenDemoTradeArgs {
             .context("Context not initialized")?
             .data_dir
             .clone()
-            .join("orangefren");
+            .join("intercambio");
         
         tracing::info!("Using data directory: {}", data_dir.display());
         
@@ -2066,14 +2071,14 @@ impl Request for OrangefrenDemoTradeArgs {
         
         let mut client = orangefren_client::Client::new(data_dir)
             .await
-            .context("Failed to create orangefren client")?;
+            .context("Failed to create intercambio client")?;
         
-        tracing::info!("Created orangefren client");
+        tracing::info!("Created intercambio client");
         
-        let amount = bitcoin::Amount::from_sat(1000); //Example amount
-        tracing::info!("Creating new trade");
+        let amount = bitcoin::Amount::from_sat(self.btc_amount_sats);
+        tracing::info!("Creating new trade with amount: {} sats", self.btc_amount_sats);
         
-        let trade_id = client
+        let (trade_id, trade_info) = client
             .new_trade(amount, address)
             .await?;
         
@@ -2081,12 +2086,6 @@ impl Request for OrangefrenDemoTradeArgs {
         
         let mut updates = client.watch_status(trade_id.clone()).await;
         tracing::info!("Watching status updates...");
-
-        tracing::info!("Loading all trades from database...");
-        let all_trades = client.all_trades().await;
-        for trade in all_trades {
-            tracing::info!("Loaded trade: {}", trade);
-        }
         
         while let Some(status) = updates.next().await {
             tracing::info!(
@@ -2096,10 +2095,13 @@ impl Request for OrangefrenDemoTradeArgs {
                 status.is_terminal
             );
             
-            // Try to get deposit address
             match client.deposit_address(trade_id.clone()).await {
                 Ok(addr) => {
                     tracing::info!("Deposit address: {}", addr);
+                    return Ok(IntercambioTradeResponse {
+                        deposit_address: addr.to_string(),
+                        xmr_amount: trade_info.to_amount.as_xmr(),
+                    });
                 }
                 Err(e) => {
                     tracing::warn!("Could not get deposit address: {}", e);
@@ -2111,9 +2113,7 @@ impl Request for OrangefrenDemoTradeArgs {
                 break;
             }
         }
-        
-        Ok(OrangefrenDemoTradeResponse {
-            trade_id: format!("{:?}", trade_id),
-        })
+
+        Err(anyhow::anyhow!("Trade reached terminal state, stopping watch"))
     }
 }

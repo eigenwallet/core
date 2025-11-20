@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO trades (\n                path_uuid,\n                timestamp,\n                from_currency,\n                from_network,\n                to_currency,\n                to_network,\n                withdraw_address,\n                deposit_address,\n                to_amount,\n                raw_json\n                ) values (\n                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?\n                );\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 10
+    },
+    "nullable": []
+  },
+  "hash": "659e699e3598231ba6a11c030740b20fabcd72cd2cecb0c7127f1a3962051008"
+}

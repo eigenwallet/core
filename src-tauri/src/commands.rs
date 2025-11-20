@@ -12,7 +12,7 @@ use swap::cli::{
             GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSyncProgressArgs,
             GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
-            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, OrangefrenDemoTradeArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, IntercambioTradeArgs,
             RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
             ResumeSwapArgs, SendMoneroArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
             WithdrawBtcArgs,
@@ -71,7 +71,7 @@ macro_rules! generate_command_handlers {
             dfx_authenticate,
             change_monero_node,
             get_context_status,
-            orangefren_demo_trade
+            intercambio_trade
         ]
     };
 }
@@ -436,6 +436,7 @@ tauri_command!(cancel_and_refund, CancelAndRefundArgs);
 tauri_command!(redact, RedactArgs);
 tauri_command!(send_monero, SendMoneroArgs);
 tauri_command!(change_monero_node, ChangeMoneroNodeArgs);
+tauri_command!(intercambio_trade, IntercambioTradeArgs);
 
 // These commands require no arguments
 tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
@@ -452,4 +453,3 @@ tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
-tauri_command!(orangefren_demo_trade, OrangefrenDemoTradeArgs, no_args);

@@ -47,9 +47,10 @@ import {
   MoneroNodeConfig,
   GetMoneroSeedResponse,
   ContextStatus,
-  OrangefrenDemoTradeArgs,
-  OrangefrenDemoTradeResponse,
+  IntercambioTradeArgs,
+  IntercambioTradeResponse,
 } from "models/tauriModel";
+import { btcToSats } from "utils/conversionUtils";
 import {
   rpcSetBalance,
   rpcSetSwapInfo,
@@ -686,9 +687,13 @@ export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
   return moneroNodeConfig;
 }
 
-export async function orangefrenDemoTrade(): Promise<string> {
-  const response = await invokeNoArgs<OrangefrenDemoTradeResponse>(
-    "orangefren_demo_trade",
+export async function intercambioTrade(btcAmount: string): Promise<IntercambioTradeResponse> {
+  const btcNumber = parseFloat(btcAmount);
+  const sats = Math.floor(btcToSats(btcNumber));
+  
+  const response = await invoke<IntercambioTradeArgs, IntercambioTradeResponse>(
+    "intercambio_trade",
+    { btc_amount_sats: sats },
   );
-  return response.trade_id;
+  return response;
 }

@@ -28,7 +28,6 @@ import SetRestoreHeightModal from "../SetRestoreHeightModal";
 import SeedPhraseButton from "../SeedPhraseButton";
 import SeedPhraseModal from "../SeedPhraseModal";
 import DfxButton from "./DFXWidget";
-import OrangefrenDemoButton from "./OrangefrenDemoButton";
 import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
@@ -97,7 +96,6 @@ export default function WalletActionButtons({
             clickable
           />
           <DfxButton />
-          <OrangefrenDemoButton />
         </Box>
         <Box>
           <IconButton onClick={handleMenuClick}>

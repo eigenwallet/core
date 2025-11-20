@@ -1,6 +1,7 @@
 import { Box, List, Badge } from "@mui/material";
 import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import { ScatterPlot } from "@mui/icons-material";
 import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
 import FeedbackOutlinedIcon from "@mui/icons-material/FeedbackOutlined";
 import RouteListItemIconButton from "./RouteListItemIconButton";
@@ -28,6 +29,9 @@ export default function NavigationHeader() {
           <Badge invisible={!isSwapRunning} variant="dot" color="primary">
             <SwapHorizOutlinedIcon />
           </Badge>
+        </RouteListItemIconButton>
+        <RouteListItemIconButton name="Intercambio" route={["/intercambio"]}>
+          <ScatterPlot />
         </RouteListItemIconButton>
         <RouteListItemIconButton name="History" route="/history">
           <UnfinishedSwapsBadge>

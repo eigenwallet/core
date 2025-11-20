@@ -61,6 +61,7 @@ impl Database {
         let deposit_address = trade_info.deposit_address.to_string();
         let path_uuid = &path_id.id.to_string();
 
+        let to_amount = trade_info.to_amount.as_xmr();
         let raw_json = trade_info.raw_json.clone();
 
         sqlx::query!(
@@ -74,9 +75,10 @@ impl Database {
                 to_network,
                 withdraw_address,
                 deposit_address,
+                to_amount,
                 raw_json
                 ) values (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 );
             "#,
             path_uuid,
@@ -87,6 +89,7 @@ impl Database {
             to_network,
             withdraw_address,
             deposit_address,
+            to_amount,
             raw_json
         )
         .execute(&self.pool)
@@ -108,6 +111,7 @@ impl Database {
                 to_network,
                 withdraw_address,
                 deposit_address,
+                to_amount,
                 raw_json
             FROM trades
             ORDER BY id ASC
@@ -130,6 +134,7 @@ impl Database {
             info.push((
                 path_id.clone(),
                 TradeInfo {
+                    to_amount: monero::Amount::from_xmr(row.to_amount).context("Could not parse to amount")?,
                     from_currency: row.from_currency.clone().try_into()?,
                     to_currency: row.to_currency.clone().try_into()?,
                     from_network: row.from_network.clone().try_into()?,

@@ -1,7 +1,7 @@
 use std::{os::macos::raw::stat, path::PathBuf, str::FromStr};
 
 use anyhow::Context;
-use client::{Client, TradeStatusType};
+use orangefren_client::{Client, TradeStatusType};
 use tokio_stream::StreamExt;
 
 use clap::Parser;
@@ -28,7 +28,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut client = Client::new(data_dir.clone())
         .await
         .context("Error creating a client")?;
-    let trade_id = client
+    let (trade_id, _trade_info) = client
         .new_trade(bitcoin::Amount::from_sat(1), address)
         .await
         .expect("Not a valid address");

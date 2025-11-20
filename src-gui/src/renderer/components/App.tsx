@@ -10,6 +10,7 @@ import Navigation, { drawerWidth } from "./navigation/Navigation";
 import SettingsPage from "./pages/help/SettingsPage";
 import HistoryPage from "./pages/history/HistoryPage";
 import SwapPage from "./pages/swap/SwapPage";
+import IntercambioPage from "./pages/intercambio/IntercambioPage";
 import WalletPage from "./pages/wallet/WalletPage";
 import GlobalSnackbarProvider from "./snackbar/GlobalSnackbarProvider";
 import UpdaterDialog from "./modal/updater/UpdaterDialog";
@@ -84,6 +85,7 @@ function InnerContent() {
         <Route path="/swap" element={<SwapPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/bitcoin-wallet" element={<WalletPage />} />
+        <Route path="/intercambio" element={<IntercambioPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />
       </Routes>

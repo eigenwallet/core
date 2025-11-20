@@ -83,6 +83,9 @@ pub struct PathId {
 #[typeshare]
 #[derive(PartialEq, Eq, Hash, Clone, Debug, Serialize, Deserialize)]
 pub struct TradeInfo {
+    #[typeshare(serialized_as = "number")]
+    #[serde(with = "swap_serde::monero::amount")]
+    pub to_amount: monero::Amount,
     pub from_currency: Currency,
     pub to_currency: Currency,
     pub from_network: Currency,
@@ -146,7 +149,7 @@ impl Client {
         &mut self,
         from_amount: bitcoin::Amount,
         to_address: monero::Address,
-    ) -> Result<PathId, anyhow::Error> {
+    ) -> Result<(PathId, TradeInfo), anyhow::Error> {
         if to_address.network == monero::Network::Stagenet
             || to_address.network == monero::Network::Testnet
         {
@@ -197,14 +200,13 @@ impl Client {
 
         let trade_info = self
             .wait_until_created(path_id.clone())
-            .await
-            .context("Error creating the trade")?;
-
-        self.db
-            .insert_trade_info(trade_info, path_id.clone())
             .await?;
 
-        Ok(path_id)
+        self.db
+            .insert_trade_info(trade_info.clone(), path_id.clone())
+            .await?;
+
+        Ok((path_id, trade_info))
     }
 
     pub async fn last_trade_state_by_id(
@@ -292,6 +294,7 @@ impl Client {
                 let raw_json = serde_json::to_string(&path_response).context("Serde error")?;
 
                 let trade_info = TradeInfo {
+                    to_amount: monero::Amount::from_xmr(last_trade.to_amount).context("Could not parse to amount")?,
                     from_currency: Currency::try_from(last_trade.from_currency.as_ref())?,
                     to_currency: Currency::try_from(last_trade.to_currency.as_ref())?,
                     from_network: last_trade.from_currency.network.clone().try_into()?,
