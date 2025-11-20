@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                status_type,\n                is_terminal,\n                description,\n                valid_for_secs\n            FROM trade_states\n            WHERE path_uuid = ?\n            ORDER BY id ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "status_type",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_terminal",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "valid_for_secs",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1b078a906110575aa183fa0604213f563348e589d46342cc63bab5dd6f9167d3"
+}

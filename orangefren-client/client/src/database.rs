@@ -11,7 +11,7 @@ use sqlx::{
 
 use tracing::info;
 
-use crate::{PathId, TradeInfo};
+use crate::{PathId, TradeInfo, TradeStatus, TradeStatusType};
 
 #[derive(Clone)]
 pub struct Database {
@@ -173,5 +173,88 @@ impl Database {
             id: Uuid::from_str(row.path_uuid.as_str()).context("Could not initialize the uuid")?,
         };
         Ok(trade_id)
+    }
+
+    pub async fn insert_trade_state(
+        &self,
+        trade_state: TradeStatus,
+        path_id: PathId,
+    ) -> Result<(), anyhow::Error> {
+        let now = Utc::now().to_rfc3339();
+        let path_uuid = &path_id.id.to_string();
+
+        let status_type = format!("{:?}", trade_state.status_type);
+        let is_terminal = if trade_state.is_terminal { 1 } else { 0 };
+        let valid_for_secs = trade_state.valid_for.as_secs() as i64;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO trade_states (
+                path_uuid,
+                timestamp,
+                status_type,
+                is_terminal,
+                description,
+                valid_for_secs
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            "#,
+            path_uuid,
+            now,
+            status_type,
+            is_terminal,
+            trade_state.description,
+            valid_for_secs
+        )
+        .execute(&self.pool)
+        .await
+        .context("insert_trade_state(): failed to insert trade state")?;
+
+        Ok(())
+    }
+
+    pub async fn get_trade_states(&self, path_id: PathId) -> Result<Vec<TradeStatus>, anyhow::Error> {
+        let path_uuid = path_id.id.to_string();
+        
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                status_type,
+                is_terminal,
+                description,
+                valid_for_secs
+            FROM trade_states
+            WHERE path_uuid = ?
+            ORDER BY id ASC
+            "#,
+            path_uuid
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to fetch states")?;
+
+        let mut states = Vec::new();
+        for row in rows {
+            
+            let status_type = match row.status_type.as_str() {
+                "Queued" => TradeStatusType::Queued,
+                "Initial" => TradeStatusType::Initial,
+                "Confirming" => TradeStatusType::Confirming,
+                "Exchanging" => TradeStatusType::Exchanging,
+                "Success" => TradeStatusType::Success,
+                "Refunded" => TradeStatusType::Refunded,
+                "Failed" => TradeStatusType::Failed,
+                "Expired" => TradeStatusType::Expired,
+                _ => TradeStatusType::Unrecognized,
+            };
+
+            states.push(TradeStatus {
+                status_type,
+                is_terminal: row.is_terminal != 0,
+                description: row.description,
+                valid_for: std::time::Duration::from_secs(row.valid_for_secs as u64),
+            });
+        }
+
+        Ok(states)
     }
 }

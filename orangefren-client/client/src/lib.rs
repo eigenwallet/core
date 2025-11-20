@@ -145,6 +145,13 @@ impl Client {
         map.values().map(|(info, _statuses)| info.clone()).collect()
     }
 
+    pub async fn all_states(&self, path_id: PathId) -> Result<Vec<TradeStatus>, anyhow::Error> {
+        let map = self.trades.lock().await;
+        Ok(map.get(&path_id)
+            .map(|(_info, statuses)| statuses.clone())
+            .context("No states found for path id")?)
+    }
+
     pub async fn new_trade(
         &mut self,
         from_amount: bitcoin::Amount,
@@ -354,6 +361,11 @@ impl Client {
         let path_id = self.db.latest_trade_id_by_withdraw_address(address).await?;
         let trade = self.wait_until_created(path_id.clone()).await?;
 
+        let states = self.db.get_trade_states(path_id.clone()).await?;
+        {
+            let mut map = self.trades.lock().await;
+            map.insert(path_id.clone(), (trade.clone(), states.clone()));
+        }
         Ok((trade, path_id))
     }
 
@@ -406,11 +418,14 @@ impl Client {
     async fn store(&self, status: TradeStatus, path_id: PathId) -> Result<(), anyhow::Error> {
         let mut map = self.trades.lock().await;
         if let Some((_, statuses)) = map.get_mut(&path_id) {
-            statuses.push(status);
-            Ok(())
+            statuses.push(status.clone());
         } else {
             anyhow::bail!("Trade not found");
         }
+
+        self.db.insert_trade_state(status, path_id).await?;
+
+        Ok(())
     }
 
     pub async fn load_from_db(&mut self) -> Result<(), anyhow::Error> {
@@ -419,12 +434,15 @@ impl Client {
         let mut map = self.trades.lock().await;
 
         for (id, info) in rows {
+            let states = self.db.get_trade_states(id.clone()).await?;
+            
             match map.entry(id) {
                 Entry::Occupied(mut e) => {
                     e.get_mut().0 = info;
+                    e.get_mut().1 = states;
                 }
                 Entry::Vacant(e) => {
-                    e.insert((info, Vec::new()));
+                    e.insert((info, states));
                 }
             }
         }

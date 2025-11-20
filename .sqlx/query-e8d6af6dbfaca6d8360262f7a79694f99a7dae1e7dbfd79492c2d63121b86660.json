@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO trade_states (\n                path_uuid,\n                timestamp,\n                status_type,\n                is_terminal,\n                description,\n                valid_for_secs\n            ) VALUES (?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "e8d6af6dbfaca6d8360262f7a79694f99a7dae1e7dbfd79492c2d63121b86660"
+}

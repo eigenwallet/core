@@ -58,6 +58,16 @@ async fn main() -> Result<(), anyhow::Error> {
 
     tracing::info!("recovered info {}", recovered_info);
 
+    let all_states = client2.all_states(recovered_path_id.clone()).await?;
+    for state in all_states {
+        tracing::info!(
+            "State {:?} - {} (terminal: {})",
+            state.status_type,
+            state.description,
+            state.is_terminal
+        );
+    }
+
     let mut updates2 = client2.watch_status(recovered_path_id.clone()).await;
 
     while let Some(status) = updates2.next().await {
