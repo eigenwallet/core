@@ -945,7 +945,7 @@ mod wallet {
                                     Some(password)
                                 },
                                 env_config.monero_network,
-                                restore_height.unwrap_or(0),
+                                restore_height.into(),
                                 true,
                                 daemon.clone(),
                             )

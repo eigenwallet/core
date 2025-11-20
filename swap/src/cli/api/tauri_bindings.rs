@@ -114,7 +114,7 @@ pub enum SeedChoice {
     },
     FromSeed {
         seed: String,
-        restore_height: Option<u64>,
+        restore_height: u32,
         password: String,
     },
     FromWalletPath {
