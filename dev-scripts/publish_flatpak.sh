@@ -233,7 +233,8 @@ jq --arg deb_path "$DEB_FILE" --arg PWD "$PWD" '
         "type": "file",
         "path": $deb_path
     } |
-    .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path
+    .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path |
+    .modules[0].sources[2].path = $PWD + "/" + .modules[0].sources[2].path
 ' "$MANIFEST_FILE" > "$TEMP_MANIFEST"
 
 MANIFEST_FILE="$TEMP_MANIFEST"
