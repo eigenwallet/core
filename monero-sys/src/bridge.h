@@ -381,16 +381,6 @@ namespace Monero
         return amounts;
     }
 
-    inline std::unique_ptr<std::vector<std::string>> pendingTransactionTxKeys(const PendingTransaction &tx, const std::string &tx_hash)
-    {
-        auto keys = tx.txKeys(tx_hash);
-        auto vec = std::make_unique<std::vector<std::string>>();
-        vec->reserve(keys.size());
-        for (auto &key : keys)
-            vec->push_back(std::move(key));
-        return vec;
-    }
-
     inline void addSubaddress(Wallet &wallet, uint32_t account_index, const std::string &label)
     {
         auto *sub = wallet.subaddress();
