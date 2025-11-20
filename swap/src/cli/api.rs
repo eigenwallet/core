@@ -929,6 +929,7 @@ mod wallet {
                         }
                         SeedChoice::FromSeed {
                             seed: mnemonic,
+                            restore_height,
                             password,
                         } => {
                             // Create wallet from provided seed
@@ -944,7 +945,7 @@ mod wallet {
                                     Some(password)
                                 },
                                 env_config.monero_network,
-                                0,
+                                restore_height.into(),
                                 true,
                                 daemon.clone(),
                             )
