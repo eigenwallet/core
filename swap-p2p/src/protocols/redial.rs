@@ -323,10 +323,16 @@ impl NetworkBehaviour for Behaviour {
             return Ok(vec![]);
         };
 
-        // TODO: Uncomment this if we only want to contribute addresses for peers we are instructed to redial
-        // if !self.peers.contains(&peer_id) {
-        //     return Ok(vec![]);
-        // }
+        // We only want to contribute addresses for peers we are instructed to redial
+        if !self.peers.contains(&peer_id) {
+            return Ok(vec![]);
+        }
+
+        // Cancel all pending dials for this peer in this behaviour
+        // Another Behaviour already schedules a dial before we could
+        if self.to_dial.remove(&peer_id) {
+            tracing::trace!(peer = %peer_id, "Cancelled a pending dial for a peer because something else already scheduled a dial");
+        }
 
         // Check if we have any addresses cached for the peer
         // TODO: Sort these by how often we were able to connect to them

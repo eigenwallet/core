@@ -852,7 +852,9 @@ mod builder {
                         event_loop_handle
                             .queue_peer_address(peer_id, addr)
                             .await
-                            .expect("adding a peer address will only fail if the event loop is dropped");
+                            .expect(
+                                "adding a peer address will only fail if the event loop is dropped",
+                            );
                     }
                 }
 
@@ -863,7 +865,9 @@ mod builder {
                         event_loop_handle
                             .queue_peer_address(peer_id, addr)
                             .await
-                            .expect("adding a peer address will only fail if the event loop is dropped");
+                            .expect(
+                                "adding a peer address will only fail if the event loop is dropped",
+                            );
                     }
                 }
 
