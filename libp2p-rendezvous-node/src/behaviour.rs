@@ -15,38 +15,20 @@ impl Behaviour {
         identity: identity::Keypair,
         rendezvous_addrs: Vec<Multiaddr>,
         namespace: XmrBtcNamespace,
-        registration_ttl: Option<u64>,
     ) -> Result<Self> {
         let server = libp2p::rendezvous::server::Behaviour::new(
             libp2p::rendezvous::server::Config::default(),
         );
 
-        let rendezvous_nodes =
-            build_rendezvous_nodes(rendezvous_addrs, namespace, registration_ttl)?;
-        let register = register::Behaviour::new(identity, rendezvous_nodes);
+        let rendezvous_nodes = rendezvous_addrs
+            .iter()
+            .map(|addr| extract_peer_id(addr))
+            .collect::<Result<Vec<_>>>()?;
+
+        let register = register::Behaviour::new(identity, rendezvous_nodes, namespace.into());
 
         Ok(Self { server, register })
     }
-}
-
-/// Builds a list of RendezvousNode from multiaddrs and namespace
-fn build_rendezvous_nodes(
-    addrs: Vec<Multiaddr>,
-    namespace: XmrBtcNamespace,
-    registration_ttl: Option<u64>,
-) -> Result<Vec<register::RendezvousNode>> {
-    addrs
-        .into_iter()
-        .map(|addr| {
-            let peer_id = extract_peer_id(&addr)?;
-            Ok(register::RendezvousNode::new(
-                &addr,
-                peer_id,
-                namespace,
-                registration_ttl,
-            ))
-        })
-        .collect()
 }
 
 fn extract_peer_id(addr: &Multiaddr) -> Result<PeerId> {

@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use libp2p::core::ConnectedPoint;
+use libp2p::Multiaddr;
 use libp2p::{
     swarm::{ConnectionId, FromSwarm},
     PeerId,
@@ -85,5 +87,47 @@ impl BackoffTracker {
         if let Some(b) = self.backoffs.get_mut(peer) {
             b.reset();
         }
+    }
+}
+
+/// Used inside of a Behaviour to track the last successful address for a peer
+pub struct AddressTracker {
+    addresses: HashMap<PeerId, Multiaddr>,
+}
+
+impl AddressTracker {
+    pub fn new() -> Self {
+        Self {
+            addresses: HashMap::new(),
+        }
+    }
+
+    pub fn handle_swarm_event(&mut self, event: FromSwarm<'_>) {
+        match event {
+            // If we connected as a dialer, record the address we connected to them at
+            FromSwarm::ConnectionEstablished(connection_established) => {
+                if let ConnectedPoint::Dialer { address, .. } = connection_established.endpoint {
+                    self.addresses
+                        .insert(connection_established.peer_id, address.clone());
+                }
+            }
+            FromSwarm::NewExternalAddrOfPeer(new_external_addr_of_peer) => {
+                // If we have never successfully connected to any address of the peer, we record the first announced address
+                if !self
+                    .addresses
+                    .contains_key(&new_external_addr_of_peer.peer_id)
+                {
+                    self.addresses.insert(
+                        new_external_addr_of_peer.peer_id,
+                        new_external_addr_of_peer.addr.clone(),
+                    );
+                }
+            }
+            _ => (),
+        }
+    }
+
+    pub fn last_seen_address(&self, peer_id: &PeerId) -> Option<Multiaddr> {
+        self.addresses.get(peer_id).cloned()
     }
 }

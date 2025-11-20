@@ -218,6 +218,7 @@ mod context {
     /// These must always exist together
     pub struct EventLoopState {
         pub handle: EventLoopHandle,
+        #[allow(dead_code)]
         pub task: JoinHandle<()>,
     }
 

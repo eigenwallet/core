@@ -130,7 +130,7 @@ pub mod behaviour {
             resume_only: bool,
             env_config: env::Config,
             identify_params: (identity::Keypair, XmrBtcNamespace),
-            rendezvous_nodes: Vec<register::RendezvousNode>,
+            rendezvous_nodes: Vec<PeerId>,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -147,6 +147,7 @@ pub mod behaviour {
                 Some(rendezvous::register::Behaviour::new(
                     identity,
                     rendezvous_nodes,
+                    namespace.into(),
                 ))
             };
 

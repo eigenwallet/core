@@ -5,8 +5,8 @@ use crate::{asb, cli};
 use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::SwarmBuilder;
 use libp2p::{identity, Multiaddr, Swarm};
+use libp2p::{PeerId, SwarmBuilder};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,14 +37,11 @@ where
 {
     let identity = seed.derive_libp2p_identity();
 
-    let rendezvous_nodes = rendezvous_addrs
+    let rendezvous_nodes: Vec<PeerId> = rendezvous_addrs
         .iter()
         .map(|addr| {
-            let peer_id = addr
-                .extract_peer_id()
-                .expect("Rendezvous node address must contain peer ID");
-
-            register::RendezvousNode::new(addr, peer_id, namespace, None)
+            addr.extract_peer_id()
+                .expect("Rendezvous node address must contain peer ID")
         })
         .collect();
 
@@ -65,12 +62,19 @@ where
         num_intro_points,
     )?;
 
-    let swarm = SwarmBuilder::with_existing_identity(identity)
+    let mut swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
         .with_other_transport(|_| transport)?
         .with_behaviour(|_| behaviour)?
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(IDLE_CONNECTION_TIMEOUT))
         .build();
+
+    for addr in rendezvous_addrs {
+        let peer_id = addr
+            .extract_peer_id()
+            .expect("Rendezvous node address must contain peer ID");
+        swarm.add_peer_address(peer_id, addr.clone());
+    }
 
     Ok((swarm, onion_addresses))
 }

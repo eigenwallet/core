@@ -51,7 +51,6 @@ pub mod register;
 /// It uses the `redial` behaviour internally to do this
 pub mod discovery;
 
-// TODO: Rework these tests, they are ugly
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,84 +58,44 @@ mod tests {
     use futures::StreamExt;
     use libp2p::rendezvous;
     use libp2p::swarm::SwarmEvent;
+    use libp2p::{Multiaddr, PeerId};
     use std::time::Duration;
-
-    // Helper to spawn a background poller for a swarm that just drains events.
-    fn spawn_drain_swarm<B>(mut swarm: libp2p::Swarm<B>)
-    where
-        B: libp2p::swarm::NetworkBehaviour + Send + 'static,
-        <B as libp2p::swarm::NetworkBehaviour>::ToSwarm: std::fmt::Debug,
-    {
-        tokio::spawn(async move {
-            loop {
-                let _ = swarm.next().await;
-            }
-        });
-    }
 
     #[tokio::test]
     async fn register_and_discover_together() {
-        // Rendezvous server
-        let mut rendezvous_server =
-            new_swarm(
-                |_| rendezvous::server::Behaviour::new(rendezvous::server::Config::default()),
-            );
-        let server_addr = rendezvous_server.listen_on_random_memory_address().await;
-        let server_id = *rendezvous_server.local_peer_id();
+        let (rendezvous_peer_id, rendezvous_addr, rendezvous_handle) =
+            spawn_rendezvous_server().await;
 
         // Registering client (adds an external address so it can be discovered)
         let mut registrar = new_swarm(|identity| {
             register::Behaviour::new(
                 identity,
-                vec![register::RendezvousNode::new(
-                    &server_addr,
-                    server_id,
-                    XmrBtcNamespace::Testnet,
-                    Some(10),
-                )],
+                vec![rendezvous_peer_id],
+                XmrBtcNamespace::Testnet.into(),
             )
         });
+        registrar.add_peer_address(rendezvous_peer_id, rendezvous_addr.clone());
         registrar.listen_on_random_memory_address().await;
         let registrar_id = *registrar.local_peer_id();
 
         // Discovery client using our wrapper behaviour
         let mut discoverer = new_swarm(|identity| {
-            discovery::Behaviour::new(identity, vec![server_id], XmrBtcNamespace::Testnet.into())
+            discovery::Behaviour::new(
+                identity,
+                vec![rendezvous_peer_id],
+                XmrBtcNamespace::Testnet.into(),
+            )
         });
+        discoverer.add_peer_address(rendezvous_peer_id, rendezvous_addr);
 
-        // First connect registrar to server to ensure it can register promptly.
-        registrar.block_on_connection(&mut rendezvous_server).await;
-        // Then connect discoverer to the rendezvous server without poking inner behaviours.
-        discoverer.block_on_connection(&mut rendezvous_server).await;
-
-        // Drive server in background and observe registrar until it registers once.
-        spawn_drain_swarm(rendezvous_server);
-        let (tx_reg, rx_reg) = tokio::sync::oneshot::channel::<()>();
-        tokio::spawn(async move {
-            let mut registrar = registrar;
-            let mut sent = false;
-            let mut tx_opt = Some(tx_reg);
+        let registrar_task = tokio::spawn(async move {
             loop {
-                match registrar.select_next_some().await {
-                    SwarmEvent::Behaviour(register::InnerBehaviourEvent::Rendezvous(
-                        rendezvous::client::Event::Registered { .. },
-                    )) if !sent => {
-                        if let Some(sender) = tx_opt.take() {
-                            let _ = sender.send(());
-                        }
-                        sent = true;
-                    }
-                    _ => {}
-                }
+                registrar.next().await;
             }
         });
-        tokio::time::timeout(Duration::from_secs(30), rx_reg)
-            .await
-            .expect("registrar did not register in time")
-            .ok();
 
         // Now wait until discovery wrapper discovers registrar and dials it.
-        let _ = tokio::time::timeout(Duration::from_secs(60), async {
+        let discovery_task = tokio::spawn(async move {
             let mut saw_discovery = false;
             let mut saw_address = false;
 
@@ -160,8 +119,33 @@ mod tests {
                     _ => {}
                 }
             }
-        })
-        .await
-        .expect("discovery and direct connection to registrar timed out");
+        });
+
+        tokio::time::timeout(Duration::from_secs(60), discovery_task)
+            .await
+            .expect("discovery and direct connection to registrar timed out")
+            .unwrap();
+
+        registrar_task.abort();
+        rendezvous_handle.abort();
+    }
+
+    /// Spawns a rendezvous server that continuously processes events
+    async fn spawn_rendezvous_server() -> (PeerId, Multiaddr, tokio::task::JoinHandle<()>) {
+        let mut rendezvous_node = new_swarm(|_| {
+            rendezvous::server::Behaviour::new(
+                rendezvous::server::Config::default().with_min_ttl(2),
+            )
+        });
+        let address = rendezvous_node.listen_on_random_memory_address().await;
+        let peer_id = *rendezvous_node.local_peer_id();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                rendezvous_node.next().await;
+            }
+        });
+
+        (peer_id, address, handle)
     }
 }

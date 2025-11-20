@@ -1,38 +1,41 @@
-use crate::behaviour_util::BackoffTracker;
+use crate::behaviour_util::{AddressTracker, BackoffTracker, ConnectionTracker};
+use crate::futures_util::FuturesHashSet;
 use crate::protocols::redial;
-
-use super::*;
-use futures::FutureExt;
+use backoff::backoff::Backoff;
+use futures::{future, FutureExt};
 use libp2p::rendezvous::client::RegisterError;
+use libp2p::rendezvous::ErrorCode;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
     THandlerOutEvent, ToSwarm,
 };
 use libp2p::{identity, rendezvous, Multiaddr, PeerId};
-use std::pin::Pin;
+use std::collections::{HashSet, VecDeque};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-// TODO: We should use the ConnectionTracker from the behaviour_util module instead of this enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConnectionStatus {
-    Disconnected,
-    Connected,
-}
-
-enum RegistrationStatus {
-    RegisterOnNextConnection,
-    Pending,
-    Registered {
-        re_register_in: Pin<Box<tokio::time::Sleep>>,
-    },
-}
-
-// This could use notice to recursively discover other rendezvous nodes
+// TODO: This could use notice to recursively discover other rendezvous nodes
+// TODO: Get the tests working again
 pub struct Behaviour {
     inner: InnerBehaviour,
-    rendezvous_nodes: Vec<RendezvousNode>,
+
+    rendezvous_nodes: Vec<PeerId>,
+    namespace: rendezvous::Namespace,
+
     backoffs: BackoffTracker,
+    connection: ConnectionTracker,
+    address: AddressTracker,
+
+    // Set of all peers that we think we are registered at
+    registered: HashSet<PeerId>,
+
+    // Register at these as soon as we are connected to them
+    to_dispatch: VecDeque<PeerId>,
+
+    // Move these into `to_dispatch` once the future resolves
+    pending_to_dispatch: FuturesHashSet<PeerId, ()>,
+
+    to_swarm: VecDeque<Event>,
 }
 
 #[derive(NetworkBehaviour)]
@@ -41,89 +44,49 @@ pub struct InnerBehaviour {
     redial: redial::Behaviour,
 }
 
-// Provide a read-only snapshot of rendezvous registrations
-impl Behaviour {
-    /// Returns a snapshot of registration and connection status for all configured rendezvous nodes.
-    pub fn registrations(&self) -> Vec<RegistrationReport> {
-        self.rendezvous_nodes
-            .iter()
-            .map(|n| RegistrationReport {
-                address: n.address.clone(),
-                connection: n.connection_status,
-                registration: match &n.registration_status {
-                    RegistrationStatus::RegisterOnNextConnection => {
-                        RegistrationStatusReport::RegisterOnNextConnection
-                    }
-                    RegistrationStatus::Pending => RegistrationStatusReport::Pending,
-                    RegistrationStatus::Registered { .. } => RegistrationStatusReport::Registered,
-                },
-            })
-            .collect()
-    }
-}
-
-/// Public representation of a rendezvous node registration status
-/// The raw `RegistrationStatus` cannot be exposed because it is not serializable
-#[derive(Debug, Clone)]
-pub struct RegistrationReport {
-    pub address: Multiaddr,
-    pub connection: ConnectionStatus,
-    pub registration: RegistrationStatusReport,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegistrationStatusReport {
-    RegisterOnNextConnection,
-    Pending,
-    Registered,
-}
-
-/// A node running the rendezvous server protocol.
-pub struct RendezvousNode {
-    pub address: Multiaddr,
-    connection_status: ConnectionStatus,
-    pub peer_id: PeerId,
-    registration_status: RegistrationStatus,
-    pub registration_ttl: Option<u64>,
-    pub namespace: XmrBtcNamespace,
-}
-
-impl RendezvousNode {
-    pub fn new(
-        address: &Multiaddr,
+#[derive(Debug)]
+pub enum Event {
+    Registered {
         peer_id: PeerId,
-        namespace: XmrBtcNamespace,
-        registration_ttl: Option<u64>,
-    ) -> Self {
-        Self {
-            address: address.to_owned(),
-            connection_status: ConnectionStatus::Disconnected,
-            namespace,
-            peer_id,
-            registration_status: RegistrationStatus::RegisterOnNextConnection,
-            registration_ttl,
-        }
+    },
+    RegisterDispatchFailed {
+        peer_id: PeerId,
+        error: RegisterError,
+    },
+    RegisterRequestFailed {
+        peer_id: PeerId,
+        error: ErrorCode,
+    },
+}
+
+pub mod public {
+    use libp2p::{Multiaddr, PeerId};
+
+    #[derive(Debug, Clone)]
+    pub struct RendezvousNodeStatus {
+        pub peer_id: PeerId,
+        pub address: Option<Multiaddr>,
+        pub is_connected: bool,
+        pub registration: RegisterStatus,
     }
 
-    fn set_connection(&mut self, status: ConnectionStatus) {
-        self.connection_status = status;
-    }
-
-    fn set_registration(&mut self, status: RegistrationStatus) {
-        self.registration_status = status;
+    #[derive(Debug, Clone)]
+    pub enum RegisterStatus {
+        Registered,
+        WillRegisterAfterDelay,
+        RegisterOnceConnected,
+        RequestInflight,
     }
 }
 
 impl Behaviour {
     const REDIAL_IDENTIFIER: &str = "rendezvous-register";
 
-    pub fn new(identity: identity::Keypair, rendezvous_nodes: Vec<RendezvousNode>) -> Self {
-        let our_peer_id = identity.public().to_peer_id();
-        let rendezvous_nodes: Vec<RendezvousNode> = rendezvous_nodes
-            .into_iter()
-            .filter(|node| node.peer_id != our_peer_id)
-            .collect();
-
+    pub fn new(
+        identity: identity::Keypair,
+        rendezvous_nodes: Vec<PeerId>,
+        namespace: rendezvous::Namespace,
+    ) -> Self {
         let backoffs = BackoffTracker::new(
             crate::defaults::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
             crate::defaults::RENDEZVOUS_RETRY_MAX_INTERVAL,
@@ -136,9 +99,14 @@ impl Behaviour {
             crate::defaults::REDIAL_MAX_INTERVAL,
         );
 
-        // Initialize backoff for each rendezvous node
-        for node in &rendezvous_nodes {
-            redial.add_peer_with_address(node.peer_id, node.address.clone());
+        let mut pending_to_dispatch = FuturesHashSet::new();
+
+        for &peer_id in &rendezvous_nodes {
+            // We want to redial all of the nodes periodically because we only dispatch requests once we are connected
+            redial.add_peer(peer_id.clone());
+
+            // Schedule an intitial register
+            pending_to_dispatch.insert(peer_id, Box::pin(future::ready(())));
         }
 
         Self {
@@ -146,81 +114,50 @@ impl Behaviour {
                 rendezvous: rendezvous::client::Behaviour::new(identity),
                 redial,
             },
+            connection: ConnectionTracker::new(),
+            address: AddressTracker::new(),
+            registered: HashSet::new(),
             rendezvous_nodes,
             backoffs,
+            to_dispatch: VecDeque::new(),
+            pending_to_dispatch,
+            namespace,
+            to_swarm: VecDeque::new(),
         }
     }
 
-    /// Registers the rendezvous node at the given index.
-    /// Also sets the registration status to [`RegistrationStatus::Pending`].
-    pub fn register(&mut self, node_index: usize) -> Result<(), RegisterError> {
-        let node = &mut self.rendezvous_nodes[node_index];
-        node.set_registration(RegistrationStatus::Pending);
-        let (namespace, peer_id, ttl) =
-            (node.namespace.into(), node.peer_id, node.registration_ttl);
-        self.inner.rendezvous.register(namespace, peer_id, ttl)
+    pub fn status(&self) -> Vec<public::RendezvousNodeStatus> {
+        self.rendezvous_nodes
+            .iter()
+            .map(|peer_id| {
+                let registration = {
+                    if self.registered.contains(peer_id) {
+                        public::RegisterStatus::Registered
+                    } else if self.to_dispatch.contains(peer_id) {
+                        public::RegisterStatus::RegisterOnceConnected
+                    } else {
+                        public::RegisterStatus::WillRegisterAfterDelay
+                    }
+                };
+
+                public::RendezvousNodeStatus {
+                    peer_id: peer_id.clone(),
+                    address: self.address.last_seen_address(peer_id),
+                    is_connected: self.connection.is_connected(peer_id),
+                    registration,
+                }
+            })
+            .collect()
     }
 }
 
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = <InnerBehaviour as NetworkBehaviour>::ConnectionHandler;
-    type ToSwarm = InnerBehaviourEvent;
+    type ToSwarm = Event; // TODO: Emit useful events here instead of just all this junk
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-        match event {
-            FromSwarm::ConnectionEstablished(connection) => {
-                let peer_id = connection.peer_id;
-
-                // Find the rendezvous node that matches the peer id, else do nothing.
-                if let Some(index) = self
-                    .rendezvous_nodes
-                    .iter_mut()
-                    .position(|node| node.peer_id == peer_id)
-                {
-                    let rendezvous_node = &mut self.rendezvous_nodes[index];
-                    rendezvous_node.set_connection(ConnectionStatus::Connected);
-
-                    // Reset backoff on successful connection
-                    self.backoffs.reset(&peer_id);
-
-                    if let RegistrationStatus::RegisterOnNextConnection =
-                        rendezvous_node.registration_status
-                    {
-                        let _ = self.register(index).inspect_err(|err| {
-                            tracing::error!(
-                                    error=%err,
-                                    rendezvous_node=%peer_id,
-                                    "Failed to register with rendezvous node");
-                        });
-                    }
-                }
-            }
-            FromSwarm::ConnectionClosed(connection) => {
-                let peer_id = connection.peer_id;
-
-                // Update the connection status of the rendezvous node that disconnected.
-                if let Some(node) = self
-                    .rendezvous_nodes
-                    .iter_mut()
-                    .find(|node| node.peer_id == peer_id)
-                {
-                    node.set_connection(ConnectionStatus::Disconnected);
-                }
-            }
-            FromSwarm::DialFailure(dial_failure) => {
-                // Update the connection status of the rendezvous node that failed to connect.
-                if let Some(peer_id) = dial_failure.peer_id {
-                    if let Some(node) = self
-                        .rendezvous_nodes
-                        .iter_mut()
-                        .find(|node| node.peer_id == peer_id)
-                    {
-                        node.set_connection(ConnectionStatus::Disconnected);
-                    }
-                }
-            }
-            _ => {}
-        }
+        self.connection.handle_swarm_event(event);
+        self.address.handle_swarm_event(event);
         self.inner.on_swarm_event(event);
     }
 
@@ -228,62 +165,125 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        // Check the status of each rendezvous node
-        for i in 0..self.rendezvous_nodes.len() {
-            let connection_status = self.rendezvous_nodes[i].connection_status.clone();
-            match &mut self.rendezvous_nodes[i].registration_status {
-                RegistrationStatus::RegisterOnNextConnection => match connection_status {
-                    ConnectionStatus::Disconnected => {}
-                    ConnectionStatus::Connected => {
-                        let _ = self.register(i);
-                    }
-                },
-                RegistrationStatus::Registered { re_register_in } => {
-                    if let Poll::Ready(()) = re_register_in.poll_unpin(cx) {
-                        match connection_status {
-                            ConnectionStatus::Connected => {
-                                let _ = self.register(i).inspect_err(|err| {
-                                    tracing::error!(
-                                            error=%err,
-                                            rendezvous_node=%self.rendezvous_nodes[i].peer_id,
-                                            "Failed to register with rendezvous node");
-                                });
-                            }
-                            ConnectionStatus::Disconnected => {
-                                self.rendezvous_nodes[i]
-                                    .set_registration(RegistrationStatus::RegisterOnNextConnection);
-                            }
-                        }
-                    }
-                }
-                RegistrationStatus::Pending => {}
-            }
+        // Check if any of the futures resolved
+        while let Poll::Ready(Some((peer_id, _))) = self.pending_to_dispatch.poll_next_unpin(cx) {
+            self.to_dispatch.push_back(peer_id);
+
+            // We assume that if we have queued a register to be dispatched, then we are not registed anymore
+            // because we only queue a register if we failed to register or the ttl expired
+            self.registered.remove(&peer_id);
         }
 
-        let inner_poll = self.inner.poll(cx);
+        // Take ownership of the queue to avoid borrow checker issues
+        let to_dispatch = std::mem::take(&mut self.to_dispatch);
+        self.to_dispatch = to_dispatch
+            .into_iter()
+            .filter(|peer| {
+                if !self.connection.is_connected(peer) {
+                    return true;
+                }
+
+                // If we are connected to the peer, register with them
+                if let Err(err) = self.inner.rendezvous.register(self.namespace.clone(), peer.clone(), None) {
+                    // We failed to dispatch the register, so we backoff
+                    let backoff = self.backoffs.get(&peer.clone()).next_backoff().expect("backoff should never run out");
+
+                    tracing::error!(
+                        ?peer,
+                        ?err,
+                        "Failed to dispatch register at rendezvous node, scheduling retry after backoff"
+                    );
+
+                    // Inform swarm
+                    self.to_swarm.push_back(Event::RegisterDispatchFailed { peer_id: peer.clone(), error: err });
+
+                    self.pending_to_dispatch.insert(peer.clone(), tokio::time::sleep(backoff).boxed());
+                }
+
+                false
+            })
+            .collect();
 
         // Reset the timer for the specific rendezvous node if we successfully registered
-        if let Poll::Ready(ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(
-            rendezvous::client::Event::Registered {
-                ttl,
-                rendezvous_node,
-                ..
-            },
-        ))) = &inner_poll
-        {
-            if let Some(i) = self
-                .rendezvous_nodes
-                .iter()
-                .position(|n| &n.peer_id == rendezvous_node)
-            {
-                let half_of_ttl = Duration::from_secs(*ttl) / 2;
-                let re_register_in = Box::pin(tokio::time::sleep(half_of_ttl));
-                let status = RegistrationStatus::Registered { re_register_in };
-                self.rendezvous_nodes[i].set_registration(status);
+        while let Poll::Ready(event) = self.inner.poll(cx) {
+            match event {
+                ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(
+                    rendezvous::client::Event::Registered {
+                        ttl,
+                        rendezvous_node,
+                        ..
+                    },
+                )) => {
+                    // We successfully registered, so we backoff
+                    self.backoffs.reset(&rendezvous_node);
+                    self.registered.insert(rendezvous_node.clone());
+
+                    // Schedule a re-registration after half of the TTL
+                    let half_of_ttl = Duration::from_secs(ttl) / 2;
+                    self.pending_to_dispatch.insert(
+                        rendezvous_node.clone(),
+                        tokio::time::sleep(half_of_ttl).boxed(),
+                    );
+
+                    // Inform swarm
+                    self.to_swarm.push_back(Event::Registered {
+                        peer_id: rendezvous_node,
+                    });
+
+                    tracing::info!(
+                        ?rendezvous_node,
+                        re_register_after_seconds = %half_of_ttl.as_secs(),
+                        "Registered with rendezvous node"
+                    );
+                }
+                ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(
+                    rendezvous::client::Event::RegisterFailed {
+                        rendezvous_node,
+                        namespace: _,
+                        error,
+                    },
+                )) => {
+                    // We failed to register, so we backoff
+                    let backoff = self
+                        .backoffs
+                        .get(&rendezvous_node.clone())
+                        .next_backoff()
+                        .expect("backoff should never run out");
+
+                    // Inform swarm
+                    self.to_swarm.push_back(Event::RegisterRequestFailed {
+                        peer_id: rendezvous_node,
+                        error,
+                    });
+
+                    tracing::error!(
+                        ?rendezvous_node,
+                        ?error,
+                        seconds_until_next_registration_attempt = %backoff.as_secs(),
+                        "Failed to register with rendezvous node, scheduling retry after backoff"
+                    );
+
+                    // Schedule a retry after the backoff
+                    self.pending_to_dispatch
+                        .insert(rendezvous_node.clone(), tokio::time::sleep(backoff).boxed());
+                }
+                ToSwarm::GenerateEvent(_) => {
+                    // swallow all other generated events by the inner swarm
+                    // TODO: Do something with these
+                }
+                other => {
+                    return Poll::Ready(other.map_out(|_| {
+                        unreachable!("we handled all generated events in the arm above")
+                    }))
+                }
             }
         }
 
-        inner_poll
+        while let Some(event) = self.to_swarm.pop_front() {
+            return Poll::Ready(ToSwarm::GenerateEvent(event));
+        }
+
+        Poll::Pending
     }
 
     fn on_connection_handler_event(
@@ -348,155 +348,75 @@ impl NetworkBehaviour for Behaviour {
     }
 }
 
+// TODO: Add a test that ensures we re-register after some time
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocols::rendezvous::XmrBtcNamespace;
     use crate::test::{new_swarm, SwarmExt};
     use futures::StreamExt;
     use libp2p::rendezvous;
     use libp2p::swarm::SwarmEvent;
-    use std::collections::HashMap;
 
     #[tokio::test]
-    async fn given_no_initial_connection_when_constructed_asb_connects_and_registers_with_rendezvous_node(
-    ) {
-        let mut rendezvous_node =
-            new_swarm(
-                |_| rendezvous::server::Behaviour::new(rendezvous::server::Config::default()),
-            );
-        let address = rendezvous_node.listen_on_random_memory_address().await;
-        let rendezvous_point = RendezvousNode::new(
-            &address,
-            rendezvous_node.local_peer_id().to_owned(),
-            XmrBtcNamespace::Testnet,
-            None,
-        );
+    async fn registers_once_at_two_rendezvous_nodes() {
+        let (rendezvous_peer_id1, rendezvous_addr1, _) = spawn_rendezvous_server().await;
+        let (rendezvous_peer_id2, rendezvous_addr2, _) = spawn_rendezvous_server().await;
 
-        let mut asb = new_swarm(|identity| super::Behaviour::new(identity, vec![rendezvous_point]));
+        let mut asb = new_swarm(|identity| {
+            super::Behaviour::new(
+                identity,
+                vec![rendezvous_peer_id1, rendezvous_peer_id2],
+                XmrBtcNamespace::Testnet.into(),
+            )
+        });
+        asb.add_peer_address(rendezvous_peer_id1, rendezvous_addr1);
+        asb.add_peer_address(rendezvous_peer_id2, rendezvous_addr2);
+
+        // We need to listen on address because otherwise we cannot advertise an address at the rendezvous point
         asb.listen_on_random_memory_address().await;
 
-        tokio::spawn(async move {
+        let mut registered = HashSet::new();
+
+        let asb_registered_three_times = tokio::spawn(async move {
             loop {
-                rendezvous_node.next().await;
-            }
-        });
-        let asb_registered = tokio::spawn(async move {
-            loop {
-                if let SwarmEvent::Behaviour(InnerBehaviourEvent::Rendezvous(
-                    rendezvous::client::Event::Registered { .. },
-                )) = asb.select_next_some().await
+                if let SwarmEvent::Behaviour(Event::Registered { peer_id }) =
+                    asb.select_next_some().await
+                {
+                    assert!(peer_id == rendezvous_peer_id1 || peer_id == rendezvous_peer_id2);
+                    registered.insert(peer_id);
+                }
+
+                if registered.contains(&rendezvous_peer_id1)
+                    && registered.contains(&rendezvous_peer_id2)
                 {
                     break;
                 }
             }
         });
 
-        tokio::time::timeout(Duration::from_secs(10), asb_registered)
+        tokio::time::timeout(Duration::from_secs(5), asb_registered_three_times)
             .await
             .unwrap()
             .unwrap();
     }
 
-    #[tokio::test]
-    async fn asb_automatically_re_registers() {
+    /// Spawns a rendezvous server that continuously processes events
+    async fn spawn_rendezvous_server() -> (PeerId, Multiaddr, tokio::task::JoinHandle<()>) {
         let mut rendezvous_node = new_swarm(|_| {
             rendezvous::server::Behaviour::new(
                 rendezvous::server::Config::default().with_min_ttl(2),
             )
         });
         let address = rendezvous_node.listen_on_random_memory_address().await;
-        let rendezvous_point = RendezvousNode::new(
-            &address,
-            rendezvous_node.local_peer_id().to_owned(),
-            XmrBtcNamespace::Testnet,
-            Some(5),
-        );
+        let peer_id = *rendezvous_node.local_peer_id();
 
-        let mut asb = new_swarm(|identity| super::Behaviour::new(identity, vec![rendezvous_point]));
-        asb.listen_on_random_memory_address().await;
-
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             loop {
                 rendezvous_node.next().await;
             }
         });
-        let asb_registered_three_times = tokio::spawn(async move {
-            let mut number_of_registrations = 0;
 
-            loop {
-                if let SwarmEvent::Behaviour(InnerBehaviourEvent::Rendezvous(
-                    rendezvous::client::Event::Registered { .. },
-                )) = asb.select_next_some().await
-                {
-                    number_of_registrations += 1
-                }
-
-                if number_of_registrations == 3 {
-                    break;
-                }
-            }
-        });
-
-        tokio::time::timeout(Duration::from_secs(30), asb_registered_three_times)
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn asb_registers_multiple() {
-        let registration_ttl = Some(10);
-        let mut rendezvous_nodes = Vec::new();
-        let mut registrations = HashMap::new();
-
-        // Register with 5 rendezvous nodes
-        for _ in 0..5 {
-            let mut rendezvous = new_swarm(|_| {
-                rendezvous::server::Behaviour::new(
-                    rendezvous::server::Config::default().with_min_ttl(2),
-                )
-            });
-            let address = rendezvous.listen_on_random_memory_address().await;
-            let id = *rendezvous.local_peer_id();
-            registrations.insert(id, 0);
-            rendezvous_nodes.push(RendezvousNode::new(
-                &address,
-                *rendezvous.local_peer_id(),
-                XmrBtcNamespace::Testnet,
-                registration_ttl,
-            ));
-            tokio::spawn(async move {
-                loop {
-                    rendezvous.next().await;
-                }
-            });
-        }
-
-        let mut asb = new_swarm(|identity| register::Behaviour::new(identity, rendezvous_nodes));
-        asb.listen_on_random_memory_address().await; // this adds an external address
-
-        let handle = tokio::spawn(async move {
-            loop {
-                if let SwarmEvent::Behaviour(InnerBehaviourEvent::Rendezvous(
-                    rendezvous::client::Event::Registered {
-                        rendezvous_node, ..
-                    },
-                )) = asb.select_next_some().await
-                {
-                    registrations
-                        .entry(rendezvous_node)
-                        .and_modify(|counter| *counter += 1);
-                }
-
-                if registrations.iter().all(|(_, &count)| count >= 4) {
-                    break;
-                }
-            }
-        });
-
-        tokio::time::timeout(Duration::from_secs(30), handle)
-            .await
-            .unwrap()
-            .unwrap();
+        (peer_id, address, handle)
     }
 }

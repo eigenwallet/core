@@ -26,8 +26,6 @@ mod defaults {
     pub const HIDDEN_SERVICE_NUM_INTRO_POINTS: u8 = 5;
 
     pub const MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(60);
-
-    pub const REGISTRATION_TTL: Option<u64> = None;
 }
 
 pub fn create_swarm(
@@ -39,7 +37,6 @@ pub fn create_swarm(
         identity.clone(),
         rendezvous_addrs,
         swap_p2p::protocols::rendezvous::XmrBtcNamespace::RendezvousPoint,
-        defaults::REGISTRATION_TTL,
     )?;
 
     let swarm = SwarmBuilder::with_existing_identity(identity)
@@ -67,7 +64,6 @@ pub async fn create_swarm_with_onion(
         identity.clone(),
         rendezvous_addrs,
         swap_p2p::protocols::rendezvous::XmrBtcNamespace::RendezvousPoint,
-        defaults::REGISTRATION_TTL,
     )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)

@@ -424,11 +424,14 @@ where
 
                             tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
                         }
-                        SwarmEvent::Behaviour(OutEvent::Rendezvous(libp2p::rendezvous::client::Event::Registered { rendezvous_node, ttl, namespace })) => {
-                            tracing::trace!("Successfully registered with rendezvous node: {} with namespace: {} and TTL: {:?}", rendezvous_node, namespace, ttl);
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::Registered { peer_id })) => {
+                            tracing::trace!("Successfully registered with rendezvous node: {}", peer_id);
                         }
-                        SwarmEvent::Behaviour(OutEvent::Rendezvous(libp2p::rendezvous::client::Event::RegisterFailed { rendezvous_node, namespace, error })) => {
-                            tracing::trace!("Registration with rendezvous node {} failed for namespace {}: {:?}", rendezvous_node, namespace, error);
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::RegisterRequestFailed { peer_id, error })) => {
+                            tracing::trace!("Registration with rendezvous node {} failed: {:?}", peer_id, error);
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::RegisterDispatchFailed { peer_id, error })) => {
+                            tracing::trace!("Failed to dispatch registration to rendezvous node {}: {:?}", peer_id, error);
                         }
                         SwarmEvent::Behaviour(OutEvent::OutboundRequestResponseFailure {peer, error, request_id, protocol}) => {
                             tracing::error!(
@@ -529,7 +532,7 @@ where
                                 .behaviour()
                                 .rendezvous
                                 .as_ref()
-                                .map(|b| b.registrations())
+                                .map(|b| b.status())
                                 .unwrap_or_default(); // If rendezvous behaviour is disabled we report empty list
 
                             let _ = respond_to.send(registrations);
@@ -841,7 +844,9 @@ mod service {
             respond_to: oneshot::Sender<usize>,
         },
         GetRegistrationStatus {
-            respond_to: oneshot::Sender<Vec<crate::asb::register::RegistrationReport>>,
+            respond_to: oneshot::Sender<
+                Vec<crate::network::rendezvous::register::public::RendezvousNodeStatus>,
+            >,
         },
     }
 
@@ -879,7 +884,8 @@ mod service {
         /// Get the registration status at configured rendezvous points
         pub async fn get_registration_status(
             &self,
-        ) -> anyhow::Result<Vec<crate::asb::register::RegistrationReport>> {
+        ) -> anyhow::Result<Vec<crate::network::rendezvous::register::public::RendezvousNodeStatus>>
+        {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GetRegistrationStatus { respond_to: tx })
