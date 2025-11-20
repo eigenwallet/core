@@ -124,9 +124,11 @@ AmountWithUnit.defaultProps = {
 export function BitcoinAmount({
   amount,
   disableTooltip = false,
+  fixedPrecision = 6,
 }: {
   amount: Amount;
   disableTooltip?: boolean;
+  fixedPrecision?: number;
 }) {
   const btcRate = useAppSelector((state) => state.rates.btcPrice);
 
@@ -134,7 +136,7 @@ export function BitcoinAmount({
     <AmountWithUnit
       amount={amount}
       unit="BTC"
-      fixedPrecision={6}
+      fixedPrecision={fixedPrecision}
       exchangeRate={btcRate}
       disableTooltip={disableTooltip}
     />
@@ -223,12 +225,20 @@ export function MoneroSatsExchangeRate({
 export function SatsAmount({
   amount,
   disableTooltip = false,
+  fixedPrecision = 6,
 }: {
   amount: Amount;
   disableTooltip?: boolean;
+  fixedPrecision?: number;
 }) {
   const btcAmount = amount == null ? null : satsToBtc(amount);
-  return <BitcoinAmount amount={btcAmount} disableTooltip={disableTooltip} />;
+  return (
+    <BitcoinAmount
+      amount={btcAmount}
+      disableTooltip={disableTooltip}
+      fixedPrecision={fixedPrecision}
+    />
+  );
 }
 
 export interface PiconeroAmountArgs {

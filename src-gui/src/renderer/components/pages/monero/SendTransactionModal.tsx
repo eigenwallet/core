@@ -3,7 +3,7 @@ import SendTransactionContent from "./components/SendTransactionContent";
 import SendApprovalContent from "./components/SendApprovalContent";
 import { useState } from "react";
 import SendSuccessContent from "./components/SendSuccessContent";
-import { usePendingSendMoneroApproval } from "store/hooks";
+import { usePendingSendCurrencyApproval } from "store/hooks";
 import { SendMoneroResponse, WithdrawBtcResponse } from "models/tauriModel";
 
 interface SendTransactionModalProps {
@@ -19,7 +19,7 @@ export default function SendTransactionModal({
   unlocked_balance,
   wallet,
 }: SendTransactionModalProps) {
-  const pendingApprovals = usePendingSendMoneroApproval();
+  const pendingApprovals = usePendingSendCurrencyApproval(wallet);
   const hasPendingApproval = pendingApprovals.length > 0;
 
   const [successResponse, setSuccessResponse] = useState<
@@ -52,7 +52,10 @@ export default function SendTransactionModal({
         />
       )}
       {!showSuccess && hasPendingApproval && (
-        <SendApprovalContent onClose={onClose} />
+        <SendApprovalContent
+          onClose={onClose}
+          pendingApprovals={pendingApprovals}
+        />
       )}
       {showSuccess && (
         <SendSuccessContent

@@ -2,7 +2,7 @@ use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::wallet;
 use crate::cli::api::tauri_bindings::{
     ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
-    TauriSwapProgressEvent,
+    TauriSwapProgressEvent, WithdrawBitcoinDetails,
 };
 use crate::cli::api::Context;
 use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
@@ -1440,10 +1440,28 @@ pub async fn withdraw_btc(
             (withdraw_tx_unsigned, max_giveable)
         }
     };
+    let fee = withdraw_tx_unsigned.fee()?;
 
     let withdraw_tx = bitcoin_wallet
         .sign_and_finalize(withdraw_tx_unsigned)
         .await?;
+
+    if !context
+        .tauri_handle
+        .as_ref()
+        .context("Tauri needs to be available to approve transactions")?
+        .request_approval::<bool>(
+            ApprovalRequestType::WithdrawBitcoin(WithdrawBitcoinDetails {
+                address: address.to_string(),
+                amount,
+                fee,
+            }),
+            Some(60 * 5),
+        )
+        .await?
+    {
+        bail!("Transaction rejected interactively.");
+    }
 
     bitcoin_wallet
         .broadcast(withdraw_tx.clone(), "withdraw")

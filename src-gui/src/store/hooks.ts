@@ -13,7 +13,8 @@ import {
   haveFundsBeenLocked,
   PendingSeedSelectionApprovalRequest,
   PendingSendMoneroApprovalRequest,
-  isPendingSendMoneroApprovalEvent,
+  PendingWithdrawBitcoinApprovalRequest,
+  isPendingSendCurrencyApprovalEvent,
   PendingPasswordApprovalRequest,
   isPendingPasswordApprovalEvent,
   isContextFullyInitialized,
@@ -216,9 +217,16 @@ export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalReque
   return approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c));
 }
 
-export function usePendingSendMoneroApproval(): PendingSendMoneroApprovalRequest[] {
+export function usePendingSendCurrencyApproval(
+  currency: "monero" | "bitcoin",
+): (
+  | PendingSendMoneroApprovalRequest
+  | PendingWithdrawBitcoinApprovalRequest
+)[] {
   const approvals = usePendingApprovals();
-  return approvals.filter((c) => isPendingSendMoneroApprovalEvent(c));
+  return approvals.filter((c) =>
+    isPendingSendCurrencyApprovalEvent(c, currency),
+  );
 }
 
 export function usePendingSelectMakerApproval(): PendingSelectMakerApprovalRequest[] {

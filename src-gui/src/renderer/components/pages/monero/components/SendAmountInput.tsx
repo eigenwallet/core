@@ -172,7 +172,9 @@ export default function SendAmountInput({
               <NumberInput
                 value={amount}
                 onChange={disabled ? () => {} : onAmountChange}
-                placeholder={(0).toFixed(currency === walletCurrency ? walletPrecision : 2)}
+                placeholder={(0).toFixed(
+                  currency === walletCurrency ? walletPrecision : 2,
+                )}
                 fontSize="3em"
                 fontWeight={600}
                 minWidth={60}

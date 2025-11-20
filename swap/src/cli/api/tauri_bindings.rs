@@ -100,6 +100,20 @@ pub struct SendMoneroDetails {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WithdrawBitcoinDetails {
+    /// Destination address for the Bitcoin transfer
+    #[typeshare(serialized_as = "string")]
+    pub address: String,
+    /// Amount to send
+    #[typeshare(serialized_as = "number")]
+    pub amount: bitcoin::Amount,
+    /// Transaction fee
+    #[typeshare(serialized_as = "number")]
+    pub fee: bitcoin::Amount,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PasswordRequestDetails {
     /// The wallet file path that requires a password
     pub wallet_path: String,
@@ -146,6 +160,8 @@ pub enum ApprovalRequestType {
     SeedSelection(SeedSelectionDetails),
     /// Request approval for publishing a Monero transaction.
     SendMonero(SendMoneroDetails),
+    /// Request approval for publishing a Bitcoin transaction.
+    WithdrawBitcoin(WithdrawBitcoinDetails),
     /// Request password for wallet file.
     /// User must provide password to unlock the selected wallet.
     PasswordRequest(PasswordRequestDetails),
@@ -423,6 +439,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
+            ApprovalRequestType::WithdrawBitcoin(_) => write!(f, "WithdrawBitcoin()"),
             ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
         }
     }
