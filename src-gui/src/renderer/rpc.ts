@@ -24,6 +24,8 @@ import {
   TauriSettings,
   CheckElectrumNodeArgs,
   CheckElectrumNodeResponse,
+  GenerateBitcoinAddressesArgs,
+  GenerateBitcoinAddressesResponse,
   GetMoneroAddressesResponse,
   GetDataDirArgs,
   ResolveApprovalArgs,
@@ -166,6 +168,13 @@ export async function checkBitcoinBalance() {
 
   store.dispatch(setBitcoinBalance(response.balance));
   store.dispatch(setBitcoinHistory(response.transactions));
+}
+
+export async function generateBitcoinAddresses(amount: number) {
+  return await invoke<
+    GenerateBitcoinAddressesArgs,
+    GenerateBitcoinAddressesResponse
+  >("generate_bitcoin_addresses", amount);
 }
 
 export async function buyXmr() {

@@ -1322,19 +1322,30 @@ where
     }
 
     /// Reveals the next address from the wallet.
-    pub async fn new_address(&self) -> Result<Address> {
+    pub async fn new_addresses(&self, amount: usize) -> Result<Vec<Address>> {
         let mut wallet = self.wallet.lock().await;
 
-        // Only reveal a new address if absolutely necessary
+        // Only reveal new addresses if absolutely necessary
         // We want to avoid revealing more and more addresses
-        let address = wallet.next_unused_address(KeychainKind::External).address;
+        let mut addresses = wallet
+            .list_unused_addresses(KeychainKind::External)
+            .map(|a| a.address)
+            .take(amount)
+            .collect();
+        addresses.resize_with(amount, || {
+            wallet.reveal_next_address(KeychainKind::External).address
+        });
 
-        // Important: persist that we revealed a new address.
+        // Important: persist that we revealed new addresses.
         // Otherwise the wallet might reuse it (bad).
         let mut persister = self.persister.lock().await;
         wallet.persist(&mut persister)?;
 
-        Ok(address)
+        Ok(addresses)
+    }
+
+    pub async fn new_address(&self) -> Result<Address> {
+        self.new_addresses(1).await.map(|mut a| a.remove(0))
     }
 
     pub async fn history(&self) -> Vec<TransactionInfo> {

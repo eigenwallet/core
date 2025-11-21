@@ -187,6 +187,27 @@ impl Request for WithdrawBtcArgs {
     }
 }
 
+// GenerateBitcoinAddresses
+#[typeshare(serialized_as = "number")]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GenerateBitcoinAddressesArgs(pub usize);
+
+#[typeshare(serialized_as = "string[]")]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GenerateBitcoinAddressesResponse(
+    #[serde(with = "swap_serde::bitcoin::address_serde::vec")] pub Vec<bitcoin::Address>,
+);
+
+impl Request for GenerateBitcoinAddressesArgs {
+    type Response = GenerateBitcoinAddressesResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let bitcoin_wallet = ctx.try_get_bitcoin_wallet().await?;
+        let addresses = bitcoin_wallet.new_addresses(self.0).await?;
+        Ok(GenerateBitcoinAddressesResponse(addresses))
+    }
+}
+
 // ListSellers
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]

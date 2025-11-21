@@ -8,11 +8,12 @@ use swap::cli::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
             CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse,
-            ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs,
-            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
-            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
-            GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            ExportBitcoinWalletArgs, GenerateBitcoinAddressesArgs, GetBitcoinAddressArgs,
+            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
+            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
+            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSyncProgressArgs,
+            GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs,
+            GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
             SendMoneroArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
             SuspendCurrentSwapArgs, WithdrawBtcArgs,
@@ -72,7 +73,8 @@ macro_rules! generate_command_handlers {
             set_monero_wallet_password,
             dfx_authenticate,
             change_monero_node,
-            get_context_status
+            get_context_status,
+            generate_bitcoin_addresses,
         ]
     };
 }
@@ -429,6 +431,7 @@ tauri_command!(get_balance, BalanceArgs);
 tauri_command!(buy_xmr, BuyXmrArgs);
 tauri_command!(resume_swap, ResumeSwapArgs);
 tauri_command!(withdraw_btc, WithdrawBtcArgs);
+tauri_command!(generate_bitcoin_addresses, GenerateBitcoinAddressesArgs);
 tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);
 tauri_command!(list_sellers, ListSellersArgs);
