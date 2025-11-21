@@ -17,7 +17,6 @@
 )]
 
 pub mod asb;
-pub mod bitcoin;
 pub mod cli;
 pub mod common;
 pub mod database;
@@ -26,4 +25,3 @@ pub mod monero;
 pub mod network;
 pub mod protocol;
 pub mod seed;
-pub mod tracing_ext;

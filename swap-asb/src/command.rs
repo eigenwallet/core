@@ -1,12 +1,12 @@
 use anyhow::{bail, Context, Result};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
+use bitcoin_wallet::{bitcoin_address, Amount};
 use serde::Serialize;
 use std::ffi::OsString;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use structopt::StructOpt;
-use swap::bitcoin::{bitcoin_address, Amount};
 use swap_env::defaults::GetDefaults;
 use swap_env::env;
 use swap_env::env::GetConfig;

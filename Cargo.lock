@@ -1202,8 +1202,27 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "backoff",
+ "bdk",
+ "bdk_chain",
+ "bdk_core",
+ "bdk_electrum",
  "bdk_wallet",
  "bitcoin 0.32.7",
+ "derive_builder",
+ "electrum-pool",
+ "futures",
+ "moka",
+ "proptest",
+ "reqwest 0.12.24",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "swap-env",
+ "swap-proptest",
+ "swap-serde",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]
@@ -11055,9 +11074,6 @@ dependencies = [
  "backoff",
  "base64 0.22.1",
  "bdk",
- "bdk_chain",
- "bdk_core",
- "bdk_electrum",
  "bdk_wallet",
  "big-bytes",
  "bitcoin 0.32.7",
@@ -11069,7 +11085,6 @@ dependencies = [
  "conquer-once",
  "curve25519-dalek-ng",
  "data-encoding",
- "derive_builder",
  "dfx-swiss-sdk",
  "dialoguer",
  "ecdsa_fun",
@@ -11099,7 +11114,6 @@ dependencies = [
  "regex",
  "reqwest 0.12.24",
  "rust_decimal",
- "rust_decimal_macros",
  "rustls 0.23.35",
  "semver",
  "serde",
@@ -11137,6 +11151,7 @@ dependencies = [
  "tower-http 0.3.5",
  "tracing",
  "tracing-appender",
+ "tracing-ext",
  "tracing-subscriber",
  "typeshare",
  "url",
@@ -11153,6 +11168,7 @@ version = "3.3.7"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
+ "bitcoin-wallet",
  "comfy-table",
  "libp2p",
  "monero-rpc-pool",
@@ -11210,8 +11226,9 @@ dependencies = [
  "bitcoin-wallet",
  "curve25519-dalek-ng",
  "ecdsa_fun",
- "electrum-pool",
+ "futures",
  "monero",
+ "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rust_decimal",
@@ -11220,10 +11237,12 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "swap-env",
+ "swap-proptest",
  "swap-serde",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "tracing-ext",
  "typeshare",
  "uuid",
 ]
@@ -11314,6 +11333,7 @@ dependencies = [
  "swap-env",
  "swap-serde",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
  "uuid",
 ]
@@ -13617,6 +13637,14 @@ checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-ext"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
