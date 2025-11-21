@@ -990,7 +990,6 @@ pub async fn buy_xmr(
     let monero_wallet = context.try_get_monero_manager().await?;
 
     let env_config = config.env_config;
-    let seed = config.seed.clone().context("Could not get seed")?;
 
     // Prepare variables for the quote fetching process
     let tor_client = context.tor_client.read().await.clone();
@@ -1164,7 +1163,6 @@ pub async fn resume_swap(
     let config = context.try_get_config().await?;
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
     let monero_manager = context.try_get_monero_manager().await?;
-    let tor_client = context.tor_client.read().await.clone();
 
     let seller_peer_id = db.get_peer_id(swap_id).await?;
     let seller_addresses = db.get_addresses(seller_peer_id).await?;

@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::EncryptedSignature;
 use swap_p2p::protocols::redial;
+use tracing::Instrument;
 use uuid::Uuid;
 
 // Timeout for the execution setup protocol within the event loop.
@@ -53,6 +54,7 @@ pub struct EventLoop {
             Uuid,
             PeerId,
             bmrng::unbounded::UnboundedRequestSender<monero::TransferProof, ()>,
+            tracing::Span,
         ),
         (),
     >,
@@ -61,27 +63,32 @@ pub struct EventLoop {
         (
             PeerId,
             bmrng::unbounded::UnboundedRequestSender<monero::TransferProof, ()>,
+            tracing::Span,
         ),
     >,
 
     // These streams represents outgoing requests that we have to make (queues)
     //
     // Requests are keyed by the PeerId because they do not correspond to an existing swap yet
-    quote_requests:
-        bmrng::unbounded::UnboundedRequestReceiverStream<PeerId, Result<BidQuote, OutboundFailure>>,
+    quote_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
+        (PeerId, tracing::Span),
+        Result<BidQuote, OutboundFailure>,
+    >,
     // TODO: technically NewSwap.swap_id already contains the id of the swap
-    execution_setup_requests:
-        bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, NewSwap), Result<State2>>,
+    execution_setup_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
+        (PeerId, NewSwap, tracing::Span),
+        Result<State2>,
+    >,
 
     // These streams represents outgoing requests that we have to make (queues)
     //
     // Requests are keyed by the swap_id because they correspond to a specific swap
     cooperative_xmr_redeem_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
-        (PeerId, Uuid),
+        (PeerId, Uuid, tracing::Span),
         Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>,
     >,
     encrypted_signatures_requests: bmrng::unbounded::UnboundedRequestReceiverStream<
-        (PeerId, Uuid, EncryptedSignature),
+        (PeerId, Uuid, EncryptedSignature, tracing::Span),
         Result<(), OutboundFailure>,
     >,
 
@@ -91,19 +98,33 @@ pub struct EventLoop {
     // response.
     inflight_quote_requests: HashMap<
         OutboundRequestId,
-        bmrng::unbounded::UnboundedResponder<Result<BidQuote, OutboundFailure>>,
+        (
+            bmrng::unbounded::UnboundedResponder<Result<BidQuote, OutboundFailure>>,
+            tracing::Span,
+        ),
     >,
     inflight_encrypted_signature_requests: HashMap<
         OutboundRequestId,
-        bmrng::unbounded::UnboundedResponder<Result<(), OutboundFailure>>,
+        (
+            bmrng::unbounded::UnboundedResponder<Result<(), OutboundFailure>>,
+            tracing::Span,
+        ),
     >,
-    inflight_swap_setup:
-        HashMap<(PeerId, Uuid), bmrng::unbounded::UnboundedResponder<Result<State2>>>,
+    inflight_swap_setup: HashMap<
+        (PeerId, Uuid),
+        (
+            bmrng::unbounded::UnboundedResponder<Result<State2>>,
+            tracing::Span,
+        ),
+    >,
     inflight_cooperative_xmr_redeem_requests: HashMap<
         OutboundRequestId,
-        bmrng::unbounded::UnboundedResponder<
-            Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>,
-        >,
+        (
+            bmrng::unbounded::UnboundedResponder<
+                Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>,
+            >,
+            tracing::Span,
+        ),
     >,
 
     /// The future representing the successful handling of an incoming transfer proof (by the state machine)
@@ -182,22 +203,26 @@ impl EventLoop {
                 swarm_event = self.swarm.select_next_some() => {
                     match swarm_event {
                         SwarmEvent::Behaviour(OutEvent::QuoteReceived { id, response }) => {
-                            tracing::trace!(
-                                %id,
-                                "Received quote"
-                            );
+                            if let Some((responder, span)) = self.inflight_quote_requests.remove(&id) {
+                                let _span_guard = span.enter();
 
-                            if let Some(responder) = self.inflight_quote_requests.remove(&id) {
+                                tracing::trace!(
+                                    %id,
+                                    "Received quote"
+                                );
+
                                 let _ = responder.respond(Ok(response));
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted { peer, swap_id, result }) => {
-                            tracing::trace!(
-                                %peer,
-                                "Processing swap setup completion"
-                            );
+                            if let Some((responder, span)) = self.inflight_swap_setup.remove(&(peer, swap_id)) {
+                                let _span_guard = span.enter();
 
-                            if let Some(responder) = self.inflight_swap_setup.remove(&(peer, swap_id)) {
+                                tracing::trace!(
+                                    %peer,
+                                    "Processing swap setup completion"
+                                );
+
                                 let _ = responder.respond(*result);
                             }
                         }
@@ -211,7 +236,7 @@ impl EventLoop {
                             let swap_id = msg.swap_id;
 
                             // Check if we have a registered handler for this swap
-                            if let Some((expected_peer_id, sender)) = self.registered_swap_handlers.get(&swap_id) {
+                            if let Some((expected_peer_id, sender, _)) = self.registered_swap_handlers.get(&swap_id) {
                                 // Ensure the transfer proof is coming from the expected peer
                                 if peer != *expected_peer_id {
                                     tracing::warn!(
@@ -282,38 +307,53 @@ impl EventLoop {
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::EncryptedSignatureAcknowledged { id }) => {
-                            if let Some(responder) = self.inflight_encrypted_signature_requests.remove(&id) {
+                            if let Some((responder, span)) = self.inflight_encrypted_signature_requests.remove(&id) {
+                                let _span_guard = span.enter();
                                 let _ = responder.respond(Ok(()));
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemFulfilled { id, swap_id, s_a, lock_transfer_proof }) => {
-                            if let Some(responder) = self.inflight_cooperative_xmr_redeem_requests.remove(&id) {
+                            if let Some((responder, span)) = self.inflight_cooperative_xmr_redeem_requests.remove(&id) {
+                                let _span_guard = span.enter();
                                 let _ = responder.respond(Ok(Response::Fullfilled { s_a, swap_id, lock_transfer_proof }));
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemRejected { id, swap_id, reason }) => {
-                            if let Some(responder) = self.inflight_cooperative_xmr_redeem_requests.remove(&id) {
+                            if let Some((responder, span)) = self.inflight_cooperative_xmr_redeem_requests.remove(&id) {
+                                let _span_guard = span.enter();
                                 let _ = responder.respond(Ok(Response::Rejected { reason, swap_id }));
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::Failure { peer, error }) => {
+                            let span = self.get_peer_span(peer);
+                            let _span_guard = span.enter();
                             tracing::warn!(%peer, err = ?error, "Communication error");
                             return;
                         }
-                        SwarmEvent::ConnectionEstablished { peer_id: _, endpoint, .. } => {
-                            tracing::info!(peer_id = %endpoint.get_remote_address(), "Connected to peer");
+                        SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+                            let span = self.get_peer_span(peer_id);
+                            let _span_guard = span.enter();
+                            tracing::info!(%peer_id, peer_addr = %endpoint.get_remote_address(), "Connected to peer");
                         }
                         SwarmEvent::Dialing { peer_id: Some(peer_id), connection_id } => {
+                            let span = self.get_peer_span(peer_id);
+                            let _span_guard = span.enter();
                             tracing::debug!(%peer_id, %connection_id, "Dialing peer");
                         }
-                        SwarmEvent::ConnectionClosed { peer_id: _, endpoint, num_established, cause: Some(error), connection_id } if num_established == 0 => {
-                            tracing::warn!(peer_id = %endpoint.get_remote_address(), cause = ?error, %connection_id, "Lost connection to peer");
+                        SwarmEvent::ConnectionClosed { peer_id, num_established, cause: Some(error), connection_id, endpoint } if num_established == 0 => {
+                            let span = self.get_peer_span(peer_id);
+                            let _span_guard = span.enter();
+                            tracing::warn!(%peer_id, peer_addr = %endpoint.get_remote_address(), cause = ?error, %connection_id, "Lost connection to peer");
                         }
                         SwarmEvent::ConnectionClosed { peer_id, num_established, cause: None, .. } if num_established == 0 => {
                             // no error means the disconnection was requested
+                            let span = self.get_peer_span(peer_id);
+                            let _span_guard = span.enter();
                             tracing::info!(%peer_id, "Successfully closed connection to peer");
                         }
                         SwarmEvent::OutgoingConnectionError { peer_id: Some(peer_id),  error, connection_id } => {
+                            let span = self.get_peer_span(peer_id);
+                            let _span_guard = span.enter();
                             tracing::warn!(%peer_id, %connection_id, ?error, "Outgoing connection error to peer");
                         }
                         SwarmEvent::Behaviour(OutEvent::OutboundRequestResponseFailure {peer, error, request_id, protocol}) => {
@@ -328,19 +368,22 @@ impl EventLoop {
                             // We will remove the responder from the inflight requests and respond with an error
 
                             // Check for encrypted signature requests
-                            if let Some(responder) = self.inflight_encrypted_signature_requests.remove(&request_id) {
+                            if let Some((responder, span)) = self.inflight_encrypted_signature_requests.remove(&request_id) {
+                                let _span_guard = span.enter();
                                 let _ = responder.respond(Err(error));
                                 continue;
                             }
 
                             // Check for quote requests
-                            if let Some(responder) = self.inflight_quote_requests.remove(&request_id) {
+                            if let Some((responder, span)) = self.inflight_quote_requests.remove(&request_id) {
+                                let _span_guard = span.enter();
                                 let _ = responder.respond(Err(error));
                                 continue;
                             }
 
                             // Check for cooperative xmr redeem requests
-                            if let Some(responder) = self.inflight_cooperative_xmr_redeem_requests.remove(&request_id) {
+                            if let Some((responder, span)) = self.inflight_cooperative_xmr_redeem_requests.remove(&request_id) {
+                                let _span_guard = span.enter();
                                 let _ = responder.respond(Err(error));
                                 continue;
                             }
@@ -373,9 +416,11 @@ impl EventLoop {
                 },
 
                 // Handle to-be-sent outgoing requests for all our network protocols.
-                Some((peer_id, responder)) = self.quote_requests.next().fuse() => {
+                Some(((peer_id, span), responder)) = self.quote_requests.next().fuse() => {
+                    let _span_guard = span.enter();
+
                     let outbound_request_id = self.swarm.behaviour_mut().direct_quote.send_request(&peer_id, ());
-                    self.inflight_quote_requests.insert(outbound_request_id, responder);
+                    self.inflight_quote_requests.insert(outbound_request_id, (responder, span.clone()));
 
                     tracing::trace!(
                         %peer_id,
@@ -383,14 +428,16 @@ impl EventLoop {
                         "Dispatching outgoing quote request"
                     );
                 },
-                Some(((peer_id, swap_id, tx_redeem_encsig), responder)) = self.encrypted_signatures_requests.next().fuse() => {
+                Some(((peer_id, swap_id, tx_redeem_encsig, span), responder)) = self.encrypted_signatures_requests.next().fuse() => {
+                    let _span_guard = span.enter();
+
                     let request = encrypted_signature::Request {
                         swap_id,
                         tx_redeem_encsig
                     };
 
                     let outbound_request_id = self.swarm.behaviour_mut().encrypted_signature.send_request(&peer_id, request);
-                    self.inflight_encrypted_signature_requests.insert(outbound_request_id, responder);
+                    self.inflight_encrypted_signature_requests.insert(outbound_request_id, (responder, span.clone()));
 
                     tracing::trace!(
                         %peer_id,
@@ -399,11 +446,13 @@ impl EventLoop {
                         "Dispatching outgoing encrypted signature"
                     );
                 },
-                Some(((peer_id, swap_id), responder)) = self.cooperative_xmr_redeem_requests.next().fuse() => {
+                Some(((peer_id, swap_id, span), responder)) = self.cooperative_xmr_redeem_requests.next().fuse() => {
+                    let _span_guard = span.enter();
+
                     let outbound_request_id = self.swarm.behaviour_mut().cooperative_xmr_redeem.send_request(&peer_id, Request {
                         swap_id
                     });
-                    self.inflight_cooperative_xmr_redeem_requests.insert(outbound_request_id, responder);
+                    self.inflight_cooperative_xmr_redeem_requests.insert(outbound_request_id, (responder, span.clone()));
 
                     tracing::trace!(
                         %peer_id,
@@ -415,12 +464,21 @@ impl EventLoop {
 
                 // Instruct the swap setup behaviour to do a swap setup request
                 // The behaviour will instruct the swarm to dial Alice, so we don't need to check if we are connected
-                Some(((alice_peer_id, swap), responder)) = self.execution_setup_requests.next().fuse() => {
+                Some(((alice_peer_id, swap, span), responder)) = self.execution_setup_requests.next().fuse() => {
                     let swap_id = swap.swap_id.clone();
 
-                    self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
-                    self.inflight_swap_setup.insert((alice_peer_id, swap_id), responder);
+                    // We await the start of the swap setup
+                    // We use an async block to instrument the future, but we don't use `move`
+                    // so `self` is borrowed, not moved.
+                    async {
+                        self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
+                    }
+                    .instrument(span.clone())
+                    .await;
 
+                    self.inflight_swap_setup.insert((alice_peer_id, swap_id), (responder, span.clone()));
+
+                    let _guard = span.enter();
                     tracing::trace!(
                         %alice_peer_id,
                         "Dispatching outgoing execution setup request"
@@ -442,11 +500,12 @@ impl EventLoop {
                     }
                 },
 
-                Some(((swap_id, peer_id, sender), responder)) = self.queued_swap_handlers.next().fuse() => {
+                Some(((swap_id, peer_id, sender, span), responder)) = self.queued_swap_handlers.next().fuse() => {
+                    let _guard = span.enter();
                     tracing::trace!(%swap_id, %peer_id, "Registering swap handle for a swap internally inside the event loop");
 
                     // This registers the swap_id -> peer_id and swap_id -> transfer_proof_sender
-                    self.registered_swap_handlers.insert(swap_id, (peer_id, sender));
+                    self.registered_swap_handlers.insert(swap_id, (peer_id, sender, span.clone()));
 
                     // Instruct the swarm to contineously redial the peer
                     // TODO: We must remove it again once the swap is complete, otherwise we will redial indefinitely
@@ -464,6 +523,17 @@ impl EventLoop {
             }
         }
     }
+
+    fn get_peer_span(&self, peer_id: PeerId) -> tracing::Span {
+        let span = tracing::debug_span!("peer_context", %peer_id);
+
+        for (peer, _, s) in self.registered_swap_handlers.values() {
+            if *peer == peer_id {
+                span.follows_from(s);
+            }
+        }
+        span
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -473,14 +543,14 @@ pub struct EventLoopHandle {
     /// 2. Return the resulting State2 if successful
     /// 3. Return an anyhow error if the request fails
     execution_setup_sender:
-        bmrng::unbounded::UnboundedRequestSender<(PeerId, NewSwap), Result<State2>>,
+        bmrng::unbounded::UnboundedRequestSender<(PeerId, NewSwap, tracing::Span), Result<State2>>,
 
     /// When a (PeerId, Uuid, EncryptedSignature) tuple is sent into this channel, the EventLoop will:
     /// 1. Send the encrypted signature to the specified peer over the network
     /// 2. Return Ok(()) if the peer acknowledges receipt, or
     /// 3. Return an OutboundFailure error if the request fails
     encrypted_signature_sender: bmrng::unbounded::UnboundedRequestSender<
-        (PeerId, Uuid, EncryptedSignature),
+        (PeerId, Uuid, EncryptedSignature, tracing::Span),
         Result<(), OutboundFailure>,
     >,
 
@@ -488,8 +558,10 @@ pub struct EventLoopHandle {
     /// 1. Request a price quote from the specified peer
     /// 2. Return the quote if successful
     /// 3. Return an OutboundFailure error if the request fails
-    quote_sender:
-        bmrng::unbounded::UnboundedRequestSender<PeerId, Result<BidQuote, OutboundFailure>>,
+    quote_sender: bmrng::unbounded::UnboundedRequestSender<
+        (PeerId, tracing::Span),
+        Result<BidQuote, OutboundFailure>,
+    >,
 
     /// When a (PeerId, Uuid) tuple is sent into this channel, the EventLoop will:
     /// 1. Request the specified peer's cooperation in redeeming the Monero for the given swap
@@ -497,7 +569,7 @@ pub struct EventLoopHandle {
     ///    The Fullfilled object contains the keys required to redeem the Monero
     /// 3. Return an OutboundFailure error if the network request fails
     cooperative_xmr_redeem_sender: bmrng::unbounded::UnboundedRequestSender<
-        (PeerId, Uuid),
+        (PeerId, Uuid, tracing::Span),
         Result<cooperative_xmr_redeem_after_punish::Response, OutboundFailure>,
     >,
 
@@ -506,6 +578,7 @@ pub struct EventLoopHandle {
             Uuid,
             PeerId,
             bmrng::unbounded::UnboundedRequestSender<monero::TransferProof, ()>,
+            tracing::Span,
         ),
         (),
     >,
@@ -549,13 +622,14 @@ impl EventLoopHandle {
         //
         // The sender is stored in the `EventLoop`. The receiver is stored in the `SwapEventLoopHandle`.
         let (transfer_proof_sender, transfer_proof_receiver) = bmrng::unbounded_channel();
+        let span = tracing::Span::current();
 
         // Register this sender in the `EventLoop`
         // It is put into the queue and then later moved into `registered_transfer_proof_senders`
         //
         // We use `send(...) instead of send_receive(...)` because the event loop needs to be running for this to respond
         self.queued_transfer_proof_sender
-            .send((swap_id, peer_id, transfer_proof_sender))
+            .send((swap_id, peer_id, transfer_proof_sender, span))
             .context("Failed to queue transfer proof sender into event loop")?;
 
         Ok(SwapEventLoopHandle {
@@ -570,13 +644,14 @@ impl EventLoopHandle {
     ///
     /// This will retry until the maximum elapsed time is reached. It is therefore fallible.
     pub async fn setup_swap(&mut self, peer_id: PeerId, swap: NewSwap) -> Result<State2> {
+        let span = tracing::Span::current();
         tracing::debug!(swap = ?swap, %peer_id, "Sending swap setup request");
 
         let backoff =
             retry::give_up_eventually(RETRY_MAX_INTERVAL, EXECUTION_SETUP_MAX_ELAPSED_TIME);
 
         backoff::future::retry_notify(backoff, || async {
-            match self.execution_setup_sender.send_receive((peer_id, swap.clone())).await {
+            match self.execution_setup_sender.send_receive((peer_id, swap.clone(), span.clone())).await {
                 Ok(Ok(state2)) => {
                     Ok(state2)
                 }
@@ -617,8 +692,9 @@ impl EventLoopHandle {
             REQUEST_RESPONSE_PROTOCOL_RETRY_MAX_ELASPED_TIME,
         );
 
+        let span = tracing::Span::current();
         backoff::future::retry_notify(backoff, || async {
-            match self.quote_sender.send_receive(peer_id).await {
+            match self.quote_sender.send_receive((peer_id, span.clone())).await {
                 Ok(Ok(quote)) => Ok(quote),
                 Ok(Err(err)) => {
                     Err(backoff::Error::transient(anyhow!(err).context("A network error occurred while requesting a quote")))
@@ -646,6 +722,7 @@ impl EventLoopHandle {
         peer_id: PeerId,
         swap_id: Uuid,
     ) -> Result<Response> {
+        let span = tracing::Span::current();
         tracing::debug!(%peer_id, %swap_id, "Requesting cooperative XMR redeem");
 
         // We want to give up eventually here
@@ -655,7 +732,7 @@ impl EventLoopHandle {
         );
 
         backoff::future::retry_notify(backoff, || async {
-            match self.cooperative_xmr_redeem_sender.send_receive((peer_id, swap_id)).await {
+            match self.cooperative_xmr_redeem_sender.send_receive((peer_id, swap_id, span.clone())).await {
                 Ok(Ok(response)) => Ok(response),
                 Ok(Err(err)) => {
                     Err(backoff::Error::transient(anyhow!(err).context("A network error occurred while requesting cooperative XMR redeem")))
@@ -684,13 +761,14 @@ impl EventLoopHandle {
         swap_id: Uuid,
         tx_redeem_encsig: EncryptedSignature,
     ) -> () {
+        let span = tracing::Span::current();
         tracing::debug!(%peer_id, %swap_id, "Sending encrypted signature");
 
         // We will retry indefinitely until we succeed
         let backoff = retry::never_give_up(RETRY_MAX_INTERVAL);
 
         backoff::future::retry_notify(backoff, || async {
-            match self.encrypted_signature_sender.send_receive((peer_id, swap_id, tx_redeem_encsig.clone())).await {
+            match self.encrypted_signature_sender.send_receive((peer_id, swap_id, tx_redeem_encsig.clone(), span.clone())).await {
                 Ok(Ok(_)) => Ok(()),
                 Ok(Err(err)) => {
                     Err(backoff::Error::transient(anyhow!(err).context("A network error occurred while sending the encrypted signature")))
