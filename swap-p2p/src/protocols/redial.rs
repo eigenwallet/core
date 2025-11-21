@@ -2,7 +2,6 @@ use crate::behaviour_util::{BackoffTracker, ConnectionTracker};
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use backoff::backoff::Backoff;
-use backoff::ExponentialBackoff;
 use libp2p::core::Multiaddr;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{DialError, FromSwarm, NetworkBehaviour, ToSwarm};
@@ -19,7 +18,6 @@ use void::Void;
 /// Note: Make sure that when using this as an inner behaviour for a `NetworkBehaviour` that you
 /// call all the NetworkBehaviour methods (including `handle_pending_outbound_connection`) to ensure
 /// that the addresses are cached correctly.
-// TODO: Allow specifying a min_connection per peer which will instruct this behaviour to maintain multiple connections per peer.
 pub struct Behaviour {
     /// An identifier for this redial behaviour instance (for logging/tracing).
     name: &'static str,
@@ -39,7 +37,6 @@ pub struct Behaviour {
     to_dial: FuturesHashSet<PeerId, ()>,
 
     /// Tracks the current backoff state for each peer.
-    // TODO: We should allow allow different backoff policies for different peers
     backoff: BackoffTracker,
 
     /// A queue of events to be sent to the swarm.
@@ -56,7 +53,7 @@ impl Behaviour {
             backoff: BackoffTracker::new(
                 interval,
                 max_interval,
-                ExponentialBackoff::default().multiplier,
+                crate::defaults::BACKOFF_MULTIPLIER,
             ),
             to_swarm: VecDeque::new(),
             name,

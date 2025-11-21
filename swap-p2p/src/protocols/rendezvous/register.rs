@@ -90,7 +90,7 @@ impl Behaviour {
         let backoffs = BackoffTracker::new(
             crate::defaults::RENDEZVOUS_RETRY_INITIAL_INTERVAL,
             crate::defaults::RENDEZVOUS_RETRY_MAX_INTERVAL,
-            1.1f64,
+            crate::defaults::BACKOFF_MULTIPLIER,
         );
 
         let mut redial = redial::Behaviour::new(

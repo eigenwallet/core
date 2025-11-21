@@ -3,6 +3,8 @@ use std::time::Duration;
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(7200); // 2 hours
 
+pub const BACKOFF_MULTIPLIER: f64 = 1.5;
+
 // Redial
 pub const REDIAL_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
 pub const REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(10);
@@ -14,7 +16,6 @@ pub const RENDEZVOUS_REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(60);
 pub const DISCOVERY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
 pub const DISCOVERY_MAX_INTERVAL: Duration = Duration::from_secs(60 * 3);
 pub const DISCOVERY_INTERVAL: Duration = Duration::from_secs(10);
-pub const DISCOVERY_MULTIPLIER: f64 = 1.5;
 
 // Rendezvous register
 pub const RENDEZVOUS_RETRY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);

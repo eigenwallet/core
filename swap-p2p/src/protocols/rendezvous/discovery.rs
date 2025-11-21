@@ -70,7 +70,7 @@ impl Behaviour {
         let backoff = BackoffTracker::new(
             crate::defaults::DISCOVERY_INITIAL_INTERVAL,
             crate::defaults::DISCOVERY_MAX_INTERVAL,
-            crate::defaults::DISCOVERY_MULTIPLIER,
+            crate::defaults::BACKOFF_MULTIPLIER,
         );
         let mut to_discover = FuturesHashSet::new();
 

@@ -65,7 +65,7 @@ impl Behaviour {
             backoff: BackoffTracker::new(
                 crate::defaults::QUOTE_REDIAL_INTERVAL,
                 crate::defaults::QUOTE_REDIAL_MAX_INTERVAL,
-                1.5,
+                crate::defaults::BACKOFF_MULTIPLIER,
             ),
             to_swarm: VecDeque::new(),
         }
