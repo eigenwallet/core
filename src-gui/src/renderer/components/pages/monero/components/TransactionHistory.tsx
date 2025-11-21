@@ -2,6 +2,7 @@ import { Typography, Box, Paper } from "@mui/material";
 import { TransactionInfo } from "models/tauriModel";
 import _ from "lodash";
 import dayjs from "dayjs";
+import { useMemo, memo } from "react";
 import TransactionItem from "./TransactionItem";
 
 interface TransactionHistoryProps {
@@ -17,9 +18,7 @@ interface TransactionGroup {
 }
 
 // Component for displaying transaction history
-export default function TransactionHistory({
-  history,
-}: TransactionHistoryProps) {
+function TransactionHistory({ history }: TransactionHistoryProps) {
   if (!history || !history.transactions || history.transactions.length === 0) {
     return <Typography variant="h5">Transactions</Typography>;
   }
@@ -27,15 +26,20 @@ export default function TransactionHistory({
   const transactions = history.transactions;
 
   // Group transactions by date using dayjs and lodash
-  const transactionGroups: TransactionGroup[] = _(transactions)
-    .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD")) // Convert Unix timestamp to date string
-    .map((txs, dateKey) => ({
-      date: dateKey,
-      displayDate: dayjs(dateKey).format("MMMM D, YYYY"), // Human-readable format
-      transactions: _.orderBy(txs, ["timestamp"], ["desc"]), // Sort transactions within group by newest first
-    }))
-    .orderBy(["date"], ["desc"]) // Sort groups by newest date first
-    .value();
+  // Memoize this expensive computation to avoid recalculating on every render
+  const transactionGroups: TransactionGroup[] = useMemo(
+    () =>
+      _(transactions)
+        .groupBy((tx) => dayjs(tx.timestamp * 1000).format("YYYY-MM-DD")) // Convert Unix timestamp to date string
+        .map((txs, dateKey) => ({
+          date: dateKey,
+          displayDate: dayjs(dateKey).format("MMMM D, YYYY"), // Human-readable format
+          transactions: _.orderBy(txs, ["timestamp"], ["desc"]), // Sort transactions within group by newest first
+        }))
+        .orderBy(["date"], ["desc"]) // Sort groups by newest date first
+        .value(),
+    [transactions]
+  );
 
   return (
     <Box>
@@ -59,3 +63,6 @@ export default function TransactionHistory({
     </Box>
   );
 }
+
+// Memoize to prevent re-renders when parent re-renders due to syncProgress updates
+export default memo(TransactionHistory);
