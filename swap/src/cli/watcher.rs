@@ -69,9 +69,11 @@ impl Watcher {
             .balance()
             .await
             .context("Failed to fetch Bitcoin balance, retrying later")?;
+        let new_history = self.wallet.history().await;
 
         // Emit a balance update event
-        self.tauri.emit_balance_update_event(new_balance);
+        self.tauri
+            .emit_balance_update_event(new_balance, new_history);
 
         // Fetch current transactions and timelocks
         let current_swaps = self

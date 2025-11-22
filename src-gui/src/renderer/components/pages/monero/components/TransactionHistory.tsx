@@ -5,9 +5,8 @@ import dayjs from "dayjs";
 import TransactionItem from "./TransactionItem";
 
 interface TransactionHistoryProps {
-  history: {
-    transactions: TransactionInfo[];
-  } | null;
+  transactions: TransactionInfo[] | null;
+  currency: "monero" | "bitcoin";
 }
 
 interface TransactionGroup {
@@ -18,13 +17,12 @@ interface TransactionGroup {
 
 // Component for displaying transaction history
 export default function TransactionHistory({
-  history,
+  transactions,
+  currency,
 }: TransactionHistoryProps) {
-  if (!history || !history.transactions || history.transactions.length === 0) {
+  if (!transactions || transactions.length === 0) {
     return <Typography variant="h5">Transactions</Typography>;
   }
-
-  const transactions = history.transactions;
 
   // Group transactions by date using dayjs and lodash
   const transactionGroups: TransactionGroup[] = _(transactions)
@@ -50,7 +48,11 @@ export default function TransactionHistory({
             </Typography>
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {group.transactions.map((tx) => (
-                <TransactionItem key={tx.tx_hash} transaction={tx} />
+                <TransactionItem
+                  currency={currency}
+                  key={tx.tx_hash}
+                  transaction={tx}
+                />
               ))}
             </Box>
           </Box>

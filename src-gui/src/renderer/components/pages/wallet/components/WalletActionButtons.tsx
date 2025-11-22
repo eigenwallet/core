@@ -2,16 +2,21 @@ import { Box, Chip } from "@mui/material";
 import { Send as SendIcon } from "@mui/icons-material";
 import { useState } from "react";
 import { useAppSelector } from "store/hooks";
-import WithdrawDialog from "../../../modal/wallet/WithdrawDialog";
 import WalletDescriptorButton from "./WalletDescriptorButton";
+import SendTransactionModal from "../../monero/SendTransactionModal";
 
 export default function WalletActionButtons() {
-  const [showDialog, setShowDialog] = useState(false);
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const balance = useAppSelector((state) => state.bitcoinWallet.balance);
 
   return (
     <>
-      <WithdrawDialog open={showDialog} onClose={() => setShowDialog(false)} />
+      <SendTransactionModal
+        wallet="bitcoin"
+        unlocked_balance={balance!}
+        open={sendDialogOpen}
+        onClose={() => setSendDialogOpen(false)}
+      />
       <Box sx={{ display: "flex", justifyContent: "space-between" }}>
         <Box
           sx={{
@@ -23,10 +28,10 @@ export default function WalletActionButtons() {
         >
           <Chip
             icon={<SendIcon />}
-            label="Sweep"
+            label="Send"
             variant="button"
             clickable
-            onClick={() => setShowDialog(true)}
+            onClick={() => setSendDialogOpen(true)}
             disabled={balance === null || balance <= 0}
           />
           <WalletDescriptorButton />

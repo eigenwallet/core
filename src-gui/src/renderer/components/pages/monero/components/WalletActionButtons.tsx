@@ -33,12 +33,11 @@ import DfxButton from "./DFXWidget";
 import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
+  GetMoneroBalanceResponse,
 } from "models/tauriModel";
 
 interface WalletActionButtonsProps {
-  balance: {
-    unlocked_balance: string;
-  };
+  balance: GetMoneroBalanceResponse;
 }
 
 export default function WalletActionButtons({
@@ -75,7 +74,8 @@ export default function WalletActionButtons({
       />
       <SeedPhraseModal onClose={() => setSeedPhrase(null)} seed={seedPhrase} />
       <SendTransactionModal
-        balance={balance}
+        wallet="monero"
+        unlocked_balance={balance.unlocked_balance}
         open={sendDialogOpen}
         onClose={() => setSendDialogOpen(false)}
       />
@@ -94,6 +94,7 @@ export default function WalletActionButtons({
             variant="button"
             clickable
             onClick={() => setSendDialogOpen(true)}
+            disabled={!balance || balance.unlocked_balance <= 0}
           />
           <Chip
             onClick={() => navigate("/swap")}

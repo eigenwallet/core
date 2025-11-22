@@ -7,6 +7,7 @@ import {
   TauriBackgroundProgress,
   TauriSwapProgressEvent,
   SendMoneroDetails,
+  WithdrawBitcoinDetails,
   ContextStatus,
   QuoteWithAddress,
   ExportBitcoinWalletResponse,
@@ -319,6 +320,10 @@ export type PendingSendMoneroApprovalRequest = PendingApprovalRequest & {
   request: { type: "SendMonero"; content: SendMoneroDetails };
 };
 
+export type PendingWithdrawBitcoinApprovalRequest = PendingApprovalRequest & {
+  request: { type: "WithdrawBitcoin"; content: WithdrawBitcoinDetails };
+};
+
 export type PendingPasswordApprovalRequest = PendingApprovalRequest & {
   request: { type: "PasswordRequest"; content: { wallet_path: string } };
 };
@@ -335,16 +340,21 @@ export function isPendingSelectMakerApprovalEvent(
   return event.request.type === "SelectMaker";
 }
 
-export function isPendingSendMoneroApprovalEvent(
+export function isPendingSendCurrencyApprovalEvent(
   event: ApprovalRequest,
-): event is PendingSendMoneroApprovalRequest {
+  currency: "monero" | "bitcoin",
+): event is
+  | PendingSendMoneroApprovalRequest
+  | PendingWithdrawBitcoinApprovalRequest {
   // Check if the request is pending
   if (event.request_status.state !== "Pending") {
     return false;
   }
 
+  const type = currency === "monero" ? "SendMonero" : "WithdrawBitcoin";
+
   // Check if the request is a SendMonero request
-  return event.request.type === "SendMonero";
+  return event.request.type === type;
 }
 
 export function isPendingPasswordApprovalEvent(

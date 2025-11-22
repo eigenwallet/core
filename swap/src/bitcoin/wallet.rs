@@ -20,13 +20,14 @@ use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Txid};
-use bitcoin::{Psbt, ScriptBuf, Weight};
+use bitcoin::{OutPoint, Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
 use moka;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -42,6 +43,7 @@ use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
 use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug_span, Instrument};
+use typeshare::typeshare;
 
 /// We allow transaction fees of up to 20% of the transferred amount to ensure
 /// that lock transactions can always be published, even when fees are high.
@@ -49,6 +51,38 @@ const MAX_RELATIVE_TX_FEE: Decimal = dec!(0.20);
 const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
 const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
 const DUST_AMOUNT: Amount = Amount::from_sat(546);
+
+/// Serialisation matches [`monero_sys::TransactionInfo`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct TransactionInfo {
+    pub fee: Amount,
+    pub amount: Amount,
+    #[typeshare(serialized_as = "number")]
+    pub confirmations: u32,
+    pub tx_hash: String,
+    pub direction: TransactionDirection,
+    #[typeshare(serialized_as = "number")]
+    pub timestamp: u64,
+    pub splits: TransactionSplits,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub enum TransactionDirection {
+    // In > Out => break ties for transactions in the same block by sorting incoming transactions first
+    Out,
+    In,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare]
+pub struct TransactionSplits {
+    #[typeshare(serialized_as = "[string, number][]")]
+    inputs: Vec<(String, Amount)>,
+    #[typeshare(serialized_as = "[string, number][]")]
+    outputs: Vec<(String, Amount)>,
+}
 
 /// This is our wrapper around a bdk wallet and a corresponding
 /// bdk electrum client.
@@ -1290,18 +1324,99 @@ where
 
     /// Reveals the next address from the wallet.
     pub async fn new_address(&self) -> Result<Address> {
+        self.new_addresses(1).await.map(|mut a| a.remove(0))
+    }
+
+    pub async fn new_addresses(&self, amount: usize) -> Result<Vec<Address>> {
         let mut wallet = self.wallet.lock().await;
 
-        // Only reveal a new address if absolutely necessary
+        // Only reveal new addresses if absolutely necessary
         // We want to avoid revealing more and more addresses
-        let address = wallet.next_unused_address(KeychainKind::External).address;
+        let mut addresses: Vec<_> = wallet
+            .list_unused_addresses(KeychainKind::External)
+            .map(|a| a.address)
+            .take(amount)
+            .collect();
+        addresses.resize_with(amount, || {
+            wallet.reveal_next_address(KeychainKind::External).address
+        });
 
-        // Important: persist that we revealed a new address.
+        // Important: persist that we revealed new addresses.
         // Otherwise the wallet might reuse it (bad).
         let mut persister = self.persister.lock().await;
         wallet.persist(&mut persister)?;
 
-        Ok(address)
+        Ok(addresses)
+    }
+
+    pub async fn history(&self) -> Vec<TransactionInfo> {
+        let wallet = self.wallet.lock().await;
+        let current_height = wallet.latest_checkpoint().height();
+
+        let mut history: Vec<_> = wallet
+            .transactions()
+            .flat_map(|tx| wallet.tx_details(tx.tx_node.txid))
+            .map(|txd| {
+                let (timestamp, confirmations) = match txd.chain_position {
+                    bdk_chain::ChainPosition::Confirmed { anchor, .. } => (
+                        anchor.confirmation_time,
+                        current_height + 1 - anchor.block_id.height,
+                    ),
+                    bdk_chain::ChainPosition::Unconfirmed {
+                        first_seen,
+                        last_seen,
+                    } => (last_seen.or(first_seen).unwrap_or(0), 0),
+                };
+                TransactionInfo {
+                    fee: txd.fee.unwrap_or(Amount::ZERO),
+                    amount: txd.balance_delta.unsigned_abs(),
+                    confirmations,
+                    tx_hash: txd.txid.to_string(),
+                    direction: match txd.balance_delta.is_positive() {
+                        true => TransactionDirection::In,
+                        false => TransactionDirection::Out,
+                    },
+                    timestamp,
+                    splits: TransactionSplits {
+                        inputs: txd
+                            .tx
+                            .input
+                            .iter()
+                            .map(|i| {
+                                (
+                                    i.previous_output.to_string(),
+                                    wallet
+                                        .get_tx(i.previous_output.txid)
+                                        .and_then(|tx| {
+                                            tx.tx_node
+                                                .tx
+                                                .output
+                                                .get(i.previous_output.vout as usize)
+                                                .map(|txo| txo.value)
+                                        })
+                                        .unwrap_or_default(),
+                                )
+                            })
+                            .collect(),
+                        outputs: txd
+                            .tx
+                            .output
+                            .iter()
+                            .enumerate()
+                            .map(|(vout, o)| {
+                                (OutPoint::new(txd.txid, vout as _).to_string(), o.value)
+                            })
+                            .collect(),
+                    },
+                }
+            })
+            .collect();
+        history.sort_unstable_by(|ti1, ti2| {
+            (ti1.confirmations.cmp(&ti2.confirmations))
+                .then_with(|| ti1.direction.cmp(&ti2.direction))
+                .then_with(|| ti1.tx_hash.cmp(&ti2.tx_hash))
+        });
+        history
     }
 
     /// Builds a partially signed transaction that sends

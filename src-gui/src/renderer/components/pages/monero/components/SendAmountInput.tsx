@@ -2,39 +2,52 @@ import { Box, Button, Card, Grow, Typography } from "@mui/material";
 import NumberInput from "renderer/components/inputs/NumberInput";
 import SwapVertIcon from "@mui/icons-material/SwapVert";
 import { useTheme } from "@mui/material/styles";
-import { piconerosToXmr } from "../../../../../utils/conversionUtils";
-import { MoneroAmount } from "renderer/components/other/Units";
+import {
+  piconerosToXmr,
+  satsToBtc,
+} from "../../../../../utils/conversionUtils";
+import { MoneroAmount, BitcoinAmount } from "renderer/components/other/Units";
 
 interface SendAmountInputProps {
-  balance: {
-    unlocked_balance: string;
-  };
+  unlocked_balance: number;
   amount: string;
   onAmountChange: (amount: string) => void;
   onMaxClicked?: () => void;
   onMaxToggled?: () => void;
   currency: string;
   onCurrencyChange: (currency: string) => void;
+  wallet: "monero" | "bitcoin";
+  walletCurrency: string;
+  walletPrecision: number;
   fiatCurrency: string;
-  xmrPrice: number | null;
+  fiatPrice: number | null;
   showFiatRate: boolean;
   disabled?: boolean;
 }
 
 export default function SendAmountInput({
-  balance,
+  unlocked_balance,
   amount,
   currency,
+  wallet,
+  walletCurrency,
+  walletPrecision,
   onCurrencyChange,
   onAmountChange,
   onMaxClicked,
   onMaxToggled,
   fiatCurrency,
-  xmrPrice,
+  fiatPrice,
   showFiatRate,
   disabled = false,
 }: SendAmountInputProps) {
   const theme = useTheme();
+  const baseunitsToFraction = wallet === "monero" ? piconerosToXmr : satsToBtc;
+  const estFee =
+    wallet === "monero" ? 10000000000 /* 0.01 XMR */ : 10000; /* 0.0001 BTC */
+  const walletStep = wallet === "monero" ? 0.001 : 0.00001;
+  const walletLargeStep = wallet === "monero" ? 0.1 : 0.001;
+  const WalletAmount = wallet === "monero" ? MoneroAmount : BitcoinAmount;
 
   const isMaxSelected = amount === "<MAX>";
 
@@ -48,17 +61,17 @@ export default function SendAmountInput({
       return "0.00";
     }
 
-    if (xmrPrice === null) {
+    if (fiatPrice === null) {
       return "?";
     }
 
     const primaryValue = parseFloat(amount);
-    if (currency === "XMR") {
+    if (currency === walletCurrency) {
       // Primary is XMR, secondary is USD
-      return (primaryValue * xmrPrice).toFixed(2);
+      return (primaryValue * fiatPrice).toFixed(2);
     } else {
       // Primary is USD, secondary is XMR
-      return (primaryValue / xmrPrice).toFixed(3);
+      return (primaryValue / fiatPrice).toFixed(walletPrecision);
     }
   })();
 
@@ -70,21 +83,15 @@ export default function SendAmountInput({
       onMaxClicked();
     } else {
       // Fallback to old behavior if no callback provided
-      if (
-        balance?.unlocked_balance !== undefined &&
-        balance?.unlocked_balance !== null
-      ) {
-        // TODO: We need to use a real fee here and call sweep(...) instead of just subtracting a fixed amount
-        const unlocked = parseFloat(balance.unlocked_balance);
-        const maxAmountXmr = piconerosToXmr(unlocked - 10000000000); // Subtract ~0.01 XMR for fees
+      // TODO: We need to use a real fee here and call sweep(...) instead of just subtracting a fixed amount
+      const maxWalletAmount = baseunitsToFraction(unlocked_balance - estFee); // Subtract ~0.01 XMR/~0.0001 BTC for fees
 
-        if (currency === "XMR") {
-          onAmountChange(Math.max(0, maxAmountXmr).toString());
-        } else if (xmrPrice !== null) {
-          // Convert to USD for display
-          const maxAmountUsd = maxAmountXmr * xmrPrice;
-          onAmountChange(Math.max(0, maxAmountUsd).toString());
-        }
+      if (currency === walletCurrency) {
+        onAmountChange(Math.max(0, maxWalletAmount).toString());
+      } else if (fiatPrice !== null) {
+        // Convert to USD for display
+        const maxAmountUsd = maxWalletAmount * fiatPrice;
+        onAmountChange(Math.max(0, maxAmountUsd).toString());
       }
     }
   };
@@ -98,18 +105,18 @@ export default function SendAmountInput({
 
   const handleCurrencySwap = () => {
     if (!isMaxSelected && !disabled) {
-      onCurrencyChange(currency === "XMR" ? fiatCurrency : "XMR");
+      onCurrencyChange(
+        currency === walletCurrency ? fiatCurrency : walletCurrency,
+      );
     }
   };
 
   const isAmountTooHigh =
     !isMaxSelected &&
-    (currency === "XMR"
-      ? parseFloat(amount) >
-        piconerosToXmr(parseFloat(balance.unlocked_balance))
-      : xmrPrice !== null &&
-        parseFloat(amount) / xmrPrice >
-          piconerosToXmr(parseFloat(balance.unlocked_balance)));
+    (currency === walletCurrency
+      ? parseFloat(amount) > baseunitsToFraction(unlocked_balance)
+      : fiatPrice !== null &&
+        parseFloat(amount) / fiatPrice > baseunitsToFraction(unlocked_balance));
 
   return (
     <Card
@@ -165,12 +172,14 @@ export default function SendAmountInput({
               <NumberInput
                 value={amount}
                 onChange={disabled ? () => {} : onAmountChange}
-                placeholder={currency === "XMR" ? "0.000" : "0.00"}
+                placeholder={(0).toFixed(
+                  currency === walletCurrency ? walletPrecision : 2,
+                )}
                 fontSize="3em"
                 fontWeight={600}
                 minWidth={60}
-                step={currency === "XMR" ? 0.001 : 0.01}
-                largeStep={currency === "XMR" ? 0.1 : 10}
+                step={currency === walletCurrency ? walletStep : 0.01}
+                largeStep={currency === walletCurrency ? walletLargeStep : 10}
               />
               <Typography variant="h4" color="text.secondary">
                 {currency}
@@ -189,7 +198,11 @@ export default function SendAmountInput({
             />
             <Typography color="text.secondary">
               {secondaryAmount}{" "}
-              {isMaxSelected ? "" : currency === "XMR" ? fiatCurrency : "XMR"}
+              {isMaxSelected
+                ? ""
+                : currency === walletCurrency
+                  ? fiatCurrency
+                  : walletCurrency}
             </Typography>
           </Box>
         )}
@@ -209,9 +222,7 @@ export default function SendAmountInput({
       >
         <Typography color="text.secondary">Available</Typography>
         <Typography color="text.primary">
-          <MoneroAmount
-            amount={piconerosToXmr(parseFloat(balance.unlocked_balance))}
-          />
+          <WalletAmount amount={baseunitsToFraction(unlocked_balance)} />
         </Typography>
         <Button
           variant={isMaxSelected ? "contained" : "secondary"}

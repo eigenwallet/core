@@ -9,19 +9,27 @@ import {
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import { resolveApproval } from "renderer/rpc";
-import { usePendingSendMoneroApproval } from "store/hooks";
-import { PiconeroAmount } from "renderer/components/other/Units";
+import { usePendingSendCurrencyApproval } from "store/hooks";
+import { PiconeroAmount, SatsAmount } from "renderer/components/other/Units";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import {
+  PendingSendMoneroApprovalRequest,
+  PendingWithdrawBitcoinApprovalRequest,
+} from "models/tauriModelExt";
 
 interface SendApprovalContentProps {
   onClose: () => void;
+  pendingApprovals: (
+    | PendingSendMoneroApprovalRequest
+    | PendingWithdrawBitcoinApprovalRequest
+  )[];
 }
 
 export default function SendApprovalContent({
   onClose,
+  pendingApprovals,
 }: SendApprovalContentProps) {
-  const pendingApprovals = usePendingSendMoneroApproval();
   const [timeLeft, setTimeLeft] = useState<number>(0);
 
   const approval = pendingApprovals[0]; // Handle the first approval request
@@ -61,13 +69,17 @@ export default function SendApprovalContent({
     return null;
   }
 
+  const isMonero = approval.request.type == "SendMonero";
+  const BaseUnitAmount = isMonero ? PiconeroAmount : SatsAmount;
+  const fixedPrecision = isMonero ? 12 : 8;
+
   const { address, amount, fee } = approval.request.content;
 
   return (
     <>
       <DialogTitle>
         <Typography variant="h6" component="div">
-          Confirm Monero Transfer
+          Confirm {isMonero ? "Monero" : "Bitcoin"} Transfer
         </Typography>
       </DialogTitle>
 
@@ -79,7 +91,7 @@ export default function SendApprovalContent({
               Amount to Send
             </Typography>
             <Typography variant="h6" color="primary">
-              <PiconeroAmount amount={amount} fixedPrecision={12} />
+              <BaseUnitAmount amount={amount} fixedPrecision={fixedPrecision} />
             </Typography>
           </Box>
 
@@ -89,7 +101,7 @@ export default function SendApprovalContent({
               Network Fee
             </Typography>
             <Typography variant="h6" color="text.secondary">
-              <PiconeroAmount amount={fee} fixedPrecision={12} />
+              <BaseUnitAmount amount={fee} fixedPrecision={fixedPrecision} />
             </Typography>
           </Box>
 
