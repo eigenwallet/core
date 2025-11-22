@@ -328,30 +328,6 @@ impl Request for BalanceArgs {
     }
 }
 
-// GetBitcoinAddress
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GetBitcoinAddressArgs;
-
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GetBitcoinAddressResponse {
-    #[typeshare(serialized_as = "string")]
-    #[serde(with = "swap_serde::bitcoin::address_serde")]
-    pub address: bitcoin::Address,
-}
-
-impl Request for GetBitcoinAddressArgs {
-    type Response = GetBitcoinAddressResponse;
-
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let bitcoin_wallet = ctx.try_get_bitcoin_wallet().await?;
-        let address = bitcoin_wallet.new_address().await?;
-
-        Ok(GetBitcoinAddressResponse { address })
-    }
-}
-
 // GetHistory
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]

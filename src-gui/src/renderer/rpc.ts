@@ -16,7 +16,6 @@ import {
   WithdrawBtcResponse,
   GetSwapInfoArgs,
   ExportBitcoinWalletResponse,
-  GetBitcoinAddressResponse,
   CheckMoneroNodeArgs,
   CheckSeedArgs,
   CheckSeedResponse,
@@ -335,14 +334,6 @@ export async function cheapCheckBitcoinBalance() {
   store.dispatch(setBitcoinHistory(response.transactions));
 }
 
-export async function getBitcoinAddress() {
-  const response = await invokeNoArgs<GetBitcoinAddressResponse>(
-    "get_bitcoin_address",
-  );
-
-  return response.address;
-}
-
 export async function getAllSwapInfos() {
   const response =
     await invokeNoArgs<GetSwapInfoResponse[]>("get_swap_infos_all");
@@ -609,7 +600,7 @@ export async function initializeBitcoinWallet() {
   try {
     await Promise.all([
       checkBitcoinBalance(),
-      getBitcoinAddress().then((address) => {
+      generateBitcoinAddresses(1).then(([address]) => {
         store.dispatch(setBitcoinAddress(address));
       }),
     ]);

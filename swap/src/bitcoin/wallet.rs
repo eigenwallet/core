@@ -1327,7 +1327,7 @@ where
 
         // Only reveal new addresses if absolutely necessary
         // We want to avoid revealing more and more addresses
-        let mut addresses = wallet
+        let mut addresses: Vec<_> = wallet
             .list_unused_addresses(KeychainKind::External)
             .map(|a| a.address)
             .take(amount)
