@@ -68,10 +68,11 @@ pub struct TransactionInfo {
 }
 
 #[typeshare]
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum TransactionDirection {
-    In,
+    // In > Out => break ties for transactions in the same block by sorting incoming transactions first
     Out,
+    In,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1322,6 +1323,10 @@ where
     }
 
     /// Reveals the next address from the wallet.
+    pub async fn new_address(&self) -> Result<Address> {
+        self.new_addresses(1).await.map(|mut a| a.remove(0))
+    }
+
     pub async fn new_addresses(&self, amount: usize) -> Result<Vec<Address>> {
         let mut wallet = self.wallet.lock().await;
 
@@ -1342,10 +1347,6 @@ where
         wallet.persist(&mut persister)?;
 
         Ok(addresses)
-    }
-
-    pub async fn new_address(&self) -> Result<Address> {
-        self.new_addresses(1).await.map(|mut a| a.remove(0))
     }
 
     pub async fn history(&self) -> Vec<TransactionInfo> {
@@ -1411,8 +1412,8 @@ where
             })
             .collect();
         history.sort_unstable_by(|ti1, ti2| {
-            ti1.confirmations
-                .cmp(&ti2.confirmations)
+            (ti1.confirmations.cmp(&ti2.confirmations))
+                .then_with(|| ti1.direction.cmp(&ti2.direction))
                 .then_with(|| ti1.tx_hash.cmp(&ti2.tx_hash))
         });
         history
