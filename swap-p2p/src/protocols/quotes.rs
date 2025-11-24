@@ -342,7 +342,9 @@ mod tests {
     #[tokio::test]
     async fn receive_quote_from_alice() {
         // Create the swarm for Bob
-        let mut bob = new_swarm(|_| Behaviour::new());
+        let mut bob = new_swarm(|identity| {
+            Behaviour::new(identify_config(identity, "quotes", "1.0.0"))
+        });
 
         // Create the swarm for Alice
         // Let her listen on a random memory address
@@ -379,7 +381,9 @@ mod tests {
     #[tokio::test]
     async fn receive_does_not_support_protocol_from_alice() {
         // Create the swarm for Bob
-        let mut bob = new_swarm(|_| Behaviour::new());
+        let mut bob = new_swarm(|identity| {
+            Behaviour::new(identify_config(identity, "quotes", "1.0.0"))
+        });
 
         // Use quote::bob() so Alice doesn't support inbound requests
         let mut alice = new_swarm(|_| quote::bob());
@@ -473,5 +477,14 @@ mod tests {
         });
 
         (alice_peer_id, alice_addr, alice_handle)
+    }
+
+    fn identify_config(
+        identity: libp2p::identity::Keypair,
+        protocol: &str,
+        version: &str,
+    ) -> identify::Config {
+        identify::Config::new(format!("/quotes/test/{}", protocol), identity.public())
+            .with_agent_version(format!("{} ({})", protocol, version))
     }
 }
