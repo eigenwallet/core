@@ -7,9 +7,10 @@ async fn main() -> Result<()> {
         tracing_subscriber::fmt().with_env_filter("debug").finish(),
     )?;
 
-    let price_ticker_ws_url_kraken = Url::parse("wss://ws.kraken.com")?;
-    let mut ticker = swap_feed::kraken::connect(price_ticker_ws_url_kraken)
-        .context("Failed to connect to kraken")?;
+    let price_ticker_rest_url_kucoin = Url::parse("https://api.kucoin.com/api/v1/bullet-public")?;
+    let mut ticker =
+        swap_feed::kucoin::connect(price_ticker_rest_url_kucoin, reqwest::Client::new())
+            .context("Failed to connect to kucoin")?;
 
     loop {
         match ticker.wait_for_next_update().await? {

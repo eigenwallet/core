@@ -8,16 +8,13 @@ description = "Price feed functionality for XMR/BTC atomic swaps"
 [lib]
 name = "swap_feed"
 
-[[bin]]
-name = "kraken_ticker"
-path = "src/bin/kraken_ticker.rs"
-
 [dependencies]
 anyhow = { workspace = true }
 backoff = { workspace = true }
 bitcoin = { workspace = true }
 futures = { workspace = true }
 monero = { workspace = true }
+reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
