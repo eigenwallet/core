@@ -39,9 +39,6 @@ pub struct Behaviour {
     /// Allows us to keep connections to specific peers alive
     pub redial: redial::Behaviour,
 
-    /// Identify is used to share supported protocols, addresses and useragents
-    pub identify: identify::Behaviour,
-
     /// Ping behaviour that ensures that the underlying network connection is
     /// still alive. If the ping fails a connection close event will be
     /// emitted that is picked up as swarm event.
@@ -63,7 +60,7 @@ impl Behaviour {
 
         Self {
             direct_quote: quote::bob(),
-            quotes: quotes_cached::Behaviour::new(),
+            quotes: quotes_cached::Behaviour::new(identifyConfig),
 
             discovery: rendezvous::discovery::Behaviour::new(
                 identity,
@@ -78,7 +75,6 @@ impl Behaviour {
 
             redial: redial::Behaviour::new("makers", INITIAL_REDIAL_INTERVAL, MAX_REDIAL_INTERVAL),
             ping: ping::Behaviour::new(pingConfig),
-            identify: identify::Behaviour::new(identifyConfig),
         }
     }
 }

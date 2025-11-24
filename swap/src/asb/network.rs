@@ -93,7 +93,7 @@ pub mod transport {
 
 pub mod behaviour {
     use libp2p::{identify, identity, ping, swarm::behaviour::toggle::Toggle};
-    use swap_p2p::out_event::alice::OutEvent;
+    use swap_p2p::{out_event::alice::OutEvent, patches};
 
     use super::{rendezvous::register, *};
 
@@ -111,7 +111,7 @@ pub mod behaviour {
         pub transfer_proof: transfer_proof::Behaviour,
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
-        pub identify: identify::Behaviour,
+        pub identify: patches::identify::Behaviour,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -165,7 +165,7 @@ pub mod behaviour {
                 encrypted_signature: encrypted_signature::alice(),
                 cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(),
                 ping: ping::Behaviour::new(pingConfig),
-                identify: identify::Behaviour::new(identifyConfig),
+                identify: patches::identify::Behaviour::new(identifyConfig),
             }
         }
     }

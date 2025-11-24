@@ -194,6 +194,7 @@ impl NetworkBehaviour for Behaviour {
 
         // Forward any peers that we want to dial to the Swarm
         if let Some(peer) = self.to_dial.pop_front() {
+            // TODO: We need to redial here!!
             tracing::trace!(
                 peer = %peer,
                 "Instructing swarm to dial a new connection handler for a swap setup request",
@@ -234,6 +235,7 @@ impl NetworkBehaviour for Behaviour {
             let mut remaining = std::collections::VecDeque::new();
             for (peer, swap_id, new_swap) in new_swaps.drain(..) {
                 if let Some(connection_id) =
+                // TODO: A connection handler can be used multiple times!!! This will prevent us from using it again!
                     connection_handlers.entry(peer).or_default().0.pop_front()
                 {
                     assigned_unnotified_swaps.push_back((connection_id, peer, swap_id, new_swap));
@@ -310,13 +312,14 @@ impl NetworkBehaviour for Behaviour {
 
 type OutboundStream = BoxFuture<'static, Result<State2, Error>>;
 
+// TODO: A single connection handler can be used multiple times!!!
 pub struct Handler {
     outbound_stream: OptionFuture<OutboundStream>,
     env_config: env::Config,
     timeout: Duration,
     new_swaps: VecDeque<NewSwap>,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
-    keep_alive: bool,
+    keep_alive: bool, // TODO:; This needs to be a little bit more granular to support multiple swaps on the same connection (differnet substreams)
 }
 
 impl Handler {

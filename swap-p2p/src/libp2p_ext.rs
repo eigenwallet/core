@@ -7,6 +7,7 @@ use std::str::FromStr;
 pub trait MultiAddrExt {
     fn extract_peer_id(&self) -> Option<PeerId>;
     fn split_peer_id(&self) -> Option<(PeerId, Multiaddr)>;
+    fn is_local(&self) -> bool;
 }
 
 impl MultiAddrExt for Multiaddr {
@@ -23,6 +24,25 @@ impl MultiAddrExt for Multiaddr {
         let peer_id = self.extract_peer_id()?;
         let address = self.clone();
         Some((peer_id, address))
+    }
+
+    // Returns true if the multi address contains a local address which should not be advertised to the global internet
+    fn is_local(&self) -> bool {
+        self.iter().any(|p| match p {
+            Protocol::Ip4(addr) => {
+                addr.is_private()
+                    || addr.is_loopback()
+                    || addr.is_link_local()
+                    || addr.is_unspecified()
+            }
+            Protocol::Ip6(addr) => {
+                addr.is_unique_local()
+                    || addr.is_loopback()
+                    || addr.is_unicast_link_local()
+                    || addr.is_unspecified()
+            }
+            _ => false,
+        })
     }
 }
 
