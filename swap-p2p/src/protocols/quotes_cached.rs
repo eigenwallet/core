@@ -9,16 +9,21 @@ use libp2p::swarm::{
 use libp2p::{Multiaddr, PeerId};
 use std::collections::{HashMap, VecDeque};
 use std::task::{Context, Poll};
-
+use libp2p::identify;
 use crate::out_event;
 
 pub struct Behaviour {
     inner: quotes::Behaviour,
 
-    // For each peer, cache the address we last connected to them at
+    /// For each peer, cache the address we last connected to them at
     address_tracker: AddressTracker,
 
+    /// For every peer track the last semver version we received from them
+    // TODO: Maybe let these expire after a certain time?
+    versions: HashMap<PeerId, semver::Version>,
+
     // Caches quotes
+    // TODO: Maybe move the identify logic from quotes to quotes_cached?
     cache: HashMap<PeerId, BidQuote>,
     expiry: FuturesHashSet<PeerId, ()>,
 
@@ -27,10 +32,11 @@ pub struct Behaviour {
 }
 
 impl Behaviour {
-    pub fn new() -> Self {
+    pub fn new(identify_config: identify::Config) -> Self {
         Self {
-            inner: quotes::Behaviour::new(),
+            inner: quotes::Behaviour::new(identify_config),
             address_tracker: AddressTracker::new(),
+            versions: HashMap::new(),
             cache: HashMap::new(),
             expiry: FuturesHashSet::new(),
             to_swarm: VecDeque::new(),
@@ -41,13 +47,17 @@ impl Behaviour {
         // Attach the address we last connected to the peer at to the quote
         //
         // Ignores those peers where we don't have an address cached
-        let quotes: Vec<(PeerId, Multiaddr, BidQuote)> = self
+        let quotes: Vec<(PeerId, Multiaddr, BidQuote, Option<semver::Version>)> = self
             .cache
             .iter()
             .filter_map(|(peer_id, quote)| {
                 self.address_tracker
                     .last_seen_address(peer_id)
-                    .map(|addr| (*peer_id, addr, quote.clone()))
+                    .map(|addr| {
+                        let version = self.versions.get(peer_id).cloned();
+
+                        (*peer_id, addr, quote.clone(), version)
+                    })
             })
             .collect();
 
@@ -61,7 +71,8 @@ impl Behaviour {
 #[derive(Debug)]
 pub enum Event {
     CachedQuotes {
-        quotes: Vec<(PeerId, Multiaddr, BidQuote)>,
+        // Peer ID, Address, Quote, Version
+        quotes: Vec<(PeerId, Multiaddr, BidQuote, Option<semver::Version>)>,
     },
 }
 
@@ -88,8 +99,15 @@ impl NetworkBehaviour for Behaviour {
                                 peer,
                                 Box::pin(tokio::time::sleep(crate::defaults::CACHED_QUOTE_EXPIRY)),
                             );
+    
                             self.emit_cached_quotes();
                         }
+                        quotes::Event::VersionReceived { peer, version } => {
+                            self.versions.insert(peer, version);
+
+                            // TODO: Only emit if the version is different from the cached one?
+                            self.emit_cached_quotes();
+                        },
                         quotes::Event::DoesNotSupportProtocol { peer: _ } => {
                             // Don't care about this
                         }

@@ -137,3 +137,15 @@ impl AddressTracker {
         self.addresses.get(peer_id).cloned()
     }
 }
+
+/// Extracts the semver version from a user agent string.
+/// Example input: "asb/2.0.0 (xmr-btc-swap-mainnet)"
+/// Returns None if the version cannot be parsed.
+pub fn extract_semver_from_agent_str(agent_str: &str) -> Option<semver::Version> {
+    // Split on '/' and take the second part
+    let version_str = agent_str.split('/').nth(1)?;
+    // Split on whitespace and take the first part
+    let version_str = version_str.split_whitespace().next()?;
+    // Parse the version string
+    semver::Version::parse(version_str).ok()
+}

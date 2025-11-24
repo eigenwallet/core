@@ -33,6 +33,7 @@ backoff = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
+semver = { workspace = true }
 
 # Async
 bmrng = { workspace = true }

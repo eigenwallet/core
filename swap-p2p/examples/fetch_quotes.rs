@@ -25,7 +25,6 @@ const USE_TOR: bool = true;
 struct Behaviour {
     rendezvous: rendezvous::discovery::Behaviour,
     ping: ping::Behaviour,
-    identify: identify::Behaviour,
     quote: quotes_cached::Behaviour,
 }
 
@@ -100,11 +99,10 @@ async fn main() -> Result<()> {
             namespace.into(),
         ),
         ping: ping::Behaviour::new(ping::Config::new().with_interval(Duration::from_secs(1))),
-        identify: identify::Behaviour::new(identify::Config::new(
+        quote: quotes_cached::Behaviour::new(identify::Config::new(
             "fetch_quotes/1.0.0".to_string(),
             identity.public(),
         )),
-        quote: quotes_cached::Behaviour::new(),
     };
 
     let transport = create_transport(&identity, tor_client_opt)?;
@@ -140,8 +138,11 @@ async fn main() -> Result<()> {
                     println!("================");
                     println!("==== !!!! GOT CACHED QUOTES SNAPSHOT !!!! ====");
                     println!("All quotes:");
-                    for (peer, addr, quote) in quotes {
+                    for (peer, addr, quote, agent_version) in quotes {
                         println!("- {peer} @ {addr}:");
+                        if let Some(version) = agent_version {
+                            println!("  - Agent Version: {version}");
+                        }
                         println!("  - {:?}", quote);
                         println!("================");
                     }

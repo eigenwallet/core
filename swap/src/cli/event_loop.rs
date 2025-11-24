@@ -139,7 +139,8 @@ pub struct EventLoop {
     add_peer_address_requests:
         bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, libp2p::Multiaddr), ()>,
 
-    cached_quotes_sender: tokio::sync::watch::Sender<Vec<(PeerId, libp2p::Multiaddr, BidQuote)>>,
+    cached_quotes_sender:
+        tokio::sync::watch::Sender<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>>,
 }
 
 impl EventLoop {
@@ -587,14 +588,15 @@ pub struct EventLoopHandle {
     add_peer_address_sender:
         bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
 
+    // TODO: Extract the Vec<_> into its own struct (QuotesBatch?)
     cached_quotes_receiver:
-        tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote)>>,
+        tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>>,
 }
 
 impl EventLoopHandle {
     pub fn cached_quotes(
         &self,
-    ) -> tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote)>> {
+    ) -> tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>> {
         self.cached_quotes_receiver.clone()
     }
 

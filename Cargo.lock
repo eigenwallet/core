@@ -11350,6 +11350,7 @@ dependencies = [
  "libp2p-tor",
  "monero",
  "rand 0.8.5",
+ "semver",
  "serde",
  "serde_cbor",
  "swap-core",

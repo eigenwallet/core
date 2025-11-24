@@ -992,7 +992,6 @@ pub async fn buy_xmr(
     let env_config = config.env_config;
 
     // Prepare variables for the quote fetching process
-    let tor_client = context.tor_client.read().await.clone();
     let tauri_handle = context.tauri_handle.clone();
 
     // Get the existing event loop handle from context
@@ -1472,7 +1471,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS>(
-    mut quotes_rx: ::tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote)>>,
+    mut quotes_rx: ::tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>>,
     // TODO: Shouldn't this be a function?
     get_new_address: impl Future<Output = Result<bitcoin::Address>>,
     balance: FB,
@@ -1514,15 +1513,12 @@ where
         let quotes = quotes_rx.borrow().clone();
         let quotes: Vec<SellerStatus> = quotes
             .into_iter()
-            .map(|(peer_id, multiaddr, quote)| {
-                // TODO: Get actual version from somewhere
-                let placeholder_version = semver::Version::new(0, 0, 0);
-
+            .map(|(peer_id, multiaddr, quote, version)| {
                 SellerStatus::Online(QuoteWithAddress {
                     multiaddr,
                     peer_id,
                     quote,
-                    version: placeholder_version,
+                    version,
                 })
             })
             .collect();
@@ -1605,15 +1601,6 @@ where
                 }
             });
         }
-
-        tracing::trace!(
-            swap_id = ?swap_id,
-            pending_approvals = ?pending_approvals.len(),
-            balance = ?balance,
-            max_giveable = ?max_giveable,
-            quotes = ?quotes,
-            "Waiting for user to select an offer"
-        );
 
         // Listen for approvals, balance changes, or quote changes
         let result: Option<(

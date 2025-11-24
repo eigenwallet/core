@@ -1,25 +1,20 @@
 use backoff::backoff::Backoff;
 use libp2p::{
-    core::Endpoint,
-    request_response::{self, OutboundFailure},
-    swarm::{
+    Multiaddr, PeerId, StreamProtocol, core::Endpoint, identify, request_response::{self, OutboundFailure}, swarm::{
         ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent,
         THandlerOutEvent, ToSwarm,
-    },
-    Multiaddr, PeerId, StreamProtocol,
+    }
 };
 
 use crate::{
-    behaviour_util::{BackoffTracker, ConnectionTracker},
-    futures_util::FuturesHashSet,
-    protocols::{
+    behaviour_util::{BackoffTracker, ConnectionTracker, extract_semver_from_agent_str}, futures_util::FuturesHashSet, patches, protocols::{
         notice,
         quote::{self, BidQuote},
         redial,
-    },
+    }
 };
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     task::Poll,
     time::Duration,
 };
@@ -47,7 +42,7 @@ pub struct Behaviour {
 }
 
 impl Behaviour {
-    pub fn new() -> Self {
+    pub fn new(identify_config: identify::Config) -> Self {
         Self {
             inner: InnerBehaviour {
                 quote: quote::bob(),
@@ -57,6 +52,7 @@ impl Behaviour {
                     crate::defaults::QUOTE_REDIAL_INTERVAL,
                     crate::defaults::QUOTE_REDIAL_MAX_INTERVAL,
                 ),
+                identify: patches::identify::Behaviour::new(identify_config),
             },
             connection_tracker: ConnectionTracker::new(),
             does_not_support: HashSet::new(),
@@ -111,11 +107,13 @@ pub struct InnerBehaviour {
     quote: quote::Behaviour,
     notice: notice::Behaviour,
     redial: redial::Behaviour,
+    identify: patches::identify::Behaviour,
 }
 
 #[derive(Debug)]
 pub enum Event {
     QuoteReceived { peer: PeerId, quote: BidQuote },
+    VersionReceived { peer: PeerId, version: semver::Version },
     DoesNotSupportProtocol { peer: PeerId },
 }
 
@@ -198,6 +196,18 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                                     self.schedule_quote_request_with_backoff(peer);
 
                                 tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
+                            }
+                        }
+                        InnerBehaviourEvent::Identify(identify::Event::Received { peer_id, info }) => {
+                            match extract_semver_from_agent_str(info.agent_version.as_str()) {
+                                Some(version) => {
+                                    tracing::trace!(%peer_id, %version, "Received version from peer via identify");
+
+                                    self.to_swarm.push_back(Event::VersionReceived { peer: peer_id, version });
+                                }
+                                None => {
+                                    tracing::warn!(%peer_id, ?info, "Received identify info from peer but failed to extract semver version");
+                                }
                             }
                         }
                         _other => {

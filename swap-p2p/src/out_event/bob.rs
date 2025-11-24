@@ -19,7 +19,7 @@ pub enum OutEvent {
         response: BidQuote,
     },
     CachedQuotes {
-        quotes: Vec<(PeerId, Multiaddr, BidQuote)>,
+        quotes: Vec<(PeerId, Multiaddr, BidQuote, Option<semver::Version>)>,
     },
     SwapSetupCompleted {
         peer: PeerId,
