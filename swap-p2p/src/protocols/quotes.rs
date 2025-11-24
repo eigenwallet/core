@@ -186,9 +186,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                         }) => {
                             // We got an outbound failure, so we increment the backoff
                             self.backoff
-                                .get(&peer)
-                                .next_backoff()
-                                .expect("backoff should never run out of attempts");
+                                .increment(&peer);
 
                             if let OutboundFailure::UnsupportedProtocols = error {
                                 self.handle_does_not_support_protocol(peer);

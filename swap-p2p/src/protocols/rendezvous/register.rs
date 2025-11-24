@@ -149,16 +149,38 @@ impl Behaviour {
             })
             .collect()
     }
+
+    pub fn schedule_re_register_replace(&mut self, peer_id: PeerId) -> Duration {
+        let backoff = self.backoffs.get(&peer_id).current_interval;
+
+        // We replace any existing timeout
+        self.pending_to_dispatch.replace(peer_id, Box::pin(tokio::time::sleep(backoff).boxed()));
+
+        backoff
+    }
 }
 
 impl NetworkBehaviour for Behaviour {
     type ConnectionHandler = <InnerBehaviour as NetworkBehaviour>::ConnectionHandler;
-    type ToSwarm = Event; // TODO: Emit useful events here instead of just all this junk
+    type ToSwarm = Event;
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
         self.connection.handle_swarm_event(event);
         self.address.handle_swarm_event(event);
         self.inner.on_swarm_event(event);
+
+        if let FromSwarm::ConnectionClosed(connection_closed) = event {
+            // We disconnected from a node where we were registered, so we schedule a re-register
+            if self.registered.contains(&connection_closed.peer_id) {
+                let backoff = self.schedule_re_register_replace(connection_closed.peer_id);
+
+                tracing::info!(
+                    ?connection_closed.peer_id,
+                    seconds_until_next_registration_attempt = %backoff.as_secs(),
+                    "Disconnected from rendezvous node, scheduling re-register after backoff"
+                );
+            }
+        }
     }
 
     fn poll(
@@ -186,18 +208,20 @@ impl NetworkBehaviour for Behaviour {
                 // If we are connected to the peer, register with them
                 if let Err(err) = self.inner.rendezvous.register(self.namespace.clone(), peer.clone(), None) {
                     // We failed to dispatch the register, so we backoff
-                    let backoff = self.backoffs.get(&peer.clone()).next_backoff().expect("backoff should never run out");
+                    self.backoffs.increment(&peer);
+
+                    // Schedule a re-register
+                    let backoff = self.schedule_re_register_replace(*peer);
 
                     tracing::error!(
                         ?peer,
                         ?err,
+                        seconds_until_next_registration_attempt = %backoff.as_secs(),
                         "Failed to dispatch register at rendezvous node, scheduling retry after backoff"
                     );
 
                     // Inform swarm
                     self.to_swarm.push_back(Event::RegisterDispatchFailed { peer_id: peer.clone(), error: err });
-
-                    self.pending_to_dispatch.insert(peer.clone(), tokio::time::sleep(backoff).boxed());
                 }
 
                 false
@@ -246,9 +270,7 @@ impl NetworkBehaviour for Behaviour {
                     // We failed to register, so we backoff
                     let backoff = self
                         .backoffs
-                        .get(&rendezvous_node.clone())
-                        .next_backoff()
-                        .expect("backoff should never run out");
+                        .increment(&rendezvous_node);
 
                     // Inform swarm
                     self.to_swarm.push_back(Event::RegisterRequestFailed {

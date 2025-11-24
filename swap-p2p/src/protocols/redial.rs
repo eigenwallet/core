@@ -30,6 +30,7 @@ pub struct Behaviour {
     /// Store address for all peers (even those we are not interested in)
     /// because we might be interested in them later on
     // TODO: Sort these by how often we were able to connect to them
+    // TODO: Use the behaviour_util::AddressTracker instead
     addresses: HashMap<PeerId, HashSet<Multiaddr>>,
 
     /// Tracks sleep timers for each peer waiting to redial.
@@ -127,10 +128,7 @@ impl Behaviour {
         // If an override is provided, use that, otherwise use the backoff
         // TODO: Instead only increment on errors
         let next_dial_in = override_next_dial_in.into().unwrap_or_else(|| {
-            self.backoff
-                .get(peer)
-                .next_backoff()
-                .expect("redial backoff should never run out of attempts")
+            self.backoff.increment(peer)
         });
 
         let did_queue_new_dial = self.to_dial.insert(

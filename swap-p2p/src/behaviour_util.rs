@@ -88,9 +88,15 @@ impl BackoffTracker {
             b.reset();
         }
     }
+
+    /// Increments the backoff for the given peer and returns the new backoff
+    pub fn increment(&mut self, peer: &PeerId) -> Duration {
+        self.get(peer).next_backoff().expect("backoff should never run out")
+    }
 }
 
 /// Used inside of a Behaviour to track the last successful address for a peer
+/// TODO: Track success/failure rates for each address
 pub struct AddressTracker {
     addresses: HashMap<PeerId, Multiaddr>,
 }

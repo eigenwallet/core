@@ -195,9 +195,7 @@ impl NetworkBehaviour for Behaviour {
                     ) => {
                         let backoff = self
                             .backoff
-                            .get(&rendezvous_node)
-                            .next_backoff()
-                            .expect("backoff should never run out");
+                            .increment(&rendezvous_node);
 
                         self.pending_to_discover
                             .insert(rendezvous_node, tokio::time::sleep(backoff).boxed());
