@@ -381,9 +381,9 @@ async fn init_test_wallets(
     .await
     .unwrap();
 
-    let xmr_wallet = wallets.main_wallet().await;
+    let xmr_wallet = wallets.main_wallet().await?;
     tracing::info!(
-        address = %xmr_wallet.main_address().await,
+        address = %xmr_wallet.main_address().await?,
         "Initialized monero wallet"
     );
 
@@ -533,7 +533,11 @@ impl BobParams {
     pub async fn get_change_receive_addresses(&self) -> (bitcoin::Address, monero::Address) {
         (
             self.bitcoin_wallet.new_address().await.unwrap(),
-            self.monero_wallet.main_wallet().await.main_address().await,
+            self.monero_wallet
+                .main_wallet()
+                .await
+                .main_address()
+                .await?,
         )
     }
 
