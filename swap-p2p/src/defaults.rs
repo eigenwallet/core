@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
-pub const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(7200); // 2 hours
+pub const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(15 * 60); // 15 minutes
 
 pub const BACKOFF_MULTIPLIER: f64 = 1.5;
 

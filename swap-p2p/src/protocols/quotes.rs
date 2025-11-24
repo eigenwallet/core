@@ -1,4 +1,3 @@
-use backoff::backoff::Backoff;
 use libp2p::{
     core::Endpoint,
     identify,
@@ -21,7 +20,7 @@ use crate::{
     },
 };
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     task::Poll,
     time::Duration,
 };

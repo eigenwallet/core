@@ -1,7 +1,6 @@
 use crate::behaviour_util::{BackoffTracker, ConnectionTracker};
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
-use backoff::backoff::Backoff;
 use libp2p::core::Multiaddr;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{DialError, FromSwarm, NetworkBehaviour, ToSwarm};
@@ -160,11 +159,11 @@ impl Behaviour {
         self.to_dial.contains_key(peer)
     }
 
-    pub fn insert_address(&mut self, peer: &PeerId, address: Multiaddr) {
+    pub fn insert_address(&mut self, peer: &PeerId, address: Multiaddr) -> bool {
         self.addresses
             .entry(peer.clone())
             .or_default()
-            .insert(address);
+            .insert(address)
     }
 }
 
@@ -190,9 +189,9 @@ impl NetworkBehaviour for Behaviour {
             // Check if we discovered a new address for some peer
             FromSwarm::NewExternalAddrOfPeer(event) => {
                 // TOOD: Ensure that if the address contains a peer id it matches the peer id in the event
-                self.insert_address(&event.peer_id, event.addr.clone());
-
-                tracing::trace!(peer = %event.peer_id, address = %event.addr, "Cached an address for a peer");
+                if self.insert_address(&event.peer_id, event.addr.clone()) {
+                    tracing::trace!(peer = %event.peer_id, address = %event.addr, "Cached an address for a peer");
+                }
 
                 None
             }

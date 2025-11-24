@@ -1,4 +1,3 @@
-use backoff::backoff::Backoff;
 use futures::future::{self};
 use futures::FutureExt;
 use libp2p::{

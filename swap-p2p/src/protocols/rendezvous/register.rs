@@ -1,7 +1,6 @@
 use crate::behaviour_util::{AddressTracker, BackoffTracker, ConnectionTracker};
 use crate::futures_util::FuturesHashSet;
 use crate::protocols::redial;
-use backoff::backoff::Backoff;
 use futures::{future, FutureExt};
 use libp2p::rendezvous::client::RegisterError;
 use libp2p::rendezvous::ErrorCode;
