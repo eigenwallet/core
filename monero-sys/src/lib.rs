@@ -18,6 +18,7 @@ pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
 use throttle::Throttle;
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
@@ -1096,6 +1097,8 @@ impl Wallet {
         }
     }
 
+    /// This is  the loop that runs in the wallet thread. It continuously waits for
+    /// calls from the [`WalletHandle`] and executes them.
     fn run(&mut self) {
         // Create a tracing span to group the wallet thread logs
         let span = tracing::span!(
@@ -1106,7 +1109,32 @@ impl Wallet {
         let _span_guard = span.enter();
 
         while let Some(call) = self.call_receiver.blocking_recv() {
-            let result = (call.function)(&mut self.wallet, &mut self.pending_transactions);
+            // AssertUnwindSafe is safe here, because we don't access any of the possibly malformed state after the panic
+            // is caught. We simply log the error and then re-panic.
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                (call.function)(&mut self.wallet, &mut self.pending_transactions)
+            }));
+
+            let result = match result {
+                Ok(result) => result,
+                Err(panic_payload) => {
+                    let error = if let Some(error) = panic_payload.downcast_ref::<&str>() {
+                        *error
+                    } else if let Some(error) = panic_payload.downcast_ref::<String>() {
+                        error.as_str()
+                    } else {
+                        "error message unavailable: couldn't parse panic payload"
+                    };
+                    tracing::error!(
+                        error=%error,
+                        "Panic in wallet thread while executing call. Panicking now after issuing this error message.",
+                    );
+                    panic!(
+                        "Re-panicking after catching panic in wallet thread: `{}`",
+                        error
+                    );
+                }
+            };
 
             if call.sender.send(result).is_err() {
                 // Err() contains only the Box<dyn Any> value, so we don't care about the specific value
