@@ -87,7 +87,8 @@ fn find_workspace_target_dir() -> std::path::PathBuf {
 
     // Walk up from OUT_DIR to find "target" directory
     for ancestor in out_path.ancestors() {
-        if ancestor.ends_with("target") {
+        // allow target dir and also target-check dir (latter one is for lsp to not interfere with cli build commands)
+        if ancestor.ends_with("target") || ancestor.ends_with("target-check") {
             return ancestor.to_path_buf();
         }
     }

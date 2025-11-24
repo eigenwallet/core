@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .expect("Failed to recover wallet");
 
-    tracing::info!("Primary address: {}", wallet.main_address().await);
+    tracing::info!("Primary address: {}", wallet.main_address().await?);
 
     // Wait for a while to let the wallet sync, checking sync status
     tracing::info!("Waiting for wallet to sync...");
@@ -49,10 +49,10 @@ async fn main() -> anyhow::Result<()> {
     wallet.store_in_current_file().await?;
 
     // Test sending to some (sub)addresses
-    let subaddress1 = wallet.address(1, 0).await;
-    let subaddress2 = wallet.address(0, 2).await;
-    let subaddress3 = wallet.address(1, 2).await;
-    let subaddress4 = wallet.address(2, 2).await;
+    let subaddress1 = wallet.address(1, 0).await?;
+    let subaddress2 = wallet.address(0, 2).await?;
+    let subaddress3 = wallet.address(1, 2).await?;
+    let subaddress4 = wallet.address(2, 2).await?;
 
     let addresses = [
         subaddress1.to_string(),

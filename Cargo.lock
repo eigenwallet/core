@@ -6881,6 +6881,7 @@ dependencies = [
  "swap-serde",
  "tempfile",
  "testcontainers",
+ "thiserror 2.0.17",
  "throttle",
  "tokio",
  "tracing",

@@ -3,7 +3,7 @@ use monero_sys::{Daemon, WalletHandle};
 const PLACEHOLDER_NODE: &str = "http://127.0.0.1:18081";
 
 #[tokio::test]
-async fn test_sign_message() {
+async fn test_sign_message() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter("info,test=debug,sign_message=trace,monero_sys=trace")
         .with_test_writer()
@@ -25,7 +25,7 @@ async fn test_sign_message() {
     .await
     .expect("Failed to create wallet");
 
-    let main_address = wallet.main_address().await;
+    let main_address = wallet.main_address().await?;
     tracing::info!("Wallet main address: {}", main_address);
 
     // Test message to sign
@@ -94,4 +94,6 @@ async fn test_sign_message() {
     );
 
     tracing::info!("All message signing tests passed!");
+
+    Ok(())
 }

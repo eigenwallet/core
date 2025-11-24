@@ -35,7 +35,7 @@ use tokio::sync::{
 };
 use url::Url;
 
-use bridge::ffi::{self, TransactionHistory};
+use bridge::ffi::{self};
 use typeshare::typeshare;
 use uuid::Uuid;
 
@@ -53,18 +53,6 @@ pub struct WalletHandle {
     call_sender: UnboundedSender<Call>,
 }
 
-impl WalletHandle {
-    fn new(call_sender: UnboundedSender<Call>) -> Self {
-        Self { call_sender }
-    }
-}
-
-impl std::fmt::Display for WalletHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "WalletHandle")
-    }
-}
-
 /// A wrapper around a wallet that can be used to call methods on it.
 /// It must live in a single thread due to ffi constraints [1].
 ///
@@ -78,13 +66,14 @@ pub struct Wallet {
     wallet: FfiWallet,
     manager: WalletManager,
     call_receiver: UnboundedReceiver<Call>,
-    pending_transactions: HashMap<Uuid, PendingTransaction>,
+    pending_transactions: HashMap<Uuid, PendingTransactionHandle>,
 }
 
 /// A function call to be executed on the wallet and a channel to send the result back.
 struct Call {
-    function:
-        Box<dyn FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> AnyBox + Send>,
+    function: Box<
+        dyn FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransactionHandle>) -> AnyBox + Send,
+    >,
     sender: oneshot::Sender<AnyBox>,
 }
 
@@ -158,48 +147,6 @@ pub struct Daemon {
     pub ssl: bool,
 }
 
-impl TryFrom<String> for Daemon {
-    type Error = anyhow::Error;
-
-    fn try_from(address: String) -> Result<Self, Self::Error> {
-        let url = Url::parse(&address).context("Failed to parse daemon URL")?;
-
-        let hostname = url
-            .host_str()
-            .ok_or_else(|| anyhow::anyhow!("No hostname found in URL"))?
-            .to_string();
-
-        let port = url
-            .port()
-            .ok_or_else(|| anyhow::anyhow!("No port found in URL"))?;
-
-        let ssl = url.scheme() == "https";
-
-        Ok(Daemon {
-            hostname,
-            port,
-            ssl,
-        })
-    }
-}
-
-impl<'a> TryFrom<&'a str> for Daemon {
-    type Error = anyhow::Error;
-
-    fn try_from(address: &'a str) -> Result<Self, Self::Error> {
-        address.to_string().try_into()
-    }
-}
-
-impl Daemon {
-    /// Try to convert the daemon configuration to a URL
-    pub fn to_url_string(&self) -> String {
-        let scheme = if self.ssl { "https" } else { "http" };
-
-        format!("{}://{}:{}", scheme, self.hostname, self.port)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare]
 pub struct TransactionInfo {
@@ -225,15 +172,23 @@ pub enum TransactionDirection {
 /// A wrapper around a pending transaction.
 ///
 /// Safety: do _not_ implement copy, send, sync, ...
-pub struct PendingTransaction(*mut ffi::PendingTransaction);
+pub struct PendingTransactionHandle(*mut ffi::PendingTransaction);
 
-/// A struct containing transaction history.
-pub struct TransactionHistoryHandle(*mut TransactionHistory);
+/// Struct containing a raw pointer to a transaction history.
+struct TransactionHistoryHandle(*mut ffi::TransactionHistory);
 
-/// A struct containing a single transaction.
-pub struct TransactionInfoHandle(*mut ffi::TransactionInfo);
+/// Struct containing a raw pointer to a single transaction.
+struct TransactionInfoHandle(*mut ffi::TransactionInfo);
+
+#[derive(Debug, thiserror::Error)]
+#[error("Couldn't complete wallet operation because the channel was closed")]
+pub struct ChannelClosed;
 
 impl WalletHandle {
+    fn new(call_sender: UnboundedSender<Call>) -> Self {
+        Self { call_sender }
+    }
+
     /// Open an existing wallet or create a new one, with a random seed.
     pub async fn open_or_create(
         path: String,
@@ -421,7 +376,7 @@ impl WalletHandle {
     /// Execute a function on the wallet thread and return the result.
     /// Necessary because every interaction with the wallet must run on a single thread.
     /// Panics if the channel is closed unexpectedly.
-    pub async fn call<F, R>(&self, function: F) -> R
+    pub async fn call<F, R>(&self, function: F) -> Result<R, ChannelClosed>
     where
         F: FnOnce(&mut FfiWallet) -> R + Send + 'static,
         R: Sized + Send + 'static,
@@ -429,12 +384,15 @@ impl WalletHandle {
         // Delegate to call_with_pending_txs but ignore the pending_txs parameter
         self.call_with_pending_txs(move |wallet, _pending_txs| function(wallet))
             .await
+            .map_err(|_| ChannelClosed)
     }
 
     /// Call a function on the wallet with access to pending transactions storage.
-    pub async fn call_with_pending_txs<F, R>(&self, function: F) -> R
+    pub async fn call_with_pending_txs<F, R>(&self, function: F) -> Result<R, ChannelClosed>
     where
-        F: FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransaction>) -> R + Send + 'static,
+        F: FnOnce(&mut FfiWallet, &mut HashMap<Uuid, PendingTransactionHandle>) -> R
+            + Send
+            + 'static,
         R: Sized + Send + 'static,
     {
         // Create a oneshot channel for the result
@@ -449,31 +407,40 @@ impl WalletHandle {
                 sender,
             })
             .inspect_err(|e| tracing::error!(error=%e, "failed to send call"))
-            .expect("channel to be open");
+            .map_err(|_| ChannelClosed)?;
 
         // Wait for the result and cast back to the expected type
-        *receiver
+        Ok(*receiver
             .await
             .expect("channel to be open")
             .downcast::<R>() // We know that F returns R
-            .expect("return type to be consistent")
+            .expect("return type to be consistent"))
     }
 
     /// Get the file system path to the wallet.
-    pub async fn path(&self) -> String {
-        self.call(move |wallet| wallet.path()).await
+    pub async fn path(&self) -> anyhow::Result<String> {
+        self.call(move |wallet| wallet.path())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Get the main address of the wallet.
     /// The main address is the first address of the first account.
-    pub async fn main_address(&self) -> monero::Address {
-        self.call(move |wallet| wallet.main_address()).await
+    pub async fn main_address(&self) -> anyhow::Result<monero::Address> {
+        self.call(move |wallet| wallet.main_address())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Get the address of the wallet for a given account and address index.
-    pub async fn address(&self, account_index: u32, address_index: u32) -> monero::Address {
+    pub async fn address(
+        &self,
+        account_index: u32,
+        address_index: u32,
+    ) -> anyhow::Result<monero::Address> {
         self.call(move |wallet| wallet.address(account_index, address_index))
             .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Get the current height of the blockchain.
@@ -492,9 +459,10 @@ impl WalletHandle {
                 .call(move |wallet| wallet.daemon_blockchain_height())
                 .await
             {
-                Ok(0) => last_error = Some(anyhow!("Daemon blockchain height is 0")),
-                Err(e) => last_error = Some(e),
-                Ok(height) => return Ok(height),
+                Ok(Ok(0)) => last_error = Some(anyhow!("Daemon blockchain height is 0")),
+                Err(e) => last_error = Some(anyhow!(e)),
+                Ok(Ok(height)) => return Ok(height),
+                Ok(Err(e)) => last_error = Some(e),
             }
 
             tracing::warn!(error=%last_error.as_ref().unwrap_or(&anyhow!("Unknown error")), "Failed to get blockchain height, retrying in {}ms", RETRY_DELAY);
@@ -532,7 +500,7 @@ impl WalletHandle {
         }, |error, duration: Duration| {
             tracing::error!(error=?error, "Failed to transfer funds, retrying in {} secs", duration.as_secs());
         })
-        .await
+        .await?
         .map_err(|e| anyhow!("Failed to transfer funds after multiple attempts: {e:?}"))
     }
 
@@ -560,7 +528,7 @@ impl WalletHandle {
         }, |error, duration: Duration| {
             tracing::error!(error=?error, "Failed to sweep to multiple destinations, retrying in {} secs", duration.as_secs());
         })
-        .await
+        .await?
         .map_err(|e| anyhow!("Failed to sweep to multiple destinations after multiple attempts: {e:?}"))
     }
 
@@ -585,62 +553,71 @@ impl WalletHandle {
         }, |error, duration: Duration| {
             tracing::error!(error=?error, "Failed to sweep funds, retrying in {} secs", duration.as_secs());
         })
-        .await
+        .await?
         .map_err(|e| anyhow!("Failed to sweep funds after multiple attempts: {e:?}"))
     }
 
     /// Get the seed of the wallet.
     pub async fn seed(&self) -> anyhow::Result<String> {
-        self.call(move |wallet| wallet.seed()).await
+        self.call(move |wallet| wallet.seed())
+            .await
+            .context("Couldn't complete wallet call")?
     }
 
     /// Get the creation height of the wallet.
-    pub async fn creation_height(&self) -> u64 {
-        self.call(move |wallet| wallet.creation_height()).await
+    pub async fn creation_height(&self) -> anyhow::Result<u64> {
+        self.call(move |wallet| wallet.creation_height())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Get the transaction history and convert it to a list of serializable transaction infos.
     /// This is needed because TransactionHistory and TransactionInfo are not Send.
-    pub async fn history(&self) -> Vec<TransactionInfo> {
-        self.call(move |wallet| wallet.history()).await
+    pub async fn history(&self) -> anyhow::Result<Vec<TransactionInfo>> {
+        self.call(move |wallet| wallet.history())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Get the unlocked balance of the wallet.
-    pub async fn unlocked_balance(&self) -> monero::Amount {
-        self.call(move |wallet| wallet.unlocked_balance()).await
+    pub async fn unlocked_balance(&self) -> anyhow::Result<monero::Amount> {
+        self.call(move |wallet| wallet.unlocked_balance())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
-    /// Get the total balance of the wallet.
-    pub async fn total_balance(&self) -> monero::Amount {
-        self.call(move |wallet| wallet.total_balance()).await
+    /// Get the total balance of the wallet (unlocked + locked).
+    pub async fn total_balance(&self) -> anyhow::Result<monero::Amount> {
+        self.call(move |wallet| wallet.total_balance())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Check if the wallet is synchronized.
-    pub async fn synchronized(&self) -> bool {
-        self.call(move |wallet| wallet.synchronized()).await
+    pub async fn synchronized(&self) -> anyhow::Result<bool> {
+        self.call(move |wallet| wallet.synchronized())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Set the restore height of the wallet.
     pub async fn set_restore_height(&self, height: u64) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.set_restore_height(height))
-            .await
+            .await?
             .context("Failed to set restore height: FFI call failed with exception")
-            .expect("Shouldn't panic");
-
-        Ok(())
     }
 
     /// Set the restore height of the wallet.
     pub async fn set_password(&self, password: String) -> anyhow::Result<bool> {
         self.call(move |wallet| wallet.set_password(&password))
-            .await
+            .await?
             .context("Failed to set password: FFI call failed with exception")
     }
 
     /// Get the restore height of the wallet.
     pub async fn get_restore_height(&self) -> anyhow::Result<u64> {
         self.call(move |wallet| wallet.get_restore_height())
-            .await
+            .await?
             .map_err(|e| {
                 anyhow!("Failed to get restore height: FFI call failed with exception: {e}")
             })
@@ -653,7 +630,7 @@ impl WalletHandle {
         day: u8,
     ) -> Result<u64> {
         self.call(move |wallet| wallet.get_blockchain_height_by_date(year, month, day))
-            .await
+            .await?
             .map_err(|e| {
                 anyhow!(
                     "Failed to get blockchain height by date: FFI call failed with exception: {e}"
@@ -662,36 +639,46 @@ impl WalletHandle {
     }
 
     /// Rescan the blockchain asynchronously.
-    pub async fn rescan_blockchain_async(&self) {
+    pub async fn rescan_blockchain_async(&self) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.rescan_blockchain_async())
-            .await
+            .await?;
+
+        Ok(())
     }
 
     /// Start the refresh.
-    pub async fn start_refresh(&self) {
-        self.call(move |wallet| wallet.start_refresh()).await
+    pub async fn start_refresh(&self) -> Result<()> {
+        self.call(move |wallet| wallet.start_refresh()).await?;
+
+        Ok(())
     }
 
     /// Pause the background refresh.
-    pub async fn pause_refresh(&self) {
-        self.call(move |wallet| wallet.pause_refresh()).await
+    pub async fn pause_refresh(&self) -> Result<()> {
+        self.call(move |wallet| wallet.pause_refresh()).await?;
+
+        Ok(())
     }
 
     /// Start the background refresh thread.
-    pub async fn start_refresh_thread(&self) {
-        self.call(move |wallet| wallet.start_refresh_thread()).await
+    pub async fn start_refresh_thread(&self) -> Result<()> {
+        self.call(move |wallet| wallet.start_refresh_thread())
+            .await
+            .context("Refresh blocking failed")
     }
 
     /// Refresh blocking
     pub async fn refresh_blocking(&self) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.refresh_blocking())
             .await
-            .context("Refresh blocking failed")
+            .context("Couldn't complete wallet call")?
     }
 
     /// Stop the background refresh once (doesn't stop background refresh thread).
-    pub async fn stop(&self) {
-        self.call(move |wallet| wallet.stop()).await
+    pub async fn stop(&self) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.stop())
+            .await
+            .context("Couldn't complete wallet call")
     }
 
     /// Store the wallet state.
@@ -701,6 +688,7 @@ impl WalletHandle {
 
         self.call(move |wallet| wallet.store(&path))
             .await
+            .map_err(|_| ChannelClosed)?
             .context("Failed to store wallet: FFI call failed with exception")?;
 
         Ok(())
@@ -710,19 +698,24 @@ impl WalletHandle {
     pub async fn store_in_current_file(&self) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.store_in_current_file())
             .await
+            .map_err(|_| ChannelClosed)?
             .context("Failed to store wallet in current file: FFI call failed with exception")?;
 
         Ok(())
     }
 
     /// Get the sync progress of the wallet.
-    pub async fn sync_progress(&self) -> SyncProgress {
-        self.call(move |wallet| wallet.sync_progress()).await
+    pub async fn sync_progress(&self) -> Result<SyncProgress, ChannelClosed> {
+        self.call(move |wallet| wallet.sync_progress())
+            .await
+            .map_err(|_| ChannelClosed)
     }
 
     /// Check if the wallet is connected to a daemon.
-    pub async fn connected(&self) -> bool {
-        self.call(move |wallet| wallet.connected()).await
+    pub async fn connected(&self) -> Result<bool, ChannelClosed> {
+        self.call(move |wallet| wallet.connected())
+            .await
+            .map_err(|_| ChannelClosed)
     }
 
     /// Check that the wallet is created and ready to use.
@@ -732,16 +725,17 @@ impl WalletHandle {
 
         self.call_sender
             .send(Call {
-                function: Box::new(move |wallet, _pending_txs| {
-                    Box::new(wallet.check_error()) as Box<dyn Any + Send>
-                }),
+                function: Box::new(move |wallet, _pending_txs| Box::new(wallet.check_error())),
                 sender,
             })
             .map_err(|_| anyhow::anyhow!("failed to send check_wallet call"))?;
 
         receiver
             .await
-            .context("wallet channel closed unexpectedly")?;
+            .context("wallet channel closed unexpectedly")?
+            .downcast::<anyhow::Result<()>>()
+            .expect("type to be consistent")
+            .context("Wallet did not pass initial health check")?;
 
         Ok(())
     }
@@ -758,6 +752,7 @@ impl WalletHandle {
             wallet.set_trusted_daemon(true);
         })
         .await
+        .expect("Wallet channel to be open. Panic is fine because this is only used for testing")
     }
 
     /// Wait until the wallet is synchronized.
@@ -779,13 +774,13 @@ impl WalletHandle {
                 wallet.start_refresh_thread();
                 wallet.force_background_refresh();
             })
-            .await;
+            .await?;
             tracing::debug!("Wallet refresh initiated");
         }
 
         // Wait until the wallet is connected to the daemon.
         loop {
-            let connected = self.call(move |wallet| wallet.connected()).await;
+            let connected = self.call(move |wallet| wallet.connected()).await?;
 
             if connected {
                 break;
@@ -801,13 +796,13 @@ impl WalletHandle {
 
         // Keep track of the sync progress to avoid calling
         // the listener twice with the same progress
-        let mut current_progress = self.sync_progress().await;
+        let mut current_progress = self.sync_progress().await?;
 
         // Continue polling until the sync is complete
         loop {
             // Get the current sync status
             let (synced, sync_progress) =
-                { (self.synchronized().await, self.sync_progress().await) };
+                { (self.synchronized().await?, self.sync_progress().await?) };
 
             // Notify the listener (if it exists)
             if sync_progress > current_progress {
@@ -848,13 +843,14 @@ impl WalletHandle {
     ) -> anyhow::Result<TxStatus> {
         let destination_address = *destination_address;
         self.call(move |wallet| wallet.check_tx_status(&txid, tx_key, &destination_address))
-            .await
+            .await?
     }
 
     /// Scan a transaction for the wallet.
     /// This makes a transaction visible to the wallet without requiring a full sync.
     pub async fn scan_transaction(&self, txid: String) -> anyhow::Result<()> {
-        self.call(move |wallet| wallet.scan_transaction(txid)).await
+        self.call(move |wallet| wallet.scan_transaction(txid))
+            .await?
     }
 
     /// Wait until a transaction is confirmed.
@@ -980,7 +976,7 @@ impl WalletHandle {
                     uuid, txid, amount, fee,
                 ))
             })
-            .await?;
+            .await??;
 
         // Get approval asynchronously (no wallet thread blocking)
         let approved = approval_callback(txid, amount, fee).await;
@@ -1011,7 +1007,7 @@ impl WalletHandle {
             })
             .await;
 
-        result
+        result?
     }
 
     /// Verify the password for a wallet at the given path.
@@ -1075,7 +1071,13 @@ impl WalletHandle {
         self.call(move |wallet| {
             wallet.sign_message(&message, address.as_deref(), sign_with_view_key)
         })
-        .await
+        .await?
+    }
+}
+
+impl std::fmt::Display for WalletHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "WalletHandle")
     }
 }
 
@@ -2157,7 +2159,7 @@ impl FfiWallet {
         &mut self,
         address: &monero::Address,
         amount: monero::Amount,
-    ) -> anyhow::Result<PendingTransaction> {
+    ) -> anyhow::Result<PendingTransactionHandle> {
         // This is just a wrapper around the function that creates a multi-destination transaction
         // This is what wallet2 does under the hood:
         // https://github.com/SNeedlewoods/seraphis_wallet/blob/dbbccecc89e1121762a4ad6b531638ece82aa0c7/src/wallet/api/wallet.cpp#L1952
@@ -2174,7 +2176,7 @@ impl FfiWallet {
         // If set to true, the fee will be subtracted from output with the highest amount
         // If set to false, the fee will be paid by the wallet and the exact amounts will be sent to the destinations
         subtract_fee_from_outputs: bool,
-    ) -> anyhow::Result<PendingTransaction> {
+    ) -> anyhow::Result<PendingTransactionHandle> {
         self.ensure_synchronized_blocking()
             .context("Cannot construct transaction when wallet is not synchronized")?;
 
@@ -2216,7 +2218,7 @@ impl FfiWallet {
                 .context("Failed to create multi-destination transaction")?;
         }
 
-        Ok(PendingTransaction(raw_tx))
+        Ok(PendingTransactionHandle(raw_tx))
     }
 
     /// Create a pending sweep transaction without publishing it.
@@ -2224,13 +2226,13 @@ impl FfiWallet {
     fn create_pending_sweep_transaction(
         &mut self,
         address: &monero::Address,
-    ) -> anyhow::Result<PendingTransaction> {
+    ) -> anyhow::Result<PendingTransactionHandle> {
         self.ensure_synchronized_blocking()
             .context("Cannot construct transaction when wallet is not synchronized")?;
 
         let_cxx_string!(address_str = address.to_string());
 
-        let pending_tx = PendingTransaction(
+        let pending_tx = PendingTransactionHandle(
             ffi::createSweepTransaction(self.inner.pinned(), &address_str)
                 .context("Failed to create sweep transaction: FFI call failed with exception")?,
         );
@@ -2245,7 +2247,7 @@ impl FfiWallet {
     /// need a tx key.
     fn publish_pending_transaction(
         &mut self,
-        pending_tx: &mut PendingTransaction,
+        pending_tx: &mut PendingTransactionHandle,
         output_addresses: &[monero::Address],
     ) -> anyhow::Result<TxReceipt> {
         // Ensure the transaction only has a single txid and tx key
@@ -2409,7 +2411,7 @@ impl FfiWallet {
     /// Dispose (deallocate) a pending transaction object.
     /// Always call this before dropping a pending transaction object,
     /// otherwise we leak memory.
-    fn dispose_pending_transaction(&mut self, tx: PendingTransaction) {
+    fn dispose_pending_transaction(&mut self, tx: PendingTransactionHandle) {
         // Safety: we pass a valid pointer and we verified it's not used again since PendingTransaction is moved into this function
         unsafe {
             self.inner
@@ -2513,7 +2515,7 @@ impl FfiWallet {
     }
 }
 
-impl PendingTransaction {
+impl PendingTransactionHandle {
     /// Return `Ok` when the pending transaction is ok, otherwise return the error.
     /// This is a convenience method we use for retrieving errors after
     /// a method call failed.
@@ -2736,7 +2738,7 @@ impl Deref for RawWallet {
     }
 }
 
-impl PendingTransaction {
+impl PendingTransactionHandle {
     fn pinned(&mut self) -> Pin<&mut ffi::PendingTransaction> {
         // Safety: we know this is a valid pointer in the original thread
         unsafe {
@@ -2749,7 +2751,7 @@ impl PendingTransaction {
     }
 }
 
-impl Deref for PendingTransaction {
+impl Deref for PendingTransactionHandle {
     type Target = ffi::PendingTransaction;
 
     fn deref(&self) -> &ffi::PendingTransaction {
@@ -2791,6 +2793,48 @@ impl Deref for TransactionHistoryHandle {
                 .as_ref()
                 .expect("transaction history pointer not to be null")
         }
+    }
+}
+
+impl TryFrom<String> for Daemon {
+    type Error = anyhow::Error;
+
+    fn try_from(address: String) -> Result<Self, Self::Error> {
+        let url = Url::parse(&address).context("Failed to parse daemon URL")?;
+
+        let hostname = url
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("No hostname found in URL"))?
+            .to_string();
+
+        let port = url
+            .port()
+            .ok_or_else(|| anyhow::anyhow!("No port found in URL"))?;
+
+        let ssl = url.scheme() == "https";
+
+        Ok(Daemon {
+            hostname,
+            port,
+            ssl,
+        })
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Daemon {
+    type Error = anyhow::Error;
+
+    fn try_from(address: &'a str) -> Result<Self, Self::Error> {
+        address.to_string().try_into()
+    }
+}
+
+impl Daemon {
+    /// Try to convert the daemon configuration to a URL
+    pub fn to_url_string(&self) -> String {
+        let scheme = if self.ssl { "https" } else { "http" };
+
+        format!("{}://{}:{}", scheme, self.hostname, self.port)
     }
 }
 
@@ -2946,7 +2990,9 @@ impl WalletEventListener for WalletHandleListener {
         // We start the refresh thread again after the rescan is complete.
         let handle = self.wallet.clone();
         self.rt_handle.spawn(async move {
-            handle.start_refresh_thread().await;
+            if let Err(e) = handle.start_refresh_thread().await {
+                tracing::error!(error=%e, "Failed to start refresh thread");
+            }
         });
     }
 

@@ -180,14 +180,14 @@ pub async fn main() -> Result<()> {
 
             // Initialize Monero wallet
             let monero_wallet = init_monero_wallet(&config, env_config).await?;
-            let monero_address = monero_wallet.main_wallet().await.main_address().await;
+            let monero_address = monero_wallet.main_wallet().await.main_address().await?;
             tracing::info!(%monero_address, "Monero wallet address");
 
             // Check Monero balance
             let wallet = monero_wallet.main_wallet().await;
 
-            let total = wallet.total_balance().await.as_pico();
-            let unlocked = wallet.unlocked_balance().await.as_pico();
+            let total = wallet.total_balance().await?.as_pico();
+            let unlocked = wallet.unlocked_balance().await?.as_pico();
 
             match (total, unlocked) {
                 (0, _) => {
@@ -427,7 +427,7 @@ pub async fn main() -> Result<()> {
         }
         Command::Balance => {
             let monero_wallet = init_monero_wallet(&config, env_config).await?;
-            let monero_balance = monero_wallet.main_wallet().await.total_balance().await;
+            let monero_balance = monero_wallet.main_wallet().await.total_balance().await?;
             tracing::info!(%monero_balance);
 
             let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
@@ -498,7 +498,7 @@ pub async fn main() -> Result<()> {
             let main_wallet = monero_wallet.main_wallet().await;
 
             let seed = main_wallet.seed().await?;
-            let creation_height = main_wallet.creation_height().await;
+            let creation_height = main_wallet.creation_height().await?;
 
             println!("Seed          : {seed}");
             println!("Restore height: {creation_height}");

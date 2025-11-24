@@ -69,9 +69,24 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
+                    let total_balance = match wallet.total_balance().await {
+                        Ok(total_balance) => total_balance,
+                        Err(e) => {
+                            tracing::error!("Failed to get total balance: {}", e);
+                            return;
+                        }
+                    };
+                    let unlocked_balance = match wallet.unlocked_balance().await {
+                        Ok(unlocked_balance) => unlocked_balance,
+                        Err(e) => {
+                            tracing::error!("Failed to get unlocked balance: {}", e);
+                            return;
+                        }
+                    };
+
                     let response = GetMoneroBalanceResponse {
-                        total_balance: wallet.total_balance().await.into(),
-                        unlocked_balance: wallet.unlocked_balance().await.into(),
+                        total_balance: total_balance.into(),
+                        unlocked_balance: unlocked_balance.into(),
                     };
                     tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
                         MoneroWalletUpdate::BalanceChange(response),
@@ -89,7 +104,13 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
-                    let transactions = wallet.history().await;
+                    let transactions = match wallet.history().await {
+                        Ok(transactions) => transactions,
+                        Err(e) => {
+                            tracing::error!("Failed to get history: {}", e);
+                            return;
+                        }
+                    };
                     let response = GetMoneroHistoryResponse { transactions };
 
                     tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
@@ -108,7 +129,13 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
-                    let sync_progress = wallet.sync_progress().await;
+                    let sync_progress = match wallet.sync_progress().await {
+                        Ok(sync_progress) => sync_progress,
+                        Err(e) => {
+                            tracing::error!("Failed to get sync progress: {}", e);
+                            return;
+                        }
+                    };
 
                     let progress_percentage = sync_progress.percentage();
 
@@ -227,7 +254,7 @@ impl Wallets {
             .call(move |wallet| {
                 wallet.add_listener(Box::new(handle_listener));
             })
-            .await;
+            .await?;
 
         // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
@@ -238,7 +265,7 @@ impl Wallets {
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
                 })
-                .await;
+                .await?;
         }
 
         let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
@@ -256,7 +283,7 @@ impl Wallets {
 
         // Record wallet access in database
         let wallet_path = wallets.main_wallet.path().await;
-        let _ = wallets.record_wallet_access(&wallet_path).await;
+        let _ = wallets.record_wallet_access(&wallet_path?).await;
 
         Ok(wallets)
     }
@@ -288,7 +315,7 @@ impl Wallets {
             .call(move |wallet| {
                 wallet.add_listener(Box::new(handle_listener));
             })
-            .await;
+            .await?;
 
         // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
@@ -299,7 +326,7 @@ impl Wallets {
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
                 })
-                .await;
+                .await?;
         }
 
         let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
@@ -317,7 +344,7 @@ impl Wallets {
 
         // Record wallet access in database
         let wallet_path = wallets.main_wallet.path().await;
-        let _ = wallets.record_wallet_access(&wallet_path).await;
+        let _ = wallets.record_wallet_access(&wallet_path?).await;
 
         Ok(wallets)
     }
@@ -400,7 +427,7 @@ impl Wallets {
         // Why?
         // Because if the user later tries to spend the funds (after a new block is mined), the wallet will not be synchronized anymore
         // We start the refresh thread such that the wallet will keep up with the chain tip in the background.
-        wallet.start_refresh_thread().await;
+        wallet.start_refresh_thread().await?;
 
         Ok(Arc::new(wallet))
     }
@@ -473,7 +500,7 @@ impl Wallets {
 
         self.main_wallet
             .call(move |wallet| wallet.set_daemon(&new_daemon))
-            .await?;
+            .await??;
 
         Ok(())
     }
