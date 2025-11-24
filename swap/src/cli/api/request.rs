@@ -703,12 +703,10 @@ impl Request for SetMoneroWalletPasswordArgs {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
-        let success = wallet.set_password(self.password).await?;
-        if success {
-            wallet.store_in_current_file().await?;
-        }
+        wallet.set_password(self.password).await?;
+        wallet.store_in_current_file().await?;
 
-        Ok(SetMoneroWalletPasswordResponse { success })
+        Ok(SetMoneroWalletPasswordResponse { success: true })
     }
 }
 
@@ -2029,7 +2027,10 @@ impl Request for GetMoneroSyncProgressArgs {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
-        let sync_progress = wallet.call(|wallet| wallet.sync_progress()).await?;
+        let sync_progress = wallet
+            .sync_progress()
+            .await
+            .context("Couldn't get sync progress")?;
 
         Ok(GetMoneroSyncProgressResponse {
             current_block: sync_progress.current_block,
