@@ -121,7 +121,7 @@ impl GetDefaults for Mainnet {
                 .join("mainnet")
                 .join("config.toml"),
             data_dir: default_asb_data_dir()?.join("mainnet"),
-            listen_address_tcp: Multiaddr::from_str("/ip4/127.0.0.1/tcp/9939")?,
+            listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
             electrum_rpc_urls: default_electrum_servers_mainnet(),
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,
