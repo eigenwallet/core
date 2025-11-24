@@ -1028,6 +1028,7 @@ mod wallet {
                         }
                         SeedChoice::FromSeed {
                             seed: mnemonic,
+                            restore_height,
                             password,
                         } => {
                             // Create wallet from provided seed
@@ -1043,7 +1044,7 @@ mod wallet {
                                     Some(password)
                                 },
                                 env_config.monero_network,
-                                0,
+                                restore_height.into(),
                                 true,
                                 daemon.clone(),
                             )
@@ -1244,7 +1245,7 @@ pub mod api_test {
         pub async fn default(
             is_testnet: bool,
             data_dir: Option<PathBuf>,
-            debug: bool,
+            _debug: bool,
             json: bool,
         ) -> Self {
             let data_dir = data::data_dir_from(data_dir, is_testnet).unwrap();

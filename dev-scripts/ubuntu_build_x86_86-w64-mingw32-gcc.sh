@@ -417,4 +417,7 @@ setup_path
 
 verify_installation
 
+echo "Cleaning up build directory"
+rm -rf "$BUILD"
+
 echo "Done"

@@ -6873,6 +6873,7 @@ dependencies = [
  "fs_extra",
  "futures",
  "monero",
+ "num_cpus",
  "quickcheck",
  "quickcheck_macros",
  "serde",
@@ -11044,7 +11045,7 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "swap"
-version = "3.3.4"
+version = "3.3.7"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -11119,6 +11120,7 @@ dependencies = [
  "swap-fs",
  "swap-machine",
  "swap-p2p",
+ "swap-proptest",
  "swap-serde",
  "tauri",
  "tempfile",
@@ -11147,7 +11149,7 @@ dependencies = [
 
 [[package]]
 name = "swap-asb"
-version = "3.3.4"
+version = "3.3.7"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
@@ -11176,7 +11178,7 @@ dependencies = [
 
 [[package]]
 name = "swap-controller"
-version = "3.3.4"
+version = "3.3.7"
 dependencies = [
  "anyhow",
  "clap 4.5.51",
@@ -11367,6 +11369,16 @@ dependencies = [
  "unsigned-varint 0.8.0",
  "uuid",
  "void",
+]
+
+[[package]]
+name = "swap-proptest"
+version = "0.1.0"
+dependencies = [
+ "bitcoin 0.32.7",
+ "ecdsa_fun",
+ "proptest",
+ "tokio",
 ]
 
 [[package]]
@@ -13970,7 +13982,7 @@ dependencies = [
 
 [[package]]
 name = "unstoppableswap-gui-rs"
-version = "3.3.4"
+version = "3.3.7"
 dependencies = [
  "anyhow",
  "dfx-swiss-sdk",

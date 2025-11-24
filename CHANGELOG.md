@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SWAP: Removed the `list-sellers` CLI command.
 
 ## [3.3.4] - 2025-11-14
+- ASB + CONTROLLER: Add the `peer-id` command to the controller shell which can be used to obtain the Peer ID of your ASB instance.
+
+## [3.3.7] - 2025-11-19
+
+- ORCHESTRATOR + ASB: Support for tunneling both the Bitcoin and Monero node over Tor has been added (thanks to @nabijaczleweli)
+
+## [3.3.6] - 2025-11-17
+
+- GUI: Fix an issue where the user would have to keep resuming if we failed to check the status of a Bitcoin timelock before we waited for the Monero lock transaction to be confirmed.
+
+## [3.3.5] - 2025-11-15
 
 - GUI: Allow changing the password of a Monero wallet (thanks to @nabijaczleweli)
 - GUI: Fix an issue where the list of Electrum servers would display all servers as being unreachable (thanks to @nabijaczleweli)
@@ -766,7 +777,10 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.3.4...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.3.7...HEAD
+[3.3.7]: https://github.com/eigenwallet/core/compare/3.3.6...3.3.7
+[3.3.6]: https://github.com/eigenwallet/core/compare/3.3.5...3.3.6
+[3.3.5]: https://github.com/eigenwallet/core/compare/3.3.4...3.3.5
 [3.3.4]: https://github.com/eigenwallet/core/compare/3.3.3...3.3.4
 [3.3.3]: https://github.com/eigenwallet/core/compare/3.3.2...3.3.3
 [3.3.2]: https://github.com/eigenwallet/core/compare/3.3.1...3.3.2

@@ -557,6 +557,10 @@ impl MoneroWallet {
             .await
             .context("Failed to perform sweep")
     }
+
+    pub async fn blockchain_height(&self) -> Result<u64> {
+        self.wallet.blockchain_height().await
+    }
 }
 
 /// Mine a block ever BLOCK_TIME_SECS seconds.

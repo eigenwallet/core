@@ -21,6 +21,7 @@ use ::bitcoin::Txid;
 use ::monero::Network;
 use anyhow::{bail, Context as AnyContext, Result};
 use arti_client::TorClient;
+use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use libp2p::core::Multiaddr;
@@ -752,12 +753,7 @@ impl Request for SendMoneroArgs {
         // This is a closure that will be called by the monero-sys library to get approval for the transaction
         // It sends an approval request to the frontend and returns true if the user approves the transaction
         let approval_callback: Arc<
-            dyn Fn(
-                    String,
-                    ::monero::Amount,
-                    ::monero::Amount,
-                )
-                    -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>
+            dyn Fn(String, ::monero::Amount, ::monero::Amount) -> BoxFuture<'static, bool>
                 + Send
                 + Sync,
         > = std::sync::Arc::new(
@@ -1468,6 +1464,14 @@ where
 
     Ok((handle, rx))
 }
+
+pub type QuoteFetchFuture = BoxFuture<
+    'static,
+    Result<(
+        tokio::task::JoinHandle<()>,
+        ::tokio::sync::watch::Receiver<Vec<SellerStatus>>,
+    )>,
+>;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS>(

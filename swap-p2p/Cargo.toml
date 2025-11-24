@@ -14,6 +14,7 @@ swap-serde = { path = "../swap-serde" }
 
 # Networking
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify"] }
+async-trait = { workspace = true }
 
 # Serialization
 asynchronous-codec = "0.7.0"
@@ -53,10 +54,10 @@ fetch-quotes-example = []
 [dev-dependencies]
 arti-client = { workspace = true }
 async-trait = { workspace = true }
-libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio", "dns"] }
-libp2p-tor = { path = "../libp2p-tor" }
 tor-rtcompat = { workspace = true }
 tracing-subscriber = { workspace = true }
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio", "dns"] }
+libp2p-tor = { path = "../libp2p-tor" }
 
 [lints]
 workspace = true

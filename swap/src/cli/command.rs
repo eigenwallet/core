@@ -44,6 +44,19 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
+    parse_args_and_custom(raw_args, apply_defaults).await
+}
+
+type JsonTestnetData = (bool, bool, Option<PathBuf>);
+async fn parse_args_and_custom<I, T, Hcc>(
+    raw_args: I,
+    handle_cli_command: impl FnOnce(CliCommand, Arc<Context>, JsonTestnetData) -> Hcc,
+) -> Result<ParseResult>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+    Hcc: std::future::Future<Output = Result<()>>,
+{
     let args = match Arguments::clap().get_matches_from_safe(raw_args) {
         Ok(matches) => Arguments::from_clap(&matches),
         Err(clap::Error {
@@ -54,11 +67,22 @@ where
         Err(e) => anyhow::bail!(e),
     };
 
-    let json = args.json;
-    let is_testnet = args.testnet;
-    let data = args.data;
+    let context = Arc::new(Context::new_without_tauri_handle());
+    handle_cli_command(
+        args.cmd,
+        context.clone(),
+        (args.json, args.testnet, args.data),
+    )
+    .await?;
+    Ok(ParseResult::Success(context))
+}
 
-    let result: Result<Arc<Context>> = match args.cmd {
+async fn apply_defaults(
+    cli_cmd: CliCommand,
+    context: Arc<Context>,
+    (json, is_testnet, data): JsonTestnetData,
+) -> Result<()> {
+    match cli_cmd {
         CliCommand::BuyXmr {
             seller: Seller { seller },
             bitcoin,
@@ -79,7 +103,6 @@ where
                 .transpose()?
                 .map(|address| address.into_unchecked());
 
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_tor(tor.enable_tor)
                 .with_bitcoin(bitcoin)
@@ -94,29 +117,23 @@ where
                 bitcoin_change_address,
                 monero_receive_pool,
             }
-            .request(context.clone())
+            .request(context)
             .await?;
-
-            Ok(context)
         }
         CliCommand::History => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
 
-            GetHistoryArgs {}.request(context.clone()).await?;
-
-            Ok(context)
+            GetHistoryArgs {}.request(context).await?;
         }
         CliCommand::Logs {
             logs_dir,
             redact,
             swap_id,
         } => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
                 .with_json(json)
@@ -128,25 +145,19 @@ where
                 redact,
                 swap_id,
             }
-            .request(context.clone())
+            .request(context)
             .await?;
-
-            Ok(context)
         }
         CliCommand::Config => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
 
-            GetConfigArgs {}.request(context.clone()).await?;
-
-            Ok(context)
+            GetConfigArgs {}.request(context).await?;
         }
         CliCommand::Balance { bitcoin } => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
@@ -157,10 +168,8 @@ where
             BalanceArgs {
                 force_refresh: true,
             }
-            .request(context.clone())
+            .request(context)
             .await?;
-
-            Ok(context)
         }
         CliCommand::WithdrawBtc {
             bitcoin,
@@ -169,7 +178,6 @@ where
         } => {
             let address = bitcoin_address::validate(address, is_testnet)?;
 
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
@@ -177,11 +185,7 @@ where
                 .build(context.clone())
                 .await?;
 
-            WithdrawBtcArgs { amount, address }
-                .request(context.clone())
-                .await?;
-
-            Ok(context)
+            WithdrawBtcArgs { amount, address }.request(context).await?;
         }
         CliCommand::Resume {
             swap_id: SwapId { swap_id },
@@ -189,7 +193,6 @@ where
             monero,
             tor,
         } => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_tor(tor.enable_tor)
                 .with_bitcoin(bitcoin)
@@ -199,15 +202,12 @@ where
                 .build(context.clone())
                 .await?;
 
-            ResumeSwapArgs { swap_id }.request(context.clone()).await?;
-
-            Ok(context)
+            ResumeSwapArgs { swap_id }.request(context).await?;
         }
         CliCommand::CancelAndRefund {
             swap_id: SwapId { swap_id },
             bitcoin,
         } => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
@@ -215,14 +215,9 @@ where
                 .build(context.clone())
                 .await?;
 
-            CancelAndRefundArgs { swap_id }
-                .request(context.clone())
-                .await?;
-
-            Ok(context)
+            CancelAndRefundArgs { swap_id }.request(context).await?;
         }
         CliCommand::ExportBitcoinWallet { bitcoin } => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
                 .with_data_dir(data)
@@ -230,29 +225,21 @@ where
                 .build(context.clone())
                 .await?;
 
-            ExportBitcoinWalletArgs {}.request(context.clone()).await?;
-
-            Ok(context)
+            ExportBitcoinWalletArgs {}.request(context).await?;
         }
         CliCommand::MoneroRecovery {
             swap_id: SwapId { swap_id },
         } => {
-            let context = Arc::new(Context::new_without_tauri_handle());
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
                 .with_json(json)
                 .build(context.clone())
                 .await?;
 
-            MoneroRecoveryArgs { swap_id }
-                .request(context.clone())
-                .await?;
-
-            Ok(context)
+            MoneroRecoveryArgs { swap_id }.request(context).await?;
         }
-    };
-
-    Ok(ParseResult::Success(result?))
+    }
+    Ok(())
 }
 
 #[derive(structopt::StructOpt, Debug)]
@@ -289,7 +276,7 @@ struct Arguments {
     cmd: CliCommand,
 }
 
-#[derive(structopt::StructOpt, Debug)]
+#[derive(structopt::StructOpt, Debug, PartialEq)]
 enum CliCommand {
     /// Start a BTC for XMR swap
     BuyXmr {
@@ -400,7 +387,7 @@ enum CliCommand {
     },
 }
 
-#[derive(structopt::StructOpt, Debug)]
+#[derive(structopt::StructOpt, Debug, PartialEq, Default)]
 pub struct Monero {
     #[structopt(
         long = "monero-node-address",
@@ -409,7 +396,7 @@ pub struct Monero {
     pub monero_node_address: Option<Url>,
 }
 
-#[derive(structopt::StructOpt, Debug)]
+#[derive(structopt::StructOpt, Debug, PartialEq, Default)]
 pub struct Bitcoin {
     #[structopt(long = "electrum-rpc", help = "Provide the Bitcoin Electrum RPC URLs")]
     pub bitcoin_electrum_rpc_urls: Vec<String>,
@@ -443,7 +430,7 @@ impl Bitcoin {
     }
 }
 
-#[derive(structopt::StructOpt, Debug)]
+#[derive(structopt::StructOpt, Debug, PartialEq, Default)]
 pub struct Tor {
     #[structopt(
         long = "enable-tor",
@@ -452,7 +439,7 @@ pub struct Tor {
     pub enable_tor: bool,
 }
 
-#[derive(structopt::StructOpt, Debug)]
+#[derive(structopt::StructOpt, Debug, PartialEq)]
 struct SwapId {
     #[structopt(
         long = "swap-id",
@@ -461,7 +448,7 @@ struct SwapId {
     swap_id: Uuid,
 }
 
-#[derive(structopt::StructOpt, Debug)]
+#[derive(structopt::StructOpt, Debug, PartialEq)]
 struct Seller {
     #[structopt(
         long,
@@ -472,28 +459,31 @@ struct Seller {
 
 #[cfg(test)]
 mod tests {
-    // this test is very long, however it just checks that various CLI arguments sets the
-    // internal Context and Request properly. It is unlikely to fail and splitting it in various
-    // tests would require to run the tests sequantially which is very slow (due to the context
-    // need to access files like the Bitcoin wallet).
-
-    /*
-
     use super::*;
 
     use crate::cli::api::api_test::*;
-    use crate::cli::api::Config;
-    use crate::monero::monero_address::MoneroAddressNetworkMismatch;
+    use swap_serde::monero::address::MoneroAddressNetworkMismatch;
 
     const BINARY_NAME: &str = "swap";
     const ARGS_DATA_DIR: &str = "/tmp/dir/";
 
-    TODO: This test doesn't work anymore since the Request struct has been removed. We need to find another way to test the CLI arguments.
-    #[tokio::test]
-    async fn test_cli_arguments() {
-        // given_buy_xmr_on_mainnet_then_defaults_to_mainnet
+    async fn simple_positive(
+        raw_ars: &[&str],
+        want_json_testnet_data: JsonTestnetData,
+        want_cli_cmd: CliCommand,
+    ) {
+        parse_args_and_custom(raw_ars, async |cli_cmd, _, json_testnet_data| {
+            assert_eq!(json_testnet_data, want_json_testnet_data);
+            assert_eq!(cli_cmd, want_cli_cmd);
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
 
-        let raw_ars = vec![
+    #[tokio::test]
+    async fn given_buy_xmr_on_mainnet_then_defaults_to_mainnet() {
+        let raw_ars = [
             BINARY_NAME,
             "buy-xmr",
             "--receive-address",
@@ -503,36 +493,22 @@ mod tests {
             "--seller",
             MULTI_ADDRESS,
         ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, false, false);
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
+        let cli_cmd = CliCommand::BuyXmr {
+            monero_receive_address: MONERO_MAINNET_ADDRESS.parse().unwrap(),
+            bitcoin_change_address: Some(BITCOIN_MAINNET_ADDRESS.parse().unwrap()),
+            seller: Seller {
+                seller: MULTI_ADDRESS.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
         };
+        simple_positive(&raw_ars, (false, false, None), cli_cmd).await;
+    }
 
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-
-        // since Uuid is random, copy before comparing requests
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_buy_xmr_on_testnet_then_defaults_to_testnet
-        let raw_ars = vec![
+    #[tokio::test]
+    async fn given_buy_xmr_on_testnet_then_defaults_to_testnet() {
+        let raw_ars = [
             BINARY_NAME,
             "--testnet",
             "buy-xmr",
@@ -543,35 +519,22 @@ mod tests {
             "--seller",
             MULTI_ADDRESS,
         ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, false, false);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
+        let cli_cmd = CliCommand::BuyXmr {
+            monero_receive_address: MONERO_STAGENET_ADDRESS.parse().unwrap(),
+            bitcoin_change_address: Some(BITCOIN_TESTNET_ADDRESS.parse().unwrap()),
+            seller: Seller {
+                seller: MULTI_ADDRESS.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
         };
+        simple_positive(&raw_ars, (false, true, None), cli_cmd).await;
+    }
 
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_buy_xmr_on_mainnet_with_testnet_address_then_fails
-        let raw_ars = vec![
+    #[tokio::test]
+    async fn given_buy_xmr_on_mainnet_with_testnet_address_then_fails() {
+        let raw_ars = [
             BINARY_NAME,
             "buy-xmr",
             "--receive-address",
@@ -583,7 +546,6 @@ mod tests {
         ];
 
         let err = parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-
         assert_eq!(
             err.downcast_ref::<MoneroAddressNetworkMismatch>().unwrap(),
             &MoneroAddressNetworkMismatch {
@@ -591,9 +553,11 @@ mod tests {
                 actual: monero::Network::Stagenet
             }
         );
+    }
 
-        // given_buy_xmr_on_testnet_with_mainnet_address_then_fails
-        let raw_ars = vec![
+    #[tokio::test]
+    async fn given_buy_xmr_on_testnet_with_mainnet_address_then_fails() {
+        let raw_ars = [
             BINARY_NAME,
             "--testnet",
             "buy-xmr",
@@ -606,7 +570,6 @@ mod tests {
         ];
 
         let err = parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-
         assert_eq!(
             err.downcast_ref::<MoneroAddressNetworkMismatch>().unwrap(),
             &MoneroAddressNetworkMismatch {
@@ -614,600 +577,320 @@ mod tests {
                 actual: monero::Network::Mainnet
             }
         );
-
-        // given_resume_on_mainnet_then_defaults_to_mainnet
-        let raw_ars = vec![BINARY_NAME, "resume", "--swap-id", SWAP_ID];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, false, false);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::resume(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_resume_on_testnet_then_defaults_to_testnet
-        let raw_ars = vec![BINARY_NAME, "--testnet", "resume", "--swap-id", SWAP_ID];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, false, false);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::resume(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_cancel_on_mainnet_then_defaults_to_mainnet
-        let raw_ars = vec![BINARY_NAME, "cancel", "--swap-id", SWAP_ID];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-
-        let (is_testnet, debug, json) = (false, false, false);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::cancel(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_cancel_on_testnet_then_defaults_to_testnet
-        let raw_ars = vec![BINARY_NAME, "--testnet", "cancel", "--swap-id", SWAP_ID];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, false, false);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::cancel(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        let raw_ars = vec![BINARY_NAME, "refund", "--swap-id", SWAP_ID];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, false, false);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::refund(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_refund_on_testnet_then_defaults_to_testnet
-        let raw_ars = vec![BINARY_NAME, "--testnet", "refund", "--swap-id", SWAP_ID];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, false, false);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::refund(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_buy_xmr_on_mainnet_with_data_dir_then_data_dir_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--data-base-dir",
-            ARGS_DATA_DIR,
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_MAINNET_ADDRESS,
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, false, false);
-        let data_dir = PathBuf::from_str(ARGS_DATA_DIR).unwrap();
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, Some(data_dir.clone()), debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_buy_xmr_on_testnet_with_data_dir_then_data_dir_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "--data-base-dir",
-            ARGS_DATA_DIR,
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_TESTNET_ADDRESS,
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let data_dir = PathBuf::from_str(ARGS_DATA_DIR).unwrap();
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, false, false);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, Some(data_dir.clone()), debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_resume_on_mainnet_with_data_dir_then_data_dir_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--data-base-dir",
-            ARGS_DATA_DIR,
-            "resume",
-            "--swap-id",
-            SWAP_ID,
-        ];
-
-        let data_dir = PathBuf::from_str(ARGS_DATA_DIR).unwrap();
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, false, false);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, Some(data_dir.clone()), debug, json),
-            Request::resume(),
-        );
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_resume_on_testnet_with_data_dir_then_data_dir_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "--data-base-dir",
-            ARGS_DATA_DIR,
-            "resume",
-            "--swap-id",
-            SWAP_ID,
-        ];
-
-        let data_dir = PathBuf::from_str(ARGS_DATA_DIR).unwrap();
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, false, false);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, Some(data_dir.clone()), debug, json),
-            Request::resume(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_buy_xmr_on_mainnet_with_debug_then_debug_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--debug",
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_MAINNET_ADDRESS,
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, true, false);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_buy_xmr_on_testnet_with_debug_then_debug_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "--debug",
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_TESTNET_ADDRESS,
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, true, false);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_resume_on_mainnet_with_debug_then_debug_set
-        let raw_ars = vec![BINARY_NAME, "--debug", "resume", "--swap-id", SWAP_ID];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, true, false);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::resume(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_resume_on_testnet_with_debug_then_debug_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "--debug",
-            "resume",
-            "--swap-id",
-            SWAP_ID,
-        ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, true, false);
-
-        let expected_config = Config::default(is_testnet, None, debug, json);
-
-        let actual_config = match args {
-            ParseResult::Context(context, request) => context.config.clone(),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-
-        // given_buy_xmr_on_mainnet_with_json_then_json_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--json",
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_MAINNET_ADDRESS,
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, false, true);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_buy_xmr_on_testnet_with_json_then_json_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "--json",
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_TESTNET_ADDRESS,
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-
-        let (is_testnet, debug, json) = (true, false, true);
-
-        let (expected_config, mut expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::buy_xmr(is_testnet),
-        );
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        if let Method::BuyXmr {
-            ref mut swap_id, ..
-        } = expected_request.cmd
-        {
-            *swap_id = match actual_request.cmd {
-                Method::BuyXmr { swap_id, .. } => swap_id,
-                _ => panic!("Not the Method we expected"),
-            }
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_resume_on_mainnet_with_json_then_json_set
-        let raw_ars = vec![BINARY_NAME, "--json", "resume", "--swap-id", SWAP_ID];
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (false, false, true);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::resume(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // given_resume_on_testnet_with_json_then_json_set
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "--json",
-            "resume",
-            "--swap-id",
-            SWAP_ID,
-        ];
-
-        let args = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        let (is_testnet, debug, json) = (true, false, true);
-
-        let (expected_config, expected_request) = (
-            Config::default(is_testnet, None, debug, json),
-            Request::resume(),
-        );
-
-        let (actual_config, actual_request) = match args {
-            ParseResult::Context(context, request) => (context.config.clone(), request),
-            _ => panic!("Couldn't parse result"),
-        };
-
-        assert_eq!(actual_config, expected_config);
-        assert_eq!(actual_request, Box::new(expected_request));
-
-        // only_bech32_addresses_mainnet_are_allowed
-        let raw_ars = vec![
-            BINARY_NAME,
-            "buy-xmr",
-            "--change-address",
-            "1A5btpLKZjgYm8R22rJAhdbTFVXgSRA2Mp",
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-
-        let raw_ars = vec![
-            BINARY_NAME,
-            "buy-xmr",
-            "--change-address",
-            "36vn4mFhmTXn7YcNwELFPxTXhjorw2ppu2",
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-
-        let raw_ars = vec![
-            BINARY_NAME,
-            "buy-xmr",
-            "--change-address",
-            "bc1qh4zjxrqe3trzg7s6m7y67q2jzrw3ru5mx3z7j3",
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let result = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        assert!(matches!(result, ParseResult::Context(_, _)));
-
-        // only_bech32_addresses_testnet_are_allowed
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "buy-xmr",
-            "--change-address",
-            "n2czxyeFCQp9e8WRyGpy4oL4YfQAeKkkUH",
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "buy-xmr",
-            "--change-address",
-            "2ND9a4xmQG89qEWG3ETRuytjKpLmGrW7Jvf",
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        parse_args_and_apply_defaults(raw_ars).await.unwrap_err();
-
-        let raw_ars = vec![
-            BINARY_NAME,
-            "--testnet",
-            "buy-xmr",
-            "--change-address",
-            "tb1q958vfh3wkdp232pktq8zzvmttyxeqnj80zkz3v",
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let result = parse_args_and_apply_defaults(raw_ars).await.unwrap();
-        assert!(matches!(result, ParseResult::Context(_, _)));
     }
-     */
+
+    #[tokio::test]
+    async fn given_resume_on_mainnet_then_defaults_to_mainnet() {
+        let raw_ars = [BINARY_NAME, "resume", "--swap-id", SWAP_ID];
+        let cli_cmd = CliCommand::Resume {
+            swap_id: SwapId {
+                swap_id: SWAP_ID.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (false, false, None), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn given_resume_on_testnet_then_defaults_to_testnet() {
+        let raw_ars = [BINARY_NAME, "--testnet", "resume", "--swap-id", SWAP_ID];
+        let cli_cmd = CliCommand::Resume {
+            swap_id: SwapId {
+                swap_id: SWAP_ID.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (false, true, None), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn given_cancel_on_mainnet_then_defaults_to_mainnet() {
+        for alias in ["cancel", "refund"] {
+            let raw_ars = [BINARY_NAME, alias, "--swap-id", SWAP_ID];
+            let cli_cmd = CliCommand::CancelAndRefund {
+                swap_id: SwapId {
+                    swap_id: SWAP_ID.parse().unwrap(),
+                },
+                bitcoin: Default::default(),
+            };
+            simple_positive(&raw_ars, (false, false, None), cli_cmd).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn given_cancel_on_testnet_then_defaults_to_testnet() {
+        for alias in ["cancel", "refund"] {
+            let raw_ars = [BINARY_NAME, "--testnet", alias, "--swap-id", SWAP_ID];
+            let cli_cmd = CliCommand::CancelAndRefund {
+                swap_id: SwapId {
+                    swap_id: SWAP_ID.parse().unwrap(),
+                },
+                bitcoin: Default::default(),
+            };
+            simple_positive(&raw_ars, (false, true, None), cli_cmd).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn given_buy_xmr_on_mainnet_with_data_dir_then_data_dir_set() {
+        let raw_ars = [
+            BINARY_NAME,
+            "--data-base-dir",
+            ARGS_DATA_DIR,
+            "buy-xmr",
+            "--change-address",
+            BITCOIN_MAINNET_ADDRESS,
+            "--receive-address",
+            MONERO_MAINNET_ADDRESS,
+            "--seller",
+            MULTI_ADDRESS,
+        ];
+        let cli_cmd = CliCommand::BuyXmr {
+            monero_receive_address: MONERO_MAINNET_ADDRESS.parse().unwrap(),
+            bitcoin_change_address: Some(BITCOIN_MAINNET_ADDRESS.parse().unwrap()),
+            seller: Seller {
+                seller: MULTI_ADDRESS.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(
+            &raw_ars,
+            (false, false, Some(ARGS_DATA_DIR.into())),
+            cli_cmd,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn given_buy_xmr_on_testnet_with_data_dir_then_data_dir_set() {
+        let raw_ars = [
+            BINARY_NAME,
+            "--testnet",
+            "--data-base-dir",
+            ARGS_DATA_DIR,
+            "buy-xmr",
+            "--change-address",
+            BITCOIN_TESTNET_ADDRESS,
+            "--receive-address",
+            MONERO_STAGENET_ADDRESS,
+            "--seller",
+            MULTI_ADDRESS,
+        ];
+        let cli_cmd = CliCommand::BuyXmr {
+            monero_receive_address: MONERO_STAGENET_ADDRESS.parse().unwrap(),
+            bitcoin_change_address: Some(BITCOIN_TESTNET_ADDRESS.parse().unwrap()),
+            seller: Seller {
+                seller: MULTI_ADDRESS.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (false, true, Some(ARGS_DATA_DIR.into())), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn given_resume_on_mainnet_with_data_dir_then_data_dir_set() {
+        let raw_ars = [
+            BINARY_NAME,
+            "--data-base-dir",
+            ARGS_DATA_DIR,
+            "resume",
+            "--swap-id",
+            SWAP_ID,
+        ];
+        let cli_cmd = CliCommand::Resume {
+            swap_id: SwapId {
+                swap_id: SWAP_ID.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(
+            &raw_ars,
+            (false, false, Some(ARGS_DATA_DIR.into())),
+            cli_cmd,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn given_resume_on_testnet_with_data_dir_then_data_dir_set() {
+        let raw_ars = [
+            BINARY_NAME,
+            "--testnet",
+            "--data-base-dir",
+            ARGS_DATA_DIR,
+            "resume",
+            "--swap-id",
+            SWAP_ID,
+        ];
+        let cli_cmd = CliCommand::Resume {
+            swap_id: SwapId {
+                swap_id: SWAP_ID.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (false, true, Some(ARGS_DATA_DIR.into())), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn given_buy_xmr_on_mainnet_with_json_then_json_set() {
+        let raw_ars = [
+            BINARY_NAME,
+            "--json",
+            "buy-xmr",
+            "--change-address",
+            BITCOIN_MAINNET_ADDRESS,
+            "--receive-address",
+            MONERO_MAINNET_ADDRESS,
+            "--seller",
+            MULTI_ADDRESS,
+        ];
+        let cli_cmd = CliCommand::BuyXmr {
+            monero_receive_address: MONERO_MAINNET_ADDRESS.parse().unwrap(),
+            bitcoin_change_address: Some(BITCOIN_MAINNET_ADDRESS.parse().unwrap()),
+            seller: Seller {
+                seller: MULTI_ADDRESS.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (true, false, None), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn given_buy_xmr_on_testnet_with_json_then_json_set() {
+        let raw_ars = [
+            BINARY_NAME,
+            "--testnet",
+            "--json",
+            "buy-xmr",
+            "--change-address",
+            BITCOIN_TESTNET_ADDRESS,
+            "--receive-address",
+            MONERO_STAGENET_ADDRESS,
+            "--seller",
+            MULTI_ADDRESS,
+        ];
+        let cli_cmd = CliCommand::BuyXmr {
+            bitcoin_change_address: Some(BITCOIN_TESTNET_ADDRESS.parse().unwrap()),
+            monero_receive_address: MONERO_STAGENET_ADDRESS.parse().unwrap(),
+            seller: Seller {
+                seller: MULTI_ADDRESS.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (true, true, None), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn given_resume_on_mainnet_with_json_then_json_set() {
+        let raw_ars = [BINARY_NAME, "--json", "resume", "--swap-id", SWAP_ID];
+        let cli_cmd = CliCommand::Resume {
+            swap_id: SwapId {
+                swap_id: SWAP_ID.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (true, false, None), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn given_resume_on_testnet_with_json_then_json_set() {
+        let raw_ars = [
+            BINARY_NAME,
+            "--testnet",
+            "--json",
+            "resume",
+            "--swap-id",
+            SWAP_ID,
+        ];
+        let cli_cmd = CliCommand::Resume {
+            swap_id: SwapId {
+                swap_id: SWAP_ID.parse().unwrap(),
+            },
+            bitcoin: Default::default(),
+            monero: Default::default(),
+            tor: Default::default(),
+        };
+        simple_positive(&raw_ars, (true, true, None), cli_cmd).await;
+    }
+
+    #[tokio::test]
+    async fn only_bech32_addresses_mainnet_are_allowed() {
+        // TODO: not apply defaults
+        let mut raw_ars = [
+            BINARY_NAME,
+            "buy-xmr",
+            "--change-address",
+            "",
+            "--receive-address",
+            MONERO_MAINNET_ADDRESS,
+            "--seller",
+            MULTI_ADDRESS,
+        ];
+        raw_ars[3] = "1A5btpLKZjgYm8R22rJAhdbTFVXgSRA2Mp";
+        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
+            .await
+            .unwrap_err();
+
+        raw_ars[3] = "36vn4mFhmTXn7YcNwELFPxTXhjorw2ppu2";
+        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
+            .await
+            .unwrap_err();
+
+        raw_ars[3] = "bc1qh4zjxrqe3trzg7s6m7y67q2jzrw3ru5mx3z7j3";
+        let ParseResult::Success(_) = parse_args_and_custom(raw_ars, async |_, _, _| Ok(()))
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+    }
+
+    #[tokio::test]
+    async fn only_bech32_addresses_testnet_are_allowed() {
+        let mut raw_ars = [
+            BINARY_NAME,
+            "--testnet",
+            "buy-xmr",
+            "--change-address",
+            "",
+            "--receive-address",
+            MONERO_STAGENET_ADDRESS,
+            "--seller",
+            MULTI_ADDRESS,
+        ];
+        raw_ars[4] = "n2czxyeFCQp9e8WRyGpy4oL4YfQAeKkkUH";
+        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
+            .await
+            .unwrap_err();
+        raw_ars[4] = "2ND9a4xmQG89qEWG3ETRuytjKpLmGrW7Jvf";
+        parse_args_and_custom(raw_ars, async |_, _, _| unreachable!())
+            .await
+            .unwrap_err();
+
+        raw_ars[4] = "tb1q958vfh3wkdp232pktq8zzvmttyxeqnj80zkz3v";
+        let ParseResult::Success(_) = parse_args_and_custom(raw_ars, async |_, _, _| Ok(()))
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+    }
 }

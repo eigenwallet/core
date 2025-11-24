@@ -7,5 +7,4 @@ pub mod out_event;
 pub mod patches;
 pub mod protocols;
 
-#[cfg(test)]
 pub mod test;
