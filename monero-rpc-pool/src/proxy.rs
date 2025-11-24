@@ -304,11 +304,11 @@ async fn proxy_to_multiple_nodes(
                 // Only record errors if we have gotten a successful response
                 // This helps prevent logging errors if it's likely our fault (e.g. no internet).
                 for (node_failed, _) in collected_errors.iter() {
-                    record_failure(&state, &node_failed.0, &node_failed.1, node_failed.2).await;
+                    record_failure(state, &node_failed.0, &node_failed.1, node_failed.2).await;
                 }
 
                 // Record the success with actual latency
-                record_success(&state, &winner.0, &winner.1, winner.2, latency).await;
+                record_success(state, &winner.0, &winner.1, winner.2, latency).await;
 
                 // Return the buffered response (no streaming)
                 return Ok(buffered_response.into_response());
@@ -338,7 +338,7 @@ async fn maybe_wrap_with_tls(
             .map_err(|_| SingleRequestError::ConnectionError("Invalid DNS name".to_string()))?;
 
         let tls_stream = connector.connect(server_name, stream).await.map_err(|e| {
-            SingleRequestError::ConnectionError(format!("TLS connection error: {:?}", e))
+            SingleRequestError::ConnectionError(format!("TLS connection error: {e:?}"))
         })?;
 
         Ok(Box::new(tls_stream))
@@ -492,13 +492,13 @@ async fn proxy_to_single_node(
                 let stream = tor_client
                     .connect(address)
                     .await
-                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
 
                 Box::new(stream)
             } else {
                 let stream = TcpStream::connect(address)
                     .await
-                    .map_err(|e| SingleRequestError::ConnectionError(format!("{:?}", e)))?;
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
 
                 Box::new(stream)
             };
@@ -558,8 +558,7 @@ async fn proxy_to_single_node(
             // If we fail to read the full body, mark connection as failed
             guarded_sender.mark_failed().await;
             return Err(SingleRequestError::SendRequestError(format!(
-                "Failed to read response body: {}",
-                e
+                "Failed to read response body: {e}",
             )));
         }
     };
@@ -740,9 +739,9 @@ impl std::fmt::Display for HandlerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HandlerError::NoNodes => write!(f, "No nodes available"),
-            HandlerError::PoolError(msg) => write!(f, "Pool error: {}", msg),
-            HandlerError::PhyiscalError(msg) => write!(f, "Request error: {}", msg),
-            HandlerError::JsonRpcError(msg) => write!(f, "JSON-RPC error: {}", msg),
+            HandlerError::PoolError(msg) => write!(f, "Pool error: {msg}"),
+            HandlerError::PhyiscalError(msg) => write!(f, "Request error: {msg}"),
+            HandlerError::JsonRpcError(msg) => write!(f, "JSON-RPC error: {msg}"),
             HandlerError::AllRequestsFailed(errors) => {
                 write!(f, "All requests failed: [")?;
                 for (i, (node, error)) in errors.iter().enumerate() {
@@ -750,12 +749,12 @@ impl std::fmt::Display for HandlerError {
                         write!(f, ", ")?;
                     }
                     let node_str = display_node(node);
-                    write!(f, "{}: {}", node_str, error)?;
+                    write!(f, "{node_str}: {error}")?;
                 }
                 write!(f, "]")
             }
-            HandlerError::CloneRequestError(msg) => write!(f, "Clone request error: {}", msg),
-            HandlerError::HttpError(msg) => write!(f, "HTTP error: {}", msg),
+            HandlerError::CloneRequestError(msg) => write!(f, "Clone request error: {msg}"),
+            HandlerError::HttpError(msg) => write!(f, "HTTP error: {msg}"),
         }
     }
 }
@@ -763,9 +762,9 @@ impl std::fmt::Display for HandlerError {
 impl std::fmt::Display for SingleRequestError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
-            SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {}", msg),
-            SingleRequestError::Timeout(msg) => write!(f, "Timeout: {}", msg),
+            SingleRequestError::ConnectionError(msg) => write!(f, "Connection error: {msg}"),
+            SingleRequestError::SendRequestError(msg) => write!(f, "Send request error: {msg}"),
+            SingleRequestError::Timeout(msg) => write!(f, "Timeout: {msg}"),
         }
     }
 }

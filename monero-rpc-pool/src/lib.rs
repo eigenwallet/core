@@ -60,9 +60,9 @@ pub struct ServerInfo {
     pub host: String,
 }
 
-impl Into<String> for ServerInfo {
-    fn into(self) -> String {
-        format!("http://{}:{}", self.host, self.port)
+impl From<ServerInfo> for String {
+    fn from(val: ServerInfo) -> String {
+        format!("http://{host}:{port}", host = val.host, port = val.port)
     }
 }
 
@@ -77,7 +77,7 @@ pub async fn create_app_with_receiver(
     let db = Database::new(config.data_dir.clone()).await?;
 
     // Initialize node pool with network from config
-    let (node_pool, status_receiver) = NodePool::new(db.clone(), config.network.clone());
+    let (node_pool, status_receiver) = NodePool::new(db.clone(), config.network);
     let node_pool = Arc::new(node_pool);
 
     // Publish initial status immediately to ensure first event is sent
@@ -160,7 +160,7 @@ pub async fn start_server_with_random_port(
     let (app, status_receiver, mut pool_handle) = create_app_with_receiver(config).await?;
 
     // Bind to port 0 to get a random available port
-    let listener = tokio::net::TcpListener::bind(format!("{}:0", host)).await?;
+    let listener = tokio::net::TcpListener::bind(format!("{host}:0")).await?;
     let actual_addr = listener.local_addr()?;
 
     let server_info = ServerInfo {

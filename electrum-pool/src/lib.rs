@@ -193,10 +193,8 @@ where
         match spawn_blocking(move || balancer.call_sync(&kind_string, f)).await {
             Ok(result) => result,
             Err(e) => {
-                let context = format!(
-                    "Failed to spawn blocking task for operation '{}'",
-                    kind_for_error
-                );
+                let context =
+                    format!("Failed to spawn blocking task for operation '{kind_for_error}'");
                 let error = Error::IOError(std::io::Error::other(e.to_string()));
                 Err(MultiError::new(vec![error], context))
             }
@@ -357,7 +355,7 @@ where
                             Ok(client) => tokio::task::spawn_blocking(move || f(&client))
                                 .await
                                 .map_err(|e| {
-                                    Error::IOError(std::io::Error::other(format!("{:?}", e)))
+                                    Error::IOError(std::io::Error::other(format!("{e:?}")))
                                 })?,
                             Err(e) => Err(e),
                         }
@@ -582,7 +580,7 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
                 Error::IOError(io_err) if io_err.kind() == std::io::ErrorKind::NotFound => {
                     Error::IOError(std::io::Error::new(
                         std::io::ErrorKind::NotFound,
-                        format!("{} (Most likely DNS resolution error)", e),
+                        format!("{e} (Most likely DNS resolution error)"),
                     ))
                 }
                 Error::IOError(io_err)
@@ -593,7 +591,7 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
                 {
                     Error::IOError(std::io::Error::new(
                         io_err.kind(),
-                        format!("{} (Most likely DNS resolution error)", e),
+                        format!("{e} (Most likely DNS resolution error)"),
                     ))
                 }
                 _ => e, // Pass through other errors unchanged
@@ -1071,7 +1069,7 @@ mod tests {
         match result {
             Err(e) => {
                 let error_msg = e.to_string();
-                println!("Error message: {}", error_msg);
+                println!("Error message: {error_msg}");
                 assert!(
                     error_msg.contains("All Electrum nodes failed")
                         || error_msg.contains("Mock connection failed")

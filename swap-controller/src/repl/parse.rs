@@ -26,7 +26,7 @@ pub fn parse_line(line: &str) -> Option<Cmd> {
         Ok(repl_cmd) => Some(repl_cmd.cmd),
         Err(err) => {
             // Print clap's error message (it's quite good)
-            eprintln!("{}", err);
+            eprintln!("{err}");
             None
         }
     }

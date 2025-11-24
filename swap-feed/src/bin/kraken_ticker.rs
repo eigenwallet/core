@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     loop {
         match ticker.wait_for_next_update().await? {
             Ok(update) => println!("Price update: {}", update.ask),
-            Err(e) => println!("Error: {:#}", e),
+            Err(e) => println!("Error: {e:#?}"),
         }
     }
 }

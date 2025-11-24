@@ -50,7 +50,7 @@ impl Client {
     /// Constructs a monero-wallet-rpc client with localhost endpoint.
     pub fn localhost(port: u16) -> Result<Self> {
         Client::new(
-            format!("http://127.0.0.1:{}/json_rpc", port)
+            format!("http://127.0.0.1:{port}/json_rpc")
                 .parse()
                 .context("url is well formed")?,
         )
@@ -108,11 +108,7 @@ impl fmt::Display for GetBalance {
             .set_scale(12)
             .expect("12 is smaller than max precision of 28");
 
-        write!(
-            f,
-            "total balance: {}, unlocked balance: {}",
-            total, unlocked
-        )
+        write!(f, "total balance: {total}, unlocked balance: {unlocked}")
     }
 }
 

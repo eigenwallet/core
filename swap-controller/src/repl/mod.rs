@@ -135,8 +135,7 @@ where
                             }
                         } else {
                             eprintln!(
-                                "Unknown command: {}. Type 'help' for available commands.",
-                                line
+                                "Unknown command: {line}. Type 'help' for available commands."
                             );
                         }
                     }
@@ -151,7 +150,7 @@ where
                 break;
             }
             Err(err) => {
-                eprintln!("Error: {:?}", err);
+                eprintln!("Error: {err:?}");
                 break;
             }
         }
