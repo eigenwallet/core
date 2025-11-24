@@ -258,7 +258,9 @@ where
                             let _ = responder.respond(wallet_snapshot);
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
-                            self.handle_execution_setup_done(peer_id, swap_id, state3).await;
+                            if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
+                                tracing::error!(%swap_id, ?error, "Failed to handle execution setup done");
+                            }
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapDeclined { peer, error }) => {
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
@@ -614,7 +616,12 @@ where
         bob_peer_id: PeerId,
         swap_id: Uuid,
         state3: State3,
-    ) {
+    ) -> Result<()> {
+        if self.db.has_swap(swap_id).await.context("Failed to check if UUID is already in use")? {
+            // TODO: We should ideally check this during swap setup, not after
+            return Err(anyhow::anyhow!("UUID is already in use"));
+        }
+
         let handle = self.new_handle(bob_peer_id, swap_id);
 
         let initial_state = AliceState::Started {
@@ -632,16 +639,10 @@ where
             developer_tip: self.developer_tip.clone(),
         };
 
-        match self.db.insert_peer_id(swap_id, bob_peer_id).await {
-            Ok(_) => {
-                if let Err(error) = self.swap_sender.send(swap).await {
-                    tracing::warn!(%swap_id, "Failed to start swap: {:?}", error);
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%swap_id, "Unable to save peer-id in database: {}", error);
-            }
-        }
+        self.db.insert_peer_id(swap_id, bob_peer_id).await.context("Failed to save peer-id in database")?;
+        self.swap_sender.send(swap).await.context("Failed to send message to spawn swap state machine")?;
+
+        Ok(())
     }
 
     /// Create a new [`EventLoopHandle`] that is scoped for communication with
