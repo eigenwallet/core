@@ -107,115 +107,115 @@ impl NetworkBehaviour for Behaviour {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>>
     {
-        loop {
-            // Check if we have any events to send to the swarm
-            if let Some(event) = self.to_swarm.pop_front() {
-                return Poll::Ready(event);
-            }
+        // Check if a backoff timer for a peer has resolved
+        while let Poll::Ready(Some((peer_id, _))) = self.pending_to_discover.poll_next_unpin(cx) {
+            // Request is ready to be dispatched
+            self.to_discover.push_back(peer_id);
+        }
 
-            // Check if we should send a discovery request to a rendezvous node
-            while let Poll::Ready(Some((peer_id, _))) = self.pending_to_discover.poll_next_unpin(cx)
-            {
-                self.to_discover.push_back(peer_id);
-            }
+        // Take ownership of the queue to avoid borrow checker issues
+        let to_discover = std::mem::take(&mut self.to_discover);
+        self.to_discover = to_discover
+            .into_iter()
+            .filter(|peer| {
+                // If we are not connected to the peer, keep it in the queue
+                if !self.connection_tracker.is_connected(peer) {
+                    return true;
+                }
 
-            // Take ownership of the queue to avoid borrow checker issues
-            let to_discover = std::mem::take(&mut self.to_discover);
-            self.to_discover = to_discover
-                .into_iter()
-                .filter(|peer| {
-                    // If we are not connected to the peer, keep it in the queue
-                    if !self.connection_tracker.is_connected(peer) {
-                        return true;
-                    }
+                // If we are connected to the peer, send a discovery request
+                self.inner.rendezvous.discover(
+                    Some(self.namespace.clone()),
+                    None,
+                    None,
+                    peer.clone(),
+                );
 
-                    // If we are connected to the peer, send a discovery request
-                    self.inner.rendezvous.discover(
-                        Some(self.namespace.clone()),
-                        None,
-                        None,
-                        peer.clone(),
+                false
+            })
+            .collect();
+
+        while let Poll::Ready(event) = self.inner.poll(cx) {
+            match event {
+                ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(
+                    libp2p::rendezvous::client::Event::Discovered {
+                        rendezvous_node,
+                        registrations,
+                        ..
+                    },
+                )) => {
+                    tracing::trace!(
+                        ?rendezvous_node,
+                        num_registrations = %registrations.len(),
+                        "Discovered peers at rendezvous node"
                     );
 
-                    false
-                })
-                .collect();
+                    for registration in registrations {
+                        for address in registration.record.addresses() {
+                            let peer_id = registration.record.peer_id();
 
-            match self.inner.poll(cx) {
-                Poll::Ready(ToSwarm::GenerateEvent(event)) => match event {
-                    InnerBehaviourEvent::Rendezvous(
-                        libp2p::rendezvous::client::Event::Discovered {
-                            rendezvous_node,
-                            registrations,
-                            ..
-                        },
-                    ) => {
-                        tracing::trace!(
-                            ?rendezvous_node,
-                            num_registrations = %registrations.len(),
-                            "Discovered peers at rendezvous node"
-                        );
+                            if self.discovered.insert((peer_id, address.clone())) {
+                                self.to_swarm.push_back(ToSwarm::NewExternalAddrOfPeer {
+                                    peer_id,
+                                    address: address.clone(),
+                                });
+                                self.to_swarm.push_back(ToSwarm::GenerateEvent(
+                                    Event::DiscoveredPeer { peer_id },
+                                ));
 
-                        for registration in registrations {
-                            for address in registration.record.addresses() {
-                                let peer_id = registration.record.peer_id();
-
-                                if self.discovered.insert((peer_id, address.clone())) {
-                                    self.to_swarm.push_back(ToSwarm::NewExternalAddrOfPeer {
-                                        peer_id,
-                                        address: address.clone(),
-                                    });
-                                    self.to_swarm.push_back(ToSwarm::GenerateEvent(
-                                        Event::DiscoveredPeer { peer_id },
-                                    ));
-
-                                    tracing::trace!(
-                                        ?rendezvous_node,
-                                        ?peer_id,
-                                        ?address,
-                                        "Discovered peer at rendezvous node"
-                                    );
-                                }
-
-                                self.pending_to_discover.insert(
-                                    rendezvous_node,
-                                    tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
+                                tracing::trace!(
+                                    ?rendezvous_node,
+                                    ?peer_id,
+                                    ?address,
+                                    "Discovered peer at rendezvous node"
                                 );
                             }
+
+                            self.pending_to_discover.insert(
+                                rendezvous_node,
+                                tokio::time::sleep(crate::defaults::DISCOVERY_INTERVAL).boxed(),
+                            );
                         }
-                        continue;
                     }
-                    InnerBehaviourEvent::Rendezvous(
-                        libp2p::rendezvous::client::Event::DiscoverFailed {
-                            rendezvous_node,
-                            error,
-                            namespace: _,
-                        },
-                    ) => {
-                        let backoff = self.backoff.increment(&rendezvous_node);
-
-                        self.pending_to_discover
-                            .insert(rendezvous_node, tokio::time::sleep(backoff).boxed());
-
-                        tracing::error!(
-                            ?rendezvous_node,
-                            ?error,
-                            seconds_until_next_discovery_attempt = %backoff.as_secs(),
-                            "Failed to discover peers at rendezvous node, scheduling retry after backoff"
-                        );
-                        continue;
-                    }
-                    _ => continue,
-                },
-                Poll::Ready(other) => {
-                    self.to_swarm.push_back(other.map_out(|_| unreachable!()));
                     continue;
                 }
-                Poll::Pending => {
-                    return Poll::Pending;
+                ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(
+                    libp2p::rendezvous::client::Event::DiscoverFailed {
+                        rendezvous_node,
+                        error,
+                        namespace: _,
+                    },
+                )) => {
+                    let backoff = self.backoff.increment(&rendezvous_node);
+
+                    self.pending_to_discover
+                        .insert(rendezvous_node, tokio::time::sleep(backoff).boxed());
+
+                    tracing::error!(
+                        ?rendezvous_node,
+                        ?error,
+                        seconds_until_next_discovery_attempt = %backoff.as_secs(),
+                        "Failed to discover peers at rendezvous node, scheduling retry after backoff"
+                    );
+                    continue;
+                }
+                ToSwarm::GenerateEvent(_) => {
+                    // TODO: Do anything with these?
+                }
+                other => {
+                    return Poll::Ready(other.map_out(|_| {
+                        unreachable!("we handled all generated events in the arm above")
+                    }))
                 }
             }
         }
+
+        // Check if we have any events to send to the swarm
+        if let Some(event) = self.to_swarm.pop_front() {
+            return Poll::Ready(event);
+        }
+
+        Poll::Pending
     }
 
     fn on_swarm_event(&mut self, event: libp2p::swarm::FromSwarm) {
