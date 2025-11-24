@@ -1,7 +1,9 @@
 use crate::behaviour_util::AddressTracker;
 use crate::futures_util::FuturesHashSet;
+use crate::out_event;
 use crate::protocols::quote::BidQuote;
 use crate::protocols::quotes;
+use libp2p::identify;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
     THandlerOutEvent, ToSwarm,
@@ -9,8 +11,6 @@ use libp2p::swarm::{
 use libp2p::{Multiaddr, PeerId};
 use std::collections::{HashMap, VecDeque};
 use std::task::{Context, Poll};
-use libp2p::identify;
-use crate::out_event;
 
 pub struct Behaviour {
     inner: quotes::Behaviour,
@@ -51,13 +51,11 @@ impl Behaviour {
             .cache
             .iter()
             .filter_map(|(peer_id, quote)| {
-                self.address_tracker
-                    .last_seen_address(peer_id)
-                    .map(|addr| {
-                        let version = self.versions.get(peer_id).cloned();
+                self.address_tracker.last_seen_address(peer_id).map(|addr| {
+                    let version = self.versions.get(peer_id).cloned();
 
-                        (*peer_id, addr, quote.clone(), version)
-                    })
+                    (*peer_id, addr, quote.clone(), version)
+                })
             })
             .collect();
 
@@ -99,7 +97,7 @@ impl NetworkBehaviour for Behaviour {
                                 peer,
                                 Box::pin(tokio::time::sleep(crate::defaults::CACHED_QUOTE_EXPIRY)),
                             );
-    
+
                             self.emit_cached_quotes();
                         }
                         quotes::Event::VersionReceived { peer, version } => {
@@ -107,7 +105,7 @@ impl NetworkBehaviour for Behaviour {
 
                             // TODO: Only emit if the version is different from the cached one?
                             self.emit_cached_quotes();
-                        },
+                        }
                         quotes::Event::DoesNotSupportProtocol { peer: _ } => {
                             // Don't care about this
                         }

@@ -1471,7 +1471,9 @@ where
 
 #[allow(clippy::too_many_arguments)]
 pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS>(
-    mut quotes_rx: ::tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>>,
+    mut quotes_rx: ::tokio::sync::watch::Receiver<
+        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
+    >,
     // TODO: Shouldn't this be a function?
     get_new_address: impl Future<Output = Result<bitcoin::Address>>,
     balance: FB,

@@ -30,10 +30,10 @@ rand = { workspace = true }
 # Utils
 anyhow = { workspace = true }
 backoff = { workspace = true }
+semver = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
-semver = { workspace = true }
 
 # Async
 bmrng = { workspace = true }

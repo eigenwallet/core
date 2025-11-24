@@ -91,7 +91,9 @@ impl BackoffTracker {
 
     /// Increments the backoff for the given peer and returns the new backoff
     pub fn increment(&mut self, peer: &PeerId) -> Duration {
-        self.get(peer).next_backoff().expect("backoff should never run out")
+        self.get(peer)
+            .next_backoff()
+            .expect("backoff should never run out")
     }
 }
 

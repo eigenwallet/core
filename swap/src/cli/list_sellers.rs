@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use typeshare::typeshare;
 
-
 #[serde_as]
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone, Ord, PartialOrd)]

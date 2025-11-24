@@ -1,17 +1,24 @@
 use backoff::backoff::Backoff;
 use libp2p::{
-    Multiaddr, PeerId, StreamProtocol, core::Endpoint, identify, request_response::{self, OutboundFailure}, swarm::{
+    core::Endpoint,
+    identify,
+    request_response::{self, OutboundFailure},
+    swarm::{
         ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent,
         THandlerOutEvent, ToSwarm,
-    }
+    },
+    Multiaddr, PeerId, StreamProtocol,
 };
 
 use crate::{
-    behaviour_util::{BackoffTracker, ConnectionTracker, extract_semver_from_agent_str}, futures_util::FuturesHashSet, patches, protocols::{
+    behaviour_util::{extract_semver_from_agent_str, BackoffTracker, ConnectionTracker},
+    futures_util::FuturesHashSet,
+    patches,
+    protocols::{
         notice,
         quote::{self, BidQuote},
         redial,
-    }
+    },
 };
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -112,9 +119,17 @@ pub struct InnerBehaviour {
 
 #[derive(Debug)]
 pub enum Event {
-    QuoteReceived { peer: PeerId, quote: BidQuote },
-    VersionReceived { peer: PeerId, version: semver::Version },
-    DoesNotSupportProtocol { peer: PeerId },
+    QuoteReceived {
+        peer: PeerId,
+        quote: BidQuote,
+    },
+    VersionReceived {
+        peer: PeerId,
+        version: semver::Version,
+    },
+    DoesNotSupportProtocol {
+        peer: PeerId,
+    },
 }
 
 impl libp2p::swarm::NetworkBehaviour for Behaviour {
@@ -183,8 +198,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                             error,
                         }) => {
                             // We got an outbound failure, so we increment the backoff
-                            self.backoff
-                                .increment(&peer);
+                            self.backoff.increment(&peer);
 
                             if let OutboundFailure::UnsupportedProtocols = error {
                                 self.handle_does_not_support_protocol(peer);
@@ -198,18 +212,22 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                                 tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
                             }
                         }
-                        InnerBehaviourEvent::Identify(identify::Event::Received { peer_id, info }) => {
-                            match extract_semver_from_agent_str(info.agent_version.as_str()) {
-                                Some(version) => {
-                                    tracing::trace!(%peer_id, %version, "Received version from peer via identify");
+                        InnerBehaviourEvent::Identify(identify::Event::Received {
+                            peer_id,
+                            info,
+                        }) => match extract_semver_from_agent_str(info.agent_version.as_str()) {
+                            Some(version) => {
+                                tracing::trace!(%peer_id, %version, "Received version from peer via identify");
 
-                                    self.to_swarm.push_back(Event::VersionReceived { peer: peer_id, version });
-                                }
-                                None => {
-                                    tracing::warn!(%peer_id, ?info, "Received identify info from peer but failed to extract semver version");
-                                }
+                                self.to_swarm.push_back(Event::VersionReceived {
+                                    peer: peer_id,
+                                    version,
+                                });
                             }
-                        }
+                            None => {
+                                tracing::warn!(%peer_id, ?info, "Received identify info from peer but failed to extract semver version");
+                            }
+                        },
                         _other => {
                             // TODO: Do we need to handle other events?
                         }

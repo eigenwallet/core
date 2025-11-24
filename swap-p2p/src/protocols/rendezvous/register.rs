@@ -154,7 +154,8 @@ impl Behaviour {
         let backoff = self.backoffs.get(&peer_id).current_interval;
 
         // We replace any existing timeout
-        self.pending_to_dispatch.replace(peer_id, Box::pin(tokio::time::sleep(backoff).boxed()));
+        self.pending_to_dispatch
+            .replace(peer_id, Box::pin(tokio::time::sleep(backoff).boxed()));
 
         backoff
     }
@@ -268,9 +269,7 @@ impl NetworkBehaviour for Behaviour {
                     },
                 )) => {
                     // We failed to register, so we backoff
-                    let backoff = self
-                        .backoffs
-                        .increment(&rendezvous_node);
+                    let backoff = self.backoffs.increment(&rendezvous_node);
 
                     // Inform swarm
                     self.to_swarm.push_back(Event::RegisterRequestFailed {

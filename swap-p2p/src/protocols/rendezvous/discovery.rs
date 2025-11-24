@@ -193,9 +193,7 @@ impl NetworkBehaviour for Behaviour {
                             namespace: _,
                         },
                     ) => {
-                        let backoff = self
-                            .backoff
-                            .increment(&rendezvous_node);
+                        let backoff = self.backoff.increment(&rendezvous_node);
 
                         self.pending_to_discover
                             .insert(rendezvous_node, tokio::time::sleep(backoff).boxed());

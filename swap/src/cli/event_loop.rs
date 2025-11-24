@@ -139,8 +139,9 @@ pub struct EventLoop {
     add_peer_address_requests:
         bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, libp2p::Multiaddr), ()>,
 
-    cached_quotes_sender:
-        tokio::sync::watch::Sender<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>>,
+    cached_quotes_sender: tokio::sync::watch::Sender<
+        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
+    >,
 }
 
 impl EventLoop {
@@ -472,7 +473,7 @@ impl EventLoop {
                     // We use an async block to instrument the future, but we don't use `move`
                     // so `self` is borrowed, not moved.
                     async {
-                        self.swarm.behaviour_mut().swap_setup.start(alice_peer_id, swap).await;
+                        self.swarm.behaviour_mut().swap_setup.queue_new_swap(alice_peer_id, swap).await;
                     }
                     .instrument(span.clone())
                     .await;
@@ -589,14 +590,17 @@ pub struct EventLoopHandle {
         bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
 
     // TODO: Extract the Vec<_> into its own struct (QuotesBatch?)
-    cached_quotes_receiver:
-        tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>>,
+    cached_quotes_receiver: tokio::sync::watch::Receiver<
+        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
+    >,
 }
 
 impl EventLoopHandle {
     pub fn cached_quotes(
         &self,
-    ) -> tokio::sync::watch::Receiver<Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>> {
+    ) -> tokio::sync::watch::Receiver<
+        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
+    > {
         self.cached_quotes_receiver.clone()
     }
 

@@ -127,9 +127,9 @@ impl Behaviour {
         // How long should we wait before we redial the peer?
         // If an override is provided, use that, otherwise use the backoff
         // TODO: Instead only increment on errors
-        let next_dial_in = override_next_dial_in.into().unwrap_or_else(|| {
-            self.backoff.increment(peer)
-        });
+        let next_dial_in = override_next_dial_in
+            .into()
+            .unwrap_or_else(|| self.backoff.increment(peer));
 
         let did_queue_new_dial = self.to_dial.insert(
             peer.clone(),
