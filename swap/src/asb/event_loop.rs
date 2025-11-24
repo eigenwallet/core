@@ -617,7 +617,12 @@ where
         swap_id: Uuid,
         state3: State3,
     ) -> Result<()> {
-        if self.db.has_swap(swap_id).await.context("Failed to check if UUID is already in use")? {
+        if self
+            .db
+            .has_swap(swap_id)
+            .await
+            .context("Failed to check if UUID is already in use")?
+        {
             // TODO: We should ideally check this during swap setup, not after
             return Err(anyhow::anyhow!("UUID is already in use"));
         }
@@ -639,8 +644,14 @@ where
             developer_tip: self.developer_tip.clone(),
         };
 
-        self.db.insert_peer_id(swap_id, bob_peer_id).await.context("Failed to save peer-id in database")?;
-        self.swap_sender.send(swap).await.context("Failed to send message to spawn swap state machine")?;
+        self.db
+            .insert_peer_id(swap_id, bob_peer_id)
+            .await
+            .context("Failed to save peer-id in database")?;
+        self.swap_sender
+            .send(swap)
+            .await
+            .context("Failed to send message to spawn swap state machine")?;
 
         Ok(())
     }

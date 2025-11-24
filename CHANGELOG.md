@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SWAP: Removed the `list-sellers` CLI command.
 
 ## [3.3.4] - 2025-11-14
+
 - ASB + CONTROLLER: Add the `peer-id` command to the controller shell which can be used to obtain the Peer ID of your ASB instance.
 
 ## [3.3.7] - 2025-11-19

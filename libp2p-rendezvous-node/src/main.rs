@@ -107,25 +107,17 @@ async fn main() -> Result<()> {
                 tracing::info!(peer=%enquirer, "Discovery served");
             }
             SwarmEvent::Behaviour(behaviour::BehaviourEvent::Register(
-                register::Event::Registered {
-                    peer_id,
-                }
+                register::Event::Registered { peer_id },
             )) => {
                 tracing::info!(%peer_id, "Registered at rendezvous point");
             }
             SwarmEvent::Behaviour(behaviour::BehaviourEvent::Register(
-                register::Event::RegisterRequestFailed {
-                    peer_id,
-                    error,
-                }
+                register::Event::RegisterRequestFailed { peer_id, error },
             )) => {
                 tracing::warn!(%peer_id, ?error, "Failed to register at rendezvous point");
             }
             SwarmEvent::Behaviour(behaviour::BehaviourEvent::Register(
-                register::Event::RegisterDispatchFailed {
-                    peer_id,
-                    error,
-                }
+                register::Event::RegisterDispatchFailed { peer_id, error },
             )) => {
                 tracing::warn!(%peer_id, ?error, "Failed to dispatch register request at rendezvous point");
             }

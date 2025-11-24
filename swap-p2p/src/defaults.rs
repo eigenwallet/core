@@ -15,7 +15,7 @@ pub const RENDEZVOUS_REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(60);
 // Rendezvous discovery
 pub const DISCOVERY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);
 pub const DISCOVERY_MAX_INTERVAL: Duration = Duration::from_secs(60 * 3);
-pub const DISCOVERY_INTERVAL: Duration = Duration::from_secs(10);
+pub const DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
 
 // Rendezvous register
 pub const RENDEZVOUS_RETRY_INITIAL_INTERVAL: Duration = Duration::from_secs(1);

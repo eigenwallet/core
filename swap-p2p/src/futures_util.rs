@@ -60,7 +60,7 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
 
     /// Insert a new future with the given key.
     /// If a future with the same key already exists, it is aborted and replaced.
-    /// 
+    ///
     /// Returns true if a future was replaced, false if no future was replaced.
     pub fn replace(&mut self, key: K, future: BoxFuture<'static, V>) -> bool {
         let did_remove_existing = self.remove(&key);

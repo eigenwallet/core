@@ -4,10 +4,11 @@ use crate::protocols::swap_setup::{
     protocol, BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse,
 };
 use anyhow::{anyhow, Context, Result};
-use futures::future::{BoxFuture};
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
 use futures::AsyncWriteExt;
 use futures::FutureExt;
-use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use libp2p::core::upgrade;
 use libp2p::swarm::handler::ConnectionEvent;
 use libp2p::swarm::{ConnectionHandler, ConnectionId};
@@ -16,14 +17,13 @@ use libp2p::{Multiaddr, PeerId};
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::task::Poll;
-use std::time::{Duration};
+use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_feed::LatestRate;
 use swap_machine::alice::{State0, State3};
 use swap_machine::common::{Message0, Message2, Message4};
 use uuid::Uuid;
-use futures::StreamExt;
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]

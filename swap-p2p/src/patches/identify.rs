@@ -106,16 +106,17 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
 
         Poll::Pending
     }
-    
+
     fn handle_pending_inbound_connection(
         &mut self,
         connection_id: libp2p::swarm::ConnectionId,
         local_addr: &libp2p::Multiaddr,
         remote_addr: &libp2p::Multiaddr,
     ) -> Result<(), libp2p::swarm::ConnectionDenied> {
-        self.inner.handle_pending_inbound_connection(connection_id, local_addr, remote_addr)
+        self.inner
+            .handle_pending_inbound_connection(connection_id, local_addr, remote_addr)
     }
-    
+
     fn handle_pending_outbound_connection(
         &mut self,
         connection_id: libp2p::swarm::ConnectionId,
@@ -123,6 +124,11 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
         addresses: &[libp2p::Multiaddr],
         effective_role: libp2p::core::Endpoint,
     ) -> Result<Vec<libp2p::Multiaddr>, libp2p::swarm::ConnectionDenied> {
-        self.inner.handle_pending_outbound_connection(connection_id, maybe_peer, addresses, effective_role)
+        self.inner.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )
     }
 }

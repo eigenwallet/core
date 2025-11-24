@@ -10,8 +10,8 @@ use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse,
-    RendezvousConnectionStatus, RendezvousRegistrationStatus, Swap,
+    PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
+    RendezvousRegistrationStatus, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
 
