@@ -3,7 +3,7 @@
   "runtime": "org.gnome.Platform",
   "runtime-version": "47",
   "sdk": "org.gnome.Sdk",
-  "command": "unstoppableswap-gui-rs",
+  "command": "unstoppableswap-gui-rs.flatpak.sh",
   "finish-args": [
     "--socket=wayland",
     "--socket=fallback-x11",
@@ -28,12 +28,17 @@
         {
           "type": "file",
           "path": "flatpak/org.eigenwallet.app.appdata.xml"
+        },
+        {
+          "type": "file",
+          "path": "flatpak/unstoppableswap-gui-rs.flatpak.sh"
         }
       ],
       "build-commands": [
         "ar -x *.deb",
         "tar -xf data.tar.gz",
         "install -Dm755 usr/bin/unstoppableswap-gui-rs -t /app/bin",
+        "install -Dm755 *.flatpak.sh                   -t /app/bin",
         "install -Dm644 *.appdata.xml                  -t /app/share/metainfo",
         "mv             usr/share/icons                   /app/share"
       ]
