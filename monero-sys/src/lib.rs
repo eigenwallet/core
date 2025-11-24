@@ -409,10 +409,11 @@ impl WalletHandle {
             .inspect_err(|e| tracing::error!(error=%e, "failed to send call"))
             .map_err(|_| ChannelClosed)?;
 
-        // Wait for the result and cast back to the expected type
-        Ok(*receiver
-            .await
-            .map_err(|_| ChannelClosed)?
+        // Wait for the result, or return an error if the channel was closed
+        let result = receiver.await.map_err(|_| ChannelClosed)?;
+
+        // Cast back the result to the expected type and return it
+        Ok(*result
             .downcast::<R>()
             .expect("return type to be consistent - we know that our callback returns this type R"))
     }
@@ -1121,7 +1122,7 @@ impl Wallet {
         let result = self.manager.close_wallet(&mut self.wallet);
 
         if let Err(e) = result {
-            tracing::error!("Failed to close wallet: {}", e);
+            tracing::error!("Failed to close wallet, continuing anyway: {}", e);
             // If we fail to close the wallet, we can't do anything about it.
             // This results in it being leaked.
         }
@@ -1131,9 +1132,11 @@ impl Wallet {
         // We need to do this because easylogging++ may send logs after we end this thread, leading
         // to a tracing panic.
 
-        bridge::log::uninstall_log_callback()
-            .context("Failed to uninstall log callback: FFI call failed with exception")
-            .expect("Shouldn't panic");
+        if let Err(e) =
+            bridge::log::uninstall_log_callback().context("Error uninstalling log callback")
+        {
+            tracing::error!(error=%e, "Failed to uninstall C++ tracing log callback, continuing anyway");
+        }
     }
 }
 
