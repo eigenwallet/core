@@ -412,9 +412,9 @@ impl WalletHandle {
         // Wait for the result and cast back to the expected type
         Ok(*receiver
             .await
-            .expect("channel to be open")
-            .downcast::<R>() // We know that F returns R
-            .expect("return type to be consistent"))
+            .map_err(|_| ChannelClosed)?
+            .downcast::<R>()
+            .expect("return type to be consistent - we know that our callback returns this type R"))
     }
 
     /// Get the file system path to the wallet.
@@ -1096,13 +1096,21 @@ impl Wallet {
     }
 
     fn run(&mut self) {
+        // Create a tracing span to group the wallet thread logs
+        let span = tracing::span!(
+            tracing::Level::INFO,
+            "wallet-thread",
+            wallet_path = self.wallet.filename()
+        );
+        let _span_guard = span.enter();
+
         while let Some(call) = self.call_receiver.blocking_recv() {
             let result = (call.function)(&mut self.wallet, &mut self.pending_transactions);
 
-            // TODO: Do not panic here
-            call.sender
-                .send(result)
-                .expect("failed to send result back to caller");
+            if call.sender.send(result).is_err() {
+                // Err() contains only the Box<dyn Any> value, so we don't care about the specific value
+                tracing::error!("Failed to send result back to caller, because the channel was closed. Dropping the result.");
+            }
         }
 
         tracing::info!(
