@@ -568,7 +568,7 @@ impl Request for GetMoneroHistoryArgs {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
-        let transactions = wallet.history().await;
+        let transactions = wallet.history().await?;
         Ok(GetMoneroHistoryResponse { transactions })
     }
 }
@@ -590,7 +590,7 @@ impl Request for GetMoneroMainAddressArgs {
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
-        let address = wallet.main_address().await;
+        let address = wallet.main_address().await?;
         Ok(GetMoneroMainAddressResponse { address })
     }
 }
@@ -672,12 +672,12 @@ impl Request for SetRestoreHeightArgs {
         };
 
         wallet.set_restore_height(height).await?;
-        wallet.pause_refresh().await;
-        wallet.stop().await;
+        wallet.pause_refresh().await?;
+        wallet.stop().await?;
         tracing::debug!("Background refresh stopped");
 
-        wallet.rescan_blockchain_async().await;
-        wallet.start_refresh().await;
+        wallet.rescan_blockchain_async().await?;
+        wallet.start_refresh().await?;
         tracing::info!("Rescanning blockchain from height {} completed", height);
 
         Ok(SetRestoreHeightResponse { success: true })
@@ -703,12 +703,10 @@ impl Request for SetMoneroWalletPasswordArgs {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
-        let success = wallet.set_password(self.password).await?;
-        if success {
-            wallet.store_in_current_file().await?;
-        }
+        wallet.set_password(self.password).await?;
+        wallet.store_in_current_file().await?;
 
-        Ok(SetMoneroWalletPasswordResponse { success })
+        Ok(SetMoneroWalletPasswordResponse { success: true })
     }
 }
 
@@ -733,8 +731,8 @@ impl Request for GetMoneroBalanceArgs {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
-        let total_balance = wallet.total_balance().await;
-        let unlocked_balance = wallet.unlocked_balance().await;
+        let total_balance = wallet.total_balance().await?;
+        let unlocked_balance = wallet.unlocked_balance().await?;
 
         Ok(GetMoneroBalanceResponse {
             total_balance: crate::monero::Amount::from_piconero(total_balance.as_pico()),
@@ -2029,7 +2027,10 @@ impl Request for GetMoneroSyncProgressArgs {
         let wallet_manager = ctx.try_get_monero_manager().await?;
         let wallet = wallet_manager.main_wallet().await;
 
-        let sync_progress = wallet.call(|wallet| wallet.sync_progress()).await;
+        let sync_progress = wallet
+            .sync_progress()
+            .await
+            .context("Couldn't get sync progress")?;
 
         Ok(GetMoneroSyncProgressResponse {
             current_block: sync_progress.current_block,

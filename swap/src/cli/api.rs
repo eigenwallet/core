@@ -653,7 +653,7 @@ mod builder {
             )
             .await?;
 
-            let primary_address = wallet.main_address().await;
+            let primary_address = wallet.main_address().await?;
 
             // Derive wallet-specific data directory
             let data_dir = base_data_dir

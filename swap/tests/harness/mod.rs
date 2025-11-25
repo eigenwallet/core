@@ -112,6 +112,7 @@ pub async fn setup_test<T, F, C>(
         // explicitly use a suabddress here to test the addtional tx key logic
         .address(0, 2)
         .await
+        .unwrap()
         .into();
 
     let developer_tip = TipConfig {
@@ -571,7 +572,8 @@ impl BobParams {
                 .unwrap()
                 .into(),
         )
-        .await?;
+        .await
+        .unwrap();
 
         Ok((swap, event_loop))
     }
@@ -1098,7 +1100,7 @@ impl Wallet for monero::Wallet {
     }
 
     async fn get_balance(&self) -> Result<Self::Amount> {
-        Ok(self.total_balance().await.into())
+        Ok(self.total_balance().await?.into())
     }
 }
 

@@ -800,8 +800,8 @@ async fn capture_wallet_snapshot(
     external_redeem_address: &Option<bitcoin::Address>,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
-    let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await;
-    let total_balance = monero_wallet.main_wallet().await.total_balance().await;
+    let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
+    let total_balance = monero_wallet.main_wallet().await.total_balance().await?;
 
     tracing::info!(%unlocked_balance, %total_balance, "Capturing monero wallet snapshot");
 
@@ -1064,14 +1064,14 @@ mod quote {
         // We cannot be sure that the balance is accurate
         // It is dangerous to provide a balancer higher than the actual balance
         if !timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.synchronized())
-            .await
+            .await?
             .context("Timeout while checking if wallet is synchronized")?
         {
             return Err(anyhow::anyhow!("Wallet is not synchronized"));
         }
 
         let balance = timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.unlocked_balance())
-            .await
+            .await?
             .context("Timeout while getting unlocked balance from Monero wallet")?;
 
         Ok(balance.into())

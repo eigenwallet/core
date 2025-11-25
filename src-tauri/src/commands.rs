@@ -350,7 +350,11 @@ pub async fn dfx_authenticate(
         .map_err(|_| "Monero wallet manager not available for DFX authentication".to_string())?;
 
     let wallet = monero_manager.main_wallet().await;
-    let address = wallet.main_address().await.to_string();
+    let address = wallet
+        .main_address()
+        .await
+        .map_err(|e| e.to_string())?
+        .to_string();
 
     // Create channel for authentication
     let (auth_tx, mut auth_rx) = mpsc::channel::<(SignRequest, oneshot::Sender<String>)>(10);

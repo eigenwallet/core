@@ -49,12 +49,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 restore_height,
             } = client.monero_seed().await?;
 
-            println!("The seed of the internal Monero wallet is: \n{}", seed);
+            println!("The seed of the internal Monero wallet is: \n{seed}");
             println!();
-            println!(
-                "The restore height of the internal Monero wallet is {}",
-                restore_height
-            );
+            println!("The restore height of the internal Monero wallet is {restore_height}",);
         }
         Cmd::Multiaddresses => {
             let response = client.multiaddresses().await?;
@@ -62,7 +59,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("No external multiaddresses configured");
             } else {
                 for addr in response.multiaddresses {
-                    println!("{}", addr);
+                    println!("{addr}");
                 }
             }
         }
