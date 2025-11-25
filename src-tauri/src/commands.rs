@@ -22,6 +22,7 @@ use swap::cli::{
     },
     command::Bitcoin,
 };
+use swap_p2p::libp2p_ext::MultiAddrVecExt;
 use tauri_plugin_dialog::DialogExt;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
@@ -167,9 +168,10 @@ pub async fn initialize_context(
     // Get tauri handle from the state
     let tauri_handle = state.handle.clone();
 
+    // Parse rendeuvous points
+    let rendezvous_points = settings.rendezvous_points.extract_peer_addresses();
+
     // Now populate the context in the background
-    let rendezvous_points =
-        swap_p2p::libp2p_ext::parse_strings_to_multiaddresses(&settings.rendezvous_points);
     let context_result = ContextBuilder::new(testnet)
         .with_bitcoin(Bitcoin {
             bitcoin_electrum_rpc_urls: settings.electrum_rpc_urls.clone(),

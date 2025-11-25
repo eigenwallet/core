@@ -2,7 +2,6 @@
 use libp2p::multiaddr::Protocol;
 use libp2p::{Multiaddr, PeerId};
 use std::collections::HashMap;
-use std::str::FromStr;
 
 pub trait MultiAddrExt {
     fn extract_peer_id(&self) -> Option<PeerId>;
@@ -46,14 +45,35 @@ impl MultiAddrExt for Multiaddr {
     }
 }
 
-pub fn parse_strings_to_multiaddresses(addresses: &[String]) -> Vec<(PeerId, Vec<Multiaddr>)> {
+pub trait MultiAddrVecExt {
+    /// Takes multiaddresses where each multiaddress contains a peer id
+    /// and returns a vector of peer ids and their respective addresses
+    fn extract_peer_addresses(&self) -> Vec<(PeerId, Vec<Multiaddr>)>;
+}
+
+impl MultiAddrVecExt for Vec<String> {
+    fn extract_peer_addresses(&self) -> Vec<(PeerId, Vec<Multiaddr>)> {
+        let addresses = self
+            .iter()
+            .filter_map(|addr| addr.parse::<Multiaddr>().ok())
+            .collect::<Vec<_>>();
+
+        parse_strings_to_multiaddresses(&addresses)
+    }
+}
+
+impl MultiAddrVecExt for Vec<Multiaddr> {
+    fn extract_peer_addresses(&self) -> Vec<(PeerId, Vec<Multiaddr>)> {
+        parse_strings_to_multiaddresses(self)
+    }
+}
+
+pub fn parse_strings_to_multiaddresses(addresses: &[Multiaddr]) -> Vec<(PeerId, Vec<Multiaddr>)> {
     let mut map: HashMap<PeerId, Vec<Multiaddr>> = HashMap::new();
 
-    for addr_str in addresses {
-        if let Ok(multiaddr) = Multiaddr::from_str(addr_str) {
-            if let Some(peer_id) = multiaddr.extract_peer_id() {
-                map.entry(peer_id).or_default().push(multiaddr);
-            }
+    for addr in addresses {
+        if let Some(peer_id) = addr.extract_peer_id() {
+            map.entry(peer_id).or_default().push(addr.clone());
         }
     }
 
