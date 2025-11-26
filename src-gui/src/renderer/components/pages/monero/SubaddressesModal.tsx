@@ -31,6 +31,7 @@ interface Props {
   onClose: () => void;
 }
 
+const SAVE_DELAY_MS = 5000;
 const SAVED_LABEL_DURATION_MS = 2500;
 
 export default function SubaddressesModal({ open, onClose }: Props) {
@@ -42,12 +43,16 @@ export default function SubaddressesModal({ open, onClose }: Props) {
   const [recentlySaved, setRecentlySaved] = useState<Record<number, boolean>>(
     {},
   );
+  const saveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const savedLabelTimers = useRef<
     Record<number, ReturnType<typeof setTimeout>>
   >({});
 
   useEffect(() => {
     return () => {
+      Object.values(saveTimers.current).forEach((timer) => {
+        clearTimeout(timer);
+      });
       Object.values(savedLabelTimers.current).forEach((timer) => {
         clearTimeout(timer);
       });
@@ -69,30 +74,21 @@ export default function SubaddressesModal({ open, onClose }: Props) {
     return await updateMoneroSubaddresses();
   };
 
-  const handleLabelChange = (s: SubaddressSummary, value: string) => {
-    setLabelEdits((prev) => ({ ...prev, [s.address_index]: value }));
+  const persistLabel = async (s: SubaddressSummary, value: string) => {
+    const trimmedValue = value.trim();
+    const currentValue = (s.label ?? "").trim();
 
-    if (recentlySaved[s.address_index]) {
-      setRecentlySaved((prev) => {
+    if (saveTimers.current[s.address_index]) {
+      clearTimeout(saveTimers.current[s.address_index]);
+      delete saveTimers.current[s.address_index];
+    }
+
+    if (trimmedValue === currentValue) {
+      setLabelEdits((prev) => {
         const next = { ...prev };
         delete next[s.address_index];
         return next;
       });
-
-      if (savedLabelTimers.current[s.address_index]) {
-        clearTimeout(savedLabelTimers.current[s.address_index]);
-        delete savedLabelTimers.current[s.address_index];
-      }
-    }
-  };
-
-  const saveLabel = async (s: SubaddressSummary) => {
-    const currentValue = (
-      subaddressesByIndex[s.address_index]?.label ?? ""
-    ).trim();
-    const draftValue = (labelEdits[s.address_index] ?? currentValue).trim();
-
-    if (draftValue === currentValue) {
       return;
     }
 
@@ -101,7 +97,7 @@ export default function SubaddressesModal({ open, onClose }: Props) {
     await setMoneroSubaddressLabel(
       s.account_index,
       s.address_index,
-      draftValue,
+      trimmedValue,
     );
 
     await updateMoneroSubaddresses();
@@ -126,6 +122,32 @@ export default function SubaddressesModal({ open, onClose }: Props) {
       });
       delete savedLabelTimers.current[s.address_index];
     }, SAVED_LABEL_DURATION_MS);
+  };
+
+  const queueSaveLabel = (s: SubaddressSummary, value: string) => {
+    setLabelEdits((prev) => ({ ...prev, [s.address_index]: value }));
+
+    if (recentlySaved[s.address_index]) {
+      setRecentlySaved((prev) => {
+        const next = { ...prev };
+        delete next[s.address_index];
+        return next;
+      });
+    }
+
+    if (savedLabelTimers.current[s.address_index]) {
+      clearTimeout(savedLabelTimers.current[s.address_index]);
+      delete savedLabelTimers.current[s.address_index];
+    }
+
+    if (saveTimers.current[s.address_index]) {
+      clearTimeout(saveTimers.current[s.address_index]);
+    }
+
+    saveTimers.current[s.address_index] = setTimeout(
+      () => persistLabel(s, value),
+      SAVE_DELAY_MS,
+    );
   };
 
   return (
@@ -159,6 +181,10 @@ export default function SubaddressesModal({ open, onClose }: Props) {
           </Typography>
         ) : (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Labels auto-save after 5 seconds of inactivity or when the field
+              loses focus.
+            </Typography>
             <TableContainer>
               <Table size="small" stickyHeader>
                 <TableHead>
@@ -199,56 +225,23 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                           </Box>
                         </TableCell>
                         <TableCell>
-                          <Box
-                            sx={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 0.5,
-                            }}
-                          >
-                            <TextField
-                              size="small"
-                              fullWidth
-                              label="Label"
-                              value={labelDraft}
-                              onChange={(e) =>
-                                handleLabelChange(s, e.target.value)
-                              }
-                            />
-                            <Box
-                              sx={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 1,
-                              }}
-                            >
-                              <Button
-                                size="small"
-                                variant="contained"
-                                disabled={!hasPendingChange || isSaving}
-                                onClick={() => saveLabel(s)}
-                              >
-                                Save
-                              </Button>
-                              {isSaving ? (
-                                <Typography
-                                  variant="caption"
-                                  color="text.secondary"
-                                >
-                                  Saving…
-                                </Typography>
-                              ) : (
-                                wasRecentlySaved && (
-                                  <Typography
-                                    variant="caption"
-                                    sx={{ color: "success.main" }}
-                                  >
-                                    Saved!
-                                  </Typography>
-                                )
-                              )}
-                            </Box>
-                          </Box>
+                          <TextField
+                            size="small"
+                            fullWidth
+                            label="Label"
+                            value={labelDraft}
+                            onChange={(e) => queueSaveLabel(s, e.target.value)}
+                            onBlur={() => persistLabel(s, labelDraft)}
+                            helperText={
+                              isSaving
+                                ? "Saving…"
+                                : wasRecentlySaved
+                                  ? "Saved!"
+                                  : hasPendingChange
+                                    ? "Auto-save pending…"
+                                    : " "
+                            }
+                          />
                         </TableCell>
 
                         <TableCell align="right">
