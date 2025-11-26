@@ -78,7 +78,7 @@
         "*.ipp": "cpp"
     },
     "rust-analyzer.cargo.extraEnv": {
-        "CARGO_TARGET_DIR": "target-check"
+        "CARGO_TARGET_DIR": "analyzer-target"
     },
     "[cpp]": {
         "editor.formatOnSave": false
