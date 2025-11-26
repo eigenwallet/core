@@ -17,6 +17,7 @@ async fn main() {
         Some(Command::Start) => command::start().await,
         Some(Command::Build) => command::build().await,
         Some(Command::Export) => command::export().await,
+        Some(Command::Controller) => command::controller().await,
     };
 
     if let Err(err) = result {

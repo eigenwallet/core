@@ -2,7 +2,7 @@ use anyhow::bail;
 
 use crate::{
     command, flag,
-    util::{CommandExt, probe_docker, probe_maker_config},
+    util::{probe_docker, probe_maker_config},
 };
 
 pub async fn start() -> anyhow::Result<()> {
@@ -12,9 +12,8 @@ pub async fn start() -> anyhow::Result<()> {
 
     probe_docker().await?;
 
-    let mut command = command!("docker", flag!("compose"), flag!("up"), flag!("-d"))
-        .to_tokio_command()
-        .expect("non-empty command");
-
-    command.exec_piped().await.map(|_| ())
+    command!("docker", flag!("compose"), flag!("up"), flag!("-d"))
+        .exec_piped(true)
+        .await
+        .map(|_| ())
 }

@@ -1,10 +1,12 @@
 mod build;
+mod controller;
 mod export;
 mod init;
 pub mod prompt;
 mod start;
 
 pub use build::build;
+pub use controller::controller;
 pub use export::export;
 pub use init::init;
 pub use start::start;
@@ -30,4 +32,5 @@ pub enum Command {
     Start,
     Build,
     Export,
+    Controller
 }

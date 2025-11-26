@@ -1,10 +1,12 @@
 use std::{
     fmt::{Display, Write},
     path::PathBuf,
+    process::Stdio,
     sync::Arc,
 };
 
 use anyhow::Context;
+use dialoguer::theme::ColorfulTheme;
 use url::Url;
 
 use crate::writer::IndentedWriter;
@@ -566,6 +568,50 @@ impl Command {
         command.args(parts);
 
         Ok(command)
+    }
+
+    /// Returns the command as a string for display purposes.
+    pub fn to_display_string(&self) -> String {
+        self.flags
+            .iter()
+            .map(|flag| flag.0.clone())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Prompt the user for confirmation before executing the command.
+    /// Exits with code 0 if the user declines.
+    pub fn confirm(&self) -> anyhow::Result<()> {
+        let consent = dialoguer::Confirm::with_theme(&ColorfulTheme::default())
+            .default(true)
+            .with_prompt(format!(
+                "orchestrator will execute this command: \"{}\" - continue?",
+                self.to_display_string()
+            ))
+            .interact()?;
+
+        if !consent {
+            std::process::exit(0);
+        }
+        Ok(())
+    }
+
+    /// Execute the command with stdin/stdout/stderr piped to the parent process.
+    ///
+    /// If `confirm` is true, a confirmation prompt will be shown before executing.
+    pub async fn exec_piped(&self, confirm: bool) -> anyhow::Result<std::process::ExitStatus> {
+        if confirm {
+            self.confirm()?;
+        }
+
+        self.to_tokio_command()?
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()?
+            .wait()
+            .await
+            .context("Failed to execute command")
     }
 }
 

@@ -1,6 +1,6 @@
-use std::{path::PathBuf, process::Stdio};
+use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use swap_env::config::Config;
 
 use crate::{command, flag};
@@ -83,21 +83,4 @@ pub fn compose_name(
     Ok(format!(
         "{bitcoin_network_str}_monero_{monero_network_str}_bitcoin"
     ))
-}
-
-#[allow(async_fn_in_trait)]
-pub trait CommandExt {
-    async fn exec_piped(&mut self) -> anyhow::Result<std::process::ExitStatus>;
-}
-
-impl CommandExt for tokio::process::Command {
-    async fn exec_piped(&mut self) -> anyhow::Result<std::process::ExitStatus> {
-        self.stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()?
-            .wait()
-            .await
-            .context("Failed to execute command")
-    }
 }
