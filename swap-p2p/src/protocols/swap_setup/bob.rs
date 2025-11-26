@@ -40,7 +40,6 @@ pub struct Behaviour {
 
     // Maintains the set of all alive connections handlers for a specific peer
     connection_handlers: HashMap<PeerId, HashSet<ConnectionId>>,
-
     connection_handler_deaths: VecDeque<(PeerId, ConnectionId)>,
 
     // Queue of completed swaps that we have assigned a connection handler to but where we haven't notified the ConnectionHandler yet
@@ -72,7 +71,7 @@ impl Behaviour {
         }
     }
 
-    pub async fn queue_new_swap(&mut self, alice_peer_id: PeerId, swap: NewSwap) {
+    pub fn queue_new_swap(&mut self, alice_peer_id: PeerId, swap: NewSwap) {
         tracing::trace!(
             %alice_peer_id,
             ?swap,
@@ -100,6 +99,13 @@ impl NetworkBehaviour for Behaviour {
         _local_addr: &Multiaddr,
         _remote_addr: &Multiaddr,
     ) -> Result<THandler<Self>, ConnectionDenied> {
+        // This should never be called as Bob does not support inbound substreams
+        // TODO: Can this still be called somehow by libp2p? Can we forbid this?
+        debug_assert!(
+            false,
+            "Bob does not listen so he should never get an inbound connection"
+        );
+
         Ok(Handler::new(self.env_config, self.bitcoin_wallet.clone()))
     }
 
@@ -280,18 +286,24 @@ impl NetworkBehaviour for Behaviour {
     }
 }
 
-// TODO: A single connection handler can be used multiple times!!!
 pub struct Handler {
     // Configuration
     env_config: env::Config,
     timeout: Duration,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
 
-    // Queue
+    // Queue of swap setup requests that do not have an inflight substream negotiation
     new_swaps: VecDeque<NewSwap>,
 
-    // Maps Swap ID -> Outbound Stream result
+    // When we have instructed the Behaviour to start a new outbound substream, we store the swap id here
+    // Eventually we will either get a fully negotiated outbound substream or a dial upgrade error
+    inflight_substream_negotiations: HashSet<Uuid>,
+
+    // Inflight swap setup requests that we have a fully negotiated outbound substream for
     outbound_streams: FuturesHashSet<Uuid, Result<State2, Error>>,
+
+    // Queue of swap setup results that we want to notify the Behaviour about
+    to_behaviour: VecDeque<(Uuid, Result<State2>)>,
 }
 
 impl Handler {
@@ -302,6 +314,8 @@ impl Handler {
             bitcoin_wallet,
             new_swaps: VecDeque::default(),
             outbound_streams: FuturesHashSet::default(),
+            to_behaviour: VecDeque::default(),
+            inflight_substream_negotiations: HashSet::default(),
         }
     }
 }
@@ -347,25 +361,25 @@ impl ConnectionHandler for Handler {
         >,
     ) {
         match event {
-            libp2p::swarm::handler::ConnectionEvent::FullyNegotiatedInbound(_) => {
-                // TODO: Maybe warn here as Bob does not support inbound substreams?
-            }
-            libp2p::swarm::handler::ConnectionEvent::FullyNegotiatedOutbound(outbound) => {
-                let mut substream = outbound.protocol;
-                let new_swap_request = outbound.info;
+            libp2p::swarm::handler::ConnectionEvent::FullyNegotiatedOutbound(
+                libp2p::swarm::handler::FullyNegotiatedOutbound {
+                    protocol: mut substream,
+                    info,
+                },
+            ) => {
+                let swap_id = info.swap_id;
+
+                // We got the substream, so its no longer inflight
+                self.inflight_substream_negotiations.remove(&swap_id);
 
                 let bitcoin_wallet = self.bitcoin_wallet.clone();
                 let env_config = self.env_config;
-                let swap_id = new_swap_request.swap_id;
 
+                // This runs runs the actual negotiation protocol
+                // It is wrapped in a timeout to protect against the case where the peer does not respond
                 let protocol = tokio::time::timeout(self.timeout, async move {
-                    let result = run_swap_setup(
-                        &mut substream,
-                        new_swap_request,
-                        env_config,
-                        bitcoin_wallet,
-                    )
-                    .await;
+                    let result =
+                        run_swap_setup(&mut substream, info, env_config, bitcoin_wallet).await;
 
                     result.map_err(|err: anyhow::Error| {
                         tracing::error!(?err, "Error occurred during swap setup protocol");
@@ -384,26 +398,35 @@ impl ConnectionHandler for Handler {
                     }),
                 );
 
-                debug_assert!(!did_replace_existing_future, "Multiple swap setup requests on the same handler are generally discouraged but not stricly");
+                // In poll(..), we ensure that we never dispatch multiple concurrent swap setup requests for the same swap on the same ConnectionHandler
+                // This invariant should therefore never be violated
+                // TODO: Is this truly true?
+                assert!(!did_replace_existing_future, "Replacing an existing inflight swap setup request is not allowed. We should have checked for this invariant before instructing the Behaviour to start a substream.");
             }
-            libp2p::swarm::handler::ConnectionEvent::AddressChange(address_change) => {
-                tracing::trace!(
-                    ?address_change,
-                    "Connection address changed during swap setup"
+            libp2p::swarm::handler::ConnectionEvent::DialUpgradeError(
+                libp2p::swarm::handler::DialUpgradeError { info, error },
+            ) => {
+                // We failed to get a fully negotiated outbound substream, so its no longer inflight
+                self.inflight_substream_negotiations.remove(&info.swap_id);
+
+                tracing::error!(%error, "Dial upgrade error during swap setup substream negotiation. Propagating error back to the Behaviour");
+
+                self.to_behaviour.push_back((
+                    info.swap_id,
+                    Err(anyhow::Error::from(error)
+                        .context("Dial upgrade error during swap setup. The peer may not support the swap setup protocol.")),
+                ));
+            }
+            libp2p::swarm::handler::ConnectionEvent::ListenUpgradeError(_)
+            | libp2p::swarm::handler::ConnectionEvent::FullyNegotiatedInbound(_) => {
+                // This should never be called as Bob does not support inbound substreams
+                // TODO: Maybe warn here as Bob does not support inbound substreams?
+                debug_assert!(
+                    false,
+                    "Bob does not support inbound substreams for the swap setup protocol"
                 );
             }
-            libp2p::swarm::handler::ConnectionEvent::DialUpgradeError(dial_upgrade_error) => {
-                tracing::trace!(error = %dial_upgrade_error.error, "Dial upgrade error during swap setup");
-            }
-            libp2p::swarm::handler::ConnectionEvent::ListenUpgradeError(listen_upgrade_error) => {
-                tracing::trace!(
-                    ?listen_upgrade_error,
-                    "Listen upgrade error during swap setup"
-                );
-            }
-            _ => {
-                // We ignore the rest of events
-            }
+            _ => {}
         }
     }
 
@@ -413,7 +436,6 @@ impl ConnectionHandler for Handler {
             "Received a new swap setup request from the Behaviour",
         );
 
-        // TODO: Will the handler be woken up by this?
         self.new_swaps.push_back(new_swap);
     }
 
@@ -430,32 +452,67 @@ impl ConnectionHandler for Handler {
     > {
         // Check if there is a new swap to be started on this connection
         // Has the Behaviour assigned us a new swap to be started on this connection?
-        if let Some(new_swap) = self.new_swaps.pop_front() {
+        while let Some(new_swap) = self.new_swaps.pop_front() {
+            // Check if we already have an inflight request for this swap
+            // We disallow multiple concurrent swap setup requests for the same swap on the same ConnectionHandler
+            if self.outbound_streams.contains_key(&new_swap.swap_id) {
+                tracing::error!(
+                    swap_id = %new_swap.swap_id,
+                    "Received a new swap setup request for a swap id that we already have an inflight request for. Ignoring request. The upstream behaviour may encounter bugs if its internal logic does not handle this correctly.",
+                );
+
+                // TODO: Potentially make this a production assert
+                debug_assert!(false, "Multiple concurrent swap setup requests with the same swap id are not allowed.");
+
+                continue;
+            }
+
+            // We disallow multiple concurrent substream negotiations for the same swap on the same ConnectionHandler
+            if self
+                .inflight_substream_negotiations
+                .contains(&new_swap.swap_id)
+            {
+                tracing::error!(
+                    swap_id = %new_swap.swap_id,
+                    "Received a new swap setup request for a swap id that we already have an inflight substream negotiation for. Ignoring. The upstream behaviour may encounter bugs if its internal logic does not handle this correctly.",
+                );
+
+                // TODO: Potentially make this a production assert
+                debug_assert!(false, "Multiple concurrent substream negotiations for the same swap id are not allowed.");
+
+                continue;
+            }
+
             tracing::trace!(
                 ?new_swap.swap_id,
                 "Instructing swarm to start a new outbound substream as part of swap setup",
             );
 
             // We instruct the swarm to start a new outbound substream
+            self.inflight_substream_negotiations
+                .insert(new_swap.swap_id);
+
             return Poll::Ready(ConnectionHandlerEvent::OutboundSubstreamRequest {
                 protocol: SubstreamProtocol::new(protocol::new(), new_swap),
             });
         }
 
         // Check if the outbound stream has completed
-        if let Poll::Ready(Some((swap_id, result))) = self.outbound_streams.poll_next_unpin(cx) {
-            // We notify the swarm that the swap setup is completed / failed
-            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour((
-                swap_id,
-                result.map_err(anyhow::Error::from).into(),
-            )));
+        while let Poll::Ready(Some((swap_id, result))) = self.outbound_streams.poll_next_unpin(cx) {
+            self.to_behaviour
+                .push_back((swap_id, result.map_err(anyhow::Error::from)));
+        }
+
+        // Notify the Behaviour about any swap setup results
+        if let Some(result) = self.to_behaviour.pop_front() {
+            return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(result));
         }
 
         Poll::Pending
     }
 }
 
-// TODO: This is protocol and should be moved to another crate
+// TODO: This is protocol and should be moved to another crate (probably swap-machine, swap-core or swap)
 async fn run_swap_setup(
     mut substream: &mut libp2p::swarm::Stream,
     new_swap_request: NewSwap,
@@ -596,7 +653,7 @@ pub enum Error {
         asb: BlockchainNetwork,
     },
 
-    #[error("Failed to complete swap setup within {seconds}s")]
+    #[error("Failed to complete swap setup back-and-forth within {seconds}s")]
     Timeout { seconds: u64 },
 
     /// Something went wrong during the swap setup protocol that is not covered by the other errors
@@ -638,3 +695,9 @@ impl From<SwapSetupResult> for out_event::bob::OutEvent {
         }
     }
 }
+
+// TODO: Tests
+// - Case where Alice does not support the protocol at all
+// - Case where Connection dies before the swap setup is started
+// - Case where Connection dies during the swap setup protocol
+// TODO: Extract actualy protocol logic into a callback of sorts or some type of event/state system

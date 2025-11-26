@@ -467,20 +467,26 @@ impl EventLoop {
                 // Instruct the swap setup behaviour to do a swap setup request
                 // The behaviour will instruct the swarm to dial Alice, so we don't need to check if we are connected
                 Some(((alice_peer_id, swap, span), responder)) = self.execution_setup_requests.next().fuse() => {
+                    let _span_guard = span.enter();
                     let swap_id = swap.swap_id.clone();
 
-                    // We await the start of the swap setup
-                    // We use an async block to instrument the future, but we don't use `move`
-                    // so `self` is borrowed, not moved.
-                    async {
-                        self.swarm.behaviour_mut().swap_setup.queue_new_swap(alice_peer_id, swap).await;
-                    }
-                    .instrument(span.clone())
-                    .await;
+                    // Check if we have an inflight swap setup request for this swap already
+                    if self.inflight_swap_setup.contains_key((alice_peer_id, swap_id)) {
+                        tracing::warn!(
+                            %alice_peer_id,
+                            %swap_id,
+                            "We already have an inflight swap setup request for this swap. We will not instruct the Behaviour to start a new one. Responding with an error to the caller immediately.",
+                        );
 
+                        // Immediately respond with an error to the caller
+                        let _ = responder.respond(Err(anyhow::anyhow!("We already have an inflight swap setup request for this swap")));
+
+                        continue;
+                    }
+
+                    self.swarm.behaviour_mut().swap_setup.queue_new_swap(alice_peer_id, swap);
                     self.inflight_swap_setup.insert((alice_peer_id, swap_id), (responder, span.clone()));
 
-                    let _guard = span.enter();
                     tracing::trace!(
                         %alice_peer_id,
                         "Dispatching outgoing execution setup request"

@@ -77,10 +77,6 @@ pub trait SwarmExt {
     /// Listens on a random memory address, polling the [`Swarm`] until the
     /// transport is ready to accept connections.
     async fn listen_on_random_memory_address(&mut self) -> Multiaddr;
-
-    /// Listens on a TCP port for localhost only, polling the [`Swarm`] until
-    /// the transport is ready to accept connections.
-    async fn listen_on_tcp_localhost(&mut self) -> Multiaddr;
 }
 
 #[async_trait]
@@ -155,15 +151,6 @@ where
         // Memory addresses are externally reachable because they all share the same
         // memory-space.
         self.add_external_address(multiaddr.clone());
-
-        multiaddr
-    }
-
-    async fn listen_on_tcp_localhost(&mut self) -> Multiaddr {
-        let multiaddr = get_local_tcp_address().await;
-
-        self.listen_on(multiaddr.clone()).unwrap();
-        block_until_listening_on(self, &multiaddr).await;
 
         multiaddr
     }
