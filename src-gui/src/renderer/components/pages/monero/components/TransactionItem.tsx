@@ -22,6 +22,8 @@ import { isTestnet } from "store/config";
 import { open } from "@tauri-apps/plugin-shell";
 import dayjs from "dayjs";
 import { useState } from "react";
+import { useMoneroMainAddress, useMoneroSubaddresses } from "store/hooks";
+import _ from "lodash";
 
 interface TransactionItemProps {
   transaction: TransactionInfo;
@@ -29,6 +31,30 @@ interface TransactionItemProps {
 
 export default function TransactionItem({ transaction }: TransactionItemProps) {
   const isIncoming = transaction.direction === TransactionDirection.In;
+  const moneroMainAddress = useMoneroMainAddress();
+  const subaddresses = useMoneroSubaddresses();
+  const subaddress = subaddresses.find(
+    (s) => s.address === transaction.received_address,
+  );
+
+  let addressLabel: string | null = null;
+  if (isIncoming && transaction.received_address) {
+    if (subaddress && subaddress.label.length > 0) {
+      addressLabel = subaddress.label;
+    } else {
+      addressLabel = _.truncate(transaction.received_address, { length: 8 });
+    }
+  }
+
+  const shouldShowSubaddressChip = Boolean(
+    isIncoming &&
+    transaction.received_address &&
+    (transaction.received_address.trim() !== moneroMainAddress?.trim() ||
+      (subaddress?.account_index === 0 && subaddress?.address_index !== 0)) &&
+    subaddress &&
+    addressLabel,
+  );
+
   const displayDate = dayjs(transaction.timestamp * 1000).format(
     "MMM DD YYYY, HH:mm",
   );
@@ -75,6 +101,7 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
           sx={{
             display: "grid",
             gridTemplateColumns: "min-content max-content",
+            rowGap: 0.25,
             columnGap: 0.5,
           }}
         >
@@ -99,20 +126,32 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
               disableTooltip
             />
           </Typography>
-          {isIncoming && (
-            <Typography variant="caption" sx={{ gridArea: "2 / 2" }}>
-              <FiatPiconeroAmount amount={transaction.amount} />
-            </Typography>
-          )}
-          <Typography variant="caption" sx={{ gridArea: "2 / 2" }}>
+
+          <Typography variant="caption" sx={{ gridColumn: "2 / 3" }}>
             <FiatPiconeroAmount amount={transaction.amount} />
           </Typography>
-          {isIncoming && transaction.received_address && (
+
+          {shouldShowSubaddressChip && subaddress && addressLabel && (
             <Chip
               size="small"
               variant="outlined"
-              label={transaction.received_address}
-              sx={{ gridArea: "3 / 2", maxWidth: 360 }}
+              label={
+                <Typography noWrap>
+                  {`Address #${subaddress.address_index}`}
+                  <i>{`"${addressLabel}"`}</i>
+                </Typography>
+              }
+              sx={{
+                gridColumn: "2 / 3",
+                maxWidth: 220,
+                "& .MuiChip-label": {
+                  width: "100%",
+                  display: "block",
+                  textOverflow: "ellipsis",
+                  overflow: "hidden",
+                },
+              }}
+              title={transaction.received_address}
             />
           )}
         </Box>

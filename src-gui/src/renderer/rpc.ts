@@ -655,6 +655,9 @@ export async function initializeMoneroWallet() {
       getRestoreHeight().then((response) => {
         store.dispatch(setRestoreHeight(response));
       }),
+      getMoneroSubAddresses().then((subaddresses) => {
+        store.dispatch(setSubaddresses(subaddresses));
+      }),
     ]);
   } catch (err) {
     console.error("Failed to fetch Monero wallet data:", err);
