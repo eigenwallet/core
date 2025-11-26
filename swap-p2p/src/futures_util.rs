@@ -75,16 +75,12 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
         loop {
             match self.futures.poll_next_unpin(cx) {
                 Poll::Ready(Some(Ok((k, v)))) => {
-                    // We only return the value if it matches the currently active handle for this key.
-                    // However, since we abort old handles, they shouldn't return Ok.
-                    // We remove the key from handles as it is now completed.
-                    if self.handles.contains_key(&k) {
-                        self.handles.remove(&k);
-                        return Poll::Ready(Some((k, v)));
-                    }
-                    // If the key is not in handles, it might have been removed or race condition?
-                    // But if it returned Ok, it wasn't aborted.
-                    // Safe to return.
+                    let did_remove_handle = self.handles.remove(&k);
+
+                    // TODO: Make this a production assert
+                    debug_assert!(did_remove_handle, "A future returned Ok but the key is not in handles. This should never happen.");
+
+                    // Still return the value to avoid panicking
                     return Poll::Ready(Some((k, v)));
                 }
                 Poll::Ready(Some(Err(future::Aborted))) => {
