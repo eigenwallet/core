@@ -7,4 +7,5 @@ pub mod out_event;
 pub mod patches;
 pub mod protocols;
 
+#[cfg(any(test, feature = "test-support"))]
 pub mod test;

@@ -11,4 +11,5 @@ pub use swap_p2p::protocols::transfer_proof;
 pub mod swarm;
 pub mod transport;
 
+#[cfg(test)]
 pub use swap_p2p::test;

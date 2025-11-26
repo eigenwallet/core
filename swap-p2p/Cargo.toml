@@ -50,6 +50,7 @@ required-features = ["fetch-quotes-example"]
 
 [features]
 fetch-quotes-example = []
+test-support = ["libp2p/noise", "libp2p/tcp", "libp2p/yamux", "libp2p/tokio", "libp2p/dns"]
 
 [dev-dependencies]
 arti-client = { workspace = true }
