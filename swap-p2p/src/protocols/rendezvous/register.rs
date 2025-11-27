@@ -66,11 +66,11 @@ pub mod public {
         pub peer_id: PeerId,
         pub address: Option<Multiaddr>,
         pub is_connected: bool,
-        pub registration: RegisterStatus,
+        pub registration: RegistrationStatus,
     }
 
     #[derive(Debug, Clone)]
-    pub enum RegisterStatus {
+    pub enum RegistrationStatus {
         Registered,
         WillRegisterAfterDelay,
         RegisterOnceConnected,
@@ -131,11 +131,11 @@ impl Behaviour {
             .map(|peer_id| {
                 let registration = {
                     if self.registered.contains(peer_id) {
-                        public::RegisterStatus::Registered
+                        public::RegistrationStatus::Registered
                     } else if self.to_dispatch.contains(peer_id) {
-                        public::RegisterStatus::RegisterOnceConnected
+                        public::RegistrationStatus::RegisterOnceConnected
                     } else {
-                        public::RegisterStatus::WillRegisterAfterDelay
+                        public::RegistrationStatus::WillRegisterAfterDelay
                     }
                 };
 
@@ -228,7 +228,6 @@ impl NetworkBehaviour for Behaviour {
             })
             .collect();
 
-        // Reset the timer for the specific rendezvous node if we successfully registered
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
                 ToSwarm::GenerateEvent(InnerBehaviourEvent::Rendezvous(
@@ -238,8 +237,9 @@ impl NetworkBehaviour for Behaviour {
                         ..
                     },
                 )) => {
-                    // We successfully registered, so we backoff
+                    // We successfully registered, so we reset the backoff
                     self.backoffs.reset(&rendezvous_node);
+
                     self.registered.insert(rendezvous_node.clone());
 
                     // Schedule a re-registration after half of the TTL

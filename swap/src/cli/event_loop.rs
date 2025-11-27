@@ -1,4 +1,5 @@
 use crate::cli::behaviour::{Behaviour, OutEvent};
+use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::{self, Request, Response};
 use crate::network::encrypted_signature;
@@ -139,9 +140,7 @@ pub struct EventLoop {
     add_peer_address_requests:
         bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, libp2p::Multiaddr), ()>,
 
-    cached_quotes_sender: tokio::sync::watch::Sender<
-        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
-    >,
+    cached_quotes_sender: tokio::sync::watch::Sender<Vec<QuoteWithAddress>>,
 }
 
 impl EventLoop {
@@ -411,7 +410,17 @@ impl EventLoop {
                                 "Received cached quotes"
                             );
 
-                            let _ = self.cached_quotes_sender.send(quotes);
+                            let quotes_with_addresses: Vec<QuoteWithAddress> = quotes
+                                .into_iter()
+                                .map(|(peer_id, multiaddr, quote, version)| QuoteWithAddress {
+                                    peer_id,
+                                    multiaddr,
+                                    quote,
+                                    version,
+                                })
+                                .collect();
+
+                            let _ = self.cached_quotes_sender.send(quotes_with_addresses);
                         }
                         _ => {}
                     }
@@ -471,7 +480,7 @@ impl EventLoop {
                     let swap_id = swap.swap_id.clone();
 
                     // Check if we have an inflight swap setup request for this swap already
-                    if self.inflight_swap_setup.contains_key((alice_peer_id, swap_id)) {
+                    if self.inflight_swap_setup.contains_key(&(alice_peer_id, swap_id)) {
                         tracing::warn!(
                             %alice_peer_id,
                             %swap_id,
@@ -596,17 +605,11 @@ pub struct EventLoopHandle {
         bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
 
     // TODO: Extract the Vec<_> into its own struct (QuotesBatch?)
-    cached_quotes_receiver: tokio::sync::watch::Receiver<
-        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
-    >,
+    cached_quotes_receiver: tokio::sync::watch::Receiver<Vec<QuoteWithAddress>>,
 }
 
 impl EventLoopHandle {
-    pub fn cached_quotes(
-        &self,
-    ) -> tokio::sync::watch::Receiver<
-        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
-    > {
+    pub fn cached_quotes(&self) -> tokio::sync::watch::Receiver<Vec<QuoteWithAddress>> {
         self.cached_quotes_receiver.clone()
     }
 

@@ -17,7 +17,6 @@ use libp2p::{Multiaddr, PeerId};
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::{Arc, Once};
 use swap_env::env::{Config as EnvConfig, GetConfig, Mainnet, Testnet};
 use swap_fs::system_data_dir;
@@ -837,42 +836,35 @@ mod builder {
                     rendezvous_peer_ids,
                 );
 
-                let swarm = crate::network::swarm::cli(
+                let mut swarm = crate::network::swarm::cli(
                     seed.derive_libp2p_identity(),
                     tor_client_for_swarm,
                     behaviour,
                 )
                 .await?;
 
-                let (event_loop, mut event_loop_handle) =
-                    crate::cli::EventLoop::new(swarm, db_for_swarm)?;
-
+                // Add addresses of rendezvous points to the swarm
                 for (peer_id, addrs) in rendezvous_points {
                     for addr in addrs {
-                        event_loop_handle
-                            .queue_peer_address(peer_id, addr)
-                            .await
-                            .expect(
-                                "adding a peer address will only fail if the event loop is dropped",
-                            );
+                        swarm.add_peer_address(peer_id, addr);
                     }
                 }
 
+                // Add addresses of peers that we have previously connected to to the swarm
                 for (peer_id, addrs) in db.get_all_peer_addresses().await.context(
                     "Failed to retrieve peer addresses from database to insert into swarm",
                 )? {
                     for addr in addrs {
-                        event_loop_handle
-                            .queue_peer_address(peer_id, addr)
-                            .await
-                            .expect(
-                                "adding a peer address will only fail if the event loop is dropped",
-                            );
+                        swarm.add_peer_address(peer_id, addr);
                     }
                 }
 
+                let (event_loop, event_loop_handle) =
+                    crate::cli::EventLoop::new(swarm, db_for_swarm)?;
+
                 let event_loop_task = tokio::spawn(event_loop.run());
 
+                // TODO: We need to emit this to the frontend so that certain button can be disabled if the event loop is not yet running
                 *context.event_loop_state.write().await =
                     Some(EventLoopState::new(event_loop_handle, event_loop_task));
             }

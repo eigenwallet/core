@@ -75,7 +75,7 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
         loop {
             match self.futures.poll_next_unpin(cx) {
                 Poll::Ready(Some(Ok((k, v)))) => {
-                    let did_remove_handle = self.handles.remove(&k);
+                    let did_remove_handle = self.handles.remove(&k).is_some();
 
                     // TODO: Make this a production assert
                     debug_assert!(did_remove_handle, "A future returned Ok but the key is not in handles. This should never happen.");

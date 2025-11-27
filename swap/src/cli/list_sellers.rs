@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use typeshare::typeshare;
 
+// TODO: Move these types into swap-p2p?
 #[serde_as]
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone, Ord, PartialOrd)]
@@ -25,20 +26,4 @@ pub struct QuoteWithAddress {
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[typeshare(serialized_as = "string")]
     pub version: Option<Version>,
-}
-
-#[typeshare]
-#[derive(Debug, Serialize, PartialEq, Eq, Hash, Clone, Ord, PartialOrd)]
-pub struct UnreachableSeller {
-    /// The peer id of the seller
-    #[typeshare(serialized_as = "string")]
-    pub peer_id: PeerId,
-}
-
-#[typeshare]
-#[derive(Debug, Serialize, PartialEq, Eq, Hash, Clone, Ord, PartialOrd)]
-#[serde(tag = "type", content = "content")]
-pub enum SellerStatus {
-    Online(QuoteWithAddress),
-    Unreachable(UnreachableSeller),
 }

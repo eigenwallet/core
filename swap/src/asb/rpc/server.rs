@@ -191,16 +191,16 @@ impl AsbApiServer for RpcImpl {
                     RendezvousConnectionStatus::Disconnected
                 },
                 registration: match r.registration {
-                    crate::network::rendezvous::register::public::RegisterStatus::RegisterOnceConnected => {
+                    crate::network::rendezvous::register::public::RegistrationStatus::RegisterOnceConnected => {
                         RendezvousRegistrationStatus::RegisterOnceConnected
                     }
-                    crate::network::rendezvous::register::public::RegisterStatus::WillRegisterAfterDelay => {
+                    crate::network::rendezvous::register::public::RegistrationStatus::WillRegisterAfterDelay => {
                         RendezvousRegistrationStatus::WillRegisterAfterDelay
                     }
-                    crate::network::rendezvous::register::public::RegisterStatus::RequestInflight => {
+                    crate::network::rendezvous::register::public::RegistrationStatus::RequestInflight => {
                         RendezvousRegistrationStatus::RequestInflight
                     }
-                    crate::network::rendezvous::register::public::RegisterStatus::Registered => {
+                    crate::network::rendezvous::register::public::RegistrationStatus::Registered => {
                         RendezvousRegistrationStatus::Registered
                     }
                 },

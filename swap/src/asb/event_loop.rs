@@ -857,7 +857,7 @@ mod service {
         },
         GetRegistrationStatus {
             respond_to: oneshot::Sender<
-                Vec<crate::network::rendezvous::register::public::RendezvousNodeStatus>,
+                Vec<swap_p2p::protocols::rendezvous::register::public::RendezvousNodeStatus>,
             >,
         },
     }

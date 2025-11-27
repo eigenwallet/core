@@ -97,7 +97,7 @@ impl Behaviour {
 
 impl NetworkBehaviour for Behaviour {
     // We use a dummy connection handler here as we don't need low level connection handling
-    // This is handled by the rendezvous behaviour
+    // This is handled by the inner behaviour
     type ConnectionHandler = <InnerBehaviour as NetworkBehaviour>::ConnectionHandler;
 
     type ToSwarm = Event;

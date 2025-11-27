@@ -6,7 +6,6 @@ use crate::cli::api::tauri_bindings::{
 };
 use crate::cli::api::Context;
 use crate::cli::list_sellers::QuoteWithAddress;
-use crate::cli::SellerStatus;
 use crate::common::{get_logs, redact};
 use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::monero::MoneroAddressPool;
@@ -1460,19 +1459,9 @@ where
     Ok((handle, rx))
 }
 
-pub type QuoteFetchFuture = BoxFuture<
-    'static,
-    Result<(
-        tokio::task::JoinHandle<()>,
-        ::tokio::sync::watch::Receiver<Vec<SellerStatus>>,
-    )>,
->;
-
 #[allow(clippy::too_many_arguments)]
 pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS>(
-    mut quotes_rx: ::tokio::sync::watch::Receiver<
-        Vec<(PeerId, libp2p::Multiaddr, BidQuote, Option<semver::Version>)>,
-    >,
+    mut quotes_rx: ::tokio::sync::watch::Receiver<Vec<QuoteWithAddress>>,
     // TODO: Shouldn't this be a function?
     get_new_address: impl Future<Output = Result<bitcoin::Address>>,
     balance: FB,
@@ -1512,26 +1501,7 @@ where
     loop {
         // Get the latest quotes, balance and max_giveable
         let quotes = quotes_rx.borrow().clone();
-        let quotes: Vec<SellerStatus> = quotes
-            .into_iter()
-            .map(|(peer_id, multiaddr, quote, version)| {
-                SellerStatus::Online(QuoteWithAddress {
-                    multiaddr,
-                    peer_id,
-                    quote,
-                    version,
-                })
-            })
-            .collect();
         let (balance, max_giveable) = *balance_rx.borrow();
-
-        let success_quotes = quotes
-            .iter()
-            .filter_map(|quote| match quote {
-                SellerStatus::Online(quote_with_address) => Some(quote_with_address.clone()),
-                SellerStatus::Unreachable(_) => None,
-            })
-            .collect::<Vec<_>>();
 
         // Emit a Tauri event
         event_emitter.emit_swap_progress_event(
@@ -1540,12 +1510,12 @@ where
                 deposit_address: deposit_address.clone(),
                 max_giveable: max_giveable,
                 min_bitcoin_lock_tx_fee: balance - max_giveable,
-                known_quotes: success_quotes.clone(),
+                known_quotes: quotes.clone(),
             },
         );
 
         // Iterate through quotes and find ones that match the balance and max_giveable
-        let matching_quotes = success_quotes
+        let matching_quotes = quotes
             .iter()
             .filter_map(|quote_with_address| {
                 let quote = quote_with_address.quote;
