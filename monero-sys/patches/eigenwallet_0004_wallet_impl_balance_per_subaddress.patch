@@ -1,0 +1,39 @@
+diff --git a/src/wallet/api/wallet.h b/src/wallet/api/wallet.h
+index b7f77a186..0a8cfb0b8 100644
+--- a/src/wallet/api/wallet.h
++++ b/src/wallet/api/wallet.h
+@@ -238,6 +238,9 @@ public:
+     virtual uint64_t getBytesReceived() override;
+     virtual uint64_t getBytesSent() override;
+ 
++    std::map<uint32_t, uint64_t> balancePerSubaddress(uint32_t accountIndex, bool strict) const;
++    std::map<uint32_t, uint64_t> unlockedBalancePerSubaddress(uint32_t accountIndex, bool strict) const;
++
+     std::string getMultisigSeed(const std::string &seed_offset) const override;
+     std::pair<std::uint32_t, std::uint32_t> getSubaddressIndex(const std::string &address) const override;
+     void freeze(const std::string &key_image) override;
+diff --git a/src/wallet/api/wallet.cpp b/src/wallet/api/wallet.cpp
+index 96393eaaa..3dd62e7d2 100644
+--- a/src/wallet/api/wallet.cpp
++++ b/src/wallet/api/wallet.cpp
+@@ -1102,6 +1106,20 @@ uint64_t WalletImpl::unlockedBalance(uint32_t accountIndex) const
+     return m_wallet->unlocked_balance(accountIndex, false);
+ }
+ 
++std::map<uint32_t, uint64_t> WalletImpl::balancePerSubaddress(uint32_t accountIndex, bool strict) const
++{
++    return m_wallet->balance_per_subaddress(accountIndex, strict);
++}
++
++std::map<uint32_t, uint64_t> WalletImpl::unlockedBalancePerSubaddress(uint32_t accountIndex, bool strict) const
++{
++    auto full = m_wallet->unlocked_balance_per_subaddress(accountIndex, strict);
++    std::map<uint32_t, uint64_t> result;
++    for (const auto &p : full)
++        result[p.first] = p.second.first; // extract the unlocked amount only
++    return result;
++}
++
+ uint64_t WalletImpl::blockChainHeight() const
+ {
+     if(m_wallet->light_wallet()) {
