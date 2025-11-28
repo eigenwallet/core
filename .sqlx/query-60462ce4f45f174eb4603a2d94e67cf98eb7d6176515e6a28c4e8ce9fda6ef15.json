@@ -1,0 +1,18 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT 1 as found\n            FROM swap_states\n            WHERE swap_id = ?\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "found",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [false]
+  },
+  "hash": "60462ce4f45f174eb4603a2d94e67cf98eb7d6176515e6a28c4e8ce9fda6ef15"
+}

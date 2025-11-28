@@ -3,20 +3,23 @@ use libp2p::{
     request_response::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
-    PeerId,
+    Multiaddr, PeerId,
 };
 
-use crate::protocols::redial;
 use crate::protocols::{
     cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote,
     transfer_proof,
 };
+use crate::protocols::{redial, rendezvous};
 
 #[derive(Debug)]
 pub enum OutEvent {
     QuoteReceived {
         id: OutboundRequestId,
         response: BidQuote,
+    },
+    CachedQuotes {
+        quotes: Vec<(PeerId, Multiaddr, BidQuote, Option<semver::Version>)>,
     },
     SwapSetupCompleted {
         peer: PeerId,
@@ -89,6 +92,12 @@ impl From<ping::Event> for OutEvent {
 
 impl From<identify::Event> for OutEvent {
     fn from(_: identify::Event) -> Self {
+        OutEvent::Other
+    }
+}
+
+impl From<rendezvous::discovery::Event> for OutEvent {
+    fn from(_: rendezvous::discovery::Event) -> Self {
         OutEvent::Other
     }
 }

@@ -2,7 +2,6 @@ use crate::out_event;
 use libp2p::request_response::ProtocolSupport;
 use libp2p::{request_response, PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use swap_core::monero::{Scalar, TransferProof};
 use uuid::Uuid;
 
@@ -55,7 +54,8 @@ pub fn alice() -> Behaviour {
             StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
             ProtocolSupport::Inbound,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
     )
 }
 
@@ -65,7 +65,8 @@ pub fn bob() -> Behaviour {
             StreamProtocol::new(CooperativeXmrRedeemProtocol.as_ref()),
             ProtocolSupport::Outbound,
         )],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::DEFAULT_REQUEST_TIMEOUT),
     )
 }
 

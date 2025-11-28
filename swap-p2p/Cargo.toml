@@ -14,7 +14,7 @@ swap-serde = { path = "../swap-serde" }
 
 # Networking
 async-trait = { workspace = true }
-libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "identify", "ping"] }
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify"] }
 
 # Serialization
 asynchronous-codec = "0.7.0"
@@ -31,6 +31,7 @@ rand = { workspace = true }
 # Utils
 anyhow = { workspace = true }
 backoff = { workspace = true }
+semver = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
@@ -43,8 +44,21 @@ tokio = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+[[example]]
+name = "fetch_quotes"
+required-features = ["fetch-quotes-example"]
+
+[features]
+fetch-quotes-example = []
+test-support = ["libp2p/noise", "libp2p/tcp", "libp2p/yamux", "libp2p/tokio", "libp2p/dns"]
+
 [dev-dependencies]
-libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio"] }
+arti-client = { workspace = true }
+async-trait = { workspace = true }
+libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio", "dns"] }
+libp2p-tor = { path = "../libp2p-tor" }
+tor-rtcompat = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

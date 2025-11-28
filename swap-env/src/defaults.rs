@@ -46,7 +46,6 @@ pub fn default_rendezvous_points() -> Vec<Multiaddr> {
         "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw".parse().unwrap(),
         "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU".parse().unwrap(),
         "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT".parse().unwrap(),
-        "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp".parse().unwrap(),
         "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa".parse().unwrap(),
         "/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X".parse().unwrap(),
         "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk".parse().unwrap()
@@ -141,7 +140,7 @@ impl GetDefaults for Testnet {
                 .join("testnet")
                 .join("config.toml"),
             data_dir: default_asb_data_dir()?.join("testnet"),
-            listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
+            listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9839")?,
             electrum_rpc_urls: default_electrum_servers_testnet(),
             price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
             bitcoin_confirmation_target: 1,

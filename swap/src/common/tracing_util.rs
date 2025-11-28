@@ -217,6 +217,7 @@ mod crates {
         "libp2p_yamux",
         "libp2p_tor",
         "libp2p_tcp",
+        // TODO: Maybe add "swap_p2p" here too?
     ];
 
     pub const OUR_CRATES: &[&str] = &[

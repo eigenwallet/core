@@ -7,6 +7,7 @@ use libp2p::{
 };
 use uuid::Uuid;
 
+use crate::protocols::rendezvous;
 use crate::protocols::{
     cooperative_xmr_redeem_after_punish, encrypted_signature, quote::BidQuote, swap_setup,
 };
@@ -45,7 +46,7 @@ pub enum OutEvent {
         swap_id: Uuid,
         peer: PeerId,
     },
-    Rendezvous(libp2p::rendezvous::client::Event),
+    Rendezvous(rendezvous::register::Event),
     OutboundRequestResponseFailure {
         peer: PeerId,
         error: OutboundFailure,
@@ -96,21 +97,8 @@ impl From<identify::Event> for OutEvent {
     }
 }
 
-impl From<libp2p::rendezvous::client::Event> for OutEvent {
-    fn from(e: libp2p::rendezvous::client::Event) -> Self {
-        OutEvent::Rendezvous(e)
-    }
-}
-
-impl From<crate::protocols::rendezvous::register::InnerBehaviourEvent> for OutEvent {
-    fn from(e: crate::protocols::rendezvous::register::InnerBehaviourEvent) -> Self {
-        match e {
-            crate::protocols::rendezvous::register::InnerBehaviourEvent::Rendezvous(ev) => {
-                OutEvent::from(ev)
-            }
-            crate::protocols::rendezvous::register::InnerBehaviourEvent::Redial(_) => {
-                OutEvent::Other
-            }
-        }
+impl From<rendezvous::register::Event> for OutEvent {
+    fn from(event: rendezvous::register::Event) -> Self {
+        OutEvent::Rendezvous(event)
     }
 }

@@ -166,4 +166,5 @@ pub trait Database {
         &self,
         swap_id: Uuid,
     ) -> Result<Option<monero::TransferProof>>;
+    async fn has_swap(&self, swap_id: Uuid) -> Result<bool>;
 }

@@ -10,6 +10,7 @@ use libp2p::{dns, noise, Multiaddr, PeerId, Swarm, Transport};
 use libp2p_tor::{AddressConversion, TorTransport};
 use std::fmt;
 use std::path::Path;
+use swap_p2p::libp2p_ext::MultiAddrVecExt;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 
 use crate::behaviour::Behaviour;
@@ -26,48 +27,23 @@ mod defaults {
     pub const HIDDEN_SERVICE_NUM_INTRO_POINTS: u8 = 5;
 
     pub const MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(60);
-
-    pub const REGISTRATION_TTL: Option<u64> = None;
 }
 
 pub fn create_swarm(
     identity: identity::Keypair,
-    rendezvous_addrs: Vec<Multiaddr>,
+    rendezvous_nodes: Vec<Multiaddr>,
 ) -> Result<Swarm<Behaviour>> {
+    let rendezvous_nodes = rendezvous_nodes.extract_peer_addresses();
+    let rendezvous_nodes_peer_ids = rendezvous_nodes
+        .iter()
+        .map(|(peer_id, _)| *peer_id)
+        .collect();
+
     let transport = create_transport(&identity).context("Failed to create transport")?;
     let behaviour = Behaviour::new(
         identity.clone(),
-        rendezvous_addrs,
+        rendezvous_nodes_peer_ids,
         swap_p2p::protocols::rendezvous::XmrBtcNamespace::RendezvousPoint,
-        defaults::REGISTRATION_TTL,
-    )?;
-
-    let swarm = SwarmBuilder::with_existing_identity(identity)
-        .with_tokio()
-        .with_other_transport(|_| transport)?
-        .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| {
-            cfg.with_idle_connection_timeout(defaults::IDLE_CONNECTION_TIMEOUT)
-        })
-        .build();
-
-    Ok(swarm)
-}
-
-pub async fn create_swarm_with_onion(
-    identity: identity::Keypair,
-    onion_port: u16,
-    data_dir: &Path,
-    rendezvous_addrs: Vec<Multiaddr>,
-) -> Result<Swarm<Behaviour>> {
-    let (transport, onion_address) = create_transport_with_onion(&identity, onion_port, data_dir)
-        .await
-        .context("Failed to create transport with onion")?;
-    let behaviour = Behaviour::new(
-        identity.clone(),
-        rendezvous_addrs,
-        swap_p2p::protocols::rendezvous::XmrBtcNamespace::RendezvousPoint,
-        defaults::REGISTRATION_TTL,
     )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
@@ -78,6 +54,54 @@ pub async fn create_swarm_with_onion(
             cfg.with_idle_connection_timeout(defaults::IDLE_CONNECTION_TIMEOUT)
         })
         .build();
+
+    // Add all the addresses of the rendezvous nodes to the Swarm
+    for (peer_id, addresses) in rendezvous_nodes {
+        for address in addresses {
+            swarm.add_peer_address(peer_id.clone(), address.clone());
+        }
+    }
+
+    Ok(swarm)
+}
+
+pub async fn create_swarm_with_onion(
+    identity: identity::Keypair,
+    onion_port: u16,
+    data_dir: &Path,
+    rendezvous_nodes: Vec<Multiaddr>,
+) -> Result<Swarm<Behaviour>> {
+    let rendezvous_nodes = rendezvous_nodes.extract_peer_addresses();
+    let rendezvous_nodes_peer_ids = rendezvous_nodes
+        .iter()
+        .map(|(peer_id, _)| *peer_id)
+        .collect();
+
+    let (transport, onion_address) = create_transport_with_onion(&identity, onion_port, data_dir)
+        .await
+        .context("Failed to create transport with onion")?;
+
+    let behaviour = Behaviour::new(
+        identity.clone(),
+        rendezvous_nodes_peer_ids,
+        swap_p2p::protocols::rendezvous::XmrBtcNamespace::RendezvousPoint,
+    )?;
+
+    let mut swarm = SwarmBuilder::with_existing_identity(identity)
+        .with_tokio()
+        .with_other_transport(|_| transport)?
+        .with_behaviour(|_| behaviour)?
+        .with_swarm_config(|cfg| {
+            cfg.with_idle_connection_timeout(defaults::IDLE_CONNECTION_TIMEOUT)
+        })
+        .build();
+
+    // Add all the addresses of the rendezvous nodes to the Swarm
+    for (peer_id, addresses) in rendezvous_nodes {
+        for address in addresses {
+            swarm.add_peer_address(peer_id, address.clone());
+        }
+    }
 
     // Listen on the onion address
     swarm
