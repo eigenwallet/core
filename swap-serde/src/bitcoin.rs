@@ -33,7 +33,7 @@ pub mod address_serde {
         D: Deserializer<'de>,
     {
         let unchecked: Address<NetworkUnchecked> =
-            Address::from_str(&String::deserialize(deserializer)?)
+            Address::from_str(<&str>::deserialize(deserializer)?)
                 .map_err(serde::de::Error::custom)?;
 
         Ok(unchecked.assume_checked())
@@ -62,15 +62,49 @@ pub mod address_serde {
         where
             D: Deserializer<'de>,
         {
-            let opt: Option<String> = Option::deserialize(deserializer)?;
+            let opt: Option<&str> = Option::deserialize(deserializer)?;
             match opt {
                 Some(s) => {
                     let unchecked: Address<NetworkUnchecked> =
-                        Address::from_str(&s).map_err(serde::de::Error::custom)?;
+                        Address::from_str(s).map_err(serde::de::Error::custom)?;
                     Ok(Some(unchecked.assume_checked()))
                 }
                 None => Ok(None),
             }
+        }
+    }
+
+    /// This submodule supports Vec<Address>.
+    pub mod vec {
+        use super::*;
+        use serde::ser::SerializeSeq;
+
+        pub fn serialize<S>(
+            addresses: &Vec<Address<NetworkChecked>>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let mut seq = serializer.serialize_seq(Some(addresses.len()))?;
+            for addr in addresses {
+                seq.serialize_element(addr)?;
+            }
+            seq.end()
+        }
+
+        pub fn deserialize<'de, D>(
+            deserializer: D,
+        ) -> Result<Vec<Address<NetworkChecked>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let vec: Vec<&str> = Vec::deserialize(deserializer)?;
+            Result::from_iter(vec.into_iter().map(|s| {
+                Address::from_str(s)
+                    .map(|unchecked: Address<NetworkUnchecked>| unchecked.assume_checked())
+                    .map_err(serde::de::Error::custom)
+            }))
         }
     }
 }

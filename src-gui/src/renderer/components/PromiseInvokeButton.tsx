@@ -132,11 +132,11 @@ export default function PromiseInvokeButton<T>({
           <IconButton
             onClick={handleClick}
             disabled={isDisabled}
-            {...(rest as IconButtonProps)}
-            size="large"
             sx={{
               padding: "0.25rem",
             }}
+            size="large"
+            {...(rest as IconButtonProps)}
           >
             {isLoading
               ? resolvedLoadingIcon

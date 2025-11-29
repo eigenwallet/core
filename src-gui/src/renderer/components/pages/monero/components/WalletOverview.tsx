@@ -100,7 +100,7 @@ export default function WalletOverview({
   const timeEstimation = useSyncTimeEstimation(syncProgress);
 
   const pendingBalance = balance
-    ? parseFloat(balance.total_balance) - parseFloat(balance.unlocked_balance)
+    ? balance.total_balance - balance.unlocked_balance
     : null;
 
   const isSyncing = !!(syncProgress && syncProgress.progress_percentage < 100);
@@ -185,14 +185,14 @@ export default function WalletOverview({
             </Typography>
             <Typography variant="h4">
               <PiconeroAmount
-                amount={balance ? parseFloat(balance.unlocked_balance) : null}
+                amount={balance ? balance.unlocked_balance : null}
                 fixedPrecision={4}
                 disableTooltip
               />
             </Typography>
             <Typography variant="body2" color="text.secondary">
               <FiatPiconeroAmount
-                amount={balance ? parseFloat(balance.unlocked_balance) : null}
+                amount={balance ? balance.unlocked_balance : null}
               />
             </Typography>
           </Box>

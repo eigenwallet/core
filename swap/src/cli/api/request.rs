@@ -2,7 +2,7 @@ use super::tauri_bindings::TauriHandle;
 use crate::bitcoin::wallet;
 use crate::cli::api::tauri_bindings::{
     ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
-    TauriSwapProgressEvent,
+    TauriSwapProgressEvent, WithdrawBitcoinDetails,
 };
 use crate::cli::api::Context;
 use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
@@ -174,6 +174,9 @@ pub struct WithdrawBtcResponse {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub amount: bitcoin::Amount,
     pub txid: String,
+    #[typeshare(serialized_as = "string")]
+    #[serde(with = "swap_serde::bitcoin::address_serde")]
+    pub address: bitcoin::Address,
 }
 
 impl Request for WithdrawBtcArgs {
@@ -181,6 +184,27 @@ impl Request for WithdrawBtcArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         withdraw_btc(self, ctx).await
+    }
+}
+
+// GenerateBitcoinAddresses
+#[typeshare(serialized_as = "number")]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GenerateBitcoinAddressesArgs(pub usize);
+
+#[typeshare(serialized_as = "string[]")]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GenerateBitcoinAddressesResponse(
+    #[serde(with = "swap_serde::bitcoin::address_serde::vec")] pub Vec<bitcoin::Address>,
+);
+
+impl Request for GenerateBitcoinAddressesArgs {
+    type Response = GenerateBitcoinAddressesResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let bitcoin_wallet = ctx.try_get_bitcoin_wallet().await?;
+        let addresses = bitcoin_wallet.new_addresses(self.0).await?;
+        Ok(GenerateBitcoinAddressesResponse(addresses))
     }
 }
 
@@ -293,6 +317,7 @@ pub struct BalanceResponse {
     #[typeshare(serialized_as = "number")]
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub balance: bitcoin::Amount,
+    pub transactions: Vec<wallet::TransactionInfo>,
 }
 
 impl Request for BalanceArgs {
@@ -300,30 +325,6 @@ impl Request for BalanceArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         get_balance(self, ctx).await
-    }
-}
-
-// GetBitcoinAddress
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GetBitcoinAddressArgs;
-
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GetBitcoinAddressResponse {
-    #[typeshare(serialized_as = "string")]
-    #[serde(with = "swap_serde::bitcoin::address_serde")]
-    pub address: bitcoin::Address,
-}
-
-impl Request for GetBitcoinAddressArgs {
-    type Response = GetBitcoinAddressResponse;
-
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        let bitcoin_wallet = ctx.try_get_bitcoin_wallet().await?;
-        let address = bitcoin_wallet.new_address().await?;
-
-        Ok(GetBitcoinAddressResponse { address })
     }
 }
 
@@ -718,9 +719,9 @@ pub struct GetMoneroBalanceArgs;
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GetMoneroBalanceResponse {
-    #[typeshare(serialized_as = "string")]
+    #[typeshare(serialized_as = "number")]
     pub total_balance: crate::monero::Amount,
-    #[typeshare(serialized_as = "string")]
+    #[typeshare(serialized_as = "number")]
     pub unlocked_balance: crate::monero::Amount,
 }
 
@@ -762,7 +763,9 @@ pub enum SendMoneroAmount {
 pub struct SendMoneroResponse {
     pub tx_hash: String,
     pub address: String,
+    #[typeshare(serialized_as = "number")]
     pub amount_sent: crate::monero::Amount,
+    #[typeshare(serialized_as = "number")]
     pub fee: crate::monero::Amount,
 }
 
@@ -1415,7 +1418,7 @@ pub async fn withdraw_btc(
     let (withdraw_tx_unsigned, amount) = match amount {
         Some(amount) => {
             let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address_dynamic_fee(address, amount, None)
+                .send_to_address_dynamic_fee(address.clone(), amount, None)
                 .await?;
 
             (withdraw_tx_unsigned, amount)
@@ -1426,16 +1429,34 @@ pub async fn withdraw_btc(
                 .await?;
 
             let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address(address, max_giveable, spending_fee, None)
+                .send_to_address(address.clone(), max_giveable, spending_fee, None)
                 .await?;
 
             (withdraw_tx_unsigned, max_giveable)
         }
     };
+    let fee = withdraw_tx_unsigned.fee()?;
 
     let withdraw_tx = bitcoin_wallet
         .sign_and_finalize(withdraw_tx_unsigned)
         .await?;
+
+    if !context
+        .tauri_handle
+        .as_ref()
+        .context("Tauri needs to be available to approve transactions")?
+        .request_approval::<bool>(
+            ApprovalRequestType::WithdrawBitcoin(WithdrawBitcoinDetails {
+                address: address.to_string(),
+                amount,
+                fee,
+            }),
+            Some(60 * 5),
+        )
+        .await?
+    {
+        bail!("Transaction rejected interactively.");
+    }
 
     bitcoin_wallet
         .broadcast(withdraw_tx.clone(), "withdraw")
@@ -1446,6 +1467,7 @@ pub async fn withdraw_btc(
     Ok(WithdrawBtcResponse {
         txid: txid.to_string(),
         amount,
+        address,
     })
 }
 
@@ -1458,22 +1480,24 @@ pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<
         bitcoin_wallet.sync().await?;
     }
 
-    let bitcoin_balance = bitcoin_wallet.balance().await?;
+    let balance = bitcoin_wallet.balance().await?;
+    let transactions = bitcoin_wallet.history().await;
 
     if force_refresh {
         tracing::info!(
-            balance = %bitcoin_balance,
+            %balance,
             "Checked Bitcoin balance",
         );
     } else {
         tracing::debug!(
-            balance = %bitcoin_balance,
+            %balance,
             "Current Bitcoin balance as of last sync",
         );
     }
 
     Ok(BalanceResponse {
-        balance: bitcoin_balance,
+        balance,
+        transactions,
     })
 }
 

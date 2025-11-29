@@ -2470,7 +2470,7 @@ impl FfiWallet {
         let history_handle = TransactionHistoryHandle(history_ptr);
         let count = history_handle.count();
 
-        let mut transactions = Vec::new();
+        let mut transactions = Vec::with_capacity(count as _);
         for i in 0..count {
             if let Some(tx_info_handle) = history_handle.transaction(i) {
                 if let Some(serialized_tx) = tx_info_handle.serialize() {

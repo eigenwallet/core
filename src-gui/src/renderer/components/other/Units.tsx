@@ -88,19 +88,57 @@ export function FiatPiconeroAmount({
   );
 }
 
+export function FiatSatsAmount({
+  amount,
+  fixedPrecision = 2,
+}: {
+  amount: Amount;
+  fixedPrecision?: number;
+}) {
+  const btcPrice = useAppSelector((state) => state.rates.btcPrice);
+  const [fetchFiatPrices, fiatCurrency] = useSettings((settings) => [
+    settings.fetchFiatPrices,
+    settings.fiatCurrency,
+  ]);
+
+  if (
+    !fetchFiatPrices ||
+    fiatCurrency == null ||
+    amount == null ||
+    btcPrice == null
+  ) {
+    return null;
+  }
+
+  return (
+    <span>
+      {(satsToBtc(amount) * btcPrice).toFixed(fixedPrecision)} {fiatCurrency}
+    </span>
+  );
+}
+
 AmountWithUnit.defaultProps = {
   exchangeRate: null,
 };
 
-export function BitcoinAmount({ amount }: { amount: Amount }) {
+export function BitcoinAmount({
+  amount,
+  disableTooltip = false,
+  fixedPrecision = 6,
+}: {
+  amount: Amount;
+  disableTooltip?: boolean;
+  fixedPrecision?: number;
+}) {
   const btcRate = useAppSelector((state) => state.rates.btcPrice);
 
   return (
     <AmountWithUnit
       amount={amount}
       unit="BTC"
-      fixedPrecision={6}
+      fixedPrecision={fixedPrecision}
       exchangeRate={btcRate}
+      disableTooltip={disableTooltip}
     />
   );
 }
@@ -184,24 +222,39 @@ export function MoneroSatsExchangeRate({
   return <MoneroBitcoinExchangeRate rate={btc} displayMarkup={displayMarkup} />;
 }
 
-export function SatsAmount({ amount }: { amount: Amount }) {
+export function SatsAmount({
+  amount,
+  disableTooltip = false,
+  fixedPrecision = 6,
+}: {
+  amount: Amount;
+  disableTooltip?: boolean;
+  fixedPrecision?: number;
+}) {
   const btcAmount = amount == null ? null : satsToBtc(amount);
-  return <BitcoinAmount amount={btcAmount} />;
+  return (
+    <BitcoinAmount
+      amount={btcAmount}
+      disableTooltip={disableTooltip}
+      fixedPrecision={fixedPrecision}
+    />
+  );
 }
 
+export interface PiconeroAmountArgs {
+  amount: Amount;
+  fixedPrecision?: number;
+  labelStyles?: SxProps;
+  amountStyles?: SxProps;
+  disableTooltip?: boolean;
+}
 export function PiconeroAmount({
   amount,
   fixedPrecision = 8,
   labelStyles,
   amountStyles,
   disableTooltip = false,
-}: {
-  amount: Amount;
-  fixedPrecision?: number;
-  labelStyles?: SxProps;
-  amountStyles?: SxProps;
-  disableTooltip?: boolean;
-}) {
+}: PiconeroAmountArgs) {
   return (
     <MoneroAmount
       amount={amount == null ? null : piconerosToXmr(amount)}

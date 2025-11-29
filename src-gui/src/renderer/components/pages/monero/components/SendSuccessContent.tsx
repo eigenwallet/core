@@ -3,26 +3,43 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import {
   FiatPiconeroAmount,
   PiconeroAmount,
+  FiatSatsAmount,
+  SatsAmount,
 } from "renderer/components/other/Units";
 import MonospaceTextBox from "renderer/components/other/MonospaceTextBox";
 import ArrowOutwardIcon from "@mui/icons-material/ArrowOutward";
-import { SendMoneroResponse } from "models/tauriModel";
-import { getMoneroTxExplorerUrl } from "../../../../../utils/conversionUtils";
+import { SendMoneroResponse, WithdrawBtcResponse } from "models/tauriModel";
+import {
+  getMoneroTxExplorerUrl,
+  getBitcoinTxExplorerUrl,
+} from "../../../../../utils/conversionUtils";
 import { isTestnet } from "store/config";
 import { open } from "@tauri-apps/plugin-shell";
 
 export default function SendSuccessContent({
   onClose,
   successDetails,
+  wallet,
 }: {
   onClose: () => void;
-  successDetails: SendMoneroResponse | null;
+  successDetails: SendMoneroResponse | WithdrawBtcResponse | null;
+  wallet: "monero" | "bitcoin";
 }) {
-  const address = successDetails?.address;
-  const amount = successDetails?.amount_sent;
-  const explorerUrl = successDetails?.tx_hash
-    ? getMoneroTxExplorerUrl(successDetails.tx_hash, isTestnet())
-    : null;
+  const details = successDetails as
+    | (SendMoneroResponse & WithdrawBtcResponse)
+    | null;
+  const address = details?.address;
+  const amount = details?.amount_sent || details?.amount;
+  const explorerUrl = details?.tx_hash
+    ? getMoneroTxExplorerUrl(details.tx_hash, isTestnet())
+    : details?.txid
+      ? getBitcoinTxExplorerUrl(details.txid, isTestnet())
+      : null;
+
+  const BaseUnitAmount = wallet === "monero" ? PiconeroAmount : SatsAmount;
+  const FiatBaseUnitAmount =
+    wallet === "monero" ? FiatPiconeroAmount : FiatSatsAmount;
+  const baseUnitPrecision = wallet === "monero" ? 4 : 6;
 
   return (
     <Box
@@ -59,10 +76,13 @@ export default function SendSuccessContent({
             Sent
           </Typography>
           <Typography variant="body1" color="text.primary">
-            <PiconeroAmount amount={amount} fixedPrecision={4} />
+            <BaseUnitAmount
+              amount={amount}
+              fixedPrecision={baseUnitPrecision}
+            />
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            (<FiatPiconeroAmount amount={amount} />)
+            (<FiatBaseUnitAmount amount={amount} />)
           </Typography>
         </Box>
         <Box
