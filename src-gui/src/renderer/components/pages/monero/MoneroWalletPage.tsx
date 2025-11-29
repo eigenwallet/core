@@ -12,9 +12,15 @@ import WalletPageLoadingState from "./components/WalletPageLoadingState";
 
 // Main MoneroWalletPage component
 export default function MoneroWalletPage() {
-  const { mainAddress, balance, syncProgress, history } = useAppSelector(
-    (state) => state.wallet.state,
+  // Use separate selectors to prevent unnecessary re-renders
+  // When syncProgress updates frequently during syncing, we don't want to
+  // re-render components that only depend on history, balance, or mainAddress
+  const mainAddress = useAppSelector((state) => state.wallet.state.mainAddress);
+  const balance = useAppSelector((state) => state.wallet.state.balance);
+  const syncProgress = useAppSelector(
+    (state) => state.wallet.state.syncProgress
   );
+  const history = useAppSelector((state) => state.wallet.state.history);
 
   useEffect(() => {
     initializeMoneroWallet();
