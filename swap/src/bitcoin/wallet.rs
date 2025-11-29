@@ -1595,9 +1595,7 @@ where
     ///
     /// This uses different techniques to estimate the fee under the hood:
     /// 1. `estimate_fee_rate` from Electrum which calls `estimatesmartfee` from Bitcoin Core
-    /// 2. `estimate_fee_rate_from_histogram` which calls `mempool.get_fee_histogram` from Electrum. It calculates the distance to the tip of the mempool.
-    ///    it can adapt faster to sudden spikes in the mempool.
-    /// 3. `MempoolClient::estimate_feerate` which uses the mempool.space API for fee estimation
+    /// 2. `MempoolClient::estimate_feerate` which uses the mempool.space API for fee estimation
     ///
     /// To compute the min relay fee we fetch from both the Electrum server and the MempoolClient.
     ///
@@ -1607,10 +1605,10 @@ where
         weight: Weight,
         transfer_amount: Option<bitcoin::Amount>,
     ) -> Result<bitcoin::Amount> {
-        let fee_rate = self.combined_fee_rate().await?;
-        let min_relay_fee = self.combined_min_relay_fee().await?;
+        let (fee_rate, min_relay_fee) =
+            tokio::join!(self.combined_fee_rate(), self.combined_min_relay_fee());
 
-        estimate_fee(weight, transfer_amount, fee_rate, min_relay_fee)
+        estimate_fee(weight, transfer_amount, fee_rate?, min_relay_fee?)
     }
 }
 
@@ -1982,66 +1980,8 @@ impl Client {
 
         Ok(fee_rate)
     }
-
-    /// Calculates the fee_rate needed to be included in a block at the given offset.
-    /// We calculate how many vMB we are away from the tip of the mempool.
-    /// This method adapts faster to sudden spikes in the mempool.
-    async fn estimate_fee_rate_from_histogram(&self, target_block: u32) -> Result<FeeRate> {
-        // Assume we want to get into the next block:
-        // We want to be 80% of the block size away from the tip of the mempool.
-        const HISTOGRAM_SAFETY_MARGIN: f32 = 0.8;
-
-        // First we fetch the fee histogram from the Electrum server
-        let fee_histogram = self
-            .inner
-            .call_async("get_fee_histogram", move |client| {
-                client.inner.raw_call("mempool.get_fee_histogram", vec![])
-            })
-            .await?;
-
-        // Parse the histogram as array of [fee, vsize] pairs
-        let histogram: Vec<(f64, u64)> = serde_json::from_value(fee_histogram)?;
-
-        // If the histogram is empty, we return an error
-        if histogram.is_empty() {
-            return Err(anyhow!(
-                "The mempool seems to be empty therefore we cannot estimate the fee rate from the histogram"
-            ));
-        }
-
-        // Sort the histogram by fee rate
-        let mut histogram = histogram;
-        histogram.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Estimate block size (typically ~1MB = 1,000,000 vbytes)
-        let estimated_block_size = 1_000_000u64;
-        #[allow(clippy::cast_precision_loss)]
-        let target_distance_from_tip =
-            (estimated_block_size * target_block as u64) as f32 * HISTOGRAM_SAFETY_MARGIN;
-
-        // Find cumulative vsize and corresponding fee rate
-        let mut cumulative_vsize = 0u64;
-        for (fee_rate, vsize) in histogram.clone() {
-            cumulative_vsize += vsize;
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            if cumulative_vsize >= target_distance_from_tip as u64 {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                let sat_per_vb = fee_rate.ceil() as u64;
-                return FeeRate::from_sat_per_vb(sat_per_vb)
-                    .context("Failed to create fee rate from histogram");
             }
         }
-
-        // If we get here, the entire mempool is less than the target distance from the tip.
-        // We return the lowest fee rate in the histogram.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let sat_per_vb = histogram
-            .first()
-            .expect("The histogram should not be empty")
-            .0
-            .ceil() as u64;
-        FeeRate::from_sat_per_vb(sat_per_vb)
-            .context("Failed to create fee rate from histogram (all mempool is less than the target distance from the tip)")
     }
 
     /// Get the minimum relay fee rate from the Electrum server.
@@ -2188,49 +2128,17 @@ impl bitcoin_wallet::BitcoinWallet for Wallet {
 impl EstimateFeeRate for Client {
     async fn estimate_feerate(&self, target_block: u32) -> Result<FeeRate> {
         // Now that the Electrum client methods are async, we can parallelize the calls
-        let (electrum_conservative_fee_rate, electrum_histogram_fee_rate) = tokio::join!(
-            self.estimate_fee_rate(target_block),
-            self.estimate_fee_rate_from_histogram(target_block)
+        let electrum_conservative_fee_rate = self
+            .estimate_fee_rate(target_block)
+            .await
+            .context("Failed to fetch the conservative fee rates from Electrum")?;
+
+        tracing::debug!(
+            electrum_conservative_fee_rate_sat_vb =
+                electrum_conservative_fee_rate.to_sat_per_vb_ceil(),
+            "Successfully fetched fee rate"
         );
-
-        match (electrum_conservative_fee_rate, electrum_histogram_fee_rate) {
-            // If both the histogram and conservative fee rate are successful, we use the higher one
-            (Ok(electrum_conservative_fee_rate), Ok(electrum_histogram_fee_rate)) => {
-                tracing::debug!(
-                    electrum_conservative_fee_rate_sat_vb =
-                        electrum_conservative_fee_rate.to_sat_per_vb_ceil(),
-                    electrum_histogram_fee_rate_sat_vb =
-                        electrum_histogram_fee_rate.to_sat_per_vb_ceil(),
-                    "Successfully fetched fee rates from both sources. We will use the higher one"
-                );
-
-                Ok(electrum_conservative_fee_rate.max(electrum_histogram_fee_rate))
-            }
-            // If the conservative fee rate fails, we use the histogram fee rate
-            (Err(electrum_conservative_fee_rate_error), Ok(electrum_histogram_fee_rate)) => {
-                tracing::warn!(
-                    electrum_conservative_fee_rate_error = ?electrum_conservative_fee_rate_error,
-                    electrum_histogram_fee_rate_sat_vb = electrum_histogram_fee_rate.to_sat_per_vb_ceil(),
-                    "Failed to fetch conservative fee rate, using histogram fee rate"
-                );
-                Ok(electrum_histogram_fee_rate)
-            }
-            // If the histogram fee rate fails, we use the conservative fee rate
-            (Ok(electrum_conservative_fee_rate), Err(electrum_histogram_fee_rate_error)) => {
-                tracing::warn!(
-                    electrum_histogram_fee_rate_error = ?electrum_histogram_fee_rate_error,
-                    electrum_conservative_fee_rate_sat_vb = electrum_conservative_fee_rate.to_sat_per_vb_ceil(),
-                    "Failed to fetch histogram fee rate, using conservative fee rate"
-                );
-                Ok(electrum_conservative_fee_rate)
-            }
-            // If both the histogram and conservative fee rate fail, we return an error
-            (Err(electrum_conservative_fee_rate_error), Err(electrum_histogram_fee_rate_error)) => {
-                Err(electrum_conservative_fee_rate_error
-                    .context(electrum_histogram_fee_rate_error)
-                    .context("Failed to fetch both the conservative and histogram fee rates from Electrum"))
-            }
-        }
+        Ok(electrum_conservative_fee_rate)
     }
 
     async fn min_relay_fee(&self) -> Result<FeeRate> {
