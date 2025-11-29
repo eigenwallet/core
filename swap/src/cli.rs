@@ -227,7 +227,7 @@ mod tests {
                     StaticQuoteAsbBehaviourInnerEvent::Rendezvous(rendezvous_event) => {
                         if let InnerBehaviourEvent::Rendezvous(
                             rendezvous::client::Event::Registered { .. },
-                        ) = &rendezvous_event
+                        ) = rendezvous_event
                         {
                             self.registered = true;
                         }
