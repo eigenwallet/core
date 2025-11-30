@@ -29,10 +29,13 @@ mod connection {
     use super::*;
     use crate::kraken::wire;
     use futures::stream::BoxStream;
+    use std::sync::Arc;
     use tokio_tungstenite::tungstenite;
 
-    pub async fn new(ws_url: Url) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
-        let (mut rate_stream, _) = tokio_tungstenite::connect_async(ws_url)
+    pub async fn new(
+        ws_url: Arc<Url>,
+    ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
+        let (mut rate_stream, _) = tokio_tungstenite::connect_async(&*ws_url)
             .await
             .context("Failed to connect to Kraken websocket API")?;
 

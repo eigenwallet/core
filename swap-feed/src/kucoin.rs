@@ -41,10 +41,12 @@ mod connection {
     use tokio_tungstenite::tungstenite;
 
     pub async fn new(
-        (rest_url, client): (Url, reqwest::Client),
+        rest_url_client: Arc<(Url, reqwest::Client)>,
     ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
+        let &(ref rest_url, ref client) = &*rest_url_client;
+
         let auth: wire::BulletPublicResponse = client
-            .post(rest_url)
+            .post(rest_url.clone())
             .send()
             .await
             .context(

@@ -10,10 +10,10 @@ use tokio::sync::watch;
 pub fn connect<Params, ConnectionNewRet, ConnectionNewError, WirePriceUpdate>(
     label: &'static str,
     params: Params,
-    connection_new: fn(Params) -> ConnectionNewRet,
+    connection_new: fn(Arc<Params>) -> ConnectionNewRet,
 ) -> Result<PriceUpdates<WirePriceUpdate>>
 where
-    Params: Clone + Send + Sync + 'static,
+    Params: Sync + Send + 'static,
     ConnectionNewRet: Future<Output = Result<BoxStream<'static, Result<WirePriceUpdate, ConnectionNewError>>>>
         + Send
         + 'static,
@@ -22,6 +22,7 @@ where
 {
     let (price_update, price_update_receiver) = watch::channel(Err(Error::NotYetAvailable));
     let price_update = Arc::new(price_update);
+    let params = Arc::new(params);
 
     tokio::spawn(async move {
         // The default backoff config is fine for us apart from one thing:
