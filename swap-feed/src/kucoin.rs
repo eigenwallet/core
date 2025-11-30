@@ -393,7 +393,7 @@ mod wire {
             let Event::Message {
                 data:
                     MessageEventData {
-                        best_ask: PriceUpdate { ask, received: _ },
+                        best_ask: PriceUpdate { ask },
                     },
             } = event
             else {
