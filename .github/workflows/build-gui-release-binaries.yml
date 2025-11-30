@@ -227,8 +227,8 @@ jobs:
           ls -la /tmp/dmgs
           
           # Calculate SHA256 checksums
-          AARCH64_DMG=$(find /tmp/dmgs -type f -iname "*aarch64*.dmg" | head -n1)
-          X64_DMG=$(find /tmp/dmgs -type f -iname "*x86*.dmg" | head -n1)
+          AARCH64_DMG=$(ls /tmp/dmgs/*_aarch64.dmg)
+          X64_DMG=$(ls /tmp/dmgs/*_x64.dmg)
 
           echo "Found DMGs:"
           echo "  aarch64 -> $(basename "$AARCH64_DMG")"
