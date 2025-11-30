@@ -1,10 +1,7 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use serde::Deserialize;
-use std::convert::{Infallible, TryFrom};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::watch;
+use std::convert::TryFrom;
 use url::Url;
 
 /// Connect to Bitfinex websocket API for a constant stream of rate updates.
@@ -16,92 +13,12 @@ use url::Url;
 /// See: https://docs.bitfinex.com/docs/ws-public
 /// See: https://docs.bitfinex.com/reference/ws-public-ticker
 pub fn connect(price_ticker_ws_url_bitfinex: Url) -> Result<PriceUpdates> {
-    let (price_update, price_update_receiver) = watch::channel(Err(Error::NotYetAvailable));
-    let price_update = Arc::new(price_update);
-
-    tokio::spawn(async move {
-        // The default backoff config is fine for us apart from one thing:
-        // `max_elapsed_time`. If we don't get an error within this timeframe,
-        // backoff won't actually retry the operation.
-        let backoff = backoff::ExponentialBackoff {
-            max_elapsed_time: None,
-            ..backoff::ExponentialBackoff::default()
-        };
-
-        let result = backoff::future::retry_notify::<Infallible, _, _, _, _, _>(
-            backoff,
-            || {
-                let price_update = price_update.clone();
-                let price_ticker_ws_url_bitfinex = price_ticker_ws_url_bitfinex.clone();
-                async move {
-                    let mut stream = connection::new(price_ticker_ws_url_bitfinex).await?;
-
-                    while let Some(update) = stream
-                        .try_next()
-                        .await
-                        .map_err(anyhow::Error::from)
-                        .map_err(backoff::Error::transient)?
-                    {
-                        let send_result = price_update.send(Ok((Instant::now(), update)));
-
-                        if send_result.is_err() {
-                            return Err(backoff::Error::Permanent(anyhow!(
-                                "receiver disconnected"
-                            )));
-                        }
-                    }
-
-                    Err(backoff::Error::transient(anyhow!("stream ended")))
-                }
-            },
-            |error, next: Duration| {
-                tracing::info!(
-                    "Bitfinex websocket connection failed, retrying in {}ms. Error {:#}",
-                    next.as_millis(),
-                    error
-                );
-            },
-        )
-        .await;
-
-        let err = result.expect_err("Stream can't end successfully");
-        tracing::warn!("Rate updates incurred an unrecoverable error: {:#}", err);
-
-        // in case the retries fail permanently, let the subscribers know
-        price_update.send(Err(Error::PermanentFailure(err.into())))
-    });
-
-    Ok(PriceUpdates {
-        inner: price_update_receiver,
-    })
+    crate::ticker::connect("Bitfinex", price_ticker_ws_url_bitfinex, connection::new)
 }
 
-#[derive(Clone, Debug)]
-pub struct PriceUpdates {
-    inner: watch::Receiver<PriceUpdate>,
-}
+pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
 
-impl PriceUpdates {
-    pub async fn wait_for_next_update(&mut self) -> Result<PriceUpdate> {
-        self.inner.changed().await?;
-
-        Ok(self.inner.borrow().clone())
-    }
-
-    pub fn latest_update(&mut self) -> PriceUpdate {
-        self.inner.borrow().clone()
-    }
-}
-
-#[derive(Clone, Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Rate is not yet available")]
-    NotYetAvailable,
-    #[error("Permanently failed to retrieve rate from Bitfinex")]
-    PermanentFailure(Arc<anyhow::Error>),
-}
-
-type PriceUpdate = Result<(Instant, wire::PriceUpdate), Error>;
+pub type Error = crate::ticker::Error;
 
 /// Bitfinex websocket connection module.
 ///

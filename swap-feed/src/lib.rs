@@ -9,6 +9,8 @@ pub use kraken::{connect, Error as KrakenError, PriceUpdates};
 pub use rate::{ExchangeRate, FixedRate, Rate};
 pub use traits::LatestRate;
 
+mod ticker;
+
 // Core functions
 pub fn connect_kraken(url: url::Url) -> anyhow::Result<kraken::PriceUpdates> {
     kraken::connect(url)
