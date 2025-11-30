@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.3.8] - 2025-11-30
 
 - ASB + CONTROLLER: Add the `peer-id` command to the controller shell which can be used to obtain the Peer ID of your ASB instance.
+- GUI: Fix an issue where the Monero wallet could become unresponsive
 
 ## [3.3.7] - 2025-11-19
 
