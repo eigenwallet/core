@@ -60,7 +60,7 @@ where
                 }
             },
             |error, next: Duration| {
-                tracing::info!(
+                tracing::debug!(
                     "{} websocket connection failed, retrying in {}ms. Error {:#}",
                     label,
                     next.as_millis(),
