@@ -192,7 +192,11 @@ impl crate::traits::LatestRate for ExchangeRate {
         assert!(*max_ask >= *min_ask, "bitcoin::Amount violates Ord");
 
         let spread = *max_ask - *min_ask;
-        tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+        if degraded {
+            tracing::warn!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+        } else {
+            tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+        }
 
         if Decimal::from(spread.to_sat())
             > Decimal::from(average_ask.to_sat()) * MAX_INTEREXCHANGE_SPREAD
