@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.4.1] - 2025-12-01
 
-## [3.4.0] - 2025-12-01
-
 - GUI: Display detailed information about which peers we are connected to.
 - GUI: Change the unique avatars of makers to be distinctly different from each other to allow for recognizability.
 - GUI + SWAP + ASB: Massivly improved the reliability of all parts of the P2P networking stack.
