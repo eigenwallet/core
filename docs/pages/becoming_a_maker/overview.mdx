@@ -145,7 +145,7 @@ Below an explanation of what each option does:
 ### Bitcoin Section
 
 The `bitcoin` section specifies a few details about the asb's interaction with the Bitcoin blockchain.
-We do not recommend changing these settings, however we document them for completeness sake.
+We do not recommend changing these settings, however we document them for completeness' sake.
 
 ```toml filename="config_mainnet.toml"
 # ...
@@ -153,6 +153,7 @@ We do not recommend changing these settings, however we document them for comple
 [bitcoin]
 target_block = 1
 electrum_rpc_urls = ["tcp://mainnet_electrs:50001"]
+# bitcoind_rpc_urls = ["http://user:pass@127.0.0.1:8332"]
 use_mempool_space_fee_estimation = true
 network = "Mainnet"
 

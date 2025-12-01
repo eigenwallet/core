@@ -21,6 +21,7 @@ use std::time::Duration;
 use swap::asb::FixedRate;
 use swap::bitcoin::{CancelTimelock, PunishTimelock};
 use swap::cli::api;
+use swap::cli::command::BitcoinRemotes;
 use swap::database::{AccessMode, SqliteDatabase};
 use swap::monero::wallet::no_listener;
 use swap::monero::Wallets;
@@ -414,7 +415,9 @@ async fn init_test_wallets(
     let btc_wallet = swap::bitcoin::wallet::WalletBuilder::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)
-        .electrum_rpc_urls(vec![electrum_rpc_url.as_str().to_string()])
+        .remotes(BitcoinRemotes::Electrum(vec![electrum_rpc_url
+            .as_str()
+            .to_string()]))
         .persister(swap::bitcoin::wallet::PersisterConfig::InMemorySqlite)
         .finality_confirmations(1_u32)
         .target_block(1_u32)

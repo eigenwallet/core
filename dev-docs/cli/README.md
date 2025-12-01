@@ -67,7 +67,8 @@ OPTIONS:
         --receive-address <monero-receive-address>          The monero address where you would like to receive monero
         --seller <seller>                                   The seller's address. Must include a peer ID part, i.e. `/p2p/`
 
-        --electrum-rpc <bitcoin-electrum-rpc-url>           Provide the Bitcoin Electrum RPC URL
+        --electrum-rpc <bitcoin-electrum-rpc-url>           Provide the Bitcoin Electrum RPC URL. Supersedes --bitcoind-rpc
+        --bitcoind-rpc <bitcoind-rpc-url>                   Provide the bitcoind RPC URL. Superseded by --electrum-rpc
         --bitcoin-target-block <bitcoin-target-block>       Estimate Bitcoin fees such that transactions are confirmed within the specified number of blocks
         --monero-daemon-address <monero-daemon-address>     Specify to connect to a monero daemon of your choice: <host>:<port>
         --tor-socks5-port <tor-socks5-port>                 Your local Tor socks5 proxy port [default: 9050]

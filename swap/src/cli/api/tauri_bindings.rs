@@ -1030,7 +1030,9 @@ pub enum MoneroNodeConfig {
 pub struct TauriSettings {
     /// Configuration for Monero node connection
     pub monero_node_config: MoneroNodeConfig,
-    /// The URLs of the Electrum RPC servers e.g `["ssl://bitcoin.com:50001", "ssl://backup.com:50001"]`
+    /// The URL of a bitcoind RPC server, e.g. `["http://127.0.0.1:8332"]`. If `Some`, supersedes `electrum_rpc_urls`
+    pub bitcoind_rpc_url: Option<String>,
+    /// The URLs of the Electrum RPC servers, e.g. `["ssl://bitcoin.com:50001", "ssl://backup.com:50001"]`
     pub electrum_rpc_urls: Vec<String>,
     /// Whether to initialize and use a tor client.
     pub use_tor: bool,

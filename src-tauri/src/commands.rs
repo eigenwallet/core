@@ -171,7 +171,8 @@ pub async fn initialize_context(
     // Now populate the context in the background
     let context_result = ContextBuilder::new(testnet)
         .with_bitcoin(Bitcoin {
-            bitcoin_electrum_rpc_urls: settings.electrum_rpc_urls.clone(),
+            bitcoin_electrum_rpc_urls: settings.electrum_rpc_urls,
+            bitcoind_rpc_url: settings.bitcoind_rpc_url,
             bitcoin_target_block: None,
         })
         .with_monero(settings.monero_node_config)

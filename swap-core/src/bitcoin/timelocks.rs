@@ -28,6 +28,16 @@ impl From<u32> for BlockHeight {
     }
 }
 
+impl TryFrom<u64> for BlockHeight {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        Ok(Self(
+            value.try_into().context("Failed to fit u64 into u32")?,
+        ))
+    }
+}
+
 impl TryFrom<HeaderNotification> for BlockHeight {
     type Error = anyhow::Error;
 

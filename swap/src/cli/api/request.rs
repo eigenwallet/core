@@ -1975,7 +1975,11 @@ impl CheckElectrumNodeArgs {
         };
 
         // Check if the node is available
-        let res = wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60)).await;
+        let res = wallet::Client::new(
+            cli::command::BitcoinRemotes::Electrum(vec![url.as_str().to_string()]),
+            Duration::from_secs(60),
+        )
+        .await;
 
         Ok(CheckElectrumNodeResponse {
             available: res.is_ok(),

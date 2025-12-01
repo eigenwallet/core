@@ -259,6 +259,7 @@ export async function initializeContext() {
 
   // Get all Bitcoin nodes without checking availability
   // The backend ElectrumBalancer will handle load balancing and failover
+  const bitcoindRpc = store.getState().settings.bitcoindNode;
   const bitcoinNodes =
     store.getState().settings.nodes[network][Blockchain.Bitcoin];
 
@@ -285,6 +286,7 @@ export async function initializeContext() {
 
   // Initialize Tauri settings
   const tauriSettings: TauriSettings = {
+    bitcoind_rpc_url: bitcoindRpc,
     electrum_rpc_urls: bitcoinNodes,
     monero_node_config: moneroNodeConfig,
     use_tor: useTor,

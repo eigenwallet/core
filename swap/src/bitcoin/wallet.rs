@@ -3,12 +3,14 @@ use crate::cli::api::tauri_bindings::{
     TauriBackgroundProgress, TauriBitcoinFullScanProgress, TauriBitcoinSyncProgress, TauriEmitter,
     TauriHandle,
 };
+use crate::cli::command::BitcoinRemotes;
 use crate::seed::Seed;
 use anyhow::{anyhow, bail, Context, Result};
 use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
 use bdk_chain::CheckPoint;
 use bdk_electrum::electrum_client::{ElectrumApi, GetHistoryRes};
 
+use bdk_bitcoind_rpc::bitcoincore_rpc;
 use bdk_wallet::bitcoin::FeeRate;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::export::FullyNodedExport;
@@ -21,8 +23,10 @@ use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Txid};
 use bitcoin::{OutPoint, Psbt, ScriptBuf, Weight};
+use bitcoincore_rpc::{jsonrpc, RpcApi};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
+use futures::StreamExt;
 use moka;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
@@ -121,9 +125,11 @@ pub struct Wallet<Persister = Connection, C = Client> {
 #[derive(Clone)]
 pub struct Client {
     /// The underlying electrum balancer for load balancing across multiple servers.
-    inner: Arc<ElectrumBalancer>,
+    inner: ClientBackend,
     /// The history of transactions for each script.
-    script_history: BTreeMap<ScriptBuf, Vec<GetHistoryRes>>,
+    script_history: BTreeMap<ScriptBuf, Vec<ScriptHistory>>,
+    /// Transaction-only variant of `script_history` used by some backends.
+    tx_heights: BTreeMap<Txid, Option<i32>>,
     /// The subscriptions to the status of transactions.
     subscriptions: HashMap<(Txid, ScriptBuf), Subscription>,
     /// The time of the last sync.
@@ -132,6 +138,20 @@ pub struct Client {
     sync_interval: Duration,
     /// The height of the latest block we know about.
     latest_block_height: BlockHeight,
+}
+
+#[derive(Clone)]
+struct ScriptHistory {
+    height: i32,
+    tx_hash: Txid,
+}
+impl From<GetHistoryRes> for ScriptHistory {
+    fn from(ghr: GetHistoryRes) -> Self {
+        Self {
+            height: ghr.height,
+            tx_hash: ghr.tx_hash,
+        }
+    }
 }
 
 /// Holds the configuration parameters for creating a Bitcoin wallet.
@@ -151,7 +171,7 @@ pub struct Client {
 pub struct WalletConfig {
     seed: Seed,
     network: Network,
-    electrum_rpc_urls: Vec<String>,
+    remotes: BitcoinRemotes,
     persister: PersisterConfig,
     finality_confirmations: u32,
     target_block: u32,
@@ -171,7 +191,7 @@ impl WalletBuilder {
             .validate_config()
             .map_err(|e| anyhow!("Builder validation failed: {e}"))?;
 
-        let client = Client::new(&config.electrum_rpc_urls, config.sync_interval)
+        let client = Client::new(config.remotes, config.sync_interval)
             .await
             .context("Failed to create Electrum client")?;
 
@@ -466,7 +486,7 @@ impl Wallet {
 
         let progress_handle_clone = progress_handle.clone();
 
-        let callback = sync_ext::InnerSyncCallback::new(move |consumed, total| {
+        let mut callback = sync_ext::InnerSyncCallback::new(move |consumed, total| {
             progress_handle_clone.update(TauriBitcoinFullScanProgress::Known {
                 current_index: consumed,
                 assumed_total: total,
@@ -477,16 +497,35 @@ impl Wallet {
                 consumed,
                 total
             );
-        }).throttle_callback(10.0)).to_full_scan_callback(Self::SCAN_STOP_GAP, 100);
+        }).throttle_callback(10.0));
 
-        let full_scan = wallet.start_full_scan().inspect(callback);
+        let (full_scan_response, bitcoind_scan_response) = match &client.inner {
+            ClientBackend::BitcoindRpc(rpc) => (
+                None,
+                Some(
+                    rpc.run_sync(
+                        network,
+                        wallet.latest_checkpoint(),
+                        bdk_bitcoind_rpc::NO_EXPECTED_MEMPOOL_TXS,
+                        move |cur, tot| callback.call(cur, tot),
+                    )
+                    .await?,
+                ),
+            ),
+            ClientBackend::Electrum(inner) => {
+                let full_scan = wallet
+                    .start_full_scan()
+                    .inspect(callback.to_full_scan_callback(Self::SCAN_STOP_GAP, 100));
+                let full_scan_response = inner.get_any_client().await?.full_scan(
+                    full_scan,
+                    Self::SCAN_STOP_GAP as usize,
+                    Self::SCAN_BATCH_SIZE as usize,
+                    true,
+                )?;
 
-        let full_scan_response = client.inner.get_any_client().await?.full_scan(
-            full_scan,
-            Self::SCAN_STOP_GAP as usize,
-            Self::SCAN_BATCH_SIZE as usize,
-            true,
-        )?;
+                (Some(full_scan_response), None)
+            }
+        };
 
         // Only create the persister once we have the full scan result
         let mut persister = persister_constructor()?;
@@ -498,7 +537,19 @@ impl Wallet {
             .context("Failed to create wallet with persister")?;
 
         // Apply the full scan result to the wallet
-        wallet.apply_update(full_scan_response)?;
+        if let Some(full_scan_response) = full_scan_response {
+            wallet.apply_update(full_scan_response)?;
+        }
+        if let Some((block_events_scan_response, mempool_scan_response)) = bitcoind_scan_response {
+            for block_event in block_events_scan_response {
+                wallet.apply_block_connected_to(
+                    &block_event.block,
+                    block_event.block_height(),
+                    block_event.connected_to(),
+                )?;
+            }
+            wallet.apply_unconfirmed_txs(mempool_scan_response.update);
+        }
         wallet.persist(&mut persister)?;
 
         progress_handle.finish();
@@ -615,7 +666,7 @@ impl Wallet {
 
         let client = self.electrum_client.lock().await;
         let broadcast_results = client
-            .transaction_broadcast_all(&transaction)
+            .transaction_broadcast_all(transaction.clone())
             .await
             .with_context(|| {
                 format!(
@@ -921,36 +972,78 @@ impl Wallet {
     pub async fn sync_with_custom_callback(
         &self,
         sync_request_factory: SyncRequestBuilderFactory,
-        callback: InnerSyncCallback,
+        mut callback: InnerSyncCallback,
     ) -> Result<()> {
-        let callback = Arc::new(SyncMutex::new(callback));
+        let (sync_response, bitcoind_sync_response) = match &self.electrum_client.lock().await.inner
+        {
+            ClientBackend::BitcoindRpc(rpc) => {
+                let (wallet_tip, expected_mempool_txs) = {
+                    let wallet = self.wallet.lock().await;
+                    (
+                        wallet.latest_checkpoint(),
+                        wallet
+                            .transactions()
+                            .filter(|wtx| wtx.chain_position.is_unconfirmed())
+                            .map(|wtx| wtx.tx_node.tx)
+                            .collect::<Vec<_>>(),
+                    )
+                };
 
-        let sync_response = self
-            .electrum_client
-            .lock()
-            .await
-            .inner
-            .call_async("sync_wallet", move |client| {
-                let sync_request_factory = sync_request_factory.clone();
-                let callback = callback.clone();
+                (
+                    None,
+                    Some(
+                        // rpc.run_sync(self.network, wallet_tip, expected_mempool_txs, move |cur, tot| if let Ok(mut guard) = callback.lock() {guard.call(cur,tot);})
+                        rpc.run_sync(
+                            self.network,
+                            wallet_tip,
+                            expected_mempool_txs,
+                            move |cur, tot| callback.call(cur, tot),
+                        )
+                        .await?,
+                    ),
+                )
+            }
+            ClientBackend::Electrum(inner) => {
+                let callback = Arc::new(SyncMutex::new(callback));
+                inner
+                    .call_async("sync_wallet", move |client| {
+                        let callback = callback.clone();
+                        let sync_request_factory = sync_request_factory.clone();
 
-                // Build the sync request
-                let sync_request = sync_request_factory
-                    .build()
-                    .inspect(move |_, progress| {
-                        if let Ok(mut guard) = callback.lock() {
-                            guard.call(progress.consumed() as u64, progress.total() as u64);
-                        }
+                        // Build the sync request
+                        let sync_request = sync_request_factory
+                            .build()
+                            .inspect(move |_, progress| {
+                                if let Ok(mut guard) = callback.lock() {
+                                    guard.call(progress.consumed() as u64, progress.total() as u64);
+                                }
+                            })
+                            .build();
+
+                        let sync_response =
+                            client.sync(sync_request, Self::SCAN_BATCH_SIZE as usize, true)?;
+                        Ok((Some(sync_response), None))
                     })
-                    .build();
-
-                client.sync(sync_request, Self::SCAN_BATCH_SIZE as usize, true)
-            })
-            .await?;
+                    .await?
+            }
+        };
 
         // We only acquire the lock after the long running .sync(...) call has finished
         let mut wallet = self.wallet.lock().await;
-        wallet.apply_update(sync_response)?; // Use the full sync_response, not just chain_update
+        if let Some(sync_response) = sync_response {
+            wallet.apply_update(sync_response)?; // Use the full sync_response, not just chain_update
+        }
+        if let Some((block_events_sync_response, mempool_sync_response)) = bitcoind_sync_response {
+            for block_event in block_events_sync_response {
+                wallet.apply_block_connected_to(
+                    &block_event.block,
+                    block_event.block_height(),
+                    block_event.connected_to(),
+                )?;
+            }
+            wallet.apply_unconfirmed_txs(mempool_sync_response.update);
+            wallet.apply_evicted_txs(mempool_sync_response.evicted);
+        }
 
         let mut persister = self.persister.lock().await;
         wallet.persist(&mut persister)?;
@@ -1612,14 +1705,152 @@ where
     }
 }
 
+#[derive(Clone)]
+enum ClientBackend {
+    BitcoindRpc(AsyncBitcoindRpcClient),
+    Electrum(Arc<ElectrumBalancer>),
+}
+
+impl ClientBackend {
+    async fn new(remotes: BitcoinRemotes) -> Result<Self> {
+        match remotes {
+            BitcoinRemotes::BitcoindRpc(mut bitcoind_rpc_url) => {
+                let mut auth = bitcoincore_rpc::Auth::None;
+                if let Ok(mut url) = url::Url::parse(&bitcoind_rpc_url) {
+                    let username = url.username();
+                    let password = url.password().unwrap_or("");
+                    if username != "" || password != "" {
+                        auth = bitcoincore_rpc::Auth::UserPass(username.into(), password.into());
+                        let _ = url.set_username("");
+                        let _ = url.set_password(None);
+                        bitcoind_rpc_url = url.into();
+                    }
+                }
+                Ok(Self::BitcoindRpc(AsyncBitcoindRpcClient(Arc::new(
+                    bitcoincore_rpc::Client::new(&bitcoind_rpc_url, auth)?,
+                ))))
+            }
+            BitcoinRemotes::Electrum(electrum_rpc_urls) => Ok(Self::Electrum(Arc::new(
+                ElectrumBalancer::new(electrum_rpc_urls).await?,
+            ))),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AsyncBitcoindRpcClient(pub Arc<bitcoincore_rpc::Client>);
+impl AsyncBitcoindRpcClient {
+    async fn call_async<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&bitcoincore_rpc::Client) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let client = self.0.clone();
+        tokio::task::spawn_blocking(move || f(&*client)).await?
+    }
+
+    async fn run_sync(
+        &self,
+        network: Network,
+        wallet_tip: bdk_core::CheckPoint,
+        expected_mempool_txs: impl IntoIterator<Item = impl Into<Arc<Transaction>>> + Send + 'static,
+        mut callback: impl FnMut(u64, u64) + Send + 'static,
+    ) -> Result<(
+        Vec<bdk_bitcoind_rpc::BlockEvent<bitcoin::Block>>,
+        bdk_bitcoind_rpc::MempoolEvent,
+    )> {
+        self.call_async(move |client| {
+            // https://bookofbdk.com/cookbook/syncing/rpc/
+            let info = client.get_blockchain_info()?;
+
+            let rpc_network = info.chain;
+            if rpc_network != network {
+                bail!("bitcoind connected to {}, we want {}", rpc_network, network);
+            }
+
+            let warnings = match info.warnings {
+                bitcoincore_rpc::json::StringOrStringArray::String(s) => {
+                    if !s.is_empty() {
+                        vec![s]
+                    } else {
+                        vec![]
+                    }
+                }
+                bitcoincore_rpc::json::StringOrStringArray::StringArray(sa) => sa,
+            };
+            if !warnings.is_empty() {
+                tracing::warn!(?warnings, "bitcoind warnings");
+            }
+
+            let est_to_sync = info
+                .headers
+                .checked_sub(wallet_tip.height() as u64)
+                .unwrap_or(0);
+
+            let mut emitter = bdk_bitcoind_rpc::Emitter::new(
+                client,
+                wallet_tip.clone(),
+                wallet_tip.height(),
+                expected_mempool_txs,
+            );
+
+            let mut block_events = vec![];
+            while let Some(block) = emitter.next_block()? {
+                callback(
+                    block
+                        .block_height()
+                        .checked_sub(wallet_tip.height())
+                        .unwrap_or(0) as _,
+                    est_to_sync,
+                );
+                block_events.push(block);
+            }
+
+            Ok((block_events, emitter.mempool()?))
+        })
+        .await
+    }
+
+    /// <=0: unconfirmed; >0 <=> confirmed in block #
+    async fn tx_height(
+        &self,
+        txid: Txid,
+        latest_block_height: BlockHeight,
+    ) -> Result<(Txid, Option<i32>)> {
+        self.call_async(move |client| {
+            Ok(match client.get_transaction(&txid, Some(true)) {
+                Ok(txr) => (txid, Some(txr.info.blockheight.unwrap_or(0) as i32)),
+                Err(_) => match client.get_raw_transaction_info(&txid, None) {
+                    Ok(rtxr) => {
+                        // confirmations=1 <=> in latest block
+                        let confirmations = rtxr.confirmations.unwrap_or(0);
+                        (
+                            txid,
+                            Some(if confirmations <= 0 {
+                                confirmations
+                            } else {
+                                (latest_block_height + (confirmations - 1)).into()
+                            } as i32),
+                        )
+                    }
+                    // -5 is ENOENT; error string "No such mempool or blockchain transaction."
+                    Err(bitcoincore_rpc::Error::JsonRpc(jsonrpc::error::Error::Rpc(
+                        jsonrpc::error::RpcError { code: -5, .. },
+                    ))) => (txid, None),
+                    Err(e) => Err(e)?,
+                },
+            })
+        })
+        .await
+    }
+}
+
 impl Client {
     /// Create a new client with multiple electrum servers for load balancing.
-    pub async fn new(electrum_rpc_urls: &[String], sync_interval: Duration) -> Result<Self> {
-        let balancer = ElectrumBalancer::new(electrum_rpc_urls.to_vec()).await?;
-
+    pub async fn new(remotes: BitcoinRemotes, sync_interval: Duration) -> Result<Self> {
         Ok(Self {
-            inner: Arc::new(balancer),
+            inner: ClientBackend::new(remotes).await?,
             script_history: Default::default(),
+            tx_heights: Default::default(),
             last_sync: Instant::now()
                 .checked_sub(sync_interval)
                 .ok_or(anyhow!("failed to set last sync time"))?,
@@ -1640,8 +1871,8 @@ impl Client {
         }
 
         self.last_sync = now;
-        self.update_script_histories().await?;
         self.update_block_height().await?;
+        self.update_script_histories().await?;
 
         Ok(())
     }
@@ -1652,22 +1883,31 @@ impl Client {
     /// check the time since the last update before refreshing
     /// It therefore also does not take a [`force`] parameter
     pub async fn update_state_single(&mut self, script: &dyn Watchable) -> Result<()> {
-        self.update_script_history(script).await?;
         self.update_block_height().await?;
+        self.update_script_history(script).await?;
 
         Ok(())
     }
 
     /// Update the block height.
     async fn update_block_height(&mut self) -> Result<()> {
-        let latest_block = self
-            .inner
-            .call_async("block_headers_subscribe", |client| {
-                client.inner.block_headers_subscribe()
-            })
-            .await
-            .context("Failed to subscribe to header notifications")?;
-        let latest_block_height = BlockHeight::try_from(latest_block)?;
+        let latest_block_height: BlockHeight = match &self.inner {
+            ClientBackend::BitcoindRpc(rpc) => rpc
+                .call_async(move |client| {
+                    client
+                        .get_block_count()
+                        .context("Failed to get block height")
+                })
+                .await?
+                .try_into()?,
+            ClientBackend::Electrum(inner) => inner
+                .call_async("block_headers_subscribe", |client| {
+                    client.inner.block_headers_subscribe()
+                })
+                .await
+                .context("Failed to subscribe to header notifications")?
+                .try_into()?,
+        };
 
         if latest_block_height > self.latest_block_height {
             tracing::trace!(
@@ -1682,27 +1922,65 @@ impl Client {
 
     /// Update the script histories.
     async fn update_script_histories(&mut self) -> Result<()> {
-        let scripts: Vec<_> = self.script_history.keys().cloned().collect();
-
         // No need to do any network request if we have nothing to fetch
-        if scripts.is_empty() {
+        if self.script_history.is_empty() {
             return Ok(());
         }
 
         // Concurrently fetch the script histories from ALL electrum servers
-        let results = self
-            .inner
+        let inner = match &self.inner {
+            ClientBackend::BitcoindRpc(rpc) => {
+                let mut poll: futures::stream::FuturesUnordered<_> = self
+                    .tx_heights
+                    .keys()
+                    .map(|txid| rpc.tx_height(txid.clone(), self.latest_block_height))
+                    .collect();
+                let mut error = None;
+                let mut anyok = false;
+                while let Some(height) = poll.next().await {
+                    match height {
+                        Ok((txid, height)) => {
+                            anyok = true;
+                            self.tx_heights.insert(txid, height);
+                        }
+                        Err(err) if error.is_none() => error = Some(err),
+                        Err(_) => {}
+                    }
+                }
+                if error.is_some() && !anyok {
+                    return Err(error.unwrap());
+                }
+                return Ok(());
+            }
+            ClientBackend::Electrum(inner) => inner,
+        };
+
+        let scripts: Arc<Vec<_>> = Arc::new(self.script_history.keys().cloned().collect());
+        let results = inner
             .join_all("batch_script_get_history", {
                 let scripts = scripts.clone();
 
                 move |client| {
-                    let script_refs: Vec<_> = scripts.iter().map(|s| s.as_script()).collect();
-                    client.inner.batch_script_get_history(script_refs)
+                    let script_refs = scripts.iter().map(|s| s.as_script());
+                    client
+                        .inner
+                        .batch_script_get_history(script_refs)
+                        .map(|vvghr| {
+                            // Vec<Vec<GetHistoryRes>> -> Vec<Vec<ScriptHistory>>
+                            vvghr
+                                .into_iter()
+                                .map(|vghr| {
+                                    vghr.into_iter()
+                                        .map(ScriptHistory::from)
+                                        .collect::<Vec<_>>()
+                                })
+                                .collect::<Vec<_>>()
+                        })
                 }
             })
             .await?;
 
-        let successful_results: Vec<Vec<Vec<GetHistoryRes>>> = results
+        let successful_results: Vec<Vec<Vec<ScriptHistory>>> = results
             .iter()
             .filter_map(|r| r.as_ref().ok())
             .cloned()
@@ -1718,14 +1996,12 @@ impl Client {
         // Iterate through each script we fetched and find the highest
         // returned entry at any Electrum node
         for (script_index, script) in scripts.iter().enumerate() {
-            let all_history_for_script: Vec<GetHistoryRes> = successful_results
+            let all_history_for_script = successful_results
                 .iter()
                 .filter_map(|server_result| server_result.get(script_index))
-                .flatten()
-                .cloned()
-                .collect();
+                .flatten();
 
-            let mut best_history: BTreeMap<Txid, GetHistoryRes> = BTreeMap::new();
+            let mut best_history: BTreeMap<Txid, ScriptHistory> = BTreeMap::new();
             for item in all_history_for_script {
                 best_history
                     .entry(item.tx_hash)
@@ -1734,10 +2010,10 @@ impl Client {
                             *current = item.clone();
                         }
                     })
-                    .or_insert(item);
+                    .or_insert(item.clone());
             }
 
-            let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
+            let final_history = best_history.into_values().collect();
             self.script_history.insert(script.clone(), final_history);
         }
 
@@ -1746,19 +2022,32 @@ impl Client {
 
     /// Update the script history of a single script.
     pub async fn update_script_history(&mut self, script: &dyn Watchable) -> Result<()> {
-        let (script_buf, _) = script.script_and_txid();
-        let script_clone = script_buf.clone();
+        let (script_buf, txid) = script.script_and_txid();
 
         // Call all electrum servers in parallel to get script history.
-        let results = self
-            .inner
-            .join_all("script_get_history", move |client| {
-                client.inner.script_get_history(script_clone.as_script())
-            })
-            .await?;
+        let results = match &self.inner {
+            ClientBackend::BitcoindRpc(rpc) => {
+                let (_, height) = rpc.tx_height(txid, self.latest_block_height).await?;
+                self.tx_heights.insert(txid, height);
+                return Ok(());
+            }
+            ClientBackend::Electrum(inner) => {
+                let script_buf = script_buf.clone();
+                inner
+                    .join_all("script_get_history", move |client| {
+                        Ok(client
+                            .inner
+                            .script_get_history(script_buf.as_script())?
+                            .into_iter()
+                            .map(ScriptHistory::from)
+                            .collect::<Vec<_>>())
+                    })
+                    .await?
+            }
+        };
 
         // Collect all successful history entries from all servers.
-        let mut all_history_items: Vec<GetHistoryRes> = Vec::new();
+        let mut all_history_items = Vec::new();
         let mut first_error = None;
 
         for result in results {
@@ -1781,7 +2070,7 @@ impl Client {
         }
 
         // Use a map to find the best (highest confirmation) entry for each transaction.
-        let mut best_history: BTreeMap<Txid, GetHistoryRes> = BTreeMap::new();
+        let mut best_history: BTreeMap<Txid, ScriptHistory> = BTreeMap::new();
         for item in all_history_items {
             best_history
                 .entry(item.tx_hash)
@@ -1793,7 +2082,7 @@ impl Client {
                 .or_insert(item);
         }
 
-        let final_history: Vec<GetHistoryRes> = best_history.into_values().collect();
+        let final_history: Vec<ScriptHistory> = best_history.into_values().collect();
 
         self.script_history.insert(script_buf, final_history);
 
@@ -1804,19 +2093,31 @@ impl Client {
     /// Returns the results from all servers - at least one success indicates successful broadcast.
     pub async fn transaction_broadcast_all(
         &self,
-        transaction: &Transaction,
+        transaction: Transaction,
     ) -> Result<Vec<Result<bitcoin::Txid, bdk_electrum::electrum_client::Error>>> {
-        // Broadcast to all electrum servers in parallel
-        let results = self.inner.broadcast_all(transaction.clone()).await?;
+        match &self.inner {
+            // https://developer.bitcoin.org/reference/rpc/sendrawtransaction.html
+            ClientBackend::BitcoindRpc(rpc) => {
+                rpc.call_async(move |client| {
+                    client.send_raw_transaction(&transaction)?;
+                    Ok(vec![Ok(transaction.compute_txid())])
+                })
+                .await
+            }
+            ClientBackend::Electrum(inner) => {
+                // Broadcast to all electrum servers in parallel
+                let results = inner.broadcast_all(transaction.clone()).await?;
 
-        // Add the transaction to the cache if at least one broadcast succeeded
-        if results.iter().any(|r| r.is_ok()) {
-            // Note: Perhaps it is better to only populate caches of the Electrum nodes
-            // that accepted our transaction?
-            self.inner.populate_tx_cache(vec![transaction.clone()]);
+                // Add the transaction to the cache if at least one broadcast succeeded
+                if results.iter().any(|r| r.is_ok()) {
+                    // Note: Perhaps it is better to only populate caches of the Electrum nodes
+                    // that accepted our transaction?
+                    inner.populate_tx_cache([transaction]);
+                }
+
+                Ok(results)
+            }
         }
-
-        Ok(results)
     }
 
     /// Get the status of a script.
@@ -1829,6 +2130,7 @@ impl Client {
 
         if !self.script_history.contains_key(&script_buf) {
             self.script_history.insert(script_buf.clone(), vec![]);
+            self.tx_heights.insert(txid.clone(), None);
 
             // Immediately refetch the status of the script
             // when we first subscribe to it.
@@ -1842,12 +2144,17 @@ impl Client {
             self.update_state(false).await?;
         }
 
-        let history = self.script_history.entry(script_buf).or_default();
-
-        let history_of_tx: Vec<&GetHistoryRes> = history
-            .iter()
-            .filter(|entry| entry.tx_hash == txid)
-            .collect();
+        let history_of_tx = match self.tx_heights.get(&txid) {
+            Some(Some(height)) => vec![*height],
+            _ => self
+                .script_history
+                .entry(script_buf)
+                .or_default()
+                .iter()
+                .filter(|entry| entry.tx_hash == txid)
+                .map(|entry| entry.height)
+                .collect(),
+        };
 
         // Destructure history_of_tx into the last entry and the rest.
         let [rest @ .., last] = history_of_tx.as_slice() else {
@@ -1860,7 +2167,7 @@ impl Client {
             tracing::warn!(%txid, "Found multiple history entries for the same txid. Ignoring all but the last one.");
         }
 
-        match last.height {
+        match *last {
             // If the height is 0 or less, the transaction is still in the mempool.
             ..=0 => Ok(ScriptStatus::InMempool),
             // Otherwise, the transaction has been included in a block.
@@ -1876,62 +2183,87 @@ impl Client {
     /// Get a transaction from the Electrum server.
     /// Fails if the transaction is not found.
     pub async fn get_tx(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
-        match self
-            .inner
-            .call_async_with_multi_error("get_raw_transaction", move |client| {
-                use bitcoin::consensus::Decodable;
-                client.inner.transaction_get_raw(&txid).and_then(|raw| {
-                    let mut cursor = std::io::Cursor::new(&raw);
-                    bitcoin::Transaction::consensus_decode(&mut cursor).map_err(|e| {
-                        bdk_electrum::electrum_client::Error::Protocol(
-                            format!("Failed to deserialize transaction: {}", e).into(),
-                        )
+        match &self.inner {
+            // https://developer.bitcoin.org/reference/rpc/gettransaction.html
+            //   Get detailed information about in-wallet transaction <txid>
+            //
+            // https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
+            //   getrawtransaction will return the transaction if it is in the mempool,
+            //   or if -txindex is enabled and the transaction is in a block in the blockchain.
+            ClientBackend::BitcoindRpc(rpc) => {
+                rpc.call_async(move |client| {
+                    Ok(match client.get_transaction(&txid, Some(true)) {
+                        Ok(tx) => Some(Arc::new(bitcoin::consensus::encode::deserialize(&tx.hex)?)),
+                        Err(_) => match client.get_raw_transaction(&txid, None) {
+                            Ok(tx) => Some(Arc::new(tx)),
+                            // -5 is ENOENT; error string "No such mempool or blockchain transaction."
+                            Err(bitcoincore_rpc::Error::JsonRpc(jsonrpc::error::Error::Rpc(
+                                jsonrpc::error::RpcError { code: -5, .. },
+                            ))) => None,
+                            Err(e) => Err(e)?,
+                        },
                     })
                 })
-            })
-            .await
-        {
-            Ok(tx) => {
-                let tx = Arc::new(tx);
-                // Note: Perhaps it is better to only populate caches of the Electrum nodes
-                // that accepted our transaction?
-                self.inner.populate_tx_cache(vec![(*tx).clone()]);
-                Ok(Some(tx))
+                .await
             }
-            Err(multi_error) => {
-                // Check if any error indicates the transaction doesn't exist
-                let has_not_found = multi_error.any(|error| {
-                    let error_str = error.to_string();
-
-                    // Check for specific error patterns that indicate "not found"
-                    if error_str.contains("\"code\": Number(-5)")
-                        || error_str.contains("No such mempool or blockchain transaction")
-                        || error_str.contains("missing transaction")
-                    {
-                        return true;
+            ClientBackend::Electrum(inner) => {
+                match inner
+                    .call_async_with_multi_error("get_raw_transaction", move |client| {
+                        use bitcoin::consensus::Decodable;
+                        client.inner.transaction_get_raw(&txid).and_then(|raw| {
+                            let mut cursor = std::io::Cursor::new(&raw);
+                            bitcoin::Transaction::consensus_decode(&mut cursor).map_err(|e| {
+                                bdk_electrum::electrum_client::Error::Protocol(
+                                    format!("Failed to deserialize transaction: {}", e).into(),
+                                )
+                            })
+                        })
+                    })
+                    .await
+                {
+                    Ok(tx) => {
+                        let tx = Arc::new(tx);
+                        // Note: Perhaps it is better to only populate caches of the Electrum nodes
+                        // that accepted our transaction?
+                        inner.populate_tx_cache([tx.clone()]);
+                        Ok(Some(tx))
                     }
+                    Err(multi_error) => {
+                        // Check if any error indicates the transaction doesn't exist
+                        let has_not_found = multi_error.any(|error| {
+                            let error_str = error.to_string();
 
-                    // Also try to parse the RPC error code if possible
-                    let err_anyhow = anyhow::anyhow!(error_str);
-                    if let Ok(error_code) = parse_rpc_error_code(&err_anyhow) {
-                        if error_code == i64::from(RpcErrorCode::RpcInvalidAddressOrKey) {
-                            return true;
+                            // Check for specific error patterns that indicate "not found"
+                            if error_str.contains("\"code\": Number(-5)")
+                                || error_str.contains("No such mempool or blockchain transaction")
+                                || error_str.contains("missing transaction")
+                            {
+                                return true;
+                            }
+
+                            // Also try to parse the RPC error code if possible
+                            let err_anyhow = anyhow::anyhow!(error_str);
+                            if let Ok(error_code) = parse_rpc_error_code(&err_anyhow) {
+                                if error_code == i64::from(RpcErrorCode::RpcInvalidAddressOrKey) {
+                                    return true;
+                                }
+                            }
+
+                            false
+                        });
+
+                        if has_not_found {
+                            tracing::trace!(
+                                txid = %txid,
+                                error_count = multi_error.len(),
+                                "Transaction not found indicated by one or more Electrum servers"
+                            );
+                            Ok(None)
+                        } else {
+                            let err = anyhow::anyhow!(multi_error);
+                            Err(err.context("Failed to get transaction from the Electrum server"))
                         }
                     }
-
-                    false
-                });
-
-                if has_not_found {
-                    tracing::trace!(
-                        txid = %txid,
-                        error_count = multi_error.len(),
-                        "Transaction not found indicated by one or more Electrum servers"
-                    );
-                    Ok(None)
-                } else {
-                    let err = anyhow::anyhow!(multi_error);
-                    Err(err.context("Failed to get transaction from the Electrum server"))
                 }
             }
         }
@@ -1944,72 +2276,85 @@ impl Client {
     /// This uses estimatesmartfee of bitcoind
     pub async fn estimate_fee_rate(&self, target_block: u32) -> Result<FeeRate> {
         // Get the fee rate in Bitcoin per kilobyte
-        let btc_per_kvb = self
-            .inner
-            .call_async("estimate_fee", move |client| {
-                client.inner.estimate_fee(target_block as usize)
-            })
-            .await?;
-
-        // If the fee rate is less than 0, return an error
-        // The Electrum server returns a value <= 0 if it cannot estimate the fee rate.
-        // See: https://github.com/romanz/electrs/blob/ed0ef2ee22efb45fcf0c7f3876fd746913008de3/src/electrum.rs#L239-L245
-        //      https://github.com/romanz/electrs/blob/ed0ef2ee22efb45fcf0c7f3876fd746913008de3/src/electrum.rs#L31
-        if btc_per_kvb <= 0.0 {
-            return Err(anyhow!(
-                "Fee rate returned by Electrum server is less than 0"
-            ));
-        }
-
-        // Convert to sat / kB without ever constructing an Amount from the float
-        // Simply by multiplying the float with the satoshi value of 1 BTC.
-        // Truncation is allowed here because we are converting to sats and rounding down sats will
-        // not lose us any precision (because there is no fractional satoshi).
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            clippy::cast_precision_loss
-        )]
-        let sats_per_kvb = (btc_per_kvb * Amount::ONE_BTC.to_sat() as f64).ceil() as u64;
-
-        // Convert to sat / kwu (kwu = kB × 4)
-        let sat_per_kwu = sats_per_kvb / 4;
-
-        // Construct the fee rate
-        let fee_rate = FeeRate::from_sat_per_kwu(sat_per_kwu);
-
-        Ok(fee_rate)
-    }
+        match &self.inner {
+            // https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
+            ClientBackend::BitcoindRpc(rpc) => {
+                rpc.call_async(move |client| {
+                    let estimate = client.estimate_smart_fee(
+                        target_block
+                            .try_into()
+                            .context("block too far in the future")?,
+                        None,
+                    )?;
+                    estimate
+                        .fee_rate
+                        .map(feerate_bitcoind_rpc)
+                        .ok_or_else(|| anyhow!("{:?}", estimate.errors))
+                })
+                .await
             }
+            ClientBackend::Electrum(inner) => feerate_electrum(
+                inner
+                    .call_async("estimate_fee", move |client| {
+                        client.inner.estimate_fee(target_block as usize)
+                    })
+                    .await?,
+            ),
         }
     }
 
     /// Get the minimum relay fee rate from the Electrum server.
     async fn min_relay_fee(&self) -> Result<FeeRate> {
-        let min_relay_btc_per_kvb = self
-            .inner
-            .call_async("relay_fee", |client| client.inner.relay_fee())
-            .await?;
-
-        // Convert to sat / kB without ever constructing an Amount from the float
-        // Simply by multiplying the float with the satoshi value of 1 BTC.
-        // Truncation is allowed here because we are converting to sats and rounding down sats will
-        // not lose us any precision (because there is no fractional satoshi).
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            clippy::cast_precision_loss
-        )]
-        let sats_per_kvb = (min_relay_btc_per_kvb * Amount::ONE_BTC.to_sat() as f64).ceil() as u64;
-
-        // Convert to sat / kwu (kwu = kB × 4)
-        let sat_per_kwu = sats_per_kvb / 4;
-
-        // Construct the fee rate
-        let fee_rate = FeeRate::from_sat_per_kwu(sat_per_kwu);
-
-        Ok(fee_rate)
+        match &self.inner {
+            // https://developer.bitcoin.org/reference/rpc/getnetworkinfo.html
+            ClientBackend::BitcoindRpc(rpc) => {
+                rpc.call_async(|client| {
+                    Ok(feerate_bitcoind_rpc(client.get_network_info()?.relay_fee))
+                })
+                .await
+            }
+            ClientBackend::Electrum(inner) => feerate_electrum(
+                inner
+                    .call_async("relay_fee", |client| client.inner.relay_fee())
+                    .await?,
+            ),
+        }
     }
+}
+
+fn feerate_bitcoind_rpc(btc_per_kvb: Amount) -> FeeRate {
+    let sats_per_kvb = btc_per_kvb.to_sat();
+    feerate_from_sats_per_kvb(sats_per_kvb)
+}
+
+fn feerate_electrum(btc_per_kvb: f64) -> Result<FeeRate> {
+    // If the fee rate is less than 0, return an error
+    // The Electrum server returns a value <= 0 if it cannot estimate the fee rate.
+    // See: https://github.com/romanz/electrs/blob/ed0ef2ee22efb45fcf0c7f3876fd746913008de3/src/electrum.rs#L239-L245
+    //      https://github.com/romanz/electrs/blob/ed0ef2ee22efb45fcf0c7f3876fd746913008de3/src/electrum.rs#L31
+    if btc_per_kvb <= 0.0 {
+        bail!("Fee rate returned by Electrum server is less than 0");
+    }
+
+    // Convert to sat / kB without ever constructing an Amount from the float
+    // Simply by multiplying the float with the satoshi value of 1 BTC.
+    // Truncation is allowed here because we are converting to sats and rounding down sats will
+    // not lose us any precision (because there is no fractional satoshi).
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
+    let sats_per_kvb = (btc_per_kvb * Amount::ONE_BTC.to_sat() as f64).ceil() as u64;
+
+    Ok(feerate_from_sats_per_kvb(sats_per_kvb))
+}
+
+fn feerate_from_sats_per_kvb(sats_per_kvb: u64) -> FeeRate {
+    // Convert to sat / kwu (kwu = kB × 4)
+    let sat_per_kwu = sats_per_kvb / 4;
+
+    FeeRate::from_sat_per_kwu(sat_per_kwu)
 }
 
 #[derive(Clone)]

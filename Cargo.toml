@@ -30,6 +30,7 @@ members = [
 [workspace.dependencies]
 # Bitcoin Dev Kit
 bdk = "0.28"
+bdk_bitcoind_rpc = "0.22"
 bdk_chain = "0.23.0"
 bdk_core = "0.6.0"
 bdk_electrum = { version = "0.23.0", default-features = false }
