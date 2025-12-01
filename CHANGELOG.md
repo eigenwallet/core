@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2025-12-01
+
 - GUI: Display detailed information about which peers we are connected to.
 - GUI: Change the unique avatars of makers to be distinctly different from each other to allow for recognizability.
 - GUI + SWAP + ASB: Massivly improved the reliability of all parts of the P2P networking stack.
@@ -785,7 +787,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.3.8...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.4.0...HEAD
+[3.4.0]: https://github.com/eigenwallet/core/compare/3.3.8...3.4.0
 [3.3.8]: https://github.com/eigenwallet/core/compare/3.3.7...3.3.8
 [3.3.7]: https://github.com/eigenwallet/core/compare/3.3.6...3.3.7
 [3.3.6]: https://github.com/eigenwallet/core/compare/3.3.5...3.3.6
