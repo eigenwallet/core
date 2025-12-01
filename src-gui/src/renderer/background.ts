@@ -7,7 +7,10 @@ import {
   approvalEventReceived,
   backgroundProgressEventReceived,
 } from "store/features/rpcSlice";
-import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
+import {
+  setBitcoinBalance,
+  setBitcoinHistory,
+} from "store/features/bitcoinWalletSlice";
 import { receivedCliLog } from "store/features/logsSlice";
 import { poolStatusReceived } from "store/features/poolSlice";
 import { swapProgressEventReceived } from "store/features/swapSlice";
@@ -135,6 +138,7 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
 
     case "BalanceChange":
       store.dispatch(setBitcoinBalance(eventData.balance));
+      store.dispatch(setBitcoinHistory(eventData.transactions));
       break;
 
     case "SwapDatabaseStateUpdate":

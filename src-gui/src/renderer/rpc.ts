@@ -16,7 +16,6 @@ import {
   WithdrawBtcResponse,
   GetSwapInfoArgs,
   ExportBitcoinWalletResponse,
-  GetBitcoinAddressResponse,
   CheckMoneroNodeArgs,
   CheckSeedArgs,
   CheckSeedResponse,
@@ -24,6 +23,8 @@ import {
   TauriSettings,
   CheckElectrumNodeArgs,
   CheckElectrumNodeResponse,
+  GenerateBitcoinAddressesArgs,
+  GenerateBitcoinAddressesResponse,
   GetMoneroAddressesResponse,
   GetDataDirArgs,
   ResolveApprovalArgs,
@@ -60,7 +61,11 @@ import {
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
 import { selectAllSwapIds } from "store/selectors";
-import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
+import {
+  setBitcoinAddress,
+  setBitcoinBalance,
+  setBitcoinHistory,
+} from "store/features/bitcoinWalletSlice";
 import {
   setMainAddress,
   setBalance,
@@ -161,6 +166,14 @@ export async function checkBitcoinBalance() {
   });
 
   store.dispatch(setBitcoinBalance(response.balance));
+  store.dispatch(setBitcoinHistory(response.transactions));
+}
+
+export async function generateBitcoinAddresses(amount: number) {
+  return await invoke<
+    GenerateBitcoinAddressesArgs,
+    GenerateBitcoinAddressesResponse
+  >("generate_bitcoin_addresses", amount);
 }
 
 export async function buyXmr() {
@@ -246,6 +259,7 @@ export async function initializeContext() {
 
   // Get all Bitcoin nodes without checking availability
   // The backend ElectrumBalancer will handle load balancing and failover
+  const bitcoindRpc = store.getState().settings.bitcoindNode;
   const bitcoinNodes =
     store.getState().settings.nodes[network][Blockchain.Bitcoin];
 
@@ -272,6 +286,7 @@ export async function initializeContext() {
 
   // Initialize Tauri settings
   const tauriSettings: TauriSettings = {
+    bitcoind_rpc_url: bitcoindRpc,
     electrum_rpc_urls: bitcoinNodes,
     monero_node_config: moneroNodeConfig,
     use_tor: useTor,
@@ -318,14 +333,7 @@ export async function cheapCheckBitcoinBalance() {
   });
 
   store.dispatch(setBitcoinBalance(response.balance));
-}
-
-export async function getBitcoinAddress() {
-  const response = await invokeNoArgs<GetBitcoinAddressResponse>(
-    "get_bitcoin_address",
-  );
-
-  return response.address;
+  store.dispatch(setBitcoinHistory(response.transactions));
 }
 
 export async function getAllSwapInfos() {
@@ -378,12 +386,15 @@ export async function getAllSwapTimelocks() {
   );
 }
 
-export async function sweepBtc(address: string): Promise<string> {
+export async function withdrawBtc(
+  address: string,
+  amount: number | undefined,
+): Promise<WithdrawBtcResponse> {
   const response = await invoke<WithdrawBtcArgs, WithdrawBtcResponse>(
     "withdraw_btc",
     {
       address,
-      amount: undefined,
+      amount,
     },
   );
 
@@ -391,7 +402,7 @@ export async function sweepBtc(address: string): Promise<string> {
   // but instead uses our local cached balance
   await cheapCheckBitcoinBalance();
 
-  return response.txid;
+  return response;
 }
 
 export async function resumeSwap(swapId: string) {
@@ -587,6 +598,19 @@ export async function getMoneroSeedAndRestoreHeight(): Promise<
 }
 
 // Wallet management functions that handle Redux dispatching
+export async function initializeBitcoinWallet() {
+  try {
+    await Promise.all([
+      checkBitcoinBalance(),
+      generateBitcoinAddresses(1).then(([address]) => {
+        store.dispatch(setBitcoinAddress(address));
+      }),
+    ]);
+  } catch (err) {
+    console.error("Failed to fetch Bitcoin wallet data:", err);
+  }
+}
+
 export async function initializeMoneroWallet() {
   try {
     await Promise.all([

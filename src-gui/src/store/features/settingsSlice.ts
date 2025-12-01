@@ -8,6 +8,8 @@ export type DonateToDevelopmentTip = false | 0.0005 | 0.0075;
 const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 export interface SettingsState {
+  /// This is an URL to a bitcoind node. If present it overrules `nodes`.
+  bitcoindNode?: string;
   /// This is an ordered list of node urls for each network and blockchain
   nodes: Record<Network, Record<Blockchain, string[]>>;
   /// Which theme to use
@@ -124,6 +126,9 @@ const alertsSlice = createSlice({
   name: "settings",
   initialState,
   reducers: {
+    setBitcoindNode(slice, action: PayloadAction<string>) {
+      slice.bitcoindNode = action.payload.length ? action.payload : undefined;
+    },
     moveUpNode(
       slice,
       action: PayloadAction<{
@@ -288,6 +293,7 @@ const alertsSlice = createSlice({
 });
 
 export const {
+  setBitcoindNode,
   moveUpNode,
   setTheme,
   addNode,

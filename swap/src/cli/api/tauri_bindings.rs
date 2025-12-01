@@ -100,6 +100,20 @@ pub struct SendMoneroDetails {
 
 #[typeshare]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WithdrawBitcoinDetails {
+    /// Destination address for the Bitcoin transfer
+    #[typeshare(serialized_as = "string")]
+    pub address: String,
+    /// Amount to send
+    #[typeshare(serialized_as = "number")]
+    pub amount: bitcoin::Amount,
+    /// Transaction fee
+    #[typeshare(serialized_as = "number")]
+    pub fee: bitcoin::Amount,
+}
+
+#[typeshare]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PasswordRequestDetails {
     /// The wallet file path that requires a password
     pub wallet_path: String,
@@ -154,6 +168,8 @@ pub enum ApprovalRequestType {
     SeedSelection(SeedSelectionDetails),
     /// Request approval for publishing a Monero transaction.
     SendMonero(SendMoneroDetails),
+    /// Request approval for publishing a Bitcoin transaction.
+    WithdrawBitcoin(WithdrawBitcoinDetails),
     /// Request password for wallet file.
     /// User must provide password to unlock the selected wallet.
     PasswordRequest(PasswordRequestDetails),
@@ -431,6 +447,7 @@ impl Display for ApprovalRequest {
             ApprovalRequestType::SelectMaker(..) => write!(f, "SelectMaker()"),
             ApprovalRequestType::SeedSelection(_) => write!(f, "SeedSelection()"),
             ApprovalRequestType::SendMonero(_) => write!(f, "SendMonero()"),
+            ApprovalRequestType::WithdrawBitcoin(_) => write!(f, "WithdrawBitcoin()"),
             ApprovalRequestType::PasswordRequest(_) => write!(f, "PasswordRequest()"),
         }
     }
@@ -490,9 +507,14 @@ pub trait TauriEmitter {
         }));
     }
 
-    fn emit_balance_update_event(&self, new_balance: bitcoin::Amount) {
+    fn emit_balance_update_event(
+        &self,
+        balance: bitcoin::Amount,
+        transactions: Vec<crate::bitcoin::TransactionInfo>,
+    ) {
         self.emit_unified_event(TauriEvent::BalanceChange(BalanceResponse {
-            balance: new_balance,
+            balance,
+            transactions,
         }));
     }
 
@@ -1016,7 +1038,9 @@ pub enum MoneroNodeConfig {
 pub struct TauriSettings {
     /// Configuration for Monero node connection
     pub monero_node_config: MoneroNodeConfig,
-    /// The URLs of the Electrum RPC servers e.g `["ssl://bitcoin.com:50001", "ssl://backup.com:50001"]`
+    /// The URL of a bitcoind RPC server, e.g. `["http://127.0.0.1:8332"]`. If `Some`, supersedes `electrum_rpc_urls`
+    pub bitcoind_rpc_url: Option<String>,
+    /// The URLs of the Electrum RPC servers, e.g. `["ssl://bitcoin.com:50001", "ssl://backup.com:50001"]`
     pub electrum_rpc_urls: Vec<String>,
     /// Whether to initialize and use a tor client.
     pub use_tor: bool,

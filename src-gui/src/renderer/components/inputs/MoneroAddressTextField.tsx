@@ -8,8 +8,8 @@ import {
   List,
   ListItemText,
   TextField,
+  TextFieldProps,
 } from "@mui/material";
-import { TextFieldProps } from "@mui/material";
 import { useEffect, useState } from "react";
 import { getMoneroAddresses } from "renderer/rpc";
 import { isTestnet } from "store/config";

@@ -18,6 +18,7 @@ type Props = {
   enableQrCode?: boolean;
   light?: boolean;
   spoilerText?: string;
+  centered?: boolean;
 };
 
 function QRCodeModal({ open, onClose, content }: ModalProps) {
@@ -65,6 +66,7 @@ export default function ActionableMonospaceTextBox({
   enableQrCode = true,
   light = false,
   spoilerText,
+  centered = false,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [qrCodeOpen, setQrCodeOpen] = useState(false);
@@ -101,6 +103,7 @@ export default function ActionableMonospaceTextBox({
           >
             <MonospaceTextBox
               light={light}
+              centered={centered}
               actions={
                 <>
                   {displayCopyIcon && (

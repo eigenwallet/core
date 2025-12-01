@@ -49,6 +49,7 @@ pub struct Network {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bitcoin {
+    pub bitcoind_rpc_url: Option<Url>,
     #[serde(deserialize_with = "swap_serde::electrum::urls::deserialize")]
     pub electrum_rpc_urls: Vec<Url>,
     pub target_block: u16,
@@ -205,6 +206,7 @@ pub fn query_user_for_initial_config_with_network(
             external_addresses: vec![],
         },
         bitcoin: Bitcoin {
+            bitcoind_rpc_url: None,
             electrum_rpc_urls,
             target_block,
             finality_confirmations: None,

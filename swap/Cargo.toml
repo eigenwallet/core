@@ -14,6 +14,7 @@ tauri = ["dep:tauri", "dep:dfx-swiss-sdk"]
 [dependencies]
 # Bitcoin Dev Kit
 bdk = { workspace = true }
+bdk_bitcoind_rpc = { workspace = true }
 bdk_chain = { workspace = true }
 bdk_core = { workspace = true }
 bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }

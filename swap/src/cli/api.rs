@@ -2,7 +2,7 @@ pub mod request;
 pub mod tauri_bindings;
 
 use crate::cli::api::tauri_bindings::{ContextStatus, SeedChoice};
-use crate::cli::command::{Bitcoin, Monero};
+use crate::cli::command::{Bitcoin, BitcoinRemotes, Monero};
 use crate::common::tor::{bootstrap_tor_client, create_tor_client};
 use crate::common::tracing_util::Format;
 use crate::database::{open_db, AccessMode};
@@ -792,7 +792,7 @@ mod wallet {
     use super::*;
 
     pub(super) async fn init_bitcoin_wallet(
-        electrum_rpc_urls: Vec<String>,
+        remotes: BitcoinRemotes,
         seed: &Seed,
         data_dir: &Path,
         env_config: EnvConfig,
@@ -802,7 +802,7 @@ mod wallet {
         let mut builder = bitcoin::wallet::WalletBuilder::default()
             .seed(seed.clone())
             .network(env_config.bitcoin_network)
-            .electrum_rpc_urls(electrum_rpc_urls)
+            .remotes(remotes)
             .persister(bitcoin::wallet::PersisterConfig::SqliteFile {
                 data_dir: data_dir.to_path_buf(),
             })

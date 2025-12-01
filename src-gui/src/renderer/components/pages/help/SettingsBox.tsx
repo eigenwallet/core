@@ -38,6 +38,7 @@ import {
   setTorEnabled,
   setEnableMoneroTor,
   setUseMoneroRpcPool,
+  setBitcoindNode,
   setDonateToDevelopment,
   setMoneroRedeemPolicy,
   setMoneroRedeemAddress,
@@ -61,7 +62,7 @@ import {
   Refresh,
 } from "@mui/icons-material";
 
-import { getNetwork } from "store/config";
+import { getNetwork, isTestnet } from "store/config";
 import { currencySymbol } from "utils/formatUtils";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 import { isValidMultiAddressWithPeerId } from "utils/parseUtils";
@@ -70,6 +71,7 @@ import { setStatus } from "store/features/nodesSlice";
 import MoneroAddressTextField from "renderer/components/inputs/MoneroAddressTextField";
 import BitcoinAddressTextField from "renderer/components/inputs/BitcoinAddressTextField";
 
+const PLACEHOLDER_BITCOIND_RPC_URL = `http://user:pass@127.0.0.1:${isTestnet() ? 18332 : 8332}`;
 const PLACEHOLDER_ELECTRUM_RPC_URL = "ssl://blockstream.info:700";
 const PLACEHOLDER_MONERO_NODE_URL = "http://xmr-node.cakewallet.com:18081";
 
@@ -103,6 +105,7 @@ export default function SettingsBox() {
                 <DonationTipSetting />
                 <RedeemPolicySetting />
                 <RefundPolicySetting />
+                <BitcoindRpcUrlSetting />
                 <ElectrumRpcUrlSetting />
                 <MoneroRpcPoolSetting />
                 <MoneroNodeUrlSetting />
@@ -246,6 +249,47 @@ function isValidUrl(url: string, allowedProtocols: string[]): boolean {
   return urlPattern.test(url);
 }
 
+/*
+ * A setting that allows entering the bitcoind RPC URL.
+ */
+function BitcoindRpcUrlSetting() {
+  const network = getNetwork();
+  const bitcoindNode = useSettings((s) => s.bitcoindNode);
+  const dispatch = useAppDispatch();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const currentNodes = useSettings((s) => s.nodes[network][Blockchain.Monero]);
+
+  const isValid = (url: string) =>
+    url.trim() === "" || isValidUrl(url.trim(), ["http", "https"]);
+
+  return (
+    <TableRow>
+      <TableCell>
+        <SettingLabel
+          label="Custom bitcoind RPC URL"
+          tooltip={`URL of bitcoind -server -txindex ${isTestnet() ? "-chain=test" : ""}. If unset, Electrum servers will be used. This is most often what you want.`}
+        />
+      </TableCell>
+      <TableCell>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <ValidatedTextField
+            value={bitcoindNode}
+            onValidatedChange={(value) =>
+              dispatch(setBitcoindNode(value.trim()))
+            }
+            placeholder={PLACEHOLDER_BITCOIND_RPC_URL}
+            fullWidth
+            isValid={isValid}
+            variant="outlined"
+            noErrorWhenEmpty
+          />
+        </Box>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 /**
  * A setting that allows you to select the Electrum RPC URL to use.
  */
@@ -253,6 +297,7 @@ function ElectrumRpcUrlSetting() {
   const [tableVisible, setTableVisible] = useState(false);
   const network = getNetwork();
 
+  const bitcoindNode = useSettings((s) => s.bitcoindNode);
   const isValid = (url: string) => isValidUrl(url, ["ssl", "tcp"]);
 
   return (
@@ -264,7 +309,11 @@ function ElectrumRpcUrlSetting() {
         />
       </TableCell>
       <TableCell>
-        <IconButton onClick={() => setTableVisible(true)} size="large">
+        <IconButton
+          onClick={() => setTableVisible(true)}
+          disabled={bitcoindNode !== undefined}
+          size="large"
+        >
           {<Edit />}
         </IconButton>
         {tableVisible ? (

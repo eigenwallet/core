@@ -427,8 +427,17 @@ pub struct Monero {
 
 #[derive(structopt::StructOpt, Debug, PartialEq, Default)]
 pub struct Bitcoin {
-    #[structopt(long = "electrum-rpc", help = "Provide the Bitcoin Electrum RPC URLs")]
+    #[structopt(
+        long = "electrum-rpc",
+        help = "Provide the Bitcoin Electrum RPC URLs. Supersedes --bitcoind-rpc"
+    )]
     pub bitcoin_electrum_rpc_urls: Vec<String>,
+
+    #[structopt(
+        long = "bitcoind-rpc",
+        help = "Provide the bitcoind RPC URL. Superseded by --electrum-rpc"
+    )]
+    pub bitcoind_rpc_url: Option<String>,
 
     #[structopt(
         long = "bitcoin-target-block",
@@ -437,14 +446,24 @@ pub struct Bitcoin {
     pub bitcoin_target_block: Option<u16>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BitcoinRemotes {
+    BitcoindRpc(String),
+    Electrum(Vec<String>),
+}
+
 impl Bitcoin {
-    pub fn apply_defaults(self, testnet: bool) -> Result<(Vec<String>, u16)> {
-        let bitcoin_electrum_rpc_urls = if !self.bitcoin_electrum_rpc_urls.is_empty() {
-            self.bitcoin_electrum_rpc_urls
-        } else if testnet {
-            vec![DEFAULT_ELECTRUM_RPC_URL_TESTNET.to_string()]
+    pub fn apply_defaults(self, testnet: bool) -> Result<(BitcoinRemotes, u16)> {
+        let remotes = if let Some(bitcoind_rpc_url) = self.bitcoind_rpc_url {
+            BitcoinRemotes::BitcoindRpc(bitcoind_rpc_url)
         } else {
-            vec![DEFAULT_ELECTRUM_RPC_URL.to_string()]
+            BitcoinRemotes::Electrum(if !self.bitcoin_electrum_rpc_urls.is_empty() {
+                self.bitcoin_electrum_rpc_urls
+            } else if testnet {
+                vec![DEFAULT_ELECTRUM_RPC_URL_TESTNET.to_string()]
+            } else {
+                vec![DEFAULT_ELECTRUM_RPC_URL.to_string()]
+            })
         };
 
         let bitcoin_target_block = if let Some(target_block) = self.bitcoin_target_block {
@@ -455,7 +474,7 @@ impl Bitcoin {
             DEFAULT_BITCOIN_CONFIRMATION_TARGET
         };
 
-        Ok((bitcoin_electrum_rpc_urls, bitcoin_target_block))
+        Ok((remotes, bitcoin_target_block))
     }
 }
 
