@@ -103,7 +103,6 @@ pub async fn setup_test<T, F, C>(
         .await
         .main_address()
         .await
-        .unwrap()
         .into();
 
     let developer_tip_monero_wallet_subaddress = developer_tip_monero_wallet
@@ -385,7 +384,7 @@ async fn init_test_wallets(
 
     let xmr_wallet = wallets.main_wallet().await;
     tracing::info!(
-        address = %xmr_wallet.main_address().await.unwrap(),
+        address = %xmr_wallet.main_address().await,
         "Initialized monero wallet"
     );
 
@@ -535,12 +534,7 @@ impl BobParams {
     pub async fn get_change_receive_addresses(&self) -> (bitcoin::Address, monero::Address) {
         (
             self.bitcoin_wallet.new_address().await.unwrap(),
-            self.monero_wallet
-                .main_wallet()
-                .await
-                .main_address()
-                .await
-                .unwrap(),
+            self.monero_wallet.main_wallet().await.main_address().await,
         )
     }
 
@@ -569,7 +563,6 @@ impl BobParams {
                 .await
                 .main_address()
                 .await
-                .unwrap()
                 .into(),
         )
         .await
@@ -610,7 +603,6 @@ impl BobParams {
                 .await
                 .main_address()
                 .await
-                .unwrap()
                 .into(),
             self.bitcoin_wallet.new_address().await?,
             btc_amount,
@@ -629,7 +621,9 @@ impl BobParams {
         let behaviour = cli::Behaviour::new(
             self.env_config,
             self.bitcoin_wallet.clone(),
-            (identity.clone(), XmrBtcNamespace::Testnet),
+            identity.clone(),
+            XmrBtcNamespace::Testnet,
+            Vec::new(),
         );
         let mut swarm = swarm::cli(identity.clone(), None, behaviour).await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());

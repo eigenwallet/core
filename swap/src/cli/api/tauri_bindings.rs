@@ -8,6 +8,7 @@ use crate::{monero, network::quote::BidQuote};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
+use libp2p::{Multiaddr, PeerId};
 use monero_rpc_pool::pool::PoolStatus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -18,6 +19,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::Display;
 use swap_core::bitcoin;
 use swap_core::bitcoin::ExpiredTimelocks;
+use swap_p2p::observe;
+use swap_p2p::protocols::quotes_cached::QuoteStatus;
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 use uuid::Uuid;
@@ -37,6 +40,29 @@ pub enum TauriEvent {
     BackgroundProgress(TauriBackgroundProgressWrapper),
     PoolStatusUpdate(PoolStatus),
     MoneroWalletUpdate(MoneroWalletUpdate),
+    P2P(TauriP2PEvent),
+}
+
+#[typeshare]
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "content")]
+pub enum TauriP2PEvent {
+    ConnectionChange {
+        #[typeshare(serialized_as = "string")]
+        peer_id: PeerId,
+        change: observe::ConnectionChange,
+    },
+    QuotesProgress {
+        peers: Vec<PeerQuoteProgress>,
+    },
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PeerQuoteProgress {
+    #[typeshare(serialized_as = "string")]
+    pub peer_id: PeerId,
+    pub quote_status: QuoteStatus,
 }
 
 #[typeshare]
@@ -504,6 +530,27 @@ pub trait TauriEmitter {
 
     fn emit_pool_status_update(&self, status: PoolStatus) {
         self.emit_unified_event(TauriEvent::PoolStatusUpdate(status));
+    }
+
+    fn emit_peer_connection_change(&self, peer_id: PeerId, change: observe::ConnectionChange) {
+        self.emit_unified_event(TauriEvent::P2P(TauriP2PEvent::ConnectionChange {
+            peer_id,
+            change,
+        }));
+    }
+
+    fn emit_quotes_progress(&self, peers: Vec<(PeerId, QuoteStatus)>) {
+        let entries = peers
+            .into_iter()
+            .map(|(peer_id, quote_status)| PeerQuoteProgress {
+                peer_id,
+                quote_status,
+            })
+            .collect();
+
+        self.emit_unified_event(TauriEvent::P2P(TauriP2PEvent::QuotesProgress {
+            peers: entries,
+        }));
     }
 
     /// Create a new background progress handle for tracking a specific type of progress
@@ -1022,6 +1069,8 @@ pub struct TauriSettings {
     pub use_tor: bool,
     /// Whether to route Monero wallet traffic through Tor
     pub enable_monero_tor: bool,
+    /// The list of rendezvous points to connect to
+    pub rendezvous_points: Vec<String>,
 }
 
 #[typeshare]

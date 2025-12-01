@@ -153,14 +153,6 @@ export function useActiveSwapLogs() {
   }, [logs, swapId]);
 }
 
-export function useAllMakers() {
-  return useAppSelector((state) => {
-    const registryMakers = state.makers.registry.makers || [];
-    const listSellersMakers = state.makers.rendezvous.makers || [];
-    return [...registryMakers, ...listSellersMakers];
-  });
-}
-
 /// This hook returns the all swap infos, as an array
 /// Excluding those who are in a state where it's better to hide them from the user
 export function useSaneSwapInfos() {

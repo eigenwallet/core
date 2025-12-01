@@ -44,8 +44,8 @@ mod tests {
     use libp2p::PeerId;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
-    use swap::cli::api::request::{determine_btc_to_swap, QuoteFetchFuture};
-    use swap::cli::{QuoteWithAddress, SellerStatus};
+    use swap::cli::api::request::determine_btc_to_swap;
+    use swap::cli::QuoteWithAddress;
     use swap::network::quote::BidQuote;
     use swap::tracing_ext::capture_logs;
     use tracing::level_filters::LevelFilter;
@@ -398,15 +398,18 @@ mod tests {
         }
     }
 
-    fn quote_with_max(btc: f64) -> impl Fn() -> QuoteFetchFuture {
+    fn quote_with_max(btc: f64) -> ::tokio::sync::watch::Receiver<Vec<QuoteWithAddress>> {
         quote_minmax(None, Some(btc))
     }
 
-    fn quote_with_min(btc: f64) -> impl Fn() -> QuoteFetchFuture {
+    fn quote_with_min(btc: f64) -> ::tokio::sync::watch::Receiver<Vec<QuoteWithAddress>> {
         quote_minmax(Some(btc), None)
     }
 
-    fn quote_minmax(min: Option<f64>, max: Option<f64>) -> impl Fn() -> QuoteFetchFuture {
+    fn quote_minmax(
+        min: Option<f64>,
+        max: Option<f64>,
+    ) -> ::tokio::sync::watch::Receiver<Vec<QuoteWithAddress>> {
         let max_quantity = max
             .map(|m| Amount::from_btc(m).unwrap())
             .unwrap_or(Amount::MAX_MONEY);
@@ -414,23 +417,17 @@ mod tests {
             .map(|m| Amount::from_btc(m).unwrap())
             .unwrap_or(Amount::ZERO);
 
-        move || {
-            async move {
-                let (_, rx) =
-                    ::tokio::sync::watch::channel(vec![SellerStatus::Online(QuoteWithAddress {
-                        multiaddr: "/ip4/127.0.0.1/tcp/5678".parse().unwrap(),
-                        peer_id: PeerId::random(),
-                        quote: BidQuote {
-                            price: Amount::from_btc(0.001).unwrap(),
-                            max_quantity,
-                            min_quantity,
-                        },
-                        version: "1.0.0".parse().unwrap(),
-                    })]);
-                Ok((tokio::task::spawn(async {}), rx))
-            }
-            .boxed()
-        }
+        let (_, rx) = ::tokio::sync::watch::channel(vec![QuoteWithAddress {
+            peer_id: PeerId::random(),
+            multiaddr: "/ip4/127.0.0.1/tcp/5678".parse().unwrap(),
+            quote: BidQuote {
+                price: Amount::from_btc(0.001).unwrap(),
+                max_quantity,
+                min_quantity,
+            },
+            version: Some("1.0.0".parse().unwrap()),
+        }]);
+        rx
     }
 
     async fn get_dummy_address() -> Result<bitcoin::Address> {

@@ -185,9 +185,9 @@ export default function SeedSelectionDialog() {
   const isDisabled =
     selectedOption === "FromSeed"
       ? customSeed.trim().length === 0 ||
-      !isSeedValid ||
-      isBlockheightInvalid ||
-      !isPasswordValid
+        !isSeedValid ||
+        isBlockheightInvalid ||
+        !isPasswordValid
       : selectedOption === "FromWalletPath"
         ? !walletPath
         : selectedOption === "RandomSeed"

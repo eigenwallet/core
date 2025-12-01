@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::out_event;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
@@ -7,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use swap_core::bitcoin;
 use typeshare::typeshare;
 
-const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/1.0.0";
+pub(crate) const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/1.0.0";
 pub type OutEvent = request_response::Event<(), BidQuote>;
 pub type Message = request_response::Message<(), BidQuote>;
 
@@ -58,10 +56,11 @@ pub struct ZeroQuoteReceived;
 ///
 /// The ASB is always listening and only supports inbound connections, i.e.
 /// handing out quotes.
-pub fn asb() -> Behaviour {
+pub fn alice() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
     )
 }
 
@@ -69,10 +68,11 @@ pub fn asb() -> Behaviour {
 ///
 /// The CLI is always dialing and only supports outbound connections, i.e.
 /// requesting quotes.
-pub fn cli() -> Behaviour {
+pub fn bob() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
     )
 }
 

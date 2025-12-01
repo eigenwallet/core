@@ -1,6 +1,6 @@
 use crate::cli::api::request::{
-    BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs,
-    GetHistoryArgs, ListSellersArgs, MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
+    BalanceArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs,
+    GetHistoryArgs, MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
 };
 use crate::cli::api::Context;
 use crate::monero::{self, MoneroAddressPool};
@@ -83,44 +83,6 @@ async fn apply_defaults(
     (json, is_testnet, data): JsonTestnetData,
 ) -> Result<()> {
     match cli_cmd {
-        CliCommand::BuyXmr {
-            seller: Seller { seller },
-            bitcoin,
-            bitcoin_change_address,
-            monero,
-            monero_receive_address,
-            tor,
-        } => {
-            let monero_receive_pool: MoneroAddressPool =
-                swap_serde::monero::address::validate_is_testnet(
-                    monero_receive_address,
-                    is_testnet,
-                )?
-                .into();
-
-            let bitcoin_change_address = bitcoin_change_address
-                .map(|address| bitcoin_address::validate(address, is_testnet))
-                .transpose()?
-                .map(|address| address.into_unchecked());
-
-            ContextBuilder::new(is_testnet)
-                .with_tor(tor.enable_tor)
-                .with_bitcoin(bitcoin)
-                .with_monero(monero)
-                .with_data_dir(data)
-                .with_json(json)
-                .build(context.clone())
-                .await?;
-
-            BuyXmrArgs {
-                rendezvous_points: vec![],
-                sellers: vec![seller],
-                bitcoin_change_address,
-                monero_receive_pool,
-            }
-            .request(context)
-            .await?;
-        }
         CliCommand::History => {
             ContextBuilder::new(is_testnet)
                 .with_data_dir(data)
@@ -218,23 +180,6 @@ async fn apply_defaults(
 
             CancelAndRefundArgs { swap_id }.request(context).await?;
         }
-        CliCommand::ListSellers {
-            rendezvous_point,
-            tor,
-        } => {
-            ContextBuilder::new(is_testnet)
-                .with_tor(tor.enable_tor)
-                .with_data_dir(data)
-                .with_json(json)
-                .build(context.clone())
-                .await?;
-
-            ListSellersArgs {
-                rendezvous_points: vec![rendezvous_point],
-            }
-            .request(context)
-            .await?;
-        }
         CliCommand::ExportBitcoinWallet { bitcoin } => {
             ContextBuilder::new(is_testnet)
                 .with_bitcoin(bitcoin)
@@ -296,33 +241,34 @@ struct Arguments {
 
 #[derive(structopt::StructOpt, Debug, PartialEq)]
 enum CliCommand {
-    /// Start a BTC for XMR swap
-    BuyXmr {
-        #[structopt(flatten)]
-        seller: Seller,
+    // TODO: Add this back once our CLI is more flexible
+    // Start a BTC for XMR swap
+    // BuyXmr {
+    //     #[structopt(flatten)]
+    //     seller: Seller,
 
-        #[structopt(flatten)]
-        bitcoin: Bitcoin,
+    //     #[structopt(flatten)]
+    //     bitcoin: Bitcoin,
 
-        #[structopt(
-            long = "change-address",
-            help = "The bitcoin address where any form of change or excess funds should be sent to. If omitted they will be sent to the internal wallet.",
-            parse(try_from_str = bitcoin_address::parse)
-        )]
-        bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
+    //     #[structopt(
+    //         long = "change-address",
+    //         help = "The bitcoin address where any form of change or excess funds should be sent to. If omitted they will be sent to the internal wallet.",
+    //         parse(try_from_str = bitcoin_address::parse)
+    //     )]
+    //     bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
 
-        #[structopt(flatten)]
-        monero: Monero,
+    //     #[structopt(flatten)]
+    //     monero: Monero,
 
-        #[structopt(long = "receive-address",
-            help = "The monero address where you would like to receive monero",
-            parse(try_from_str = swap_serde::monero::address::parse)
-        )]
-        monero_receive_address: monero::Address,
+    //     #[structopt(long = "receive-address",
+    //         help = "The monero address where you would like to receive monero",
+    //         parse(try_from_str = swap_serde::monero::address::parse)
+    //     )]
+    //     monero_receive_address: monero::Address,
 
-        #[structopt(flatten)]
-        tor: Tor,
-    },
+    //     #[structopt(flatten)]
+    //     tor: Tor,
+    // },
     /// Show a list of past, ongoing and completed swaps
     History,
     /// Output all logging messages that have been issued.
@@ -390,17 +336,6 @@ enum CliCommand {
 
         #[structopt(flatten)]
         bitcoin: Bitcoin,
-    },
-    /// Discover and list sellers (i.e. ASB providers)
-    ListSellers {
-        #[structopt(
-            long,
-            help = "Address of the rendezvous point you want to use to discover ASBs"
-        )]
-        rendezvous_point: Multiaddr,
-
-        #[structopt(flatten)]
-        tor: Tor,
     },
     /// Print the internal bitcoin wallet descriptor
     ExportBitcoinWallet {

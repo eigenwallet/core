@@ -16,7 +16,6 @@ import logger from "utils/logger";
 
 interface State {
   withdrawTxId: string | null;
-  rendezvousDiscoveredSellers: (ExtendedMakerStatus | MakerStatus)[];
   swapInfos: {
     [swapId: string]: GetSwapInfoResponseExt;
   };
@@ -58,7 +57,6 @@ const initialState: RPCSlice = {
   status: null,
   state: {
     withdrawTxId: null,
-    rendezvousDiscoveredSellers: [],
     swapInfos: {},
     swapTimelocks: {},
     moneroRecovery: null,
@@ -96,12 +94,6 @@ export const rpcSlice = createSlice({
     },
     rpcSetWithdrawTxId(slice, action: PayloadAction<string>) {
       slice.state.withdrawTxId = action.payload;
-    },
-    rpcSetRendezvousDiscoveredMakers(
-      slice,
-      action: PayloadAction<(ExtendedMakerStatus | MakerStatus)[]>,
-    ) {
-      slice.state.rendezvousDiscoveredSellers = action.payload;
     },
     rpcResetWithdrawTxId(slice) {
       slice.state.withdrawTxId = null;
@@ -175,7 +167,6 @@ export const {
   contextInitializationFailed,
   rpcSetWithdrawTxId,
   rpcResetWithdrawTxId,
-  rpcSetRendezvousDiscoveredMakers,
   rpcSetSwapInfo,
   rpcSetMoneroRecoveryKeys,
   rpcResetMoneroRecoveryKeys,

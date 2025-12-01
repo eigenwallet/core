@@ -12,7 +12,7 @@ use swap::cli::{
             GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
             GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
-            GetSwapInfoArgs, GetSwapInfosAllArgs, ListSellersArgs, MoneroRecoveryArgs, RedactArgs,
+            GetSwapInfoArgs, GetSwapInfosAllArgs, MoneroRecoveryArgs, RedactArgs,
             RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs,
             SendMoneroArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
             SuspendCurrentSwapArgs, WithdrawBtcArgs,
@@ -22,6 +22,7 @@ use swap::cli::{
     },
     command::Bitcoin,
 };
+use swap_p2p::libp2p_ext::MultiAddrVecExt;
 use tauri_plugin_dialog::DialogExt;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
@@ -46,7 +47,6 @@ macro_rules! generate_command_handlers {
             get_history,
             monero_recovery,
             get_logs,
-            list_sellers,
             suspend_current_swap,
             cancel_and_refund,
             initialize_context,
@@ -168,6 +168,9 @@ pub async fn initialize_context(
     // Get tauri handle from the state
     let tauri_handle = state.handle.clone();
 
+    // Parse rendeuvous points
+    let rendezvous_points = settings.rendezvous_points.extract_peer_addresses();
+
     // Now populate the context in the background
     let context_result = ContextBuilder::new(testnet)
         .with_bitcoin(Bitcoin {
@@ -178,6 +181,7 @@ pub async fn initialize_context(
         .with_json(false)
         .with_tor(settings.use_tor)
         .with_enable_monero_tor(settings.enable_monero_tor)
+        .with_rendezvous_points(rendezvous_points)
         .with_tauri(tauri_handle.clone())
         .build(state.context())
         .await;
@@ -435,7 +439,6 @@ tauri_command!(resume_swap, ResumeSwapArgs);
 tauri_command!(withdraw_btc, WithdrawBtcArgs);
 tauri_command!(monero_recovery, MoneroRecoveryArgs);
 tauri_command!(get_logs, GetLogsArgs);
-tauri_command!(list_sellers, ListSellersArgs);
 tauri_command!(cancel_and_refund, CancelAndRefundArgs);
 tauri_command!(redact, RedactArgs);
 tauri_command!(send_monero, SendMoneroArgs);
