@@ -239,13 +239,13 @@ pub mod ffi {
         fn setPassword(self: Pin<&mut Wallet>, password: &CxxString) -> Result<bool>;
 
         /// Rescan the blockchain asynchronously.
-        fn rescanBlockchainAsync(self: Pin<&mut Wallet>);
+        fn rescanBlockchainAsync(self: Pin<&mut Wallet>) -> Result<()>;
 
         /// Pause the background refresh.
-        fn pauseRefresh(self: Pin<&mut Wallet>);
+        fn pauseRefresh(self: Pin<&mut Wallet>) -> Result<()>;
 
         /// Stop the background refresh once (doesn't stop background refresh thread).
-        fn stop(self: Pin<&mut Wallet>);
+        fn stop(self: Pin<&mut Wallet>) -> Result<()>;
 
         /// Set whether to allow mismatched daemon versions.
         fn setAllowMismatchedDaemonVersion(
@@ -279,7 +279,7 @@ pub mod ffi {
             dest_addresses: &CxxVector<CxxString>,
             amounts: &CxxVector<u64>,
             subtract_fee_from_outputs: bool,
-        ) -> *mut PendingTransaction;
+        ) -> Result<*mut PendingTransaction>;
 
         fn vector_string_push_back(v: Pin<&mut CxxVector<CxxString>>, s: &CxxString);
 

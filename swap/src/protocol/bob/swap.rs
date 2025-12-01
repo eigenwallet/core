@@ -1089,7 +1089,7 @@ impl XmrRedeemable for State5 {
 
         tracing::debug!(%swap_id, receive_address=?monero_receive_pool, "Sweeping Monero to receive address");
 
-        let main_address = monero_wallet.main_wallet().await.main_address().await;
+        let main_address = monero_wallet.main_wallet().await.main_address().await?;
 
         let tx_hash = wallet
             .sweep_multi_destination(

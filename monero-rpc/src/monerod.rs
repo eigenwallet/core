@@ -34,13 +34,13 @@ impl Client {
             inner: reqwest::ClientBuilder::new()
                 .connection_verbose(true)
                 .build()?,
-            base_url: format!("http://{}:{}/json_rpc", host, port)
+            base_url: format!("http://{host}:{port}/json_rpc")
                 .parse()
                 .context("url is well formed")?,
-            get_o_indexes_bin_url: format!("http://{}:{}/get_o_indexes.bin", host, port)
+            get_o_indexes_bin_url: format!("http://{host}:{port}/get_o_indexes.bin")
                 .parse()
                 .context("url is well formed")?,
-            get_outs_bin_url: format!("http://{}:{}/get_outs.bin", host, port)
+            get_outs_bin_url: format!("http://{host}:{port}/get_outs.bin")
                 .parse()
                 .context("url is well formed")?,
         })
@@ -243,11 +243,10 @@ mod byte_array {
             where
                 E: Error,
             {
-                let bytes = <[u8; N]>::try_from(v).map_err(|_| {
-                    E::custom(format!("Failed to construct [u8; {}] from buffer", N))
-                })?;
+                let bytes = <[u8; N]>::try_from(v)
+                    .map_err(|_| E::custom(format!("Failed to construct [u8; {N}] from buffer")))?;
                 let result = T::try_from(bytes)
-                    .map_err(|_| E::custom(format!("Failed to construct T from [u8; {}]", N)))?;
+                    .map_err(|_| E::custom(format!("Failed to construct T from [u8; {N}]")))?;
 
                 Ok(result)
             }

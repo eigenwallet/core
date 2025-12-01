@@ -91,7 +91,7 @@ impl AsbApiServer for RpcImpl {
 
     async fn monero_balance(&self) -> Result<MoneroBalanceResponse, ErrorObjectOwned> {
         let wallet = self.monero_wallet.main_wallet().await;
-        let balance = wallet.total_balance().await;
+        let balance = wallet.total_balance().await.into_json_rpc_result()?;
 
         Ok(MoneroBalanceResponse {
             balance: balance.as_pico(),
@@ -100,7 +100,7 @@ impl AsbApiServer for RpcImpl {
 
     async fn monero_address(&self) -> Result<MoneroAddressResponse, ErrorObjectOwned> {
         let wallet = self.monero_wallet.main_wallet().await;
-        let address = wallet.main_address().await;
+        let address = wallet.main_address().await.into_json_rpc_result()?;
 
         Ok(MoneroAddressResponse {
             address: address.to_string(),

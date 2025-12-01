@@ -163,6 +163,7 @@ impl TorTransport {
 
     /// Creates an unbootstrapped `TorTransport`. It will bootstrap in the background.
     /// This can silently fail
+    #[allow(clippy::unused_async, clippy::missing_errors_doc)]
     pub async fn unbootstrapped() -> Result<Self, TorError> {
         let builder = Self::builder();
         let ret = Self::from_builder(&builder, AddressConversion::DnsOnly)?;
@@ -320,9 +321,9 @@ impl Transport for TorTransport {
             .services
             .iter()
             .position(|(service, _)| {
-                service.onion_address().map_or(false, |name| {
-                    name.to_multiaddr(address.port()) == onion_address
-                })
+                service
+                    .onion_address()
+                    .is_some_and(|name| name.to_multiaddr(address.port()) == onion_address)
             })
             .ok_or_else(|| TransportError::MultiaddrNotSupported(onion_address.clone()))?;
 

@@ -44,7 +44,7 @@ pub fn dangerous_extract(multiaddr: &Multiaddr) -> Option<TorAddr> {
 pub fn safe_extract(multiaddr: &Multiaddr) -> Option<TorAddr> {
     let mut protocols = multiaddr.into_iter();
 
-    let tor_addr = try_to_domain_and_port(&protocols.next()?, &protocols.next())?
+    let tor_addr = try_to_domain_and_port(&protocols.next()?, protocols.next().as_ref())?
         .into_tor_addr()
         .ok()?;
 
@@ -65,7 +65,7 @@ fn libp2p_onion_address_to_domain_and_port<'a>(
 
 fn try_to_domain_and_port<'a>(
     maybe_domain: &'a Protocol,
-    maybe_port: &Option<Protocol>,
+    maybe_port: Option<&Protocol>,
 ) -> Option<(&'a str, u16)> {
     match (maybe_domain, maybe_port) {
         (

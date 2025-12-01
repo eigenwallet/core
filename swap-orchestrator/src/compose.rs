@@ -464,7 +464,7 @@ pub trait IntoImageAttribute {
 impl IntoImageAttribute for OrchestratorImage {
     fn to_image_attribute(self) -> String {
         match self {
-            OrchestratorImage::Registry(image) => format!("image: {}", image),
+            OrchestratorImage::Registry(image) => format!("image: {image}"),
             OrchestratorImage::Build(input) => format!(
                 r#"build: {{ context: "{}", dockerfile: "{}" }}"#,
                 input.context, input.dockerfile
@@ -475,9 +475,6 @@ impl IntoImageAttribute for OrchestratorImage {
 
 fn validate_compose(compose_str: &str) {
     serde_yaml::from_str::<Compose>(compose_str).unwrap_or_else(|_| {
-        panic!(
-            "Expected generated compose spec to be valid. But it was not. This is the spec: \n\n{}",
-            compose_str
-        )
+        panic!("Expected generated compose spec to be valid. But it was not. This is the spec: \n\n{compose_str}")
     });
 }
