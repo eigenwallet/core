@@ -146,12 +146,10 @@ mod connection {
                     loop {
                         ping_timer.tick().await;
                         tracing::debug!("Renewing KuCoin ticker server lease");
-                        to_kucoin
-                            .lock()
-                            .await
-                            .send(PING_PAYLOAD.into())
-                            .await
-                            .expect("Renewing KuCoin lease");
+                        if let Err(err) = to_kucoin.lock().await.send(PING_PAYLOAD.into()).await {
+                            tracing::error!(%err, "Renewing KuCoin lease");
+                            return;
+                        }
                     }
                 });
 
