@@ -1,20 +1,15 @@
-use crate::bitcoin;
+use crate::bitcoin::partial_refund::TxPartialRefund;
 use crate::bitcoin::{
-    verify_sig, Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey,
-    TooManyInputs, Transaction, TxRefund,
+    Address, Amount, PublicKey, Transaction,
 };
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{secp256k1, ScriptBuf, Weight};
 use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin_wallet::primitives::Watchable;
-use curve25519_dalek::scalar::Scalar;
 use ecdsa_fun::Signature;
 use std::collections::HashMap;
-use std::sync::Arc;
-
-use super::extract_ecdsa_sig;
 
 #[derive(Debug, Clone)]
 pub struct TxRefundAmnesty {
@@ -25,7 +20,7 @@ pub struct TxRefundAmnesty {
 }
 
 impl TxRefundAmnesty {
-    pub fn new(tx_refund: &TxRefund, refund_address: &Address, spending_fee: Amount) -> Self {
+    pub fn new(tx_refund: &TxPartialRefund, refund_address: &Address, spending_fee: Amount) -> Self {
         let tx_refund_amnesty = tx_refund.build_amnesty_spend_transaction(refund_address, spending_fee);
 
         let digest = SighashCache::new(&tx_refund_amnesty)

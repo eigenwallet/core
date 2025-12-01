@@ -66,6 +66,30 @@ pub enum BobState {
     SafelyAborted,
 }
 
+/// !IMPORTANT: This enum must be #[untagged] and maintain the field names in order to be backwards compatible
+/// with the database.
+/// Changing any of that is a breaking change
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum BobRefundType {
+    /// Alice has only signed the partial refund transaction (most cases).
+    Partial {
+        tx_partial_refund_encsig: bitcoin::EncryptedSignature,
+    },
+    /// Alice has signed both the partial and full refund transactions.
+    Full {
+        tx_partial_refund_encsig: bitcoin::EncryptedSignature,
+        tx_refund_encsig: bitcoin::EncryptedSignature,
+    },
+    /// Alice has only signed the full refund transaction.
+    /// This is only used to maintain backwards compatibility for older swaps 
+    /// from before the partial refund protocol change.
+    /// See [#675](https://github.com/eigenwallet/core/pull/675).
+    Legacy {
+        tx_refund_encsig: bitcoin::EncryptedSignature,
+    }
+}
+
 impl fmt::Display for BobState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -311,7 +335,7 @@ impl State1 {
         )?;
 
         let tx_refund =
-            bitcoin::TxRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+            bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
 
         bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)?;
         bitcoin::verify_encsig(
@@ -366,7 +390,14 @@ pub struct State2 {
     punish_address: bitcoin::Address,
     pub tx_lock: bitcoin::TxLock,
     tx_cancel_sig_a: Signature,
-    tx_refund_encsig: bitcoin::EncryptedSignature,
+    /// This field was changed in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It boils down to the same json except that it now may also contain a partial refund signature.
+    #[serde(flatten)]
+    bob_refund_type: BobRefundType,
+    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It allows Bob to retrieve the refund fee introduced in the PR.
+    /// This signature is voluntarily revealed by alice.
+    tx_refund_amnesty_sig: Option<Signature>,
     min_monero_confirmations: u64,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
@@ -456,7 +487,14 @@ pub struct State3 {
     redeem_address: bitcoin::Address,
     pub tx_lock: bitcoin::TxLock,
     tx_cancel_sig_a: Signature,
-    tx_refund_encsig: bitcoin::EncryptedSignature,
+    /// This field was changed in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It boils down to the same json except that it now may also contain a partial refund signature.
+    #[serde(flatten)]
+    bob_refund_type: BobRefundType,
+    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It allows Bob to retrieve the refund fee introduced in the PR.
+    /// This signature is voluntarily revealed by alice.
+    tx_refund_amnesty_sig: Option<Signature>,
     min_monero_confirmations: u64,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
@@ -593,7 +631,14 @@ pub struct State4 {
     redeem_address: bitcoin::Address,
     pub tx_lock: bitcoin::TxLock,
     tx_cancel_sig_a: Signature,
-    tx_refund_encsig: bitcoin::EncryptedSignature,
+    /// This field was changed in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It boils down to the same json except that it now may also contain a partial refund signature.
+    #[serde(flatten)]
+    bob_refund_type: BobRefundType,
+    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It allows Bob to retrieve the refund fee introduced in the PR.
+    /// This signature is voluntarily revealed by alice.
+    tx_refund_amnesty_sig: Option<Signature>,
     monero_wallet_restore_blockheight: BlockHeight,
     lock_transfer_proof: TransferProof,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
@@ -767,7 +812,14 @@ pub struct State6 {
     refund_address: bitcoin::Address,
     pub tx_lock: bitcoin::TxLock,
     tx_cancel_sig_a: Signature,
-    tx_refund_encsig: bitcoin::EncryptedSignature,
+    /// This field was changed in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It boils down to the same json except that it now may also contain a partial refund signature.
+    #[serde(flatten)]
+    bob_refund_type: BobRefundType,
+    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// It allows Bob to retrieve the refund fee introduced in the PR.
+    /// This signature is voluntarily revealed by alice.
+    tx_refund_amnesty_sig: Option<Signature>,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
@@ -847,11 +899,11 @@ impl State6 {
         Ok(signed_tx_refund_txid)
     }
 
-    pub fn construct_tx_refund(&self) -> Result<bitcoin::TxRefund> {
+    pub fn construct_tx_refund(&self) -> Result<bitcoin::TxFullRefund> {
         let tx_cancel = self.construct_tx_cancel()?;
 
         let tx_refund =
-            bitcoin::TxRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+            bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
 
         Ok(tx_refund)
     }
@@ -909,5 +961,43 @@ impl State6 {
             .context("Failed to check for existence of tx_early_refund")?;
 
         Ok(tx)
+    }
+}
+
+impl BobRefundType {
+    pub fn legacy_full_refund(full_refund_encsig: bitcoin::EncryptedSignature) -> Self {
+        Self::Legacy { tx_refund_encsig: full_refund_encsig }
+    }
+
+    pub fn partial_refund(partial_refund_encsig: bitcoin::EncryptedSignature) -> Self {
+        Self::Partial { tx_partial_refund_encsig: partial_refund_encsig }
+    }
+
+    pub fn full_refund(partial_refund_encsig: bitcoin::EncryptedSignature, full_refund_encsig: bitcoin::EncryptedSignature) -> Self {
+        Self::Full { tx_partial_refund_encsig: partial_refund_encsig, tx_refund_encsig: full_refund_encsig }
+    }
+
+    pub fn upgrade_with_full_refund(&self, full_refund_encsig: bitcoin::EncryptedSignature) -> Self {
+        match self {
+            BobRefundType::Partial { tx_partial_refund_encsig } => BobRefundType::Full { tx_partial_refund_encsig: tx_partial_refund_encsig.clone(), tx_refund_encsig: full_refund_encsig },
+            BobRefundType::Full { tx_partial_refund_encsig, .. } => BobRefundType::Full { tx_partial_refund_encsig: tx_partial_refund_encsig.clone(), tx_refund_encsig: full_refund_encsig },
+            BobRefundType::Legacy { tx_refund_encsig } => BobRefundType::Full { tx_partial_refund_encsig: tx_refund_encsig.clone(), tx_refund_encsig: full_refund_encsig },
+        }
+    }
+
+    pub fn tx_full_refund_encsig(&self) -> Option<bitcoin::EncryptedSignature> {
+        match self {
+            BobRefundType::Partial { .. } => None,
+            BobRefundType::Full { tx_refund_encsig, .. } => Some(tx_refund_encsig.clone()),
+            BobRefundType::Legacy { tx_refund_encsig } => Some(tx_refund_encsig.clone()),
+        }
+    }
+
+    pub fn tx_partial_refund_encsig(&self) -> Option<bitcoin::EncryptedSignature> {
+        match self {
+            BobRefundType::Partial { tx_partial_refund_encsig } => Some(tx_partial_refund_encsig.clone()),
+            BobRefundType::Full { tx_partial_refund_encsig, .. } => Some(tx_partial_refund_encsig.clone()),
+            BobRefundType::Legacy { .. } => None,
+        }
     }
 }

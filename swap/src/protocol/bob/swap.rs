@@ -11,7 +11,7 @@ use crate::protocol::{bob, Database};
 use anyhow::{Context as AnyContext, Result};
 use std::sync::Arc;
 use std::time::Duration;
-use swap_core::bitcoin::{ExpiredTimelocks, TxCancel, TxRefund};
+use swap_core::bitcoin::{ExpiredTimelocks, TxCancel, TxFullRefund};
 use swap_core::monero::TxHash;
 use swap_env::env;
 use swap_machine::bob::State5;
@@ -107,7 +107,7 @@ async fn next_state(
             tx_lock_fee,
         } => {
             let tx_refund_fee = bitcoin_wallet
-                .estimate_fee(TxRefund::weight(), Some(btc_amount))
+                .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
                 .await?;
             let tx_cancel_fee = bitcoin_wallet
                 .estimate_fee(TxCancel::weight(), Some(btc_amount))

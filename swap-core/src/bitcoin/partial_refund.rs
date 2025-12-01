@@ -19,7 +19,7 @@ use std::sync::Arc;
 use super::extract_ecdsa_sig;
 
 #[derive(Debug, Clone)]
-pub struct TxRefund {
+pub struct TxPartialRefund {
     inner: Transaction,
     digest: Sighash,
     cancel_output_descriptor: Descriptor<::bitcoin::PublicKey>,
@@ -27,7 +27,7 @@ pub struct TxRefund {
     watch_script: ScriptBuf,
 }
 
-impl TxRefund {
+impl TxPartialRefund {
     pub fn new(
         tx_cancel: &TxCancel,
         refund_address: &Address,
@@ -211,7 +211,7 @@ impl TxRefund {
     }
 }
 
-impl Watchable for TxRefund {
+impl Watchable for TxPartialRefund {
     fn id(&self) -> Txid {
         self.txid()
     }

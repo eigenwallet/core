@@ -5,7 +5,8 @@ mod early_refund;
 mod lock;
 mod punish;
 mod redeem;
-mod refund;
+mod full_refund;
+mod partial_refund;
 mod refund_amnesty;
 mod timelocks;
 
@@ -14,7 +15,7 @@ pub use crate::bitcoin::early_refund::TxEarlyRefund;
 pub use crate::bitcoin::lock::TxLock;
 pub use crate::bitcoin::punish::TxPunish;
 pub use crate::bitcoin::redeem::TxRedeem;
-pub use crate::bitcoin::refund::TxRefund;
+pub use crate::bitcoin::full_refund::TxFullRefund;
 pub use crate::bitcoin::refund_amnesty::TxRefundAmnesty;
 pub use crate::bitcoin::timelocks::{BlockHeight, ExpiredTimelocks};
 pub use crate::bitcoin::timelocks::{CancelTimelock, PunishTimelock};

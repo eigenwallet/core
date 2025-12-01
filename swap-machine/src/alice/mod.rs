@@ -9,7 +9,7 @@ use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
     current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
+    TxEarlyRefund, TxPunish, TxRedeem, TxFullRefund, Txid,
 };
 use swap_core::monero;
 use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
@@ -348,7 +348,7 @@ impl State2 {
         .expect("valid cancel tx");
 
         let tx_refund =
-            swap_core::bitcoin::TxRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+            swap_core::bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
         // Alice encsigns the refund transaction(bitcoin) digest with Bob's monero
         // pubkey(S_b). The refund transaction spends the output of
         // tx_lock_bitcoin to Bob's refund address.
@@ -535,8 +535,8 @@ impl State3 {
         .expect("valid cancel tx")
     }
 
-    pub fn tx_refund(&self) -> TxRefund {
-        swap_core::bitcoin::TxRefund::new(
+    pub fn tx_refund(&self) -> TxFullRefund {
+        swap_core::bitcoin::TxFullRefund::new(
             &self.tx_cancel(),
             &self.refund_address,
             self.tx_refund_fee,
