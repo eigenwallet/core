@@ -22,7 +22,7 @@ pub struct Behaviour {
     namespace: rendezvous::Namespace,
 
     backoffs: BackoffTracker,
-    connection: ConnectionTracker,
+    connections: ConnectionTracker,
     address: AddressTracker,
 
     // Set of all peers that we think we are registered at
@@ -113,7 +113,7 @@ impl Behaviour {
                 rendezvous: rendezvous::client::Behaviour::new(identity),
                 redial,
             },
-            connection: ConnectionTracker::new(),
+            connections: ConnectionTracker::new(),
             address: AddressTracker::new(),
             registered: HashSet::new(),
             rendezvous_nodes,
@@ -142,7 +142,7 @@ impl Behaviour {
                 public::RendezvousNodeStatus {
                     peer_id: peer_id.clone(),
                     address: self.address.last_seen_address(peer_id),
-                    is_connected: self.connection.is_connected(peer_id),
+                    is_connected: self.connections.is_connected(peer_id),
                     registration,
                 }
             })
@@ -165,7 +165,7 @@ impl NetworkBehaviour for Behaviour {
     type ToSwarm = Event;
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
-        self.connection.handle_swarm_event(event);
+        self.connections.handle_swarm_event(event);
         self.address.handle_swarm_event(event);
         self.inner.on_swarm_event(event);
 
@@ -201,7 +201,7 @@ impl NetworkBehaviour for Behaviour {
         self.to_dispatch = to_dispatch
             .into_iter()
             .filter(|peer| {
-                if !self.connection.is_connected(peer) {
+                if !self.connections.is_connected(peer) {
                     return true;
                 }
 
@@ -349,6 +349,9 @@ impl NetworkBehaviour for Behaviour {
         addresses: &[Multiaddr],
         effective_role: libp2p::core::Endpoint,
     ) -> std::result::Result<Vec<Multiaddr>, ConnectionDenied> {
+        self.connections
+            .handle_pending_outbound_connection(connection_id, maybe_peer);
+
         self.inner.handle_pending_outbound_connection(
             connection_id,
             maybe_peer,

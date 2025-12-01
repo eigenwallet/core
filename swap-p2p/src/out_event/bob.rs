@@ -6,9 +6,10 @@ use libp2p::{
     Multiaddr, PeerId,
 };
 
+use crate::observe;
 use crate::protocols::{
     cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason, quote::BidQuote,
-    transfer_proof,
+    quotes_cached::QuoteStatus, transfer_proof,
 };
 use crate::protocols::{redial, rendezvous};
 
@@ -21,6 +22,10 @@ pub enum OutEvent {
     CachedQuotes {
         quotes: Vec<(PeerId, Multiaddr, BidQuote, Option<semver::Version>)>,
     },
+    CachedQuotesProgress {
+        peers: Vec<(PeerId, QuoteStatus)>,
+    },
+    Observe(observe::Event),
     SwapSetupCompleted {
         peer: PeerId,
         swap_id: uuid::Uuid,
@@ -99,6 +104,12 @@ impl From<identify::Event> for OutEvent {
 impl From<rendezvous::discovery::Event> for OutEvent {
     fn from(_: rendezvous::discovery::Event) -> Self {
         OutEvent::Other
+    }
+}
+
+impl From<observe::Event> for OutEvent {
+    fn from(event: observe::Event) -> Self {
+        OutEvent::Observe(event)
     }
 }
 

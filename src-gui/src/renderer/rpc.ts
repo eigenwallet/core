@@ -66,13 +66,11 @@ import {
   setRestoreHeight,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
-import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
 import { MoneroRecoveryResponse } from "models/rpcModel";
 import logger from "utils/logger";
 import { getNetwork, isTestnet } from "store/config";
 import { Blockchain, Network } from "store/types";
 import { setStatus } from "store/features/nodesSlice";
-import { discoveredMakersByRendezvous } from "store/features/makersSlice";
 import { CliLog } from "models/cliModel";
 import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 import { DEFAULT_RENDEZVOUS_POINTS } from "store/defaults";
@@ -162,17 +160,6 @@ export async function buyXmr() {
 
   const donationPercentage = state.settings.donateToDevelopment;
 
-  // Get all available makers from the Redux store
-  const allMakers = [
-    ...(state.makers.registry.makers || []),
-    ...state.makers.rendezvous.makers,
-  ];
-
-  // Convert all makers to multiaddr format
-  const sellers = allMakers.map((maker) =>
-    providerToConcatenatedMultiAddr(maker),
-  );
-
   const address_pool: LabeledMoneroAddress[] = [];
   if (donationPercentage !== false && donationPercentage > 0) {
     const donation_address = isTestnet()
@@ -212,7 +199,7 @@ export async function buyXmr() {
   }
 
   await invoke<BuyXmrArgs, void>("buy_xmr", {
-    sellers,
+    sellers: [], // TODO: Remove
     monero_receive_pool: address_pool,
     // We convert null to undefined because typescript
     // expects undefined if the field is optional and does not accept null here

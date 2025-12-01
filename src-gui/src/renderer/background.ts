@@ -11,13 +11,12 @@ import { setBitcoinBalance } from "store/features/bitcoinWalletSlice";
 import { receivedCliLog } from "store/features/logsSlice";
 import { poolStatusReceived } from "store/features/poolSlice";
 import { swapProgressEventReceived } from "store/features/swapSlice";
-import logger from "utils/logger";
 import {
-  fetchAllConversations,
-  updateAlerts,
-  updatePublicRegistry,
-  updateRates,
-} from "./api";
+  quotesProgressReceived,
+  connectionChangeReceived,
+} from "store/features/p2pSlice";
+import logger from "utils/logger";
+import { fetchAllConversations, updateAlerts, updateRates } from "./api";
 import {
   checkContextStatus,
   getSwapInfo,
@@ -79,7 +78,6 @@ export async function setupBackgroundTasks(): Promise<void> {
   );
 
   // Setup periodic fetch tasks
-  setIntervalImmediate(updatePublicRegistry, PROVIDER_UPDATE_INTERVAL);
   setIntervalImmediate(updateAllNodeStatuses, STATUS_UPDATE_INTERVAL);
   setIntervalImmediate(updateRates, UPDATE_RATE_INTERVAL);
   setIntervalImmediate(fetchAllConversations, FETCH_CONVERSATIONS_INTERVAL);
@@ -186,6 +184,15 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
       }
       if (eventData.type === "SyncProgress") {
         store.dispatch(setSyncProgress(eventData.content));
+      }
+      break;
+
+    case "P2P":
+      if (eventData.type === "ConnectionChange") {
+        store.dispatch(connectionChangeReceived(eventData.content));
+      }
+      if (eventData.type === "QuotesProgress") {
+        store.dispatch(quotesProgressReceived(eventData.content.peers));
       }
       break;
 

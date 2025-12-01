@@ -11,6 +11,7 @@ use libp2p::{identify, identity, ping, PeerId};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_env::env;
+use swap_p2p::observe;
 pub use swap_p2p::out_event::bob::OutEvent;
 
 const PROTOCOL_VERSION: &str = "/comit/xmr/btc/1.0.0";
@@ -29,6 +30,8 @@ pub struct Behaviour {
     pub quotes: quotes_cached::Behaviour,
     /// Periodically discover peers via rendezvous nodes
     pub discovery: rendezvous::discovery::Behaviour,
+    /// Observes connection status and emits events
+    pub observe: observe::Behaviour,
 
     /// Requires to actually do swaps
     pub swap_setup: bob::Behaviour,
@@ -67,6 +70,7 @@ impl Behaviour {
                 rendezvous_nodes,
                 namespace.into(),
             ),
+            observe: observe::Behaviour::new(),
 
             swap_setup: bob::Behaviour::new(env_config, bitcoin_wallet),
             transfer_proof: transfer_proof::bob(),

@@ -21,7 +21,7 @@ impl ConnectionTracker {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
-            inflight_dials: HashMap::new()
+            inflight_dials: HashMap::new(),
         }
     }
 
@@ -44,7 +44,7 @@ impl ConnectionTracker {
     }
 
     /// Any behaviour that uses the ConnectionTracker MUST call this method on every [`NetworkBehaviour::on_swarm_event`]
-    /// 
+    ///
     /// Returns the peer id if the calling of this method resulted in a change of the internal state of that peer
     pub fn handle_swarm_event(&mut self, event: FromSwarm<'_>) -> Option<PeerId> {
         match event {
@@ -55,7 +55,9 @@ impl ConnectionTracker {
                     .insert(connection_established.connection_id);
 
                 // This dial attempts is no longer inflight because it has been established
-                if let Some(inflight_dials) = self.inflight_dials.get_mut(&connection_established.peer_id) {
+                if let Some(inflight_dials) =
+                    self.inflight_dials.get_mut(&connection_established.peer_id)
+                {
                     if inflight_dials.remove(&connection_established.connection_id) {
                         return Some(connection_established.peer_id);
                     }
@@ -87,14 +89,20 @@ impl ConnectionTracker {
     }
 
     /// Any behaviour that uses the ConnectionTracker MUST call this method on every [`NetworkBehaviour::handle_pending_outbound_connection`]
-    pub fn handle_pending_outbound_connection(&mut self, connection_id: ConnectionId, maybe_peer: Option<PeerId>) -> Option<PeerId> {
+    pub fn handle_pending_outbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        maybe_peer: Option<PeerId>,
+    ) -> Option<PeerId> {
         if let Some(peer_id) = maybe_peer {
-            if self.inflight_dials
+            if self
+                .inflight_dials
                 .entry(peer_id)
                 .or_insert_with(HashSet::new)
-                .insert(connection_id) {
-                    return Some(peer_id);
-                }
+                .insert(connection_id)
+            {
+                return Some(peer_id);
+            }
         }
 
         None
@@ -163,14 +171,15 @@ impl AddressTracker {
     }
 
     /// Any behaviour that uses the AddressTracker MUST call this method on every [`NetworkBehaviour::on_swarm_event`]
-    /// 
+    ///
     /// Returns the peer id if the calling of this method resulted in a change of the internal state of that peer
     pub fn handle_swarm_event(&mut self, event: FromSwarm<'_>) -> Option<PeerId> {
         match event {
             // If we connected as a dialer, record the address we connected to them at
             FromSwarm::ConnectionEstablished(connection_established) => {
                 if let ConnectedPoint::Dialer { address, .. } = connection_established.endpoint {
-                    let old_address = self.addresses
+                    let old_address = self
+                        .addresses
                         .insert(connection_established.peer_id, address.clone());
 
                     // Return the peer id if the address was changed
@@ -225,12 +234,10 @@ pub fn extract_semver_from_agent_str(agent_str: &str) -> Option<semver::Version>
 mod tests {
     use super::*;
     use libp2p::core::{ConnectedPoint, Endpoint, Multiaddr};
-    use libp2p::swarm::{
-        ConnectionId, DialError, FromSwarm,
-    };
     use libp2p::swarm::behaviour::{
         ConnectionClosed, ConnectionEstablished, DialFailure, NewExternalAddrOfPeer,
     };
+    use libp2p::swarm::{ConnectionId, DialError, FromSwarm};
     use libp2p::PeerId;
 
     #[test]
@@ -254,7 +261,7 @@ mod tests {
             failed_addresses: &[],
             other_established: 0,
         });
-        
+
         tracker.handle_swarm_event(event);
         assert!(tracker.is_connected(&peer_id));
 
@@ -287,18 +294,14 @@ mod tests {
             error: &error,
             connection_id: conn_id,
         });
-        
+
         tracker.handle_swarm_event(event);
         assert!(!tracker.has_inflight_dial(&peer_id));
     }
 
     #[test]
     fn test_backoff_tracker() {
-        let mut tracker = BackoffTracker::new(
-            Duration::from_secs(1),
-            Duration::from_secs(10),
-            2.0,
-        );
+        let mut tracker = BackoffTracker::new(Duration::from_secs(1), Duration::from_secs(10), 2.0);
         let peer_id = PeerId::random();
 
         // Initial increment
@@ -312,7 +315,7 @@ mod tests {
 
         // Reset
         tracker.reset(&peer_id);
-        
+
         // After reset, it should start over
         let backoff_after_reset = tracker.increment(&peer_id);
         assert!(backoff_after_reset < backoff2);
@@ -337,12 +340,12 @@ mod tests {
             failed_addresses: &[],
             other_established: 0,
         });
-        
+
         tracker.handle_swarm_event(event);
-        
+
         assert_eq!(tracker.last_seen_address(&peer_id), Some(addr.clone()));
     }
-    
+
     #[test]
     fn test_address_tracker_external_addr() {
         let mut tracker = AddressTracker::new();
@@ -366,7 +369,7 @@ mod tests {
 
         let invalid = "invalid";
         assert!(extract_semver_from_agent_str(invalid).is_none());
-        
+
         let agent_v3 = "asb/3.1.4-rc1 other-info";
         let version_v3 = extract_semver_from_agent_str(agent_v3).unwrap();
         assert_eq!(version_v3.major, 3);

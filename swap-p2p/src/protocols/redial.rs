@@ -304,14 +304,17 @@ impl NetworkBehaviour for Behaviour {
         Ok(Self::ConnectionHandler {})
     }
 
-    #[tracing::instrument(level = "trace", name = "redial::handle_pending_outbound_connection", skip(self, _connection_id, _addresses, maybe_peer, _effective_role), fields(redial_type = %self.name))]
+    #[tracing::instrument(level = "trace", name = "redial::handle_pending_outbound_connection", skip(self, connection_id, _addresses, maybe_peer, _effective_role), fields(redial_type = %self.name))]
     fn handle_pending_outbound_connection(
         &mut self,
-        _connection_id: libp2p::swarm::ConnectionId,
+        connection_id: libp2p::swarm::ConnectionId,
         maybe_peer: Option<PeerId>,
         _addresses: &[Multiaddr],
         _effective_role: libp2p::core::Endpoint,
     ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+        self.connections
+            .handle_pending_outbound_connection(connection_id, maybe_peer);
+
         // If we don't know the peer id, we cannot contribute any addresses
         let Some(peer_id) = maybe_peer else {
             return Ok(vec![]);

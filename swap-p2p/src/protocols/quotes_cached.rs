@@ -1,4 +1,4 @@
-use crate::behaviour_util::AddressTracker;
+use crate::behaviour_util::{AddressTracker};
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use crate::protocols::quote::BidQuote;
@@ -9,13 +9,16 @@ use libp2p::swarm::{
     THandlerOutEvent, ToSwarm,
 };
 use libp2p::{Multiaddr, PeerId};
-use std::collections::{HashMap, VecDeque};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::task::{Context, Poll};
+use typeshare::typeshare;
 
 pub struct Behaviour {
     inner: quotes::Behaviour,
 
     /// For each peer, cache the address we last connected to them at
+    // TODO: Technically this is not required. The UI gets the address from the observe behaviour.
     address_tracker: AddressTracker,
 
     /// For every peer track the last semver version we received from them
@@ -25,6 +28,7 @@ pub struct Behaviour {
     // Caches quotes
     // TODO: Maybe move the identify logic from quotes to quotes_cached?
     cache: HashMap<PeerId, BidQuote>,
+    quote_status: HashMap<PeerId, QuoteStatus>,
     expiry: FuturesHashSet<PeerId, ()>,
 
     // Queue of events to be sent to the swarm
@@ -38,6 +42,7 @@ impl Behaviour {
             address_tracker: AddressTracker::new(),
             versions: HashMap::new(),
             cache: HashMap::new(),
+            quote_status: HashMap::new(),
             expiry: FuturesHashSet::new(),
             to_swarm: VecDeque::new(),
         }
@@ -64,6 +69,39 @@ impl Behaviour {
 
         self.to_swarm.push_back(Event::CachedQuotes { quotes });
     }
+
+    fn emit_progress(&mut self) {
+        let mut peers = Vec::new();
+
+        let all_peers: HashSet<PeerId> = self
+            .address_tracker
+            .peers()
+            .chain(self.quote_status.keys())
+            .cloned()
+            .collect();
+
+        for peer in all_peers {
+            let quote = self
+                .quote_status
+                .get(&peer)
+                .cloned()
+                .unwrap_or(QuoteStatus::Nothing);
+
+            peers.push((peer, quote));
+        }
+
+        self.to_swarm.push_back(Event::Progress { peers });
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare]
+pub enum QuoteStatus {
+    Received,
+    NotSupported,
+    Inflight,
+    Failed,
+    Nothing,
 }
 
 #[derive(Debug)]
@@ -71,6 +109,9 @@ pub enum Event {
     CachedQuotes {
         // Peer ID, Address, Quote, Version
         quotes: Vec<(PeerId, Multiaddr, BidQuote, Option<semver::Version>)>,
+    },
+    Progress {
+        peers: Vec<(PeerId, QuoteStatus)>,
     },
 }
 
@@ -93,21 +134,33 @@ impl NetworkBehaviour for Behaviour {
                     match event {
                         quotes::Event::QuoteReceived { peer, quote } => {
                             self.cache.insert(peer, quote);
+                            self.quote_status.insert(peer, QuoteStatus::Received);
                             self.expiry.replace(
                                 peer,
                                 Box::pin(tokio::time::sleep(crate::defaults::CACHED_QUOTE_EXPIRY)),
                             );
 
                             self.emit_cached_quotes();
+                            self.emit_progress();
+                        }
+                        quotes::Event::QuoteInflight { peer } => {
+                            self.quote_status.insert(peer, QuoteStatus::Inflight);
+                            self.emit_progress();
+                        }
+                        quotes::Event::QuoteFailed { peer } => {
+                            self.quote_status.insert(peer, QuoteStatus::Failed);
+                            self.emit_progress();
                         }
                         quotes::Event::VersionReceived { peer, version } => {
                             self.versions.insert(peer, version);
 
                             // TODO: Only emit if the version is different from the cached one?
                             self.emit_cached_quotes();
+                            self.emit_progress();
                         }
-                        quotes::Event::DoesNotSupportProtocol { peer: _ } => {
-                            // Don't care about this
+                        quotes::Event::DoesNotSupportProtocol { peer } => {
+                            self.quote_status.insert(peer, QuoteStatus::NotSupported);
+                            self.emit_progress();
                         }
                     }
                 }
@@ -179,6 +232,7 @@ impl NetworkBehaviour for Behaviour {
 
     fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
         self.address_tracker.handle_swarm_event(event);
+        self.emit_progress(); // TODO: this will emit quite frequently
         self.inner.on_swarm_event(event);
     }
 
@@ -197,6 +251,7 @@ impl From<Event> for out_event::bob::OutEvent {
     fn from(event: Event) -> Self {
         match event {
             Event::CachedQuotes { quotes } => Self::CachedQuotes { quotes },
+            Event::Progress { peers } => Self::CachedQuotesProgress { peers },
         }
     }
 }

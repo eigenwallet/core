@@ -122,6 +122,12 @@ pub enum Event {
         peer: PeerId,
         quote: BidQuote,
     },
+    QuoteInflight {
+        peer: PeerId,
+    },
+    QuoteFailed {
+        peer: PeerId,
+    },
     VersionReceived {
         peer: PeerId,
         version: semver::Version,
@@ -156,6 +162,9 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                         %outbound_request_id,
                         "Dispatching outgoing quote request to peer"
                     );
+
+                    self.to_swarm
+                        .push_back(Event::QuoteInflight { peer: *peer });
 
                     false
                 } else {
@@ -209,6 +218,8 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                                     self.schedule_quote_request_with_backoff(peer);
 
                                 tracing::trace!(%peer, %request_id, %error, next_request_in = %next_request_in.as_secs(), "Queuing quote request to peer after outbound failure");
+
+                                self.to_swarm.push_back(Event::QuoteFailed { peer });
                             }
                         }
                         InnerBehaviourEvent::Identify(identify::Event::Received {
@@ -276,6 +287,9 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
         addresses: &[Multiaddr],
         effective_role: libp2p::core::Endpoint,
     ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+        self.connection_tracker
+            .handle_pending_outbound_connection(connection_id, maybe_peer);
+
         self.inner.handle_pending_outbound_connection(
             connection_id,
             maybe_peer,

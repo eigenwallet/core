@@ -95,7 +95,7 @@ pub mod behaviour {
     use libp2p::{identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_p2p::{out_event::alice::OutEvent, patches};
 
-    use super::{rendezvous::register, *};
+    use super::*;
 
     /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Alice.
     #[derive(NetworkBehaviour)]

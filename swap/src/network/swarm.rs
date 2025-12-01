@@ -1,4 +1,4 @@
-use crate::asb::{register, LatestRate};
+use crate::asb::LatestRate;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::seed::Seed;
 use crate::{asb, cli};

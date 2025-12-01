@@ -276,6 +276,9 @@ impl NetworkBehaviour for Behaviour {
         addresses: &[Multiaddr],
         effective_role: libp2p::core::Endpoint,
     ) -> Result<Vec<Multiaddr>, libp2p::swarm::ConnectionDenied> {
+        self.connection_tracker
+            .handle_pending_outbound_connection(connection_id, maybe_peer);
+
         self.inner.handle_pending_outbound_connection(
             connection_id,
             maybe_peer,

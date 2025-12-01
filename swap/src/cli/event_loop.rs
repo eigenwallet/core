@@ -1,9 +1,11 @@
+use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle};
 use crate::cli::behaviour::{Behaviour, OutEvent};
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::{self, Request, Response};
 use crate::network::encrypted_signature;
 use crate::network::quote::BidQuote;
+use crate::network::quotes_cached::QuoteStatus;
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::swap::has_already_processed_transfer_proof;
 use crate::protocol::bob::{BobState, State2};
@@ -19,6 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::EncryptedSignature;
+use swap_p2p::observe;
 use swap_p2p::protocols::redial;
 use tracing::Instrument;
 use uuid::Uuid;
@@ -141,12 +144,14 @@ pub struct EventLoop {
         bmrng::unbounded::UnboundedRequestReceiverStream<(PeerId, libp2p::Multiaddr), ()>,
 
     cached_quotes_sender: tokio::sync::watch::Sender<Vec<QuoteWithAddress>>,
+    tauri_handle: Option<TauriHandle>,
 }
 
 impl EventLoop {
     pub fn new(
         swarm: Swarm<Behaviour>,
         db: Arc<dyn Database + Send + Sync>,
+        tauri_handle: Option<TauriHandle>,
     ) -> Result<(Self, EventLoopHandle)> {
         // We still use a timeout here because we trust our own implementation of the swap setup protocol less than the libp2p library
         let (execution_setup_sender, execution_setup_receiver) =
@@ -182,6 +187,7 @@ impl EventLoop {
             pending_transfer_proof_acks: FuturesUnordered::new(),
             add_peer_address_requests: add_peer_address_receiver.into(),
             cached_quotes_sender,
+            tauri_handle,
         };
 
         let handle = EventLoopHandle {
@@ -421,6 +427,12 @@ impl EventLoop {
                                 .collect();
 
                             let _ = self.cached_quotes_sender.send(quotes_with_addresses);
+                        }
+                        SwarmEvent::Behaviour(OutEvent::CachedQuotesProgress { peers }) => {
+                            self.tauri_handle.emit_quotes_progress(peers.clone());
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Observe(event)) => {
+                            self.tauri_handle.emit_peer_connection_change(event.peer_id, event.update);
                         }
                         _ => {}
                     }

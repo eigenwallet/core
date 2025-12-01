@@ -948,7 +948,7 @@ pub async fn buy_xmr(
     let _span = get_swap_tracing_span(swap_id);
 
     let BuyXmrArgs {
-        sellers,
+        sellers, // TODO: Use this or remove it
         bitcoin_change_address,
         monero_receive_pool,
     } = buy_xmr;

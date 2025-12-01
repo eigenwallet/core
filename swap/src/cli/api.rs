@@ -860,7 +860,7 @@ mod builder {
                 }
 
                 let (event_loop, event_loop_handle) =
-                    crate::cli::EventLoop::new(swarm, db_for_swarm)?;
+                    crate::cli::EventLoop::new(swarm, db_for_swarm, self.tauri_handle.clone())?;
 
                 let event_loop_task = tokio::spawn(event_loop.run());
 

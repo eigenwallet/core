@@ -23,10 +23,6 @@ import {
 } from "store/features/ratesSlice";
 import { FiatCurrency } from "store/features/settingsSlice";
 import { setAlerts } from "store/features/alertsSlice";
-import {
-  registryConnectionFailed,
-  setRegistryMakers,
-} from "store/features/makersSlice";
 import logger from "utils/logger";
 import { setConversation } from "store/features/conversationsSlice";
 
@@ -182,19 +178,6 @@ export async function updateRates(): Promise<void> {
     logger.info(`Fetched rates for ${settings.fiatCurrency}`);
   } catch (error) {
     logger.error(error, "Error fetching rates");
-  }
-}
-
-/**
- * Update public registry
- */
-export async function updatePublicRegistry(): Promise<void> {
-  try {
-    const providers = await fetchMakersViaHttp();
-    store.dispatch(setRegistryMakers(providers));
-  } catch (error) {
-    store.dispatch(registryConnectionFailed());
-    logger.error(error, "Error fetching providers");
   }
 }
 
