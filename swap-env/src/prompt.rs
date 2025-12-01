@@ -1,15 +1,15 @@
 use std::path::{Path, PathBuf};
 
 use crate::defaults::{
-    DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD, default_rendezvous_points,
+    default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use console::Style;
 use dialoguer::Confirm;
-use dialoguer::{Input, Select, theme::ColorfulTheme};
+use dialoguer::{theme::ColorfulTheme, Input, Select};
 use libp2p::Multiaddr;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use url::Url;
 
 /// Prompt user for data directory
