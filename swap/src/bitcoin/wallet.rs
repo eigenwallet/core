@@ -1817,27 +1817,24 @@ impl AsyncBitcoindRpcClient {
         latest_block_height: BlockHeight,
     ) -> Result<(Txid, Option<i32>)> {
         self.call_async(move |client| {
-            Ok(match client.get_transaction(&txid, Some(true)) {
-                Ok(txr) => (txid, Some(txr.info.blockheight.unwrap_or(0) as i32)),
-                Err(_) => match client.get_raw_transaction_info(&txid, None) {
-                    Ok(rtxr) => {
-                        // confirmations=1 <=> in latest block
-                        let confirmations = rtxr.confirmations.unwrap_or(0);
-                        (
-                            txid,
-                            Some(if confirmations <= 0 {
-                                confirmations
-                            } else {
-                                (latest_block_height + (confirmations - 1)).into()
-                            } as i32),
-                        )
-                    }
-                    // -5 is ENOENT; error string "No such mempool or blockchain transaction."
-                    Err(bitcoincore_rpc::Error::JsonRpc(jsonrpc::error::Error::Rpc(
-                        jsonrpc::error::RpcError { code: -5, .. },
-                    ))) => (txid, None),
-                    Err(e) => Err(e)?,
-                },
+            Ok(match client.get_raw_transaction_info(&txid, None) {
+                Ok(rtxr) => {
+                    // confirmations=1 <=> in latest block
+                    let confirmations = rtxr.confirmations.unwrap_or(0);
+                    (
+                        txid,
+                        Some(if confirmations <= 0 {
+                            confirmations
+                        } else {
+                            (latest_block_height + (confirmations - 1)).into()
+                        } as i32),
+                    )
+                }
+                // -5 is ENOENT; error string "No such mempool or blockchain transaction."
+                Err(bitcoincore_rpc::Error::JsonRpc(jsonrpc::error::Error::Rpc(
+                    jsonrpc::error::RpcError { code: -5, .. },
+                ))) => (txid, None),
+                Err(e) => Err(e)?,
             })
         })
         .await
@@ -2192,16 +2189,13 @@ impl Client {
             //   or if -txindex is enabled and the transaction is in a block in the blockchain.
             ClientBackend::BitcoindRpc(rpc) => {
                 rpc.call_async(move |client| {
-                    Ok(match client.get_transaction(&txid, Some(true)) {
-                        Ok(tx) => Some(Arc::new(bitcoin::consensus::encode::deserialize(&tx.hex)?)),
-                        Err(_) => match client.get_raw_transaction(&txid, None) {
-                            Ok(tx) => Some(Arc::new(tx)),
-                            // -5 is ENOENT; error string "No such mempool or blockchain transaction."
-                            Err(bitcoincore_rpc::Error::JsonRpc(jsonrpc::error::Error::Rpc(
-                                jsonrpc::error::RpcError { code: -5, .. },
-                            ))) => None,
-                            Err(e) => Err(e)?,
-                        },
+                    Ok(match client.get_raw_transaction(&txid, None) {
+                        Ok(tx) => Some(Arc::new(tx)),
+                        // -5 is ENOENT; error string "No such mempool or blockchain transaction."
+                        Err(bitcoincore_rpc::Error::JsonRpc(jsonrpc::error::Error::Rpc(
+                            jsonrpc::error::RpcError { code: -5, .. },
+                        ))) => None,
+                        Err(e) => Err(e)?,
                     })
                 })
                 .await
