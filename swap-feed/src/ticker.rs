@@ -33,7 +33,7 @@ where
             ..backoff::ExponentialBackoff::default()
         };
 
-        let result = backoff::future::retry_notify::<Infallible, _, _, _, _, _>(
+        let result = backoff::future::retry_notify::<Infallible, anyhow::Error, _, _, _, _>(
             backoff,
             || {
                 let price_update = price_update.clone();
@@ -66,6 +66,8 @@ where
                     next.as_millis(),
                     error
                 );
+                // we shouldn't be using this price while restarting
+                let _ = price_update.send(Err(Error::TemporaryFailure(Arc::new(error))));
             },
         )
         .await;
@@ -103,6 +105,8 @@ impl<WirePriceUpdate: Clone + Send + 'static> PriceUpdates<WirePriceUpdate> {
 pub enum Error {
     #[error("Rate is not yet available")]
     NotYetAvailable,
+    #[error("Connection with exchange failed, will retry")]
+    TemporaryFailure(Arc<anyhow::Error>),
     #[error("Permanently failed to retrieve rate from exchange")]
     PermanentFailure(Arc<anyhow::Error>),
 }
