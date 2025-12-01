@@ -53,7 +53,7 @@ export const selectPendingApprovals = createSelector(
     ),
 );
 
-// TODO: This should be split into multiple selectors/hooks to avoid excessive re-rendering 
+// TODO: This should be split into multiple selectors/hooks to avoid excessive re-rendering
 export const selectPeers = createSelector([selectP2pState], (p2p) => {
   const peerIds = new Set([
     ...Object.keys(p2p.connectionStatus),

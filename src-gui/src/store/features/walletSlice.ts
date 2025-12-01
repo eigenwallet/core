@@ -63,10 +63,6 @@ export const walletSlice = createSlice({
     setRestoreHeight(slice, action: PayloadAction<GetRestoreHeightResponse>) {
       slice.state.restoreHeight = action.payload;
     },
-    // Reset actions
-    resetWalletState(slice) {
-      slice.state = initialState.state;
-    },
   },
 });
 
@@ -75,7 +71,6 @@ export const {
   setBalance,
   setSyncProgress,
   setHistory,
-  resetWalletState,
   setRestoreHeight,
 } = walletSlice.actions;
 

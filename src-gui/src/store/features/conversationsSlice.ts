@@ -28,14 +28,6 @@ const conversationsSlice = createSlice({
         slice.knownFeedbackIds.push(action.payload);
       }
     },
-    // Removes a feedback id from the list of known ones
-    // Also removes the conversation from the store
-    removeFeedback(slice, action: PayloadAction<string>) {
-      slice.knownFeedbackIds = slice.knownFeedbackIds.filter(
-        (id) => id !== action.payload,
-      );
-      delete slice.conversations[action.payload];
-    },
     // Sets the conversations for a given feedback id (Payload uses the correct Message type)
     setConversation(
       slice,
@@ -53,10 +45,6 @@ const conversationsSlice = createSlice({
   },
 });
 
-export const {
-  addFeedbackId,
-  removeFeedback,
-  setConversation,
-  markMessagesAsSeen,
-} = conversationsSlice.actions;
+export const { addFeedbackId, setConversation, markMessagesAsSeen } =
+  conversationsSlice.actions;
 export default conversationsSlice.reducer;
