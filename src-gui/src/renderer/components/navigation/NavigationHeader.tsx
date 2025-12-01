@@ -1,5 +1,4 @@
 import { Box, List, Badge } from "@mui/material";
-import AccountBalanceWalletIcon from "@mui/icons-material/AccountBalanceWallet";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import SwapHorizOutlinedIcon from "@mui/icons-material/SwapHorizOutlined";
 import FeedbackOutlinedIcon from "@mui/icons-material/FeedbackOutlined";
@@ -7,13 +6,10 @@ import RouteListItemIconButton from "./RouteListItemIconButton";
 import UnfinishedSwapsBadge from "./UnfinishedSwapsCountBadge";
 import { useIsSwapRunning, useTotalUnreadMessagesCount } from "store/hooks";
 import SettingsIcon from "@mui/icons-material/Settings";
-import AttachMoneyIcon from "@mui/icons-material/AttachMoney";
 import BitcoinIcon from "../icons/BitcoinIcon";
 import MoneroIcon from "../icons/MoneroIcon";
 
 export default function NavigationHeader() {
-  const isSwapRunning = useIsSwapRunning();
-
   return (
     <Box>
       <List>

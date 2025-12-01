@@ -41,6 +41,7 @@ macro_rules! generate_command_handlers {
             get_monero_addresses,
             get_swap_info,
             get_swap_infos_all,
+            get_swap_timelock,
             withdraw_btc,
             buy_xmr,
             resume_swap,
@@ -450,6 +451,7 @@ tauri_command!(get_wallet_descriptor, ExportBitcoinWalletArgs, no_args);
 tauri_command!(suspend_current_swap, SuspendCurrentSwapArgs, no_args);
 tauri_command!(get_swap_info, GetSwapInfoArgs);
 tauri_command!(get_swap_infos_all, GetSwapInfosAllArgs, no_args);
+tauri_command!(get_swap_timelock, GetSwapTimelockArgs);
 tauri_command!(get_history, GetHistoryArgs, no_args);
 tauri_command!(get_monero_addresses, GetMoneroAddressesArgs, no_args);
 tauri_command!(get_monero_history, GetMoneroHistoryArgs, no_args);
