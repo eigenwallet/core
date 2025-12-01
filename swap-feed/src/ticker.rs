@@ -107,4 +107,10 @@ pub enum Error {
     PermanentFailure(Arc<anyhow::Error>),
 }
 
-type PriceUpdate<WirePriceUpdate> = Result<(Instant, WirePriceUpdate), Error>;
+impl PartialEq for Error {
+    fn eq(&self, other: &Error) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+pub type PriceUpdate<WirePriceUpdate> = Result<(Instant, WirePriceUpdate), Error>;

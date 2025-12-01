@@ -23,7 +23,7 @@ pub fn connect(price_ticker_rest_url_kucoin: Url, client: reqwest::Client) -> Re
 }
 
 pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
-
+pub type PriceUpdate = crate::ticker::PriceUpdate<wire::PriceUpdate>;
 pub type Error = crate::ticker::Error;
 
 /// KuCoin websocket connection module.
@@ -221,7 +221,7 @@ mod connection {
 /// ```
 ///
 /// We must send `{"type":"ping"}` every `pingInterval` to get `{"type":"pong","timestamp":1762983181128413}`.
-mod wire {
+pub mod wire {
     use super::*;
 
     /// https://api.kucoin.com/api/v1/bullet-public

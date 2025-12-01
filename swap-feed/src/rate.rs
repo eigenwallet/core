@@ -134,7 +134,7 @@ impl ExchangeRate {
     }
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(PartialEq, Clone, Debug, thiserror::Error)]
 pub enum Error {
     #[error("All exchanges failed (Kraken: {0}, Bitfinex: {1}, KuCoin: {2})")]
     AllExchanges(
@@ -158,56 +158,63 @@ impl crate::traits::LatestRate for ExchangeRate {
         let kraken_update = self.kraken_price_updates.latest_update();
         let bitfinex_update = self.bitfinex_price_updates.latest_update();
         let kucoin_update = self.kucoin_price_updates.latest_update();
-        if kraken_update.is_err() && bitfinex_update.is_err() && kucoin_update.is_err() {
-            return Err(Error::AllExchanges(
-                kraken_update.unwrap_err(),
-                bitfinex_update.unwrap_err(),
-                kucoin_update.unwrap_err(),
-            ));
-        }
-
-        let now = Instant::now();
-        let kraken_update = kraken_update.map(|(ts, u)| (now - ts, u.ask));
-        let bitfinex_update = bitfinex_update.map(|(ts, u)| (now - ts, u.ask));
-        let kucoin_update = kucoin_update.map(|(ts, u)| (now - ts, u.ask));
-        let asks: Vec<_> = [
-            kraken_update.as_ref().ok(),
-            bitfinex_update.as_ref().ok(),
-            kucoin_update.as_ref().ok(),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|(age, _)| *age <= MAX_UPDATE_AGE)
-        .map(|(_, ask)| ask)
-        .copied()
-        .collect();
-        if asks.is_empty() {
-            return Err(Error::AllStaleData);
-        }
-        let degraded = asks.len() < 3;
-
-        let average_ask = asks.iter().copied().sum::<bitcoin::Amount>() / (asks.len() as u64);
-        let min_ask = asks.iter().min().expect(">0 asks");
-        let max_ask = asks.iter().max().expect(">0 asks");
-        assert!(*max_ask >= *min_ask, "bitcoin::Amount violates Ord");
-
-        let spread = *max_ask - *min_ask;
-        if degraded {
-            tracing::warn!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
-        } else {
-            tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
-        }
-
-        if Decimal::from(spread.to_sat())
-            > Decimal::from(average_ask.to_sat()) * MAX_INTEREXCHANGE_SPREAD
-        {
-            return Err(Error::SpreadTooWide);
-        }
-
-        let rate = Rate::new(average_ask, self.ask_spread);
-
-        Ok(rate)
+        average_ask(kraken_update, bitfinex_update, kucoin_update)
+            .map(|average_ask| Rate::new(average_ask, self.ask_spread))
     }
+}
+
+fn average_ask(
+    kraken_update: crate::kraken::PriceUpdate,
+    bitfinex_update: crate::bitfinex::PriceUpdate,
+    kucoin_update: crate::kucoin::PriceUpdate,
+) -> Result<bitcoin::Amount, Error> {
+    if kraken_update.is_err() && bitfinex_update.is_err() && kucoin_update.is_err() {
+        return Err(Error::AllExchanges(
+            kraken_update.unwrap_err(),
+            bitfinex_update.unwrap_err(),
+            kucoin_update.unwrap_err(),
+        ));
+    }
+
+    let now = Instant::now();
+    let kraken_update = kraken_update.map(|(ts, u)| (now - ts, u.ask));
+    let bitfinex_update = bitfinex_update.map(|(ts, u)| (now - ts, u.ask));
+    let kucoin_update = kucoin_update.map(|(ts, u)| (now - ts, u.ask));
+    let asks: Vec<_> = [
+        kraken_update.as_ref().ok(),
+        bitfinex_update.as_ref().ok(),
+        kucoin_update.as_ref().ok(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|(age, _)| *age <= MAX_UPDATE_AGE)
+    .map(|(_, ask)| ask)
+    .copied()
+    .collect();
+    if asks.is_empty() {
+        return Err(Error::AllStaleData);
+    }
+    let degraded = asks.len() < 3;
+
+    let average_ask = asks.iter().copied().sum::<bitcoin::Amount>() / (asks.len() as u64);
+    let min_ask = asks.iter().min().expect(">0 asks");
+    let max_ask = asks.iter().max().expect(">0 asks");
+    assert!(*max_ask >= *min_ask, "bitcoin::Amount violates Ord");
+
+    let spread = *max_ask - *min_ask;
+    if degraded {
+        tracing::warn!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+    } else {
+        tracing::debug!(?kraken_update, ?bitfinex_update, ?kucoin_update, %average_ask, %spread, %degraded, "Computing latest XMR/BTC rate");
+    }
+
+    if Decimal::from(spread.to_sat())
+        > Decimal::from(average_ask.to_sat()) * MAX_INTEREXCHANGE_SPREAD
+    {
+        return Err(Error::SpreadTooWide);
+    }
+
+    Ok(average_ask)
 }
 
 #[cfg(test)]
@@ -261,5 +268,195 @@ mod tests {
                                                          // places to show that
                                                          // it is really close
                                                          // to two percent
+    }
+
+    mod average_ask {
+        use super::*;
+
+        #[test]
+        fn normal() {
+            let now = Instant::now();
+            let kraken_update = Ok((
+                now,
+                crate::kraken::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(0.95).unwrap(),
+                },
+            ));
+            let bitfinex_update = Ok((
+                now,
+                crate::bitfinex::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
+                },
+            ));
+            let kucoin_update = Ok((
+                now,
+                crate::kucoin::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.05).unwrap(),
+                },
+            ));
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Ok(bitcoin::Amount::ONE_BTC)
+            );
+        }
+
+        #[test]
+        fn err1() {
+            let now = Instant::now();
+            let kraken_update = Ok((
+                now,
+                crate::kraken::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(0.95).unwrap(),
+                },
+            ));
+            let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
+            let kucoin_update = Ok((
+                now,
+                crate::kucoin::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.05).unwrap(),
+                },
+            ));
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Ok(bitcoin::Amount::ONE_BTC)
+            );
+        }
+
+        #[test]
+        fn err2() {
+            let now = Instant::now();
+            let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
+            let bitfinex_update = Ok((
+                now,
+                crate::bitfinex::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
+                },
+            ));
+            let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Ok(bitcoin::Amount::ONE_BTC)
+            );
+        }
+
+        #[test]
+        fn err3() {
+            let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
+            let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
+            let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Err(Error::AllExchanges(
+                    crate::kraken::Error::NotYetAvailable,
+                    crate::bitfinex::Error::NotYetAvailable,
+                    crate::kucoin::Error::NotYetAvailable
+                ))
+            );
+        }
+
+        #[test]
+        fn spread_too_wide() {
+            let now = Instant::now();
+            let kraken_update = Ok((
+                now,
+                crate::kraken::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(0.85).unwrap(),
+                },
+            ));
+            let bitfinex_update = Ok((
+                now,
+                crate::bitfinex::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
+                },
+            ));
+            let kucoin_update = Ok((
+                now,
+                crate::kucoin::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.15).unwrap(),
+                },
+            ));
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Err(Error::SpreadTooWide)
+            );
+        }
+
+        #[test]
+        fn old() {
+            let now = Instant::now();
+            let old = Instant::now() - MAX_UPDATE_AGE - Duration::from_secs(1);
+            let kraken_update = Ok((
+                now,
+                crate::kraken::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(0.95).unwrap(),
+                },
+            ));
+            let bitfinex_update = Ok((
+                old,
+                crate::bitfinex::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(200.00).unwrap(),
+                },
+            ));
+            let kucoin_update = Ok((
+                now,
+                crate::kucoin::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.05).unwrap(),
+                },
+            ));
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Ok(bitcoin::Amount::ONE_BTC)
+            );
+        }
+
+        #[test]
+        fn old_err() {
+            let now = Instant::now();
+            let old = Instant::now() - MAX_UPDATE_AGE - Duration::from_secs(1);
+            let kraken_update = Err(crate::kraken::Error::NotYetAvailable);
+            let bitfinex_update = Ok((
+                old,
+                crate::bitfinex::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(200.00).unwrap(),
+                },
+            ));
+            let kucoin_update = Ok((
+                now,
+                crate::kucoin::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
+                },
+            ));
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Ok(bitcoin::Amount::ONE_BTC)
+            );
+        }
+
+        #[test]
+        fn old_and_dry() {
+            let old = Instant::now() - MAX_UPDATE_AGE - Duration::from_secs(1);
+            let kraken_update = Ok((
+                old,
+                crate::kraken::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(0.95).unwrap(),
+                },
+            ));
+            let bitfinex_update = Ok((
+                old,
+                crate::bitfinex::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.00).unwrap(),
+                },
+            ));
+            let kucoin_update = Ok((
+                old,
+                crate::kucoin::wire::PriceUpdate {
+                    ask: bitcoin::Amount::from_btc(1.05).unwrap(),
+                },
+            ));
+            assert_eq!(
+                average_ask(kraken_update, bitfinex_update, kucoin_update),
+                Err(Error::AllStaleData)
+            );
+        }
     }
 }

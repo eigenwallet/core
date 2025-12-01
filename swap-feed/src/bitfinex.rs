@@ -17,7 +17,7 @@ pub fn connect(price_ticker_ws_url_bitfinex: Url) -> Result<PriceUpdates> {
 }
 
 pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
-
+pub type PriceUpdate = crate::ticker::PriceUpdate<wire::PriceUpdate>;
 pub type Error = crate::ticker::Error;
 
 /// Bitfinex websocket connection module.
@@ -136,7 +136,7 @@ mod connection {
 /// [225000,"hb"]
 /// ```
 /// `[chanId,[BID,BID_SIZE,ASK,ASK_SIZE,DAILY_CHANGE,DAILY_CHANGE_RELATIVE,LAST_PRICE,VOLUME,HIGH,LOW]]`
-mod wire {
+pub mod wire {
     use super::*;
 
     #[derive(Debug, Deserialize, PartialEq)]

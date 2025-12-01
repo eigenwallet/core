@@ -16,7 +16,7 @@ pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
 }
 
 pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
-
+pub type PriceUpdate = crate::ticker::PriceUpdate<wire::PriceUpdate>;
 pub type Error = crate::ticker::Error;
 
 /// Kraken websocket connection module.
@@ -128,7 +128,7 @@ mod connection {
 /// Kraken websocket API wire module.
 ///
 /// Responsible for parsing websocket text messages to events and rate updates.
-mod wire {
+pub mod wire {
     use super::*;
     use bitcoin::amount::ParseAmountError;
     use serde_json::Value;
