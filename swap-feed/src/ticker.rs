@@ -70,7 +70,7 @@ where
         )
         .await;
 
-        let err = result.expect_err("Stream can't end successfully");
+        let Err(err) = result;
         tracing::warn!("Rate updates incurred an unrecoverable error: {:#}", err);
 
         // in case the retries fail permanently, let the subscribers know
