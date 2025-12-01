@@ -23,7 +23,7 @@ pub const RENDEZVOUS_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(60);
 
 // Quote
 pub const CACHED_QUOTE_EXPIRY: Duration = Duration::from_secs(120);
-pub const QUOTE_INTERVAL: Duration = Duration::from_secs(5);
+pub const QUOTE_INTERVAL: Duration = Duration::from_secs(45);
 pub const QUOTE_REDIAL_INTERVAL: Duration = Duration::from_secs(1);
 pub const QUOTE_REDIAL_MAX_INTERVAL: Duration = Duration::from_secs(30);
 pub const QUOTE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
