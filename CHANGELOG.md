@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - GUI: Display detailed information about which peers we are connected to.
+- GUI: Change the unique avatars of makers to be distinctly different from each other to allow for recognizability.
 - GUI + SWAP + ASB: Massivly improved the reliability of all parts of the P2P networking stack.
 - ASB: Fix bugs where we would not properly reconnect to rendezvous servers which could negatively impact peer discovery
 - CLI: Removed the `list-sellers` and `buy-xmr` CLI commands. They were cumbersome to use and confusing. They will be re-added once the CLI is more flexible to allow for interactivity.
