@@ -2,7 +2,7 @@ import { Box, Divider, IconButton, Paper, Typography } from "@mui/material";
 import FileCopyOutlinedIcon from "@mui/icons-material/FileCopyOutlined";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { VList, VListHandle } from "virtua";
 import { ExpandableSearchBox } from "./ExpandableSearchBox";
 
@@ -35,9 +35,9 @@ export default function ScrollablePaperTextBox({
     navigator.clipboard.writeText(copyValue);
   }
 
-  function scrollToBottom() {
+  const scrollToBottom = useCallback(() => {
     virtuaEl.current?.scrollToIndex(rows.length - 1);
-  }
+  }, [rows.length]);
 
   function scrollToTop() {
     virtuaEl.current?.scrollToIndex(0);
@@ -54,7 +54,7 @@ export default function ScrollablePaperTextBox({
     if (autoScroll && isNearBottom) {
       scrollToBottom();
     }
-  }, [rows.length, autoScroll, isNearBottom]);
+  }, [rows.length, autoScroll, isNearBottom, scrollToBottom]);
 
   return (
     <Paper

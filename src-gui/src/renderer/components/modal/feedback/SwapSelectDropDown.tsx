@@ -17,10 +17,10 @@ export default function SwapSelectDropDown({
   const swaps = useSwapInfosSortedByDate();
 
   useEffect(() => {
-    if (swaps.length > 0) {
+    if (swaps.length > 0 && selectedSwap === null) {
       setSelectedSwap(swaps[0].swap_id);
     }
-  }, []);
+  }, [swaps, selectedSwap, setSelectedSwap]);
 
   return (
     <Select

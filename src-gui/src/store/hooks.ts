@@ -105,12 +105,9 @@ export function useIsSwapRunningAndHasFundsLocked() {
 
 /// Returns true if we have a swap that is running
 export function useIsSpecificSwapRunning(swapId: string | null) {
-  if (swapId == null) {
-    return false;
-  }
-
   return useAppSelector(
     (state) =>
+      swapId != null &&
       state.swap.state !== null &&
       state.swap.state.swapId === swapId &&
       state.swap.state.curr.type !== "Released",
@@ -247,7 +244,7 @@ export function useBitcoinSyncProgress(): TauriBitcoinSyncProgress[] {
     );
 }
 
-export function isSyncingBitcoin(): boolean {
+export function useIsSyncingBitcoin(): boolean {
   const syncProgress = useBitcoinSyncProgress();
   return syncProgress.length > 0;
 }

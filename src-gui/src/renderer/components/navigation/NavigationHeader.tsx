@@ -12,7 +12,6 @@ import BitcoinIcon from "../icons/BitcoinIcon";
 import MoneroIcon from "../icons/MoneroIcon";
 
 export default function NavigationHeader() {
-  const totalUnreadCount = useTotalUnreadMessagesCount();
   const isSwapRunning = useIsSwapRunning();
 
   return (
@@ -25,9 +24,7 @@ export default function NavigationHeader() {
           <BitcoinIcon />
         </RouteListItemIconButton>
         <RouteListItemIconButton name="Swap" route={["/swap"]}>
-          <Badge invisible={!isSwapRunning} variant="dot" color="primary">
-            <SwapHorizOutlinedIcon />
-          </Badge>
+          <SwapIconWithBadge />
         </RouteListItemIconButton>
         <RouteListItemIconButton name="History" route="/history">
           <UnfinishedSwapsBadge>
@@ -35,19 +32,37 @@ export default function NavigationHeader() {
           </UnfinishedSwapsBadge>
         </RouteListItemIconButton>
         <RouteListItemIconButton name="Feedback" route="/feedback">
-          <Badge
-            badgeContent={totalUnreadCount}
-            color="primary"
-            overlap="rectangular"
-            invisible={totalUnreadCount === 0}
-          >
-            <FeedbackOutlinedIcon />
-          </Badge>
+          <FeedbackIconWithBadge />
         </RouteListItemIconButton>
         <RouteListItemIconButton name="Settings" route="/settings">
           <SettingsIcon />
         </RouteListItemIconButton>
       </List>
     </Box>
+  );
+}
+
+function FeedbackIconWithBadge() {
+  const totalUnreadCount = useTotalUnreadMessagesCount();
+
+  return (
+    <Badge
+      badgeContent={totalUnreadCount}
+      color="primary"
+      overlap="rectangular"
+      invisible={totalUnreadCount === 0}
+    >
+      <FeedbackOutlinedIcon />
+    </Badge>
+  );
+}
+
+function SwapIconWithBadge() {
+  const isSwapRunning = useIsSwapRunning();
+
+  return (
+    <Badge invisible={!isSwapRunning} variant="dot" color="primary">
+      <SwapHorizOutlinedIcon />
+    </Badge>
   );
 }
