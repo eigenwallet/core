@@ -3,9 +3,22 @@ use std::io::Write;
 use std::result::Result;
 use swap::cli::{
     api::{
-        ContextBuilder, data, request::{
-            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs, CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs, CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse, ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs, GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs, RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs
-        }, tauri_bindings::{ContextStatus, TauriSettings}
+        data,
+        request::{
+            BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
+            CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
+            CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse,
+            ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs,
+            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
+            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
+            GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
+            GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
+            RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
+            ResumeSwapArgs, SendMoneroArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
+            SuspendCurrentSwapArgs, WithdrawBtcArgs,
+        },
+        tauri_bindings::{ContextStatus, TauriSettings},
+        ContextBuilder,
     },
     command::Bitcoin,
 };

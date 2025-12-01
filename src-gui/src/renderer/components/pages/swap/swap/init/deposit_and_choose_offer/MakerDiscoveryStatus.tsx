@@ -38,12 +38,12 @@ export default function MakerDiscoveryStatus() {
   );
   const peers = useAppSelector(selectPeers);
 
+  const connectedPeerIds = peers
+    .filter((p) => p.connection === ConnectionStatus.Connected)
+    .map((p) => p.peer_id);
+
   // Track peers that have ever been connected
   useEffect(() => {
-    const connectedPeerIds = peers
-      .filter((p) => p.connection === ConnectionStatus.Connected)
-      .map((p) => p.peer_id);
-
     if (connectedPeerIds.length > 0) {
       setEverConnectedPeers((prev) => {
         const updated = new Set(prev);
@@ -110,7 +110,7 @@ export default function MakerDiscoveryStatus() {
                       fontWeight: "medium",
                     }}
                   >
-                    Connected to {peers.length} peers
+                    Connected to {connectedPeerIds.length} peers
                   </Typography>
                 </Stack>
                 <InfoIcon
