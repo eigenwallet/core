@@ -52,17 +52,6 @@ fn get_rand_memory_address() -> Multiaddr {
     format!("/memory/{}", address_port).parse().unwrap()
 }
 
-async fn get_local_tcp_address() -> Multiaddr {
-    let random_port = {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        listener.local_addr().unwrap().port()
-    };
-
-    format!("/ip4/127.0.0.1/tcp/{}", random_port)
-        .parse()
-        .unwrap()
-}
-
 /// An extension trait for [`Swarm`] that makes it easier to set up a network of
 /// [`Swarm`]s for tests.
 #[async_trait]

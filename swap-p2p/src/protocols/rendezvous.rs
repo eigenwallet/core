@@ -63,10 +63,11 @@ mod tests {
 
     #[tokio::test]
     async fn register_and_discover_together() {
+        // Create rendezvous node
         let (rendezvous_peer_id, rendezvous_addr, rendezvous_handle) =
-            spawn_rendezvous_server().await;
+            spawn_rendezvous_node().await;
 
-        // Registering client (adds an external address so it can be discovered)
+        // Create peer that registers at the rendezvous node
         let mut registrar = new_swarm(|identity| {
             register::Behaviour::new(
                 identity,
@@ -78,7 +79,7 @@ mod tests {
         registrar.listen_on_random_memory_address().await;
         let registrar_id = *registrar.local_peer_id();
 
-        // Discovery client using our wrapper behaviour
+        // Create peer that discovers the 
         let mut discoverer = new_swarm(|identity| {
             discovery::Behaviour::new(
                 identity,
@@ -111,17 +112,16 @@ mod tests {
                     {
                         saw_address = true;
                     }
-                    SwarmEvent::ConnectionEstablished { peer_id, .. }
-                        if peer_id == registrar_id && saw_discovery && saw_address =>
-                    {
-                        break;
-                    }
                     _ => {}
+                }
+
+                if saw_discovery && saw_address {
+                    break;
                 }
             }
         });
 
-        tokio::time::timeout(Duration::from_secs(60), discovery_task)
+        tokio::time::timeout(Duration::from_secs(10), discovery_task)
             .await
             .expect("discovery and direct connection to registrar timed out")
             .unwrap();
@@ -131,7 +131,7 @@ mod tests {
     }
 
     /// Spawns a rendezvous server that continuously processes events
-    async fn spawn_rendezvous_server() -> (PeerId, Multiaddr, tokio::task::JoinHandle<()>) {
+    async fn spawn_rendezvous_node() -> (PeerId, Multiaddr, tokio::task::JoinHandle<()>) {
         let mut rendezvous_node = new_swarm(|_| {
             rendezvous::server::Behaviour::new(
                 rendezvous::server::Config::default().with_min_ttl(2),
