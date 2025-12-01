@@ -184,11 +184,6 @@ export function useSwapInfosSortedByDate() {
   return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
 }
 
-export function useRates<T>(selector: (rates: RatesState) => T): T {
-  const rates = useAppSelector((state) => state.rates);
-  return selector(rates);
-}
-
 export function useSettings<T>(selector: (settings: SettingsState) => T): T {
   const settings = useAppSelector((state) => state.settings);
   return selector(settings);

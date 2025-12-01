@@ -14,15 +14,6 @@ export function isMakerOnCorrectNetwork(
   return provider.testnet === isTestnet();
 }
 
-export function isMakerOutdated(maker: ExtendedMakerStatus): boolean {
-  if (maker.version != null) {
-    if (isMakerVersionOutdated(maker.version)) return true;
-  }
-
-  // Do not mark a maker as outdated if it doesn't have a version
-  return false;
-}
-
 export function isMakerVersionOutdated(version: string): boolean {
   // This checks if the version is less than the minimum version
   // we use .compare(...) instead of .satisfies(...) because satisfies(...)

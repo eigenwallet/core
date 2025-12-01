@@ -29,14 +29,8 @@ const nodesSlice = createSlice({
       slice.nodes[action.payload.blockchain][action.payload.node] =
         action.payload.status;
     },
-    resetStatuses(slice) {
-      slice.nodes = {
-        [Blockchain.Bitcoin]: {},
-        [Blockchain.Monero]: {},
-      };
-    },
   },
 });
 
-export const { setStatus, resetStatuses } = nodesSlice.actions;
+export const { setStatus } = nodesSlice.actions;
 export default nodesSlice.reducer;

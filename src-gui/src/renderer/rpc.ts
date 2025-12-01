@@ -600,15 +600,6 @@ export async function sendMoneroTransaction(
   }
 }
 
-export async function updateMoneroSyncProgress() {
-  try {
-    const response = await getMoneroSyncProgress();
-    store.dispatch(setSyncProgress(response));
-  } catch (err) {
-    console.error("Failed to fetch sync progress:", err);
-  }
-}
-
 export async function getDataDir(): Promise<string> {
   const testnet = isTestnet();
   return await invoke<GetDataDirArgs, string>("get_data_dir", {
@@ -669,12 +660,6 @@ export async function saveLogFiles(
   content: Record<string, string>,
 ): Promise<void> {
   await invokeUnsafe<void>("save_txt_files", { zipFileName, content });
-}
-
-export async function saveFilesInDialog(files: Record<string, string>) {
-  await invokeUnsafe<void>("save_txt_files", {
-    files,
-  });
 }
 
 export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
