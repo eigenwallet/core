@@ -1,4 +1,4 @@
-use crate::behaviour_util::{AddressTracker};
+use crate::behaviour_util::AddressTracker;
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use crate::protocols::quote::BidQuote;

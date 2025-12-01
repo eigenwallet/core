@@ -1,6 +1,6 @@
 use crate::cli::api::request::{
-    BalanceArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs,
-    GetHistoryArgs, MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
+    BalanceArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs, GetHistoryArgs,
+    MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
 };
 use crate::cli::api::Context;
 use crate::monero::{self, MoneroAddressPool};

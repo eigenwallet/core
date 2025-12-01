@@ -79,7 +79,7 @@ mod tests {
         registrar.listen_on_random_memory_address().await;
         let registrar_id = *registrar.local_peer_id();
 
-        // Create peer that discovers the 
+        // Create peer that discovers the
         let mut discoverer = new_swarm(|identity| {
             discovery::Behaviour::new(
                 identity,
