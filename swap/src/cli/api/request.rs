@@ -63,8 +63,6 @@ fn get_swap_tracing_span(swap_id: Uuid) -> Span {
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BuyXmrArgs {
-    #[typeshare(serialized_as = "Vec<string>")]
-    pub sellers: Vec<Multiaddr>,
     #[typeshare(serialized_as = "Option<string>")]
     pub bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
     pub monero_receive_pool: MoneroAddressPool,
@@ -948,7 +946,6 @@ pub async fn buy_xmr(
     let _span = get_swap_tracing_span(swap_id);
 
     let BuyXmrArgs {
-        sellers, // TODO: Use this or remove it
         bitcoin_change_address,
         monero_receive_pool,
     } = buy_xmr;

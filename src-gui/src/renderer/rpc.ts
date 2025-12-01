@@ -199,7 +199,6 @@ export async function buyXmr() {
   }
 
   await invoke<BuyXmrArgs, void>("buy_xmr", {
-    sellers: [], // TODO: Remove
     monero_receive_pool: address_pool,
     // We convert null to undefined because typescript
     // expects undefined if the field is optional and does not accept null here
