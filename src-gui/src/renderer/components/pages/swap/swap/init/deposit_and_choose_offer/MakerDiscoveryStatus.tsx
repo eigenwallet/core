@@ -17,6 +17,7 @@ import {
   Chip,
   CircularProgress,
   Stack,
+  Tooltip,
 } from "@mui/material";
 import { Info as InfoIcon, Close as CloseIcon } from "@mui/icons-material";
 import { useEffect, useState, useMemo } from "react";
@@ -52,99 +53,85 @@ export default function MakerDiscoveryStatus() {
     }
   }, [peers]);
 
-  const totalPeers = peers.length;
-  const quotesReceived = peers.filter(
-    (p) => p.quote === QuoteStatus.Received,
-  ).length;
-  const quotesFailed = peers.filter(
-    (p) =>
-      p.quote === QuoteStatus.Failed || p.quote === QuoteStatus.NotSupported,
-  ).length;
   const quotesInflight = peers.filter(
     (p) => p.quote === QuoteStatus.Inflight,
   ).length;
+  const dialsInflight = peers.filter(
+    (p) => p.connection === ConnectionStatus.Dialing,
+  ).length;
 
-  const isActive = quotesInflight > 0 || totalPeers === 0;
-
-  const totalCompleted = quotesReceived + quotesFailed;
-  const progressValue =
-    totalPeers > 0 ? (totalCompleted / totalPeers) * 100 : 0;
+  const isActive = quotesInflight > 0 || dialsInflight > 0;
 
   return (
     <>
-      <Paper
-        variant="outlined"
-        onClick={() => setDialogOpen(true)}
-        sx={{
-          width: "100%",
-          mb: 2,
-          p: 2,
-          borderColor: isActive ? "success.main" : "divider",
-          opacity: isActive ? 1 : 0.6,
-          cursor: "pointer",
-          transition: "background-color 0.2s",
-          "&:hover": {
-            bgcolor: "action.hover",
-          },
-        }}
-      >
-        <Stack gap={1.5}>
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-          >
-            <Typography
-              variant="body2"
-              sx={{
-                fontWeight: "medium",
-                color: isActive ? "info.main" : "text.disabled",
-              }}
+      <Tooltip title="Click to view details">
+        <Paper
+          variant="outlined"
+          onClick={() => setDialogOpen(true)}
+          sx={{
+            width: "100%",
+            mb: 2,
+            p: 2,
+            borderColor: isActive ? "success.main" : "divider",
+            opacity: isActive ? 1 : 0.6,
+            cursor: "pointer",
+            transition: "background-color 0.2s",
+            "&:hover": {
+              bgcolor: "action.hover",
+            },
+          }}
+        >
+          <Stack gap={1.5}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              justifyContent="space-between"
             >
-              {isActive
-                ? "Getting offers..."
-                : "Waiting a few seconds before refreshing offers"}
-            </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: "medium",
+                  color: isActive ? "info.main" : "text.disabled",
+                }}
+              >
+                {isActive
+                  ? quotesInflight > 0
+                    ? "Getting offers..."
+                    : "Dialing peers..."
+                  : "Waiting a few seconds..."}
+              </Typography>
 
-            <Stack direction="row" alignItems="center" gap={2}>
-              <Stack direction="row" gap={2}>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: isActive ? "success.main" : "text.disabled",
-                    fontWeight: "medium",
-                  }}
-                >
-                  {quotesReceived} online
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: isActive ? "error.main" : "text.disabled",
-                    fontWeight: "medium",
-                  }}
-                >
-                  {quotesFailed} offline
-                </Typography>
+              <Stack direction="row" alignItems="center" gap={2}>
+                <Stack direction="row" gap={2}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: isActive ? "success.main" : "text.disabled",
+                      fontWeight: "medium",
+                    }}
+                  >
+                    Connected to {peers.length} peers
+                  </Typography>
+                </Stack>
+                <InfoIcon
+                  fontSize="small"
+                  sx={{ opacity: 0.7, color: "action.active" }}
+                />
               </Stack>
-              <InfoIcon
-                fontSize="small"
-                sx={{ opacity: 0.7, color: "action.active" }}
-              />
             </Stack>
+            <LinearProgress
+              variant={isActive ? "indeterminate" : "determinate"}
+              value={0}
+              sx={{
+                width: "100%",
+                height: 8,
+                borderRadius: 4,
+                opacity: isActive ? 1 : 0.4,
+              }}
+            />
           </Stack>
-          <LinearProgress
-            variant="determinate"
-            value={Math.min(progressValue, 100)}
-            sx={{
-              width: "100%",
-              height: 8,
-              borderRadius: 4,
-              opacity: isActive ? 1 : 0.4,
-            }}
-          />
-        </Stack>
-      </Paper>
+        </Paper>
+      </Tooltip>
       <PeerDetailsDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}

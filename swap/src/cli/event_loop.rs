@@ -5,7 +5,6 @@ use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::{self, Request, Response};
 use crate::network::encrypted_signature;
 use crate::network::quote::BidQuote;
-use crate::network::quotes_cached::QuoteStatus;
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::swap::has_already_processed_transfer_proof;
 use crate::protocol::bob::{BobState, State2};
@@ -21,9 +20,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::EncryptedSignature;
-use swap_p2p::observe;
 use swap_p2p::protocols::redial;
-use tracing::Instrument;
 use uuid::Uuid;
 
 // Timeout for the execution setup protocol within the event loop.
