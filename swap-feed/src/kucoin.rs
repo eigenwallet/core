@@ -167,6 +167,15 @@ mod connection {
 
                 return Ok(None);
             }
+            Ok(wire::Event::Error { data }) => {
+                tracing::error!("KuCoin error: {}. Reconnecting.", data);
+
+                // We most likely got here because the ping thread died to remote hangup => I/O error.
+                // If we don't, this will kill it on next iteration.
+                let _ = to_kucoin.lock().await.close().await;
+
+                return Err(Error::RemoteError(data));
+            }
             Ok(wire::Event::Message { data }) => data.best_ask,
             Err(error) => {
                 tracing::warn!(%msg, "Failed to deserialize message as ticker update. Error {:#}", error);
@@ -187,6 +196,8 @@ mod connection {
         Parse(#[from] wire::Error),
         #[error("KuCoin didn't give us any Websocket servers")]
         NoWebsocketServers,
+        #[error("KuCoin remote error: {0}")]
+        RemoteError(String),
     }
 
     const SUBSCRIBE_XMR_BTC_TICKER_PAYLOAD: &str =
@@ -240,6 +251,8 @@ mod wire {
         ACK,
         #[serde(rename = "pong")]
         Pong,
+        #[serde(rename = "error")]
+        Error { data: String },
         #[serde(rename = "message")]
         Message { data: MessageEventData },
     }
