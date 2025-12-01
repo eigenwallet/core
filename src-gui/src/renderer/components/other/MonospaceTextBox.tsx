@@ -3,12 +3,14 @@ import { Box, Typography } from "@mui/material";
 type Props = {
   children: React.ReactNode;
   light?: boolean;
+  centered?: boolean;
   actions?: React.ReactNode;
 };
 
 export default function MonospaceTextBox({
   children,
   light = false,
+  centered = false,
   actions,
 }: Props) {
   return (
@@ -33,6 +35,7 @@ export default function MonospaceTextBox({
           fontFamily: "monospace",
           lineHeight: 1.5,
           flex: 1,
+          ...(centered ? { textAlign: "center" } : {}),
         }}
       >
         {children}
