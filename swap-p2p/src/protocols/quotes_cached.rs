@@ -124,8 +124,15 @@ impl NetworkBehaviour for Behaviour {
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
         while let Poll::Ready(Some((peer, ()))) = self.expiry.poll_next_unpin(cx) {
+            // Remove the quote from the cache
+            // Then emit an event to the Swarm because the quote is no longer valid
             self.cache.remove(&peer);
             self.emit_cached_quotes();
+
+            // The progress indicator needs to be updated because the quote is no longer valid
+            // We "no longer have a quote" for this peer
+            self.quote_status.remove(&peer);
+            self.emit_progress();
         }
 
         while let Poll::Ready(event) = self.inner.poll(cx) {
