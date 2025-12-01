@@ -34,6 +34,29 @@ pub async fn probe_docker() -> Result<()> {
     }
 }
 
+pub async fn is_docker_compose_running() -> bool {
+    probe_docker().await.is_ok()
+}
+
+pub async fn is_compose_container_running(container_name: &str) -> bool {
+    let output = command!(
+        "docker",
+        flag!("compose"),
+        flag!("ps"),
+        flag!("{}", container_name),
+        flag!("--format"),
+        flag!("{{{{.State}}}}")
+    )
+    .to_tokio_command()
+    .expect("non-empty command")
+    .output()
+    .await
+    .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.trim() == "running"
+}
+
 /// Check whether there's a valid maker config.toml file in the current directory.
 /// `None` if there isn't, `Some(Err(err))` if there is but it's invalid, `Some(Ok(config))` if there is and it's valid.
 pub async fn probe_maker_config() -> Option<anyhow::Result<Config>> {
