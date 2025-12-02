@@ -227,6 +227,7 @@ mod crates {
         "swap_core",
         "swap_fs",
         "swap_serde",
+        "swap_feed",
         "monero_sys",
         // Binary crates
         "swap",
