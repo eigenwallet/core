@@ -79,14 +79,18 @@ pub enum BobRefundType {
     /// Alice has signed both the partial and full refund transactions.
     Full {
         tx_partial_refund_encsig: bitcoin::EncryptedSignature,
-        tx_refund_encsig: bitcoin::EncryptedSignature,
+        // Serde rename keeps + untagged + flatten keeps this backwards compatible with old swaps in the database.
+        #[serde(rename = "tx_refund_encsig")]
+        tx_full_refund_encsig: bitcoin::EncryptedSignature,
     },
     /// Alice has only signed the full refund transaction.
     /// This is only used to maintain backwards compatibility for older swaps 
     /// from before the partial refund protocol change.
     /// See [#675](https://github.com/eigenwallet/core/pull/675).
     Legacy {
-        tx_refund_encsig: bitcoin::EncryptedSignature,
+        // Serde raname keeps + untagged + flatten keeps this backwards compatible with old swaps in the database.
+        #[serde(rename = "tx_refund_encsig")]
+        tx_full_refund_encsig: bitcoin::EncryptedSignature,
     }
 }
 
@@ -983,7 +987,7 @@ impl State6 {
 impl BobRefundType {
     pub fn from_possibly_full_refund_sig(partial_refund_encsig: bitcoin::EncryptedSignature, full_refund_encsig: Option<bitcoin::EncryptedSignature>) -> Self {
         if let Some(full_refund_encsig) = full_refund_encsig {
-            Self::Full { tx_partial_refund_encsig: partial_refund_encsig, tx_refund_encsig: full_refund_encsig }
+            Self::Full { tx_partial_refund_encsig: partial_refund_encsig, tx_full_refund_encsig: full_refund_encsig }
         } else {
             Self::Partial { tx_partial_refund_encsig: partial_refund_encsig }
         }
@@ -996,8 +1000,8 @@ impl BobRefundType {
     pub fn tx_full_refund_encsig(&self) -> Option<bitcoin::EncryptedSignature> {
         match self {
             BobRefundType::Partial { .. } => None,
-            BobRefundType::Full { tx_refund_encsig, .. } => Some(tx_refund_encsig.clone()),
-            BobRefundType::Legacy { tx_refund_encsig } => Some(tx_refund_encsig.clone()),
+            BobRefundType::Full { tx_full_refund_encsig, .. } => Some(tx_full_refund_encsig.clone()),
+            BobRefundType::Legacy { tx_full_refund_encsig } => Some(tx_full_refund_encsig.clone()),
         }
     }
 
