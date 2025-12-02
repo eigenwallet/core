@@ -334,6 +334,7 @@ impl State1 {
             self.tx_cancel_fee,
         )?;
 
+        // TODO: send and receive and verify _partial_ refund signature instead of full refund signature.
         let tx_refund =
             bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
 
@@ -965,24 +966,8 @@ impl State6 {
 }
 
 impl BobRefundType {
-    pub fn legacy_full_refund(full_refund_encsig: bitcoin::EncryptedSignature) -> Self {
-        Self::Legacy { tx_refund_encsig: full_refund_encsig }
-    }
-
-    pub fn partial_refund(partial_refund_encsig: bitcoin::EncryptedSignature) -> Self {
+    pub fn from_partial_refund_sig(partial_refund_encsig: bitcoin::EncryptedSignature) -> Self {
         Self::Partial { tx_partial_refund_encsig: partial_refund_encsig }
-    }
-
-    pub fn full_refund(partial_refund_encsig: bitcoin::EncryptedSignature, full_refund_encsig: bitcoin::EncryptedSignature) -> Self {
-        Self::Full { tx_partial_refund_encsig: partial_refund_encsig, tx_refund_encsig: full_refund_encsig }
-    }
-
-    pub fn upgrade_with_full_refund(&self, full_refund_encsig: bitcoin::EncryptedSignature) -> Self {
-        match self {
-            BobRefundType::Partial { tx_partial_refund_encsig } => BobRefundType::Full { tx_partial_refund_encsig: tx_partial_refund_encsig.clone(), tx_refund_encsig: full_refund_encsig },
-            BobRefundType::Full { tx_partial_refund_encsig, .. } => BobRefundType::Full { tx_partial_refund_encsig: tx_partial_refund_encsig.clone(), tx_refund_encsig: full_refund_encsig },
-            BobRefundType::Legacy { tx_refund_encsig } => BobRefundType::Full { tx_partial_refund_encsig: tx_refund_encsig.clone(), tx_refund_encsig: full_refund_encsig },
-        }
     }
 
     pub fn tx_full_refund_encsig(&self) -> Option<bitcoin::EncryptedSignature> {

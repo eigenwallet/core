@@ -12,6 +12,7 @@ mod timelocks;
 
 pub use crate::bitcoin::cancel::TxCancel;
 pub use crate::bitcoin::early_refund::TxEarlyRefund;
+pub use crate::bitcoin::partial_refund::TxPartialRefund;
 pub use crate::bitcoin::lock::TxLock;
 pub use crate::bitcoin::punish::TxPunish;
 pub use crate::bitcoin::redeem::TxRedeem;
