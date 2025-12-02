@@ -545,6 +545,7 @@ async fn run_swap_setup(
     let state0 = State0::new(
         request.btc,
         xmr,
+        compile_error!("TODO: Implement system for alice to decide amnesty amount"),
         env_config,
         wallet_snapshot.redeem_address,
         wallet_snapshot.punish_address,
