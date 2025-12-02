@@ -69,7 +69,7 @@ pub struct Message2 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message3 {
     pub tx_cancel_sig: bitcoin::Signature,
-    pub tx_refund_encsig: bitcoin::EncryptedSignature,
+    pub tx_partial_refund_encsig: bitcoin::EncryptedSignature,
 }
 
 #[allow(non_snake_case)]

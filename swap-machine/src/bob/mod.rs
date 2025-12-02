@@ -336,14 +336,14 @@ impl State1 {
 
         // TODO: send and receive and verify _partial_ refund signature instead of full refund signature.
         let tx_refund =
-            bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+            bitcoin::TxPartialRefund::new(&tx_cancel, &self.refund_address, self.A, self.b.public(), spending_fee)
 
         bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)?;
         bitcoin::verify_encsig(
             self.A,
             bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
             &tx_refund.digest(),
-            &msg.tx_refund_encsig,
+            &msg.tx_partial_refund_encsig,
         )?;
 
         Ok(State2 {
@@ -361,7 +361,7 @@ impl State1 {
             punish_address: self.punish_address,
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: msg.tx_cancel_sig,
-            tx_refund_encsig: msg.tx_refund_encsig,
+            bob_refund_type: BobRefundType::from_partial_refund_sig(msg.tx_partial_refund_encsig),
             min_monero_confirmations: self.min_monero_confirmations,
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
