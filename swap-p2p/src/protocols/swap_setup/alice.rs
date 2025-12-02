@@ -297,7 +297,7 @@ where
             ConnectionEvent::FullyNegotiatedInbound(substream) => {
                 self.keep_alive_until = None;
 
-                let mut substream = substream.protocol;
+                let substream = substream.protocol;
 
                 let (sender, receiver) = bmrng::channel_with_timeout::<
                     bitcoin::Amount,
@@ -307,145 +307,22 @@ where
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
                 let max_buy = self.max_buy;
-                let latest_rate = self.latest_rate.latest_rate();
+                let latest_rate = self.latest_rate.latest_rate().map_err(anyhow::Error::from);
                 let env_config = self.env_config;
 
                 // We wrap the entire handshake in a timeout future
-                let protocol = tokio::time::timeout(self.negotiation_timeout, async move {
-                    let request = swap_setup::read_cbor_message::<SpotPriceRequest>(&mut substream)
-                        .await
-                        .context("Failed to read spot price request")?;
-
-                    let wallet_snapshot = sender
-                        .send_receive(request.btc)
-                        .await
-                        .context("Failed to receive wallet snapshot")?;
-
-                    // wrap all of these into another future so we can `return` from all the
-                    // different blocks
-                    let validate = async {
-                        if resume_only {
-                            return Err(Error::ResumeOnlyMode);
-                        };
-
-                        let blockchain_network = BlockchainNetwork {
-                            bitcoin: env_config.bitcoin_network,
-                            monero: env_config.monero_network,
-                        };
-
-                        if request.blockchain_network != blockchain_network {
-                            return Err(Error::BlockchainNetworkMismatch {
-                                cli: request.blockchain_network,
-                                asb: blockchain_network,
-                            });
-                        }
-
-                        let btc = request.btc;
-
-                        if btc < min_buy {
-                            return Err(Error::AmountBelowMinimum {
-                                min: min_buy,
-                                buy: btc,
-                            });
-                        }
-
-                        if btc > max_buy {
-                            return Err(Error::AmountAboveMaximum {
-                                max: max_buy,
-                                buy: btc,
-                            });
-                        }
-
-                        let rate =
-                            latest_rate.map_err(|e| Error::LatestRateFetchFailed(Box::new(e)))?;
-                        let xmr = rate
-                            .sell_quote(btc)
-                            .map_err(Error::SellQuoteCalculationFailed)?;
-
-                        let unlocked = wallet_snapshot.unlocked_balance;
-
-                        let needed_balance = xmr + wallet_snapshot.lock_fee.into();
-                        if unlocked.as_piconero() < needed_balance.as_pico() {
-                            tracing::warn!(
-                                unlocked_balance = %unlocked,
-                                needed_balance = %needed_balance,
-                                "Rejecting swap, unlocked balance too low"
-                            );
-                            return Err(Error::BalanceTooLow {
-                                balance: wallet_snapshot.unlocked_balance,
-                                buy: btc,
-                            });
-                        }
-
-                        Ok(xmr)
-                    };
-
-                    let result = validate.await;
-
-                    let converted_result = match result {
-                        Ok(xmr) => Ok(xmr.into()),
-                        Err(e) => Err(e),
-                    };
-                    swap_setup::write_cbor_message(
-                        &mut substream,
-                        SpotPriceResponse::from_result_ref(&converted_result),
-                    )
-                    .await
-                    .context("Failed to write spot price response")?;
-
-                    let xmr = converted_result?;
-
-                    let state0 = State0::new(
-                        request.btc,
-                        xmr,
+                let protocol = tokio::time::timeout(
+                    self.negotiation_timeout,
+                    run_swap_setup(
+                        substream,
+                        sender,
+                        resume_only,
                         env_config,
-                        wallet_snapshot.redeem_address,
-                        wallet_snapshot.punish_address,
-                        wallet_snapshot.redeem_fee,
-                        wallet_snapshot.punish_fee,
-                        &mut rand::thread_rng(),
-                    );
-
-                    let message0 = swap_setup::read_cbor_message::<Message0>(&mut substream)
-                        .await
-                        .context("Failed to read message0")?;
-                    let (swap_id, state1) = state0
-                        .receive(message0)
-                        .context("Failed to transition state0 -> state1 using message0")?;
-
-                    swap_setup::write_cbor_message(&mut substream, state1.next_message())
-                        .await
-                        .context("Failed to send message1")?;
-
-                    let message2 = swap_setup::read_cbor_message::<Message2>(&mut substream)
-                        .await
-                        .context("Failed to read message2")?;
-                    let state2 = state1
-                        .receive(message2)
-                        .context("Failed to transition state1 -> state2 using message2")?;
-
-                    swap_setup::write_cbor_message(&mut substream, state2.next_message())
-                        .await
-                        .context("Failed to send message3")?;
-
-                    let message4 = swap_setup::read_cbor_message::<Message4>(&mut substream)
-                        .await
-                        .context("Failed to read message4")?;
-                    let state3 = state2
-                        .receive(message4)
-                        .context("Failed to transition state2 -> state3 using message4")?;
-
-                    substream
-                        .flush()
-                        .await
-                        .context("Failed to flush substream after all messages were sent")?;
-                    substream
-                        .close()
-                        .await
-                        .context("Failed to close substream after all messages were sent")?;
-
-                    Ok((swap_id, state3))
-                });
+                        min_buy,
+                        max_buy,
+                        latest_rate,
+                    ),
+                );
 
                 let max_seconds = self.negotiation_timeout.as_secs();
                 self.inbound_stream = OptionFuture::from(Some(
@@ -571,4 +448,148 @@ impl Error {
             }
         }
     }
+}
+
+async fn run_swap_setup(
+    mut substream: libp2p::swarm::Stream,
+    sender: bmrng::RequestSender<bitcoin::Amount, WalletSnapshot>,
+    resume_only: bool,
+    env_config: env::Config,
+    min_buy: bitcoin::Amount,
+    max_buy: bitcoin::Amount,
+    latest_rate: Result<swap_feed::Rate>,
+) -> Result<(Uuid, State3)> {
+    let request = swap_setup::read_cbor_message::<SpotPriceRequest>(&mut substream)
+        .await
+        .context("Failed to read spot price request")?;
+
+    let wallet_snapshot = sender
+        .send_receive(request.btc)
+        .await
+        .context("Failed to receive wallet snapshot")?;
+
+    // wrap all of these into another future so we can `return` from all the
+    // different blocks
+    let validate = async {
+        if resume_only {
+            return Err(Error::ResumeOnlyMode);
+        };
+
+        let blockchain_network = BlockchainNetwork {
+            bitcoin: env_config.bitcoin_network,
+            monero: env_config.monero_network,
+        };
+
+        if request.blockchain_network != blockchain_network {
+            return Err(Error::BlockchainNetworkMismatch {
+                cli: request.blockchain_network,
+                asb: blockchain_network,
+            });
+        }
+
+        let btc = request.btc;
+
+        if btc < min_buy {
+            return Err(Error::AmountBelowMinimum {
+                min: min_buy,
+                buy: btc,
+            });
+        }
+
+        if btc > max_buy {
+            return Err(Error::AmountAboveMaximum {
+                max: max_buy,
+                buy: btc,
+            });
+        }
+
+        let rate =
+            latest_rate.map_err(|e| Error::LatestRateFetchFailed(Box::new(e)))?;
+        let xmr = rate
+            .sell_quote(btc)
+            .map_err(Error::SellQuoteCalculationFailed)?;
+
+        let unlocked = wallet_snapshot.unlocked_balance;
+
+        let needed_balance = xmr + wallet_snapshot.lock_fee.into();
+        if unlocked.as_piconero() < needed_balance.as_pico() {
+            tracing::warn!(
+                unlocked_balance = %unlocked,
+                needed_balance = %needed_balance,
+                "Rejecting swap, unlocked balance too low"
+            );
+            return Err(Error::BalanceTooLow {
+                balance: wallet_snapshot.unlocked_balance,
+                buy: btc,
+            });
+        }
+
+        Ok(xmr)
+    };
+
+    let result = validate.await;
+
+    let converted_result = match result {
+        Ok(xmr) => Ok(xmr.into()),
+        Err(e) => Err(e),
+    };
+    swap_setup::write_cbor_message(
+        &mut substream,
+        SpotPriceResponse::from_result_ref(&converted_result),
+    )
+    .await
+    .context("Failed to write spot price response")?;
+
+    let xmr = converted_result?;
+
+    let state0 = State0::new(
+        request.btc,
+        xmr,
+        env_config,
+        wallet_snapshot.redeem_address,
+        wallet_snapshot.punish_address,
+        wallet_snapshot.redeem_fee,
+        wallet_snapshot.punish_fee,
+        &mut rand::thread_rng(),
+    );
+
+    let message0 = swap_setup::read_cbor_message::<Message0>(&mut substream)
+        .await
+        .context("Failed to read message0")?;
+    let (swap_id, state1) = state0
+        .receive(message0)
+        .context("Failed to transition state0 -> state1 using message0")?;
+
+    swap_setup::write_cbor_message(&mut substream, state1.next_message())
+        .await
+        .context("Failed to send message1")?;
+
+    let message2 = swap_setup::read_cbor_message::<Message2>(&mut substream)
+        .await
+        .context("Failed to read message2")?;
+    let state2 = state1
+        .receive(message2)
+        .context("Failed to transition state1 -> state2 using message2")?;
+
+    swap_setup::write_cbor_message(&mut substream, state2.next_message())
+        .await
+        .context("Failed to send message3")?;
+
+    let message4 = swap_setup::read_cbor_message::<Message4>(&mut substream)
+        .await
+        .context("Failed to read message4")?;
+    let state3 = state2
+        .receive(message4)
+        .context("Failed to transition state2 -> state3 using message4")?;
+
+    substream
+        .flush()
+        .await
+        .context("Failed to flush substream after all messages were sent")?;
+    substream
+        .close()
+        .await
+        .context("Failed to close substream after all messages were sent")?;
+
+    Ok((swap_id, state3))
 }
