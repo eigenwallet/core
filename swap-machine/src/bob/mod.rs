@@ -178,6 +178,7 @@ pub struct State0 {
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
     min_monero_confirmations: u64,
+    tx_partial_refund_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
     tx_lock_fee: bitcoin::Amount,
@@ -194,6 +195,7 @@ impl State0 {
         punish_timelock: PunishTimelock,
         refund_address: bitcoin::Address,
         min_monero_confirmations: u64,
+        tx_partial_refund_fee: bitcoin::Amount,
         tx_refund_fee: bitcoin::Amount,
         tx_cancel_fee: bitcoin::Amount,
         tx_lock_fee: bitcoin::Amount,
@@ -221,6 +223,7 @@ impl State0 {
             punish_timelock,
             refund_address,
             min_monero_confirmations,
+            tx_partial_refund_fee,
             tx_refund_fee,
             tx_cancel_fee,
             tx_lock_fee,
@@ -237,6 +240,7 @@ impl State0 {
             v_b: self.v_b,
             refund_address: self.refund_address.clone(),
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         }
     }
@@ -280,6 +284,7 @@ impl State0 {
             S_a_bitcoin: msg.S_a_bitcoin,
             v,
             xmr: self.xmr,
+            btc_amnesty_amount: msg.amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -289,6 +294,7 @@ impl State0 {
             min_monero_confirmations: self.min_monero_confirmations,
             tx_redeem_fee: msg.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_punish_fee: msg.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
@@ -305,6 +311,7 @@ pub struct State1 {
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
+    btc_amnesty_amount: bitcoin::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -312,6 +319,7 @@ pub struct State1 {
     punish_address: bitcoin::Address,
     tx_lock: bitcoin::TxLock,
     min_monero_confirmations: u64,
+    tx_partial_refund_fee: bitcoin::Amount,
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
@@ -336,7 +344,7 @@ impl State1 {
 
         // TODO: send and receive and verify _partial_ refund signature instead of full refund signature.
         let tx_refund =
-            bitcoin::TxPartialRefund::new(&tx_cancel, &self.refund_address, self.A, self.b.public(), spending_fee)
+            bitcoin::TxPartialRefund::new(&tx_cancel, &self.refund_address, self.A, self.b.public(), self.btc_amnesty_amount, self.tx_partial_refund_fee)?;
 
         bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)?;
         bitcoin::verify_encsig(
@@ -362,6 +370,7 @@ impl State1 {
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: msg.tx_cancel_sig,
             bob_refund_type: BobRefundType::from_partial_refund_sig(msg.tx_partial_refund_encsig),
+            tx_refund_amnesty_sig: compile_error!("TODO: Mechanism for sometimes sending this during swap setup, sometimes not"),
             min_monero_confirmations: self.min_monero_confirmations,
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
@@ -459,7 +468,8 @@ impl State2 {
                 redeem_address: self.redeem_address,
                 tx_lock: self.tx_lock.clone(),
                 tx_cancel_sig_a: self.tx_cancel_sig_a,
-                tx_refund_encsig: self.tx_refund_encsig,
+                bob_refund_type: self.bob_refund_type,
+                tx_refund_amnesty_sig: self.tx_refund_amnesty_sig,
                 min_monero_confirmations: self.min_monero_confirmations,
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_refund_fee: self.tx_refund_fee,
@@ -542,7 +552,8 @@ impl State3 {
             redeem_address: self.redeem_address,
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: self.tx_cancel_sig_a,
-            tx_refund_encsig: self.tx_refund_encsig,
+            bob_refund_type: self.bob_refund_type,
+            tx_refund_amnesty_sig: self.tx_refund_amnesty_sig,
             monero_wallet_restore_blockheight,
             lock_transfer_proof,
             tx_redeem_fee: self.tx_redeem_fee,
@@ -563,7 +574,8 @@ impl State3 {
             refund_address: self.refund_address.clone(),
             tx_lock: self.tx_lock.clone(),
             tx_cancel_sig_a: self.tx_cancel_sig_a.clone(),
-            tx_refund_encsig: self.tx_refund_encsig.clone(),
+            bob_refund_type: self.bob_refund_type.clone(),
+            tx_refund_amnesty_sig: self.tx_refund_amnesty_sig.clone(),
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             xmr: self.xmr,
@@ -744,7 +756,8 @@ impl State4 {
             refund_address: self.refund_address,
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: self.tx_cancel_sig_a,
-            tx_refund_encsig: self.tx_refund_encsig,
+            bob_refund_type: self.bob_refund_type,
+            tx_refund_amnesty_sig: self.tx_refund_amnesty_sig,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             xmr: self.xmr,
@@ -893,7 +906,7 @@ impl State6 {
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<bitcoin::Txid> {
-        let signed_tx_refund = self.signed_refund_transaction()?;
+        let signed_tx_refund = self.signed_full_refund_transaction()?;
         let signed_tx_refund_txid = signed_tx_refund.compute_txid();
         bitcoin_wallet.broadcast(signed_tx_refund, "refund").await?;
 
@@ -909,14 +922,16 @@ impl State6 {
         Ok(tx_refund)
     }
 
-    pub fn signed_refund_transaction(&self) -> Result<Transaction> {
+    pub fn signed_full_refund_transaction(&self) -> Result<Transaction> {
+        let tx_full_refund_encsig = self.bob_refund_type.tx_full_refund_encsig().context("Can't sign full refund transaction because we don't have the necessary signature")?;
+        
         let tx_refund = self.construct_tx_refund()?;
 
         let adaptor = Adaptor::<HashTranscript<Sha256>, Deterministic<Sha256>>::default();
 
         let sig_b = self.b.sign(tx_refund.digest());
         let sig_a =
-            adaptor.decrypt_signature(&self.s_b.to_secpfun_scalar(), self.tx_refund_encsig.clone());
+            adaptor.decrypt_signature(&self.s_b.to_secpfun_scalar(), tx_full_refund_encsig);
 
         let signed_tx_refund =
             tx_refund.add_signatures((self.A, sig_a), (self.b.public(), sig_b))?;

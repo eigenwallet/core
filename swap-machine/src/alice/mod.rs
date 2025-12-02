@@ -148,6 +148,7 @@ pub struct State0 {
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: bitcoin::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     redeem_address: bitcoin::Address,
@@ -161,6 +162,7 @@ impl State0 {
     pub fn new<R>(
         btc: bitcoin::Amount,
         xmr: monero::Amount,
+        btc_amnesty_amount: bitcoin::Amount,
         env_config: Config,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
@@ -186,6 +188,7 @@ impl State0 {
                 point: S_a_monero.compress(),
             },
             dleq_proof_s_a,
+            btc_amnesty_amount,
             redeem_address,
             punish_address,
             btc,
@@ -230,6 +233,7 @@ impl State0 {
                 dleq_proof_s_a: self.dleq_proof_s_a,
                 btc: self.btc,
                 xmr: self.xmr,
+                btc_amnesty_amount: self.btc_amnesty_amount,
                 cancel_timelock: self.cancel_timelock,
                 punish_timelock: self.punish_timelock,
                 refund_address: msg.refund_address,
@@ -238,6 +242,7 @@ impl State0 {
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_punish_fee: self.tx_punish_fee,
                 tx_refund_fee: msg.tx_refund_fee,
+                tx_partial_refund_fee: msg.tx_partial_refund_fee,
                 tx_cancel_fee: msg.tx_cancel_fee,
             },
         ))
@@ -259,6 +264,7 @@ pub struct State1 {
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: bitcoin::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -267,6 +273,7 @@ pub struct State1 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
+    tx_partial_refund_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -282,6 +289,7 @@ impl State1 {
             punish_address: self.punish_address.clone(),
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
+            amnesty_amount: self.btc_amnesty_amount,
         }
     }
 

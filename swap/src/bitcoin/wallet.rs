@@ -3805,7 +3805,7 @@ mod swap_core_bitcoin_tests {
         let redeem_transaction = alice_state3
             .signed_redeem_transaction(encrypted_signature)
             .unwrap();
-        let refund_transaction = bob_state6.signed_refund_transaction().unwrap();
+        let refund_transaction = bob_state6.signed_full_refund_transaction().unwrap();
 
         assert_weight(redeem_transaction, TxRedeem::weight().to_wu(), "TxRedeem");
         assert_weight(cancel_transaction, TxCancel::weight().to_wu(), "TxCancel");

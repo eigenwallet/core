@@ -38,6 +38,8 @@ pub struct Message0 {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub tx_partial_refund_fee: bitcoin::Amount,
+    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -57,6 +59,10 @@ pub struct Message1 {
     pub tx_redeem_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_punish_fee: bitcoin::Amount,
+    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    /// The amount of Bitcoin that Bob will only receive in case of a refund 
+    /// _and_ if Alice decides to. Introduced in [#675](https://github.com/eigenwallet/core/pull/675).
+    pub amnesty_amount: bitcoin::Amount,
 }
 
 #[allow(non_snake_case)]
