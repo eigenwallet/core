@@ -3725,6 +3725,7 @@ mod swap_core_bitcoin_tests {
             .await;
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
+        let btc_amnesty_amount = Amount::from_sat(0);
         let xmr_amount = crate::monero::Amount::from_piconero(10000);
 
         let tx_redeem_fee = alice_wallet
@@ -3747,6 +3748,7 @@ mod swap_core_bitcoin_tests {
         let alice_state0 = alice::State0::new(
             btc_amount,
             xmr_amount,
+            btc_amnesty_amount,
             config,
             redeem_address,
             punish_address,
@@ -3764,6 +3766,7 @@ mod swap_core_bitcoin_tests {
             PunishTimelock::new(config.bitcoin_punish_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
+            spending_fee,
             spending_fee,
             spending_fee,
             tx_lock_fee,
@@ -3835,6 +3838,7 @@ mod swap_core_bitcoin_tests {
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
         let xmr_amount = crate::monero::Amount::from_piconero(10000);
+        let btc_amnesty_amount = Amount::from_sat(0);
 
         let tx_redeem_fee = alice_wallet
             .estimate_fee(TxRedeem::weight(), Some(btc_amount))
@@ -3852,6 +3856,7 @@ mod swap_core_bitcoin_tests {
         let alice_state0 = alice::State0::new(
             btc_amount,
             xmr_amount,
+            btc_amnesty_amount,
             config,
             refund_address.clone(),
             punish_address,
@@ -3869,6 +3874,7 @@ mod swap_core_bitcoin_tests {
             PunishTimelock::new(config.bitcoin_punish_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
+            spending_fee,
             spending_fee,
             spending_fee,
             spending_fee,
