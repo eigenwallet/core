@@ -3,18 +3,25 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import pluginReact from "eslint-plugin-react";
 import importPlugin from "eslint-plugin-import";
+import reactHooksPlugin from "eslint-plugin-react-hooks";
 
 export default [
   { ignores: ["node_modules", "dist"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   pluginReact.configs.flat.recommended,
+  reactHooksPlugin.configs.flat.recommended,
   {
     languageOptions: {
       globals: globals.browser,
     },
     plugins: {
       import: importPlugin,
+    },
+    settings: {
+      react: {
+        version: "detect",
+      },
     },
     rules: {
       "react/react-in-jsx-scope": "off",

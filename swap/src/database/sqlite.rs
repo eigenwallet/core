@@ -472,6 +472,24 @@ impl Database for SqliteDatabase {
 
         Ok(Some(proof))
     }
+
+    async fn has_swap(&self, swap_id: Uuid) -> Result<bool> {
+        let swap_id = swap_id.to_string();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT 1 as found
+            FROM swap_states
+            WHERE swap_id = ?
+            LIMIT 1
+            "#,
+            swap_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.is_some())
+    }
 }
 
 #[cfg(test)]

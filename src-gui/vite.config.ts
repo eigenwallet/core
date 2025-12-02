@@ -11,7 +11,11 @@ const mobile = !!/android|ios/.exec(process.env.TAURI_ENV_PLATFORM);
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
   plugins: [
-    react(),
+    react({
+      babel: {
+        plugins: ["babel-plugin-react-compiler"],
+      },
+    }),
     tsconfigPaths(),
     topLevelAwait(),
     // Automatically regenerate the typescript bindings when there's a change to the rust code

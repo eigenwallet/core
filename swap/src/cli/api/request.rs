@@ -5,28 +5,23 @@ use crate::cli::api::tauri_bindings::{
     TauriSwapProgressEvent,
 };
 use crate::cli::api::Context;
-use crate::cli::list_sellers::{list_sellers_init, QuoteWithAddress, UnreachableSeller};
-use crate::cli::{list_sellers as list_sellers_impl, EventLoop, SellerStatus};
+use crate::cli::list_sellers::QuoteWithAddress;
 use crate::common::{get_logs, redact};
-use crate::libp2p_ext::MultiAddrExt;
 use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::monero::MoneroAddressPool;
 use crate::network::quote::BidQuote;
-use crate::network::rendezvous::XmrBtcNamespace;
-use crate::network::swarm;
 use crate::protocol::bob::{self, BobState, Swap};
-use crate::protocol::{Database, State};
+use crate::protocol::State;
 use crate::{cli, monero};
 use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
 use ::monero::Network;
 use anyhow::{bail, Context as AnyContext, Result};
-use arti_client::TorClient;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use libp2p::core::Multiaddr;
-use libp2p::{identity, PeerId};
+use libp2p::PeerId;
 use monero_seed::{Language, Seed as MoneroSeed};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -41,7 +36,6 @@ use swap_core::bitcoin;
 use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use thiserror::Error;
 use tokio_util::task::AbortOnDropHandle;
-use tor_rtcompat::tokio::TokioRustlsRuntime;
 use tracing::debug_span;
 use tracing::error;
 use tracing::Instrument;
@@ -69,25 +63,13 @@ fn get_swap_tracing_span(swap_id: Uuid) -> Span {
 #[typeshare]
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BuyXmrArgs {
-    #[typeshare(serialized_as = "Vec<string>")]
-    pub rendezvous_points: Vec<Multiaddr>,
-    #[typeshare(serialized_as = "Vec<string>")]
-    pub sellers: Vec<Multiaddr>,
     #[typeshare(serialized_as = "Option<string>")]
     pub bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
     pub monero_receive_pool: MoneroAddressPool,
 }
 
-#[typeshare]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BuyXmrResponse {
-    #[typeshare(serialized_as = "string")]
-    pub swap_id: Uuid,
-    pub quote: BidQuote,
-}
-
 impl Request for BuyXmrArgs {
-    type Response = BuyXmrResponse;
+    type Response = ();
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         let swap_id = Uuid::new_v4();
@@ -181,30 +163,6 @@ impl Request for WithdrawBtcArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         withdraw_btc(self, ctx).await
-    }
-}
-
-// ListSellers
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ListSellersArgs {
-    /// The rendezvous points to search for sellers
-    /// The address must contain a peer ID
-    #[typeshare(serialized_as = "Vec<string>")]
-    pub rendezvous_points: Vec<Multiaddr>,
-}
-
-#[typeshare]
-#[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct ListSellersResponse {
-    sellers: Vec<SellerStatus>,
-}
-
-impl Request for ListSellersArgs {
-    type Response = ListSellersResponse;
-
-    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
-        list_sellers(self, ctx).await
     }
 }
 
@@ -982,12 +940,10 @@ pub async fn buy_xmr(
     buy_xmr: BuyXmrArgs,
     swap_id: Uuid,
     context: Arc<Context>,
-) -> Result<BuyXmrResponse, anyhow::Error> {
+) -> Result<(), anyhow::Error> {
     let _span = get_swap_tracing_span(swap_id);
 
     let BuyXmrArgs {
-        rendezvous_points,
-        sellers,
         bitcoin_change_address,
         monero_receive_pool,
     } = buy_xmr;
@@ -1019,13 +975,13 @@ pub async fn buy_xmr(
     let monero_wallet = context.try_get_monero_manager().await?;
 
     let env_config = config.env_config;
-    let seed = config.seed.clone().context("Could not get seed")?;
 
     // Prepare variables for the quote fetching process
-    let identity = seed.derive_libp2p_identity();
-    let namespace = config.namespace;
-    let tor_client = context.tor_client.read().await.clone();
     let tauri_handle = context.tauri_handle.clone();
+
+    // Get the existing event loop handle from context
+    let mut event_loop_handle = context.try_get_event_loop_handle().await?;
+    let quotes_rx = event_loop_handle.cached_quotes();
 
     // Wait for the user to approve a seller and to deposit coins
     // Calling determine_btc_to_swap
@@ -1035,13 +991,8 @@ pub async fn buy_xmr(
 
     // Clone variables before moving them into closures
     let bitcoin_change_address_for_spawn = bitcoin_change_address.clone();
-    let rendezvous_points_clone = rendezvous_points.clone();
-    let sellers_clone = sellers.clone();
-    let db_for_fetch = db.clone();
-    let tor_client_for_swarm = tor_client.clone();
 
     // Clone tauri_handle for different closures
-    let tauri_handle_for_fetch = tauri_handle.clone();
     let tauri_handle_for_determine = tauri_handle.clone();
     let tauri_handle_for_selection = tauri_handle.clone();
     let tauri_handle_for_suspension = tauri_handle.clone();
@@ -1050,29 +1001,9 @@ pub async fn buy_xmr(
     // because we need to be able to cancel the determine_btc_to_swap(..)
     context.swap_lock.acquire_swap_lock(swap_id).await?;
 
-    let (seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee) = tokio::select! {
+    let select_offer_result = tokio::select! {
         result = determine_btc_to_swap(
-            move || {
-                let rendezvous_points = rendezvous_points_clone.clone();
-                let sellers = sellers_clone.clone();
-                let namespace = namespace;
-                let identity = identity.clone();
-                let db = db_for_fetch.clone();
-                let tor_client = tor_client.clone();
-                let tauri_handle = tauri_handle_for_fetch.clone();
-
-                Box::pin(async move {
-                    fetch_quotes_task(
-                        rendezvous_points,
-                        namespace,
-                        sellers,
-                        identity,
-                        Some(db),
-                        tor_client,
-                        tauri_handle,
-                    ).await
-                })
-            },
+            quotes_rx,
             bitcoin_wallet.new_address(),
             {
                 let wallet = Arc::clone(&bitcoin_wallet_for_closures);
@@ -1110,15 +1041,23 @@ pub async fn buy_xmr(
                 }) as Box<dyn Future<Output = Result<bool>> + Send>
             },
         ) => {
-            result?
+            Some(result?)
         }
         _ = context.swap_lock.listen_for_swap_force_suspension() => {
             context.swap_lock.release_swap_lock().await.expect("Shutdown signal received but failed to release swap lock. The swap process has been terminated but the swap lock is still active.");
+
             if let Some(handle) = tauri_handle_for_suspension {
                 handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::Released);
             }
-            bail!("Shutdown signal received");
+
+            None
         },
+    };
+
+    let Some((seller_multiaddr, seller_peer_id, quote, tx_lock_amount, tx_lock_fee)) =
+        select_offer_result
+    else {
+        return Ok(());
     };
 
     // Insert the peer_id into the database
@@ -1127,33 +1066,18 @@ pub async fn buy_xmr(
     db.insert_address(seller_peer_id, seller_multiaddr.clone())
         .await?;
 
-    let behaviour = cli::Behaviour::new(
-        env_config,
-        bitcoin_wallet.clone(),
-        (seed.derive_libp2p_identity(), namespace),
-    );
-
-    let mut swarm = swarm::cli(
-        seed.derive_libp2p_identity(),
-        tor_client_for_swarm,
-        behaviour,
-    )
-    .await?;
-
-    swarm.add_peer_address(seller_peer_id, seller_multiaddr.clone());
-
     db.insert_monero_address_pool(swap_id, monero_receive_pool.clone())
         .await?;
 
-    tracing::debug!(peer_id = %swarm.local_peer_id(), "Network layer initialized");
+    // Add the seller's address to the swarm
+    event_loop_handle
+        .queue_peer_address(seller_peer_id, seller_multiaddr.clone())
+        .await?;
 
     tauri_handle.emit_swap_progress_event(
         swap_id,
         TauriSwapProgressEvent::ReceivedQuote(quote.clone()),
     );
-
-    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
-    let event_loop = tokio::spawn(event_loop.run().in_current_span());
 
     tauri_handle.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::ReceivedQuote(quote));
 
@@ -1169,16 +1093,6 @@ pub async fn buy_xmr(
                 bail!("Shutdown signal received");
             },
 
-            event_loop_result = event_loop => {
-                match event_loop_result {
-                    Ok(_) => {
-                        tracing::debug!(%swap_id, "EventLoop completed")
-                    }
-                    Err(error) => {
-                        tracing::error!(%swap_id, "EventLoop failed: {:#}", error)
-                    }
-                }
-            },
             swap_result = async {
                 let swap_event_loop_handle = event_loop_handle.swap_handle(seller_peer_id, swap_id).await?;
                 let swap = Swap::new(
@@ -1219,7 +1133,7 @@ pub async fn buy_xmr(
         Ok::<_, anyhow::Error>(())
     }.in_current_span()).await;
 
-    Ok(BuyXmrResponse { swap_id, quote })
+    Ok(())
 }
 
 #[tracing::instrument(fields(method = "resume_swap"), skip(context))]
@@ -1233,33 +1147,17 @@ pub async fn resume_swap(
     let config = context.try_get_config().await?;
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
     let monero_manager = context.try_get_monero_manager().await?;
-    let tor_client = context.tor_client.read().await.clone();
 
     let seller_peer_id = db.get_peer_id(swap_id).await?;
     let seller_addresses = db.get_addresses(seller_peer_id).await?;
 
-    let seed = config
-        .seed
-        .as_ref()
-        .context("Could not get seed")?
-        .derive_libp2p_identity();
+    let mut event_loop_handle = context.try_get_event_loop_handle().await?;
 
-    let behaviour = cli::Behaviour::new(
-        config.env_config,
-        bitcoin_wallet.clone(),
-        (seed.clone(), config.namespace),
-    );
-    let mut swarm = swarm::cli(seed.clone(), tor_client, behaviour).await?;
-    let our_peer_id = swarm.local_peer_id();
-
-    tracing::debug!(peer_id = %our_peer_id, "Network layer initialized");
-
-    // Fetch the seller's addresses from the database and add them to the swarm
     for seller_address in seller_addresses {
-        swarm.add_peer_address(seller_peer_id, seller_address);
+        event_loop_handle
+            .queue_peer_address(seller_peer_id, seller_address)
+            .await?;
     }
-
-    let (event_loop, mut event_loop_handle) = EventLoop::new(swarm, db.clone())?;
 
     let monero_receive_pool = db.get_monero_address_pool(swap_id).await?;
 
@@ -1286,7 +1184,6 @@ pub async fn resume_swap(
 
     context.tasks.clone().spawn(
         async move {
-            let handle = tokio::spawn(event_loop.run().in_current_span());
             tokio::select! {
                 biased;
                 _ = context.swap_lock.listen_for_swap_force_suspension() => {
@@ -1298,16 +1195,6 @@ pub async fn resume_swap(
                     bail!("Shutdown signal received");
                 },
 
-                event_loop_result = handle => {
-                    match event_loop_result {
-                        Ok(_) => {
-                            tracing::debug!(%swap_id, "EventLoop completed during swap resume")
-                        }
-                        Err(error) => {
-                            tracing::error!(%swap_id, "EventLoop failed during swap resume: {:#}", error)
-                        }
-                    }
-                },
                 swap_result = bob::run(swap) => {
                     match swap_result {
                         Ok(state) => {
@@ -1477,75 +1364,6 @@ pub async fn get_balance(balance: BalanceArgs, context: Arc<Context>) -> Result<
     })
 }
 
-#[tracing::instrument(fields(method = "list_sellers"), skip(context))]
-pub async fn list_sellers(
-    list_sellers: ListSellersArgs,
-    context: Arc<Context>,
-) -> Result<ListSellersResponse> {
-    let ListSellersArgs { rendezvous_points } = list_sellers;
-    let rendezvous_nodes: Vec<_> = rendezvous_points
-        .iter()
-        .filter_map(|rendezvous_point| rendezvous_point.split_peer_id())
-        .collect();
-
-    let config = context.try_get_config().await?;
-    let db = context.try_get_db().await?;
-    let tor_client = context.tor_client.read().await.clone();
-    let tauri_handle = context.tauri_handle.clone();
-
-    let identity = config
-        .seed
-        .as_ref()
-        .context("Cannot extract seed")?
-        .derive_libp2p_identity();
-
-    let sellers = list_sellers_impl(
-        rendezvous_nodes,
-        config.namespace,
-        tor_client,
-        identity,
-        Some(db.clone()),
-        tauri_handle,
-    )
-    .await?;
-
-    for seller in &sellers {
-        match seller {
-            SellerStatus::Online(QuoteWithAddress {
-                quote,
-                multiaddr,
-                peer_id,
-                version,
-            }) => {
-                tracing::trace!(
-                    status = "Online",
-                    price = %quote.price.to_string(),
-                    min_quantity = %quote.min_quantity.to_string(),
-                    max_quantity = %quote.max_quantity.to_string(),
-                    address = %multiaddr.clone().to_string(),
-                    peer_id = %peer_id,
-                    version = %version,
-                    "Fetched peer status"
-                );
-
-                // Add the peer as known to the database
-                // This'll allow us to later request a quote again
-                // without having to re-discover the peer at the rendezvous point
-                db.insert_address(*peer_id, multiaddr.clone()).await?;
-            }
-            SellerStatus::Unreachable(UnreachableSeller { peer_id }) => {
-                tracing::trace!(
-                    status = "Unreachable",
-                    peer_id = %peer_id.to_string(),
-                    "Fetched peer status"
-                );
-            }
-        }
-    }
-
-    Ok(ListSellersResponse { sellers })
-}
-
 #[tracing::instrument(fields(method = "export_bitcoin_wallet"), skip(context))]
 pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::Value> {
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
@@ -1600,49 +1418,6 @@ pub async fn get_current_swap(context: Arc<Context>) -> Result<GetCurrentSwapRes
     Ok(GetCurrentSwapResponse { swap_id })
 }
 
-pub async fn fetch_quotes_task(
-    rendezvous_points: Vec<Multiaddr>,
-    namespace: XmrBtcNamespace,
-    sellers: Vec<Multiaddr>,
-    identity: identity::Keypair,
-    db: Option<Arc<dyn Database + Send + Sync>>,
-    tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
-    tauri_handle: Option<TauriHandle>,
-) -> Result<(
-    tokio::task::JoinHandle<()>,
-    ::tokio::sync::watch::Receiver<Vec<SellerStatus>>,
-)> {
-    let (tx, rx) = ::tokio::sync::watch::channel(Vec::new());
-
-    let rendezvous_nodes: Vec<_> = rendezvous_points
-        .iter()
-        .filter_map(|addr| addr.split_peer_id())
-        .collect();
-
-    let fetch_fn = list_sellers_init(
-        rendezvous_nodes,
-        namespace,
-        tor_client,
-        identity,
-        db,
-        tauri_handle,
-        Some(tx.clone()),
-        sellers,
-    )
-    .await?;
-
-    let handle = tokio::task::spawn(async move {
-        loop {
-            let sellers = fetch_fn().await;
-            let _ = tx.send(sellers);
-
-            tokio::time::sleep(std::time::Duration::from_secs(90)).await;
-        }
-    });
-
-    Ok((handle, rx))
-}
-
 // TODO: Let this take a refresh interval as an argument
 pub async fn refresh_wallet_task<FMG, TMG, FB, TB, FS, TS>(
     max_giveable_fn: FMG,
@@ -1679,17 +1454,9 @@ where
     Ok((handle, rx))
 }
 
-pub type QuoteFetchFuture = BoxFuture<
-    'static,
-    Result<(
-        tokio::task::JoinHandle<()>,
-        ::tokio::sync::watch::Receiver<Vec<SellerStatus>>,
-    )>,
->;
-
 #[allow(clippy::too_many_arguments)]
 pub async fn determine_btc_to_swap<FB, TB, FMG, TMG, FS, TS>(
-    quote_fetch_tasks: impl Fn() -> QuoteFetchFuture,
+    mut quotes_rx: ::tokio::sync::watch::Receiver<Vec<QuoteWithAddress>>,
     // TODO: Shouldn't this be a function?
     get_new_address: impl Future<Output = Result<bitcoin::Address>>,
     balance: FB,
@@ -1714,17 +1481,12 @@ where
     FS: Fn() -> TS + Send + 'static,
 {
     // Start background tasks with watch channels
-    let (quote_fetch_handle, mut quotes_rx): (
-        _,
-        ::tokio::sync::watch::Receiver<Vec<SellerStatus>>,
-    ) = quote_fetch_tasks().await?;
     let (wallet_refresh_handle, mut balance_rx): (
         _,
         ::tokio::sync::watch::Receiver<(bitcoin::Amount, bitcoin::Amount)>,
     ) = refresh_wallet_task(max_giveable_fn, balance, sync).await?;
 
     // Get the abort handles to kill the background tasks when we exit the function
-    let quote_fetch_abort_handle = AbortOnDropHandle::new(quote_fetch_handle);
     let wallet_refresh_abort_handle = AbortOnDropHandle::new(wallet_refresh_handle);
 
     let mut pending_approvals = FuturesUnordered::new();
@@ -1736,14 +1498,6 @@ where
         let quotes = quotes_rx.borrow().clone();
         let (balance, max_giveable) = *balance_rx.borrow();
 
-        let success_quotes = quotes
-            .iter()
-            .filter_map(|quote| match quote {
-                SellerStatus::Online(quote_with_address) => Some(quote_with_address.clone()),
-                SellerStatus::Unreachable(_) => None,
-            })
-            .collect::<Vec<_>>();
-
         // Emit a Tauri event
         event_emitter.emit_swap_progress_event(
             swap_id,
@@ -1751,12 +1505,12 @@ where
                 deposit_address: deposit_address.clone(),
                 max_giveable: max_giveable,
                 min_bitcoin_lock_tx_fee: balance - max_giveable,
-                known_quotes: success_quotes.clone(),
+                known_quotes: quotes.clone(),
             },
         );
 
         // Iterate through quotes and find ones that match the balance and max_giveable
-        let matching_quotes = success_quotes
+        let matching_quotes = quotes
             .iter()
             .filter_map(|quote_with_address| {
                 let quote = quote_with_address.quote;
@@ -1814,15 +1568,6 @@ where
             });
         }
 
-        tracing::trace!(
-            swap_id = ?swap_id,
-            pending_approvals = ?pending_approvals.len(),
-            balance = ?balance,
-            max_giveable = ?max_giveable,
-            quotes = ?quotes,
-            "Waiting for user to select an offer"
-        );
-
         // Listen for approvals, balance changes, or quote changes
         let result: Option<(
             Multiaddr,
@@ -1854,7 +1599,6 @@ where
 
         // If user accepted an offer, return it to start the swap
         if let Some((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee)) = result {
-            quote_fetch_abort_handle.abort();
             wallet_refresh_abort_handle.abort();
 
             return Ok((multiaddr, peer_id, quote, tx_lock_amount, tx_lock_fee));

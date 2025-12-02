@@ -550,7 +550,7 @@ impl Default for ElectrumBalancerConfig {
     fn default() -> Self {
         Self {
             request_timeout: 15,
-            min_retries: 15,
+            min_retries: 10,
         }
     }
 }
@@ -571,7 +571,12 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
     ) -> Result<Arc<BdkElectrumClient<Client>>, Error> {
         let client_config = ConfigBuilder::new()
             .timeout(Some(config.request_timeout))
-            .retry(0)
+            // TODO: Why is this set to 1?
+            // The goal of this crate is to extract retry logic out of the electrum client library
+            // and instead handle inside this crate. However, the electrum client library is quite inflexible.
+            //
+            // Setting it to 0 causes some bugs, see: https://github.com/bitcoindevkit/rust-electrum-client/issues/186
+            .retry(1)
             .build();
 
         let client = Client::from_config(url, client_config).map_err(|e| {

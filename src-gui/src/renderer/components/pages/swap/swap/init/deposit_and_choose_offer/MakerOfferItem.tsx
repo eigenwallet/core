@@ -1,5 +1,5 @@
 import { Box, Button, Chip, Paper, Tooltip, Typography } from "@mui/material";
-import Avatar from "boring-avatars";
+import Jdenticon from "renderer/components/other/Jdenticon";
 import { QuoteWithAddress } from "models/tauriModel";
 import {
   MoneroSatsExchangeRate,
@@ -42,12 +42,7 @@ export default function MakerOfferItem({
           gap: 2,
         }}
       >
-        <Avatar
-          size={40}
-          name={peer_id}
-          variant="marble"
-          colors={["#92A1C6", "#146A7C", "#F0AB3D", "#C271B4", "#C20D90"]}
-        />
+        <Jdenticon value={peer_id} size={40} />
         <Box
           sx={{
             display: "flex",

@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "3.3.7"
+version = "3.4.2"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "XMR/BTC trustless atomic swaps."
@@ -78,7 +78,7 @@ regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
 rust_decimal_macros = "1"
-semver = "1.0"
+semver = { workspace = true }
 structopt = "0.3"
 swap-controller-api = { path = "../swap-controller-api" }
 swap-core = { path = "../swap-core" }
@@ -145,6 +145,7 @@ monero-harness = { path = "../monero-harness" }
 proptest = "1"
 serde_cbor = "0.11"
 serial_test = "3.1"
+swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
 tempfile = "3"
 testcontainers = "0.15"
 

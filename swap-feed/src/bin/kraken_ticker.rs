@@ -7,13 +7,13 @@ async fn main() -> Result<()> {
         tracing_subscriber::fmt().with_env_filter("debug").finish(),
     )?;
 
-    let price_ticker_ws_url = Url::parse("wss://ws.kraken.com")?;
-    let mut ticker =
-        swap_feed::kraken::connect(price_ticker_ws_url).context("Failed to connect to kraken")?;
+    let price_ticker_ws_url_kraken = Url::parse("wss://ws.kraken.com")?;
+    let mut ticker = swap_feed::kraken::connect(price_ticker_ws_url_kraken)
+        .context("Failed to connect to kraken")?;
 
     loop {
         match ticker.wait_for_next_update().await? {
-            Ok(update) => println!("Price update: {}", update.ask),
+            Ok(update) => println!("Price update: {}", update.1.ask),
             Err(e) => println!("Error: {e:#?}"),
         }
     }

@@ -21,3 +21,6 @@ swap-orchestrator/config.toml
 release-build.sh
 cn_macos
 libp2p-rendezvous-node/rendezvous-data
+rust-electrum-client/
+rust-libp2p/
+bdk/

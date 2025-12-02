@@ -40,21 +40,21 @@ pub struct ActiveConnectionsResponse {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum RendezvousConnectionStatus {
-    Disconnected,
-    Dialling,
     Connected,
+    Disconnected,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum RendezvousRegistrationStatus {
-    RegisterOnNextConnection,
-    Pending,
     Registered,
+    WillRegisterAfterDelay,
+    RegisterOnceConnected,
+    RequestInflight,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RegistrationStatusItem {
-    pub address: String,
+    pub address: Option<String>,
     pub connection: RendezvousConnectionStatus,
     pub registration: RendezvousRegistrationStatus,
 }

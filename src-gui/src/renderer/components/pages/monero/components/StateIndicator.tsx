@@ -1,7 +1,6 @@
-import { Box, darken, lighten, useTheme } from "@mui/material";
+import { Box, darken, lighten, useTheme, Theme } from "@mui/material";
 
-function getColor(colorName: string): string {
-  const theme = useTheme();
+function getColor(colorName: string, theme: Theme): string {
   switch (colorName) {
     case "primary":
       return theme.palette.primary.main;
@@ -23,7 +22,8 @@ export default function StateIndicator({
   color: string;
   pulsating: boolean;
 }) {
-  const mainShade = getColor(color);
+  const theme = useTheme();
+  const mainShade = getColor(color, theme);
   const darkShade = darken(mainShade, 0.4);
   const glowShade = lighten(mainShade, 0.4);
 

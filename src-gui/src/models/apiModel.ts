@@ -40,11 +40,6 @@ export type PrimitiveDateTimeString = [
   number, // Offset Second
 ];
 
-export interface Feedback {
-  id: string;
-  created_at: PrimitiveDateTimeString;
-}
-
 export interface Attachment {
   id: number;
   message_id: number;
@@ -60,11 +55,6 @@ export interface Message {
   content: string;
   created_at: PrimitiveDateTimeString;
   attachments?: Attachment[];
-}
-
-export interface MessageWithAttachments {
-  message: Message;
-  attachments: Attachment[];
 }
 
 // Define type for Attachment data in request body
