@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Significantly improve the rendering performance
+- ASB: Now also uses Bitfinex and KuCoin as a source of truth for XMR/BTC exchange rates. It is used to calculate the base price for quotes upon which the markup is then added. If one or two of the three exchanges is unreachable, it will fallback to the arithmetic average of the rate of the remaining available exchanges.
+- ASB: To protect against market manipulation if any of three rates from the exchanges differs from the arithmetic average of the others by 10%, the maker will refuse to make new quotes and refuse to initiate new swaps.
+- ASB: `price_ticker_ws_url` config item renamed to `price_ticker_ws_url_kraken`. Two new config items `price_ticker_ws_url_bitfinex` (defaults to `wss://api-pub.bitfinex.com/ws/2`, `price_ticker_rest_url_kucoin` (defaults to `https://api.kucoin.com/api/v1/bullet-public`)
+
 ## [3.4.2] - 2025-12-01
 
 ## [3.4.1] - 2025-12-01
@@ -43,10 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [3.3.2] - 2025-11-13
 
 - GUI + SWAP: Fix an issue where we would fail to connect to peers if we failed on the initial attempt because previous addresses were not cached properly.
-- ASB: `price_ticker_ws_url` config item renamed to `price_ticker_ws_url_kraken`
-- ASB: now also uses Bitfinex as an XMR/BTC price back-end, config item `price_ticker_ws_url_bitfinex` (default `"wss://api-pub.bitfinex.com/ws/2"`)
-- ASB: now also uses KuCoin as an XMR/BTC price back-end, config item `price_ticker_rest_url_kucoin` (default `"https://api.kucoin.com/api/v1/bullet-public"`)
-- ASB: exchange-based XMR/BTC price now an arithmetic average of Kraken, Bitfinex, and KuCoin results (if one or two are unavailable, the remaining ones are averaged)
 
 ## [3.3.1] - 2025-11-11
 
