@@ -60,8 +60,8 @@ pub struct Message1 {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_punish_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
-    /// The amount of Bitcoin that Bob will only receive in case of a refund 
-    /// _and_ if Alice decides to. Introduced in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// The amount of Bitcoin that Bob not get refunded unless Alice decides so.
+    /// Introduced in [#675](https://github.com/eigenwallet/core/pull/675) to combat spam.
     pub amnesty_amount: bitcoin::Amount,
 }
 
@@ -75,7 +75,12 @@ pub struct Message2 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message3 {
     pub tx_cancel_sig: bitcoin::Signature,
+    /// The following fields were reworked in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// Alice _may_ choose to commit to a full refund during the swap setup already, but doesn't
+    /// have to.
     pub tx_partial_refund_encsig: bitcoin::EncryptedSignature,
+    pub tx_full_refund_encsig: Option<bitcoin::EncryptedSignature>,
+    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
 }
 
 #[allow(non_snake_case)]

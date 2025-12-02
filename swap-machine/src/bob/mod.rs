@@ -342,18 +342,18 @@ impl State1 {
             self.tx_cancel_fee,
         )?;
 
-        // TODO: send and receive and verify _partial_ refund signature instead of full refund signature.
-        let tx_refund =
+        let tx_partial_refund =
             bitcoin::TxPartialRefund::new(&tx_cancel, &self.refund_address, self.A, self.b.public(), self.btc_amnesty_amount, self.tx_partial_refund_fee)?;
 
         bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)?;
         bitcoin::verify_encsig(
             self.A,
             bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
-            &tx_refund.digest(),
+            &tx_partial_refund.digest(),
             &msg.tx_partial_refund_encsig,
         )?;
 
+        let bob_refund_type = BobRefundType::from_possibly_full_refund_sig(msg.tx_partial_refund_encsig, msg.tx_full_refund_encsig);
         Ok(State2 {
             A: self.A,
             b: self.b,
@@ -369,8 +369,8 @@ impl State1 {
             punish_address: self.punish_address,
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: msg.tx_cancel_sig,
-            bob_refund_type: BobRefundType::from_partial_refund_sig(msg.tx_partial_refund_encsig),
-            tx_refund_amnesty_sig: compile_error!("TODO: Mechanism for sometimes sending this during swap setup, sometimes not"),
+            bob_refund_type,
+            tx_refund_amnesty_sig: msg.tx_refund_amnesty_sig,
             min_monero_confirmations: self.min_monero_confirmations,
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
@@ -981,6 +981,14 @@ impl State6 {
 }
 
 impl BobRefundType {
+    pub fn from_possibly_full_refund_sig(partial_refund_encsig: bitcoin::EncryptedSignature, full_refund_encsig: Option<bitcoin::EncryptedSignature>) -> Self {
+        if let Some(full_refund_encsig) = full_refund_encsig {
+            Self::Full { tx_partial_refund_encsig: partial_refund_encsig, tx_refund_encsig: full_refund_encsig }
+        } else {
+            Self::Partial { tx_partial_refund_encsig: partial_refund_encsig }
+        }
+    }
+    
     pub fn from_partial_refund_sig(partial_refund_encsig: bitcoin::EncryptedSignature) -> Self {
         Self::Partial { tx_partial_refund_encsig: partial_refund_encsig }
     }
