@@ -307,7 +307,7 @@ where
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
                 let max_buy = self.max_buy;
-                let latest_rate = self.latest_rate.latest_rate().map_err(anyhow::Error::from);
+                let latest_rate = self.latest_rate.latest_rate();
                 let env_config = self.env_config;
 
                 // We wrap the entire handshake in a timeout future
@@ -320,7 +320,7 @@ where
                         env_config,
                         min_buy,
                         max_buy,
-                        latest_rate,
+                        latest_rate.map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync + 'static>),
                     ),
                 );
 
@@ -457,7 +457,7 @@ async fn run_swap_setup(
     env_config: env::Config,
     min_buy: bitcoin::Amount,
     max_buy: bitcoin::Amount,
-    latest_rate: Result<swap_feed::Rate>,
+    latest_rate: Result<swap_feed::Rate, Box<dyn std::error::Error + Send + Sync + 'static>>,
 ) -> Result<(Uuid, State3)> {
     let request = swap_setup::read_cbor_message::<SpotPriceRequest>(&mut substream)
         .await
@@ -504,7 +504,7 @@ async fn run_swap_setup(
         }
 
         let rate =
-            latest_rate.map_err(|e| Error::LatestRateFetchFailed(Box::new(e)))?;
+            latest_rate.map_err(Error::LatestRateFetchFailed)?;
         let xmr = rate
             .sell_quote(btc)
             .map_err(Error::SellQuoteCalculationFailed)?;
@@ -545,7 +545,7 @@ async fn run_swap_setup(
     let state0 = State0::new(
         request.btc,
         xmr,
-        compile_error!("TODO: Implement system for alice to decide amnesty amount"),
+        todo!("TODO: Implement system for alice to decide amnesty amount"),
         env_config,
         wallet_snapshot.redeem_address,
         wallet_snapshot.punish_address,

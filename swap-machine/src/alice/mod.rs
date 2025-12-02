@@ -373,7 +373,7 @@ impl State2 {
         let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_refund.digest());
 
         let tx_cancel_sig = self.a.sign(tx_cancel.digest());
-        let (tx_full_refund_encsig, tx_refund_amnesty_sig) = compile_error!("TODO: Implement system for Alice to decide commiting to full refund");
+        let (tx_full_refund_encsig, tx_refund_amnesty_sig) = todo!("TODO: Implement system for Alice to decide commiting to full refund");
         Message3 {
             tx_cancel_sig,
             tx_partial_refund_encsig: tx_refund_encsig,

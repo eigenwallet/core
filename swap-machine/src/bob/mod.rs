@@ -303,6 +303,7 @@ impl State0 {
             tx_redeem_fee: msg.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             tx_punish_fee: msg.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
@@ -328,6 +329,7 @@ pub struct State1 {
     tx_lock: bitcoin::TxLock,
     min_monero_confirmations: u64,
     tx_partial_refund_fee: bitcoin::Amount,
+    tx_refund_amnesty_fee: bitcoin::Amount,
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
@@ -360,6 +362,23 @@ impl State1 {
             &tx_partial_refund.digest(),
             &msg.tx_partial_refund_encsig,
         )?;
+
+        // Verify the full refund signature if it is present
+        if let Some(tx_full_refund_encsig) = &msg.tx_full_refund_encsig {
+            let tx_full_refund = bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+            bitcoin::verify_encsig(
+                self.A,
+                bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
+                &tx_full_refund.digest(),
+                tx_full_refund_encsig,
+            )?;
+        }
+
+        // Verify the refund amnesty signature if it is present
+        if let Some(tx_refund_amnesty_sig) = &msg.tx_refund_amnesty_sig {
+            let tx_refund_amnesty = bitcoin::TxRefundAmnesty::new(&tx_partial_refund, &self.refund_address, self.tx_refund_amnesty_fee);
+            bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), tx_refund_amnesty_sig)?;
+        }
 
         let bob_refund_type = BobRefundType::from_possibly_full_refund_sig(msg.tx_partial_refund_encsig, msg.tx_full_refund_encsig);
         Ok(State2 {
