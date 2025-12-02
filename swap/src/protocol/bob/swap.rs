@@ -109,6 +109,12 @@ async fn next_state(
             let tx_refund_fee = bitcoin_wallet
                 .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
                 .await?;
+            let tx_partial_refund_fee = bitcoin_wallet.
+                // The actual amount of partial refund may be smaller than btc_amount,
+                // but at this point we don't know how much smaller. 
+                // We still use btc_amount to set an upper limit on the tx fee - 
+                // Even if this limit is higher than it would be given the actual amount.
+                estimate_fee(TxPartialRefund::weight(), Some(btc_amount)).await?;
             let tx_cancel_fee = bitcoin_wallet
                 .estimate_fee(TxCancel::weight(), Some(btc_amount))
                 .await?;
@@ -127,6 +133,7 @@ async fn next_state(
                     btc: btc_amount,
                     tx_lock_fee,
                     tx_refund_fee,
+                    tx_partial_refund_fee,
                     tx_cancel_fee,
                     bitcoin_refund_address: change_address,
                 })
