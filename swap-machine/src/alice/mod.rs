@@ -307,6 +307,7 @@ impl State1 {
             v: self.v,
             btc: self.btc,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -316,6 +317,7 @@ impl State1 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }
@@ -332,6 +334,7 @@ pub struct State2 {
     v: monero::PrivateViewKey,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: bitcoin::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -341,6 +344,7 @@ pub struct State2 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
+    tx_partial_refund_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -424,6 +428,7 @@ impl State2 {
             v: self.v,
             btc: self.btc,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -436,6 +441,7 @@ impl State2 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }
@@ -453,6 +459,7 @@ pub struct State3 {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc: bitcoin::Amount,
     pub xmr: monero::Amount,
+    pub btc_amnesty_amount: bitcoin::Amount,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
@@ -481,6 +488,8 @@ pub struct State3 {
     pub tx_punish_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
+    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub tx_partial_refund_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_cancel_fee: bitcoin::Amount,
 }
