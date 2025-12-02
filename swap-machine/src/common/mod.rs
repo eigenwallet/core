@@ -40,6 +40,8 @@ pub struct Message0 {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_partial_refund_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub tx_refund_amnesty_fee: bitcoin::Amount,
+    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_cancel_fee: bitcoin::Amount,
 }
 

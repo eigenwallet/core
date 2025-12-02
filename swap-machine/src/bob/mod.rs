@@ -183,6 +183,7 @@ pub struct State0 {
     refund_address: bitcoin::Address,
     min_monero_confirmations: u64,
     tx_partial_refund_fee: bitcoin::Amount,
+    tx_refund_amnesty_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
     tx_lock_fee: bitcoin::Amount,
@@ -200,6 +201,7 @@ impl State0 {
         refund_address: bitcoin::Address,
         min_monero_confirmations: u64,
         tx_partial_refund_fee: bitcoin::Amount,
+        tx_refund_amnesty_fee: bitcoin::Amount,
         tx_refund_fee: bitcoin::Amount,
         tx_cancel_fee: bitcoin::Amount,
         tx_lock_fee: bitcoin::Amount,
@@ -228,6 +230,7 @@ impl State0 {
             refund_address,
             min_monero_confirmations,
             tx_partial_refund_fee,
+            tx_refund_amnesty_fee,
             tx_refund_fee,
             tx_cancel_fee,
             tx_lock_fee,
@@ -245,6 +248,7 @@ impl State0 {
             refund_address: self.refund_address.clone(),
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         }
     }

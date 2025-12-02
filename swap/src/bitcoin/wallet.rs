@@ -3769,6 +3769,7 @@ mod swap_core_bitcoin_tests {
             spending_fee,
             spending_fee,
             spending_fee,
+            spending_fee,
             tx_lock_fee,
         );
 
@@ -3874,6 +3875,7 @@ mod swap_core_bitcoin_tests {
             PunishTimelock::new(config.bitcoin_punish_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
+            spending_fee,
             spending_fee,
             spending_fee,
             spending_fee,

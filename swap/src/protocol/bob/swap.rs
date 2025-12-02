@@ -106,19 +106,23 @@ async fn next_state(
             change_address,
             tx_lock_fee,
         } => {
-            let tx_refund_fee = bitcoin_wallet
-                .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
-                .await?;
-            let tx_partial_refund_fee = bitcoin_wallet.
-                // The actual amount of partial refund may be smaller than btc_amount,
-                // but at this point we don't know how much smaller. 
-                // We still use btc_amount to set an upper limit on the tx fee - 
-                // Even if this limit is higher than it would be given the actual amount.
-                estimate_fee(TxPartialRefund::weight(), Some(btc_amount)).await?;
             let tx_cancel_fee = bitcoin_wallet
                 .estimate_fee(TxCancel::weight(), Some(btc_amount))
                 .await?;
-
+            let tx_refund_fee = bitcoin_wallet
+                .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
+                .await?;
+            
+            // At this point we don't know how high btc_amnesty_amount is. 
+            // This means we don't know how large the amount of the partial refund and amnesty transactions will be.
+            // We therefore specify the same upper limit on tx fees as for the other transactions, even though
+            // the maximum fee percentage might be higher due to that.
+            let tx_partial_refund_fee = bitcoin_wallet.
+                estimate_fee(TxPartialRefund::weight(), Some(btc_amount)).await?;
+            let tx_refund_amnesty_fee = bitcoin_wallet
+                .estimate_fee(TxRefundAmnesty::weight(), Some(btc_amount))
+                .await?;
+                
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -134,6 +138,7 @@ async fn next_state(
                     tx_lock_fee,
                     tx_refund_fee,
                     tx_partial_refund_fee,
+                    tx_refund_amnesty_fee,
                     tx_cancel_fee,
                     bitcoin_refund_address: change_address,
                 })
