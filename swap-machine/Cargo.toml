@@ -22,7 +22,6 @@ swap-core = { path = "../swap-core" }
 swap-env = { path = "../swap-env" }
 swap-serde = { path = "../swap-serde" }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
 [lints]
