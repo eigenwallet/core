@@ -8,7 +8,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
-conquer-once = "0.4"
 curve25519-dalek = { workspace = true }
 ecdsa_fun = { workspace = true }
 libp2p = { workspace = true }
