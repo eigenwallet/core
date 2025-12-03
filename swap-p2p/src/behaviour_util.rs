@@ -1,8 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use futures::task::AtomicWaker;
 use libp2p::core::ConnectedPoint;
 use libp2p::Multiaddr;
 use libp2p::{
@@ -11,7 +14,7 @@ use libp2p::{
 };
 
 /// Used inside of a Behaviour to track connections to peers
-// TODO: Track inflight dial attempts
+// TODO: Add a method to register a async waker for changes
 pub struct ConnectionTracker {
     connections: HashMap<PeerId, HashSet<ConnectionId>>,
     inflight_dials: HashMap<PeerId, HashSet<ConnectionId>>,
@@ -39,7 +42,7 @@ impl ConnectionTracker {
             .unwrap_or(false)
     }
 
-    pub fn peers(&self) -> impl Iterator<Item = &PeerId> {
+    pub fn connected_peers(&self) -> impl Iterator<Item = &PeerId> {
         self.connections.keys()
     }
 
@@ -149,6 +152,13 @@ impl BackoffTracker {
         }
     }
 
+    /// Reset the backoff state for all peers.
+    pub fn reset_all(&mut self) {
+        for backoff in self.backoffs.values_mut() {
+            backoff.reset();
+        }
+    }
+
     /// Increments the backoff for the given peer and returns the new backoff
     pub fn increment(&mut self, peer: &PeerId) -> Duration {
         self.get(peer)
@@ -228,6 +238,39 @@ pub fn extract_semver_from_agent_str(agent_str: &str) -> Option<semver::Version>
     let version_str = version_str.split_whitespace().next()?;
     // Parse the version string
     semver::Version::parse(version_str).ok()
+}
+
+/// A simple trigger that can be activated and polled in a stream-like fashion.
+pub struct Trigger {
+    triggered: AtomicBool,
+    waker: AtomicWaker,
+}
+
+impl Trigger {
+    pub fn new() -> Self {
+        Self {
+            triggered: AtomicBool::new(false),
+            waker: AtomicWaker::new(),
+        }
+    }
+
+    /// Trigger the notification. The next call to `poll_next_unpin` will return `Ready`.
+    pub fn trigger(&self) {
+        self.triggered.store(true, Ordering::Release);
+        self.waker.wake();
+    }
+
+    /// Poll for a trigger. Returns `Ready(())` if triggered, `Pending` otherwise.
+    pub fn poll_next_unpin(&self, cx: &mut Context<'_>) -> Poll<()> {
+        // Register waker first, then check condition
+        self.waker.register(cx.waker());
+
+        if self.triggered.swap(false, Ordering::Acquire) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
 }
 
 #[cfg(test)]

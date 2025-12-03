@@ -1,4 +1,4 @@
-use crate::behaviour_util::{BackoffTracker, ConnectionTracker};
+use crate::behaviour_util::{BackoffTracker, ConnectionTracker, Trigger};
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use libp2p::core::Multiaddr;
@@ -41,6 +41,9 @@ pub struct Behaviour {
 
     /// A queue of events to be sent to the swarm.
     to_swarm: VecDeque<ToSwarm<Event, Void>>,
+
+    /// Used to trigger an immediate refresh/redial of all disconnected peers.
+    refresh: Trigger,
 }
 
 impl Behaviour {
@@ -57,7 +60,14 @@ impl Behaviour {
             ),
             to_swarm: VecDeque::new(),
             name,
+            refresh: Trigger::new(),
         }
+    }
+
+    /// Force an immediate refresh: clears all backoffs and schedules immediate
+    /// redials for all disconnected peers.
+    pub fn force_refresh(&mut self) {
+        self.refresh.trigger();
     }
 
     /// Adds a peer to the set of peers to track. Returns true if the peer was newly added.
@@ -67,7 +77,7 @@ impl Behaviour {
 
         // If the peer is newly added, schedule a dial immediately
         if newly_added {
-            self.schedule_redial(&peer, Duration::ZERO);
+            self.schedule_redial(&peer, Duration::ZERO, false);
 
             tracing::trace!("Started tracking peer");
         }
@@ -95,7 +105,7 @@ impl Behaviour {
 
         // If the peer is newly added, schedule a dial immediately
         if newly_added {
-            self.schedule_redial(&peer, Duration::ZERO);
+            self.schedule_redial(&peer, Duration::ZERO, false);
 
             tracing::trace!(
                 ?address,
@@ -116,10 +126,11 @@ impl Behaviour {
         &mut self,
         peer: &PeerId,
         override_next_dial_in: impl Into<Option<Duration>>,
+        replace: bool,
     ) -> bool {
         // We first check if there already is a pending scheduled redial
         // because want do not want to increment the backoff if there is
-        if self.to_dial.contains_key(peer) {
+        if self.to_dial.contains_key(peer) && !replace {
             return false;
         }
 
@@ -130,16 +141,12 @@ impl Behaviour {
             .into()
             .unwrap_or_else(|| self.backoff.increment(peer));
 
-        let did_queue_new_dial = self.to_dial.insert(
+        self.to_dial.replace(
             peer.clone(),
             Box::pin(async move {
                 tokio::time::sleep(next_dial_in).await;
             }),
         );
-
-        // We check if there is an entry before inserting a new one, so this should always be true
-        // TODO: We could make this a production assert if we want to be more strict
-        debug_assert!(did_queue_new_dial);
 
         self.to_swarm
             .push_back(ToSwarm::GenerateEvent(Event::ScheduledRedial {
@@ -251,12 +258,23 @@ impl NetworkBehaviour for Behaviour {
 
         // Schedule a redial if needed
         if let Some(peer) = peer_to_redial {
-            self.schedule_redial(&peer, None);
+            self.schedule_redial(&peer, None, false);
         }
     }
 
     #[tracing::instrument(level = "trace", name = "redial::poll", skip(self, cx), fields(redial_type = %self.name))]
     fn poll(&mut self, cx: &mut Context<'_>) -> std::task::Poll<ToSwarm<Self::ToSwarm, Void>> {
+        // Check if a refresh was requested
+        if self.refresh.poll_next_unpin(cx).is_ready() {
+            self.backoff.reset_all();
+
+            // Schedule immediate redials for all peers
+            // If we are already connected, the dial will be ignored by the swarm
+            for peer in self.peers.clone() {
+                self.schedule_redial(&peer, Duration::ZERO, true);
+            }
+        }
+
         // Check if we have any event to send to the swarm
         if let Some(event) = self.to_swarm.pop_front() {
             return Poll::Ready(event);

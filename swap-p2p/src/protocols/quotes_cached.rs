@@ -48,6 +48,12 @@ impl Behaviour {
         }
     }
 
+    /// Force an immediate refresh: clears all backoffs, triggers redials for
+    /// disconnected peers, and schedules immediate quote requests for connected peers.
+    pub fn force_refresh(&mut self) {
+        self.inner.force_refresh();
+    }
+
     fn emit_cached_quotes(&mut self) {
         // Attach the address we last connected to the peer at to the quote
         //
