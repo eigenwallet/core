@@ -222,6 +222,7 @@ mod crates {
 
     pub const OUR_CRATES: &[&str] = &[
         // Library crates
+        "bitcoin_wallet",
         "swap_p2p",
         "swap_env",
         "swap_core",
