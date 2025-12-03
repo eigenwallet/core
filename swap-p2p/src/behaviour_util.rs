@@ -43,7 +43,7 @@ impl ConnectionTracker {
     }
 
     pub fn connected_peers(&self) -> impl Iterator<Item = &PeerId> {
-        self.connections.keys()
+        self.connections.keys().filter(|peer_id| self.is_connected(peer_id))
     }
 
     /// Any behaviour that uses the ConnectionTracker MUST call this method on every [`NetworkBehaviour::on_swarm_event`]
