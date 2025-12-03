@@ -6675,9 +6675,7 @@ dependencies = [
  "hyper 1.7.0",
  "hyper-util",
  "monero",
- "monero-rpc 0.1.0",
  "rand 0.8.5",
- "regex",
  "reqwest 0.11.27",
  "rustls 0.21.12",
  "serde",
@@ -6686,16 +6684,11 @@ dependencies = [
  "swap-serde",
  "tokio",
  "tokio-rustls 0.26.4",
- "tokio-test",
  "tor-rtcompat",
- "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
  "typeshare",
- "url",
- "uuid",
- "webpki-roots 1.0.4",
 ]
 
 [[package]]
