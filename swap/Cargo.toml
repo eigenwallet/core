@@ -9,13 +9,12 @@ description = "XMR/BTC trustless atomic swaps."
 name = "swap"
 
 [features]
-tauri = ["dep:tauri", "dep:dfx-swiss-sdk"]
+tauri = ["dep:tauri"]
 
 [dependencies]
 # Bitcoin Dev Kit
 bdk = { workspace = true }
 bdk_chain = { workspace = true }
-bdk_core = { workspace = true }
 bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }
 bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
 bitcoin = { workspace = true }
@@ -38,36 +37,21 @@ thiserror = { workspace = true }
 
 # Crypto / Decoding / Encoding
 base64 = "0.22"
-big-bytes = "1"
 curve25519-dalek = { workspace = true }
-data-encoding = "2.6"
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
-ed25519-dalek = "1"
-hex = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
-sha2 = { workspace = true }
-sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
 
 # Randomness
 rand = { workspace = true }
-rand_chacha = { workspace = true }
-
-# CLI
-atty = "0.2"
-comfy-table = "7.1"
-dialoguer = "0.11"
 
 # Other stuff
 bmrng = { workspace = true }
 config = { version = "0.14", default-features = false, features = ["toml"] }
-conquer-once = "0.4"
 derive_builder = "0.20.2"
-dfx-swiss-sdk = { workspace = true, optional = true }
 electrum-pool = { path = "../electrum-pool" }
 jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
 monero = { workspace = true }
-monero-rpc = { path = "../monero-rpc" }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
@@ -95,21 +79,15 @@ throttle = { path = "../throttle" }
 time = "0.3"
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
-void = "1"
 zeroize = "1.8.1"
 
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
-tokio-tungstenite = { version = "0.15", features = ["rustls-tls"] }
 tokio-util = { workspace = true }
 
 # Async
-async-compression = { version = "0.3", features = ["bzip2", "tokio"] }
 async-trait = { workspace = true }
 futures = { workspace = true }
-
-tower = { version = "0.4.13", features = ["full"] }
-tower-http = { version = "0.3.4", features = ["full"] }
 
 # Tracing
 tracing = { workspace = true }
@@ -118,7 +96,6 @@ tracing-subscriber = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
-serde_cbor = "0.11"
 serde_json = { workspace = true }
 serde_with = { version = "1", features = ["macros"] }
 strum = { workspace = true, features = ["derive"] }
@@ -131,20 +108,12 @@ monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxid
 # Database
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
-[target.'cfg(not(windows))'.dependencies]
-tokio-tar = "0.3"
-
-[target.'cfg(windows)'.dependencies]
-zip = "0.5"
-
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
 get-port = "3"
 mockito = "1.4"
 monero-harness = { path = "../monero-harness" }
 proptest = "1"
-serde_cbor = "0.11"
-serial_test = "3.1"
 swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
 tempfile = "3"
 testcontainers = "0.15"
