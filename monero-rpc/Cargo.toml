@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-hex = "0.4"
+data-encoding = { workspace = true }
 jsonrpc_client = { version = "0.7", features = ["reqwest"] }
 monero = { workspace = true }
 monero-epee-bin-serde = "1"

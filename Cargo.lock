@@ -6612,7 +6612,7 @@ name = "monero-rpc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "hex",
+ "data-encoding",
  "jsonrpc_client",
  "monero",
  "monero-epee-bin-serde",

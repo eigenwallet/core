@@ -17,7 +17,7 @@ tokio = { workspace = true }
 arti-client = { workspace = true, features = ["tokio", "rustls", "onion-service-client", "static-sqlite"] }
 libp2p = { workspace = true, features = ["tokio", "tcp", "tls"] }
 
-data-encoding = { version = "2.6.0" }
+data-encoding = { workspace = true }
 safelog = { workspace = true }
 tor-cell = { workspace = true, optional = true }
 tor-hsservice = { workspace = true, optional = true }
