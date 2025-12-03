@@ -143,8 +143,9 @@ pub struct EventLoop {
     cached_quotes_sender: tokio::sync::watch::Sender<Vec<QuoteWithAddress>>,
     tauri_handle: Option<TauriHandle>,
 
-    /// Channel for triggering a force refresh of cached quotes
-    force_refresh_requests: bmrng::unbounded::UnboundedRequestReceiverStream<(), ()>,
+    /// Channel for triggering a refresh of most backoffs. It will do things like redial disconnected peers,
+    /// re-fetching quotes, rediscovering peers at rendezvous nodes, etc.
+    refresh_requests: bmrng::unbounded::UnboundedRequestReceiverStream<(), ()>,
 }
 
 impl EventLoop {
@@ -166,7 +167,7 @@ impl EventLoop {
         let (queued_transfer_proof_sender, queued_transfer_proof_receiver) =
             bmrng::unbounded::channel();
         let (add_peer_address_sender, add_peer_address_receiver) = bmrng::unbounded::channel();
-        let (force_refresh_sender, force_refresh_receiver) = bmrng::unbounded::channel();
+        let (refresh_sender, refresh_receiver) = bmrng::unbounded::channel();
 
         // TODO: We should probably differentiate between empty and none
         let (cached_quotes_sender, cached_quotes_receiver) =
@@ -189,7 +190,7 @@ impl EventLoop {
             add_peer_address_requests: add_peer_address_receiver.into(),
             cached_quotes_sender,
             tauri_handle,
-            force_refresh_requests: force_refresh_receiver.into(),
+            refresh_requests: refresh_receiver.into(),
         };
 
         let handle = EventLoopHandle {
@@ -199,7 +200,7 @@ impl EventLoop {
             quote_sender,
             queued_transfer_proof_sender,
             add_peer_address_sender,
-            force_refresh_sender,
+            refresh_sender,
             cached_quotes_receiver,
         };
 
@@ -553,12 +554,12 @@ impl EventLoop {
                     let _ = responder.respond(());
                 },
 
-                Some(((), responder)) = self.force_refresh_requests.next().fuse() => {
-                    tracing::trace!("Resetting backoffs");
+                Some(((), responder)) = self.refresh_requests.next().fuse() => {
+                    tracing::trace!("Refreshing");
 
                     // Instruct behaviours
-                    self.swarm.behaviour_mut().quotes.force_refresh();
-                    self.swarm.behaviour_mut().discovery.force_refresh();
+                    self.swarm.behaviour_mut().quotes.refresh();
+                    self.swarm.behaviour_mut().discovery.refresh();
 
                     let _ = responder.respond(());
                 },
@@ -629,8 +630,8 @@ pub struct EventLoopHandle {
     add_peer_address_sender:
         bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
 
-    /// Channel for triggering a force refresh of cached quotes
-    force_refresh_sender: bmrng::unbounded::UnboundedRequestSender<(), ()>,
+    /// Channel for triggering a refresh of cached quotes
+    refresh_sender: bmrng::unbounded::UnboundedRequestSender<(), ()>,
 
     // TODO: Extract the Vec<_> into its own struct (QuotesBatch?)
     cached_quotes_receiver: tokio::sync::watch::Receiver<Vec<QuoteWithAddress>>,
@@ -641,12 +642,14 @@ impl EventLoopHandle {
         self.cached_quotes_receiver.clone()
     }
 
-    /// Triggers a force refresh of cached quotes
-    pub async fn force_refresh(&mut self) -> Result<()> {
-        self.force_refresh_sender
+    /// Clears all backoffs
+    /// Redials all disconnected peers
+    /// Fetches new quotes from all peers as soon as we are connected to them
+    pub async fn refresh(&mut self) -> Result<()> {
+        self.refresh_sender
             .send_receive(())
             .await
-            .context("Failed to send force refresh request to event loop")?;
+            .context("Failed to send refresh request to event loop")?;
         Ok(())
     }
 

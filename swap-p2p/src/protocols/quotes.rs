@@ -78,15 +78,16 @@ impl Behaviour {
         }
     }
 
-    /// Force an immediate refresh: clears all backoffs, triggers redials for
-    /// disconnected peers, and schedules immediate quote requests for connected peers.
-    pub fn force_refresh(&mut self) {
+    /// Clears all backoffs
+    /// Redials all disconnected peers
+    /// Fetches new quotes from all peers as soon as we are connected to them
+    pub fn refresh(&mut self) {
         self.refresh.trigger();
     }
 
     fn handle_refresh(&mut self) {
         // Reset the inner redial behaviour
-        self.inner.redial.force_refresh();
+        self.inner.redial.refresh();
 
         // Reset the backoff trackers for all peers
         self.backoff.reset_all();

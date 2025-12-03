@@ -64,9 +64,9 @@ impl Behaviour {
         }
     }
 
-    /// Force an immediate refresh: clears all backoffs and schedules immediate
-    /// redials for all disconnected peers.
-    pub fn force_refresh(&mut self) {
+    /// Clears all backoffs
+    /// Redials all disconnected peers
+    pub fn refresh(&mut self) {
         self.refresh.trigger();
     }
 

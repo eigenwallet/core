@@ -1867,7 +1867,7 @@ impl Request for RefreshP2PArgs {
 
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         let mut event_loop_handle = ctx.try_get_event_loop_handle().await?;
-        event_loop_handle.force_refresh().await?;
+        event_loop_handle.refresh().await?;
         Ok(RefreshP2PResponse { success: true })
     }
 }

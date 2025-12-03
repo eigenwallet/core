@@ -103,9 +103,10 @@ impl Behaviour {
         }
     }
 
-    /// Force an immediate refresh: clears all backoffs and schedules immediate
-    /// discovery requests for all rendezvous nodes.
-    pub fn force_refresh(&mut self) {
+    /// Clears all backoffs
+    /// Redials all disconnected rendezvous nodes
+    /// Discovers new peers at all rendezvous nodes as soon as we are connected to them
+    pub fn refresh(&mut self) {
         self.refresh.trigger();
     }
 }
