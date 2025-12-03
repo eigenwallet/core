@@ -136,10 +136,9 @@ impl Behaviour {
 
         // How long should we wait before we redial the peer?
         // If an override is provided, use that, otherwise use the backoff
-        // TODO: Instead only increment on errors
         let next_dial_in = override_next_dial_in
             .into()
-            .unwrap_or_else(|| self.backoff.increment(peer));
+            .unwrap_or_else(|| self.backoff.get(peer).current_interval);
 
         self.to_dial.replace(
             peer.clone(),
@@ -194,6 +193,7 @@ impl NetworkBehaviour for Behaviour {
 
         let peer_to_redial = match event {
             // Check if we discovered a new address for some peer
+            // TODO: Use the AddressTracker here instead
             FromSwarm::NewExternalAddrOfPeer(event) => {
                 // TOOD: Ensure that if the address contains a peer id it matches the peer id in the event
                 if self.insert_address(&event.peer_id, event.addr.clone()) {
@@ -202,11 +202,7 @@ impl NetworkBehaviour for Behaviour {
 
                 None
             }
-            // Check if the event was for either:
-            // - a failed dial
-            // - a closed connection
-            //
-            // We will then schedule a redial for the peer. We only do this if we are not already connected to the peer.
+            // We got disconnected from a peer, so we need to redial.
             FromSwarm::ConnectionClosed(event)
                 if self.peers.contains(&event.peer_id)
                     && !self.connections.is_connected(&event.peer_id) =>
@@ -242,18 +238,12 @@ impl NetworkBehaviour for Behaviour {
             _ => None,
         };
 
-        // Check if the event was for a successful connection
-        // We will then reset the backoff state for the peer
-        let peer_to_reset = match event {
+        // If we successfully connected to a peer, reset the backoff state for the peer
+        match event {
             FromSwarm::ConnectionEstablished(e) if self.peers.contains(&e.peer_id) => {
-                Some(e.peer_id)
+                self.backoff.reset(&e.peer_id);
             }
-            _ => None,
-        };
-
-        // Reset the backoff state for the peer if needed
-        if let Some(peer) = peer_to_reset {
-            self.backoff.reset(&peer);
+            _ => {},
         }
 
         // Schedule a redial if needed
@@ -283,8 +273,11 @@ impl NetworkBehaviour for Behaviour {
         // Check if any peer's sleep timer has completed
         // If it has, dial that peer
         if let Poll::Ready(Some((peer, _))) = self.to_dial.poll_next_unpin(cx) {
+            // TODO: We could check if we are already connected and then swallow the dial?
             return Poll::Ready(ToSwarm::Dial {
                 opts: DialOpts::peer_id(peer)
+                    // Important: We must use this specific DialCondition here!
+                    // Otherwise, the entire logic of this behaviour will break!
                     .condition(PeerCondition::DisconnectedAndNotDialing)
                     .build(),
             });
@@ -356,8 +349,6 @@ impl NetworkBehaviour for Behaviour {
             .get(&peer_id)
             .map(|addrs| addrs.iter().cloned().collect())
             .unwrap_or_default();
-
-        // tracing::trace!(peer = %peer_id, contributed_addresses = ?addresses, "Contributing our cached addresses for a peer to the dial attempt");
 
         Ok(addresses)
     }
