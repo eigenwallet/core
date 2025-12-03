@@ -67,6 +67,10 @@ pub async fn cancel(
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefundPublished(state6) => state6,
         BobState::BtcEarlyRefundPublished(state6) => state6,
+        BobState::BtcPartialRefundPublished(state6) => state6,
+        BobState::BtcPartiallyRefunded(state6) => state6,
+        BobState::BtcAmnestyConfirmed(state6) => state6,
+        BobState::BtcAmnestyPublished(state6) => state6,
 
         BobState::Started { .. }
         | BobState::BtcRedeemed(_)
@@ -170,6 +174,10 @@ pub async fn refund(
         BobState::BtcRefunded(state6) => state6,
         BobState::BtcRefundPublished(state6) => state6,
         BobState::BtcEarlyRefundPublished(state6) => state6,
+        BobState::BtcPartialRefundPublished(state6) => state6,
+        BobState::BtcPartiallyRefunded(state6) => state6,
+        BobState::BtcAmnestyPublished(state6) => state6,
+        BobState::BtcAmnestyConfirmed(state6) => state6,
         BobState::Started { .. }
         | BobState::SwapSetupCompleted(_)
         | BobState::BtcRedeemed(_)

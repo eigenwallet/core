@@ -1052,6 +1052,10 @@ async fn next_state(
         }
         // TODO: Emit a Tauri event here
         BobState::BtcEarlyRefunded(state) => BobState::BtcEarlyRefunded(state),
+        BobState::BtcPartialRefundPublished(state)
+        | BobState::BtcPartiallyRefunded(state)
+        | BobState::BtcAmnestyPublished(state)
+        | BobState::BtcAmnestyConfirmed(state) => todo!(),
         BobState::SafelyAborted => BobState::SafelyAborted,
         BobState::XmrRedeemed { tx_lock_id } => {
             event_emitter.emit_swap_progress_event(
