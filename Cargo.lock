@@ -6685,7 +6685,6 @@ name = "monero-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "futures",
  "monero",
  "monero-rpc 0.1.0",
  "monero-sys",
@@ -9053,7 +9052,6 @@ dependencies = [
  "anyhow",
  "arti-client",
  "atty",
- "backoff",
  "futures",
  "libp2p",
  "libp2p-tor",
@@ -13974,10 +13972,7 @@ dependencies = [
 name = "unstoppableswap-gui-rs"
 version = "3.4.2"
 dependencies = [
- "anyhow",
  "dfx-swiss-sdk",
- "libp2p",
- "monero-rpc-pool",
  "rustls 0.23.35",
  "serde",
  "serde_json",
@@ -13997,7 +13992,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "uuid",
  "zip 4.6.1",
 ]
 
