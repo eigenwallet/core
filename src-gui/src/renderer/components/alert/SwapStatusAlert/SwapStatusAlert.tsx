@@ -247,11 +247,7 @@ export default function SwapStatusAlert({
   swap: GetSwapInfoResponseExt | null;
   onlyShowIfUnusualAmountOfTimeHasPassed?: boolean;
 }) {
-<<<<<<< HEAD
   const swapId = swap?.swap_id ?? null;
-=======
-  const swapId = swap?.swap_id ?? "";
->>>>>>> b539b31b (fix react bug nullish check)
   const timelock = useAppSelector(selectSwapTimelock(swapId));
   const isRunning = useIsSpecificSwapRunning(swapId);
 
@@ -296,14 +292,11 @@ export default function SwapStatusAlert({
           )
         ) : (
           <>
-<<<<<<< HEAD
             Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
-=======
-            Swap <TruncatedText>{swapId}</TruncatedText> is not running
->>>>>>> b539b31b (fix react bug nullish check)
           </>
-        )}
-      </AlertTitle>
+        )
+        }
+      </AlertTitle >
       <Box
         sx={{
           display: "flex",
@@ -314,6 +307,6 @@ export default function SwapStatusAlert({
         <StateAlert swap={swap} timelock={timelock} isRunning={isRunning} />
         {timelock && <TimelockTimeline swap={swap} timelock={timelock} />}
       </Box>
-    </Alert>
+    </Alert >
   );
 }
