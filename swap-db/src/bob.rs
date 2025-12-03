@@ -7,7 +7,6 @@ use swap_machine::bob::BobState;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Bob {
     Started {
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_amount: bitcoin::Amount,
         #[serde(with = "swap_serde::bitcoin::address_serde")]
         change_address: bitcoin::Address,

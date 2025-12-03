@@ -43,7 +43,6 @@ pub struct BlockchainNetwork {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpotPriceRequest {
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc: bitcoin::Amount,
     pub blockchain_network: BlockchainNetwork,
 }
@@ -58,19 +57,14 @@ pub enum SpotPriceResponse {
 pub enum SpotPriceError {
     NoSwapsAccepted,
     AmountBelowMinimum {
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         min: bitcoin::Amount,
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         buy: bitcoin::Amount,
     },
     AmountAboveMaximum {
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         max: bitcoin::Amount,
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         buy: bitcoin::Amount,
     },
     BalanceTooLow {
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         buy: bitcoin::Amount,
     },
     BlockchainNetworkMismatch {

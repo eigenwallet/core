@@ -274,8 +274,8 @@ pub struct State1 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
-    tx_partial_refund_fee: bitcoin::Amount,
-    tx_refund_amnesty_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -460,7 +460,6 @@ pub struct State3 {
     S_b_monero: monero::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     pub v: monero::PrivateViewKey,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc: bitcoin::Amount,
     pub xmr: monero::Amount,
     pub btc_amnesty_amount: bitcoin::Amount,
@@ -486,15 +485,11 @@ pub struct State3 {
     /// to wait for the timelock to expire.
     #[serde(default)]
     tx_early_refund_sig_bob: Option<swap_core::bitcoin::Signature>,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_punish_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
-    pub tx_partial_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub tx_partial_refund_fee: Option<bitcoin::Amount>,
+    pub tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     pub tx_cancel_fee: bitcoin::Amount,
 }
 

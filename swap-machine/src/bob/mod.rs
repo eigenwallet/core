@@ -26,7 +26,6 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum BobState {
     Started {
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_amount: bitcoin::Amount,
         tx_lock_fee: bitcoin::Amount,
         #[serde(with = "address_serde")]
@@ -436,14 +435,12 @@ pub struct State2 {
     /// This signature is voluntarily revealed by alice.
     tx_refund_amnesty_sig: Option<Signature>,
     min_monero_confirmations: u64,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_punish_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_cancel_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
 }
 
 impl State2 {
@@ -534,11 +531,10 @@ pub struct State3 {
     /// This signature is voluntarily revealed by alice.
     tx_refund_amnesty_sig: Option<Signature>,
     min_monero_confirmations: u64,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -681,11 +677,10 @@ pub struct State4 {
     tx_refund_amnesty_sig: Option<Signature>,
     monero_wallet_restore_blockheight: BlockHeight,
     lock_transfer_proof: TransferProof,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -861,10 +856,10 @@ pub struct State6 {
     /// It allows Bob to retrieve the refund fee introduced in the PR.
     /// This signature is voluntarily revealed by alice.
     tx_refund_amnesty_sig: Option<Signature>,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_cancel_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
 }
 
 impl State6 {

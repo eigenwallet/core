@@ -61,10 +61,8 @@ pub struct ContextStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LockBitcoinDetails {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_lock_amount: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_network_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
     pub xmr_receive_amount: monero::Amount,
@@ -79,7 +77,6 @@ pub struct SelectMakerDetails {
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_amount_to_swap: bitcoin::Amount,
     pub maker: QuoteWithAddress,
 }
@@ -888,16 +885,13 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         deposit_address: bitcoin::Address,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         max_giveable: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         min_bitcoin_lock_tx_fee: bitcoin::Amount,
         known_quotes: Vec<QuoteWithAddress>,
     },
     SwapSetupInflight {
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_lock_amount: bitcoin::Amount,
     },
     RetrievingMoneroBlockheight,
