@@ -11381,7 +11381,6 @@ dependencies = [
  "bitcoin 0.32.7",
  "ecdsa_fun",
  "proptest",
- "tokio",
 ]
 
 [[package]]

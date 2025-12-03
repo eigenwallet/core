@@ -7,7 +7,6 @@ edition = "2024"
 bitcoin = { workspace = true }
 ecdsa_fun = { workspace = true }
 proptest = "1"
-tokio = { workspace = true }
 
 [lints]
 workspace = true
