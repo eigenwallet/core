@@ -44,6 +44,7 @@ pub enum Bob {
     BtcCancelled(bob::State6),
     BtcRefundPublished(bob::State6),
     BtcEarlyRefundPublished(bob::State6),
+    BtcPartialRefundPublished(bob::State6),
     BtcPartiallyRefunded(bob::State6),
     BtcAmnestyPublished(bob::State6),
     Done(BobEndState),
@@ -103,6 +104,7 @@ impl From<BobState> for Bob {
             BobState::BtcCancelled(state6) => Bob::BtcCancelled(state6),
             BobState::BtcRefundPublished(state6) => Bob::BtcRefundPublished(state6),
             BobState::BtcEarlyRefundPublished(state6) => Bob::BtcEarlyRefundPublished(state6),
+            BobState::BtcPartialRefundPublished(state6) => Bob::BtcPartialRefundPublished(state6),
             BobState::BtcPunished { state, tx_lock_id } => Bob::BtcPunished { state, tx_lock_id },
             BobState::BtcRefunded(state6) => Bob::Done(BobEndState::BtcRefunded(Box::new(state6))),
             BobState::XmrRedeemed { tx_lock_id } => {
@@ -165,6 +167,7 @@ impl From<Bob> for BobState {
             Bob::CancelTimelockExpired(state6) => BobState::CancelTimelockExpired(state6),
             Bob::BtcCancelled(state6) => BobState::BtcCancelled(state6),
             Bob::BtcRefundPublished(state6) => BobState::BtcRefundPublished(state6),
+            Bob::BtcPartialRefundPublished(state6) => BobState::BtcPartialRefundPublished(state6),
             Bob::BtcPartiallyRefunded(state6) => BobState::BtcPartiallyRefunded(state6),
             Bob::BtcAmnestyPublished(state6) => BobState::BtcAmnestyPublished(state6),
             Bob::BtcEarlyRefundPublished(state6) => BobState::BtcEarlyRefundPublished(state6),
@@ -195,6 +198,9 @@ impl fmt::Display for Bob {
             Bob::BtcCancelled(_) => f.write_str("Bitcoin refundable"),
             Bob::BtcRefundPublished { .. } => f.write_str("Bitcoin refund published"),
             Bob::BtcEarlyRefundPublished { .. } => f.write_str("Bitcoin early refund published"),
+            Bob::BtcPartialRefundPublished { .. } => {
+                f.write_str("Bitcoin partially refund published")
+            }
             Bob::BtcRedeemed(_) => f.write_str("Monero redeemable"),
             Bob::Done(end_state) => write!(f, "Done: {}", end_state),
             Bob::EncSigSent { .. } => f.write_str("Encrypted signature sent"),

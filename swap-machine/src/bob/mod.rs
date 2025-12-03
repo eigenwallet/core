@@ -53,6 +53,7 @@ pub enum BobState {
     BtcCancelled(State6),
     BtcRefundPublished(State6),
     BtcEarlyRefundPublished(State6),
+    BtcPartialRefundPublished(State6),
     BtcRefunded(State6),
     BtcEarlyRefunded(State6),
     BtcPartiallyRefunded(State6),
@@ -115,6 +116,9 @@ impl fmt::Display for BobState {
             BobState::BtcCancelled(..) => write!(f, "btc is cancelled"),
             BobState::BtcRefundPublished { .. } => write!(f, "btc refund is published"),
             BobState::BtcEarlyRefundPublished { .. } => write!(f, "btc early refund is published"),
+            BobState::BtcPartialRefundPublished { .. } => {
+                write!(f, "btc partially refund is published")
+            }
             BobState::BtcRefunded(..) => write!(f, "btc is refunded"),
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),
             BobState::BtcPunished { .. } => write!(f, "btc is punished"),
@@ -150,6 +154,7 @@ impl BobState {
             | BobState::BtcCancelled(state)
             | BobState::BtcRefundPublished(state)
             | BobState::BtcEarlyRefundPublished(state)
+            | BobState::BtcPartialRefundPublished(state)
             | BobState::BtcPartiallyRefunded(state)
             | BobState::BtcAmnestyPublished(state)
             | BobState::BtcAmnestyConfirmed(state) => {
