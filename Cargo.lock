@@ -10944,7 +10944,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "url",
  "uuid",
  "vergen 8.3.2",

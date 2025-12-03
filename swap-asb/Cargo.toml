@@ -30,7 +30,6 @@ swap-serde = { path = "../swap-serde" }
 # Async
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 comfy-table = "7.1"
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
