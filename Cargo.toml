@@ -57,7 +57,6 @@ anyhow = "1"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
 bmrng = "0.5.2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
-hex = "0.4"
 jsonrpsee = { version = "0.25", default-features = false }
 libp2p = { version = "0.53.2" }
 monero = { version = "0.12", features = ["serde_support"] }

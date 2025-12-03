@@ -11124,7 +11124,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
- "hex",
+ "data-encoding",
  "libp2p",
  "monero",
  "serde",
