@@ -55,6 +55,9 @@ pub enum BobState {
     BtcEarlyRefundPublished(State6),
     BtcRefunded(State6),
     BtcEarlyRefunded(State6),
+    BtcPartiallyRefunded(State6),
+    BtcAmnestyPublished(State6),
+    BtcAmnestyConfirmed(State6),
     XmrRedeemed {
         tx_lock_id: bitcoin::Txid,
     },
@@ -116,6 +119,9 @@ impl fmt::Display for BobState {
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),
             BobState::BtcPunished { .. } => write!(f, "btc is punished"),
             BobState::BtcEarlyRefunded { .. } => write!(f, "btc is early refunded"),
+            BobState::BtcPartiallyRefunded { .. } => write!(f, "btc is partially refunded"),
+            BobState::BtcAmnestyPublished { .. } => write!(f, "btc amnesty is published"),
+            BobState::BtcAmnestyConfirmed { .. } => write!(f, "btc amnesty is confirmed"),
             BobState::SafelyAborted => write!(f, "safely aborted"),
         }
     }
@@ -143,7 +149,10 @@ impl BobState {
             BobState::CancelTimelockExpired(state)
             | BobState::BtcCancelled(state)
             | BobState::BtcRefundPublished(state)
-            | BobState::BtcEarlyRefundPublished(state) => {
+            | BobState::BtcEarlyRefundPublished(state)
+            | BobState::BtcPartiallyRefunded(state)
+            | BobState::BtcAmnestyPublished(state)
+            | BobState::BtcAmnestyConfirmed(state) => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::BtcPunished { .. } => Some(ExpiredTimelocks::Punish),
