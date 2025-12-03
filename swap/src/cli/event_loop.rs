@@ -555,8 +555,6 @@ impl EventLoop {
                 },
 
                 Some(((), responder)) = self.refresh_requests.next().fuse() => {
-                    tracing::trace!("Refreshing");
-
                     // Instruct behaviours
                     self.swarm.behaviour_mut().quotes.refresh();
                     self.swarm.behaviour_mut().discovery.refresh();

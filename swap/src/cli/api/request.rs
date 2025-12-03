@@ -1858,9 +1858,7 @@ pub struct RefreshP2PArgs;
 
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RefreshP2PResponse {
-    pub success: bool,
-}
+pub struct RefreshP2PResponse {}
 
 impl Request for RefreshP2PArgs {
     type Response = RefreshP2PResponse;
@@ -1868,6 +1866,6 @@ impl Request for RefreshP2PArgs {
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         let mut event_loop_handle = ctx.try_get_event_loop_handle().await?;
         event_loop_handle.refresh().await?;
-        Ok(RefreshP2PResponse { success: true })
+        Ok(RefreshP2PResponse {})
     }
 }
