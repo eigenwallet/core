@@ -19,7 +19,6 @@ url = { workspace = true }
 uuid = { workspace = true }
 
 # Our crates
-swap-serde = { path = "../swap-serde" }
 throttle = { path = "../throttle" }
 
 [build-dependencies]
@@ -35,7 +34,6 @@ futures = { workspace = true }
 quickcheck = "1.0"
 quickcheck_macros = "1.0"
 tempfile = "3.19.1"
-testcontainers = "0.15"
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
