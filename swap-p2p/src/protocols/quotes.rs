@@ -104,7 +104,7 @@ impl Behaviour {
         // Because once we connect to a new peer, we will schedule this in `on_swarm_event` handler.
         let connected_peers: Vec<_> = self.connection_tracker.connected_peers().cloned().collect();
         for peer in connected_peers {
-            self.schedule_quote_request_with_backoff(peer);
+            self.schedule_quote_request_after(peer, Duration::ZERO);
         }
     }
 
