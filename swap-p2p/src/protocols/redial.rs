@@ -207,8 +207,11 @@ impl NetworkBehaviour for Behaviour {
                 if self.peers.contains(&event.peer_id)
                     && !self.connections.is_connected(&event.peer_id) =>
             {
-                // TODO: Do we want to increment the backoff here on closed connections?
                 tracing::trace!(peer = %event.peer_id, "Connection closed. We will schedule a redial for this peer.");
+
+                // Increment the backoff for the peer because we lost the connection.
+                // This prevents tight loops if the connection is unstable (flapping).
+                self.backoff.increment(&event.peer_id);
 
                 Some(event.peer_id)
             }

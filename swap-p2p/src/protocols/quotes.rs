@@ -95,8 +95,9 @@ impl Behaviour {
         // Forget what peers told us about supporting the protocol
         self.does_not_support.clear();
 
-        // Clear pending timeouts
+        // Clear all inflight quote requests
         self.to_request.clear();
+        self.to_dispatch.clear();
 
         // Schedule immediate quote requests for all connected peers
         // Why are we only doing this for connected peers?
