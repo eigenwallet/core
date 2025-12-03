@@ -1,12 +1,12 @@
 use crate::out_event;
 use crate::protocols::swap_setup::{
-    protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse,
+    BlockchainNetwork, SpotPriceError, SpotPriceResponse, protocol,
 };
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
-use futures::future::{BoxFuture, OptionFuture};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
+use futures::future::{BoxFuture, OptionFuture};
 use libp2p::core::upgrade;
 use libp2p::swarm::behaviour::ConnectionEstablished;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
@@ -26,7 +26,7 @@ use swap_machine::bob::{State0, State2};
 use swap_machine::common::{Message1, Message3};
 use uuid::Uuid;
 
-use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};
+use super::{SpotPriceRequest, read_cbor_message, write_cbor_message};
 
 #[allow(missing_debug_implementations)]
 pub struct Behaviour {
@@ -537,7 +537,6 @@ async fn run_swap_setup(
         new_swap_request.tx_refund_fee,
         new_swap_request.tx_cancel_fee,
         new_swap_request.tx_lock_fee,
-
     );
 
     tracing::trace!(
@@ -545,9 +544,14 @@ async fn run_swap_setup(
         "Transitioned into state0 during swap setup",
     );
 
-    write_cbor_message(&mut substream, state0.next_message())
-        .await
-        .context("Failed to send state0 message to Alice")?;
+    write_cbor_message(
+        &mut substream,
+        state0
+            .next_message()
+            .context("Couldn't generate Message0")?,
+    )
+    .await
+    .context("Failed to send state0 message to Alice")?;
     let message1 = read_cbor_message::<Message1>(&mut substream)
         .await
         .context("Failed to read message1 from Alice")?;
@@ -620,10 +624,14 @@ pub enum Error {
         max: bitcoin::Amount,
         buy: bitcoin::Amount,
     },
-    #[error("Seller's XMR balance is currently too low to fulfill the swap request to buy {buy}, please try again later")]
+    #[error(
+        "Seller's XMR balance is currently too low to fulfill the swap request to buy {buy}, please try again later"
+    )]
     BalanceTooLow { buy: bitcoin::Amount },
 
-    #[error("Seller blockchain network {asb:?} setup did not match your blockchain network setup {cli:?}")]
+    #[error(
+        "Seller blockchain network {asb:?} setup did not match your blockchain network setup {cli:?}"
+    )]
     BlockchainNetworkMismatch {
         cli: BlockchainNetwork,
         asb: BlockchainNetwork,

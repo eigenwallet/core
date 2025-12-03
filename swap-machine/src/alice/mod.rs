@@ -242,8 +242,8 @@ impl State0 {
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_punish_fee: self.tx_punish_fee,
                 tx_refund_fee: msg.tx_refund_fee,
-                tx_partial_refund_fee: msg.tx_partial_refund_fee,
-                tx_refund_amnesty_fee: msg.tx_refund_amnesty_fee,
+                tx_partial_refund_fee: Some(msg.tx_partial_refund_fee),
+                tx_refund_amnesty_fee: Some(msg.tx_refund_amnesty_fee),
                 tx_cancel_fee: msg.tx_cancel_fee,
             },
         ))
@@ -347,8 +347,8 @@ pub struct State2 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
-    tx_partial_refund_fee: bitcoin::Amount,
-    tx_refund_amnesty_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -446,6 +446,7 @@ impl State2 {
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }

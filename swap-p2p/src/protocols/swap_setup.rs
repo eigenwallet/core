@@ -18,7 +18,7 @@ pub mod protocol {
     use libp2p::swarm::Stream;
     use void::Void;
 
-    use super::vendor_from_fn::{from_fn, FromFnUpgrade};
+    use super::vendor_from_fn::{FromFnUpgrade, from_fn};
 
     pub fn new() -> SwapSetup {
         from_fn(

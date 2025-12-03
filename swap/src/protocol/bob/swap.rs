@@ -11,7 +11,9 @@ use crate::protocol::{bob, Database};
 use anyhow::{Context as AnyContext, Result};
 use std::sync::Arc;
 use std::time::Duration;
-use swap_core::bitcoin::{ExpiredTimelocks, TxCancel, TxFullRefund};
+use swap_core::bitcoin::{
+    ExpiredTimelocks, TxCancel, TxFullRefund, TxPartialRefund, TxRefundAmnesty,
+};
 use swap_core::monero::TxHash;
 use swap_env::env;
 use swap_machine::bob::State5;
@@ -112,17 +114,18 @@ async fn next_state(
             let tx_refund_fee = bitcoin_wallet
                 .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
                 .await?;
-            
-            // At this point we don't know how high btc_amnesty_amount is. 
+
+            // At this point we don't know how high btc_amnesty_amount is.
             // This means we don't know how large the amount of the partial refund and amnesty transactions will be.
             // We therefore specify the same upper limit on tx fees as for the other transactions, even though
             // the maximum fee percentage might be higher due to that.
-            let tx_partial_refund_fee = bitcoin_wallet.
-                estimate_fee(TxPartialRefund::weight(), Some(btc_amount)).await?;
+            let tx_partial_refund_fee = bitcoin_wallet
+                .estimate_fee(TxPartialRefund::weight(), Some(btc_amount))
+                .await?;
             let tx_refund_amnesty_fee = bitcoin_wallet
                 .estimate_fee(TxRefundAmnesty::weight(), Some(btc_amount))
                 .await?;
-                
+
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin
             event_emitter.emit_swap_progress_event(
                 swap_id,

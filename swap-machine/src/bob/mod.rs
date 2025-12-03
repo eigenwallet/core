@@ -1,11 +1,11 @@
 #![allow(non_snake_case)]
 
-use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin_wallet::primitives::Subscription;
+use ecdsa_fun::Signature;
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::nonce::Deterministic;
-use ecdsa_fun::Signature;
 use monero::BlockHeight;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -14,11 +14,11 @@ use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    self, current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxLock, Txid,
+    self, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxLock, Txid,
+    current_epoch,
 };
-use swap_core::monero::primitives::WatchRequest;
 use swap_core::monero::ScalarExt;
+use swap_core::monero::primitives::WatchRequest;
 use swap_core::monero::{self, TransferProof};
 use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
@@ -83,14 +83,14 @@ pub enum BobRefundType {
         tx_full_refund_encsig: bitcoin::EncryptedSignature,
     },
     /// Alice has only signed the full refund transaction.
-    /// This is only used to maintain backwards compatibility for older swaps 
+    /// This is only used to maintain backwards compatibility for older swaps
     /// from before the partial refund protocol change.
     /// See [#675](https://github.com/eigenwallet/core/pull/675).
     Legacy {
         // Serde raname keeps + untagged + flatten keeps this backwards compatible with old swaps in the database.
         #[serde(rename = "tx_refund_encsig")]
         tx_full_refund_encsig: bitcoin::EncryptedSignature,
-    }
+    },
 }
 
 impl fmt::Display for BobState {
@@ -181,8 +181,8 @@ pub struct State0 {
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
     min_monero_confirmations: u64,
-    tx_partial_refund_fee: bitcoin::Amount,
-    tx_refund_amnesty_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_refund_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
     tx_lock_fee: bitcoin::Amount,
@@ -228,16 +228,16 @@ impl State0 {
             punish_timelock,
             refund_address,
             min_monero_confirmations,
-            tx_partial_refund_fee,
-            tx_refund_amnesty_fee,
+            tx_partial_refund_fee: Some(tx_partial_refund_fee),
+            tx_refund_amnesty_fee: Some(tx_refund_amnesty_fee),
             tx_refund_fee,
             tx_cancel_fee,
             tx_lock_fee,
         }
     }
 
-    pub fn next_message(&self) -> Message0 {
-        Message0 {
+    pub fn next_message(&self) -> Result<Message0> {
+        Ok(Message0 {
             swap_id: self.swap_id,
             B: self.b.public(),
             S_b_monero: self.S_b_monero,
@@ -246,10 +246,14 @@ impl State0 {
             v_b: self.v_b,
             refund_address: self.refund_address.clone(),
             tx_refund_fee: self.tx_refund_fee,
-            tx_partial_refund_fee: self.tx_partial_refund_fee,
-            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+            tx_partial_refund_fee: self
+                .tx_partial_refund_fee
+                .context("tx_partial_refund_fee missing but required to setup swap")?,
+            tx_refund_amnesty_fee: self
+                .tx_refund_amnesty_fee
+                .context("tx_refund_amnesty_fee missing but required to setup swap")?,
             tx_cancel_fee: self.tx_cancel_fee,
-        }
+        })
     }
 
     pub async fn receive(
@@ -327,8 +331,8 @@ pub struct State1 {
     punish_address: bitcoin::Address,
     tx_lock: bitcoin::TxLock,
     min_monero_confirmations: u64,
-    tx_partial_refund_fee: bitcoin::Amount,
-    tx_refund_amnesty_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
@@ -351,8 +355,15 @@ impl State1 {
             self.tx_cancel_fee,
         )?;
 
-        let tx_partial_refund =
-            bitcoin::TxPartialRefund::new(&tx_cancel, &self.refund_address, self.A, self.b.public(), self.btc_amnesty_amount, self.tx_partial_refund_fee)?;
+        let tx_partial_refund = bitcoin::TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.A,
+            self.b.public(),
+            self.btc_amnesty_amount,
+            self.tx_partial_refund_fee
+                .context("tx_partial_refund_fee missing but required to setup swap")?,
+        )?;
 
         bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)?;
         bitcoin::verify_encsig(
@@ -364,7 +375,8 @@ impl State1 {
 
         // Verify the full refund signature if it is present
         if let Some(tx_full_refund_encsig) = &msg.tx_full_refund_encsig {
-            let tx_full_refund = bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+            let tx_full_refund =
+                bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
             bitcoin::verify_encsig(
                 self.A,
                 bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
@@ -375,11 +387,19 @@ impl State1 {
 
         // Verify the refund amnesty signature if it is present
         if let Some(tx_refund_amnesty_sig) = &msg.tx_refund_amnesty_sig {
-            let tx_refund_amnesty = bitcoin::TxRefundAmnesty::new(&tx_partial_refund, &self.refund_address, self.tx_refund_amnesty_fee);
+            let tx_refund_amnesty = bitcoin::TxRefundAmnesty::new(
+                &tx_partial_refund,
+                &self.refund_address,
+                self.tx_refund_amnesty_fee
+                    .context("tx_refund_amnesty_fee missing but required to setup swap")?,
+            );
             bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), tx_refund_amnesty_sig)?;
         }
 
-        let bob_refund_type = BobRefundType::from_possibly_full_refund_sig(msg.tx_partial_refund_encsig, msg.tx_full_refund_encsig);
+        let bob_refund_type = BobRefundType::from_possibly_full_refund_sig(
+            msg.tx_partial_refund_encsig,
+            msg.tx_full_refund_encsig,
+        );
         Ok(State2 {
             A: self.A,
             b: self.b,
@@ -400,6 +420,8 @@ impl State1 {
             min_monero_confirmations: self.min_monero_confirmations,
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
@@ -497,6 +519,8 @@ impl State2 {
                 min_monero_confirmations: self.min_monero_confirmations,
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_refund_fee: self.tx_refund_fee,
+                tx_partial_refund_fee: self.tx_partial_refund_fee,
+                tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
                 tx_cancel_fee: self.tx_cancel_fee,
             },
             self.tx_lock,
@@ -582,6 +606,8 @@ impl State3 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
         }
     }
 
@@ -601,6 +627,8 @@ impl State3 {
             tx_refund_amnesty_sig: self.tx_refund_amnesty_sig.clone(),
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             xmr: self.xmr,
         }
     }
@@ -783,6 +811,8 @@ impl State4 {
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             xmr: self.xmr,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
         }
     }
 
@@ -945,15 +975,16 @@ impl State6 {
     }
 
     pub fn signed_full_refund_transaction(&self) -> Result<Transaction> {
-        let tx_full_refund_encsig = self.bob_refund_type.tx_full_refund_encsig().context("Can't sign full refund transaction because we don't have the necessary signature")?;
-        
+        let tx_full_refund_encsig = self.bob_refund_type.tx_full_refund_encsig().context(
+            "Can't sign full refund transaction because we don't have the necessary signature",
+        )?;
+
         let tx_refund = self.construct_tx_refund()?;
 
         let adaptor = Adaptor::<HashTranscript<Sha256>, Deterministic<Sha256>>::default();
 
         let sig_b = self.b.sign(tx_refund.digest());
-        let sig_a =
-            adaptor.decrypt_signature(&self.s_b.to_secpfun_scalar(), tx_full_refund_encsig);
+        let sig_a = adaptor.decrypt_signature(&self.s_b.to_secpfun_scalar(), tx_full_refund_encsig);
 
         let signed_tx_refund =
             tx_refund.add_signatures((self.A, sig_a), (self.b.public(), sig_b))?;
@@ -1003,30 +1034,50 @@ impl State6 {
 }
 
 impl BobRefundType {
-    pub fn from_possibly_full_refund_sig(partial_refund_encsig: bitcoin::EncryptedSignature, full_refund_encsig: Option<bitcoin::EncryptedSignature>) -> Self {
+    pub fn from_possibly_full_refund_sig(
+        partial_refund_encsig: bitcoin::EncryptedSignature,
+        full_refund_encsig: Option<bitcoin::EncryptedSignature>,
+    ) -> Self {
         if let Some(full_refund_encsig) = full_refund_encsig {
-            Self::Full { tx_partial_refund_encsig: partial_refund_encsig, tx_full_refund_encsig: full_refund_encsig }
+            Self::Full {
+                tx_partial_refund_encsig: partial_refund_encsig,
+                tx_full_refund_encsig: full_refund_encsig,
+            }
         } else {
-            Self::Partial { tx_partial_refund_encsig: partial_refund_encsig }
+            Self::Partial {
+                tx_partial_refund_encsig: partial_refund_encsig,
+            }
         }
     }
-    
+
     pub fn from_partial_refund_sig(partial_refund_encsig: bitcoin::EncryptedSignature) -> Self {
-        Self::Partial { tx_partial_refund_encsig: partial_refund_encsig }
+        Self::Partial {
+            tx_partial_refund_encsig: partial_refund_encsig,
+        }
     }
 
     pub fn tx_full_refund_encsig(&self) -> Option<bitcoin::EncryptedSignature> {
         match self {
             BobRefundType::Partial { .. } => None,
-            BobRefundType::Full { tx_full_refund_encsig, .. } => Some(tx_full_refund_encsig.clone()),
-            BobRefundType::Legacy { tx_full_refund_encsig } => Some(tx_full_refund_encsig.clone()),
+            BobRefundType::Full {
+                tx_full_refund_encsig,
+                ..
+            } => Some(tx_full_refund_encsig.clone()),
+            BobRefundType::Legacy {
+                tx_full_refund_encsig,
+            } => Some(tx_full_refund_encsig.clone()),
         }
     }
 
     pub fn tx_partial_refund_encsig(&self) -> Option<bitcoin::EncryptedSignature> {
         match self {
-            BobRefundType::Partial { tx_partial_refund_encsig } => Some(tx_partial_refund_encsig.clone()),
-            BobRefundType::Full { tx_partial_refund_encsig, .. } => Some(tx_partial_refund_encsig.clone()),
+            BobRefundType::Partial {
+                tx_partial_refund_encsig,
+            } => Some(tx_partial_refund_encsig.clone()),
+            BobRefundType::Full {
+                tx_partial_refund_encsig,
+                ..
+            } => Some(tx_partial_refund_encsig.clone()),
             BobRefundType::Legacy { .. } => None,
         }
     }
