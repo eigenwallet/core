@@ -110,7 +110,6 @@ sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
 bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
-get-port = "3"
 mockito = "1.4"
 monero-harness = { path = "../monero-harness" }
 proptest = "1"

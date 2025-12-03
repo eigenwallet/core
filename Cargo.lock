@@ -4039,12 +4039,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "get-port"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6c41a39c60ae1fc5bf0e220347ce90fa1e4bb0fcdac65b09bb5f4576bebc84"
-
-[[package]]
 name = "gethostname"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10853,7 +10847,6 @@ dependencies = [
  "ecdsa_fun",
  "electrum-pool",
  "futures",
- "get-port",
  "jsonrpsee",
  "libp2p",
  "libp2p-tor",
