@@ -207,34 +207,44 @@ impl NetworkBehaviour for Behaviour {
                 if self.peers.contains(&event.peer_id)
                     && !self.connections.is_connected(&event.peer_id) =>
             {
+                // TODO: Do we want to increment the backoff here on closed connections?
                 tracing::trace!(peer = %event.peer_id, "Connection closed. We will schedule a redial for this peer.");
 
                 Some(event.peer_id)
             }
-            FromSwarm::DialFailure(event) => match event.peer_id {
-                Some(peer_id)
-                    if self.peers.contains(&peer_id)
-                        && !self.connections.is_connected(&peer_id) =>
-                {
-                    match event.error {
-                        DialError::DialPeerConditionFalse(_) => {
-                            // TODO: Can this lead to a condition where we will not redial the peer ever again? I don't think so...
-                            //
-                            // Reasoning:
-                            // We always dial with `PeerCondition::DisconnectedAndNotDialing`.
-                            // If we not disconnected, we don't need to redial.
-                            // If we are already dialing, another event will be emitted if that dial fails.
-                            // tracing::trace!(peer = %peer_id, dial_error = ?event.error, "A dial failure occurred for a peer we want to contineously redial, but this was due to a dial condition failure. We are not treating this as a failure. We will not schedule a redial.");
+            FromSwarm::DialFailure(event) => {
+                match event.error {
+                    // We failed to dial a peer but it was due to a `DialPeerConditionFalse` which means we can ignore it.
+                    DialError::DialPeerConditionFalse(_) => {
+                        // TODO: Can this lead to a condition where we will not redial the peer ever again? I don't think so...
+                        //
+                        // Reasoning:
+                        // We always dial with `PeerCondition::DisconnectedAndNotDialing`. Therefore, we only get here if we tried to dial despite being connected.
+                        //
+                        // 1. If we are not disconnected, we don't need to redial. We will redial once we get a disconnected event.
+                        // 2. If we are already dialing, another event will be emitted if that dial fails.
+                        None
+                    }
+                    // We failed to connect to a peer (dial failure) due to an actual error, so we need to redial.
+                    // If it was due to a `DialPeerConditionFalse`, the arm above would have already handled it.
+                    _ => {
+                        if let Some(peer_id) = event.peer_id {
+                            if self.peers.contains(&peer_id) {
+                                tracing::trace!(peer = %peer_id, dial_error = ?event.error, "Dial failure occurred. We will backoff and schedule a redial for this peer.");
+
+                                // Increment the backoff for the peer because we failed to connect
+                                self.backoff.increment(&peer_id);
+
+                                Some(peer_id)
+                            } else {
+                                None
+                            }
+                        } else {
                             None
-                        }
-                        _ => {
-                            tracing::trace!(peer = %peer_id, dial_error = ?event.error, "Dial failure occurred. We will schedule a redial for this peer.");
-                            Some(peer_id)
                         }
                     }
                 }
-                _ => None,
-            },
+            }
             _ => None,
         };
 
@@ -243,7 +253,7 @@ impl NetworkBehaviour for Behaviour {
             FromSwarm::ConnectionEstablished(e) if self.peers.contains(&e.peer_id) => {
                 self.backoff.reset(&e.peer_id);
             }
-            _ => {},
+            _ => {}
         }
 
         // Schedule a redial if needed
