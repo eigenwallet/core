@@ -3319,7 +3319,6 @@ dependencies = [
  "bitcoin 0.32.7",
  "futures",
  "once_cell",
- "serde_json",
  "tokio",
  "tracing",
 ]
@@ -4576,12 +4575,6 @@ name = "hex-literal"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
-
-[[package]]
-name = "hex-literal"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hex-literal"
@@ -6764,19 +6757,14 @@ name = "monero-rpc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "curve25519-dalek 3.2.0",
  "hex",
- "hex-literal 0.4.1",
  "jsonrpc_client",
  "monero",
  "monero-epee-bin-serde",
- "rand 0.8.5",
  "reqwest 0.12.24",
  "rust_decimal",
  "serde",
  "serde_json",
- "tokio",
- "tracing",
 ]
 
 [[package]]
