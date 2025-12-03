@@ -19,7 +19,11 @@ import {
   Stack,
   Tooltip,
 } from "@mui/material";
-import { Info as InfoIcon, Close as CloseIcon } from "@mui/icons-material";
+import {
+  Info as InfoIcon,
+  Close as CloseIcon,
+  Refresh as RefreshIcon,
+} from "@mui/icons-material";
 import { useEffect, useState, useMemo } from "react";
 import { useAppSelector } from "store/hooks";
 import { QuoteStatus, ConnectionStatus } from "models/tauriModel";
@@ -28,6 +32,8 @@ import TorIcon from "renderer/components/icons/TorIcon";
 import TruncatedText from "renderer/components/other/TruncatedText";
 import ClickToCopy from "renderer/components/other/ClickToCopy";
 import Jdenticon from "renderer/components/other/Jdenticon";
+import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
+import { refreshP2P } from "renderer/rpc";
 
 type Peer = ReturnType<typeof selectPeers>[number];
 
@@ -341,7 +347,7 @@ function PeerDetailsDialog({
   everConnectedPeers,
 }: PeerDetailsDialogProps) {
   const [page, setPage] = useState(0);
-  const rowsPerPage = 10;
+  const rowsPerPage = 8;
 
   const sortedPeers = useMemo(() => {
     return sortPeers(peers, everConnectedPeers, true);
@@ -360,9 +366,19 @@ function PeerDetailsDialog({
           alignItems="center"
         >
           Peers
-          <IconButton onClick={onClose} size="small">
-            <CloseIcon />
-          </IconButton>
+          <Stack direction="row" alignItems="center" gap={1}>
+            <PromiseInvokeButton
+              isIconButton
+              onInvoke={refreshP2P}
+              tooltipTitle="Force a network refresh"
+              size="small"
+            >
+              <RefreshIcon />
+            </PromiseInvokeButton>
+            <IconButton onClick={onClose} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Stack>
         </Stack>
       </DialogTitle>
       <DialogContent sx={{ p: 0 }}>

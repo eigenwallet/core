@@ -48,6 +48,13 @@ impl Behaviour {
         }
     }
 
+    /// Clears all backoffs
+    /// Redials all disconnected peers
+    /// Fetches new quotes from all peers as soon as we are connected to them
+    pub fn refresh(&mut self) {
+        self.inner.refresh();
+    }
+
     fn emit_cached_quotes(&mut self) {
         // Attach the address we last connected to the peer at to the quote
         //

@@ -93,6 +93,16 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
         }
     }
 
+    pub fn clear(&mut self) {
+        // Abort all futures
+        for handle in self.handles.values() {
+            handle.abort();
+        }
+
+        self.handles.clear();
+        self.futures.clear();
+    }
+
     pub fn len(&self) -> usize {
         self.handles.len()
     }

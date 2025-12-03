@@ -1850,3 +1850,22 @@ pub async fn change_monero_node(
 
     Ok(ChangeMoneroNodeResponse { success: true })
 }
+
+// RefreshP2P
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RefreshP2PArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RefreshP2PResponse {}
+
+impl Request for RefreshP2PArgs {
+    type Response = RefreshP2PResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let mut event_loop_handle = ctx.try_get_event_loop_handle().await?;
+        event_loop_handle.refresh().await?;
+        Ok(RefreshP2PResponse {})
+    }
+}

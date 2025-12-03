@@ -1,8 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
+use futures::task::AtomicWaker;
 use libp2p::core::ConnectedPoint;
 use libp2p::Multiaddr;
 use libp2p::{
@@ -11,7 +14,7 @@ use libp2p::{
 };
 
 /// Used inside of a Behaviour to track connections to peers
-// TODO: Track inflight dial attempts
+// TODO: Add a method to register a async waker for changes
 pub struct ConnectionTracker {
     connections: HashMap<PeerId, HashSet<ConnectionId>>,
     inflight_dials: HashMap<PeerId, HashSet<ConnectionId>>,
@@ -39,8 +42,10 @@ impl ConnectionTracker {
             .unwrap_or(false)
     }
 
-    pub fn peers(&self) -> impl Iterator<Item = &PeerId> {
-        self.connections.keys()
+    pub fn connected_peers(&self) -> impl Iterator<Item = &PeerId> {
+        self.connections
+            .keys()
+            .filter(|peer_id| self.is_connected(peer_id))
     }
 
     /// Any behaviour that uses the ConnectionTracker MUST call this method on every [`NetworkBehaviour::on_swarm_event`]
@@ -149,6 +154,13 @@ impl BackoffTracker {
         }
     }
 
+    /// Reset the backoff state for all peers.
+    pub fn reset_all(&mut self) {
+        for backoff in self.backoffs.values_mut() {
+            backoff.reset();
+        }
+    }
+
     /// Increments the backoff for the given peer and returns the new backoff
     pub fn increment(&mut self, peer: &PeerId) -> Duration {
         self.get(peer)
@@ -218,6 +230,39 @@ impl AddressTracker {
     }
 }
 
+/// A simple trigger that can be activated and polled in a stream-like fashion.
+pub struct Trigger {
+    triggered: AtomicBool,
+    waker: AtomicWaker,
+}
+
+impl Trigger {
+    pub fn new() -> Self {
+        Self {
+            triggered: AtomicBool::new(false),
+            waker: AtomicWaker::new(),
+        }
+    }
+
+    /// Trigger the notification. The next call to `poll_next_unpin` will return `Ready`.
+    pub fn trigger(&self) {
+        self.triggered.store(true, Ordering::Release);
+        self.waker.wake();
+    }
+
+    /// Poll for a trigger. Returns `Ready(())` if triggered, `Pending` otherwise.
+    pub fn poll_next_unpin(&self, cx: &mut Context<'_>) -> Poll<()> {
+        // Register waker first, then check condition
+        self.waker.register(cx.waker());
+
+        if self.triggered.swap(false, Ordering::Acquire) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
 /// Extracts the semver version from a user agent string.
 /// Example input: "asb/2.0.0 (xmr-btc-swap-mainnet)"
 /// Returns None if the version cannot be parsed.
@@ -233,12 +278,32 @@ pub fn extract_semver_from_agent_str(agent_str: &str) -> Option<semver::Version>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::task::ArcWake;
     use libp2p::core::{ConnectedPoint, Endpoint, Multiaddr};
     use libp2p::swarm::behaviour::{
         ConnectionClosed, ConnectionEstablished, DialFailure, NewExternalAddrOfPeer,
     };
     use libp2p::swarm::{ConnectionId, DialError, FromSwarm};
     use libp2p::PeerId;
+    use std::sync::Arc;
+
+    struct TestWaker(AtomicBool);
+
+    impl ArcWake for TestWaker {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            arc_self.0.store(true, Ordering::Relaxed);
+        }
+    }
+
+    impl TestWaker {
+        fn new() -> Arc<Self> {
+            Arc::new(Self(AtomicBool::new(false)))
+        }
+
+        fn was_woken(&self) -> bool {
+            self.0.swap(false, Ordering::Relaxed)
+        }
+    }
 
     #[test]
     fn test_connection_tracker_basic() {
@@ -375,5 +440,43 @@ mod tests {
         assert_eq!(version_v3.major, 3);
         assert_eq!(version_v3.minor, 1);
         assert_eq!(version_v3.patch, 4);
+    }
+
+    #[test]
+    fn test_trigger_lifecycle() {
+        let trigger = Trigger::new();
+        let waker = TestWaker::new();
+        let waker_ref = futures::task::waker_ref(&waker);
+        let mut cx = Context::from_waker(&waker_ref);
+
+        // Initial state is Pending
+        assert!(trigger.poll_next_unpin(&mut cx).is_pending());
+        assert!(!waker.was_woken());
+
+        // Triggering makes it Ready
+        trigger.trigger();
+        assert!(waker.was_woken());
+
+        // Polling returns Ready
+        assert!(trigger.poll_next_unpin(&mut cx).is_ready());
+
+        // After polling, it goes back to Pending
+        assert!(trigger.poll_next_unpin(&mut cx).is_pending());
+    }
+
+    #[test]
+    fn test_trigger_coalescing() {
+        let trigger = Trigger::new();
+        let waker = futures::task::noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // Trigger multiple times
+        trigger.trigger();
+        trigger.trigger();
+        trigger.trigger();
+
+        // Should only be Ready once
+        assert!(trigger.poll_next_unpin(&mut cx).is_ready());
+        assert!(trigger.poll_next_unpin(&mut cx).is_pending());
     }
 }

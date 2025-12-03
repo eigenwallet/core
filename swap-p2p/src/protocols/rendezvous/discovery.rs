@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-    behaviour_util::{BackoffTracker, ConnectionTracker},
+    behaviour_util::{BackoffTracker, ConnectionTracker, Trigger},
     futures_util::FuturesHashSet,
     protocols::redial,
 };
@@ -39,6 +39,13 @@ pub struct Behaviour {
 
     // Queue of events to be sent to the swarm
     to_swarm: VecDeque<ToSwarm<Event, THandlerInEvent<Self>>>,
+
+    // The rendezvous nodes we are tracking
+    // TODO: A bit redundant because it is stored in inner.redial
+    rendezvous_nodes: HashSet<PeerId>,
+
+    // Used to trigger an immediate refresh of discovery
+    refresh: Trigger,
 }
 
 // This could use notice to recursively discover other rendezvous nodes
@@ -91,7 +98,16 @@ impl Behaviour {
             connection_tracker: ConnectionTracker::new(),
             namespace,
             to_swarm: VecDeque::new(),
+            rendezvous_nodes: rendezvous_nodes.into_iter().collect(),
+            refresh: Trigger::new(),
         }
+    }
+
+    /// Clears all backoffs
+    /// Redials all disconnected rendezvous nodes
+    /// Discovers new peers at all rendezvous nodes as soon as we are connected to them
+    pub fn refresh(&mut self) {
+        self.refresh.trigger();
     }
 }
 
@@ -107,6 +123,20 @@ impl NetworkBehaviour for Behaviour {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<libp2p::swarm::ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>>
     {
+        // Check if a refresh was requested
+        if self.refresh.poll_next_unpin(cx).is_ready() {
+            self.backoff.reset_all();
+            self.inner.redial.refresh();
+            self.pending_to_discover.clear();
+            self.to_discover.clear();
+
+            // Schedule immediate discovery for all rendezvous nodes
+            for node in self.rendezvous_nodes.clone() {
+                self.pending_to_discover
+                    .insert(node, future::ready(()).boxed());
+            }
+        }
+
         // Check if a backoff timer for a peer has resolved
         while let Poll::Ready(Some((peer_id, _))) = self.pending_to_discover.poll_next_unpin(cx) {
             // Request is ready to be dispatched

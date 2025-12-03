@@ -13,9 +13,9 @@ use swap::cli::{
             GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
             GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
-            RedactArgs, RejectApprovalArgs, RejectApprovalResponse, ResolveApprovalArgs,
-            ResumeSwapArgs, SendMoneroArgs, SetMoneroWalletPasswordArgs, SetRestoreHeightArgs,
-            SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
+            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroWalletPasswordArgs,
+            SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
         ContextBuilder,
@@ -73,7 +73,8 @@ macro_rules! generate_command_handlers {
             set_monero_wallet_password,
             dfx_authenticate,
             change_monero_node,
-            get_context_status
+            get_context_status,
+            refresh_p2p
         ]
     };
 }
@@ -463,3 +464,4 @@ tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
+tauri_command!(refresh_p2p, RefreshP2PArgs, no_args);

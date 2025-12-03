@@ -10,7 +10,7 @@ use libp2p::{
 };
 
 use crate::{
-    behaviour_util::{extract_semver_from_agent_str, BackoffTracker, ConnectionTracker},
+    behaviour_util::{extract_semver_from_agent_str, BackoffTracker, ConnectionTracker, Trigger},
     futures_util::FuturesHashSet,
     patches,
     protocols::{
@@ -37,6 +37,7 @@ pub struct Behaviour {
 
     /// Peers to dispatch a quote request to as soon as we are connected to them
     to_dispatch: VecDeque<PeerId>,
+
     /// Peers to request a quote from once the future resolves
     to_request: FuturesHashSet<PeerId, ()>,
 
@@ -45,6 +46,9 @@ pub struct Behaviour {
 
     // Queue of events to be sent to the swarm
     to_swarm: VecDeque<Event>,
+
+    /// Used to trigger an immediate refresh of all quote requests.
+    refresh: Trigger,
 }
 
 impl Behaviour {
@@ -70,6 +74,37 @@ impl Behaviour {
                 crate::defaults::BACKOFF_MULTIPLIER,
             ),
             to_swarm: VecDeque::new(),
+            refresh: Trigger::new(),
+        }
+    }
+
+    /// Clears all backoffs
+    /// Redials all disconnected peers
+    /// Fetches new quotes from all peers as soon as we are connected to them
+    pub fn refresh(&mut self) {
+        self.refresh.trigger();
+    }
+
+    fn handle_refresh(&mut self) {
+        // Reset the inner redial behaviour
+        self.inner.redial.refresh();
+
+        // Reset the backoff trackers for all peers
+        self.backoff.reset_all();
+
+        // Forget what peers told us about supporting the protocol
+        self.does_not_support.clear();
+
+        // Clear all inflight quote requests
+        self.to_request.clear();
+        self.to_dispatch.clear();
+
+        // Schedule immediate quote requests for all connected peers
+        // Why are we only doing this for connected peers?
+        // Because once we connect to a new peer, we will schedule this in `on_swarm_event` handler.
+        let connected_peers: Vec<_> = self.connection_tracker.connected_peers().cloned().collect();
+        for peer in connected_peers {
+            self.schedule_quote_request_after(peer, Duration::ZERO);
         }
     }
 
@@ -145,6 +180,11 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        // Check if a refresh was requested
+        if self.refresh.poll_next_unpin(cx).is_ready() {
+            self.handle_refresh();
+        }
+
         while let Poll::Ready(Some((peer, ()))) = self.to_request.poll_next_unpin(cx) {
             self.to_dispatch.push_back(peer);
         }

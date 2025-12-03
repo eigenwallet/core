@@ -674,6 +674,10 @@ export async function changeMoneroNode(
   });
 }
 
+export async function refreshP2P(): Promise<void> {
+  await invokeNoArgs<void>("refresh_p2p");
+}
+
 // Helper function to create MoneroNodeConfig from current settings
 export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
   const network = getNetwork();
