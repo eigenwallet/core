@@ -7,7 +7,6 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true }
-futures = { workspace = true }
 monero = { workspace = true }
 monero-rpc = { path = "../monero-rpc" }
 monero-sys = { path = "../monero-sys" }
