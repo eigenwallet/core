@@ -126,6 +126,7 @@ impl NetworkBehaviour for Behaviour {
         // Check if a refresh was requested
         if self.refresh.poll_next_unpin(cx).is_ready() {
             self.backoff.reset_all();
+            self.inner.redial.refresh();
             self.pending_to_discover.clear();
             self.to_discover.clear();
 
