@@ -230,18 +230,6 @@ impl AddressTracker {
     }
 }
 
-/// Extracts the semver version from a user agent string.
-/// Example input: "asb/2.0.0 (xmr-btc-swap-mainnet)"
-/// Returns None if the version cannot be parsed.
-pub fn extract_semver_from_agent_str(agent_str: &str) -> Option<semver::Version> {
-    // Split on '/' and take the second part
-    let version_str = agent_str.split('/').nth(1)?;
-    // Split on whitespace and take the first part
-    let version_str = version_str.split_whitespace().next()?;
-    // Parse the version string
-    semver::Version::parse(version_str).ok()
-}
-
 /// A simple trigger that can be activated and polled in a stream-like fashion.
 pub struct Trigger {
     triggered: AtomicBool,
@@ -275,15 +263,47 @@ impl Trigger {
     }
 }
 
+/// Extracts the semver version from a user agent string.
+/// Example input: "asb/2.0.0 (xmr-btc-swap-mainnet)"
+/// Returns None if the version cannot be parsed.
+pub fn extract_semver_from_agent_str(agent_str: &str) -> Option<semver::Version> {
+    // Split on '/' and take the second part
+    let version_str = agent_str.split('/').nth(1)?;
+    // Split on whitespace and take the first part
+    let version_str = version_str.split_whitespace().next()?;
+    // Parse the version string
+    semver::Version::parse(version_str).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::task::ArcWake;
     use libp2p::core::{ConnectedPoint, Endpoint, Multiaddr};
     use libp2p::swarm::behaviour::{
         ConnectionClosed, ConnectionEstablished, DialFailure, NewExternalAddrOfPeer,
     };
     use libp2p::swarm::{ConnectionId, DialError, FromSwarm};
     use libp2p::PeerId;
+    use std::sync::Arc;
+
+    struct TestWaker(AtomicBool);
+
+    impl ArcWake for TestWaker {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            arc_self.0.store(true, Ordering::Relaxed);
+        }
+    }
+
+    impl TestWaker {
+        fn new() -> Arc<Self> {
+            Arc::new(Self(AtomicBool::new(false)))
+        }
+
+        fn was_woken(&self) -> bool {
+            self.0.swap(false, Ordering::Relaxed)
+        }
+    }
 
     #[test]
     fn test_connection_tracker_basic() {
@@ -420,5 +440,43 @@ mod tests {
         assert_eq!(version_v3.major, 3);
         assert_eq!(version_v3.minor, 1);
         assert_eq!(version_v3.patch, 4);
+    }
+
+    #[test]
+    fn test_trigger_lifecycle() {
+        let trigger = Trigger::new();
+        let waker = TestWaker::new();
+        let waker_ref = futures::task::waker_ref(&waker);
+        let mut cx = Context::from_waker(&waker_ref);
+
+        // Initial state is Pending
+        assert!(trigger.poll_next_unpin(&mut cx).is_pending());
+        assert!(!waker.was_woken());
+
+        // Triggering makes it Ready
+        trigger.trigger();
+        assert!(waker.was_woken());
+
+        // Polling returns Ready
+        assert!(trigger.poll_next_unpin(&mut cx).is_ready());
+
+        // After polling, it goes back to Pending
+        assert!(trigger.poll_next_unpin(&mut cx).is_pending());
+    }
+
+    #[test]
+    fn test_trigger_coalescing() {
+        let trigger = Trigger::new();
+        let waker = futures::task::noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        // Trigger multiple times
+        trigger.trigger();
+        trigger.trigger();
+        trigger.trigger();
+
+        // Should only be Ready once
+        assert!(trigger.poll_next_unpin(&mut cx).is_ready());
+        assert!(trigger.poll_next_unpin(&mut cx).is_pending());
     }
 }
