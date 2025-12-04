@@ -69,10 +69,6 @@ export const walletSlice = createSlice({
     setSubaddresses(slice, action: PayloadAction<SubaddressSummary[]>) {
       slice.state.subaddresses = action.payload;
     },
-    // Reset actions
-    resetWalletState(slice) {
-      slice.state = initialState.state;
-    },
   },
 });
 
@@ -81,7 +77,6 @@ export const {
   setBalance,
   setSyncProgress,
   setHistory,
-  resetWalletState,
   setRestoreHeight,
   setSubaddresses,
 } = walletSlice.actions;

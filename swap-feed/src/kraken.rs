@@ -1,121 +1,23 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use serde::Deserialize;
-use std::convert::{Infallible, TryFrom};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::watch;
+use std::convert::TryFrom;
 use url::Url;
 
 /// Connect to Kraken websocket API for a constant stream of rate updates.
 ///
 /// If the connection fails, it will automatically be re-established.
 ///
-/// price_ticker_ws_url must point to a websocket server that follows the kraken
+/// price_ticker_ws_url_kraken must point to a websocket server that follows the kraken
 /// price ticker protocol
 /// See: https://docs.kraken.com/websockets/
-pub fn connect(price_ticker_ws_url: Url) -> Result<PriceUpdates> {
-    let (price_update, price_update_receiver) = watch::channel(Err(Error::NotYetAvailable));
-    let price_update = Arc::new(price_update);
-
-    tokio::spawn(async move {
-        // The default backoff config is fine for us apart from one thing:
-        // `max_elapsed_time`. If we don't get an error within this timeframe,
-        // backoff won't actually retry the operation.
-        let backoff = backoff::ExponentialBackoff {
-            max_elapsed_time: None,
-            ..backoff::ExponentialBackoff::default()
-        };
-
-        let result = backoff::future::retry_notify::<Infallible, _, _, _, _, _>(
-            backoff,
-            || {
-                let price_update = price_update.clone();
-                let price_ticker_ws_url = price_ticker_ws_url.clone();
-                async move {
-                    let mut stream = connection::new(price_ticker_ws_url).await?;
-
-                    while let Some(update) = stream.try_next().await.map_err(to_backoff)? {
-                        let send_result = price_update.send(Ok(update));
-
-                        if send_result.is_err() {
-                            return Err(backoff::Error::Permanent(anyhow!(
-                                "receiver disconnected"
-                            )));
-                        }
-                    }
-
-                    Err(backoff::Error::transient(anyhow!("stream ended")))
-                }
-            },
-            |error, next: Duration| {
-                tracing::info!(
-                    "Kraken websocket connection failed, retrying in {}ms. Error {:#}",
-                    next.as_millis(),
-                    error
-                );
-            },
-        )
-        .await;
-
-        match result {
-            Err(e) => {
-                tracing::warn!("Rate updates incurred an unrecoverable error: {:#}", e);
-
-                // in case the retries fail permanently, let the subscribers know
-                price_update.send(Err(Error::PermanentFailure))
-            }
-            Ok(never) => match never {},
-        }
-    });
-
-    Ok(PriceUpdates {
-        inner: price_update_receiver,
-    })
+pub fn connect(price_ticker_ws_url_kraken: Url) -> Result<PriceUpdates> {
+    crate::ticker::connect("Kraken", price_ticker_ws_url_kraken, connection::new)
 }
 
-#[derive(Clone, Debug)]
-pub struct PriceUpdates {
-    inner: watch::Receiver<PriceUpdate>,
-}
-
-impl PriceUpdates {
-    pub async fn wait_for_next_update(&mut self) -> Result<PriceUpdate> {
-        self.inner.changed().await?;
-
-        Ok(self.inner.borrow().clone())
-    }
-
-    pub fn latest_update(&mut self) -> PriceUpdate {
-        self.inner.borrow().clone()
-    }
-}
-
-#[derive(Clone, Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Rate is not yet available")]
-    NotYetAvailable,
-    #[error("Permanently failed to retrieve rate from Kraken")]
-    PermanentFailure,
-}
-
-type PriceUpdate = Result<wire::PriceUpdate, Error>;
-
-/// Maps a [`connection::Error`] to a backoff error, effectively defining our
-/// retry strategy.
-fn to_backoff(e: connection::Error) -> backoff::Error<anyhow::Error> {
-    use backoff::Error::*;
-
-    match e {
-        // Connection closures and websocket errors will be retried
-        connection::Error::ConnectionClosed => backoff::Error::transient(anyhow::Error::from(e)),
-        connection::Error::WebSocket(_) => backoff::Error::transient(anyhow::Error::from(e)),
-
-        // Failures while parsing a message are permanent because they most likely present a
-        // programmer error
-        connection::Error::Parse(_) => Permanent(anyhow::Error::from(e)),
-    }
-}
+pub type PriceUpdates = crate::ticker::PriceUpdates<wire::PriceUpdate>;
+pub type PriceUpdate = crate::ticker::PriceUpdate<wire::PriceUpdate>;
+pub type Error = crate::ticker::Error;
 
 /// Kraken websocket connection module.
 ///
@@ -127,10 +29,13 @@ mod connection {
     use super::*;
     use crate::kraken::wire;
     use futures::stream::BoxStream;
+    use std::sync::Arc;
     use tokio_tungstenite::tungstenite;
 
-    pub async fn new(ws_url: Url) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
-        let (mut rate_stream, _) = tokio_tungstenite::connect_async(ws_url)
+    pub async fn new(
+        ws_url: Arc<Url>,
+    ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Error>>> {
+        let (mut rate_stream, _) = tokio_tungstenite::connect_async(&*ws_url)
             .await
             .context("Failed to connect to Kraken websocket API")?;
 
@@ -153,13 +58,13 @@ mod connection {
             tungstenite::Message::Text(msg) => msg,
             tungstenite::Message::Close(close_frame) => {
                 if let Some(tungstenite::protocol::CloseFrame { code, reason }) = close_frame {
-                    tracing::debug!(
+                    tracing::error!(
                         "Kraken rate stream was closed with code {} and reason: {}",
                         code,
                         reason
                     );
                 } else {
-                    tracing::debug!("Kraken rate stream was closed without code and reason");
+                    tracing::error!("Kraken rate stream was closed without code and reason");
                 }
 
                 return Err(Error::ConnectionClosed);
@@ -223,7 +128,7 @@ mod connection {
 /// Kraken websocket API wire module.
 ///
 /// Responsible for parsing websocket text messages to events and rate updates.
-mod wire {
+pub mod wire {
     use super::*;
     use bitcoin::amount::ParseAmountError;
     use serde_json::Value;

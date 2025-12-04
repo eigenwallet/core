@@ -34,7 +34,7 @@ where
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
         .boxed();
 
-    const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 2); // 2 hours
+    const IDLE_CONNECTION_TIMEOUT: Duration = crate::defaults::IDLE_CONNECTION_TIMEOUT;
 
     SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
@@ -52,17 +52,6 @@ fn get_rand_memory_address() -> Multiaddr {
     format!("/memory/{}", address_port).parse().unwrap()
 }
 
-async fn get_local_tcp_address() -> Multiaddr {
-    let random_port = {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        listener.local_addr().unwrap().port()
-    };
-
-    format!("/ip4/127.0.0.1/tcp/{}", random_port)
-        .parse()
-        .unwrap()
-}
-
 /// An extension trait for [`Swarm`] that makes it easier to set up a network of
 /// [`Swarm`]s for tests.
 #[async_trait]
@@ -77,10 +66,6 @@ pub trait SwarmExt {
     /// Listens on a random memory address, polling the [`Swarm`] until the
     /// transport is ready to accept connections.
     async fn listen_on_random_memory_address(&mut self) -> Multiaddr;
-
-    /// Listens on a TCP port for localhost only, polling the [`Swarm`] until
-    /// the transport is ready to accept connections.
-    async fn listen_on_tcp_localhost(&mut self) -> Multiaddr;
 }
 
 #[async_trait]
@@ -155,15 +140,6 @@ where
         // Memory addresses are externally reachable because they all share the same
         // memory-space.
         self.add_external_address(multiaddr.clone());
-
-        multiaddr
-    }
-
-    async fn listen_on_tcp_localhost(&mut self) -> Multiaddr {
-        let multiaddr = get_local_tcp_address().await;
-
-        self.listen_on(multiaddr.clone()).unwrap();
-        block_until_listening_on(self, &multiaddr).await;
 
         multiaddr
     }

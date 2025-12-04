@@ -20,7 +20,7 @@ export default function NewPasswordInput({
 
   useEffect(() => {
     setIsPasswordValid(password === passwordRepeat);
-  }, [password, passwordRepeat]);
+  }, [password, passwordRepeat, setIsPasswordValid]);
 
   return (
     <>

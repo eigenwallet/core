@@ -92,12 +92,13 @@ fn find_workspace_target_dir() -> std::path::PathBuf {
 
     // Walk up from OUT_DIR to find "target" directory
     for ancestor in out_path.ancestors() {
-        if ancestor.ends_with("target") {
+        // allow target dir and also target-check dir (latter one is for lsp to not interfere with cli build commands)
+        if ancestor.ends_with("target") || ancestor.ends_with("target-check") {
             return ancestor.to_path_buf();
         }
     }
 
-    panic!("Could not find target directory from OUT_DIR: {}", out_dir);
+    panic!("Could not find target directory from OUT_DIR: {out_dir}");
 }
 
 fn main() {
@@ -130,7 +131,7 @@ fn main() {
     let stable_depends_dir = target_dir
         .join("debug")
         .join("monero-depends")
-        .join(&std::env::var("TARGET").expect("TARGET env var to be present"));
+        .join(std::env::var("TARGET").expect("TARGET env var to be present"));
 
     let (contrib_depends_dir, target) =
         compile_dependencies(contrib_depends_dir, stable_depends_dir);
@@ -139,13 +140,13 @@ fn main() {
     let mut config = Config::new(MONERO_CPP_DIR);
 
     let toolchain_file = contrib_depends_dir
-        .join(format!("{}/share/toolchain.cmake", target))
+        .join(format!("{target}/share/toolchain.cmake"))
         .display()
         .to_string();
     config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
-    println!("cargo:warning=Using toolchain file: {}", toolchain_file);
+    println!("cargo:warning=Using toolchain file: {toolchain_file}");
 
-    let depends_lib_dir = contrib_depends_dir.join(format!("{}/lib", target));
+    let depends_lib_dir = contrib_depends_dir.join(format!("{target}/lib"));
 
     println!(
         "cargo:rustc-link-search=native={}",
@@ -181,16 +182,19 @@ fn main() {
         .define(
             "SODIUM_INCLUDE_PATH",
             contrib_depends_dir
-                .join(format!("{}/include", target))
+                .join(format!("{target}/include"))
                 .display()
                 .to_string(),
         ) // This is needed for libsodium.a to be found on mingw-w64
         .build_arg("-Wno-dev") // Disable warnings we can't fix anyway
-        .build_arg(match (is_github_actions, is_docker_build) {
-            (true, _) => "-j1",
-            (_, true) => "-j1",
-            (_, _) => "-j4",
-        })
+        .build_arg(format!(
+            "-j{}",
+            if is_github_actions || is_docker_build {
+                1
+            } else {
+                num_cpus::get()
+            }
+        ))
         .build_arg("-I.")
         .build();
 
@@ -308,19 +312,10 @@ fn main() {
             .unwrap_or_else(|| "/opt/homebrew".into());
 
         // add homebrew search paths using dynamic prefix
-        println!("cargo:rustc-link-search=native={}/lib", brew_prefix);
-        println!(
-            "cargo:rustc-link-search=native={}/opt/unbound/lib",
-            brew_prefix
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/opt/expat/lib",
-            brew_prefix
-        );
-        println!(
-            "cargo:rustc-link-search=native={}/Cellar/protobuf@21/21.12_1/lib/",
-            brew_prefix
-        );
+        println!("cargo:rustc-link-search=native={brew_prefix}/lib",);
+        println!("cargo:rustc-link-search=native={brew_prefix}/opt/unbound/lib",);
+        println!("cargo:rustc-link-search=native={brew_prefix}/opt/expat/lib",);
+        println!("cargo:rustc-link-search=native={brew_prefix}/Cellar/protobuf@21/21.12_1/lib/",);
 
         // Add search paths for clang runtime libraries
         let resource_dir = std::process::Command::new("clang")
@@ -425,7 +420,7 @@ fn main() {
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
         .include(
             contrib_depends_dir
-                .join(format!("{}/include", target))
+                .join(format!("{target}/include"))
                 .display()
                 .to_string(),
         )
@@ -448,7 +443,7 @@ fn compile_dependencies(
         "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
         _ => target,
     };
-    println!("cargo:warning=Building for target: {}", target);
+    println!("cargo:warning=Building for target: {target}");
 
     match target.as_str() {
         "x86_64-apple-darwin"
@@ -461,13 +456,10 @@ fn compile_dependencies(
         | "x86_64-linux-android"
         | "armv7a-linux-androideabi"
         | "x86_64-w64-mingw32" => {}
-        _ => panic!("target unsupported: {}", target),
+        _ => panic!("target unsupported: {target}"),
     }
 
-    println!(
-        "cargo:warning=Running make HOST={} in contrib/depends",
-        target
-    );
+    println!("cargo:warning=Running make HOST={target} in contrib/depends",);
 
     // Copy monero-depends to out_dir/depends in order to build the dependencies there
     match fs_extra::copy_items(
@@ -478,7 +470,7 @@ fn compile_dependencies(
         Ok(_) => (),
         Err(e) if matches!(e.kind, ErrorKind::AlreadyExists) => (), // Ignore the error if the directory already exists
         Err(e) => {
-            eprintln!("Failed to copy contrib/depends to target dir: {}", e);
+            eprintln!("Failed to copy contrib/depends to target dir: {e}");
             std::process::exit(1);
         }
     }
@@ -487,10 +479,10 @@ fn compile_dependencies(
     if target.contains("-apple-") {
         cmd.arg("-i");
         let path = std::env::var("PATH").unwrap_or_default();
-        cmd.arg(format!("PATH={}", path));
+        cmd.arg(format!("PATH={path}"));
     }
     cmd.arg("make")
-        .arg(format!("HOST={}", target))
+        .arg(format!("HOST={target}"))
         .arg("DEBUG=")
         .current_dir(&out_dir)
         .stdout(std::process::Stdio::piped())
@@ -530,15 +522,15 @@ fn execute_child_with_pipe(
     // Spawn threads to handle stdout and stderr
     let stdout_handle = thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line in reader.lines().flatten() {
-            println!("cargo:debug={}{}", &prefix_clone, line);
+        for line in reader.lines().map_while(Result::ok) {
+            println!("cargo:debug={prefix}{line}");
         }
     });
 
     let stderr_handle = thread::spawn(move || {
         let reader = BufReader::new(stderr);
-        for line in reader.lines().flatten() {
-            println!("cargo:debug={}{}", &prefix, line);
+        for line in reader.lines().map_while(Result::ok) {
+            println!("cargo:debug={prefix_clone}{line}");
         }
     });
 
@@ -582,37 +574,34 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
 
         // Apply each file patch individually
         for (file_path, patch_content) in file_patches {
-            println!("cargo:warning=Applying patch to file: {}", file_path);
+            println!("cargo:warning=Applying patch to file: {file_path}");
 
             // Parse the individual file patch
             let patch = diffy::Patch::from_str(&patch_content)
-                .map_err(|e| format!("Failed to parse patch for {}: {}", file_path, e))?;
+                .map_err(|e| format!("Failed to parse patch for {file_path}: {e}"))?;
 
             let target_path = monero_dir.join(&file_path);
 
             if !target_path.exists() {
-                return Err(format!("Target file {} not found!", file_path).into());
+                return Err(format!("Target file {file_path} not found!").into());
             }
 
             let current = fs::read_to_string(&target_path)
-                .map_err(|e| format!("Failed to read {}: {}", file_path, e))?;
+                .map_err(|e| format!("Failed to read {file_path}: {e}"))?;
 
             // Check if patch is already applied by trying to reverse it
             if diffy::apply(&current, &patch.reverse()).is_ok() {
-                println!(
-                    "cargo:warning=Patch for {} already applied – skipping",
-                    file_path
-                );
+                println!("cargo:warning=Patch for {file_path} already applied – skipping",);
                 continue;
             }
 
             let patched = diffy::apply(&current, &patch)
-                .map_err(|e| format!("Failed to apply patch to {}: {}", file_path, e))?;
+                .map_err(|e| format!("Failed to apply patch to {file_path}: {e}"))?;
 
             fs::write(&target_path, patched)
-                .map_err(|e| format!("Failed to write {}: {}", file_path, e))?;
+                .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
 
-            println!("cargo:warning=Successfully applied patch to: {}", file_path);
+            println!("cargo:warning=Successfully applied patch to: {file_path}");
         }
 
         println!(

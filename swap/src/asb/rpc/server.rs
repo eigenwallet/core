@@ -10,7 +10,7 @@ use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
+    PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
     RendezvousRegistrationStatus, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
@@ -91,7 +91,7 @@ impl AsbApiServer for RpcImpl {
 
     async fn monero_balance(&self) -> Result<MoneroBalanceResponse, ErrorObjectOwned> {
         let wallet = self.monero_wallet.main_wallet().await;
-        let balance = wallet.total_balance().await;
+        let balance = wallet.total_balance().await.into_json_rpc_result()?;
 
         Ok(MoneroBalanceResponse {
             balance: balance.as_pico(),
@@ -100,7 +100,7 @@ impl AsbApiServer for RpcImpl {
 
     async fn monero_address(&self) -> Result<MoneroAddressResponse, ErrorObjectOwned> {
         let wallet = self.monero_wallet.main_wallet().await;
-        let address = wallet.main_address().await;
+        let address = wallet.main_address().await.into_json_rpc_result()?;
 
         Ok(MoneroAddressResponse {
             address: address.to_string(),
@@ -129,6 +129,18 @@ impl AsbApiServer for RpcImpl {
         let multiaddresses = addresses.iter().map(|addr| addr.to_string()).collect();
 
         Ok(MultiaddressesResponse { multiaddresses })
+    }
+
+    async fn peer_id(&self) -> Result<PeerIdResponse, ErrorObjectOwned> {
+        let (peer_id, _) = self
+            .event_loop_service
+            .get_multiaddresses()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(PeerIdResponse {
+            peer_id: peer_id.to_string(),
+        })
     }
 
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned> {
@@ -172,23 +184,23 @@ impl AsbApiServer for RpcImpl {
         let registrations = regs
             .into_iter()
             .map(|r| RegistrationStatusItem {
-                address: r.address.to_string(),
-                connection: match r.connection {
-                    crate::asb::register::ConnectionStatus::Disconnected => {
-                        RendezvousConnectionStatus::Disconnected
-                    }
-                    crate::asb::register::ConnectionStatus::Connected => {
-                        RendezvousConnectionStatus::Connected
-                    }
+                address: r.address.map(|a| a.to_string()),
+                connection: if r.is_connected {
+                    RendezvousConnectionStatus::Connected
+                } else {
+                    RendezvousConnectionStatus::Disconnected
                 },
                 registration: match r.registration {
-                    crate::asb::register::RegistrationStatusReport::RegisterOnNextConnection => {
-                        RendezvousRegistrationStatus::RegisterOnNextConnection
+                    crate::network::rendezvous::register::public::RegistrationStatus::RegisterOnceConnected => {
+                        RendezvousRegistrationStatus::RegisterOnceConnected
                     }
-                    crate::asb::register::RegistrationStatusReport::Pending => {
-                        RendezvousRegistrationStatus::Pending
+                    crate::network::rendezvous::register::public::RegistrationStatus::WillRegisterAfterDelay => {
+                        RendezvousRegistrationStatus::WillRegisterAfterDelay
                     }
-                    crate::asb::register::RegistrationStatusReport::Registered => {
+                    crate::network::rendezvous::register::public::RegistrationStatus::RequestInflight => {
+                        RendezvousRegistrationStatus::RequestInflight
+                    }
+                    crate::network::rendezvous::register::public::RegistrationStatus::Registered => {
                         RendezvousRegistrationStatus::Registered
                     }
                 },

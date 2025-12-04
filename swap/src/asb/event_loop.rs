@@ -258,7 +258,9 @@ where
                             let _ = responder.respond(wallet_snapshot);
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
-                            self.handle_execution_setup_done(peer_id, swap_id, state3).await;
+                            if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
+                                tracing::error!(%swap_id, ?error, "Failed to handle execution setup done");
+                            }
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapDeclined { peer, error }) => {
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
@@ -424,11 +426,14 @@ where
 
                             tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
                         }
-                        SwarmEvent::Behaviour(OutEvent::Rendezvous(libp2p::rendezvous::client::Event::Registered { rendezvous_node, ttl, namespace })) => {
-                            tracing::trace!("Successfully registered with rendezvous node: {} with namespace: {} and TTL: {:?}", rendezvous_node, namespace, ttl);
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::Registered { peer_id })) => {
+                            tracing::trace!("Successfully registered with rendezvous node: {}", peer_id);
                         }
-                        SwarmEvent::Behaviour(OutEvent::Rendezvous(libp2p::rendezvous::client::Event::RegisterFailed { rendezvous_node, namespace, error })) => {
-                            tracing::trace!("Registration with rendezvous node {} failed for namespace {}: {:?}", rendezvous_node, namespace, error);
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::RegisterRequestFailed { peer_id, error })) => {
+                            tracing::trace!("Registration with rendezvous node {} failed: {:?}", peer_id, error);
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::RegisterDispatchFailed { peer_id, error })) => {
+                            tracing::trace!("Failed to dispatch registration to rendezvous node {}: {:?}", peer_id, error);
                         }
                         SwarmEvent::Behaviour(OutEvent::OutboundRequestResponseFailure {peer, error, request_id, protocol}) => {
                             tracing::error!(
@@ -529,7 +534,7 @@ where
                                 .behaviour()
                                 .rendezvous
                                 .as_ref()
-                                .map(|b| b.registrations())
+                                .map(|b| b.status())
                                 .unwrap_or_default(); // If rendezvous behaviour is disabled we report empty list
 
                             let _ = respond_to.send(registrations);
@@ -611,7 +616,17 @@ where
         bob_peer_id: PeerId,
         swap_id: Uuid,
         state3: State3,
-    ) {
+    ) -> Result<()> {
+        if self
+            .db
+            .has_swap(swap_id)
+            .await
+            .context("Failed to check if UUID is already in use")?
+        {
+            // TODO: We should ideally check this during swap setup, not after
+            return Err(anyhow::anyhow!("UUID is already in use"));
+        }
+
         let handle = self.new_handle(bob_peer_id, swap_id);
 
         let initial_state = AliceState::Started {
@@ -629,16 +644,16 @@ where
             developer_tip: self.developer_tip.clone(),
         };
 
-        match self.db.insert_peer_id(swap_id, bob_peer_id).await {
-            Ok(_) => {
-                if let Err(error) = self.swap_sender.send(swap).await {
-                    tracing::warn!(%swap_id, "Failed to start swap: {:?}", error);
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%swap_id, "Unable to save peer-id in database: {}", error);
-            }
-        }
+        self.db
+            .insert_peer_id(swap_id, bob_peer_id)
+            .await
+            .context("Failed to save peer-id in database")?;
+        self.swap_sender
+            .send(swap)
+            .await
+            .context("Failed to send message to spawn swap state machine")?;
+
+        Ok(())
     }
 
     /// Create a new [`EventLoopHandle`] that is scoped for communication with
@@ -800,8 +815,8 @@ async fn capture_wallet_snapshot(
     external_redeem_address: &Option<bitcoin::Address>,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
-    let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await;
-    let total_balance = monero_wallet.main_wallet().await.total_balance().await;
+    let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
+    let total_balance = monero_wallet.main_wallet().await.total_balance().await?;
 
     tracing::info!(%unlocked_balance, %total_balance, "Capturing monero wallet snapshot");
 
@@ -841,7 +856,9 @@ mod service {
             respond_to: oneshot::Sender<usize>,
         },
         GetRegistrationStatus {
-            respond_to: oneshot::Sender<Vec<crate::asb::register::RegistrationReport>>,
+            respond_to: oneshot::Sender<
+                Vec<swap_p2p::protocols::rendezvous::register::public::RendezvousNodeStatus>,
+            >,
         },
     }
 
@@ -879,7 +896,8 @@ mod service {
         /// Get the registration status at configured rendezvous points
         pub async fn get_registration_status(
             &self,
-        ) -> anyhow::Result<Vec<crate::asb::register::RegistrationReport>> {
+        ) -> anyhow::Result<Vec<crate::network::rendezvous::register::public::RendezvousNodeStatus>>
+        {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GetRegistrationStatus { respond_to: tx })
@@ -1064,14 +1082,14 @@ mod quote {
         // We cannot be sure that the balance is accurate
         // It is dangerous to provide a balancer higher than the actual balance
         if !timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.synchronized())
-            .await
+            .await?
             .context("Timeout while checking if wallet is synchronized")?
         {
             return Err(anyhow::anyhow!("Wallet is not synchronized"));
         }
 
         let balance = timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.unlocked_balance())
-            .await
+            .await?
             .context("Timeout while getting unlocked balance from Monero wallet")?;
 
         Ok(balance.into())

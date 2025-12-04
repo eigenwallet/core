@@ -109,7 +109,7 @@ export default function HistoryRowExpanded({
               </TableCell>
             </TableRow>
             <TableRow>
-              <TableCell>Monero receive pool</TableCell>
+              <TableCell>Monero Redeem Addresses</TableCell>
               <TableCell>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                   {swap.monero_receive_pool.map((pool, index) => (

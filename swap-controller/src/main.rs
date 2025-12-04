@@ -49,12 +49,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 restore_height,
             } = client.monero_seed().await?;
 
-            println!("The seed of the internal Monero wallet is: \n{}", seed);
+            println!("The seed of the internal Monero wallet is: \n{seed}");
             println!();
-            println!(
-                "The restore height of the internal Monero wallet is {}",
-                restore_height
-            );
+            println!("The restore height of the internal Monero wallet is {restore_height}",);
         }
         Cmd::Multiaddresses => {
             let response = client.multiaddresses().await?;
@@ -62,9 +59,16 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("No external multiaddresses configured");
             } else {
                 for addr in response.multiaddresses {
-                    println!("{}", addr);
+                    println!("{addr}");
                 }
             }
+        }
+        Cmd::PeerId => {
+            let response = client.peer_id().await?;
+            println!("Peer IDs are used to identify peers within the P2P network.");
+            println!("They are effectively the hash of your public key and are used for end-to-end encryption of network traffic.");
+            println!();
+            println!("Your Peer ID is: {}", response.peer_id);
         }
         Cmd::ActiveConnections => {
             let response = client.active_connections().await?;
@@ -91,9 +95,10 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("No rendezvous points configured");
             } else {
                 for item in response.registrations {
+                    let address = item.address.as_deref().unwrap_or("?");
                     println!(
                         "Connection status to rendezvous point at \"{}\" is \"{:?}\". Registration status is \"{:?}\"",
-                        item.address, item.connection, item.registration
+                        address, item.connection, item.registration
                     );
                 }
             }

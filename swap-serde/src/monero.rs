@@ -11,7 +11,6 @@ pub enum network {
 }
 
 pub mod private_key {
-    use hex;
     use monero::consensus::{Decodable, Encodable};
     use monero::PrivateKey;
     use serde::de::Visitor;
@@ -34,16 +33,18 @@ pub mod private_key {
             E: de::Error,
         {
             let mut s = s;
-            PrivateKey::consensus_decode(&mut s).map_err(|err| E::custom(format!("{:?}", err)))
+            PrivateKey::consensus_decode(&mut s).map_err(|err| E::custom(format!("{err:?}")))
         }
 
         fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
-            let bytes = hex::decode(s).map_err(|err| E::custom(format!("{:?}", err)))?;
+            let bytes = data_encoding::HEXLOWER_PERMISSIVE
+                .decode(s.as_bytes())
+                .map_err(|err| E::custom(format!("{err:?}")))?;
             PrivateKey::consensus_decode(&mut bytes.as_slice())
-                .map_err(|err| E::custom(format!("{:?}", err)))
+                .map_err(|err| E::custom(format!("{err:?}")))
         }
     }
 
@@ -53,9 +54,9 @@ pub mod private_key {
     {
         let mut bytes = Cursor::new(vec![]);
         x.consensus_encode(&mut bytes)
-            .map_err(|err| S::Error::custom(format!("{:?}", err)))?;
+            .map_err(|err| S::Error::custom(format!("{err:?}")))?;
         if s.is_human_readable() {
-            s.serialize_str(&hex::encode(bytes.into_inner()))
+            s.serialize_str(&data_encoding::HEXLOWER.encode(&bytes.into_inner()))
         } else {
             s.serialize_bytes(bytes.into_inner().as_ref())
         }
@@ -115,8 +116,7 @@ pub mod address {
     pub fn parse(s: &str) -> Result<monero::Address> {
         monero::Address::from_str(s).with_context(|| {
             format!(
-                "Failed to parse {} as a monero address, please make sure it is a valid address",
-                s
+                "Failed to parse {s} as a monero address, please make sure it is a valid address",
             )
         })
     }

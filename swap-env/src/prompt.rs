@@ -40,7 +40,7 @@ pub fn bitcoin_confirmation_target(default_target: u16) -> Result<u16> {
 pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multiaddr>> {
     let listen_addresses = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Enter multiaddresses (comma separated) on which asb should list for peer-to-peer communications or hit return to use default")
-        .default(format!("{}", default_listen_address))
+        .default(default_listen_address.to_string())
         .interact_text()?;
 
     listen_addresses
@@ -51,7 +51,7 @@ pub fn listen_addresses(default_listen_address: &Multiaddr) -> Result<Vec<Multia
 }
 
 /// Prompt user for electrum RPC URLs
-pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
+pub fn electrum_rpc_urls(default_electrum_urls: &[Url]) -> Result<Vec<Url>> {
     let mut info_lines = vec![
         "You can configure multiple Electrum servers for redundancy. At least one is required."
             .to_string(),
@@ -73,7 +73,7 @@ pub fn electrum_rpc_urls(default_electrum_urls: &Vec<Url>) -> Result<Vec<Url>> {
         .default(true)
         .interact()?
     {
-        true => default_electrum_urls.clone(),
+        true => default_electrum_urls.to_vec(),
         false => Vec::new(),
     };
 
@@ -178,8 +178,7 @@ pub fn ask_spread() -> Result<Decimal> {
 
     if !(0.0..=1.0).contains(&ask_spread) {
         bail!(format!(
-            "Invalid spread {}. For the spread value floating point number in interval [0..1] are allowed.",
-            ask_spread
+            "Invalid spread {ask_spread}. For the spread value floating point number in interval [0..1] are allowed.",
         ))
     }
 
@@ -285,8 +284,7 @@ pub fn developer_tip() -> Result<Decimal> {
 
     if !(Decimal::ZERO..=Decimal::ONE).contains(&developer_tip) {
         bail!(format!(
-            "Invalid developer tip {}. For the developer tip value floating point number in interval [0..1] are allowed.",
-            developer_tip
+            "Invalid developer tip {developer_tip}. For the developer tip value floating point number in interval [0..1] are allowed.",
         ))
     }
 
@@ -294,8 +292,7 @@ pub fn developer_tip() -> Result<Decimal> {
         developer_tip.saturating_mul(Decimal::from_u64(100).expect("100 to fit in u64"));
 
     print_info_box([&format!(
-        "You will tip {}% of each swap to the developers. Thank you for your support!",
-        developer_tip_percentage
+        "You will tip {developer_tip_percentage}% of each swap to the developers. Thank you for your support!",
     )]);
 
     Ok(developer_tip)

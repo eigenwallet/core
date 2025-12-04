@@ -1,4 +1,4 @@
-use crate::network::rendezvous;
+pub use crate::network::rendezvous;
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::network::swap_setup::alice;
 use crate::network::transport::authenticate_and_multiplex;
@@ -93,9 +93,9 @@ pub mod transport {
 
 pub mod behaviour {
     use libp2p::{identify, identity, ping, swarm::behaviour::toggle::Toggle};
-    use swap_p2p::out_event::alice::OutEvent;
+    use swap_p2p::{out_event::alice::OutEvent, patches};
 
-    use super::{rendezvous::register, *};
+    use super::*;
 
     /// A `NetworkBehaviour` that represents an XMR/BTC swap node as Alice.
     #[derive(NetworkBehaviour)]
@@ -111,7 +111,7 @@ pub mod behaviour {
         pub transfer_proof: transfer_proof::Behaviour,
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
-        pub identify: identify::Behaviour,
+        pub identify: patches::identify::Behaviour,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -130,7 +130,7 @@ pub mod behaviour {
             resume_only: bool,
             env_config: env::Config,
             identify_params: (identity::Keypair, XmrBtcNamespace),
-            rendezvous_nodes: Vec<register::RendezvousNode>,
+            rendezvous_nodes: Vec<PeerId>,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -147,12 +147,13 @@ pub mod behaviour {
                 Some(rendezvous::register::Behaviour::new(
                     identity,
                     rendezvous_nodes,
+                    namespace.into(),
                 ))
             };
 
             Self {
                 rendezvous: Toggle::from(behaviour),
-                quote: quote::asb(),
+                quote: quote::alice(),
                 swap_setup: alice::Behaviour::new(
                     min_buy,
                     max_buy,
@@ -164,7 +165,7 @@ pub mod behaviour {
                 encrypted_signature: encrypted_signature::alice(),
                 cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(),
                 ping: ping::Behaviour::new(pingConfig),
-                identify: identify::Behaviour::new(identifyConfig),
+                identify: patches::identify::Behaviour::new(identifyConfig),
             }
         }
     }

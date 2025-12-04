@@ -29,27 +29,32 @@ pub struct MultiaddressesResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PeerIdResponse {
+    pub peer_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ActiveConnectionsResponse {
     pub connections: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum RendezvousConnectionStatus {
-    Disconnected,
-    Dialling,
     Connected,
+    Disconnected,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum RendezvousRegistrationStatus {
-    RegisterOnNextConnection,
-    Pending,
     Registered,
+    WillRegisterAfterDelay,
+    RegisterOnceConnected,
+    RequestInflight,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RegistrationStatusItem {
-    pub address: String,
+    pub address: Option<String>,
     pub connection: RendezvousConnectionStatus,
     pub registration: RendezvousRegistrationStatus,
 }
@@ -87,6 +92,8 @@ pub trait AsbApi {
     async fn monero_seed(&self) -> Result<MoneroSeedResponse, ErrorObjectOwned>;
     #[method(name = "multiaddresses")]
     async fn multiaddresses(&self) -> Result<MultiaddressesResponse, ErrorObjectOwned>;
+    #[method(name = "peer_id")]
+    async fn peer_id(&self) -> Result<PeerIdResponse, ErrorObjectOwned>;
     #[method(name = "active_connections")]
     async fn active_connections(&self) -> Result<ActiveConnectionsResponse, ErrorObjectOwned>;
     #[method(name = "get_swaps")]

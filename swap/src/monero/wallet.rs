@@ -74,9 +74,24 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
+                    let total_balance = match wallet.total_balance().await {
+                        Ok(total_balance) => total_balance,
+                        Err(e) => {
+                            tracing::error!("Failed to get total balance: {}", e);
+                            return;
+                        }
+                    };
+                    let unlocked_balance = match wallet.unlocked_balance().await {
+                        Ok(unlocked_balance) => unlocked_balance,
+                        Err(e) => {
+                            tracing::error!("Failed to get unlocked balance: {}", e);
+                            return;
+                        }
+                    };
+
                     let response = GetMoneroBalanceResponse {
-                        total_balance: wallet.total_balance().await.into(),
-                        unlocked_balance: wallet.unlocked_balance().await.into(),
+                        total_balance: total_balance.into(),
+                        unlocked_balance: unlocked_balance.into(),
                     };
                     tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
                         MoneroWalletUpdate::BalanceChange(response),
@@ -94,7 +109,13 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
-                    let transactions = wallet.history().await;
+                    let transactions = match wallet.history().await {
+                        Ok(transactions) => transactions,
+                        Err(e) => {
+                            tracing::error!("Failed to get history: {}", e);
+                            return;
+                        }
+                    };
                     let response = GetMoneroHistoryResponse { transactions };
 
                     tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
@@ -113,7 +134,13 @@ impl TauriWalletListener {
                 let tauri = tauri.clone();
                 let rt = rt.clone();
                 rt.spawn(async move {
-                    let sync_progress = wallet.sync_progress().await;
+                    let sync_progress = match wallet.sync_progress().await {
+                        Ok(sync_progress) => sync_progress,
+                        Err(e) => {
+                            tracing::error!("Failed to get sync progress: {}", e);
+                            return;
+                        }
+                    };
 
                     let progress_percentage = sync_progress.percentage();
 
@@ -266,7 +293,7 @@ impl Wallets {
             .call(move |wallet| {
                 wallet.add_listener(Box::new(handle_listener));
             })
-            .await;
+            .await?;
 
         // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
@@ -277,7 +304,7 @@ impl Wallets {
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
                 })
-                .await;
+                .await?;
         }
 
         let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
@@ -295,7 +322,7 @@ impl Wallets {
 
         // Record wallet access in database
         let wallet_path = wallets.main_wallet.path().await;
-        let _ = wallets.record_wallet_access(&wallet_path).await;
+        let _ = wallets.record_wallet_access(&wallet_path?).await;
 
         Ok(wallets)
     }
@@ -327,7 +354,7 @@ impl Wallets {
             .call(move |wallet| {
                 wallet.add_listener(Box::new(handle_listener));
             })
-            .await;
+            .await?;
 
         // We only register the UI listener if we are running with Tauri
         if let Some(tauri_handle) = tauri_handle.clone() {
@@ -338,7 +365,7 @@ impl Wallets {
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
                 })
-                .await;
+                .await?;
         }
 
         let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
@@ -356,7 +383,7 @@ impl Wallets {
 
         // Record wallet access in database
         let wallet_path = wallets.main_wallet.path().await;
-        let _ = wallets.record_wallet_access(&wallet_path).await;
+        let _ = wallets.record_wallet_access(&wallet_path?).await;
 
         Ok(wallets)
     }
@@ -439,7 +466,7 @@ impl Wallets {
         // Why?
         // Because if the user later tries to spend the funds (after a new block is mined), the wallet will not be synchronized anymore
         // We start the refresh thread such that the wallet will keep up with the chain tip in the background.
-        wallet.start_refresh_thread().await;
+        wallet.start_refresh_thread().await?;
 
         Ok(Arc::new(wallet))
     }
@@ -512,7 +539,7 @@ impl Wallets {
 
         self.main_wallet
             .call(move |wallet| wallet.set_daemon(&new_daemon))
-            .await?;
+            .await??;
 
         Ok(())
     }
@@ -541,249 +568,3 @@ impl Wallets {
 pub fn no_listener<T>() -> Option<impl Fn(T) + Send + 'static> {
     Some(|_| {})
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::tracing_ext::capture_logs;
-//     use monero_rpc::wallet::CheckTxKey;
-//     use std::sync::atomic::{AtomicU32, Ordering};
-//     use tokio::sync::Mutex;
-//     use tracing::metadata::LevelFilter;
-
-//     async fn wait_for_confirmations<
-//         C: monero_rpc::wallet::MoneroWalletRpc<reqwest::Client> + Sync,
-//     >(
-//         client: Arc<Mutex<Wallet<C>>>,
-//         transfer_proof: TransferProof,
-//         to_address: Address,
-//         expected: Amount,
-//         conf_target: u64,
-//         check_interval: Interval,
-//         wallet_name: String,
-//     ) -> Result<(), InsufficientFunds> {
-//         wait_for_confirmations_with(
-//             client,
-//             transfer_proof,
-//             to_address,
-//             expected,
-//             conf_target,
-//             check_interval,
-//             wallet_name,
-//             None,
-//         )
-//         .await
-//     }
-
-//     #[tokio::test]
-//     async fn given_exact_confirmations_does_not_fetch_tx_again() {
-//         let wallet = Arc::new(Mutex::new(Wallet::from_dummy(
-//             DummyClient::new(vec![Ok(CheckTxKey {
-//                 confirmations: 10,
-//                 received: 100,
-//             })]),
-//             Network::Testnet,
-//         )));
-
-//         let result = wait_for_confirmations(
-//             wallet.clone(),
-//             TransferProof::new(TxHash("<FOO>".to_owned()), PrivateKey {
-//                 scalar: crate::monero::Scalar::random(&mut rand::thread_rng())
-//             }),
-//             "53H3QthYLckeCXh9u38vohb2gZ4QgEG3FMWHNxccR6MqV1LdDVYwF1FKsRJPj4tTupWLf9JtGPBcn2MVN6c9oR7p5Uf7JdJ".parse().unwrap(),
-//             Amount::from_piconero(100),
-//             10,
-//             tokio::time::interval(Duration::from_millis(10)),
-//             "foo-wallet".to_owned(),
-//         )
-//         .await;
-
-//         assert!(result.is_ok());
-//         assert_eq!(
-//             wallet
-//                 .lock()
-//                 .await
-//                 .inner
-//                 .check_tx_key_invocations
-//                 .load(Ordering::SeqCst),
-//             1
-//         );
-//     }
-
-//     #[tokio::test]
-//     async fn visual_log_check() {
-//         let writer = capture_logs(LevelFilter::INFO);
-
-//         let client = Arc::new(Mutex::new(Wallet::from_dummy(
-//             DummyClient::new(vec![
-//                 Ok(CheckTxKey {
-//                     confirmations: 1,
-//                     received: 100,
-//                 }),
-//                 Ok(CheckTxKey {
-//                     confirmations: 1,
-//                     received: 100,
-//                 }),
-//                 Ok(CheckTxKey {
-//                     confirmations: 1,
-//                     received: 100,
-//                 }),
-//                 Ok(CheckTxKey {
-//                     confirmations: 3,
-//                     received: 100,
-//                 }),
-//                 Ok(CheckTxKey {
-//                     confirmations: 5,
-//                     received: 100,
-//                 }),
-//             ]),
-//             Network::Testnet,
-//         )));
-
-//         wait_for_confirmations(
-//             client.clone(),
-//             TransferProof::new(TxHash("<FOO>".to_owned()), PrivateKey {
-//                 scalar: crate::monero::Scalar::random(&mut rand::thread_rng())
-//             }),
-//             "53H3QthYLckeCXh9u38vohb2gZ4QgEG3FMWHNxccR6MqV1LdDVYwF1FKsRJPj4tTupWLf9JtGPBcn2MVN6c9oR7p5Uf7JdJ".parse().unwrap(),
-//             Amount::from_piconero(100),
-//             5,
-//             tokio::time::interval(Duration::from_millis(10)),
-//             "foo-wallet".to_owned()
-//         )
-//         .await
-//         .unwrap();
-
-//         assert_eq!(
-//             writer.captured(),
-//             r" INFO swap::monero::wallet: Received new confirmation for Monero lock tx txid=<FOO> seen_confirmations=1 needed_confirmations=5
-//  INFO swap::monero::wallet: Received new confirmation for Monero lock tx txid=<FOO> seen_confirmations=3 needed_confirmations=5
-//  INFO swap::monero::wallet: Received new confirmation for Monero lock tx txid=<FOO> seen_confirmations=5 needed_confirmations=5
-// "
-//         );
-//     }
-
-//     #[tokio::test]
-//     async fn reopens_wallet_in_case_not_available() {
-//         let writer = capture_logs(LevelFilter::DEBUG);
-
-//         let client = Arc::new(Mutex::new(Wallet::from_dummy(
-//             DummyClient::new(vec![
-//                 Ok(CheckTxKey {
-//                     confirmations: 1,
-//                     received: 100,
-//                 }),
-//                 Ok(CheckTxKey {
-//                     confirmations: 1,
-//                     received: 100,
-//                 }),
-//                 Err((-13, "No wallet file".to_owned())),
-//                 Ok(CheckTxKey {
-//                     confirmations: 3,
-//                     received: 100,
-//                 }),
-//                 Ok(CheckTxKey {
-//                     confirmations: 5,
-//                     received: 100,
-//                 }),
-//             ]),
-//             Network::Testnet,
-//         )));
-
-//         tokio::time::timeout(Duration::from_secs(30), wait_for_confirmations(
-//             client.clone(),
-//             TransferProof::new(TxHash("<FOO>".to_owned()), PrivateKey {
-//                 scalar: crate::monero::Scalar::random(&mut rand::thread_rng())
-//             }),
-//             "53H3QthYLckeCXh9u38vohb2gZ4QgEG3FMWHNxccR6MqV1LdDVYwF1FKsRJPj4tTupWLf9JtGPBcn2MVN6c9oR7p5Uf7JdJ".parse().unwrap(),
-//             Amount::from_piconero(100),
-//             5,
-//             tokio::time::interval(Duration::from_millis(10)),
-//             "foo-wallet".to_owned(),
-//         ))
-//         .await
-//         .expect("timeout: shouldn't take more than 10 seconds")
-//         .unwrap();
-
-//         assert_eq!(
-//             writer.captured(),
-//             r" INFO swap::monero::wallet: Received new confirmation for Monero lock tx txid=<FOO> seen_confirmations=1 needed_confirmations=5
-// DEBUG swap::monero::wallet: No wallet loaded. Opening wallet `foo-wallet` to continue monitoring of Monero transaction <FOO>
-//  INFO swap::monero::wallet: Received new confirmation for Monero lock tx txid=<FOO> seen_confirmations=3 needed_confirmations=5
-//  INFO swap::monero::wallet: Received new confirmation for Monero lock tx txid=<FOO> seen_confirmations=5 needed_confirmations=5
-// "
-//         );
-//         assert_eq!(
-//             client
-//                 .lock()
-//                 .await
-//                 .inner
-//                 .open_wallet_invocations
-//                 .load(Ordering::SeqCst),
-//             1
-//         );
-//     }
-
-//     type ErrorCode = i64;
-//     type ErrorMessage = String;
-
-//     struct DummyClient {
-//         check_tx_key_responses: Vec<Result<wallet::CheckTxKey, (ErrorCode, ErrorMessage)>>,
-
-//         check_tx_key_invocations: AtomicU32,
-//         open_wallet_invocations: AtomicU32,
-//     }
-
-//     impl DummyClient {
-//         fn new(
-//             check_tx_key_responses: Vec<Result<wallet::CheckTxKey, (ErrorCode, ErrorMessage)>>,
-//         ) -> Self {
-//             Self {
-//                 check_tx_key_responses,
-//                 check_tx_key_invocations: Default::default(),
-//                 open_wallet_invocations: Default::default(),
-//             }
-//         }
-//     }
-
-//     #[async_trait::async_trait]
-//     impl monero_rpc::wallet::MoneroWalletRpc<reqwest::Client> for DummyClient {
-//         async fn open_wallet(
-//             &self,
-//             _: String,
-//         ) -> Result<wallet::WalletOpened, monero_rpc::jsonrpc::Error<reqwest::Error>> {
-//             self.open_wallet_invocations.fetch_add(1, Ordering::SeqCst);
-
-//             Ok(monero_rpc::wallet::Empty {})
-//         }
-
-//         async fn check_tx_key(
-//             &self,
-//             _: String,
-//             _: String,
-//             _: String,
-//         ) -> Result<wallet::CheckTxKey, monero_rpc::jsonrpc::Error<reqwest::Error>> {
-//             let index = self.check_tx_key_invocations.fetch_add(1, Ordering::SeqCst);
-
-//             self.check_tx_key_responses[index as usize]
-//                 .clone()
-//                 .map_err(|(code, message)| {
-//                     monero_rpc::jsonrpc::Error::JsonRpc(monero_rpc::jsonrpc::JsonRpcError {
-//                         code,
-//                         message,
-//                         data: None,
-//                     })
-//                 })
-//         }
-
-//         async fn send_request<P>(
-//             &self,
-//             _: String,
-//         ) -> Result<monero_rpc::jsonrpc::Response<P>, reqwest::Error>
-//         where
-//             P: serde::de::DeserializeOwned,
-//         {
-//             todo!()
-//         }
-//     }
-// }

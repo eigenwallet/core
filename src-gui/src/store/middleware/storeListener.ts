@@ -6,7 +6,6 @@ import {
   checkBitcoinBalance,
   getBitcoinAddress,
   updateAllNodeStatuses,
-  fetchSellersAtPresetRendezvousPoints,
   getSwapInfo,
   getSwapTimelock,
   initializeMoneroWallet,
@@ -138,17 +137,6 @@ export function createMainListeners() {
         );
         await getAllSwapInfos();
         await getAllSwapTimelocks();
-      }
-
-      // If the database just became availiable, fetch sellers at preset rendezvous points
-      if (
-        status.database_available &&
-        !previousContextStatus?.database_available
-      ) {
-        logger.info(
-          "Database just became available, fetching sellers at preset rendezvous points...",
-        );
-        await fetchSellersAtPresetRendezvousPoints();
       }
     },
   });

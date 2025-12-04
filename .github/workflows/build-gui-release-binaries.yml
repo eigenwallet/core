@@ -168,7 +168,8 @@ jobs:
               "type": "file",
               "path": $deb_path
             } |
-            .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path
+            .modules[0].sources[1].path = $PWD + "/" + .modules[0].sources[1].path |
+            .modules[0].sources[2].path = $PWD + "/" + .modules[0].sources[2].path
           ' < flatpak/org.eigenwallet.app.json > target/manifest.json
 
           outdir=target/flatpak-repo
@@ -216,12 +217,22 @@ jobs:
 
           VERSION="${{ github.event.release.tag_name }}"
 
-          # Download the DMG files
+          echo "Creating download directory /tmp/dmgs ..."
+          mkdir -p /tmp/dmgs
+
+          echo "Downloading all *.dmg assets from release $VERSION ..."
           gh release download "$VERSION" --pattern "*.dmg" --dir /tmp/dmgs
 
+          echo "Download complete. Contents of /tmp/dmgs:"
+          ls -la /tmp/dmgs
+          
           # Calculate SHA256 checksums
-          AARCH64_DMG=/tmp/dmgs/*_aarch64.dmg
-          X64_DMG=/tmp/dmgs/*_x64.dmg
+          AARCH64_DMG=$(ls /tmp/dmgs/eigenwallet_*_aarch64.dmg)
+          X64_DMG=$(ls /tmp/dmgs/eigenwallet_*_x64.dmg)
+
+          echo "Found DMGs:"
+          echo "  aarch64 -> $(basename "$AARCH64_DMG")"
+          echo "  x64     -> $(basename "$X64_DMG")"
 
           AARCH64_SHA256=$(sha256sum "$AARCH64_DMG" | awk '{print $1}')
           X64_SHA256=$(sha256sum "$X64_DMG" | awk '{print $1}')

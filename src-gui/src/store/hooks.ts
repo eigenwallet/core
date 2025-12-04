@@ -106,12 +106,9 @@ export function useIsSwapRunningAndHasFundsLocked() {
 
 /// Returns true if we have a swap that is running
 export function useIsSpecificSwapRunning(swapId: string | null) {
-  if (swapId == null) {
-    return false;
-  }
-
   return useAppSelector(
     (state) =>
+      swapId != null &&
       state.swap.state !== null &&
       state.swap.state.swapId === swapId &&
       state.swap.state.curr.type !== "Released",
@@ -154,14 +151,6 @@ export function useActiveSwapLogs() {
   }, [logs, swapId]);
 }
 
-export function useAllMakers() {
-  return useAppSelector((state) => {
-    const registryMakers = state.makers.registry.makers || [];
-    const listSellersMakers = state.makers.rendezvous.makers || [];
-    return [...registryMakers, ...listSellersMakers];
-  });
-}
-
 /// This hook returns the all swap infos, as an array
 /// Excluding those who are in a state where it's better to hide them from the user
 export function useSaneSwapInfos() {
@@ -191,11 +180,6 @@ export function useSwapInfosSortedByDate() {
   const swapInfos = useSaneSwapInfos();
 
   return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
-}
-
-export function useRates<T>(selector: (rates: RatesState) => T): T {
-  const rates = useAppSelector((state) => state.rates);
-  return selector(rates);
 }
 
 export function useSettings<T>(selector: (settings: SettingsState) => T): T {
@@ -269,7 +253,7 @@ export function useBitcoinSyncProgress(): TauriBitcoinSyncProgress[] {
     );
 }
 
-export function isSyncingBitcoin(): boolean {
+export function useIsSyncingBitcoin(): boolean {
   const syncProgress = useBitcoinSyncProgress();
   return syncProgress.length > 0;
 }

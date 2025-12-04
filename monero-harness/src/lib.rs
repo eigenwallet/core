@@ -244,7 +244,7 @@ impl<'c> Monero {
         let monerod = &self.monerod;
 
         if amount_in_outputs.is_empty() || amount_in_outputs.iter().sum::<u64>() == 0 {
-            tracing::info!(address=%wallet.main_address().await, "Initializing wallet `{}` with {}", name, Amount::ZERO);
+            tracing::info!(address=%wallet.main_address().await?, "Initializing wallet `{}` with {}", name, Amount::ZERO);
             return Ok(());
         }
 
@@ -256,7 +256,7 @@ impl<'c> Monero {
         for amount in amount_in_outputs {
             if amount > 0 {
                 miner_wallet
-                    .transfer(&wallet.main_address().await, amount)
+                    .transfer(&wallet.main_address().await?, amount)
                     .await
                     .context("Miner could not transfer funds to wallet")?;
                 expected_total += amount;
@@ -269,7 +269,7 @@ impl<'c> Monero {
         }
 
         tracing::info!(
-            address=%wallet.main_address().await,
+            address=%wallet.main_address().await?,
             "Funding wallet `{}` with {}. Generating 10 blocks to unlock.",
             name,
             Amount::from_pico(expected_total)
@@ -295,7 +295,7 @@ impl<'c> Monero {
 
         wallet.wait_until_synced(no_listener()).await?;
 
-        let total = wallet.total_balance().await.as_pico();
+        let total = wallet.total_balance().await?.as_pico();
 
         assert_eq!(total, expected_total);
 
@@ -474,7 +474,7 @@ impl MoneroWallet {
     }
 
     pub async fn address(&self) -> Result<Address> {
-        Ok(self.wallet.main_address().await)
+        Ok(self.wallet.main_address().await?)
     }
 
     /// Get address at a given account and subaddress index.
@@ -484,13 +484,13 @@ impl MoneroWallet {
 
     pub async fn balance(&self) -> Result<u64> {
         // First make sure we're connected to the daemon
-        let connected = self.wallet.connected().await;
+        let connected = self.wallet.connected().await?;
         tracing::debug!("Wallet connected to daemon: {}", connected);
 
         // Force a refresh first
         // self.refresh().await?;
 
-        let total = self.wallet.total_balance().await.as_pico();
+        let total = self.wallet.total_balance().await?.as_pico();
         tracing::debug!(
             "Wallet `{}` balance (total): {}",
             self.name,
@@ -511,7 +511,7 @@ impl MoneroWallet {
     }
 
     pub async fn unlocked_balance(&self) -> Result<u64> {
-        Ok(self.wallet.unlocked_balance().await.as_pico())
+        Ok(self.wallet.unlocked_balance().await?.as_pico())
     }
 
     /// Create a new subaddress for the given account with the provided label.
@@ -586,6 +586,10 @@ impl MoneroWallet {
             .sweep_multi_destination(addresses, ratios)
             .await
             .context("Failed to perform sweep")
+    }
+
+    pub async fn blockchain_height(&self) -> Result<u64> {
+        self.wallet.blockchain_height().await
     }
 }
 

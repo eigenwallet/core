@@ -10,7 +10,7 @@ import {
   TextField,
 } from "@mui/material";
 import { TextFieldProps } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getMoneroAddresses } from "renderer/rpc";
 import { isTestnet } from "store/config";
 import { isXmrAddressValid } from "utils/conversionUtils";
@@ -40,7 +40,7 @@ export default function MoneroAddressTextField({
 
   const placeholder = isTestnet() ? "59McWTPGc745..." : "888tNkZrPN6J...";
 
-  function errorText() {
+  const errorText = useCallback(() => {
     if (address.length === 0) {
       if (allowEmpty) {
         return null;
@@ -54,13 +54,13 @@ export default function MoneroAddressTextField({
     }
 
     return "Not a valid Monero address";
-  }
+  }, [address, allowEmpty]);
 
   useEffect(() => {
     if (onAddressValidityChange != null) {
       onAddressValidityChange(!errorText());
     }
-  }, [address, onAddressValidityChange]);
+  }, [errorText, onAddressValidityChange]);
 
   useEffect(() => {
     const fetchAddresses = async () => {

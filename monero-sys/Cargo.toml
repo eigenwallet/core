@@ -11,6 +11,7 @@ cxx = "1.0.137"
 monero = { workspace = true }
 serde = { workspace = true }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "chrono"] }
+thiserror = "2.0.17"
 tokio = { workspace = true, features = ["sync", "time", "rt"] }
 tracing = { workspace = true }
 typeshare = { workspace = true }
@@ -18,11 +19,11 @@ url = { workspace = true }
 uuid = { workspace = true }
 
 # Our crates
-swap-serde = { path = "../swap-serde" }
 throttle = { path = "../throttle" }
 
 [build-dependencies]
 cmake = "0.1.54"
+num_cpus = "1.17"
 cxx-build = "1.0.137"
 diffy = "0.4.2"
 fs_extra = "1.3.0"
@@ -33,7 +34,6 @@ futures = { workspace = true }
 quickcheck = "1.0"
 quickcheck_macros = "1.0"
 tempfile = "3.19.1"
-testcontainers = "0.15"
 tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }

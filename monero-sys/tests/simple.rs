@@ -6,7 +6,7 @@ const STAGENET_WALLET_SEED: &str = "echo ourselves ruined oven masterful wives e
 const STAGENET_WALLET_RESTORE_HEIGHT: u64 = 1728128;
 
 #[tokio::test]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             "info,test=debug,monero_harness=debug,monero_rpc=debug,simple=trace,monero_sys=trace",
@@ -32,7 +32,7 @@ async fn main() {
     .await
     .expect("Failed to recover wallet");
 
-    tracing::info!("Primary address: {}", wallet.main_address().await);
+    tracing::info!("Primary address: {}", wallet.main_address().await?);
 
     // Wait for a while to let the wallet sync, checking sync status
     tracing::info!("Waiting for wallet to sync...");
@@ -46,10 +46,10 @@ async fn main() {
 
     tracing::info!("Wallet is synchronized!");
 
-    let balance = wallet.total_balance().await;
+    let balance = wallet.total_balance().await?;
     tracing::info!("Balance: {}", balance);
 
-    let unlocked_balance = wallet.unlocked_balance().await;
+    let unlocked_balance = wallet.unlocked_balance().await?;
     tracing::info!("Unlocked balance: {}", unlocked_balance);
 
     assert!(balance > Amount::ZERO);
@@ -59,14 +59,14 @@ async fn main() {
     tracing::info!("Transferring 1 XMR to ourselves");
 
     wallet
-        .transfer_single_destination(&wallet.main_address().await, transfer_amount)
+        .transfer_single_destination(&wallet.main_address().await?, transfer_amount)
         .await
         .unwrap();
 
-    let new_balance = wallet.total_balance().await;
+    let new_balance = wallet.total_balance().await?;
     tracing::info!("Balance: {}", new_balance);
 
-    let new_unlocked_balance = wallet.unlocked_balance().await;
+    let new_unlocked_balance = wallet.unlocked_balance().await?;
     tracing::info!("Unlocked balance: {}", new_unlocked_balance);
 
     let fee = balance - new_balance;
@@ -77,4 +77,6 @@ async fn main() {
     assert!(new_balance > Amount::ZERO);
     assert!(new_balance <= balance);
     assert!(new_unlocked_balance <= balance - transfer_amount);
+
+    Ok(())
 }

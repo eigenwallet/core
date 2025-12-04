@@ -95,14 +95,13 @@ mod tests {
             )
             .create();
 
-        let url = format!("http://{}", server.url());
+        let url = server.url();
 
         let client = reqwest::Client::new();
         let result = MoneroDaemon::new(url, Network::Mainnet)
             .is_available(&client)
             .await;
 
-        assert!(result.is_ok());
         assert!(result.unwrap());
     }
 
@@ -126,14 +125,13 @@ mod tests {
             )
             .create();
 
-        let url = format!("http://{}", server.url());
+        let url = server.url();
 
         let client = reqwest::Client::new();
         let result = MoneroDaemon::new(url, Network::Stagenet)
             .is_available(&client)
             .await;
 
-        assert!(result.is_ok());
         assert!(!result.unwrap());
     }
 
@@ -157,14 +155,13 @@ mod tests {
             )
             .create();
 
-        let url = format!("http://{}", server.url());
+        let url = server.url();
 
         let client = reqwest::Client::new();
         let result = MoneroDaemon::new(url, Network::Mainnet)
             .is_available(&client)
             .await;
 
-        assert!(result.is_ok());
         assert!(!result.unwrap());
     }
 

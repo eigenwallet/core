@@ -1,10 +1,8 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-import { ExtendedMakerStatus, MakerStatus } from "models/apiModel";
 import {
   GetSwapInfoResponse,
   ContextStatus,
   TauriTimelockChangeEvent,
-  BackgroundRefundState,
   ApprovalRequest,
   TauriBackgroundProgressWrapper,
   TauriBackgroundProgress,
@@ -12,11 +10,8 @@ import {
 } from "models/tauriModel";
 import { MoneroRecoveryResponse } from "../../models/rpcModel";
 import { GetSwapInfoResponseExt } from "models/tauriModelExt";
-import logger from "utils/logger";
 
 interface State {
-  withdrawTxId: string | null;
-  rendezvousDiscoveredSellers: (ExtendedMakerStatus | MakerStatus)[];
   swapInfos: {
     [swapId: string]: GetSwapInfoResponseExt;
   };
@@ -26,10 +21,6 @@ interface State {
   moneroRecovery: {
     swapId: string;
     keys: MoneroRecoveryResponse;
-  } | null;
-  backgroundRefund: {
-    swapId: string;
-    state: BackgroundRefundState;
   } | null;
   approvalRequests: {
     // Store the full event, keyed by request_id
@@ -57,13 +48,10 @@ export interface RPCSlice {
 const initialState: RPCSlice = {
   status: null,
   state: {
-    withdrawTxId: null,
-    rendezvousDiscoveredSellers: [],
     swapInfos: {},
     swapTimelocks: {},
     moneroRecovery: null,
     background: {},
-    backgroundRefund: null,
     approvalRequests: {},
   },
 };
@@ -94,18 +82,6 @@ export const rpcSlice = createSlice({
           action.payload.timelock;
       }
     },
-    rpcSetWithdrawTxId(slice, action: PayloadAction<string>) {
-      slice.state.withdrawTxId = action.payload;
-    },
-    rpcSetRendezvousDiscoveredMakers(
-      slice,
-      action: PayloadAction<(ExtendedMakerStatus | MakerStatus)[]>,
-    ) {
-      slice.state.rendezvousDiscoveredSellers = action.payload;
-    },
-    rpcResetWithdrawTxId(slice) {
-      slice.state.withdrawTxId = null;
-    },
     rpcSetSwapInfo(slice, action: PayloadAction<GetSwapInfoResponse>) {
       slice.state.swapInfos[action.payload.swap_id] =
         action.payload as GetSwapInfoResponseExt;
@@ -125,15 +101,6 @@ export const rpcSlice = createSlice({
     rpcResetMoneroRecoveryKeys(slice) {
       slice.state.moneroRecovery = null;
     },
-    rpcSetBackgroundRefundState(
-      slice,
-      action: PayloadAction<{ swap_id: string; state: BackgroundRefundState }>,
-    ) {
-      slice.state.backgroundRefund = {
-        swapId: action.payload.swap_id,
-        state: action.payload.state,
-      };
-    },
     approvalEventReceived(slice, action: PayloadAction<ApprovalRequest>) {
       const event = action.payload;
       const requestId = event.request_id;
@@ -152,41 +119,19 @@ export const rpcSlice = createSlice({
     ) {
       slice.state.background[action.payload.id] = action.payload.event;
     },
-    backgroundProgressEventRemoved(slice, action: PayloadAction<string>) {
-      delete slice.state.background[action.payload];
-    },
-    rpcSetBackgroundItems(
-      slice,
-      action: PayloadAction<{ [key: string]: TauriBackgroundProgress }>,
-    ) {
-      slice.state.background = action.payload;
-    },
-    rpcSetApprovalItems(
-      slice,
-      action: PayloadAction<{ [requestId: string]: ApprovalRequest }>,
-    ) {
-      slice.state.approvalRequests = action.payload;
-    },
   },
 });
 
 export const {
   contextStatusEventReceived,
   contextInitializationFailed,
-  rpcSetWithdrawTxId,
-  rpcResetWithdrawTxId,
-  rpcSetRendezvousDiscoveredMakers,
   rpcSetSwapInfo,
   rpcSetMoneroRecoveryKeys,
   rpcResetMoneroRecoveryKeys,
-  rpcSetBackgroundRefundState,
   timelockChangeEventReceived,
   approvalEventReceived,
   approvalRequestsReplaced,
   backgroundProgressEventReceived,
-  backgroundProgressEventRemoved,
-  rpcSetBackgroundItems,
-  rpcSetApprovalItems,
 } = rpcSlice.actions;
 
 export default rpcSlice.reducer;

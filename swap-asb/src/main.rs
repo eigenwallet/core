@@ -27,7 +27,7 @@ use structopt::clap::ErrorKind;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, Finality, KrakenRate};
+use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
@@ -180,14 +180,14 @@ pub async fn main() -> Result<()> {
 
             // Initialize Monero wallet
             let monero_wallet = init_monero_wallet(&config, env_config).await?;
-            let monero_address = monero_wallet.main_wallet().await.main_address().await;
+            let monero_address = monero_wallet.main_wallet().await.main_address().await?;
             tracing::info!(%monero_address, "Monero wallet address");
 
             // Check Monero balance
             let wallet = monero_wallet.main_wallet().await;
 
-            let total = wallet.total_balance().await.as_pico();
-            let unlocked = wallet.unlocked_balance().await.as_pico();
+            let total = wallet.total_balance().await?.as_pico();
+            let unlocked = wallet.unlocked_balance().await?.as_pico();
 
             match (total, unlocked) {
                 (0, _) => {
@@ -215,11 +215,22 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to Kraken
+            // Connect to Kraken, Bitfinex, and KuCoin
             let kraken_price_updates =
-                swap_feed::connect_kraken(config.maker.price_ticker_ws_url.clone())?;
+                swap_feed::connect_kraken(config.maker.price_ticker_ws_url_kraken.clone())?;
+            let bitfinex_price_updates =
+                swap_feed::connect_bitfinex(config.maker.price_ticker_ws_url_bitfinex.clone())?;
+            let kucoin_price_updates = swap_feed::connect_kucoin(
+                config.maker.price_ticker_rest_url_kucoin.clone(),
+                reqwest::Client::new(),
+            )?;
 
-            let kraken_rate = KrakenRate::new(config.maker.ask_spread, kraken_price_updates);
+            let kraken_rate = ExchangeRate::new(
+                config.maker.ask_spread,
+                kraken_price_updates,
+                bitfinex_price_updates,
+                kucoin_price_updates,
+            );
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
@@ -427,7 +438,7 @@ pub async fn main() -> Result<()> {
         }
         Command::Balance => {
             let monero_wallet = init_monero_wallet(&config, env_config).await?;
-            let monero_balance = monero_wallet.main_wallet().await.total_balance().await;
+            let monero_balance = monero_wallet.main_wallet().await.total_balance().await?;
             tracing::info!(%monero_balance);
 
             let bitcoin_wallet = init_bitcoin_wallet(&config, &seed, env_config, true).await?;
@@ -498,7 +509,7 @@ pub async fn main() -> Result<()> {
             let main_wallet = monero_wallet.main_wallet().await;
 
             let seed = main_wallet.seed().await?;
-            let creation_height = main_wallet.creation_height().await;
+            let creation_height = main_wallet.creation_height().await?;
 
             println!("Seed          : {seed}");
             println!("Restore height: {creation_height}");

@@ -31,12 +31,49 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import SearchIcon from "@mui/icons-material/Search";
 
+/**
+ * Parses a block height input string and returns a number if valid, 0 for empty string, or false if invalid.
+ *
+ * @param blockheightInput - The input string representing a block height.
+ * @returns A non-negative integer if the input is a valid positive number,
+ *          0 if the input is an empty string,
+ *          false if the input is invalid (non-numeric, negative, or NaN).
+ *
+ * @example
+ * parseBlockHeightInput(""); // 0
+ * parseBlockHeightInput("123"); // 123
+ * parseBlockHeightInput("abc"); // false
+ * parseBlockHeightInput("-1"); // false
+ * parseBlockHeightInput("0"); // 0
+ */
+function parseBlockHeightInput(blockheightInput: string): number | false {
+  if (blockheightInput.length === 0) {
+    return 0;
+  }
+
+  if (!/^\d+$/.test(blockheightInput)) {
+    return false;
+  }
+
+  const blockheightNum = parseInt(blockheightInput, 10);
+
+  if (
+    blockheightInput === "0" ||
+    (blockheightNum && !Number.isNaN(blockheightNum) && blockheightNum >= 0)
+  ) {
+    return blockheightNum;
+  }
+
+  return false;
+}
+
 export default function SeedSelectionDialog() {
   const pendingApprovals = usePendingSeedSelectionApproval();
   const [selectedOption, setSelectedOption] = useState<
     SeedChoice["type"] | undefined
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
+  const [blockheightInput, setBlockheightInput] = useState<string>("");
   const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
   const [password, setPassword] = useState<string>("");
   const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
@@ -83,6 +120,11 @@ export default function SeedSelectionDialog() {
     }
   };
 
+  const hasBlockheightInput = blockheightInput.length > 0;
+  const isBlockheightValid = parseBlockHeightInput(blockheightInput) !== false;
+  const isBlockheightInvalid =
+    hasBlockheightInput && isBlockheightValid === false;
+
   const Legacy = async () => {
     if (!approval)
       throw new Error("No approval request found for seed selection");
@@ -96,12 +138,38 @@ export default function SeedSelectionDialog() {
     if (!approval)
       throw new Error("No approval request found for seed selection");
 
-    const seedChoice: SeedChoice =
-      selectedOption === "RandomSeed"
-        ? { type: "RandomSeed", content: { password } }
-        : selectedOption === "FromSeed"
-          ? { type: "FromSeed", content: { seed: customSeed, password } }
-          : { type: "FromWalletPath", content: { wallet_path: walletPath } };
+    let seedChoice: SeedChoice;
+
+    switch (selectedOption) {
+      case "RandomSeed":
+        seedChoice = { type: "RandomSeed", content: { password } };
+        break;
+
+      case "FromSeed": {
+        const parsedBlockHeight = parseBlockHeightInput(blockheightInput);
+
+        if (parsedBlockHeight === false) {
+          throw new Error("Invalid blockheight");
+        }
+
+        seedChoice = {
+          type: "FromSeed",
+          content: {
+            seed: customSeed,
+            password,
+            restore_height: parsedBlockHeight,
+          },
+        };
+        break;
+      }
+
+      default:
+        seedChoice = {
+          type: "FromWalletPath",
+          content: { wallet_path: walletPath },
+        };
+        break;
+    }
 
     await resolveApproval<SeedChoice>(approval.request_id, seedChoice);
   };
@@ -110,12 +178,16 @@ export default function SeedSelectionDialog() {
     return null;
   }
 
-  // Disable the button if the user is restoring from a seed and the seed is invalid,
-  // if selecting wallet path and no path is selected,
+  // Disable the button if the user is restoring from a seed and the seed is invalid
+  // or if selecting wallet path and no path is selected,
+  // or if blockheight is provided but invalid,
   // or if setting a password and they don't match
   const isDisabled =
     selectedOption === "FromSeed"
-      ? customSeed.trim().length === 0 || !isSeedValid || !isPasswordValid
+      ? customSeed.trim().length === 0 ||
+        !isSeedValid ||
+        isBlockheightInvalid ||
+        !isPasswordValid
       : selectedOption === "FromWalletPath"
         ? !walletPath
         : selectedOption === "RandomSeed"
@@ -279,6 +351,26 @@ export default function SeedSelectionDialog() {
                   ? "Seed is valid"
                   : customSeed.length > 0
                     ? "Seed is invalid"
+                    : ""
+              }
+            />
+
+            <TextField
+              type="text"
+              inputProps={{
+                inputmode: "numeric",
+                pattern: "[0-9]*",
+              }}
+              label="Restore blockheight (optional)"
+              value={blockheightInput}
+              onChange={(e) => setBlockheightInput(e.target.value)}
+              placeholder="Enter restore blockheight, leave empty to scan from the blockchain start"
+              error={isBlockheightInvalid}
+              helperText={
+                isBlockheightInvalid
+                  ? "Please enter a valid blockheight"
+                  : hasBlockheightInput && isBlockheightValid
+                    ? "Valid blockheight"
                     : ""
               }
             />

@@ -4,20 +4,20 @@ use crate::bob::is_complete as bob_is_complete;
 use crate::bob::BobState;
 use anyhow::Result;
 use async_trait::async_trait;
-use conquer_once::Lazy;
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use sigma_fun::HashTranscript;
 use std::convert::TryInto;
+use std::sync::LazyLock;
 use swap_core::bitcoin;
 use swap_core::monero::{self, MoneroAddressPool};
 use uuid::Uuid;
 
-pub static CROSS_CURVE_PROOF_SYSTEM: Lazy<
+pub static CROSS_CURVE_PROOF_SYSTEM: LazyLock<
     CrossCurveDLEQ<HashTranscript<Sha256, rand_chacha::ChaCha20Rng>>,
-> = Lazy::new(|| {
+> = LazyLock::new(|| {
     CrossCurveDLEQ::<HashTranscript<Sha256, rand_chacha::ChaCha20Rng>>::new(
         (*ecdsa_fun::fun::G).normalize(),
         curve25519_dalek::constants::ED25519_BASEPOINT_POINT,
@@ -166,4 +166,5 @@ pub trait Database {
         &self,
         swap_id: Uuid,
     ) -> Result<Option<monero::TransferProof>>;
+    async fn has_swap(&self, swap_id: Uuid) -> Result<bool>;
 }

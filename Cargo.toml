@@ -22,6 +22,7 @@ members = [
   "swap-machine",
   "swap-orchestrator",
   "swap-p2p",
+  "swap-proptest",
   "swap-serde",
   "throttle",
 ]
@@ -48,6 +49,7 @@ sigma_fun = { version = "0.7", default-features = false }
 async-trait = "0.1"
 
 # Serialization
+semver = { version = "1.0" }
 serde_cbor = "0.11"
 strum = { version = "0.26" }
 
@@ -55,7 +57,6 @@ anyhow = "1"
 backoff = { version = "0.4", features = ["futures", "tokio"] }
 bmrng = "0.5.2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
-hex = "0.4"
 jsonrpsee = { version = "0.25", default-features = false }
 libp2p = { version = "0.53.2" }
 monero = { version = "0.12", features = ["serde_support"] }
@@ -67,6 +68,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
 
+data-encoding = "2.6.0"
 toml = "0.9.5"
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
@@ -79,12 +81,12 @@ tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 
 # Tor/Arti crates
-arti-client = { git = "https://github.com/eigenwallet/arti", rev = "537dd8755817aa2b21c41e66edbd5f05f3c04373", default-features = false }
-safelog = { git = "https://github.com/eigenwallet/arti", rev = "537dd8755817aa2b21c41e66edbd5f05f3c04373" }
-tor-cell = { git = "https://github.com/eigenwallet/arti", rev = "537dd8755817aa2b21c41e66edbd5f05f3c04373" }
-tor-hsservice = { git = "https://github.com/eigenwallet/arti", rev = "537dd8755817aa2b21c41e66edbd5f05f3c04373" }
-tor-proto = { git = "https://github.com/eigenwallet/arti", rev = "537dd8755817aa2b21c41e66edbd5f05f3c04373" }
-tor-rtcompat = { git = "https://github.com/eigenwallet/arti", rev = "537dd8755817aa2b21c41e66edbd5f05f3c04373" }
+arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0", default-features = false }
+safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 
 # Terminal Utilities
 dialoguer = "0.11"

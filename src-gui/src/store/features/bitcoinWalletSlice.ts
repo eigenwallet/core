@@ -20,13 +20,10 @@ export const bitcoinWalletSlice = createSlice({
     setBitcoinBalance(state, action: PayloadAction<number>) {
       state.balance = action.payload;
     },
-    resetBitcoinWalletState(state) {
-      return initialState;
-    },
   },
 });
 
-export const { setBitcoinAddress, setBitcoinBalance, resetBitcoinWalletState } =
+export const { setBitcoinAddress, setBitcoinBalance } =
   bitcoinWalletSlice.actions;
 
 export default bitcoinWalletSlice.reducer;

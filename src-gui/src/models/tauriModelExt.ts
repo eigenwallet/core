@@ -157,25 +157,6 @@ export function isBobStateNameRunningSwap(
   ].includes(state);
 }
 
-export type BobStateNameCompletedSwap =
-  | BobStateName.XmrRedeemed
-  | BobStateName.BtcRefunded
-  | BobStateName.BtcEarlyRefunded
-  | BobStateName.BtcPunished
-  | BobStateName.SafelyAborted;
-
-export function isBobStateNameCompletedSwap(
-  state: BobStateName,
-): state is BobStateNameCompletedSwap {
-  return [
-    BobStateName.XmrRedeemed,
-    BobStateName.BtcRefunded,
-    BobStateName.BtcEarlyRefunded,
-    BobStateName.BtcPunished,
-    BobStateName.SafelyAborted,
-  ].includes(state);
-}
-
 export type BobStateNamePossiblyCancellableSwap =
   | BobStateName.BtcLocked
   | BobStateName.XmrLockProofReceived

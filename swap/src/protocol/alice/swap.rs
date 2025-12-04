@@ -1,6 +1,5 @@
 //! Run an XMR/BTC swap in the role of Alice.
 //! Alice holds XMR and wishes receive BTC.
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -761,7 +760,7 @@ impl XmrRefundable for State3 {
             .context("Couldn't get Monero blockheight")?;
 
         tracing::debug!(%swap_id, "Sweeping Monero to redeem address");
-        let main_address = monero_wallet.main_wallet().await.main_address().await;
+        let main_address = monero_wallet.main_wallet().await.main_address().await?;
 
         swap_wallet
             .sweep(&main_address)

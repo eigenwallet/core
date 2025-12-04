@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 bitcoin = { workspace = true }
 ecdsa_fun = { workspace = true }
-proptest = { workspace = true }
+proptest = "1"
 
 [lints]
 workspace = true
