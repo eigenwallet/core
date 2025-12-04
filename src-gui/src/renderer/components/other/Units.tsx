@@ -149,7 +149,7 @@ export function MoneroBitcoinExchangeRate({
   return (
     <AmountWithUnit
       amount={rate}
-      unit="BTC/XMR"
+      unit="XMR/BTC"
       fixedPrecision={8}
       parenthesisText={markup}
     />
@@ -182,6 +182,19 @@ export function MoneroSatsExchangeRate({
   const btc = rate == null ? null : satsToBtc(rate);
 
   return <MoneroBitcoinExchangeRate rate={btc} displayMarkup={displayMarkup} />;
+}
+
+export function MoneroSatsMarkup({ rate }: { rate: Amount }) {
+  const marketRate = useAppSelector((state) => state.rates?.xmrBtcRate);
+  const btcRate = rate == null ? null : satsToBtc(rate);
+
+  if (marketRate == null || btcRate == null) {
+    return <span>?</span>;
+  }
+
+  const markup = getMarkup(btcRate, marketRate);
+
+  return <span>{markup.toFixed(2)}%</span>;
 }
 
 export function SatsAmount({ amount }: { amount: Amount }) {
