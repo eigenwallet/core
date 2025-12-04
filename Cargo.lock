@@ -288,7 +288,7 @@ dependencies = [
  "safelog",
  "serde",
  "thiserror 2.0.17",
- "time 0.3.44",
+ "time",
  "tor-async-utils",
  "tor-basic-utils",
  "tor-chanmgr",
@@ -356,7 +356,7 @@ dependencies = [
  "num-traits",
  "rusticata-macros",
  "thiserror 1.0.69",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -372,7 +372,7 @@ dependencies = [
  "num-traits",
  "rusticata-macros",
  "thiserror 1.0.69",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -492,21 +492,6 @@ dependencies = [
  "event-listener-strategy",
  "futures-core",
  "pin-project-lite",
-]
-
-[[package]]
-name = "async-compression"
-version = "0.3.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942c7cd7ae39e91bde4820d74132e9862e62c2f386c3aa90ccf55949f5bad63a"
-dependencies = [
- "brotli 3.5.0",
- "bzip2 0.4.4",
- "flate2",
- "futures-core",
- "memchr",
- "pin-project-lite",
- "tokio",
 ]
 
 [[package]]
@@ -824,7 +809,7 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper 1.0.2",
  "tokio",
- "tower 0.5.2",
+ "tower",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -1040,12 +1025,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
 
 [[package]]
-name = "big-bytes"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d73a8ae8ce52d09395e4cafc83b5b81c3deb70a97740e907669c8683c4dd50a"
-
-[[package]]
 name = "bimap"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1163,7 +1142,7 @@ dependencies = [
  "reqwest 0.12.24",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "testcontainers",
  "thiserror 1.0.69",
  "tokio",
@@ -1380,34 +1359,13 @@ dependencies = [
 
 [[package]]
 name = "brotli"
-version = "3.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d640d25bc63c50fb1f0b545ffd80207d2e10a4c965530809b40ba3386825c391"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
- "brotli-decompressor 2.5.1",
-]
-
-[[package]]
-name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bd8b9603c7aa97359dbd97ecf258968c95f3adddd6db2f7e7a5bef101c84560"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
- "brotli-decompressor 5.0.0",
-]
-
-[[package]]
-name = "brotli-decompressor"
-version = "2.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e2e4afe60d7dd600fdd3de8d0f08c2b7ec039712e3b6137ff98b7004e82de4f"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
+ "brotli-decompressor",
 ]
 
 [[package]]
@@ -1503,31 +1461,11 @@ dependencies = [
 
 [[package]]
 name = "bzip2"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdb116a6ef3f6c3698828873ad02c3014b3c85cadb88496095628e3ef1e347f8"
-dependencies = [
- "bzip2-sys",
- "libc",
-]
-
-[[package]]
-name = "bzip2"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
 dependencies = [
  "libbz2-rs-sys",
-]
-
-[[package]]
-name = "bzip2-sys"
-version = "0.1.13+1.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14"
-dependencies = [
- "cc",
- "pkg-config",
 ]
 
 [[package]]
@@ -1769,7 +1707,7 @@ dependencies = [
  "minimal-ed448",
  "p256",
  "rand_core 0.6.4",
- "sha2 0.10.9",
+ "sha2",
  "sha3",
  "std-shims",
  "subtle",
@@ -1983,21 +1921,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "conquer-once"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d008a441c0f269f36ca13712528069a86a3e60dffee1d98b976eb3b0b2160b4"
-dependencies = [
- "conquer-util",
-]
-
-[[package]]
-name = "conquer-util"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e763eef8846b13b380f37dfecda401770b0ca4e56e95170237bd7c25c7db3582"
-
-[[package]]
 name = "console"
 version = "0.15.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2062,7 +1985,7 @@ version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
 dependencies = [
- "time 0.3.44",
+ "time",
  "version_check",
 ]
 
@@ -2397,19 +2320,6 @@ dependencies = [
 
 [[package]]
 name = "curve25519-dalek"
-version = "3.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b9fdf9972b2bd6af2d913799d9ebc165ea4d2e65878e329d9c6b372c4491b61"
-dependencies = [
- "byteorder",
- "digest 0.9.0",
- "rand_core 0.5.1",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "curve25519-dalek"
 version = "4.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
@@ -2521,13 +2431,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "231684731518402967286b76bedadedfd6b0867f814e2cd41d4a82bedea2902a"
 dependencies = [
  "crypto-bigint",
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "digest 0.10.7",
  "ff",
  "group",
  "rand_core 0.6.4",
  "rustversion",
- "sha2 0.10.9",
+ "sha2",
  "subtle",
  "zeroize",
 ]
@@ -2540,13 +2450,13 @@ checksum = "26103554e8f7857b6015a4a9ef551c6ce0669f6caa040785d4394bf52041ccaf"
 dependencies = [
  "ciphersuite",
  "crypto-bigint",
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "digest 0.10.7",
  "ff",
  "group",
  "rand_core 0.6.4",
  "rustversion",
- "sha2 0.10.9",
+ "sha2",
  "subtle",
  "zeroize",
 ]
@@ -3001,7 +2911,7 @@ dependencies = [
  "hex",
  "md-5",
  "rand 0.8.5",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -3189,7 +3099,7 @@ dependencies = [
  "digest 0.10.7",
  "elliptic-curve",
  "rfc6979",
- "signature 2.2.0",
+ "signature",
  "spki",
 ]
 
@@ -3207,35 +3117,12 @@ dependencies = [
 
 [[package]]
 name = "ed25519"
-version = "1.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91cff35c70bba8a626e3185d8cd48cc11b5437e1a5bcd15b9b5fa3c64b6dfee7"
-dependencies = [
- "signature 1.6.4",
-]
-
-[[package]]
-name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
 dependencies = [
  "pkcs8",
- "signature 2.2.0",
-]
-
-[[package]]
-name = "ed25519-dalek"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c762bae6dcaf24c4c84667b8579785430908723d5c889f469d76a41d59cc7a9d"
-dependencies = [
- "curve25519-dalek 3.2.0",
- "ed25519 1.5.3",
- "rand 0.7.3",
- "serde",
- "sha2 0.9.9",
- "zeroize",
+ "signature",
 ]
 
 [[package]]
@@ -3244,12 +3131,12 @@ version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
 dependencies = [
- "curve25519-dalek 4.1.3",
- "ed25519 2.2.3",
+ "curve25519-dalek",
+ "ed25519",
  "merlin",
  "rand_core 0.6.4",
  "serde",
- "sha2 0.10.9",
+ "sha2",
  "subtle",
  "zeroize",
 ]
@@ -3319,7 +3206,6 @@ dependencies = [
  "bitcoin 0.32.7",
  "futures",
  "once_cell",
- "serde_json",
  "tokio",
  "tracing",
 ]
@@ -4159,12 +4045,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "get-port"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6c41a39c60ae1fc5bf0e220347ce90fa1e4bb0fcdac65b09bb5f4576bebc84"
-
-[[package]]
 name = "gethostname"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4529,16 +4409,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hdrhistogram"
-version = "7.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "765c9198f173dd59ce26ff9f95ef0aafd0a0fe01fb9d72841bc5066a4c06511d"
-dependencies = [
- "byteorder",
- "num-traits",
-]
-
-[[package]]
 name = "heck"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4597,12 +4467,6 @@ name = "hex-literal"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
-
-[[package]]
-name = "hex-literal"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hex-literal"
@@ -4768,12 +4632,6 @@ dependencies = [
  "http-body 1.0.1",
  "pin-project-lite",
 ]
-
-[[package]]
-name = "http-range-header"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "add0ab9360ddbd88cfeb3bd9574a1d85cfdfa14db10b3e21d3700dbc4328758f"
 
 [[package]]
 name = "httparse"
@@ -5218,15 +5076,6 @@ dependencies = [
 
 [[package]]
 name = "iri-string"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f0f7638c1e223529f1bfdc48c8b133b9e0b434094d1d28473161ee48b235f78"
-dependencies = [
- "nom",
-]
-
-[[package]]
-name = "iri-string"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f867b9d1d896b67beb18518eda36fdb77a32ea590de864f1325b294a6d14397"
@@ -5440,7 +5289,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.17",
  "tokio",
- "tower 0.5.2",
+ "tower",
  "tracing",
 ]
 
@@ -5463,7 +5312,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.17",
  "tokio",
- "tower 0.5.2",
+ "tower",
  "url",
 ]
 
@@ -5503,7 +5352,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "tower 0.5.2",
+ "tower",
  "tracing",
 ]
 
@@ -5840,7 +5689,7 @@ dependencies = [
  "rand 0.8.5",
  "regex",
  "serde",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "tracing",
  "void",
@@ -5877,14 +5726,14 @@ checksum = "3104e13b51e4711ff5738caa1fb54467c8604c2e94d607e27745bcf709068774"
 dependencies = [
  "asn1_der",
  "bs58",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek",
  "hkdf",
  "multihash",
  "quick-protobuf",
  "rand 0.8.5",
  "ring 0.17.14",
  "serde",
- "sha2 0.10.9",
+ "sha2",
  "thiserror 2.0.17",
  "tracing",
  "zeroize",
@@ -5912,7 +5761,7 @@ dependencies = [
  "quick-protobuf-codec 0.3.1",
  "rand 0.8.5",
  "serde",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "thiserror 1.0.69",
  "tracing",
@@ -5966,7 +5815,7 @@ checksum = "8ecd0545ce077f6ea5434bcb76e8d0fe942693b4380aaad0d34a358c2bd05793"
 dependencies = [
  "asynchronous-codec 0.7.0",
  "bytes",
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "futures",
  "libp2p-core",
  "libp2p-identity",
@@ -5975,7 +5824,7 @@ dependencies = [
  "once_cell",
  "quick-protobuf",
  "rand 0.8.5",
- "sha2 0.10.9",
+ "sha2",
  "snow",
  "static_assertions",
  "thiserror 1.0.69",
@@ -6620,7 +6469,7 @@ name = "monero-address"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "monero-base58",
  "monero-io",
  "monero-primitives",
@@ -6642,7 +6491,7 @@ name = "monero-borromean"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "monero-generators",
  "monero-io",
  "monero-primitives",
@@ -6655,7 +6504,7 @@ name = "monero-bulletproofs"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "monero-generators",
  "monero-io",
  "monero-primitives",
@@ -6670,7 +6519,7 @@ name = "monero-clsag"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "group",
  "monero-generators",
  "monero-io",
@@ -6699,7 +6548,7 @@ version = "0.4.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
  "crypto-bigint",
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "dalek-ff-group 0.5.0",
  "group",
  "monero-io",
@@ -6713,7 +6562,6 @@ name = "monero-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "futures",
  "monero",
  "monero-rpc 0.1.0",
  "monero-sys",
@@ -6730,7 +6578,7 @@ name = "monero-io"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "std-shims",
  "zeroize",
 ]
@@ -6740,7 +6588,7 @@ name = "monero-mlsag"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "monero-generators",
  "monero-io",
  "monero-primitives",
@@ -6754,7 +6602,7 @@ name = "monero-oxide"
 version = "0.1.4-alpha"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "hex-literal 1.1.0",
  "monero-borromean",
  "monero-bulletproofs",
@@ -6772,7 +6620,7 @@ name = "monero-primitives"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "monero-generators",
  "monero-io",
  "sha3",
@@ -6785,19 +6633,14 @@ name = "monero-rpc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "curve25519-dalek 3.2.0",
- "hex",
- "hex-literal 0.4.1",
+ "data-encoding",
  "jsonrpc_client",
  "monero",
  "monero-epee-bin-serde",
- "rand 0.8.5",
  "reqwest 0.12.24",
  "rust_decimal",
  "serde",
  "serde_json",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -6805,7 +6648,7 @@ name = "monero-rpc"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-oxide.git#7c288b058ae7f1e3d36600a2af11b3176102bcfc"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "hex",
  "monero-address",
  "monero-oxide",
@@ -6832,9 +6675,7 @@ dependencies = [
  "hyper 1.7.0",
  "hyper-util",
  "monero",
- "monero-rpc 0.1.0",
  "rand 0.8.5",
- "regex",
  "reqwest 0.11.27",
  "rustls 0.21.12",
  "serde",
@@ -6843,16 +6684,11 @@ dependencies = [
  "swap-serde",
  "tokio",
  "tokio-rustls 0.26.4",
- "tokio-test",
  "tor-rtcompat",
- "tower 0.5.2",
- "tower-http 0.6.6",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "typeshare",
- "url",
- "uuid",
- "webpki-roots 1.0.4",
 ]
 
 [[package]]
@@ -6860,7 +6696,7 @@ name = "monero-seed"
 version = "0.1.0"
 source = "git+https://github.com/monero-oxide/monero-wallet-util.git#9f2669a3af09126ded8d4292e4b944245d1b978e"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "rand_core 0.6.4",
  "std-shims",
  "thiserror 1.0.69",
@@ -6899,9 +6735,7 @@ dependencies = [
  "quickcheck_macros",
  "serde",
  "sqlx",
- "swap-serde",
  "tempfile",
- "testcontainers",
  "thiserror 2.0.17",
  "throttle",
  "tokio",
@@ -7792,7 +7626,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "primeorder",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -7804,7 +7638,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "primeorder",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -7818,7 +7652,7 @@ dependencies = [
  "elliptic-curve",
  "primeorder",
  "rand_core 0.6.4",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -7987,7 +7821,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f27a2cfee9f9039c4d86faa5af122a0ac3851441a34865b8a043b46be0065a"
 dependencies = [
  "pest",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -8257,7 +8091,7 @@ dependencies = [
  "indexmap 2.12.0",
  "quick-xml 0.38.3",
  "serde",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -8959,7 +8793,7 @@ checksum = "52c4f3084aa3bc7dfbba4eff4fab2a54db4324965d8872ab933565e6fbd83bc6"
 dependencies = [
  "pem",
  "ring 0.16.20",
- "time 0.3.44",
+ "time",
  "yasna",
 ]
 
@@ -8977,15 +8811,6 @@ name = "redox_syscall"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb5a58c1855b4b6819d59012155603f0b22ad30cad752600aadfcb695265519a"
-dependencies = [
- "bitflags 1.3.2",
-]
-
-[[package]]
-name = "redox_syscall"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "567664f262709473930a4bf9e51bf2ebf3348f2e748ccc50dea20646858f8f29"
 dependencies = [
  "bitflags 1.3.2",
 ]
@@ -9086,7 +8911,6 @@ dependencies = [
  "anyhow",
  "arti-client",
  "atty",
- "backoff",
  "futures",
  "libp2p",
  "libp2p-tor",
@@ -9173,8 +8997,8 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tokio-util",
- "tower 0.5.2",
- "tower-http 0.6.6",
+ "tower",
+ "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -9308,8 +9132,8 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core 0.6.4",
- "sha2 0.10.9",
- "signature 2.2.0",
+ "sha2",
+ "signature",
  "spki",
  "subtle",
  "zeroize",
@@ -9345,7 +9169,7 @@ dependencies = [
  "hashlink",
  "libsqlite3-sys",
  "smallvec",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -9663,15 +9487,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scc"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46e6f046b7fef48e2660c57ed794263155d713de679057f2d0c169bfc6e756cc"
-dependencies = [
- "sdd",
-]
-
-[[package]]
 name = "schannel"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9768,12 +9583,6 @@ dependencies = [
  "ring 0.17.14",
  "untrusted 0.9.0",
 ]
-
-[[package]]
-name = "sdd"
-version = "3.0.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 
 [[package]]
 name = "seahash"
@@ -10158,7 +9967,7 @@ dependencies = [
  "serde_core",
  "serde_json",
  "serde_with_macros 3.15.1",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -10206,31 +10015,6 @@ checksum = "a84f14a19e9a014bb9f4512488d9829a68e04ecabffb0f9904cd1ace94598177"
 dependencies = [
  "base16ct",
  "serde",
-]
-
-[[package]]
-name = "serial_test"
-version = "3.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b258109f244e1d6891bf1053a55d63a5cd4f8f4c30cf9a1280989f80e7a1fa9"
-dependencies = [
- "futures",
- "log",
- "once_cell",
- "parking_lot 0.12.5",
- "scc",
- "serial_test_derive",
-]
-
-[[package]]
-name = "serial_test_derive"
-version = "3.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d69265a08751de7844521fd15003ae0a888e035773ba05695c5c759a6f89eef"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.109",
 ]
 
 [[package]]
@@ -10287,19 +10071,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest 0.10.7",
-]
-
-[[package]]
-name = "sha2"
-version = "0.9.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d58a1e1bf39749807d89cf2d98ac2dfa0ff1cb3faa38fbb64dd88ac8013d800"
-dependencies = [
- "block-buffer 0.9.0",
- "cfg-if",
- "cpufeatures",
- "digest 0.9.0",
- "opaque-debug",
 ]
 
 [[package]]
@@ -10409,12 +10180,6 @@ checksum = "b2a4719bff48cee6b39d12c020eeb490953ad2443b7055bd0b21fca26bd8c28b"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "signature"
-version = "1.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74233d3b3b2f6d4b006dc19dee745e73e2a6bfb6f93607cd3b02bd5b00797d7c"
 
 [[package]]
 name = "signature"
@@ -10533,11 +10298,11 @@ dependencies = [
  "aes-gcm",
  "blake2",
  "chacha20poly1305",
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "rand_core 0.6.4",
  "ring 0.17.14",
  "rustc_version",
- "sha2 0.10.9",
+ "sha2",
  "subtle",
 ]
 
@@ -10711,7 +10476,7 @@ dependencies = [
  "rustls-pemfile",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "sqlformat",
  "thiserror 1.0.69",
@@ -10750,7 +10515,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "sqlx-core",
  "sqlx-mysql",
  "sqlx-postgres",
@@ -10795,7 +10560,7 @@ dependencies = [
  "rsa",
  "serde",
  "sha1",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -10834,7 +10599,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -10885,7 +10650,7 @@ checksum = "eb9242b9ef4108a78e8cd1a2c98e193ef372437f8c22be363075233321dd4a15"
 dependencies = [
  "base64ct",
  "pem-rfc7468",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -10901,8 +10666,8 @@ dependencies = [
  "rand_core 0.6.4",
  "rsa",
  "sec1",
- "sha2 0.10.9",
- "signature 2.2.0",
+ "sha2",
+ "signature",
  "ssh-cipher",
  "ssh-encoding",
  "subtle",
@@ -11071,35 +10836,23 @@ version = "3.5.0"
 dependencies = [
  "anyhow",
  "arti-client",
- "async-compression 0.3.15",
  "async-trait",
- "atty",
  "backoff",
  "base64 0.22.1",
  "bdk",
  "bdk_chain",
- "bdk_core",
  "bdk_electrum",
  "bdk_wallet",
- "big-bytes",
  "bitcoin 0.32.7",
  "bitcoin-harness",
  "bitcoin-wallet",
  "bmrng",
- "comfy-table",
  "config",
- "conquer-once",
  "curve25519-dalek-ng",
- "data-encoding",
  "derive_builder",
- "dfx-swiss-sdk",
- "dialoguer",
  "ecdsa_fun",
- "ed25519-dalek 1.0.1",
  "electrum-pool",
  "futures",
- "get-port",
- "hex",
  "jsonrpsee",
  "libp2p",
  "libp2p-tor",
@@ -11107,7 +10860,6 @@ dependencies = [
  "moka",
  "monero",
  "monero-harness",
- "monero-rpc 0.1.0",
  "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide.git)",
  "monero-rpc-pool",
  "monero-seed",
@@ -11117,7 +10869,6 @@ dependencies = [
  "pem",
  "proptest",
  "rand 0.8.5",
- "rand_chacha 0.3.1",
  "regex",
  "reqwest 0.12.24",
  "rust_decimal",
@@ -11125,12 +10876,8 @@ dependencies = [
  "rustls 0.23.35",
  "semver",
  "serde",
- "serde_cbor",
  "serde_json",
  "serde_with 1.14.0",
- "serial_test",
- "sha2 0.10.9",
- "sigma_fun",
  "sqlx",
  "structopt",
  "strum 0.26.3",
@@ -11149,14 +10896,10 @@ dependencies = [
  "testcontainers",
  "thiserror 1.0.69",
  "throttle",
- "time 0.3.44",
+ "time",
  "tokio",
- "tokio-tar",
- "tokio-tungstenite",
  "tokio-util",
  "tor-rtcompat",
- "tower 0.4.13",
- "tower-http 0.3.5",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -11164,9 +10907,7 @@ dependencies = [
  "url",
  "uuid",
  "vergen-git2",
- "void",
  "zeroize",
- "zip 0.5.13",
 ]
 
 [[package]]
@@ -11193,7 +10934,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "url",
  "uuid",
  "vergen 8.3.2",
@@ -11241,14 +10981,11 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
- "sha2 0.10.9",
- "swap-env",
+ "sha2",
  "swap-serde",
  "thiserror 1.0.69",
- "tokio",
  "tracing",
  "typeshare",
- "uuid",
 ]
 
 [[package]]
@@ -11280,7 +11017,7 @@ dependencies = [
  "swap-serde",
  "terminal_size",
  "thiserror 1.0.69",
- "time 0.3.44",
+ "time",
  "toml 0.9.8",
  "tracing",
  "url",
@@ -11324,7 +11061,6 @@ dependencies = [
  "async-trait",
  "bitcoin 0.32.7",
  "bitcoin-wallet",
- "conquer-once",
  "curve25519-dalek-ng",
  "ecdsa_fun",
  "libp2p",
@@ -11332,13 +11068,12 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
- "sha2 0.10.9",
+ "sha2",
  "sigma_fun",
  "swap-core",
  "swap-env",
  "swap-serde",
  "thiserror 1.0.69",
- "tracing",
  "uuid",
 ]
 
@@ -11402,7 +11137,6 @@ dependencies = [
  "bitcoin 0.32.7",
  "ecdsa_fun",
  "proptest",
- "tokio",
 ]
 
 [[package]]
@@ -11411,7 +11145,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
- "hex",
+ "data-encoding",
  "libp2p",
  "monero",
  "serde",
@@ -11720,7 +11454,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c1fe64c74cc40f90848281a90058a6db931eb400b60205840e09801ee30f190"
 dependencies = [
  "base64 0.22.1",
- "brotli 8.0.2",
+ "brotli",
  "ico",
  "json-patch",
  "plist",
@@ -11730,11 +11464,11 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "syn 2.0.109",
  "tauri-utils",
  "thiserror 2.0.17",
- "time 0.3.44",
+ "time",
  "url",
  "uuid",
  "walkdir",
@@ -11950,11 +11684,11 @@ dependencies = [
  "tauri-plugin",
  "tempfile",
  "thiserror 2.0.17",
- "time 0.3.44",
+ "time",
  "tokio",
  "url",
  "windows-sys 0.60.2",
- "zip 4.6.1",
+ "zip",
 ]
 
 [[package]]
@@ -12016,7 +11750,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b8bbe426abdbf52d050e52ed693130dbd68375b9ad82a3fb17efb4c8d85673"
 dependencies = [
  "anyhow",
- "brotli 8.0.2",
+ "brotli",
  "cargo_metadata",
  "ctor",
  "dunce",
@@ -12115,7 +11849,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -12195,17 +11929,6 @@ dependencies = [
  "quick-error 2.0.1",
  "weezl",
  "zune-jpeg",
-]
-
-[[package]]
-name = "time"
-version = "0.1.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b797afad3f312d1c66a56d11d0316f916356d11bd158fbc6ca6389ff6bf805a"
-dependencies = [
- "libc",
- "wasi 0.10.0+wasi-snapshot-preview1",
- "winapi",
 ]
 
 [[package]]
@@ -12356,21 +12079,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
-]
-
-[[package]]
-name = "tokio-tar"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d5714c010ca3e5c27114c1cdeb9d14641ace49874aa5626d7149e47aedace75"
-dependencies = [
- "filetime",
- "futures-core",
- "libc",
- "redox_syscall 0.3.5",
- "tokio",
- "tokio-stream",
- "xattr",
 ]
 
 [[package]]
@@ -12651,7 +12359,7 @@ version = "0.37.0"
 source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_1_8_0#2a5db5823e2a5eb413d8ad433a4d3aba902bac07"
 dependencies = [
  "humantime",
- "signature 2.2.0",
+ "signature",
  "thiserror 2.0.17",
  "tor-llcrypto",
 ]
@@ -12765,7 +12473,7 @@ name = "tor-dirclient"
 version = "0.37.0"
 source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_1_8_0#2a5db5823e2a5eb413d8ad433a4d3aba902bac07"
 dependencies = [
- "async-compression 0.4.32",
+ "async-compression",
  "base64ct",
  "derive_more 2.0.1",
  "futures",
@@ -12836,11 +12544,11 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
- "signature 2.2.0",
+ "signature",
  "static_assertions",
  "strum 0.27.2",
  "thiserror 2.0.17",
- "time 0.3.44",
+ "time",
  "tor-async-utils",
  "tor-basic-utils",
  "tor-checkable",
@@ -12989,7 +12697,7 @@ dependencies = [
  "rand 0.9.2",
  "safelog",
  "serde",
- "signature 2.2.0",
+ "signature",
  "subtle",
  "thiserror 2.0.17",
  "tor-basic-utils",
@@ -13071,7 +12779,7 @@ dependencies = [
  "paste",
  "rand 0.9.2",
  "rsa",
- "signature 2.2.0",
+ "signature",
  "ssh-key",
  "thiserror 2.0.17",
  "tor-bytes",
@@ -13102,7 +12810,7 @@ dependencies = [
  "rand 0.9.2",
  "safelog",
  "serde",
- "signature 2.2.0",
+ "signature",
  "ssh-key",
  "thiserror 2.0.17",
  "tor-basic-utils",
@@ -13154,12 +12862,12 @@ dependencies = [
  "aes",
  "base64ct",
  "ctr",
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "der-parser 10.0.0",
  "derive-deftly",
  "derive_more 2.0.1",
  "digest 0.10.7",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek",
  "educe",
  "getrandom 0.3.4",
  "hex",
@@ -13173,9 +12881,9 @@ dependencies = [
  "safelog",
  "serde",
  "sha1",
- "sha2 0.10.9",
+ "sha2",
  "sha3",
- "signature 2.2.0",
+ "signature",
  "subtle",
  "thiserror 2.0.17",
  "tor-error",
@@ -13246,7 +12954,7 @@ dependencies = [
  "serde",
  "strum 0.27.2",
  "thiserror 2.0.17",
- "time 0.3.44",
+ "time",
  "tor-basic-utils",
  "tor-error",
  "tor-hscrypto",
@@ -13282,12 +12990,12 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_with 3.15.1",
- "signature 2.2.0",
+ "signature",
  "smallvec",
  "strum 0.27.2",
  "subtle",
  "thiserror 2.0.17",
- "time 0.3.44",
+ "time",
  "tinystr",
  "tor-basic-utils",
  "tor-bytes",
@@ -13325,7 +13033,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.17",
- "time 0.3.44",
+ "time",
  "tor-async-utils",
  "tor-basic-utils",
  "tor-error",
@@ -13528,27 +13236,6 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.4.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
-dependencies = [
- "futures-core",
- "futures-util",
- "hdrhistogram",
- "indexmap 1.9.3",
- "pin-project",
- "pin-project-lite",
- "rand 0.8.5",
- "slab",
- "tokio",
- "tokio-util",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tower"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
@@ -13565,36 +13252,6 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f873044bf02dd1e8239e9c1293ea39dad76dc594ec16185d0a1bf31d8dc8d858"
-dependencies = [
- "async-compression 0.3.15",
- "base64 0.13.1",
- "bitflags 1.3.2",
- "bytes",
- "futures-core",
- "futures-util",
- "http 0.2.12",
- "http-body 0.4.6",
- "http-range-header",
- "httpdate",
- "iri-string 0.4.1",
- "mime",
- "mime_guess",
- "percent-encoding",
- "pin-project-lite",
- "tokio",
- "tokio-util",
- "tower 0.4.13",
- "tower-layer",
- "tower-service",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "tower-http"
 version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adc82fd73de2a9722ac5da747f12383d2bfdb93591ee6c58486e0097890f05f2"
@@ -13604,9 +13261,9 @@ dependencies = [
  "futures-util",
  "http 1.3.1",
  "http-body 1.0.1",
- "iri-string 0.7.9",
+ "iri-string",
  "pin-project-lite",
- "tower 0.5.2",
+ "tower",
  "tower-layer",
  "tower-service",
 ]
@@ -13643,7 +13300,7 @@ checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
 dependencies = [
  "crossbeam-channel",
  "thiserror 1.0.69",
- "time 0.3.44",
+ "time",
  "tracing-subscriber",
 ]
 
@@ -13705,7 +13362,7 @@ dependencies = [
  "sharded-slab",
  "smallvec",
  "thread_local",
- "time 0.3.44",
+ "time",
  "tracing",
  "tracing-core",
  "tracing-log",
@@ -14028,10 +13685,7 @@ dependencies = [
 name = "unstoppableswap-gui-rs"
 version = "3.5.0"
 dependencies = [
- "anyhow",
  "dfx-swiss-sdk",
- "libp2p",
- "monero-rpc-pool",
  "rustls 0.23.35",
  "serde",
  "serde_json",
@@ -14051,8 +13705,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "uuid",
- "zip 4.6.1",
+ "zip",
 ]
 
 [[package]]
@@ -14155,7 +13808,7 @@ dependencies = [
  "cfg-if",
  "git2",
  "rustversion",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -14167,7 +13820,7 @@ dependencies = [
  "anyhow",
  "derive_builder",
  "rustversion",
- "time 0.3.44",
+ "time",
  "vergen-lib",
 ]
 
@@ -14181,7 +13834,7 @@ dependencies = [
  "derive_builder",
  "git2",
  "rustversion",
- "time 0.3.44",
+ "time",
  "vergen 9.0.6",
  "vergen-lib",
 ]
@@ -14285,12 +13938,6 @@ name = "wasi"
 version = "0.9.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cccddf32554fecc6acb585f82a32a72e28b48f8c4c1883ddfeeeaa96f7d8e519"
-
-[[package]]
-name = "wasi"
-version = "0.10.0+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
 name = "wasi"
@@ -15305,7 +14952,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "raw-window-handle",
- "sha2 0.10.9",
+ "sha2",
  "soup3",
  "tao-macros",
  "thiserror 2.0.17",
@@ -15372,7 +15019,7 @@ version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7e468321c81fb07fa7f4c636c3972b9100f0346e5b6a9f2bd0603a52f7ed277"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek",
  "rand_core 0.6.4",
  "serde",
  "zeroize",
@@ -15392,7 +15039,7 @@ dependencies = [
  "oid-registry 0.6.1",
  "rusticata-macros",
  "thiserror 1.0.69",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -15409,7 +15056,7 @@ dependencies = [
  "oid-registry 0.7.1",
  "rusticata-macros",
  "thiserror 1.0.69",
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -15480,7 +15127,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17bb3549cc1321ae1296b9cdc2698e2b6cb1992adfa19a8c72e5b7a738f44cd"
 dependencies = [
- "time 0.3.44",
+ "time",
 ]
 
 [[package]]
@@ -15665,27 +15312,13 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "0.5.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93ab48844d61251bb3835145c521d88aa4031d7139e8485990f60ca911fa0815"
-dependencies = [
- "byteorder",
- "bzip2 0.4.4",
- "crc32fast",
- "flate2",
- "thiserror 1.0.69",
- "time 0.1.45",
-]
-
-[[package]]
-name = "zip"
 version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
 dependencies = [
  "aes",
  "arbitrary",
- "bzip2 0.6.1",
+ "bzip2",
  "constant_time_eq",
  "crc32fast",
  "deflate64",
@@ -15698,7 +15331,7 @@ dependencies = [
  "pbkdf2",
  "ppmd-rust",
  "sha1",
- "time 0.3.44",
+ "time",
  "zeroize",
  "zopfli",
  "zstd",

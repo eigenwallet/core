@@ -5,7 +5,6 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin_harness::{BitcoindRpcApi, Client};
 use futures::Future;
-use get_port::get_port;
 use libp2p::core::Multiaddr;
 use libp2p::PeerId;
 use monero_harness::{image, Monero};
@@ -142,7 +141,11 @@ pub async fn setup_test<T, F, C>(
     )
     .await;
 
-    let alice_listen_port = get_port().expect("Failed to find a free port");
+    let alice_listen_port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let alice_listen_address: Multiaddr = format!("/ip4/127.0.0.1/tcp/{}", alice_listen_port)
         .parse()
         .expect("failed to parse Alice's address");

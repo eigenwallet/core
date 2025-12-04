@@ -11,7 +11,6 @@ pub enum network {
 }
 
 pub mod private_key {
-    use hex;
     use monero::consensus::{Decodable, Encodable};
     use monero::PrivateKey;
     use serde::de::Visitor;
@@ -41,7 +40,9 @@ pub mod private_key {
         where
             E: de::Error,
         {
-            let bytes = hex::decode(s).map_err(|err| E::custom(format!("{err:?}")))?;
+            let bytes = data_encoding::HEXLOWER_PERMISSIVE
+                .decode(s.as_bytes())
+                .map_err(|err| E::custom(format!("{err:?}")))?;
             PrivateKey::consensus_decode(&mut bytes.as_slice())
                 .map_err(|err| E::custom(format!("{err:?}")))
         }
@@ -55,7 +56,7 @@ pub mod private_key {
         x.consensus_encode(&mut bytes)
             .map_err(|err| S::Error::custom(format!("{err:?}")))?;
         if s.is_human_readable() {
-            s.serialize_str(&hex::encode(bytes.into_inner()))
+            s.serialize_str(&data_encoding::HEXLOWER.encode(&bytes.into_inner()))
         } else {
             s.serialize_bytes(bytes.into_inner().as_ref())
         }
