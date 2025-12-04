@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2025-12-04
+
 - ASB: Now also uses Bitfinex and KuCoin as a source of truth for XMR/BTC exchange rates. It is used to calculate the base price for quotes upon which the markup is then added. If one or two of the three exchanges is unreachable, it will fallback to the arithmetic average of the rate of the remaining available exchanges.
 - ASB: To protect against market manipulation if any of three rates from the exchanges differs from the arithmetic average of the others by 10%, the maker will refuse to make new quotes and refuse to initiate new swaps.
 - ASB: `price_ticker_ws_url` config item renamed to `price_ticker_ws_url_kraken`. Two new config items `price_ticker_ws_url_bitfinex` (defaults to `wss://api-pub.bitfinex.com/ws/2`) and `price_ticker_rest_url_kucoin` (defaults to `https://api.kucoin.com/api/v1/bullet-public`)
@@ -796,7 +798,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.4.2...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.5.0...HEAD
+[3.5.0]: https://github.com/eigenwallet/core/compare/3.4.2...3.5.0
 [3.4.2]: https://github.com/eigenwallet/core/compare/3.4.1...3.4.2
 [3.4.1]: https://github.com/eigenwallet/core/compare/3.4.0...3.4.1
 [3.4.0]: https://github.com/eigenwallet/core/compare/3.3.8...3.4.0
