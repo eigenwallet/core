@@ -472,17 +472,15 @@ impl WalletHandle {
             .context("Failed to get subaddress summaries")?
     }
 
-    /// Create a new subaddress in the specified account and persist changes.
+    /// Create a new subaddress in the specified account.
     pub async fn create_subaddress(&self, account_index: u32, label: String) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.add_subaddress(account_index, &label))
             .await?
             .context("Failed to add subaddress")?;
-        // Persist changes on disk
-        self.store_in_current_file().await?;
         Ok(())
     }
 
-    /// Update the label of an existing subaddress and persist changes.
+    /// Update the label of an existing subaddress.
     pub async fn update_subaddress_label(
         &self,
         account_index: u32,
@@ -492,7 +490,6 @@ impl WalletHandle {
         self.call(move |wallet| wallet.set_subaddress_label(account_index, address_index, &label))
             .await?
             .context("Failed to set subaddress label")?;
-        self.store_in_current_file().await?;
         Ok(())
     }
 
