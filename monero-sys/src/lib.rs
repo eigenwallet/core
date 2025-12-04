@@ -469,12 +469,13 @@ impl WalletHandle {
     ) -> anyhow::Result<Vec<SubaddressSummary>> {
         self.call(move |wallet| wallet.subaddress_summaries_sync(account_index))
             .await
+            .context("Failed to get subaddress summaries")?
     }
 
     /// Create a new subaddress in the specified account and persist changes.
     pub async fn create_subaddress(&self, account_index: u32, label: String) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.add_subaddress(account_index, &label))
-            .await
+            .await?
             .context("Failed to add subaddress")?;
         // Persist changes on disk
         self.store_in_current_file().await?;
@@ -489,7 +490,7 @@ impl WalletHandle {
         label: String,
     ) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.set_subaddress_label(account_index, address_index, &label))
-            .await
+            .await?
             .context("Failed to set subaddress label")?;
         self.store_in_current_file().await?;
         Ok(())
@@ -663,6 +664,7 @@ impl WalletHandle {
     pub async fn balance_per_subaddress(&self) -> std::collections::HashMap<u32, u64> {
         self.call(move |wallet| wallet.balance_per_subaddress_sync())
             .await
+            .expect("wallet thread closed while fetching balance per subaddress")
     }
 
     /// Check if the wallet is synchronized.
@@ -1740,6 +1742,7 @@ impl FfiWallet {
     pub fn address_at(&self, account_index: u32, address_index: u32) -> monero::Address {
         // Reuse the private `address` helper
         self.address(account_index, address_index)
+            .expect("failed to fetch address at index")
     }
 
     /// Get the number of subaddresses for a given account.
@@ -1765,7 +1768,7 @@ impl FfiWallet {
         &mut self,
         account_index: u32,
     ) -> anyhow::Result<Vec<SubaddressSummary>> {
-        let mut history_ptr = self
+        let history_ptr = self
             .inner
             .pinned()
             .history()
