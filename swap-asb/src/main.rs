@@ -25,7 +25,6 @@ use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
-use bitcoin_wallet as bitcoin;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
 use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
@@ -576,10 +575,10 @@ async fn init_bitcoin_wallet(
     seed: &Seed,
     env_config: swap_env::env::Config,
     sync: bool,
-) -> Result<bitcoin::Wallet> {
+) -> Result<bitcoin_wallet::Wallet> {
     tracing::debug!("Opening Bitcoin wallet");
 
-    let wallet = bitcoin::WalletBuilder::<Seed>::default()
+    let wallet = bitcoin_wallet::WalletBuilder::<Seed>::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)
         .electrum_rpc_urls(
@@ -590,7 +589,7 @@ async fn init_bitcoin_wallet(
                 .map(|url| url.as_str().to_string())
                 .collect::<Vec<String>>(),
         )
-        .persister(bitcoin::PersisterConfig::SqliteFile {
+        .persister(bitcoin_wallet::PersisterConfig::SqliteFile {
             data_dir: config.data.dir.clone(),
         })
         .finality_confirmations(env_config.bitcoin_finality_confirmations)

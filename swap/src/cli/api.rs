@@ -12,7 +12,6 @@ use crate::seed::Seed;
 use crate::{common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
-use bitcoin_wallet as bitcoin;
 use futures::future::try_join_all;
 use libp2p::{Multiaddr, PeerId};
 use std::fmt;
@@ -241,7 +240,7 @@ mod context {
         pub config: Arc<RwLock<Option<Config>>>,
         pub tasks: Arc<PendingTaskList>,
         pub tauri_handle: Option<TauriHandle>,
-        pub(super) bitcoin_wallet: Arc<RwLock<Option<Arc<bitcoin::Wallet>>>>,
+        pub(super) bitcoin_wallet: Arc<RwLock<Option<Arc<bitcoin_wallet::Wallet>>>>,
         pub monero_manager: Arc<RwLock<Option<Arc<monero::Wallets>>>>,
         pub(super) tor_client: Arc<RwLock<Option<Arc<TorClient<TokioRustlsRuntime>>>>>,
         #[allow(dead_code)]
@@ -284,7 +283,7 @@ mod context {
         }
 
         /// Get the Bitcoin wallet, returning an error if not initialized
-        pub async fn try_get_bitcoin_wallet(&self) -> Result<Arc<bitcoin::Wallet>> {
+        pub async fn try_get_bitcoin_wallet(&self) -> Result<Arc<bitcoin_wallet::Wallet>> {
             self.bitcoin_wallet
                 .read()
                 .await
@@ -342,7 +341,7 @@ mod context {
             seed: Seed,
             env_config: EnvConfig,
             db_path: PathBuf,
-            bob_bitcoin_wallet: Arc<bitcoin::Wallet>,
+            bob_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
             bob_monero_wallet: Arc<monero::Wallets>,
         ) -> Self {
             let config = Config::for_harness(seed, env_config);
@@ -380,7 +379,7 @@ mod context {
             Ok(())
         }
 
-        pub async fn bitcoin_wallet(&self) -> Option<Arc<bitcoin::Wallet>> {
+        pub async fn bitcoin_wallet(&self) -> Option<Arc<bitcoin_wallet::Wallet>> {
             self.bitcoin_wallet.read().await.clone()
         }
 
@@ -890,12 +889,13 @@ mod wallet {
         env_config: EnvConfig,
         bitcoin_target_block: u16,
         tauri_handle_option: Option<TauriHandle>,
-    ) -> Result<bitcoin::Wallet<bdk_wallet::rusqlite::Connection, bitcoin::Client>> {
-        let mut builder = bitcoin::WalletBuilder::<Seed>::default()
+    ) -> Result<bitcoin_wallet::Wallet<bdk_wallet::rusqlite::Connection, bitcoin_wallet::Client>>
+    {
+        let mut builder = bitcoin_wallet::WalletBuilder::<Seed>::default()
             .seed(seed.clone())
             .network(env_config.bitcoin_network)
             .electrum_rpc_urls(electrum_rpc_urls)
-            .persister(bitcoin::PersisterConfig::SqliteFile {
+            .persister(bitcoin_wallet::PersisterConfig::SqliteFile {
                 data_dir: data_dir.to_path_buf(),
             })
             .finality_confirmations(env_config.bitcoin_finality_confirmations)

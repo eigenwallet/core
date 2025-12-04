@@ -14,7 +14,6 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
 
-use bitcoin_wallet as bitcoin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -296,7 +295,7 @@ async fn start_alice(
     db_path: PathBuf,
     listen_address: Multiaddr,
     env_config: Config,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
 ) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
@@ -364,7 +363,7 @@ async fn init_test_wallets(
     electrum_rpc_port: u16,
     seed: &Seed,
     env_config: Config,
-) -> (Arc<bitcoin::Wallet>, Arc<monero::Wallets>) {
+) -> (Arc<bitcoin_wallet::Wallet>, Arc<monero::Wallets>) {
     let monerod_port = monerod_container
         .ports()
         .map_to_host_port_ipv4(image::RPC_PORT)
@@ -520,7 +519,7 @@ impl StartingBalances {
 pub struct BobParams {
     seed: Seed,
     db_path: PathBuf,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     alice_address: Multiaddr,
     alice_peer_id: PeerId,
@@ -675,14 +674,14 @@ pub struct TestContext {
     alice_listen_address: Multiaddr,
 
     alice_starting_balances: StartingBalances,
-    alice_bitcoin_wallet: Arc<bitcoin::Wallet>,
+    alice_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     alice_monero_wallet: Arc<monero::Wallets>,
     alice_swap_handle: mpsc::Receiver<Swap>,
     alice_handle: AliceApplicationHandle,
 
     pub bob_params: BobParams,
     bob_starting_balances: StartingBalances,
-    bob_bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bob_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     bob_monero_wallet: Arc<monero::Wallets>,
 
     developer_tip_monero_wallet: Arc<monero::Wallets>,
@@ -1110,7 +1109,7 @@ impl Wallet for monero::Wallet {
     }
 }
 
-impl Wallet for bitcoin::Wallet {
+impl Wallet for bitcoin_wallet::Wallet {
     type Amount = bitcoin::Amount;
 
     async fn refresh(&self) -> Result<()> {
