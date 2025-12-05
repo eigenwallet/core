@@ -452,9 +452,9 @@ impl TauriHandle {
 
 struct BitcoinTauriHandle(TauriHandle);
 
-impl Into<Arc<Box<dyn bitcoin_wallet::BitcoinTauriHandle>>> for TauriHandle {
-    fn into(self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriHandle>> {
-        Arc::new(Box::new(BitcoinTauriHandle(self)))
+impl Into<bitcoin_wallet::TauriHandle> for TauriHandle {
+    fn into(self) -> bitcoin_wallet::TauriHandle {
+        Some(Arc::new(Box::new(BitcoinTauriHandle(self))))
     }
 }
 

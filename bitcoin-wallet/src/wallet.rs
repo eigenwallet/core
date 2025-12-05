@@ -38,7 +38,7 @@ use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug_span, Instrument};
 
-type TauriHandle = Arc<Box<dyn BitcoinTauriHandle>>;
+pub type TauriHandle = Option<Arc<Box<dyn BitcoinTauriHandle>>>;
 pub trait BitcoinTauriHandle: Send + Sync {
     /// let progress_handle = tauri_handle.new_background_process_with_initial_progress(
     ///     TauriBackgroundProgress::FullScanningBitcoinWallet,
@@ -66,25 +66,6 @@ pub trait BitcoinTauriBackgroundTask: Send + Sync {
 
     /// background_process_handle.finish();
     fn finish(&self);
-}
-
-struct NoBitcoinTauri;
-impl Into<TauriHandle> for NoBitcoinTauri {
-    fn into(self) -> TauriHandle {
-        Arc::new(Box::new(NoBitcoinTauri))
-    }
-}
-impl BitcoinTauriHandle for NoBitcoinTauri {
-    fn start_full_scan(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>> {
-        Arc::new(Box::new(NoBitcoinTauri))
-    }
-    fn start_sync(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>> {
-        self.start_full_scan()
-    }
-}
-impl BitcoinTauriBackgroundTask for NoBitcoinTauri {
-    fn update(&self, _: u64, _: u64) {}
-    fn finish(&self) {}
 }
 
 pub trait BitcoinWalletSeed {
@@ -178,7 +159,7 @@ pub struct WalletConfig<Seed: BitcoinWalletSeed> {
     finality_confirmations: u32,
     target_block: u32,
     sync_interval: Duration,
-    #[builder(default = "NoBitcoinTauri.into()")]
+    #[builder(default)]
     tauri_handle: TauriHandle,
     #[builder(default = "true")]
     use_mempool_space_fee_estimation: bool,
@@ -572,13 +553,11 @@ impl Wallet {
 
         tracing::info!("Starting initial Bitcoin wallet scan. This might take a while...");
 
-        let progress_handle = tauri_handle.start_full_scan();
+        let progress_handle = tauri_handle.as_ref().map(|th| th.start_full_scan());
 
-        let progress_handle_clone = progress_handle.clone();
-
-        let callback = InnerSyncCallback::new(move |consumed, total| {
-            progress_handle_clone.update(consumed,total);
-        }).chain(InnerSyncCallback::new(move |consumed, total| {
+        let callback = progress_handle.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
+            ph.update(consumed,total);
+        })).chain(InnerSyncCallback::new(move |consumed, total| {
             tracing::debug!(
                 "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
                 consumed,
@@ -608,7 +587,7 @@ impl Wallet {
         wallet.apply_update(full_scan_response)?;
         wallet.persist(&mut persister)?;
 
-        progress_handle.finish();
+        progress_handle.map(|ph| ph.finish());
 
         tracing::trace!("Initial Bitcoin wallet scan completed");
 
@@ -1068,13 +1047,13 @@ impl Wallet {
     /// Perform a single sync of the wallet with the blockchain
     /// and emit progress events to the UI.
     async fn sync_once(&self) -> Result<()> {
-        let background_process_handle = self.tauri_handle.start_sync();
-
-        let background_process_handle_clone = background_process_handle.clone();
+        let background_process_handle = self.tauri_handle.as_ref().map(|th| th.start_sync());
 
         // We want to update the UI as often as possible
-        let tauri_callback = sync_ext::InnerSyncCallback::new(move |consumed, total| {
-            background_process_handle_clone.update(consumed, total);
+        let tauri_callback = background_process_handle.clone().and_then(|bph| {
+            sync_ext::InnerSyncCallback::new(move |consumed, total| {
+                bph.update(consumed, total);
+            })
         });
 
         // We throttle the tracing logging to 10% increments
@@ -1087,7 +1066,7 @@ impl Wallet {
         self.chunked_sync_with_callback(tauri_callback.chain(tracing_callback).finalize())
             .await?;
 
-        background_process_handle.finish();
+        background_process_handle.map(|bph| bph.finish());
 
         Ok(())
     }
@@ -2873,7 +2852,7 @@ impl TestWalletBuilder {
             cached_electrum_fee_estimator,
             cached_mempool_fee_estimator: Arc::new(None), // We don't use mempool client in tests
             persister: persister.into_arc_mutex_async(),
-            tauri_handle: NoBitcoinTauri.into(),
+            tauri_handle: None,
             network: Network::Regtest,
             finality_confirmations: 1,
             target_block: 1,
