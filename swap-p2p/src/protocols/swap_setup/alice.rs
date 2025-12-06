@@ -1,12 +1,12 @@
 use crate::out_event;
 use crate::protocols::swap_setup;
 use crate::protocols::swap_setup::{
-    protocol, BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse,
+    BlockchainNetwork, SpotPriceError, SpotPriceRequest, SpotPriceResponse, protocol,
 };
-use anyhow::{anyhow, Context, Result};
-use futures::future::{BoxFuture, OptionFuture};
+use anyhow::{Context, Result, anyhow};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
+use futures::future::{BoxFuture, OptionFuture};
 use libp2p::core::upgrade;
 use libp2p::swarm::handler::ConnectionEvent;
 use libp2p::swarm::{ConnectionHandler, ConnectionId};
@@ -320,7 +320,9 @@ where
                         env_config,
                         min_buy,
                         max_buy,
-                        latest_rate.map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync + 'static>),
+                        latest_rate.map_err(|error| {
+                            Box::new(error) as Box<dyn std::error::Error + Send + Sync + 'static>
+                        }),
                     ),
                 );
 
@@ -503,8 +505,7 @@ async fn run_swap_setup(
             });
         }
 
-        let rate =
-            latest_rate.map_err(Error::LatestRateFetchFailed)?;
+        let rate = latest_rate.map_err(Error::LatestRateFetchFailed)?;
         let xmr = rate
             .sell_quote(btc)
             .map_err(Error::SellQuoteCalculationFailed)?;
@@ -572,9 +573,12 @@ async fn run_swap_setup(
         .receive(message2)
         .context("Failed to transition state1 -> state2 using message2")?;
 
-    swap_setup::write_cbor_message(&mut substream, state2.next_message())
-        .await
-        .context("Failed to send message3")?;
+    swap_setup::write_cbor_message(
+        &mut substream,
+        state2.next_message().context("Couldn't produce Message3")?,
+    )
+    .await
+    .context("Failed to send message3")?;
 
     let message4 = swap_setup::read_cbor_message::<Message4>(&mut substream)
         .await

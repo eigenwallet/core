@@ -1,19 +1,19 @@
 #![allow(non_snake_case)]
 
-use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
+use anyhow::{Context, Result, anyhow, bail};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxEarlyRefund, TxPunish, TxRedeem, TxFullRefund, Txid,
+    CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
+    TxFullRefund, TxPunish, TxRedeem, Txid, current_epoch,
 };
 use swap_core::monero;
-use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
 use swap_core::monero::ScalarExt;
+use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
 use swap_env::env::Config;
 use uuid::Uuid;
 
@@ -353,7 +353,7 @@ pub struct State2 {
 }
 
 impl State2 {
-    pub fn next_message(&self) -> Message3 {
+    pub fn next_message(&self) -> Result<Message3> {
         let tx_cancel = swap_core::bitcoin::TxCancel::new(
             &self.tx_lock,
             self.cancel_timelock,
@@ -363,23 +363,32 @@ impl State2 {
         )
         .expect("valid cancel tx");
 
-        let tx_refund =
-            swap_core::bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
-        // Alice encsigns the refund transaction(bitcoin) digest with Bob's monero
-        // pubkey(S_b). The refund transaction spends the output of
-        // tx_lock_bitcoin to Bob's refund address.
+        let tx_partial_refund = swap_core::bitcoin::TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.a.public(),
+            self.B,
+            self.btc_amnesty_amount,
+            self.tx_refund_fee,
+        )?;
+        // Alice encsigns the partial refund transaction(bitcoin) digest with Bob's monero
+        // pubkey(S_b). The partial refund transaction spends the output of
+        // tx_lock_bitcoin to Bob's refund address (except for the amnesty output).
         // recover(encsign(a, S_b, d), sign(a, d), S_b) = s_b where d is a digest, (a,
         // A) is alice's keypair and (s_b, S_b) is bob's keypair.
-        let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_refund.digest());
+        let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_partial_refund.digest());
 
         let tx_cancel_sig = self.a.sign(tx_cancel.digest());
-        let (tx_full_refund_encsig, tx_refund_amnesty_sig) = todo!("TODO: Implement system for Alice to decide commiting to full refund");
-        Message3 {
+        // TODO: When to send these?
+        let tx_full_refund_encsig = None;
+        let tx_refund_amnesty_sig = None;
+
+        Ok(Message3 {
             tx_cancel_sig,
             tx_partial_refund_encsig: tx_refund_encsig,
             tx_full_refund_encsig,
             tx_refund_amnesty_sig,
-        }
+        })
     }
 
     pub fn receive(self, msg: Message4) -> Result<State3> {

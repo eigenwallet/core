@@ -3785,7 +3785,7 @@ mod swap_core_bitcoin_tests {
         let bob_message2 = bob_state1.next_message();
 
         let alice_state2 = alice_state1.receive(bob_message2).unwrap();
-        let alice_message3 = alice_state2.next_message();
+        let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
         let bob_message4 = bob_state2.next_message();
@@ -3898,7 +3898,7 @@ mod swap_core_bitcoin_tests {
         let bob_message2 = bob_state1.next_message();
 
         let alice_state2 = alice_state1.receive(bob_message2).unwrap();
-        let alice_message3 = alice_state2.next_message();
+        let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
         let bob_message4 = bob_state2.next_message();
