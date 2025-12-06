@@ -3725,6 +3725,7 @@ mod swap_core_bitcoin_tests {
             .await;
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
+        let btc_amnesty_amount = Amount::from_sat(0);
         let xmr_amount = crate::monero::Amount::from_piconero(10000);
 
         let tx_redeem_fee = alice_wallet
@@ -3747,6 +3748,7 @@ mod swap_core_bitcoin_tests {
         let alice_state0 = alice::State0::new(
             btc_amount,
             xmr_amount,
+            btc_amnesty_amount,
             config,
             redeem_address,
             punish_address,
@@ -3766,10 +3768,12 @@ mod swap_core_bitcoin_tests {
             config.monero_finality_confirmations,
             spending_fee,
             spending_fee,
+            spending_fee,
+            spending_fee,
             tx_lock_fee,
         );
 
-        let message0 = bob_state0.next_message();
+        let message0 = bob_state0.next_message().unwrap();
 
         let (_, alice_state1) = alice_state0.receive(message0).unwrap();
         let alice_message1 = alice_state1.next_message();
@@ -3781,7 +3785,7 @@ mod swap_core_bitcoin_tests {
         let bob_message2 = bob_state1.next_message();
 
         let alice_state2 = alice_state1.receive(bob_message2).unwrap();
-        let alice_message3 = alice_state2.next_message();
+        let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
         let bob_message4 = bob_state2.next_message();
@@ -3805,12 +3809,16 @@ mod swap_core_bitcoin_tests {
         let redeem_transaction = alice_state3
             .signed_redeem_transaction(encrypted_signature)
             .unwrap();
-        let refund_transaction = bob_state6.signed_refund_transaction().unwrap();
+        let refund_transaction = bob_state6.signed_full_refund_transaction().unwrap();
 
         assert_weight(redeem_transaction, TxRedeem::weight().to_wu(), "TxRedeem");
         assert_weight(cancel_transaction, TxCancel::weight().to_wu(), "TxCancel");
         assert_weight(punish_transaction, TxPunish::weight().to_wu(), "TxPunish");
-        assert_weight(refund_transaction, TxRefund::weight().to_wu(), "TxRefund");
+        assert_weight(
+            refund_transaction,
+            TxFullRefund::weight().to_wu(),
+            "TxRefund",
+        );
 
         // Test TxEarlyRefund transaction
         let early_refund_transaction = alice_state3
@@ -3835,6 +3843,7 @@ mod swap_core_bitcoin_tests {
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
         let xmr_amount = crate::monero::Amount::from_piconero(10000);
+        let btc_amnesty_amount = Amount::from_sat(0);
 
         let tx_redeem_fee = alice_wallet
             .estimate_fee(TxRedeem::weight(), Some(btc_amount))
@@ -3852,6 +3861,7 @@ mod swap_core_bitcoin_tests {
         let alice_state0 = alice::State0::new(
             btc_amount,
             xmr_amount,
+            btc_amnesty_amount,
             config,
             refund_address.clone(),
             punish_address,
@@ -3872,10 +3882,12 @@ mod swap_core_bitcoin_tests {
             spending_fee,
             spending_fee,
             spending_fee,
+            spending_fee,
+            spending_fee,
         );
 
         // Complete the state machine up to State3
-        let message0 = bob_state0.next_message();
+        let message0 = bob_state0.next_message().unwrap();
         let (_, alice_state1) = alice_state0.receive(message0).unwrap();
         let alice_message1 = alice_state1.next_message();
 
@@ -3886,7 +3898,7 @@ mod swap_core_bitcoin_tests {
         let bob_message2 = bob_state1.next_message();
 
         let alice_state2 = alice_state1.receive(bob_message2).unwrap();
-        let alice_message3 = alice_state2.next_message();
+        let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
         let bob_message4 = bob_state2.next_message();
@@ -3932,7 +3944,10 @@ mod swap_core_bitcoin_tests {
 
         // It should be the same as TxRedeem and TxRefund weights since they have similar structure
         assert_eq!(TxEarlyRefund::weight() as u64, TxRedeem::weight().to_wu());
-        assert_eq!(TxEarlyRefund::weight() as u64, TxRefund::weight().to_wu());
+        assert_eq!(
+            TxEarlyRefund::weight() as u64,
+            TxFullRefund::weight().to_wu()
+        );
     }
 
     // Weights fluctuate because of the length of the signatures. Valid ecdsa

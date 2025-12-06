@@ -11,7 +11,9 @@ use crate::protocol::{bob, Database};
 use anyhow::{Context as AnyContext, Result};
 use std::sync::Arc;
 use std::time::Duration;
-use swap_core::bitcoin::{ExpiredTimelocks, TxCancel, TxRefund};
+use swap_core::bitcoin::{
+    ExpiredTimelocks, TxCancel, TxFullRefund, TxPartialRefund, TxRefundAmnesty,
+};
 use swap_core::monero::TxHash;
 use swap_env::env;
 use swap_machine::bob::State5;
@@ -106,11 +108,22 @@ async fn next_state(
             change_address,
             tx_lock_fee,
         } => {
-            let tx_refund_fee = bitcoin_wallet
-                .estimate_fee(TxRefund::weight(), Some(btc_amount))
-                .await?;
             let tx_cancel_fee = bitcoin_wallet
                 .estimate_fee(TxCancel::weight(), Some(btc_amount))
+                .await?;
+            let tx_refund_fee = bitcoin_wallet
+                .estimate_fee(TxFullRefund::weight(), Some(btc_amount))
+                .await?;
+
+            // At this point we don't know how high btc_amnesty_amount is.
+            // This means we don't know how large the amount of the partial refund and amnesty transactions will be.
+            // We therefore specify the same upper limit on tx fees as for the other transactions, even though
+            // the maximum fee percentage might be higher due to that.
+            let tx_partial_refund_fee = bitcoin_wallet
+                .estimate_fee(TxPartialRefund::weight(), Some(btc_amount))
+                .await?;
+            let tx_refund_amnesty_fee = bitcoin_wallet
+                .estimate_fee(TxRefundAmnesty::weight(), Some(btc_amount))
                 .await?;
 
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin
@@ -127,6 +140,8 @@ async fn next_state(
                     btc: btc_amount,
                     tx_lock_fee,
                     tx_refund_fee,
+                    tx_partial_refund_fee,
+                    tx_refund_amnesty_fee,
                     tx_cancel_fee,
                     bitcoin_refund_address: change_address,
                 })
@@ -797,7 +812,7 @@ async fn next_state(
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::BtcRefundPublished {
-                    btc_refund_txid: state.signed_refund_transaction()?.compute_txid(),
+                    btc_refund_txid: state.signed_full_refund_transaction()?.compute_txid(),
                 },
             );
 
@@ -894,7 +909,7 @@ async fn next_state(
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::BtcRefunded {
-                    btc_refund_txid: state.signed_refund_transaction()?.compute_txid(),
+                    btc_refund_txid: state.signed_full_refund_transaction()?.compute_txid(),
                 },
             );
 
@@ -1037,6 +1052,10 @@ async fn next_state(
         }
         // TODO: Emit a Tauri event here
         BobState::BtcEarlyRefunded(state) => BobState::BtcEarlyRefunded(state),
+        BobState::BtcPartialRefundPublished(state)
+        | BobState::BtcPartiallyRefunded(state)
+        | BobState::BtcAmnestyPublished(state)
+        | BobState::BtcAmnestyConfirmed(state) => todo!(),
         BobState::SafelyAborted => BobState::SafelyAborted,
         BobState::XmrRedeemed { tx_lock_id } => {
             event_emitter.emit_swap_progress_event(

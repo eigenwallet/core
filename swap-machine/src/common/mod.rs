@@ -1,15 +1,15 @@
-use crate::alice::is_complete as alice_is_complete;
 use crate::alice::AliceState;
-use crate::bob::is_complete as bob_is_complete;
+use crate::alice::is_complete as alice_is_complete;
 use crate::bob::BobState;
+use crate::bob::is_complete as bob_is_complete;
 use anyhow::Result;
 use async_trait::async_trait;
 use conquer_once::Lazy;
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use sigma_fun::HashTranscript;
+use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use std::convert::TryInto;
 use swap_core::bitcoin;
 use swap_core::monero::{self, MoneroAddressPool};
@@ -35,9 +35,9 @@ pub struct Message0 {
     pub v_b: monero::PrivateViewKey,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     pub refund_address: bitcoin::Address,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub tx_partial_refund_fee: bitcoin::Amount,
+    pub tx_refund_amnesty_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -53,10 +53,11 @@ pub struct Message1 {
     pub redeem_address: bitcoin::Address,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     pub punish_address: bitcoin::Address,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_punish_fee: bitcoin::Amount,
+    /// The amount of Bitcoin that Bob not get refunded unless Alice decides so.
+    /// Introduced in [#675](https://github.com/eigenwallet/core/pull/675) to combat spam.
+    pub amnesty_amount: bitcoin::Amount,
 }
 
 #[allow(non_snake_case)]
@@ -69,7 +70,12 @@ pub struct Message2 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message3 {
     pub tx_cancel_sig: bitcoin::Signature,
-    pub tx_refund_encsig: bitcoin::EncryptedSignature,
+    /// The following fields were reworked in [#675](https://github.com/eigenwallet/core/pull/675).
+    /// Alice _may_ choose to commit to a full refund during the swap setup already, but doesn't
+    /// have to.
+    pub tx_partial_refund_encsig: bitcoin::EncryptedSignature,
+    pub tx_full_refund_encsig: Option<bitcoin::EncryptedSignature>,
+    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
 }
 
 #[allow(non_snake_case)]

@@ -1,19 +1,19 @@
 #![allow(non_snake_case)]
 
-use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
+use anyhow::{Context, Result, anyhow, bail};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
-    TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
+    CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
+    TxFullRefund, TxPunish, TxRedeem, Txid, current_epoch,
 };
 use swap_core::monero;
-use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
 use swap_core::monero::ScalarExt;
+use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
 use swap_env::env::Config;
 use uuid::Uuid;
 
@@ -148,6 +148,7 @@ pub struct State0 {
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: bitcoin::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     redeem_address: bitcoin::Address,
@@ -161,6 +162,7 @@ impl State0 {
     pub fn new<R>(
         btc: bitcoin::Amount,
         xmr: monero::Amount,
+        btc_amnesty_amount: bitcoin::Amount,
         env_config: Config,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
@@ -186,6 +188,7 @@ impl State0 {
                 point: S_a_monero.compress(),
             },
             dleq_proof_s_a,
+            btc_amnesty_amount,
             redeem_address,
             punish_address,
             btc,
@@ -230,6 +233,7 @@ impl State0 {
                 dleq_proof_s_a: self.dleq_proof_s_a,
                 btc: self.btc,
                 xmr: self.xmr,
+                btc_amnesty_amount: self.btc_amnesty_amount,
                 cancel_timelock: self.cancel_timelock,
                 punish_timelock: self.punish_timelock,
                 refund_address: msg.refund_address,
@@ -238,6 +242,8 @@ impl State0 {
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_punish_fee: self.tx_punish_fee,
                 tx_refund_fee: msg.tx_refund_fee,
+                tx_partial_refund_fee: Some(msg.tx_partial_refund_fee),
+                tx_refund_amnesty_fee: Some(msg.tx_refund_amnesty_fee),
                 tx_cancel_fee: msg.tx_cancel_fee,
             },
         ))
@@ -259,6 +265,7 @@ pub struct State1 {
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: bitcoin::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -267,6 +274,8 @@ pub struct State1 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -282,6 +291,7 @@ impl State1 {
             punish_address: self.punish_address.clone(),
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
+            amnesty_amount: self.btc_amnesty_amount,
         }
     }
 
@@ -299,6 +309,7 @@ impl State1 {
             v: self.v,
             btc: self.btc,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -308,6 +319,8 @@ impl State1 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }
@@ -324,6 +337,7 @@ pub struct State2 {
     v: monero::PrivateViewKey,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
+    btc_amnesty_amount: bitcoin::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -333,11 +347,13 @@ pub struct State2 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
+    tx_partial_refund_fee: Option<bitcoin::Amount>,
+    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
 impl State2 {
-    pub fn next_message(&self) -> Message3 {
+    pub fn next_message(&self) -> Result<Message3> {
         let tx_cancel = swap_core::bitcoin::TxCancel::new(
             &self.tx_lock,
             self.cancel_timelock,
@@ -347,20 +363,32 @@ impl State2 {
         )
         .expect("valid cancel tx");
 
-        let tx_refund =
-            swap_core::bitcoin::TxRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
-        // Alice encsigns the refund transaction(bitcoin) digest with Bob's monero
-        // pubkey(S_b). The refund transaction spends the output of
-        // tx_lock_bitcoin to Bob's refund address.
+        let tx_partial_refund = swap_core::bitcoin::TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.a.public(),
+            self.B,
+            self.btc_amnesty_amount,
+            self.tx_refund_fee,
+        )?;
+        // Alice encsigns the partial refund transaction(bitcoin) digest with Bob's monero
+        // pubkey(S_b). The partial refund transaction spends the output of
+        // tx_lock_bitcoin to Bob's refund address (except for the amnesty output).
         // recover(encsign(a, S_b, d), sign(a, d), S_b) = s_b where d is a digest, (a,
         // A) is alice's keypair and (s_b, S_b) is bob's keypair.
-        let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_refund.digest());
+        let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_partial_refund.digest());
 
         let tx_cancel_sig = self.a.sign(tx_cancel.digest());
-        Message3 {
+        // TODO: When to send these?
+        let tx_full_refund_encsig = None;
+        let tx_refund_amnesty_sig = None;
+
+        Ok(Message3 {
             tx_cancel_sig,
-            tx_refund_encsig,
-        }
+            tx_partial_refund_encsig: tx_refund_encsig,
+            tx_full_refund_encsig,
+            tx_refund_amnesty_sig,
+        })
     }
 
     pub fn receive(self, msg: Message4) -> Result<State3> {
@@ -413,6 +441,7 @@ impl State2 {
             v: self.v,
             btc: self.btc,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -425,6 +454,8 @@ impl State2 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
+            tx_partial_refund_fee: self.tx_partial_refund_fee,
+            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }
@@ -439,9 +470,9 @@ pub struct State3 {
     S_b_monero: monero::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     pub v: monero::PrivateViewKey,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc: bitcoin::Amount,
     pub xmr: monero::Amount,
+    pub btc_amnesty_amount: bitcoin::Amount,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
@@ -464,13 +495,11 @@ pub struct State3 {
     /// to wait for the timelock to expire.
     #[serde(default)]
     tx_early_refund_sig_bob: Option<swap_core::bitcoin::Signature>,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_punish_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub tx_partial_refund_fee: Option<bitcoin::Amount>,
+    pub tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     pub tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -535,8 +564,8 @@ impl State3 {
         .expect("valid cancel tx")
     }
 
-    pub fn tx_refund(&self) -> TxRefund {
-        swap_core::bitcoin::TxRefund::new(
+    pub fn tx_refund(&self) -> TxFullRefund {
+        swap_core::bitcoin::TxFullRefund::new(
             &self.tx_cancel(),
             &self.refund_address,
             self.tx_refund_fee,

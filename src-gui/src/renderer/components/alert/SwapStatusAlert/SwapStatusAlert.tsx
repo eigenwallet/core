@@ -175,6 +175,10 @@ export function StateAlert({
   timelock: ExpiredTimelocks | null;
   isRunning: boolean;
 }) {
+  if (swap == null) {
+    return null;
+  }
+
   switch (swap.state_name) {
     // This is the state where the swap is safe because the other party has redeemed the Bitcoin
     // It cannot be punished anymore
@@ -269,7 +273,7 @@ export default function SwapStatusAlert({
 
   return (
     <Alert
-      key={swap.swap_id}
+      key={swapId}
       severity="warning"
       variant="filled"
       classes={{ message: "alert-message-flex-grow" }}
@@ -290,8 +294,9 @@ export default function SwapStatusAlert({
           <>
             Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
           </>
-        )}
-      </AlertTitle>
+        )
+        }
+      </AlertTitle >
       <Box
         sx={{
           display: "flex",
@@ -302,6 +307,6 @@ export default function SwapStatusAlert({
         <StateAlert swap={swap} timelock={timelock} isRunning={isRunning} />
         {timelock && <TimelockTimeline swap={swap} timelock={timelock} />}
       </Box>
-    </Alert>
+    </Alert >
   );
 }
