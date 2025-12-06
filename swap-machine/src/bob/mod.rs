@@ -1018,6 +1018,41 @@ impl State6 {
         Ok(signed_tx_refund)
     }
 
+    pub fn construct_tx_partial_refund(&self) -> Result<bitcoin::TxPartialRefund> {
+        let tx_cancel = self.construct_tx_cancel()?;
+        bitcoin::TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.A,
+            self.b.public(),
+            self.btc_ammesty_amount
+                .context("Can't construct TxPartialRefund because btc_amnesty_amount is missing")?,
+            self.tx_partial_refund_fee.context(
+                "Can't construct TxPartialRefund because tx_partial_refund_fee is missing",
+            )?,
+        )
+    }
+
+    pub fn signed_partial_refund_transaction(&self) -> Result<Transaction> {
+        let tx_partial_refund_encsig = self
+            .bob_refund_type
+            .tx_partial_refund_encsig()
+            .context("Can't finalize TxPartialRefund because Alice's encsig is missing")?;
+
+        let tx_partial_refund = self.construct_tx_partial_refund()?;
+
+        let adaptor = Adaptor::<HashTranscript<Sha256>, Deterministic<Sha256>>::default();
+
+        let sig_b = self.b.sign(tx_partial_refund.digest());
+        let sig_a =
+            adaptor.decrypt_signature(&self.s_b.to_secpfun_scalar(), tx_partial_refund_encsig);
+
+        let signed_tx_partial_refund =
+            tx_partial_refund.add_signatures((self.A, sig_a), (self.b.public(), sig_b))?;
+
+        Ok(signed_tx_partial_refund)
+    }
+
     pub fn construct_tx_early_refund(&self) -> bitcoin::TxEarlyRefund {
         bitcoin::TxEarlyRefund::new(&self.tx_lock, &self.refund_address, self.tx_refund_fee)
     }
