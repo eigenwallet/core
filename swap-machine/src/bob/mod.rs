@@ -309,7 +309,7 @@ impl State0 {
             S_a_bitcoin: msg.S_a_bitcoin,
             v,
             xmr: self.xmr,
-            btc_amnesty_amount: msg.amnesty_amount,
+            btc_amnesty_amount: Some(msg.amnesty_amount),
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -337,7 +337,7 @@ pub struct State1 {
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
-    btc_amnesty_amount: bitcoin::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -374,7 +374,8 @@ impl State1 {
             &self.refund_address,
             self.A,
             self.b.public(),
-            self.btc_amnesty_amount,
+            self.btc_amnesty_amount
+                .context("btc_amnesty_amount is missing but required to create TxPartialRefund")?,
             self.tx_partial_refund_fee
                 .context("tx_partial_refund_fee missing but required to setup swap")?,
         )?;
@@ -422,6 +423,7 @@ impl State1 {
             S_a_bitcoin: self.S_a_bitcoin,
             v: self.v,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -452,6 +454,7 @@ pub struct State2 {
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     #[serde(with = "address_serde")]
@@ -522,6 +525,7 @@ impl State2 {
                 S_a_bitcoin: self.S_a_bitcoin,
                 v: self.v,
                 xmr: self.xmr,
+                btc_amnesty_amount: self.btc_amnesty_amount,
                 cancel_timelock: self.cancel_timelock,
                 punish_timelock: self.punish_timelock,
                 refund_address: self.refund_address,
@@ -552,6 +556,7 @@ pub struct State3 {
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     #[serde(with = "address_serde")]
@@ -607,6 +612,7 @@ impl State3 {
             S_a_bitcoin: self.S_a_bitcoin,
             v: self.v,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
             refund_address: self.refund_address,
@@ -644,6 +650,7 @@ impl State3 {
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             xmr: self.xmr,
+            btc_ammesty_amount: self.btc_amnesty_amount,
         }
     }
 
@@ -701,6 +708,7 @@ pub struct State4 {
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     #[serde(with = "address_serde")]
@@ -750,6 +758,7 @@ impl State4 {
                 s_b: self.s_b,
                 v: self.v,
                 xmr: self.xmr,
+                btc_amnesty_amount: self.btc_amnesty_amount,
                 tx_lock: self.tx_lock.clone(),
                 monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
                 lock_transfer_proof: self.lock_transfer_proof.clone(),
@@ -825,6 +834,7 @@ impl State4 {
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             xmr: self.xmr,
+            btc_ammesty_amount: self.btc_amnesty_amount,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
         }
@@ -842,6 +852,7 @@ pub struct State5 {
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     tx_lock: bitcoin::TxLock,
     pub monero_wallet_restore_blockheight: BlockHeight,
     pub lock_transfer_proof: TransferProof,
@@ -885,6 +896,7 @@ pub struct State6 {
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
+    btc_ammesty_amount: Option<bitcoin::Amount>,
     pub monero_wallet_restore_blockheight: BlockHeight,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
@@ -1026,6 +1038,7 @@ impl State6 {
             s_b: self.s_b,
             v: self.v,
             xmr: self.xmr,
+            btc_amnesty_amount: self.btc_ammesty_amount,
             tx_lock: self.tx_lock.clone(),
             monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
             lock_transfer_proof,
