@@ -17,6 +17,11 @@ electrum-pool = { path = "../electrum-pool" }
 monero = { workspace = true }
 sha2 = { workspace = true }
 
+# monero-oxide (migration in progress)
+# Note: monero-oxide uses curve25519-dalek v4, not the -ng fork
+monero-address = { workspace = true }
+curve25519-dalek-real = { version = "4", package = "curve25519-dalek" }
+
 # Serialization
 rust_decimal = { workspace = true }
 serde = { workspace = true }
