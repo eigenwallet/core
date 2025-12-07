@@ -23,5 +23,8 @@ swap-serde = { path = "../swap-serde" }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
+[dev-dependencies]
+tokio = { workspace = true }
+
 [lints]
 workspace = true
