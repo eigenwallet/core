@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.1] - 2025-12-07
+
 ## [3.5.0] - 2025-12-04
 
 - ASB: Now also uses Bitfinex and KuCoin as a source of truth for XMR/BTC exchange rates. It is used to calculate the base price for quotes upon which the markup is then added. If one or two of the three exchanges is unreachable, it will fallback to the arithmetic average of the rate of the remaining available exchanges.
@@ -798,7 +800,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.5.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.5.1...HEAD
+[3.5.1]: https://github.com/eigenwallet/core/compare/3.5.0...3.5.1
 [3.5.0]: https://github.com/eigenwallet/core/compare/3.4.2...3.5.0
 [3.4.2]: https://github.com/eigenwallet/core/compare/3.4.1...3.4.2
 [3.4.1]: https://github.com/eigenwallet/core/compare/3.4.0...3.4.1
