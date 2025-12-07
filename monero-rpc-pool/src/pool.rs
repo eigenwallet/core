@@ -101,13 +101,13 @@ impl BandwidthTracker {
 
 pub struct NodePool {
     db: Database,
-    network: monero::Network,
+    network: monero_address::Network,
     status_sender: broadcast::Sender<PoolStatus>,
     bandwidth_tracker: Arc<BandwidthTracker>,
 }
 
 impl NodePool {
-    pub fn new(db: Database, network: monero::Network) -> (Self, broadcast::Receiver<PoolStatus>) {
+    pub fn new(db: Database, network: monero_address::Network) -> (Self, broadcast::Receiver<PoolStatus>) {
         let (status_sender, status_receiver) = broadcast::channel(100);
         let pool = Self {
             db,

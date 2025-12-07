@@ -10,6 +10,54 @@ pub enum network {
     Testnet,
 }
 
+/// Serde module for monero_address::Network (monero-oxide)
+/// This produces IDENTICAL serialization as the monero-rs version above.
+pub mod network_oxide {
+    use monero_address::Network;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    enum NetworkHelper {
+        Mainnet,
+        Stagenet,
+        Testnet,
+    }
+
+    impl From<Network> for NetworkHelper {
+        fn from(n: Network) -> Self {
+            match n {
+                Network::Mainnet => NetworkHelper::Mainnet,
+                Network::Stagenet => NetworkHelper::Stagenet,
+                Network::Testnet => NetworkHelper::Testnet,
+            }
+        }
+    }
+
+    impl From<NetworkHelper> for Network {
+        fn from(n: NetworkHelper) -> Self {
+            match n {
+                NetworkHelper::Mainnet => Network::Mainnet,
+                NetworkHelper::Stagenet => Network::Stagenet,
+                NetworkHelper::Testnet => Network::Testnet,
+            }
+        }
+    }
+
+    pub fn serialize<S>(network: &Network, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        NetworkHelper::from(*network).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Network, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        NetworkHelper::deserialize(deserializer).map(Network::from)
+    }
+}
+
 pub mod private_key {
     use monero::consensus::{Decodable, Encodable};
     use monero::PrivateKey;

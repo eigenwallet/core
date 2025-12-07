@@ -1,10 +1,9 @@
 use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
+use monero_address::Network;
 use monero_rpc_pool::{config::Config, database::parse_network, run_server};
 use tracing::info;
 use tracing_subscriber::{self, EnvFilter};
-
-use monero::Network;
 
 #[derive(Parser)]
 #[command(name = "monero-rpc-pool")]
