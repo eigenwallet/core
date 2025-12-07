@@ -11145,6 +11145,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.7",
+ "curve25519-dalek",
  "data-encoding",
  "libp2p",
  "monero",

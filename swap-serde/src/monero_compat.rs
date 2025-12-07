@@ -350,4 +350,182 @@ mod tests {
             .expect("Failed to deserialize monero-oxide JSON with monero-rs");
         assert_eq!(rs_from_oxide.0, monero::Network::Stagenet);
     }
+
+    // ==========================================================================
+    // Phase 1 Tests: private_key_oxide and address_oxide serde modules
+    // ==========================================================================
+
+    /// CRITICAL: Verify private_key_oxide produces IDENTICAL JSON as private_key
+    #[test]
+    fn private_key_oxide_json_identical() {
+        use curve25519_dalek::Scalar;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct KeyRs(#[serde(with = "crate::monero::private_key")] monero::PrivateKey);
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct KeyOxide(#[serde(with = "crate::monero::private_key_oxide")] Scalar);
+
+        let test_bytes: [u8; 32] = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x00,
+        ];
+
+        let key_rs = KeyRs(monero::PrivateKey::from_slice(&test_bytes).unwrap());
+        let key_oxide = KeyOxide(Scalar::from_bytes_mod_order(test_bytes));
+
+        let json_rs = serde_json::to_string(&key_rs).expect("JSON serialize failed");
+        let json_oxide = serde_json::to_string(&key_oxide).expect("JSON serialize failed");
+
+        assert_eq!(
+            json_rs, json_oxide,
+            "private_key and private_key_oxide produce different JSON"
+        );
+    }
+
+    /// CRITICAL: Verify private_key_oxide produces IDENTICAL CBOR as private_key
+    #[test]
+    fn private_key_oxide_cbor_identical() {
+        use curve25519_dalek::Scalar;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct KeyRs(#[serde(with = "crate::monero::private_key")] monero::PrivateKey);
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        struct KeyOxide(#[serde(with = "crate::monero::private_key_oxide")] Scalar);
+
+        let test_bytes: [u8; 32] = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x00,
+        ];
+
+        let key_rs = KeyRs(monero::PrivateKey::from_slice(&test_bytes).unwrap());
+        let key_oxide = KeyOxide(Scalar::from_bytes_mod_order(test_bytes));
+
+        let cbor_rs = serde_cbor::to_vec(&key_rs).expect("CBOR serialize failed");
+        let cbor_oxide = serde_cbor::to_vec(&key_oxide).expect("CBOR serialize failed");
+
+        assert_eq!(
+            cbor_rs, cbor_oxide,
+            "private_key and private_key_oxide produce different CBOR"
+        );
+    }
+
+    /// Verify private_key_oxide cross-deserialization works
+    #[test]
+    fn private_key_oxide_cross_deserialize() {
+        use curve25519_dalek::Scalar;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct KeyRs(#[serde(with = "crate::monero::private_key")] monero::PrivateKey);
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct KeyOxide(#[serde(with = "crate::monero::private_key_oxide")] Scalar);
+
+        let test_bytes: [u8; 32] = [
+            0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89,
+            0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78,
+            0x87, 0x65, 0x43, 0x21, 0x0f, 0xed, 0xcb, 0xa9,
+            0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc, 0x0b,
+        ];
+
+        // Serialize with monero-rs, deserialize with monero-oxide
+        let key_rs = KeyRs(monero::PrivateKey::from_slice(&test_bytes).unwrap());
+        let json_rs = serde_json::to_string(&key_rs).unwrap();
+        let key_oxide: KeyOxide = serde_json::from_str(&json_rs)
+            .expect("Failed to deserialize monero-rs JSON with monero-oxide");
+        assert_eq!(key_oxide.0.to_bytes(), test_bytes);
+
+        // Serialize with monero-oxide, deserialize with monero-rs
+        let key_oxide = KeyOxide(Scalar::from_bytes_mod_order(test_bytes));
+        let json_oxide = serde_json::to_string(&key_oxide).unwrap();
+        let key_rs: KeyRs = serde_json::from_str(&json_oxide)
+            .expect("Failed to deserialize monero-oxide JSON with monero-rs");
+        assert_eq!(key_rs.0.to_bytes(), test_bytes);
+    }
+
+    /// CRITICAL: Verify address_oxide produces IDENTICAL serialization as monero-rs Address
+    #[test]
+    fn address_oxide_json_identical() {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct AddrRs(monero::Address);
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct AddrOxide(#[serde(with = "crate::monero::address_oxide")] OxideAddress);
+
+        // Valid mainnet address
+        let addr_str = "44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa";
+
+        let addr_rs = AddrRs(addr_str.parse().unwrap());
+        let addr_oxide = AddrOxide(
+            OxideAddress::from_str(OxideNetwork::Mainnet, addr_str).unwrap()
+        );
+
+        let json_rs = serde_json::to_string(&addr_rs).expect("JSON serialize failed");
+        let json_oxide = serde_json::to_string(&addr_oxide).expect("JSON serialize failed");
+
+        assert_eq!(
+            json_rs, json_oxide,
+            "Address serialization differs between monero-rs and monero-oxide"
+        );
+    }
+
+    /// Verify address_oxide cross-deserialization works
+    #[test]
+    fn address_oxide_cross_deserialize() {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct AddrRs(monero::Address);
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct AddrOxide(#[serde(with = "crate::monero::address_oxide")] OxideAddress);
+
+        let addr_str = "44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa";
+
+        // Serialize with monero-rs, deserialize with monero-oxide
+        let addr_rs = AddrRs(addr_str.parse().unwrap());
+        let json_rs = serde_json::to_string(&addr_rs).unwrap();
+        let addr_oxide: AddrOxide = serde_json::from_str(&json_rs)
+            .expect("Failed to deserialize monero-rs JSON with monero-oxide");
+        assert_eq!(addr_oxide.0.to_string(), addr_str);
+
+        // Serialize with monero-oxide, deserialize with monero-rs
+        let addr_oxide = AddrOxide(
+            OxideAddress::from_str(OxideNetwork::Mainnet, addr_str).unwrap()
+        );
+        let json_oxide = serde_json::to_string(&addr_oxide).unwrap();
+        let addr_rs: AddrRs = serde_json::from_str(&json_oxide)
+            .expect("Failed to deserialize monero-oxide JSON with monero-rs");
+        assert_eq!(addr_rs.0.to_string(), addr_str);
+    }
+
+    /// Test address_oxide with stagenet address
+    #[test]
+    fn address_oxide_stagenet() {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize, Deserialize, Debug)]
+        struct AddrOxide(#[serde(with = "crate::monero::address_oxide")] OxideAddress);
+
+        let addr_str = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a";
+
+        let addr = AddrOxide(
+            OxideAddress::from_str(OxideNetwork::Stagenet, addr_str).unwrap()
+        );
+
+        let json = serde_json::to_string(&addr).expect("JSON serialize failed");
+        let addr_back: AddrOxide = serde_json::from_str(&json).expect("JSON deserialize failed");
+
+        assert_eq!(addr.0.to_string(), addr_back.0.to_string());
+    }
 }

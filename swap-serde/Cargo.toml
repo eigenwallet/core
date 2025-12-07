@@ -13,6 +13,8 @@ monero = { workspace = true }
 monero-oxide = { workspace = true }
 monero-primitives = { workspace = true }
 monero-address = { workspace = true }
+# curve25519-dalek v4 (used by monero-oxide for Scalar/Point types)
+curve25519-dalek = "4"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
