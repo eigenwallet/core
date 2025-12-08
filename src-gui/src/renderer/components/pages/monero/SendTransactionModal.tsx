@@ -54,7 +54,7 @@ export default function SendTransactionModal({
       )}
       {showSuccess && (
         <SendSuccessContent
-          onClose={onClose}
+          onClose={handleClose}
           successDetails={successResponse}
         />
       )}
