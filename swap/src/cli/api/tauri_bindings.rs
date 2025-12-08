@@ -943,6 +943,20 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
     },
+    BtcPartialRefundPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        /// Whether we have Alice's signature on the amnesty transaction
+        /// such that we will be able to refund the rest of the locked Bitcoin
+        /// after the partial refund went through.
+        has_amnesty_signature: bool,
+    },
+    // BtcAmnesty was published but not yet confirmed.
+    // Requires BtcPartialRefund to be published first.
+    BtcAmnestyPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
+    },
     // tx_early_refund has been confirmed
     BtcEarlyRefunded {
         #[typeshare(serialized_as = "string")]
@@ -952,6 +966,20 @@ pub enum TauriSwapProgressEvent {
     BtcRefunded {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
+    },
+    // We got partially refunded. Might still be able to get amnesty.
+    BtcPartiallyRefunded {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        /// Whether we have Alice's signature on the amnesty transaction
+        /// such that we will be able to refund the rest of the locked Bitcoin
+        /// after the partial refund went through.
+        has_amnesty_signature: bool,
+    },
+    // BtcAmnesty was published but not yet confirmed.
+    BtcAmnestyReceived {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
     },
     BtcPunished,
     AttemptingCooperativeRedeem,
