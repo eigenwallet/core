@@ -790,7 +790,7 @@ async fn next_state(
                             //  - either full refund, if alice sent use that signature (prioritized)
                             //  - or just partial refund.
 
-                            if state.bob_refund_type.tx_full_refund_encsig().is_some() {
+                            if state.refund_signatures.tx_full_refund_encsig().is_some() {
                                 tracing::info!("Have the full refund signature, attempting full Bitcoin refund");
                                 let tx_full_refund = state
                                     .signed_full_refund_transaction()
@@ -803,7 +803,7 @@ async fn next_state(
                                 return Ok(BobState::BtcRefundPublished(state.clone()));
                             }
                     
-                            if state.bob_refund_type.tx_partial_refund_encsig().is_some() {
+                            if state.refund_signatures.tx_partial_refund_encsig().is_some() {
                                 tracing::info!(
                                     "Don't have the full refund signature, attempting partial Bitcoin refund"
                                 );
