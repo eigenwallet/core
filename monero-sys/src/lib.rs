@@ -2672,7 +2672,8 @@ impl FfiWallet {
 
         // If the proof is empty, it cannot be valid
         if proof.is_empty() {
-            self.check_error().context("Failed to construct reserve proof")?;
+            self.check_error()
+                .context("Failed to construct reserve proof")?;
             anyhow::bail!("Failed to construct reserve proof because wallet2 returned an empty string but no error was returned");
         }
 

@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+monero = { workspace = true }
 monero-harness = { path = "../monero-harness" }
 monero-sys = { path = "../monero-sys" }
-monero = { workspace = true }
 testcontainers = { workspace = true }
 
 anyhow = { workspace = true }
