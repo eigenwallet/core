@@ -52,7 +52,6 @@ monero = { workspace = true }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }
-once_cell = { workspace = true }
 pem = "3.0"
 proptest = "1"
 regex = "1.10"
