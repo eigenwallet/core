@@ -226,7 +226,7 @@ namespace Monero
     }
 
     /**
-     * Get a reserve proof that proves the wallet has a certain amount of XMR.
+     * Get a reserve proof that proves the wallet has a certain amount of Monero.
      * If `all` is true, proves the entire balance; otherwise proves at least `amount` piconero.
      */
     inline std::unique_ptr<std::string> getReserveProof(const Wallet &wallet, bool all, uint32_t account_index, uint64_t amount, const std::string &message)
@@ -237,8 +237,9 @@ namespace Monero
 
     /**
      * Check a reserve proof against an address.
-     * Returns true if the check completed (success or failure), false if an error occurred.
-     * The `good` out-parameter indicates whether the proof is valid.
+     * Returns true if the check completed without errors, false if an error occurred
+     * (e.g., invalid address, address is a subaddress, or exception during verification).
+     * The `good` out-parameter indicates whether the proof is actually valid.
      * `total` and `spent` are in piconero.
      */
     inline bool checkReserveProof(
