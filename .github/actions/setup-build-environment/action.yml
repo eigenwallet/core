@@ -74,7 +74,7 @@ runs:
     - name: Install frontend dependencies
       working-directory: src-gui
       shell: bash
-      run: yarn install --immutable --network-timeout 600000
+      run: YARN_HTTP_TIMEOUT=10m yarn install --immutable
 
     - name: Install tauri-cli via yarn
       shell: bash
