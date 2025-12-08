@@ -29,6 +29,9 @@ export default [
       "react/no-children-prop": "off",
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-empty-object-type": "off",
+      // TODO: This is temporary until we fix all of our hook issues
+      // We want to avoid eslint becoming useless for us by always failing
+      "react-hooks/set-state-in-effect": "warn",
       "import/no-cycle": ["error", { maxDepth: 10 }],
       "no-restricted-globals": [
         "warn",

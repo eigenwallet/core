@@ -1,5 +1,4 @@
 use super::tauri_bindings::TauriHandle;
-use crate::bitcoin::wallet;
 use crate::cli::api::tauri_bindings::{
     ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
@@ -23,14 +22,13 @@ use futures::StreamExt;
 use libp2p::core::Multiaddr;
 use libp2p::PeerId;
 use monero_seed::{Language, Seed as MoneroSeed};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::convert::TryInto;
 use std::future::Future;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
@@ -1643,7 +1641,7 @@ impl CheckMoneroNodeArgs {
             otherwise => anyhow::bail!(UnknownMoneroNetwork(otherwise.to_string())),
         };
 
-        static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+        static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
             reqwest::Client::builder()
                 // This function is called very frequently, so we set the timeout to be short
                 .timeout(Duration::from_secs(5))
@@ -1693,7 +1691,8 @@ impl CheckElectrumNodeArgs {
         };
 
         // Check if the node is available
-        let res = wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60)).await;
+        let res =
+            bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60)).await;
 
         Ok(CheckElectrumNodeResponse {
             available: res.is_ok(),
@@ -1849,4 +1848,23 @@ pub async fn change_monero_node(
     context.change_monero_node(args.node_config).await?;
 
     Ok(ChangeMoneroNodeResponse { success: true })
+}
+
+// RefreshP2P
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RefreshP2PArgs;
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RefreshP2PResponse {}
+
+impl Request for RefreshP2PArgs {
+    type Response = RefreshP2PResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let mut event_loop_handle = ctx.try_get_event_loop_handle().await?;
+        event_loop_handle.refresh().await?;
+        Ok(RefreshP2PResponse {})
+    }
 }

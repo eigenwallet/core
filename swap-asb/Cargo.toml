@@ -1,6 +1,6 @@
 [package]
 name = "swap-asb"
-version = "3.4.2"
+version = "3.5.1"
 authors = ["The eigenwallet guys <hello@eigenwallet.org>", "The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "ASB (Automated Swap Backend) binary for XMR/BTC atomic swaps."
@@ -19,6 +19,7 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
 # Workspace dependencies
+bitcoin-wallet = { path = "../bitcoin-wallet" }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-sys = { path = "../monero-sys" }
 swap = { path = "../swap" }
@@ -30,7 +31,6 @@ swap-serde = { path = "../swap-serde" }
 # Async
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 comfy-table = "7.1"
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }

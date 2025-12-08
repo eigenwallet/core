@@ -142,6 +142,10 @@ pub struct EventLoop {
 
     cached_quotes_sender: tokio::sync::watch::Sender<Vec<QuoteWithAddress>>,
     tauri_handle: Option<TauriHandle>,
+
+    /// Channel for triggering a refresh of most backoffs. It will do things like redial disconnected peers,
+    /// re-fetching quotes, rediscovering peers at rendezvous nodes, etc.
+    refresh_requests: bmrng::unbounded::UnboundedRequestReceiverStream<(), ()>,
 }
 
 impl EventLoop {
@@ -163,6 +167,7 @@ impl EventLoop {
         let (queued_transfer_proof_sender, queued_transfer_proof_receiver) =
             bmrng::unbounded::channel();
         let (add_peer_address_sender, add_peer_address_receiver) = bmrng::unbounded::channel();
+        let (refresh_sender, refresh_receiver) = bmrng::unbounded::channel();
 
         // TODO: We should probably differentiate between empty and none
         let (cached_quotes_sender, cached_quotes_receiver) =
@@ -185,6 +190,7 @@ impl EventLoop {
             add_peer_address_requests: add_peer_address_receiver.into(),
             cached_quotes_sender,
             tauri_handle,
+            refresh_requests: refresh_receiver.into(),
         };
 
         let handle = EventLoopHandle {
@@ -194,6 +200,7 @@ impl EventLoop {
             quote_sender,
             queued_transfer_proof_sender,
             add_peer_address_sender,
+            refresh_sender,
             cached_quotes_receiver,
         };
 
@@ -546,6 +553,14 @@ impl EventLoop {
                     self.swarm.add_peer_address(peer_id, addr);
                     let _ = responder.respond(());
                 },
+
+                Some(((), responder)) = self.refresh_requests.next().fuse() => {
+                    // Instruct behaviours
+                    self.swarm.behaviour_mut().quotes.refresh();
+                    self.swarm.behaviour_mut().discovery.refresh();
+
+                    let _ = responder.respond(());
+                },
             }
         }
     }
@@ -613,6 +628,9 @@ pub struct EventLoopHandle {
     add_peer_address_sender:
         bmrng::unbounded::UnboundedRequestSender<(PeerId, libp2p::Multiaddr), ()>,
 
+    /// Channel for triggering a refresh of cached quotes
+    refresh_sender: bmrng::unbounded::UnboundedRequestSender<(), ()>,
+
     // TODO: Extract the Vec<_> into its own struct (QuotesBatch?)
     cached_quotes_receiver: tokio::sync::watch::Receiver<Vec<QuoteWithAddress>>,
 }
@@ -620,6 +638,17 @@ pub struct EventLoopHandle {
 impl EventLoopHandle {
     pub fn cached_quotes(&self) -> tokio::sync::watch::Receiver<Vec<QuoteWithAddress>> {
         self.cached_quotes_receiver.clone()
+    }
+
+    /// Clears all backoffs
+    /// Redials all disconnected peers
+    /// Fetches new quotes from all peers as soon as we are connected to them
+    pub async fn refresh(&mut self) -> Result<()> {
+        self.refresh_sender
+            .send_receive(())
+            .await
+            .context("Failed to send refresh request to event loop")?;
+        Ok(())
     }
 
     /// Adds a peer address to the swarm

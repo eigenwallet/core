@@ -193,3 +193,110 @@ impl Watchable for TxLock {
         self.output_descriptor.script_pubkey()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bitcoin::Amount;
+    use bitcoin::Psbt;
+    use bitcoin_wallet::*;
+
+    // Basic setup function for tests
+    async fn setup() -> (
+        PublicKey,
+        PublicKey,
+        Wallet<bdk_wallet::rusqlite::Connection, StaticFeeRate>,
+    ) {
+        let (A, B) = alice_and_bob();
+        let wallet = TestWalletBuilder::new(100_000).build().await;
+        (A, B, wallet)
+    }
+
+    #[tokio::test]
+    async fn given_bob_sends_good_psbt_when_reconstructing_then_succeeeds() {
+        let (A, B, wallet) = setup().await;
+        let agreed_amount = Amount::from_sat(10000);
+        let spending_fee = Amount::from_sat(1000);
+
+        let psbt = bob_make_psbt(A, B, &wallet, agreed_amount, spending_fee).await;
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect("PSBT to be valid");
+    }
+
+    #[tokio::test]
+    async fn bob_can_fund_without_a_change_output() {
+        let (A, B, _) = setup().await;
+        let amount = 10_000;
+        let agreed_amount = Amount::from_sat(amount);
+        let spending_fee = Amount::from_sat(300);
+        let wallet = TestWalletBuilder::new(amount + 300).build().await;
+
+        let psbt = bob_make_psbt(A, B, &wallet, agreed_amount, spending_fee).await;
+        assert_eq!(
+            psbt.unsigned_tx.output.len(),
+            1,
+            "Expected no change output"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_bob_is_sending_less_than_agreed_when_reconstructing_txlock_then_fails() {
+        let (A, B, wallet) = setup().await;
+        let agreed_amount = Amount::from_sat(10000);
+        let spending_fee = Amount::from_sat(1000);
+
+        let bad_amount = Amount::from_sat(5000);
+        let psbt = bob_make_psbt(A, B, &wallet, bad_amount, spending_fee).await;
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect_err("PSBT to be invalid");
+    }
+
+    #[tokio::test]
+    async fn given_bob_is_sending_to_a_bad_output_reconstructing_txlock_then_fails() {
+        let (A, B, wallet) = setup().await;
+        let agreed_amount = Amount::from_sat(10000);
+        let spending_fee = Amount::from_sat(1000);
+
+        let E = eve();
+        let psbt = bob_make_psbt(E, B, &wallet, agreed_amount, spending_fee).await;
+        let result = TxLock::from_psbt(psbt, A, B, agreed_amount);
+
+        result.expect_err("PSBT to be invalid");
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn estimated_tx_lock_script_size_never_changes(a in swap_proptest::ecdsa_fun::point(), b in swap_proptest::ecdsa_fun::point()) {
+            proptest::prop_assume!(a != b);
+
+            let computed_size = build_shared_output_descriptor(a, b).unwrap().script_pubkey().len();
+
+            assert_eq!(computed_size, TxLock::script_size());
+        }
+    }
+
+    // Helper function for testing PSBT creation by Bob
+    async fn bob_make_psbt(
+        A: PublicKey,
+        B: PublicKey,
+        wallet: &dyn BitcoinWallet,
+        amount: Amount,
+        spending_fee: Amount,
+    ) -> Psbt {
+        let change = wallet.new_address().await.unwrap();
+        TxLock::new(wallet, amount, spending_fee, A, B, change)
+            .await
+            .unwrap()
+            .into()
+    }
+
+    fn alice_and_bob() -> (PublicKey, PublicKey) {
+        (PublicKey::random(), PublicKey::random())
+    }
+
+    fn eve() -> PublicKey {
+        PublicKey::random()
+    }
+}

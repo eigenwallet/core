@@ -6,12 +6,12 @@ use crate::cli::api::Context;
 use crate::monero::{self, MoneroAddressPool};
 use anyhow::Result;
 use bitcoin::address::NetworkUnchecked;
+use bitcoin_wallet::{bitcoin_address, Amount};
 use libp2p::core::Multiaddr;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 use structopt::{clap, StructOpt};
-use swap_core::bitcoin::{bitcoin_address, Amount};
 use url::Url;
 use uuid::Uuid;
 

@@ -1,0 +1,10 @@
+[package]
+name = "tracing-ext"
+version = "0.1.0"
+authors = ["The COMIT guys <hello@comit.network>"]
+edition = "2021"
+description = "Additional test utils for tracing"
+
+[dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
