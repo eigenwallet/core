@@ -8811,7 +8811,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "arti-client",
- "atty",
+ "console 0.16.1",
  "futures",
  "libp2p",
  "libp2p-tor",

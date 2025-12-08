@@ -103,6 +103,7 @@ tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_
 tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 
 # Terminal Utilities
+console = "0.16"
 dialoguer = "0.11"
 
 # Our dependencies in other git repositories
