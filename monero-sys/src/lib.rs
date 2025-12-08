@@ -1101,7 +1101,7 @@ impl WalletHandle {
     /// # Arguments
     /// * `account_index` - The account index to generate the proof for
     /// * `amount` - The minimum amount to prove, or `None` to prove the entire balance
-    /// * `message` - An optional message to include in the proof
+    /// * `message` - A message to include in the proof
     ///
     /// # Returns
     /// A reserve proof string that can be verified with `check_reserve_proof`
@@ -2667,12 +2667,13 @@ impl FfiWallet {
 
         let proof =
             ffi::getReserveProof(&self.inner, all, account_index, amount_pico, &message_cxx)
-                .context("Failed to get reserve proof: FFI call failed with exception")?
+                .context("Failed to construct reserve proof: FFI call failed with exception")?
                 .to_string();
 
+        // If the proof is empty, it cannot be valid
         if proof.is_empty() {
-            self.check_error().context("Failed to get reserve proof")?;
-            anyhow::bail!("Failed to get reserve proof (no proof returned)");
+            self.check_error().context("Failed to construct reserve proof")?;
+            anyhow::bail!("Failed to construct reserve proof because wallet2 returned an empty string but no error was returned");
         }
 
         Ok(proof)
