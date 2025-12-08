@@ -772,6 +772,7 @@ async fn next_state(
 
             let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
             let state_for_retry = state.clone();
+
             retry(
                 "Check timelocks and try to refund",
                 || {
@@ -785,11 +786,19 @@ async fn next_state(
                             )))
                         }
                         ExpiredTimelocks::Cancel { .. } => {
-                            let btc_refund_txid = state.publish_refund_btc(&*bitcoin_wallet).await.context("Failed to publish refund transaction after ensuring cancel timelock has expired and refund timelock has not expired").map_err(backoff::Error::transient)?;
+                            // Publish the best Bitcoin refund transaction we can sign:
+                            //  - either full refund, if alice sent use that signature (prioritized)
+                            //  - or just partial refund.
+                            // `publish_best_btc_refund_tx` returns the appropriate state depending on which 
+                            // one was published. It also logs the refund type.
+                            let (txid, next_state) = state.publish_best_btc_refund_tx(&*bitcoin_wallet)
+                                .await
+                                .context("Couldn't publish Bitcoin refund tx")
+                                .map_err(backoff::Error::transient)?;
 
-                            tracing::info!(%btc_refund_txid, "Refunded our Bitcoin");
-
-                            Ok(BobState::BtcRefundPublished(state.clone()))
+                            tracing::info!(%txid, "Published Bitcoin refund transaction");
+                                
+                            Ok(next_state)
                         }
                         ExpiredTimelocks::Punish => {
                             let tx_lock_id = state.tx_lock_id();

@@ -69,9 +69,14 @@ pub enum BobState {
     SafelyAborted,
 }
 
-/// !IMPORTANT: This enum must be #[untagged] and maintain the field names in order to be backwards compatible
+/// An enum abstracting over the different combination of
+/// refund signatures Alice could have sent us.
+/// Maintains backward compatibility with old swaps (which only had the full refund signature).
+///
+/// # IMPORTANT
+/// This enum must be `#[untagged]` and maintain the field names in order to be backwards compatible
 /// with the database.
-/// Changing any of that is a breaking change
+/// Changing any of that is a breaking change.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum BobRefundType {
@@ -907,7 +912,7 @@ pub struct State6 {
     /// This field was changed in [#675](https://github.com/eigenwallet/core/pull/675).
     /// It boils down to the same json except that it now may also contain a partial refund signature.
     #[serde(flatten)]
-    bob_refund_type: BobRefundType,
+    pub bob_refund_type: BobRefundType,
     /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
     /// It allows Bob to retrieve the refund fee introduced in the PR.
     /// This signature is voluntarily revealed by alice.
@@ -980,15 +985,43 @@ impl State6 {
         Ok((tx_id, subscription))
     }
 
-    pub async fn publish_refund_btc(
+    /// Publish the best refund transaction based on the refund signatures Alice has sent us.
+    /// This is either `TxFullRefund` or `TxPartialRefund`.
+    /// Returns the corresponding state (`BtcRefundPublished`/`PartialRefundPublished`) on success.
+    pub async fn publish_best_btc_refund_tx(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
-    ) -> Result<bitcoin::Txid> {
-        let signed_tx_refund = self.signed_full_refund_transaction()?;
-        let signed_tx_refund_txid = signed_tx_refund.compute_txid();
-        bitcoin_wallet.broadcast(signed_tx_refund, "refund").await?;
+    ) -> Result<(Txid, BobState)> {
+        if self.bob_refund_type.tx_full_refund_encsig().is_some() {
+            tracing::info!("Have the full refund signature, attempting full Bitcoin refund");
+            let tx_full_refund = self
+                .signed_full_refund_transaction()
+                .context("Couldn't construct TxFullRefund")?;
+            let (txid, _) = bitcoin_wallet
+                .ensure_broadcasted(tx_full_refund, "full refund")
+                .await
+                .context("Couldn't ensure broadcast of TxFullRefund")?;
 
-        Ok(signed_tx_refund_txid)
+            return Ok((txid, BobState::BtcRefundPublished(self.clone())));
+        }
+
+        if self.bob_refund_type.tx_partial_refund_encsig().is_some() {
+            tracing::info!(
+                "Don't have the full refund signature, attempting partial Bitcoin refund"
+            );
+
+            let tx_partial_refund = self
+                .signed_partial_refund_transaction()
+                .context("Couldn't construct TxPartialRefund")?;
+            let (txid, _) = bitcoin_wallet
+                .ensure_broadcasted(tx_partial_refund, "partial refund")
+                .await
+                .context("Couldn't ensure broadcast of TxPartialRefund")?;
+
+            return Ok((txid, BobState::BtcPartialRefundPublished(self.clone())));
+        }
+
+        unreachable!("We always have either the partial or full refund encsig");
     }
 
     pub fn construct_tx_refund(&self) -> Result<bitcoin::TxFullRefund> {

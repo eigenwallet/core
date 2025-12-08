@@ -194,7 +194,10 @@ pub async fn refund(
     tracing::info!(%swap_id, "Attempting to manually refund swap");
 
     // Attempt to just publish the refund transaction
-    match state6.publish_refund_btc(bitcoin_wallet.as_ref()).await {
+    match state6
+        .publish_best_btc_refund_tx(bitcoin_wallet.as_ref())
+        .await
+    {
         Ok(_) => {
             let state = BobState::BtcRefunded(state6);
             db.insert_latest_state(swap_id, state.clone().into())
