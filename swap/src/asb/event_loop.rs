@@ -5,7 +5,7 @@ use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
-use crate::network::quote::BidQuote;
+use crate::network::quote::{BidQuote, ReserveProofWithAddress};
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
@@ -591,11 +591,16 @@ where
         let peer_id = self.peer_id();
         let monero_wallet_for_proof = self.monero_wallet.clone();
         let get_reserve_proof = || async move {
-            monero_wallet_for_proof
-                .main_wallet()
-                .await
-                .get_reserve_proof(0, None, &peer_id.to_string())
-                .await
+            let wallet = monero_wallet_for_proof.main_wallet().await;
+            let message = peer_id.to_string();
+            let address = wallet.main_address().await?;
+            let proof = wallet.get_reserve_proof(0, None, &message).await?;
+
+            Ok(ReserveProofWithAddress {
+                address,
+                proof,
+                message,
+            })
         };
 
         let result = make_quote(
@@ -927,7 +932,10 @@ mod quote {
     use swap_feed::LatestRate;
     use tokio::time::timeout;
 
-    use crate::{network::quote::BidQuote, protocol::alice::ReservesMonero};
+    use crate::{
+        network::quote::{BidQuote, ReserveProofWithAddress},
+        protocol::alice::ReservesMonero,
+    };
 
     /// The time-to-live for quotes in the cache
     pub const QUOTE_CACHE_TTL: Duration = Duration::from_secs(120);
@@ -958,7 +966,7 @@ mod quote {
         Fut2: futures::Future<Output = Result<Vec<T>, anyhow::Error>>,
         T: ReservesMonero,
         P: FnOnce() -> Fut3,
-        Fut3: futures::Future<Output = Result<String, anyhow::Error>>,
+        Fut3: futures::Future<Output = Result<ReserveProofWithAddress, anyhow::Error>>,
     {
         let ask_price = latest_rate
             .latest_rate()

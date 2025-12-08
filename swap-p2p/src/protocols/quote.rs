@@ -45,7 +45,7 @@ pub struct BidQuote {
 }
 
 impl BidQuote {
-    /// A zero quote with all amounts set to zero
+    /// A zero quote with all amounts set to zero and with no reserve proof
     pub const ZERO: Self = Self {
         price: bitcoin::Amount::ZERO,
         min_quantity: bitcoin::Amount::ZERO,
@@ -63,6 +63,8 @@ pub struct ReserveProofWithAddress {
     #[serde(with = "swap_serde::monero::address_serde")]
     pub address: monero::Address,
     pub proof: String,
+    // TOOD: Technically redundant as convention tells us its the peer id but it'd be nice to be able to verify reserve proofs isolatedly
+    pub message: String,
 }
 
 /// Constructs a new instance of the `quote` behaviour to be used by the ASB.
