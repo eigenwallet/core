@@ -1,5 +1,6 @@
 use self::quote::{
-    make_quote, unlocked_monero_balance_with_timeout, QuoteCacheKey, QUOTE_CACHE_TTL,
+    make_quote, reserve_proof_with_timeout, unlocked_monero_balance_with_timeout, QuoteCacheKey,
+    QUOTE_CACHE_TTL,
 };
 use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
@@ -591,16 +592,7 @@ where
         let peer_id = self.peer_id();
         let monero_wallet_for_proof = self.monero_wallet.clone();
         let get_reserve_proof = || async move {
-            let wallet = monero_wallet_for_proof.main_wallet().await;
-            let message = peer_id.to_string();
-            let address = wallet.main_address().await?;
-            let proof = wallet.get_reserve_proof(0, None, &message).await?;
-
-            Ok(ReserveProofWithAddress {
-                address,
-                proof,
-                message,
-            })
+            reserve_proof_with_timeout(monero_wallet_for_proof.main_wallet().await, peer_id).await
         };
 
         let result = make_quote(
@@ -1105,13 +1097,13 @@ mod quote {
         Amount::from_piconero(unreserved_unlocked_piconero_after_accounting_for_tip)
     }
 
+    /// This is how long we maximally wait for the wallet operation
+    const MONERO_WALLET_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+
     /// Returns the unlocked Monero balance from the wallet
     pub async fn unlocked_monero_balance_with_timeout(
         wallet: Arc<crate::monero::Wallet>,
     ) -> Result<Amount, anyhow::Error> {
-        /// This is how long we maximally wait for the wallet operation
-        const MONERO_WALLET_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
-
         // First check if the wallet is synchronized
         // We cannot safely provide a balance if the wallet is not synchronized
         // We cannot be sure that the balance is accurate
@@ -1128,6 +1120,31 @@ mod quote {
             .context("Timeout while getting unlocked balance from Monero wallet")?;
 
         Ok(balance.into())
+    }
+
+    /// Returns a reserve proof from the wallet with a timeout
+    pub async fn reserve_proof_with_timeout(
+        wallet: Arc<crate::monero::Wallet>,
+        peer_id: libp2p::PeerId,
+    ) -> Result<ReserveProofWithAddress, anyhow::Error> {
+        let message = peer_id.to_string();
+
+        let address = timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.main_address())
+            .await?
+            .context("Timeout while getting main address from Monero wallet for reserve proof")?;
+
+        let proof = timeout(
+            MONERO_WALLET_OPERATION_TIMEOUT,
+            wallet.get_reserve_proof(0, None, &message),
+        )
+        .await?
+        .context("Timeout while generating reserve proof")?;
+
+        Ok(ReserveProofWithAddress {
+            address,
+            proof,
+            message,
+        })
     }
 }
 
