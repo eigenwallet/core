@@ -737,6 +737,7 @@ impl Wallet {
         transaction: bitcoin::Transaction,
         kind: &str,
     ) -> Result<(Txid, Subscription)> {
+        let txid = transaction.compute_txid();
         let tx_status = self.status_of_script(&transaction).await?;
 
         // If it's already been broadcasted, return a subscription to it
@@ -744,11 +745,13 @@ impl Wallet {
             tx_status,
             ScriptStatus::InMempool | ScriptStatus::Confirmed(_)
         ) {
+            tracing::debug!(%txid, %tx_status, "Bitcoin transaction already published, not publishing again");
             let subscription = self.subscribe_to(Box::new(transaction.clone())).await;
             return Ok((transaction.compute_txid(), subscription));
         }
 
         // Otherwise broadcast it
+        tracing::debug!(%txid, %tx_status, "Bitcoin transaction not yet published, publishing");
         self.broadcast(transaction, kind).await
     }
 

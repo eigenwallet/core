@@ -6,6 +6,7 @@ use bitcoin::Txid;
 use bitcoin_wallet::BitcoinWallet;
 use std::sync::Arc;
 use swap_core::bitcoin::ExpiredTimelocks;
+use swap_machine::bob::RefundType;
 use uuid::Uuid;
 
 pub async fn cancel_and_refund(
@@ -193,13 +194,21 @@ pub async fn refund(
 
     tracing::info!(%swap_id, "Attempting to manually refund swap");
 
+    let (refund_tx, refund_type) = state6.construct_best_bitcoin_refund_tx().await?;
+
+    tracing::info!("Attempting to publish Bitcoin refund transaction. Refund type: {refund_type}");
+
     // Attempt to just publish the refund transaction
-    match state6
-        .publish_best_btc_refund_tx(bitcoin_wallet.as_ref())
+    match bitcoin_wallet
+        .ensure_broadcasted(refund_tx, &refund_type.to_string())
         .await
     {
         Ok(_) => {
-            let state = BobState::BtcRefunded(state6);
+            let state = match refund_type {
+                RefundType::Full => BobState::BtcRefundPublished(state6),
+                RefundType::Partial { .. } => BobState::BtcPartialRefundPublished(state6),
+            };
+
             db.insert_latest_state(swap_id, state.clone().into())
                 .await?;
 

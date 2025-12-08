@@ -102,6 +102,15 @@ pub enum RefundSignatures {
     },
 }
 
+/// Either a full refund or a partial refund
+pub enum RefundType {
+    Full,
+    Partial {
+        total_swap_amount: bitcoin::Amount,
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+}
+
 impl fmt::Display for BobState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -132,6 +141,15 @@ impl fmt::Display for BobState {
             BobState::BtcAmnestyPublished { .. } => write!(f, "btc amnesty is published"),
             BobState::BtcAmnestyConfirmed { .. } => write!(f, "btc amnesty is confirmed"),
             BobState::SafelyAborted => write!(f, "safely aborted"),
+        }
+    }
+}
+
+impl fmt::Display for RefundType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RefundType::Full => write!(f, "full btc refund"),
+            RefundType::Partial { .. } => write!(f, "partial btc refund"),
         }
     }
 }
@@ -987,40 +1005,37 @@ impl State6 {
         Ok((tx_id, subscription))
     }
 
-    /// Publish the best refund transaction based on the refund signatures Alice has sent us.
+    /// Construct the best refund transaction based on the refund signatures Alice has sent us.
     /// This is either `TxFullRefund` or `TxPartialRefund`.
-    /// Returns the corresponding state (`BtcRefundPublished`/`PartialRefundPublished`) on success.
-    pub async fn publish_best_btc_refund_tx(
-        &self,
-        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
-    ) -> Result<(Txid, BobState)> {
+    /// Returns the fully constructed and signed transaction along with the refund type.
+    pub async fn construct_best_bitcoin_refund_tx(&self) -> Result<(Transaction, RefundType)> {
         if self.refund_signatures.tx_full_refund_encsig().is_some() {
-            tracing::info!("Have the full refund signature, attempting full Bitcoin refund");
+            tracing::debug!("Have the full refund signature, constructing full Bitcoin refund");
             let tx_full_refund = self
                 .signed_full_refund_transaction()
                 .context("Couldn't construct TxFullRefund")?;
-            let (txid, _) = bitcoin_wallet
-                .ensure_broadcasted(tx_full_refund, "full refund")
-                .await
-                .context("Couldn't ensure broadcast of TxFullRefund")?;
 
-            return Ok((txid, BobState::BtcRefundPublished(self.clone())));
+            return Ok((tx_full_refund, RefundType::Full));
         }
 
         if self.refund_signatures.tx_partial_refund_encsig().is_some() {
-            tracing::info!(
-                "Don't have the full refund signature, attempting partial Bitcoin refund"
+            tracing::debug!(
+                "Don't have the full refund signature, constructing partial Bitcoin refund"
             );
 
             let tx_partial_refund = self
                 .signed_partial_refund_transaction()
                 .context("Couldn't construct TxPartialRefund")?;
-            let (txid, _) = bitcoin_wallet
-                .ensure_broadcasted(tx_partial_refund, "partial refund")
-                .await
-                .context("Couldn't ensure broadcast of TxPartialRefund")?;
+            let total_swap_amount = self.tx_lock.lock_amount();
+            let btc_amnesty_amount = self.btc_amnesty_amount.context("Missing Bitcoin amnesty amount even though we don't have the full refund signature")?;
 
-            return Ok((txid, BobState::BtcPartialRefundPublished(self.clone())));
+            return Ok((
+                tx_partial_refund,
+                RefundType::Partial {
+                    total_swap_amount,
+                    btc_amnesty_amount,
+                },
+            ));
         }
 
         unreachable!("We always have either the partial or full refund encsig");
@@ -1177,5 +1192,13 @@ impl RefundSignatures {
             } => Some(tx_partial_refund_encsig.clone()),
             RefundSignatures::Legacy { .. } => None,
         }
+    }
+
+    pub fn has_full_refund_encsig(&self) -> bool {
+        self.tx_full_refund_encsig().is_some()
+    }
+
+    pub fn has_partial_refund_encsig(&self) -> bool {
+        self.tx_partial_refund_encsig().is_some()
     }
 }
