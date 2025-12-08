@@ -1,0 +1,28 @@
+[package]
+name = "monero-wallet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Error handling
+anyhow = { workspace = true }
+
+# Other stuff
+monero = { workspace = true }
+monero-sys = { path = "../monero-sys" }
+swap-core = { path = "../swap-core" }
+throttle = { path = "../throttle" }
+time = "0.3"
+uuid = { workspace = true }
+
+# Tokio
+tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }
+
+# Tracing
+tracing = { workspace = true }
+tracing-appender = "0.2"
+tracing-subscriber = { workspace = true }
+
+# monero-oxide
+monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
+monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }

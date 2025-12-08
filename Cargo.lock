@@ -6780,6 +6780,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "monero-wallet"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "monero",
+ "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide.git)",
+ "monero-simple-request-rpc",
+ "monero-sys",
+ "swap-core",
+ "throttle",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10878,11 +10897,10 @@ dependencies = [
  "moka",
  "monero",
  "monero-harness",
- "monero-rpc 0.1.0 (git+https://github.com/monero-oxide/monero-oxide.git)",
  "monero-rpc-pool",
  "monero-seed",
- "monero-simple-request-rpc",
  "monero-sys",
+ "monero-wallet",
  "pem",
  "proptest",
  "rand 0.8.5",
@@ -10911,7 +10929,6 @@ dependencies = [
  "tempfile",
  "testcontainers",
  "thiserror 1.0.69",
- "throttle",
  "time",
  "tokio",
  "tokio-util",

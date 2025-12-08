@@ -454,26 +454,22 @@ struct BitcoinTauriHandle(TauriHandle);
 
 impl Into<bitcoin_wallet::TauriHandle> for TauriHandle {
     fn into(self) -> bitcoin_wallet::TauriHandle {
-        Some(Arc::new(Box::new(BitcoinTauriHandle(self))))
+        Some(Arc::new(BitcoinTauriHandle(self)))
     }
 }
 
 impl bitcoin_wallet::BitcoinTauriHandle for BitcoinTauriHandle {
-    fn start_full_scan(&self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriBackgroundTask>> {
-        Arc::new(Box::new(
-            self.0.new_background_process_with_initial_progress(
-                TauriBackgroundProgress::FullScanningBitcoinWallet,
-                TauriBitcoinFullScanProgress::Unknown,
-            ),
+    fn start_full_scan(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::FullScanningBitcoinWallet,
+            TauriBitcoinFullScanProgress::Unknown,
         ))
     }
 
-    fn start_sync(&self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriBackgroundTask>> {
-        Arc::new(Box::new(
-            self.0.new_background_process_with_initial_progress(
-                TauriBackgroundProgress::SyncingBitcoinWallet,
-                TauriBitcoinSyncProgress::Unknown,
-            ),
+    fn start_sync(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::SyncingBitcoinWallet,
+            TauriBitcoinSyncProgress::Unknown,
         ))
     }
 }
@@ -502,6 +498,41 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
 
     fn finish(&self) {
         TauriBackgroundProgressHandle::finish(self)
+    }
+}
+
+struct MoneroTauriHandle(TauriHandle);
+
+impl Into<monero_wallet::TauriHandle> for TauriHandle {
+    fn into(self) -> monero_wallet::TauriHandle {
+        Arc::new(MoneroTauriHandle(self))
+    }
+}
+
+impl monero_wallet::MoneroTauriHandle for MoneroTauriHandle {
+    fn balance_change(&self, total_balance: monero::Amount, unlocked_balance: monero::Amount) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::BalanceChange(GetMoneroBalanceResponse {
+                total_balance,
+                unlocked_balance,
+            }),
+        ))
+    }
+
+    fn history_update(&self, transactions: Vec<monero_sys::TransactionInfo>) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::HistoryUpdate(GetMoneroHistoryResponse { transactions }),
+        ))
+    }
+
+    fn sync_progress(&self, current_block: u64, target_block: u64, progress_percentage: f32) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::SyncProgress(GetMoneroSyncProgressResponse {
+                current_block,
+                target_block,
+                progress_percentage,
+            }),
+        ))
     }
 }
 
