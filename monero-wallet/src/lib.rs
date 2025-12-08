@@ -9,7 +9,7 @@ pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
 use anyhow::{Context, Result};
 use monero::{Address, Network};
-use monero_simple_request_rpc::SimpleRequestRpc;
+use monero_simple_request_rpc::{prelude::MoneroDaemon, SimpleRequestTransport};
 use monero_sys::WalletEventListener;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use throttle::{throttle, Throttle};
@@ -50,7 +50,7 @@ pub struct Wallets {
     /// The network we're on.
     network: Network,
     /// The monero node we connect to.
-    daemon: Arc<RwLock<(Daemon, SimpleRequestRpc)>>,
+    daemon: Arc<RwLock<(Daemon, MoneroDaemon<SimpleRequestTransport>)>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
@@ -275,7 +275,7 @@ impl Wallets {
                 .await?;
         }
 
-        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
+        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -337,7 +337,7 @@ impl Wallets {
                 .await?;
         }
 
-        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
+        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -358,11 +358,11 @@ impl Wallets {
     }
 
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
-        use monero_oxide_rpc::Rpc;
+        use monero_oxide_rpc::prelude::*;
         let (daemon, rpc_client) = self.daemon.read().await.clone();
 
-        let height = rpc_client
-            .get_height()
+        let height = 1 + rpc_client
+            .latest_block_number()
             .await
             .context(format!("Failed with node {}", daemon.to_url_string()))?;
 
@@ -502,7 +502,7 @@ impl Wallets {
     pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
         {
             let mut daemon = self.daemon.write().await;
-            let rpc_client = SimpleRequestRpc::new(new_daemon.to_url_string()).await?;
+            let rpc_client = SimpleRequestTransport::new(new_daemon.to_url_string()).await?;
             *daemon = (new_daemon.clone(), rpc_client);
         }
 
