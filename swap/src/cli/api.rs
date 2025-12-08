@@ -730,7 +730,7 @@ mod builder {
                         daemon.clone(),
                         env_config.monero_network,
                         false,
-                        self.tauri_handle.clone(),
+                        self.tauri_handle.clone().map(|th| th.into()),
                         wallet,
                         wallet_database,
                     )

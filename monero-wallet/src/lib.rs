@@ -16,12 +16,31 @@ use throttle::{throttle, Throttle};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::cli::api::{
-    request::{GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse},
-    tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle},
-};
+use swap_core::monero::primitives::{Amount, BlockHeight, PrivateViewKey, TxHash, WatchRequest};
 
-use super::{BlockHeight, TxHash, WatchRequest};
+pub type TauriHandle = Arc<dyn MoneroTauriHandle>;
+pub trait MoneroTauriHandle: Send + Sync {
+    /// tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+    ///     MoneroWalletUpdate::BalanceChange(GetMoneroBalanceResponse {
+    ///         total_balance, unlocked_balance,
+    ///     })
+    /// ));
+    fn balance_change(&self, total_balance: Amount, unlocked_balance: Amount);
+
+    /// tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+    ///     MoneroWalletUpdate::HistoryUpdate(
+    ///         GetMoneroHistoryResponse { transactions }
+    ///     ),
+    /// ));
+    fn history_update(&self, transactions: Vec<monero_sys::TransactionInfo>);
+
+    /// tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+    ///     MoneroWalletUpdate::SyncProgress(GetMoneroSyncProgressResponse {
+    ///         current_block, target_block, progress_percentage,
+    ///     }),
+    /// ));
+    fn sync_progress(&self, current_block: u64, target_block: u64, progress_percentage: f32);
+}
 
 /// Entrance point to the Monero blockchain.
 /// You can use this struct to open specific wallets and monitor the blockchain.
@@ -84,13 +103,7 @@ impl TauriWalletListener {
                         }
                     };
 
-                    let response = GetMoneroBalanceResponse {
-                        total_balance: total_balance.into(),
-                        unlocked_balance: unlocked_balance.into(),
-                    };
-                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                        MoneroWalletUpdate::BalanceChange(response),
-                    ));
+                    tauri.balance_change(total_balance.into(), unlocked_balance.into());
                 });
             }
         };
@@ -111,11 +124,8 @@ impl TauriWalletListener {
                             return;
                         }
                     };
-                    let response = GetMoneroHistoryResponse { transactions };
 
-                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                        MoneroWalletUpdate::HistoryUpdate(response),
-                    ));
+                    tauri.history_update(transactions);
                 });
             }
         };
@@ -138,16 +148,11 @@ impl TauriWalletListener {
                     };
 
                     let progress_percentage = sync_progress.percentage();
-
-                    let response = GetMoneroSyncProgressResponse {
-                        current_block: sync_progress.current_block,
-                        target_block: sync_progress.target_block,
-                        progress_percentage: progress_percentage,
-                    };
-
-                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                        MoneroWalletUpdate::SyncProgress(response),
-                    ));
+                    tauri.sync_progress(
+                        sync_progress.current_block,
+                        sync_progress.target_block,
+                        progress_percentage,
+                    );
                 });
             }
         };
@@ -367,7 +372,7 @@ impl Wallets {
         &self,
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
-        view_key: super::PrivateViewKey,
+        view_key: PrivateViewKey,
         tx_lock_id: TxHash,
     ) -> Result<Arc<Wallet>> {
         // Derive wallet address from the keys
