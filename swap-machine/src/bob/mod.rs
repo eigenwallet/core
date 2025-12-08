@@ -657,7 +657,7 @@ impl State3 {
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
             xmr: self.xmr,
-            btc_ammesty_amount: self.btc_amnesty_amount,
+            btc_amnesty_amount: self.btc_amnesty_amount,
         }
     }
 
@@ -841,7 +841,7 @@ impl State4 {
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             xmr: self.xmr,
-            btc_ammesty_amount: self.btc_amnesty_amount,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
         }
@@ -903,7 +903,7 @@ pub struct State6 {
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
-    btc_ammesty_amount: Option<bitcoin::Amount>,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     pub monero_wallet_restore_blockheight: BlockHeight,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
@@ -1060,7 +1060,7 @@ impl State6 {
             &self.refund_address,
             self.A,
             self.b.public(),
-            self.btc_ammesty_amount
+            self.btc_amnesty_amount
                 .context("Can't construct TxPartialRefund because btc_amnesty_amount is missing")?,
             self.tx_partial_refund_fee.context(
                 "Can't construct TxPartialRefund because tx_partial_refund_fee is missing",
@@ -1108,7 +1108,7 @@ impl State6 {
             s_b: self.s_b,
             v: self.v,
             xmr: self.xmr,
-            btc_amnesty_amount: self.btc_ammesty_amount,
+            btc_amnesty_amount: self.btc_amnesty_amount,
             tx_lock: self.tx_lock.clone(),
             monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
             lock_transfer_proof,
