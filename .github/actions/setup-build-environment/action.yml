@@ -26,10 +26,10 @@ runs:
       with:
         node-version: lts/*
 
-    - name: Setup yarn
+    - name: Setup yarn via corepack
       shell: bash
       run: |
-        npm install --global yarn@1
+        corepack enable
 
     - name: Install Rust stable
       uses: dtolnay/rust-toolchain@1.88
