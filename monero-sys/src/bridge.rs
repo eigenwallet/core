@@ -356,6 +356,29 @@ pub mod ffi {
             address: &CxxString,
             sign_with_view_key: bool,
         ) -> Result<UniquePtr<CxxString>>;
+
+        /// Get a reserve proof that proves the wallet has a certain amount of XMR.
+        /// If `all` is true, proves the entire balance; otherwise proves at least `amount` piconero.
+        fn getReserveProof(
+            wallet: &Wallet,
+            all: bool,
+            account_index: u32,
+            amount: u64,
+            message: &CxxString,
+        ) -> Result<UniquePtr<CxxString>>;
+
+        /// Check a reserve proof against an address.
+        /// Returns true if the check completed, false if an error occurred.
+        /// The `good` out-parameter indicates whether the proof is valid.
+        fn checkReserveProof(
+            wallet: &Wallet,
+            address: &CxxString,
+            message: &CxxString,
+            signature: &CxxString,
+            good: &mut bool,
+            total: &mut u64,
+            spent: &mut u64,
+        ) -> Result<bool>;
     }
 }
 

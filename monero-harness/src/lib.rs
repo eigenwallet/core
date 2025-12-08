@@ -561,6 +561,10 @@ impl MoneroWallet {
     pub async fn blockchain_height(&self) -> Result<u64> {
         self.wallet.blockchain_height().await
     }
+
+    pub fn wallet(&self) -> &WalletHandle {
+        &self.wallet
+    }
 }
 
 /// Mine a block ever BLOCK_TIME_SECS seconds.
