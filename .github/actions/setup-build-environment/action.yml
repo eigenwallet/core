@@ -27,6 +27,7 @@ runs:
         node-version: lts/*
 
     - name: Setup yarn via corepack
+      working-directory: src-gui
       shell: bash
       run: |
         corepack enable
