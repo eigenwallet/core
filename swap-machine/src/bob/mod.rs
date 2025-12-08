@@ -1105,6 +1105,32 @@ impl State6 {
         Ok(signed_tx_partial_refund)
     }
 
+    pub fn signed_amnesty_transaction(&self) -> Result<Transaction> {
+        let tx_amnesty = self.construct_tx_amnesty()?;
+
+        let sig_a = self.tx_refund_amnesty_sig.clone().context(
+            "Can't sign amnesty transaction because Alice's amnesty signature is missing",
+        )?;
+        let sig_b = self.b.sign(tx_amnesty.digest());
+
+        let signed_tx_amnesty =
+            tx_amnesty.add_signatures((self.A, sig_a), (self.b.public(), sig_b))?;
+
+        Ok(signed_tx_amnesty)
+    }
+
+    pub fn construct_tx_amnesty(&self) -> Result<bitcoin::TxRefundAmnesty> {
+        let tx_partial_refund = self.construct_tx_partial_refund()?;
+
+        Ok(bitcoin::TxRefundAmnesty::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_refund_amnesty_fee.context(
+                "Can't construct TxRefundAmnesty because tx_refund_amnesty_fee is missing",
+            )?,
+        ))
+    }
+
     pub fn construct_tx_early_refund(&self) -> bitcoin::TxEarlyRefund {
         bitcoin::TxEarlyRefund::new(&self.tx_lock, &self.refund_address, self.tx_refund_fee)
     }

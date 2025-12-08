@@ -8,7 +8,7 @@ use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, 
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::*;
 use crate::protocol::{bob, Database};
-use anyhow::{Context as AnyContext, Result, anyhow};
+use anyhow::{Context as AnyContext, Result, anyhow, bail};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{
@@ -958,6 +958,56 @@ async fn next_state(
                     BobState::BtcEarlyRefunded(state)
                 }
             }
+        }
+        BobState::BtcPartiallyRefunded(state) => {
+            let has_amnesty_signature = state.tx_refund_amnesty_sig.is_some();
+            
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcPartiallyRefunded {
+                    btc_partial_refund_txid: state.construct_tx_partial_refund()?.txid(),
+                    has_amnesty_signature,
+                },
+            );
+
+            // If we have the amnesty signature, we publish the transaction ourselves.
+            // This also succeeds if the transaction is published by Alice.
+            if has_amnesty_signature {
+                retry("Refund amnesty transaction", || async {
+                        let state = state.clone();
+                        let transaction = state.signed_amnesty_transaction().context("Couldn't construct Bitcoin amnesty transaction").map_err(backoff::Error::permanent)?;
+                        bitcoin_wallet.ensure_broadcasted(transaction, "Bitcoin amnesty transaction")
+                            .await
+                            .context("Couldn't ensure broadcast of Bitcoin amnesty transaction")
+                            .map_err(backoff::Error::transient)?;
+                        Ok(())
+                    }, 
+                    None, 
+                    None
+                )
+                .await
+                .context("Couldn't publish Bitcoin amnesty transaction")?;
+
+                return Ok(BobState::BtcAmnestyPublished(state))
+            }
+
+            // If we don't have the amnesty signature, we have to wait for Alice to publish it.
+            // TODO: Would a timeout make sense here?  Maybe once concurrent swap support landed.
+
+            let tx_amnesty = state.construct_tx_amnesty().context("Couldn't construct Bitcoin amnesty transaction")?;
+            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_amnesty.clone())).await;
+
+            retry("Waiting for Bitcoin amnesty transaction to be published by Alice", || async {
+                subscription.clone()
+                    .wait_until_seen()
+                    .await
+                    .context("Failed to wait for Bitcoin amnesty transaction to be published by Alice")
+                    .map_err(backoff::Error::transient)?;
+                
+                Ok(BobState::BtcAmnestyPublished(state.clone()))
+            }, None, None)
+            .await
+            .context("Failed to wait for Bitcoin amnesty transaction to be published by Alice")?
         }
         BobState::BtcRefunded(state) => {
             event_emitter.emit_swap_progress_event(
