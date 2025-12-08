@@ -6772,6 +6772,8 @@ dependencies = [
  "anyhow",
  "monero",
  "monero-harness",
+ "monero-sys",
+ "testcontainers",
  "tokio",
  "tracing",
  "tracing-subscriber",

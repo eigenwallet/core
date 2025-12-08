@@ -226,6 +226,35 @@ namespace Monero
     }
 
     /**
+     * Get a reserve proof that proves the wallet has a certain amount of Monero.
+     * If `all` is true, proves the entire balance; otherwise proves at least `amount` piconero.
+     */
+    inline std::unique_ptr<std::string> getReserveProof(const Wallet &wallet, bool all, uint32_t account_index, uint64_t amount, const std::string &message)
+    {
+        auto proof = wallet.getReserveProof(all, account_index, amount, message);
+        return std::make_unique<std::string>(proof);
+    }
+
+    /**
+     * Check a reserve proof against an address.
+     * Returns true if the check completed without errors, false if an error occurred
+     * (e.g., invalid address, address is a subaddress, or exception during verification).
+     * The `good` out-parameter indicates whether the proof is actually valid.
+     * `total` and `spent` are in piconero.
+     */
+    inline bool checkReserveProof(
+        const Wallet &wallet,
+        const std::string &address,
+        const std::string &message,
+        const std::string &signature,
+        bool &good,
+        uint64_t &total,
+        uint64_t &spent)
+    {
+        return wallet.checkReserveProof(address, message, signature, good, total, spent);
+    }
+
+    /**
      * Get the seed of the wallet.
      */
     inline std::unique_ptr<std::string> walletSeed(const Wallet &wallet, const std::string &seed_offset)
