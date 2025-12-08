@@ -10881,7 +10881,6 @@ dependencies = [
  "monero-seed",
  "monero-simple-request-rpc",
  "monero-sys",
- "once_cell",
  "pem",
  "proptest",
  "rand 0.8.5",
