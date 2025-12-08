@@ -38,13 +38,13 @@ use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug_span, Instrument};
 
-pub type TauriHandle = Option<Arc<Box<dyn BitcoinTauriHandle>>>;
+pub type TauriHandle = Option<Arc<dyn BitcoinTauriHandle>>;
 pub trait BitcoinTauriHandle: Send + Sync {
     /// let progress_handle = tauri_handle.new_background_process_with_initial_progress(
     ///     TauriBackgroundProgress::FullScanningBitcoinWallet,
     ///     TauriBitcoinFullScanProgress::Unknown,
     /// );
-    fn start_full_scan(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>>;
+    fn start_full_scan(&self) -> Arc<dyn BitcoinTauriBackgroundTask>;
 
     /// let background_process_handle = self
     ///     .tauri_handle
@@ -52,7 +52,7 @@ pub trait BitcoinTauriHandle: Send + Sync {
     ///         TauriBackgroundProgress::SyncingBitcoinWallet,
     ///         TauriBitcoinSyncProgress::Unknown,
     ///     );
-    fn start_sync(&self) -> Arc<Box<dyn BitcoinTauriBackgroundTask>>;
+    fn start_sync(&self) -> Arc<dyn BitcoinTauriBackgroundTask>;
 }
 pub trait BitcoinTauriBackgroundTask: Send + Sync {
     /// progress_handle_clone.update(TauriBitcoinFullScanProgress::Known {

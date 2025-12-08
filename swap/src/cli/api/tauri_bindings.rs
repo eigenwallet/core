@@ -454,26 +454,22 @@ struct BitcoinTauriHandle(TauriHandle);
 
 impl Into<bitcoin_wallet::TauriHandle> for TauriHandle {
     fn into(self) -> bitcoin_wallet::TauriHandle {
-        Some(Arc::new(Box::new(BitcoinTauriHandle(self))))
+        Some(Arc::new(BitcoinTauriHandle(self)))
     }
 }
 
 impl bitcoin_wallet::BitcoinTauriHandle for BitcoinTauriHandle {
-    fn start_full_scan(&self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriBackgroundTask>> {
-        Arc::new(Box::new(
-            self.0.new_background_process_with_initial_progress(
-                TauriBackgroundProgress::FullScanningBitcoinWallet,
-                TauriBitcoinFullScanProgress::Unknown,
-            ),
+    fn start_full_scan(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::FullScanningBitcoinWallet,
+            TauriBitcoinFullScanProgress::Unknown,
         ))
     }
 
-    fn start_sync(&self) -> Arc<Box<dyn bitcoin_wallet::BitcoinTauriBackgroundTask>> {
-        Arc::new(Box::new(
-            self.0.new_background_process_with_initial_progress(
-                TauriBackgroundProgress::SyncingBitcoinWallet,
-                TauriBitcoinSyncProgress::Unknown,
-            ),
+    fn start_sync(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::SyncingBitcoinWallet,
+            TauriBitcoinSyncProgress::Unknown,
         ))
     }
 }
