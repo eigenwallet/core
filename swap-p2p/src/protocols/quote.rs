@@ -21,7 +21,7 @@ impl AsRef<str> for BidQuoteProtocol {
 }
 
 /// Represents a quote for buying XMR.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[typeshare]
 pub struct BidQuote {
     /// The price at which the maker is willing to buy at.
@@ -36,10 +36,12 @@ pub struct BidQuote {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     #[typeshare(serialized_as = "number")]
     pub max_quantity: bitcoin::Amount,
-    /// Monero reserve proof for Alice funds.
-    /// The message used when signing the proof is Alice's peer ID.
+    /// Monero "ReserveProofV2" which proves that Alice has the funds to fulfill the quote.
+    /// See "Zero to Monero" section 8.1.6 for more details.
+    ///
+    /// The message used when signing the proof is the peer ID of the peer that generated the quote.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reserve_proof: Option<String>,
+    pub reserve_proof: Option<ReserveProofWithAddress>,
 }
 
 impl BidQuote {
@@ -55,6 +57,13 @@ impl BidQuote {
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 #[error("Received quote of 0")]
 pub struct ZeroQuoteReceived;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ReserveProofWithAddress {
+    #[serde(with = "swap_serde::monero::address_serde")]
+    pub address: monero::Address,
+    pub proof: String,
+}
 
 /// Constructs a new instance of the `quote` behaviour to be used by the ASB.
 ///

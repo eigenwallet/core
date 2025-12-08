@@ -146,3 +146,24 @@ pub mod address {
         validate(address, expected_network)
     }
 }
+
+pub mod address_serde {
+    use std::str::FromStr;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(address: &monero::Address, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        address.to_string().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<monero::Address, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        monero::Address::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
