@@ -2831,16 +2831,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "directories-next"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "339ee130d97a610ea5a5872d2bbb130fdf68884ff09d3028b81bec8a1ac23bbc"
-dependencies = [
- "cfg-if",
- "dirs-sys-next",
-]
-
-[[package]]
 name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2857,19 +2847,8 @@ checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
 dependencies = [
  "libc",
  "option-ext",
- "redox_users 0.5.2",
+ "redox_users",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "dirs-sys-next"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d"
-dependencies = [
- "libc",
- "redox_users 0.4.6",
- "winapi",
 ]
 
 [[package]]
@@ -8727,17 +8706,6 @@ dependencies = [
 
 [[package]]
 name = "redox_users"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
-dependencies = [
- "getrandom 0.2.16",
- "libredox",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "redox_users"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
@@ -10883,7 +10851,7 @@ name = "swap-fs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "directories-next",
+ "dirs",
  "tracing",
 ]
 
