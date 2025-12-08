@@ -789,16 +789,36 @@ async fn next_state(
                             // Publish the best Bitcoin refund transaction we can sign:
                             //  - either full refund, if alice sent use that signature (prioritized)
                             //  - or just partial refund.
-                            // `publish_best_btc_refund_tx` returns the appropriate state depending on which 
-                            // one was published. It also logs the refund type.
-                            let (txid, next_state) = state.publish_best_btc_refund_tx(&*bitcoin_wallet)
-                                .await
-                                .context("Couldn't publish Bitcoin refund tx")
-                                .map_err(backoff::Error::transient)?;
 
-                            tracing::info!(%txid, "Published Bitcoin refund transaction");
-                                
-                            Ok(next_state)
+                            if state.bob_refund_type.tx_full_refund_encsig().is_some() {
+                                tracing::info!("Have the full refund signature, attempting full Bitcoin refund");
+                                let tx_full_refund = state
+                                    .signed_full_refund_transaction()
+                                    .context("Couldn't construct TxFullRefund")?;
+                                let (txid, _) = bitcoin_wallet
+                                    .ensure_broadcasted(tx_full_refund, "full refund")
+                                    .await
+                                    .context("Couldn't ensure broadcast of TxFullRefund")?;
+                                tracing::info!(%txid, "Successfully published full bitcoin refund transaction");
+                                return Ok(BobState::BtcRefundPublished(state.clone()));
+                            }
+                    
+                            if state.bob_refund_type.tx_partial_refund_encsig().is_some() {
+                                tracing::info!(
+                                    "Don't have the full refund signature, attempting partial Bitcoin refund"
+                                );
+                                let tx_partial_refund = state
+                                    .signed_partial_refund_transaction()
+                                    .context("Couldn't construct TxPartialRefund")?;
+                                let (txid, _) = bitcoin_wallet
+                                    .ensure_broadcasted(tx_partial_refund, "partial refund")
+                                    .await
+                                    .context("Couldn't ensure broadcast of TxPartialRefund")?;
+                                tracing::info!(%txid, "Successfully published partial bitcoin refund transaction");
+                                return Ok(BobState::BtcPartialRefundPublished(state.clone()));
+                            }
+                    
+                            unreachable!("We always have either the partial or full refund encsig");
                         }
                         ExpiredTimelocks::Punish => {
                             let tx_lock_id = state.tx_lock_id();
