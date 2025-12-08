@@ -1174,7 +1174,6 @@ dependencies = [
  "proptest",
  "reqwest 0.12.25",
  "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "serde_json",
  "swap-env",
@@ -9088,16 +9087,6 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "rust_decimal_macros"
-version = "1.39.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae8c0cb48f413ebe24dc2d148788e0efbe09ba3e011d9277162f2eaf8e1069a3"
-dependencies = [
- "quote",
- "syn 2.0.111",
 ]
 
 [[package]]
