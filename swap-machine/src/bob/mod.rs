@@ -197,6 +197,7 @@ pub fn is_complete(state: &BobState) -> bool {
         state,
         BobState::BtcRefunded(..)
             | BobState::BtcEarlyRefunded { .. }
+            | BobState::BtcAmnestyConfirmed { .. }
             | BobState::XmrRedeemed { .. }
             | BobState::SafelyAborted
     )

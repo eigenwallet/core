@@ -1003,7 +1003,7 @@ async fn next_state(
                     .await
                     .context("Failed to wait for Bitcoin amnesty transaction to be published by Alice")
                     .map_err(backoff::Error::transient)?;
-                
+
                 Ok(BobState::BtcAmnestyPublished(state.clone()))
             }, None, None)
             .await
@@ -1018,6 +1018,38 @@ async fn next_state(
             );
 
             BobState::BtcRefunded(state)
+        }
+        BobState::BtcAmnestyPublished(state) => {
+            // Here we just wait for the amnesty transaction to be confirmed
+            let tx_amnesty = state.construct_tx_amnesty().context("Couldn't construct Bitcoin amnesty transaction")?;
+
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcAmnestyPublished {
+                    btc_amnesty_txid: tx_amnesty.txid(),
+                },
+            );
+            
+            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_amnesty.clone())).await;
+
+            retry("Waiting for Bitcoin amnesty transaction to be published by Alice", || async {
+                subscription.clone()
+                    .wait_until_final()
+                    .await
+                    .context("Failed to wait for Bitcoin amnesty transaction to be confirmed")
+                    .map_err(backoff::Error::transient)?;
+
+                event_emitter.emit_swap_progress_event(
+                    swap_id,
+                    TauriSwapProgressEvent::BtcAmnestyReceived {
+                        btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
+                    },
+                );
+
+                Ok(BobState::BtcAmnestyConfirmed(state.clone()))
+            }, None, None)
+            .await
+            .context("Failed to wait for Bitcoin amnesty transaction to be confirmed")?
         }
         BobState::BtcPunished { state, tx_lock_id } => {
             tracing::info!("You have been punished for not refunding in time");
@@ -1154,11 +1186,18 @@ async fn next_state(
                 }
             };
         }
-        // TODO: Emit a Tauri event here
-        BobState::BtcEarlyRefunded(state) => BobState::BtcEarlyRefunded(state),
-        BobState::BtcPartiallyRefunded(state)
-        | BobState::BtcAmnestyPublished(state)
-        | BobState::BtcAmnestyConfirmed(state) => todo!(),
+        BobState::BtcEarlyRefunded(state) => {
+            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcEarlyRefunded {
+                btc_early_refund_txid: state.construct_tx_early_refund().txid(),
+            });
+            BobState::BtcEarlyRefunded(state)
+        },
+        BobState::BtcAmnestyConfirmed(state) => {
+            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcAmnestyReceived {
+                btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
+            });
+            BobState::BtcAmnestyConfirmed(state) 
+        },
         BobState::SafelyAborted => BobState::SafelyAborted,
         BobState::XmrRedeemed { tx_lock_id } => {
             event_emitter.emit_swap_progress_event(
