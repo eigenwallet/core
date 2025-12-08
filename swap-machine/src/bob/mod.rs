@@ -921,6 +921,8 @@ pub struct State6 {
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
+    /// How much of the locked Bitcoin will stay locked in case of a partial refund.
+    /// May still be retrieve by publishing the `TxAmnesty` transaction.
     btc_amnesty_amount: Option<bitcoin::Amount>,
     pub monero_wallet_restore_blockheight: BlockHeight,
     pub cancel_timelock: CancelTimelock,
@@ -936,7 +938,7 @@ pub struct State6 {
     /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
     /// It allows Bob to retrieve the refund fee introduced in the PR.
     /// This signature is voluntarily revealed by alice.
-    tx_refund_amnesty_sig: Option<Signature>,
+    pub tx_refund_amnesty_sig: Option<Signature>,
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,

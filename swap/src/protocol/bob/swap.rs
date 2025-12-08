@@ -927,6 +927,38 @@ async fn next_state(
                 },
             }
         }
+        BobState::BtcPartialRefundPublished(state)=> {
+            // 1. Emit a Tauri event
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcPartialRefundPublished {
+                    btc_partial_refund_txid: state.construct_tx_partial_refund()?.txid(),
+                    has_amnesty_signature: state.tx_refund_amnesty_sig.is_some(),
+                },
+            );
+
+            // TxEarlyRefund might still get published+confirmed before the PartialRefund gets confirmed
+            // 2. Wait for either refund transaction to be confirmed
+            
+            let tx_partial_refund = state.construct_tx_partial_refund()?;
+            let tx_early_refund = state.construct_tx_early_refund();
+
+            let (tx_partial_refund_status, tx_early_refund_status) = tokio::join!(
+                bitcoin_wallet.subscribe_to(Box::new(tx_partial_refund.clone())),
+                bitcoin_wallet.subscribe_to(Box::new(tx_early_refund.clone())),
+            );
+
+            select!{
+                _ = tx_partial_refund_status.wait_until_final() => {
+                    tracing::info!("TxPartialRefund has been confirmed");
+                    BobState::BtcPartiallyRefunded(state)
+                }
+                _ = tx_early_refund_status.wait_until_final() => {
+                    tracing::info!("TxEarlyRefund has been confirmed");
+                    BobState::BtcEarlyRefunded(state)
+                }
+            }
+        }
         BobState::BtcRefunded(state) => {
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -1074,8 +1106,7 @@ async fn next_state(
         }
         // TODO: Emit a Tauri event here
         BobState::BtcEarlyRefunded(state) => BobState::BtcEarlyRefunded(state),
-        BobState::BtcPartialRefundPublished(state)
-        | BobState::BtcPartiallyRefunded(state)
+        BobState::BtcPartiallyRefunded(state)
         | BobState::BtcAmnestyPublished(state)
         | BobState::BtcAmnestyConfirmed(state) => todo!(),
         BobState::SafelyAborted => BobState::SafelyAborted,
