@@ -505,6 +505,41 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
     }
 }
 
+struct MoneroTauriHandle(TauriHandle);
+
+impl Into<monero_wallet::TauriHandle> for TauriHandle {
+    fn into(self) -> monero_wallet::TauriHandle {
+        Arc::new(Box::new(MoneroTauriHandle(self)))
+    }
+}
+
+impl monero_wallet::MoneroTauriHandle for MoneroTauriHandle {
+    fn balance_change(&self, total_balance: monero::Amount, unlocked_balance: monero::Amount) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::BalanceChange(GetMoneroBalanceResponse {
+                total_balance,
+                unlocked_balance,
+            }),
+        ))
+    }
+
+    fn history_update(&self, transactions: Vec<monero_sys::TransactionInfo>) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::HistoryUpdate(GetMoneroHistoryResponse { transactions }),
+        ))
+    }
+
+    fn sync_progress(&self, current_block: u64, target_block: u64, progress_percentage: f32) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::SyncProgress(GetMoneroSyncProgressResponse {
+                current_block,
+                target_block,
+                progress_percentage,
+            }),
+        ))
+    }
+}
+
 impl Display for ApprovalRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.request {

@@ -17,8 +17,9 @@ bdk = { workspace = true }
 bdk_wallet = { workspace = true }
 bitcoin = { workspace = true }
 
-# Bitcoin Wallet
+# Wallets
 bitcoin-wallet = { path = "../bitcoin-wallet" }
+monero-wallet = { path = "../monero-wallet" }
 
 # Tor
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
@@ -71,7 +72,6 @@ swap-p2p = { path = "../swap-p2p" }
 swap-proptest = { path = "../swap-proptest" }
 swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
-throttle = { path = "../throttle" }
 time = "0.3"
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
@@ -96,10 +96,6 @@ serde_json = { workspace = true }
 serde_with = { version = "1", features = ["macros"] }
 strum = { workspace = true, features = ["derive"] }
 typeshare = { workspace = true }
-
-# monero-oxide
-monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
-monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }
 
 # Database
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }

@@ -9,19 +9,38 @@ pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
 use anyhow::{Context, Result};
 use monero::{Address, Network};
-use monero_simple_request_rpc::SimpleRequestRpc;
+use monero_simple_request_rpc::{prelude::MoneroDaemon, SimpleRequestTransport};
 use monero_sys::WalletEventListener;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use throttle::{throttle, Throttle};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::cli::api::{
-    request::{GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse},
-    tauri_bindings::{MoneroWalletUpdate, TauriEmitter, TauriEvent, TauriHandle},
-};
+use swap_core::monero::primitives::{Amount, BlockHeight, PrivateViewKey, TxHash, WatchRequest};
 
-use super::{BlockHeight, TxHash, WatchRequest};
+pub type TauriHandle = Arc<Box<dyn MoneroTauriHandle>>;
+pub trait MoneroTauriHandle: Send + Sync {
+    /// tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+    ///     MoneroWalletUpdate::BalanceChange(GetMoneroBalanceResponse {
+    ///         total_balance, unlocked_balance,
+    ///     })
+    /// ));
+    fn balance_change(&self, total_balance: Amount, unlocked_balance: Amount);
+
+    /// tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+    ///     MoneroWalletUpdate::HistoryUpdate(
+    ///         GetMoneroHistoryResponse { transactions }
+    ///     ),
+    /// ));
+    fn history_update(&self, transactions: Vec<monero_sys::TransactionInfo>);
+
+    /// tauri_handle.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+    ///     MoneroWalletUpdate::SyncProgress(GetMoneroSyncProgressResponse {
+    ///         current_block, target_block, progress_percentage,
+    ///     }),
+    /// ));
+    fn sync_progress(&self, current_block: u64, target_block: u64, progress_percentage: f32);
+}
 
 /// Entrance point to the Monero blockchain.
 /// You can use this struct to open specific wallets and monitor the blockchain.
@@ -31,7 +50,7 @@ pub struct Wallets {
     /// The network we're on.
     network: Network,
     /// The monero node we connect to.
-    daemon: Arc<RwLock<(Daemon, SimpleRequestRpc)>>,
+    daemon: Arc<RwLock<(Daemon, MoneroDaemon<SimpleRequestTransport>)>>,
     /// Keep the main wallet open and synced.
     main_wallet: Arc<Wallet>,
     /// Since Network::Regtest isn't a thing we have to use an extra flag.
@@ -84,13 +103,7 @@ impl TauriWalletListener {
                         }
                     };
 
-                    let response = GetMoneroBalanceResponse {
-                        total_balance: total_balance.into(),
-                        unlocked_balance: unlocked_balance.into(),
-                    };
-                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                        MoneroWalletUpdate::BalanceChange(response),
-                    ));
+                    tauri.balance_change(total_balance.into(), unlocked_balance.into());
                 });
             }
         };
@@ -111,11 +124,8 @@ impl TauriWalletListener {
                             return;
                         }
                     };
-                    let response = GetMoneroHistoryResponse { transactions };
 
-                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                        MoneroWalletUpdate::HistoryUpdate(response),
-                    ));
+                    tauri.history_update(transactions);
                 });
             }
         };
@@ -138,16 +148,11 @@ impl TauriWalletListener {
                     };
 
                     let progress_percentage = sync_progress.percentage();
-
-                    let response = GetMoneroSyncProgressResponse {
-                        current_block: sync_progress.current_block,
-                        target_block: sync_progress.target_block,
-                        progress_percentage: progress_percentage,
-                    };
-
-                    tauri.emit_unified_event(TauriEvent::MoneroWalletUpdate(
-                        MoneroWalletUpdate::SyncProgress(response),
-                    ));
+                    tauri.sync_progress(
+                        sync_progress.current_block,
+                        sync_progress.target_block,
+                        progress_percentage,
+                    );
                 });
             }
         };
@@ -223,15 +228,17 @@ impl Wallets {
     ///
     /// The main wallet will be kept alive and synced, other wallets are
     /// opened and closed on demand.
-    pub async fn new(
+    pub async fn new<T: Into<TauriHandle>>(
         wallet_dir: PathBuf,
         main_wallet_name: String,
         daemon: Daemon,
         network: Network,
         regtest: bool,
-        tauri_handle: Option<TauriHandle>,
+        tauri_handle: Option<T>,
         wallet_database: Option<Arc<monero_sys::Database>>,
     ) -> Result<Self> {
+        let tauri_handle = tauri_handle.map(|th| th.into());
+
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
             daemon.clone(),
@@ -268,7 +275,7 @@ impl Wallets {
                 .await?;
         }
 
-        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
+        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -290,15 +297,16 @@ impl Wallets {
 
     /// Create a new `Wallets` instance with an existing wallet as the main wallet.
     /// This is used when we want to use a user-selected wallet instead of creating a new one.
-    pub async fn new_with_existing_wallet(
+    pub async fn new_with_existing_wallet<T: Into<TauriHandle>>(
         wallet_dir: PathBuf,
         daemon: Daemon,
         network: Network,
         regtest: bool,
-        tauri_handle: Option<TauriHandle>,
+        tauri_handle: Option<T>,
         existing_wallet: Wallet,
         wallet_database: Option<Arc<monero_sys::Database>>,
     ) -> Result<Self> {
+        let tauri_handle = tauri_handle.map(|th| th.into());
         // TODO: This code is duplicated in [`Wallets::new`]. Unify it.
 
         if regtest {
@@ -329,7 +337,7 @@ impl Wallets {
                 .await?;
         }
 
-        let rpc_client = SimpleRequestRpc::new(daemon.to_url_string()).await?;
+        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {
@@ -350,11 +358,11 @@ impl Wallets {
     }
 
     pub async fn direct_rpc_block_height(&self) -> Result<u64> {
-        use monero_oxide_rpc::Rpc;
+        use monero_oxide_rpc::prelude::*;
         let (daemon, rpc_client) = self.daemon.read().await.clone();
 
-        let height = rpc_client
-            .get_height()
+        let height = 1 + rpc_client
+            .latest_block_number()
             .await
             .context(format!("Failed with node {}", daemon.to_url_string()))?;
 
@@ -367,7 +375,7 @@ impl Wallets {
         &self,
         swap_id: Uuid,
         spend_key: monero::PrivateKey,
-        view_key: super::PrivateViewKey,
+        view_key: PrivateViewKey,
         tx_lock_id: TxHash,
     ) -> Result<Arc<Wallet>> {
         // Derive wallet address from the keys
@@ -494,7 +502,7 @@ impl Wallets {
     pub async fn change_monero_node(&self, new_daemon: Daemon) -> Result<()> {
         {
             let mut daemon = self.daemon.write().await;
-            let rpc_client = SimpleRequestRpc::new(new_daemon.to_url_string()).await?;
+            let rpc_client = SimpleRequestTransport::new(new_daemon.to_url_string()).await?;
             *daemon = (new_daemon.clone(), rpc_client);
         }
 

@@ -1,4 +1,4 @@
-pub mod wallet;
+pub use monero_wallet as wallet;
 pub mod wallet_rpc;
 
 pub use ::monero::network::Network;
