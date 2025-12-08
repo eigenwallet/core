@@ -41,6 +41,12 @@ pub trait BitcoinWallet: Send + Sync {
         kind: &str,
     ) -> Result<(Txid, Subscription)>;
 
+    async fn ensure_broadcasted(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)>;
+
     async fn sync(&self) -> Result<()>;
 
     async fn subscribe_to(&self, tx: Box<dyn Watchable>) -> Subscription;

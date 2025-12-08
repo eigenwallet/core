@@ -668,12 +668,7 @@ impl Wallet {
         let txid = transaction.compute_txid();
 
         // to watch for confirmations, watching a single output is enough
-        let subscription = self
-            .subscribe_to(Box::new((
-                txid,
-                transaction.output[0].script_pubkey.clone(),
-            )))
-            .await;
+        let subscription = self.subscribe_to(Box::new(transaction.clone())).await;
 
         let client = self.electrum_client.lock().await;
         let broadcast_results = client
@@ -734,6 +729,27 @@ impl Wallet {
         }
 
         Ok((txid, subscription))
+    }
+
+    /// Check if a [`Transaction`] has been broadcasted and if not, broadcast it.
+    pub async fn ensure_broadcasted(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        let tx_status = self.status_of_script(&transaction).await?;
+
+        // If it's already been broadcasted, return a subscription to it
+        if matches!(
+            tx_status,
+            ScriptStatus::InMempool | ScriptStatus::Confirmed(_)
+        ) {
+            let subscription = self.subscribe_to(Box::new(transaction.clone())).await;
+            return Ok((transaction.compute_txid(), subscription));
+        }
+
+        // Otherwise broadcast it
+        self.broadcast(transaction, kind).await
     }
 
     pub async fn get_raw_transaction(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
@@ -2116,6 +2132,14 @@ impl bitcoin_wallet::BitcoinWallet for Wallet {
         Wallet::broadcast(self, transaction, kind).await
     }
 
+    async fn ensure_broadcasted(
+        &self,
+        transaction: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        Wallet::ensure_broadcasted(self, transaction, kind).await
+    }
+
     async fn sync(&self) -> Result<()> {
         Wallet::sync(self).await
     }
@@ -2940,6 +2964,14 @@ mod tests {
         }
 
         async fn broadcast(
+            &self,
+            transaction: bitcoin::Transaction,
+            kind: &str,
+        ) -> Result<(Txid, Subscription)> {
+            unimplemented!("stub method called erroneously")
+        }
+
+        async fn ensure_broadcasted(
             &self,
             transaction: bitcoin::Transaction,
             kind: &str,
