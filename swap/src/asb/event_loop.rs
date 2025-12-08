@@ -5,7 +5,7 @@ use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
-use crate::network::quote::BidQuote;
+use crate::network::quote::{BidQuote, ReserveProofWithAddress};
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
@@ -268,7 +268,7 @@ where
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
                             match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio).await {
                                 Ok(quote_arc) => {
-                                    if self.swarm.behaviour_mut().quote.send_response(channel, *quote_arc).is_err() {
+                                    if self.swarm.behaviour_mut().quote.send_response(channel, (*quote_arc).clone()).is_err() {
                                         tracing::debug!(%peer, "Failed to respond with quote");
                                     }
                                 }
@@ -588,12 +588,28 @@ where
             unlocked_monero_balance_with_timeout(monero_wallet.main_wallet().await).await
         };
 
+        let peer_id = self.peer_id();
+        let monero_wallet_for_proof = self.monero_wallet.clone();
+        let get_reserve_proof = || async move {
+            let wallet = monero_wallet_for_proof.main_wallet().await;
+            let message = peer_id.to_string();
+            let address = wallet.main_address().await?;
+            let proof = wallet.get_reserve_proof(0, None, &message).await?;
+
+            Ok(ReserveProofWithAddress {
+                address,
+                proof,
+                message,
+            })
+        };
+
         let result = make_quote(
             min_buy,
             max_buy,
             rate,
             get_unlocked_balance,
             get_reserved_items,
+            get_reserve_proof,
             developer_tip,
         )
         .await;
@@ -916,7 +932,10 @@ mod quote {
     use swap_feed::LatestRate;
     use tokio::time::timeout;
 
-    use crate::{network::quote::BidQuote, protocol::alice::ReservesMonero};
+    use crate::{
+        network::quote::{BidQuote, ReserveProofWithAddress},
+        protocol::alice::ReservesMonero,
+    };
 
     /// The time-to-live for quotes in the cache
     pub const QUOTE_CACHE_TTL: Duration = Duration::from_secs(120);
@@ -929,12 +948,14 @@ mod quote {
     }
 
     /// Computes a quote given the provided dependencies
-    pub async fn make_quote<LR, F, Fut, I, Fut2, T>(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn make_quote<LR, F, Fut, I, Fut2, T, P, Fut3>(
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         mut latest_rate: LR,
         get_unlocked_balance: F,
         get_reserved_items: I,
+        get_reserve_proof: P,
         developer_tip: Decimal,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
@@ -944,12 +965,23 @@ mod quote {
         I: FnOnce() -> Fut2,
         Fut2: futures::Future<Output = Result<Vec<T>, anyhow::Error>>,
         T: ReservesMonero,
+        P: FnOnce() -> Fut3,
+        Fut3: futures::Future<Output = Result<ReserveProofWithAddress, anyhow::Error>>,
     {
         let ask_price = latest_rate
             .latest_rate()
             .map_err(|e| Arc::new(anyhow!(e).context("Failed to get latest rate")))?
             .ask()
             .map_err(|e| Arc::new(e.context("Failed to compute asking price")))?;
+
+        // Get reserve proof, if it fails, we simply omit the proof from the quote
+        let reserve_proof = match get_reserve_proof().await {
+            Ok(proof) => Some(proof),
+            Err(err) => {
+                tracing::warn!(?err, "Failed to generate reserve proof for quote");
+                None
+            }
+        };
 
         // Get the unlocked balance
         let unlocked_balance = get_unlocked_balance()
@@ -994,6 +1026,7 @@ mod quote {
                 price: ask_price,
                 min_quantity: bitcoin::Amount::ZERO,
                 max_quantity: bitcoin::Amount::ZERO,
+                reserve_proof,
             }));
         }
 
@@ -1007,6 +1040,7 @@ mod quote {
                 price: ask_price,
                 min_quantity: min_buy,
                 max_quantity: max_bitcoin_for_monero,
+                reserve_proof,
             }));
         }
 
@@ -1014,6 +1048,7 @@ mod quote {
             price: ask_price,
             min_quantity: min_buy,
             max_quantity: max_buy,
+            reserve_proof,
         }))
     }
 
@@ -1228,6 +1263,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1259,6 +1295,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1285,6 +1322,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1309,6 +1347,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1338,6 +1377,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1361,6 +1401,7 @@ mod tests {
             rate.clone(),
             || async { Err(anyhow::anyhow!("Failed to get balance")) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await;
@@ -1386,6 +1427,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
