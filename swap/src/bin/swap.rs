@@ -424,6 +424,7 @@ mod tests {
                 price: Amount::from_btc(0.001).unwrap(),
                 max_quantity,
                 min_quantity,
+                reserve_proof: None,
             },
             version: Some("1.0.0".parse().unwrap()),
         }]);

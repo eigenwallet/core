@@ -21,7 +21,7 @@ impl AsRef<str> for BidQuoteProtocol {
 }
 
 /// Represents a quote for buying XMR.
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[typeshare]
 pub struct BidQuote {
     /// The price at which the maker is willing to buy at.
@@ -29,7 +29,6 @@ pub struct BidQuote {
     #[typeshare(serialized_as = "number")]
     pub price: bitcoin::Amount,
     /// The minimum quantity the maker is willing to buy.
-    ///     #[typeshare(serialized_as = "number")]
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     #[typeshare(serialized_as = "number")]
     pub min_quantity: bitcoin::Amount,
@@ -37,6 +36,10 @@ pub struct BidQuote {
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     #[typeshare(serialized_as = "number")]
     pub max_quantity: bitcoin::Amount,
+    /// Monero reserve proof for Alice funds.
+    /// The message used when signing the proof is Alice's peer ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserve_proof: Option<String>,
 }
 
 impl BidQuote {
@@ -45,6 +48,7 @@ impl BidQuote {
         price: bitcoin::Amount::ZERO,
         min_quantity: bitcoin::Amount::ZERO,
         max_quantity: bitcoin::Amount::ZERO,
+        reserve_proof: None,
     };
 }
 

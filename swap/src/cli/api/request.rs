@@ -1511,7 +1511,7 @@ where
         let matching_quotes = quotes
             .iter()
             .filter_map(|quote_with_address| {
-                let quote = quote_with_address.quote;
+                let quote = &quote_with_address.quote;
 
                 if quote.min_quantity <= max_giveable && quote.max_quantity > bitcoin::Amount::ZERO
                 {
