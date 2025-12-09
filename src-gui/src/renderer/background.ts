@@ -50,8 +50,8 @@ const DISCOVER_PEERS_INTERVAL = 5 * 60 * 1_000;
 // Update node statuses every 2 minutes
 const STATUS_UPDATE_INTERVAL = 2 * 60 * 1_000;
 
-// Update the exchange rate every 5 minutes
-const UPDATE_RATE_INTERVAL = 5 * 60 * 1_000;
+// Update the exchange rate every 1 minute
+const UPDATE_RATE_INTERVAL = 1 * 60 * 1_000;
 
 // Fetch all conversations every 10 minutes
 const FETCH_CONVERSATIONS_INTERVAL = 10 * 60 * 1_000;
