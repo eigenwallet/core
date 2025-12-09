@@ -7,7 +7,6 @@
     "core:event:allow-emit",
     "core:event:default",
     "clipboard-manager:allow-write-text",
-    "shell:allow-open",
     "store:default",
     "process:default",
     "updater:default",

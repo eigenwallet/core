@@ -1,5 +1,5 @@
 import Link from "@mui/material/Link";
-import { open } from "@tauri-apps/plugin-shell";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 export default function ExternalLink({
   children,
@@ -9,7 +9,7 @@ export default function ExternalLink({
   href: string;
 }) {
   return (
-    <Link style={{ cursor: "pointer" }} onClick={() => open(href)}>
+    <Link style={{ cursor: "pointer" }} onClick={() => openUrl(href)}>
       {children}
     </Link>
   );

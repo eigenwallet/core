@@ -1,5 +1,5 @@
 import { Box, Button, Typography } from "@mui/material";
-import { open } from "@tauri-apps/plugin-shell";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import InfoBox from "renderer/components/pages/swap/swap/components/InfoBox";
 
 const GITHUB_ISSUE_URL =
@@ -19,13 +19,13 @@ export default function ContactInfoBox() {
       }
       additionalContent={
         <Box sx={{ display: "flex", gap: 1 }}>
-          <Button variant="outlined" onClick={() => open(GITHUB_ISSUE_URL)}>
+          <Button variant="outlined" onClick={() => openUrl(GITHUB_ISSUE_URL)}>
             Open GitHub issue
           </Button>
-          <Button variant="outlined" onClick={() => open(MATRIX_ROOM_URL)}>
+          <Button variant="outlined" onClick={() => openUrl(MATRIX_ROOM_URL)}>
             Join Matrix room
           </Button>
-          <Button variant="outlined" onClick={() => open(DISCORD_URL)}>
+          <Button variant="outlined" onClick={() => openUrl(DISCORD_URL)}>
             Join Discord
           </Button>
         </Box>

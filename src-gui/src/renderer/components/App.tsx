@@ -4,7 +4,6 @@ import {
   Theme,
   StyledEngineProvider,
 } from "@mui/material/styles";
-import "@tauri-apps/plugin-shell";
 import { Route, MemoryRouter as Router, Routes } from "react-router-dom";
 import Navigation, { drawerWidth } from "./navigation/Navigation";
 import SettingsPage from "./pages/help/SettingsPage";
