@@ -1,11 +1,12 @@
 use self::quote::{
-    make_quote, unlocked_monero_balance_with_timeout, QuoteCacheKey, QUOTE_CACHE_TTL,
+    make_quote, reserve_proof_with_timeout, unlocked_monero_balance_with_timeout, QuoteCacheKey,
+    QUOTE_CACHE_TTL,
 };
 use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
-use crate::network::quote::BidQuote;
+use crate::network::quote::{BidQuote, ReserveProofWithAddress};
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
@@ -258,7 +259,9 @@ where
                             let _ = responder.respond(wallet_snapshot);
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
-                            self.handle_execution_setup_done(peer_id, swap_id, state3).await;
+                            if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
+                                tracing::error!(%swap_id, ?error, "Failed to handle execution setup done");
+                            }
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapDeclined { peer, error }) => {
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
@@ -266,7 +269,7 @@ where
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
                             match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio).await {
                                 Ok(quote_arc) => {
-                                    if self.swarm.behaviour_mut().quote.send_response(channel, *quote_arc).is_err() {
+                                    if self.swarm.behaviour_mut().quote.send_response(channel, (*quote_arc).clone()).is_err() {
                                         tracing::debug!(%peer, "Failed to respond with quote");
                                     }
                                 }
@@ -424,11 +427,14 @@ where
 
                             tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
                         }
-                        SwarmEvent::Behaviour(OutEvent::Rendezvous(libp2p::rendezvous::client::Event::Registered { rendezvous_node, ttl, namespace })) => {
-                            tracing::trace!("Successfully registered with rendezvous node: {} with namespace: {} and TTL: {:?}", rendezvous_node, namespace, ttl);
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::Registered { peer_id })) => {
+                            tracing::trace!("Successfully registered with rendezvous node: {}", peer_id);
                         }
-                        SwarmEvent::Behaviour(OutEvent::Rendezvous(libp2p::rendezvous::client::Event::RegisterFailed { rendezvous_node, namespace, error })) => {
-                            tracing::trace!("Registration with rendezvous node {} failed for namespace {}: {:?}", rendezvous_node, namespace, error);
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::RegisterRequestFailed { peer_id, error })) => {
+                            tracing::trace!("Registration with rendezvous node {} failed: {:?}", peer_id, error);
+                        }
+                        SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::RegisterDispatchFailed { peer_id, error })) => {
+                            tracing::trace!("Failed to dispatch registration to rendezvous node {}: {:?}", peer_id, error);
                         }
                         SwarmEvent::Behaviour(OutEvent::OutboundRequestResponseFailure {peer, error, request_id, protocol}) => {
                             tracing::error!(
@@ -529,7 +535,7 @@ where
                                 .behaviour()
                                 .rendezvous
                                 .as_ref()
-                                .map(|b| b.registrations())
+                                .map(|b| b.status())
                                 .unwrap_or_default(); // If rendezvous behaviour is disabled we report empty list
 
                             let _ = respond_to.send(registrations);
@@ -583,12 +589,19 @@ where
             unlocked_monero_balance_with_timeout(monero_wallet.main_wallet().await).await
         };
 
+        let peer_id = self.peer_id();
+        let monero_wallet_for_proof = self.monero_wallet.clone();
+        let get_reserve_proof = || async move {
+            reserve_proof_with_timeout(monero_wallet_for_proof.main_wallet().await, peer_id).await
+        };
+
         let result = make_quote(
             min_buy,
             max_buy,
             rate,
             get_unlocked_balance,
             get_reserved_items,
+            get_reserve_proof,
             developer_tip,
         )
         .await;
@@ -611,7 +624,17 @@ where
         bob_peer_id: PeerId,
         swap_id: Uuid,
         state3: State3,
-    ) {
+    ) -> Result<()> {
+        if self
+            .db
+            .has_swap(swap_id)
+            .await
+            .context("Failed to check if UUID is already in use")?
+        {
+            // TODO: We should ideally check this during swap setup, not after
+            return Err(anyhow::anyhow!("UUID is already in use"));
+        }
+
         let handle = self.new_handle(bob_peer_id, swap_id);
 
         let initial_state = AliceState::Started {
@@ -629,16 +652,16 @@ where
             developer_tip: self.developer_tip.clone(),
         };
 
-        match self.db.insert_peer_id(swap_id, bob_peer_id).await {
-            Ok(_) => {
-                if let Err(error) = self.swap_sender.send(swap).await {
-                    tracing::warn!(%swap_id, "Failed to start swap: {:?}", error);
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%swap_id, "Unable to save peer-id in database: {}", error);
-            }
-        }
+        self.db
+            .insert_peer_id(swap_id, bob_peer_id)
+            .await
+            .context("Failed to save peer-id in database")?;
+        self.swap_sender
+            .send(swap)
+            .await
+            .context("Failed to send message to spawn swap state machine")?;
+
+        Ok(())
     }
 
     /// Create a new [`EventLoopHandle`] that is scoped for communication with
@@ -841,7 +864,9 @@ mod service {
             respond_to: oneshot::Sender<usize>,
         },
         GetRegistrationStatus {
-            respond_to: oneshot::Sender<Vec<crate::asb::register::RegistrationReport>>,
+            respond_to: oneshot::Sender<
+                Vec<swap_p2p::protocols::rendezvous::register::public::RendezvousNodeStatus>,
+            >,
         },
     }
 
@@ -879,7 +904,8 @@ mod service {
         /// Get the registration status at configured rendezvous points
         pub async fn get_registration_status(
             &self,
-        ) -> anyhow::Result<Vec<crate::asb::register::RegistrationReport>> {
+        ) -> anyhow::Result<Vec<crate::network::rendezvous::register::public::RendezvousNodeStatus>>
+        {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GetRegistrationStatus { respond_to: tx })
@@ -898,7 +924,10 @@ mod quote {
     use swap_feed::LatestRate;
     use tokio::time::timeout;
 
-    use crate::{network::quote::BidQuote, protocol::alice::ReservesMonero};
+    use crate::{
+        network::quote::{BidQuote, ReserveProofWithAddress},
+        protocol::alice::ReservesMonero,
+    };
 
     /// The time-to-live for quotes in the cache
     pub const QUOTE_CACHE_TTL: Duration = Duration::from_secs(120);
@@ -911,12 +940,14 @@ mod quote {
     }
 
     /// Computes a quote given the provided dependencies
-    pub async fn make_quote<LR, F, Fut, I, Fut2, T>(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn make_quote<LR, F, Fut, I, Fut2, T, P, Fut3>(
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         mut latest_rate: LR,
         get_unlocked_balance: F,
         get_reserved_items: I,
+        get_reserve_proof: P,
         developer_tip: Decimal,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
@@ -926,12 +957,23 @@ mod quote {
         I: FnOnce() -> Fut2,
         Fut2: futures::Future<Output = Result<Vec<T>, anyhow::Error>>,
         T: ReservesMonero,
+        P: FnOnce() -> Fut3,
+        Fut3: futures::Future<Output = Result<ReserveProofWithAddress, anyhow::Error>>,
     {
         let ask_price = latest_rate
             .latest_rate()
             .map_err(|e| Arc::new(anyhow!(e).context("Failed to get latest rate")))?
             .ask()
             .map_err(|e| Arc::new(e.context("Failed to compute asking price")))?;
+
+        // Get reserve proof, if it fails, we simply omit the proof from the quote
+        let reserve_proof = match get_reserve_proof().await {
+            Ok(proof) => Some(proof),
+            Err(err) => {
+                tracing::warn!(?err, "Failed to generate reserve proof for quote");
+                None
+            }
+        };
 
         // Get the unlocked balance
         let unlocked_balance = get_unlocked_balance()
@@ -976,6 +1018,7 @@ mod quote {
                 price: ask_price,
                 min_quantity: bitcoin::Amount::ZERO,
                 max_quantity: bitcoin::Amount::ZERO,
+                reserve_proof,
             }));
         }
 
@@ -989,6 +1032,7 @@ mod quote {
                 price: ask_price,
                 min_quantity: min_buy,
                 max_quantity: max_bitcoin_for_monero,
+                reserve_proof,
             }));
         }
 
@@ -996,6 +1040,7 @@ mod quote {
             price: ask_price,
             min_quantity: min_buy,
             max_quantity: max_buy,
+            reserve_proof,
         }))
     }
 
@@ -1052,13 +1097,13 @@ mod quote {
         Amount::from_piconero(unreserved_unlocked_piconero_after_accounting_for_tip)
     }
 
+    /// This is how long we maximally wait for the wallet operation
+    const MONERO_WALLET_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
+
     /// Returns the unlocked Monero balance from the wallet
     pub async fn unlocked_monero_balance_with_timeout(
         wallet: Arc<crate::monero::Wallet>,
     ) -> Result<Amount, anyhow::Error> {
-        /// This is how long we maximally wait for the wallet operation
-        const MONERO_WALLET_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
-
         // First check if the wallet is synchronized
         // We cannot safely provide a balance if the wallet is not synchronized
         // We cannot be sure that the balance is accurate
@@ -1075,6 +1120,31 @@ mod quote {
             .context("Timeout while getting unlocked balance from Monero wallet")?;
 
         Ok(balance.into())
+    }
+
+    /// Returns a reserve proof from the wallet with a timeout
+    pub async fn reserve_proof_with_timeout(
+        wallet: Arc<crate::monero::Wallet>,
+        peer_id: libp2p::PeerId,
+    ) -> Result<ReserveProofWithAddress, anyhow::Error> {
+        let message = peer_id.to_string();
+
+        let address = timeout(MONERO_WALLET_OPERATION_TIMEOUT, wallet.main_address())
+            .await?
+            .context("Timeout while getting main address from Monero wallet for reserve proof")?;
+
+        let proof = timeout(
+            MONERO_WALLET_OPERATION_TIMEOUT,
+            wallet.get_reserve_proof(0, None, &message),
+        )
+        .await?
+        .context("Timeout while generating reserve proof")?;
+
+        Ok(ReserveProofWithAddress {
+            address,
+            proof,
+            message,
+        })
     }
 }
 
@@ -1210,6 +1280,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1241,6 +1312,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1267,6 +1339,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1291,6 +1364,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1320,6 +1394,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await
@@ -1343,6 +1418,7 @@ mod tests {
             rate.clone(),
             || async { Err(anyhow::anyhow!("Failed to get balance")) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await;
@@ -1368,6 +1444,7 @@ mod tests {
             rate.clone(),
             || async { Ok(balance) },
             || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
         )
         .await

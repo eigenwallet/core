@@ -1,5 +1,5 @@
 import TextField, { TextFieldProps } from "@mui/material/TextField";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { isTestnet } from "store/config";
 import { isBtcAddressValid } from "utils/conversionUtils";
 
@@ -21,7 +21,7 @@ export default function BitcoinAddressTextField({
 }: BitcoinAddressTextFieldProps & TextFieldProps) {
   const placeholder = isTestnet() ? "tb1q4aelwalu..." : "bc18ociqZ9mZ...";
 
-  function errorText() {
+  const errorText = useCallback(() => {
     if (address.length === 0) {
       if (allowEmpty) {
         return null;
@@ -35,13 +35,13 @@ export default function BitcoinAddressTextField({
     }
 
     return "Not a valid Bitcoin address";
-  }
+  }, [address, allowEmpty]);
 
   useEffect(() => {
     if (onAddressValidityChange != null) {
       onAddressValidityChange(!errorText());
     }
-  }, [address, onAddressValidityChange]);
+  }, [errorText, onAddressValidityChange]);
 
   return (
     <TextField

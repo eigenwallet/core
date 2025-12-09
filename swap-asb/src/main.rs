@@ -27,17 +27,17 @@ use structopt::clap::ErrorKind;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, Finality, KrakenRate};
+use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
 use swap::database::{open_db, AccessMode};
+use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
 use swap::protocol::alice::{run, AliceState, TipConfig};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
-use swap::{bitcoin, monero};
 use swap_env::config::{
     initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
 };
@@ -215,11 +215,22 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to Kraken
+            // Connect to Kraken, Bitfinex, and KuCoin
             let kraken_price_updates =
-                swap_feed::connect_kraken(config.maker.price_ticker_ws_url.clone())?;
+                swap_feed::connect_kraken(config.maker.price_ticker_ws_url_kraken.clone())?;
+            let bitfinex_price_updates =
+                swap_feed::connect_bitfinex(config.maker.price_ticker_ws_url_bitfinex.clone())?;
+            let kucoin_price_updates = swap_feed::connect_kucoin(
+                config.maker.price_ticker_rest_url_kucoin.clone(),
+                reqwest::Client::new(),
+            )?;
 
-            let kraken_rate = KrakenRate::new(config.maker.ask_spread, kraken_price_updates);
+            let kraken_rate = ExchangeRate::new(
+                config.maker.ask_spread,
+                kraken_price_updates,
+                bitfinex_price_updates,
+                kucoin_price_updates,
+            );
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client
@@ -564,10 +575,10 @@ async fn init_bitcoin_wallet(
     seed: &Seed,
     env_config: swap_env::env::Config,
     sync: bool,
-) -> Result<bitcoin::Wallet> {
+) -> Result<bitcoin_wallet::Wallet> {
     tracing::debug!("Opening Bitcoin wallet");
 
-    let wallet = bitcoin::wallet::WalletBuilder::default()
+    let wallet = bitcoin_wallet::WalletBuilder::<Seed>::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)
         .electrum_rpc_urls(
@@ -578,7 +589,7 @@ async fn init_bitcoin_wallet(
                 .map(|url| url.as_str().to_string())
                 .collect::<Vec<String>>(),
         )
-        .persister(bitcoin::wallet::PersisterConfig::SqliteFile {
+        .persister(bitcoin_wallet::PersisterConfig::SqliteFile {
             data_dir: config.data.dir.clone(),
         })
         .finality_confirmations(env_config.bitcoin_finality_confirmations)

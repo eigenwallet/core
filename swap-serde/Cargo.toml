@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
-hex = { workspace = true }
+data-encoding = { workspace = true }
 libp2p = { workspace = true }
 monero = { workspace = true }
 serde = { workspace = true }

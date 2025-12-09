@@ -13,6 +13,5 @@
 #![forbid(unsafe_code)]
 
 pub mod monerod;
-pub mod wallet;
 
 pub use jsonrpc_client as jsonrpc;

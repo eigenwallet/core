@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::out_event;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
@@ -7,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use swap_core::bitcoin;
 use typeshare::typeshare;
 
-const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/1.0.0";
+pub(crate) const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/1.0.0";
 pub type OutEvent = request_response::Event<(), BidQuote>;
 pub type Message = request_response::Message<(), BidQuote>;
 
@@ -23,27 +21,33 @@ impl AsRef<str> for BidQuoteProtocol {
 }
 
 /// Represents a quote for buying XMR.
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[typeshare]
 pub struct BidQuote {
     /// The price at which the maker is willing to buy at.
     #[typeshare(serialized_as = "number")]
     pub price: bitcoin::Amount,
     /// The minimum quantity the maker is willing to buy.
-    ///     #[typeshare(serialized_as = "number")]
     #[typeshare(serialized_as = "number")]
     pub min_quantity: bitcoin::Amount,
     /// The maximum quantity the maker is willing to buy.
     #[typeshare(serialized_as = "number")]
     pub max_quantity: bitcoin::Amount,
+    /// Monero "ReserveProofV2" which proves that Alice has the funds to fulfill the quote.
+    /// See "Zero to Monero" section 8.1.6 for more details.
+    ///
+    /// The message used when signing the proof is the peer ID of the peer that generated the quote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserve_proof: Option<ReserveProofWithAddress>,
 }
 
 impl BidQuote {
-    /// A zero quote with all amounts set to zero
+    /// A zero quote with all amounts set to zero and with no reserve proof
     pub const ZERO: Self = Self {
         price: bitcoin::Amount::ZERO,
         min_quantity: bitcoin::Amount::ZERO,
         max_quantity: bitcoin::Amount::ZERO,
+        reserve_proof: None,
     };
 }
 
@@ -51,14 +55,26 @@ impl BidQuote {
 #[error("Received quote of 0")]
 pub struct ZeroQuoteReceived;
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[typeshare]
+pub struct ReserveProofWithAddress {
+    #[serde(with = "swap_serde::monero::address_serde")]
+    #[typeshare(serialized_as = "string")]
+    pub address: monero::Address,
+    pub proof: String,
+    // TOOD: Technically redundant as convention tells us its the peer id but it'd be nice to be able to verify reserve proofs isolatedly
+    pub message: String,
+}
+
 /// Constructs a new instance of the `quote` behaviour to be used by the ASB.
 ///
 /// The ASB is always listening and only supports inbound connections, i.e.
 /// handing out quotes.
-pub fn asb() -> Behaviour {
+pub fn alice() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Inbound)],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
     )
 }
 
@@ -66,10 +82,11 @@ pub fn asb() -> Behaviour {
 ///
 /// The CLI is always dialing and only supports outbound connections, i.e.
 /// requesting quotes.
-pub fn cli() -> Behaviour {
+pub fn bob() -> Behaviour {
     Behaviour::new(
         vec![(StreamProtocol::new(PROTOCOL), ProtocolSupport::Outbound)],
-        request_response::Config::default().with_request_timeout(Duration::from_secs(60)),
+        request_response::Config::default()
+            .with_request_timeout(crate::defaults::QUOTE_REQUEST_TIMEOUT),
     )
 }
 

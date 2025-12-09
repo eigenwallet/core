@@ -26,10 +26,11 @@ runs:
       with:
         node-version: lts/*
 
-    - name: Setup yarn
+    - name: Setup yarn via corepack
+      working-directory: src-gui
       shell: bash
       run: |
-        npm install --global yarn@1
+        corepack enable
 
     - name: Install Rust stable
       uses: dtolnay/rust-toolchain@1.88
@@ -74,7 +75,7 @@ runs:
     - name: Install frontend dependencies
       working-directory: src-gui
       shell: bash
-      run: yarn install --network-timeout 600000
+      run: YARN_HTTP_TIMEOUT=10m yarn install --immutable
 
     - name: Install tauri-cli via yarn
       shell: bash

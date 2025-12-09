@@ -3,11 +3,9 @@ import {
   BalanceArgs,
   BalanceResponse,
   BuyXmrArgs,
-  BuyXmrResponse,
   GetLogsArgs,
   GetLogsResponse,
   GetSwapInfoResponse,
-  ListSellersArgs,
   MoneroRecoveryArgs,
   ResumeSwapArgs,
   ResumeSwapResponse,
@@ -56,7 +54,6 @@ import {
 import {
   rpcSetSwapInfo,
   approvalRequestsReplaced,
-  contextInitializationFailed,
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
 import { selectAllSwapIds } from "store/selectors";
@@ -69,15 +66,11 @@ import {
   setRestoreHeight,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
-import { providerToConcatenatedMultiAddr } from "utils/multiAddrUtils";
 import { MoneroRecoveryResponse } from "models/rpcModel";
-import { ListSellersResponse } from "../models/tauriModel";
 import logger from "utils/logger";
 import { getNetwork, isTestnet } from "store/config";
-import { DonateToDevelopmentTip } from "store/features/settingsSlice";
 import { Blockchain, Network } from "store/types";
 import { setStatus } from "store/features/nodesSlice";
-import { discoveredMakersByRendezvous } from "store/features/makersSlice";
 import { CliLog } from "models/cliModel";
 import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 import { DEFAULT_RENDEZVOUS_POINTS } from "store/defaults";
@@ -128,19 +121,6 @@ async function invokeNoArgs<RESPONSE>(command: string): Promise<RESPONSE> {
   return invokeUnsafe(command) as Promise<RESPONSE>;
 }
 
-export async function fetchSellersAtPresetRendezvousPoints() {
-  await Promise.all(
-    DEFAULT_RENDEZVOUS_POINTS.map(async (rendezvousPoint) => {
-      const response = await listSellersAtRendezvousPoint([rendezvousPoint]);
-      store.dispatch(discoveredMakersByRendezvous(response.sellers));
-
-      logger.info(
-        `Discovered ${response.sellers.length} sellers at rendezvous point ${rendezvousPoint} during startup fetch`,
-      );
-    }),
-  );
-}
-
 export async function checkBitcoinBalance() {
   // If we are already syncing, don't start a new sync
   if (
@@ -180,17 +160,6 @@ export async function buyXmr() {
 
   const donationPercentage = state.settings.donateToDevelopment;
 
-  // Get all available makers from the Redux store
-  const allMakers = [
-    ...(state.makers.registry.makers || []),
-    ...state.makers.rendezvous.makers,
-  ];
-
-  // Convert all makers to multiaddr format
-  const sellers = allMakers.map((maker) =>
-    providerToConcatenatedMultiAddr(maker),
-  );
-
   const address_pool: LabeledMoneroAddress[] = [];
   if (donationPercentage !== false && donationPercentage > 0) {
     const donation_address = isTestnet()
@@ -229,9 +198,7 @@ export async function buyXmr() {
     });
   }
 
-  await invoke<BuyXmrArgs, BuyXmrResponse>("buy_xmr", {
-    rendezvous_points: DEFAULT_RENDEZVOUS_POINTS,
-    sellers,
+  await invoke<BuyXmrArgs, void>("buy_xmr", {
     monero_receive_pool: address_pool,
     // We convert null to undefined because typescript
     // expects undefined if the field is optional and does not accept null here
@@ -253,6 +220,12 @@ export async function initializeContext() {
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
 
   const useMoneroTor = store.getState().settings.enableMoneroTor;
+  const rendezvousPoints = Array.from(
+    new Set([
+      ...store.getState().settings.rendezvousPoints,
+      ...DEFAULT_RENDEZVOUS_POINTS,
+    ]),
+  );
 
   const moneroNodeUrl =
     store.getState().settings.nodes[network][Blockchain.Monero][0] ?? null;
@@ -276,6 +249,7 @@ export async function initializeContext() {
     monero_node_config: moneroNodeConfig,
     use_tor: useTor,
     enable_monero_tor: useMoneroTor,
+    rendezvous_points: rendezvousPoints,
   };
 
   logger.info({ tauriSettings }, "Initializing context with settings");
@@ -442,14 +416,6 @@ export async function redactLogs(
   });
 
   return parseLogsFromString(response.text);
-}
-
-export async function listSellersAtRendezvousPoint(
-  rendezvousPointAddresses: string[],
-): Promise<ListSellersResponse> {
-  return await invoke<ListSellersArgs, ListSellersResponse>("list_sellers", {
-    rendezvous_points: rendezvousPointAddresses,
-  });
 }
 
 export async function getWalletDescriptor() {
@@ -634,15 +600,6 @@ export async function sendMoneroTransaction(
   }
 }
 
-export async function updateMoneroSyncProgress() {
-  try {
-    const response = await getMoneroSyncProgress();
-    store.dispatch(setSyncProgress(response));
-  } catch (err) {
-    console.error("Failed to fetch sync progress:", err);
-  }
-}
-
 export async function getDataDir(): Promise<string> {
   const testnet = isTestnet();
   return await invoke<GetDataDirArgs, string>("get_data_dir", {
@@ -705,12 +662,6 @@ export async function saveLogFiles(
   await invokeUnsafe<void>("save_txt_files", { zipFileName, content });
 }
 
-export async function saveFilesInDialog(files: Record<string, string>) {
-  await invokeUnsafe<void>("save_txt_files", {
-    files,
-  });
-}
-
 export async function dfxAuthenticate(): Promise<DfxAuthenticateResponse> {
   return await invokeNoArgs<DfxAuthenticateResponse>("dfx_authenticate");
 }
@@ -721,6 +672,10 @@ export async function changeMoneroNode(
   await invoke<{ node_config: MoneroNodeConfig }, void>("change_monero_node", {
     node_config: nodeConfig,
   });
+}
+
+export async function refreshP2P(): Promise<void> {
+  await invokeNoArgs<void>("refresh_p2p");
 }
 
 // Helper function to create MoneroNodeConfig from current settings

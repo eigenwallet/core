@@ -1,52 +1,10 @@
-use anyhow::Context;
-use bdk_electrum::electrum_client::HeaderNotification;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::ops::Add;
 use typeshare::typeshare;
 
-/// Represent a block height, or block number, expressed in absolute block
-/// count.
-///
-/// E.g. The transaction was included in block #655123, 655123 blocks
-/// after the genesis block.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct BlockHeight(u32);
-
-impl From<BlockHeight> for u32 {
-    fn from(height: BlockHeight) -> Self {
-        height.0
-    }
-}
-
-impl From<u32> for BlockHeight {
-    fn from(height: u32) -> Self {
-        Self(height)
-    }
-}
-
-impl TryFrom<HeaderNotification> for BlockHeight {
-    type Error = anyhow::Error;
-
-    fn try_from(value: HeaderNotification) -> Result<Self, Self::Error> {
-        Ok(Self(
-            value
-                .height
-                .try_into()
-                .context("Failed to fit usize into u32")?,
-        ))
-    }
-}
-
-impl Add<u32> for BlockHeight {
-    type Output = BlockHeight;
-    fn add(self, rhs: u32) -> Self::Output {
-        BlockHeight(self.0 + rhs)
-    }
-}
+pub use bitcoin_wallet::BlockHeight;
 
 /// Represent a timelock, expressed in relative block height as defined in
 /// [BIP68](https://github.com/bitcoin/bips/blob/master/bip-0068.mediawiki).
@@ -163,5 +121,86 @@ impl ExpiredTimelocks {
     /// Retuns `true` even if the swap has already been canceled or punished.
     pub fn cancel_timelock_expired(&self) -> bool {
         !matches!(self, ExpiredTimelocks::None { .. })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bitcoin::*;
+    use bitcoin::secp256k1;
+    use bitcoin_wallet::*;
+    use ecdsa_fun::fun::Point;
+    use ecdsa_fun::fun::marker::{NonZero, Public};
+    use rand::rngs::OsRng;
+
+    #[test]
+    fn lock_confirmations_le_to_cancel_timelock_no_timelock_expired() {
+        let tx_lock_status = ScriptStatus::from_confirmations(4);
+        let tx_cancel_status = ScriptStatus::Unseen;
+
+        let expired_timelock = current_epoch(
+            CancelTimelock::new(5),
+            PunishTimelock::new(5),
+            tx_lock_status,
+            tx_cancel_status,
+        );
+
+        assert!(matches!(expired_timelock, ExpiredTimelocks::None { .. }));
+    }
+
+    #[test]
+    fn lock_confirmations_ge_to_cancel_timelock_cancel_timelock_expired() {
+        let tx_lock_status = ScriptStatus::from_confirmations(5);
+        let tx_cancel_status = ScriptStatus::Unseen;
+
+        let expired_timelock = current_epoch(
+            CancelTimelock::new(5),
+            PunishTimelock::new(5),
+            tx_lock_status,
+            tx_cancel_status,
+        );
+
+        assert!(matches!(expired_timelock, ExpiredTimelocks::Cancel { .. }));
+    }
+
+    #[test]
+    fn cancel_confirmations_ge_to_punish_timelock_punish_timelock_expired() {
+        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_cancel_status = ScriptStatus::from_confirmations(5);
+
+        let expired_timelock = current_epoch(
+            CancelTimelock::new(5),
+            PunishTimelock::new(5),
+            tx_lock_status,
+            tx_cancel_status,
+        );
+
+        assert_eq!(expired_timelock, ExpiredTimelocks::Punish)
+    }
+
+    #[test]
+    fn tx_early_refund_has_correct_weight() {
+        // TxEarlyRefund should have the same weight as other similar transactions
+        assert_eq!(TxEarlyRefund::weight(), 548);
+
+        // It should be the same as TxRedeem and TxRefund weights since they have similar structure
+        assert_eq!(TxEarlyRefund::weight() as u64, TxRedeem::weight().to_wu());
+        assert_eq!(
+            TxEarlyRefund::weight() as u64,
+            TxFullRefund::weight().to_wu()
+        );
+    }
+
+    #[test]
+    fn compare_point_hex() {
+        // secp256kfun Point and secp256k1 PublicKey should have the same bytes and hex representation
+        let secp = secp256k1::Secp256k1::default();
+        let keypair = secp256k1::Keypair::new(&secp, &mut OsRng);
+
+        let pubkey = keypair.public_key();
+        let point: Point<_, Public, NonZero> = Point::from_bytes(pubkey.serialize()).unwrap();
+
+        assert_eq!(pubkey.to_string(), point.to_string());
     }
 }

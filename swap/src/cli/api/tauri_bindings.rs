@@ -8,6 +8,7 @@ use crate::{monero, network::quote::BidQuote};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
+use libp2p::{Multiaddr, PeerId};
 use monero_rpc_pool::pool::PoolStatus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -18,6 +19,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strum::Display;
 use swap_core::bitcoin;
 use swap_core::bitcoin::ExpiredTimelocks;
+use swap_p2p::observe;
+use swap_p2p::protocols::quotes_cached::QuoteStatus;
 use tokio::sync::oneshot;
 use typeshare::typeshare;
 use uuid::Uuid;
@@ -37,6 +40,29 @@ pub enum TauriEvent {
     BackgroundProgress(TauriBackgroundProgressWrapper),
     PoolStatusUpdate(PoolStatus),
     MoneroWalletUpdate(MoneroWalletUpdate),
+    P2P(TauriP2PEvent),
+}
+
+#[typeshare]
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "content")]
+pub enum TauriP2PEvent {
+    ConnectionChange {
+        #[typeshare(serialized_as = "string")]
+        peer_id: PeerId,
+        change: observe::ConnectionChange,
+    },
+    QuotesProgress {
+        peers: Vec<PeerQuoteProgress>,
+    },
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PeerQuoteProgress {
+    #[typeshare(serialized_as = "string")]
+    pub peer_id: PeerId,
+    pub quote_status: QuoteStatus,
 }
 
 #[typeshare]
@@ -421,6 +447,92 @@ impl TauriHandle {
     }
 }
 
+struct BitcoinTauriHandle(TauriHandle);
+
+impl Into<bitcoin_wallet::TauriHandle> for TauriHandle {
+    fn into(self) -> bitcoin_wallet::TauriHandle {
+        Some(Arc::new(BitcoinTauriHandle(self)))
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriHandle for BitcoinTauriHandle {
+    fn start_full_scan(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::FullScanningBitcoinWallet,
+            TauriBitcoinFullScanProgress::Unknown,
+        ))
+    }
+
+    fn start_sync(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::SyncingBitcoinWallet,
+            TauriBitcoinSyncProgress::Unknown,
+        ))
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriBackgroundTask
+    for TauriBackgroundProgressHandle<TauriBitcoinFullScanProgress>
+{
+    fn update(&self, consumed: u64, total: u64) {
+        self.update(TauriBitcoinFullScanProgress::Known {
+            current_index: consumed,
+            assumed_total: total,
+        });
+    }
+
+    fn finish(&self) {
+        TauriBackgroundProgressHandle::finish(self)
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriBackgroundTask
+    for TauriBackgroundProgressHandle<TauriBitcoinSyncProgress>
+{
+    fn update(&self, consumed: u64, total: u64) {
+        self.update(TauriBitcoinSyncProgress::Known { consumed, total });
+    }
+
+    fn finish(&self) {
+        TauriBackgroundProgressHandle::finish(self)
+    }
+}
+
+struct MoneroTauriHandle(TauriHandle);
+
+impl Into<monero_wallet::TauriHandle> for TauriHandle {
+    fn into(self) -> monero_wallet::TauriHandle {
+        Arc::new(MoneroTauriHandle(self))
+    }
+}
+
+impl monero_wallet::MoneroTauriHandle for MoneroTauriHandle {
+    fn balance_change(&self, total_balance: monero::Amount, unlocked_balance: monero::Amount) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::BalanceChange(GetMoneroBalanceResponse {
+                total_balance,
+                unlocked_balance,
+            }),
+        ))
+    }
+
+    fn history_update(&self, transactions: Vec<monero_sys::TransactionInfo>) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::HistoryUpdate(GetMoneroHistoryResponse { transactions }),
+        ))
+    }
+
+    fn sync_progress(&self, current_block: u64, target_block: u64, progress_percentage: f32) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::SyncProgress(GetMoneroSyncProgressResponse {
+                current_block,
+                target_block,
+                progress_percentage,
+            }),
+        ))
+    }
+}
+
 impl Display for ApprovalRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.request {
@@ -501,6 +613,27 @@ pub trait TauriEmitter {
 
     fn emit_pool_status_update(&self, status: PoolStatus) {
         self.emit_unified_event(TauriEvent::PoolStatusUpdate(status));
+    }
+
+    fn emit_peer_connection_change(&self, peer_id: PeerId, change: observe::ConnectionChange) {
+        self.emit_unified_event(TauriEvent::P2P(TauriP2PEvent::ConnectionChange {
+            peer_id,
+            change,
+        }));
+    }
+
+    fn emit_quotes_progress(&self, peers: Vec<(PeerId, QuoteStatus)>) {
+        let entries = peers
+            .into_iter()
+            .map(|(peer_id, quote_status)| PeerQuoteProgress {
+                peer_id,
+                quote_status,
+            })
+            .collect();
+
+        self.emit_unified_event(TauriEvent::P2P(TauriP2PEvent::QuotesProgress {
+            peers: entries,
+        }));
     }
 
     /// Create a new background progress handle for tracking a specific type of progress
@@ -1044,6 +1177,8 @@ pub struct TauriSettings {
     pub use_tor: bool,
     /// Whether to route Monero wallet traffic through Tor
     pub enable_monero_tor: bool,
+    /// The list of rendezvous points to connect to
+    pub rendezvous_points: Vec<String>,
 }
 
 #[typeshare]

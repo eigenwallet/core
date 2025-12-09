@@ -123,7 +123,7 @@ where
 macro_rules! regex_find_placeholders {
     ($pattern:expr, $create_placeholder:expr, $replacements:expr, $input:expr) => {{
         // compile the regex pattern
-        static REGEX: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+        static REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
             regex::Regex::new($pattern).expect("invalid regex pattern")
         });
 

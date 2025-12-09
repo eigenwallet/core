@@ -12,6 +12,7 @@ dist
 dist-ssr
 .vite
 *.local
+.yarn
 
 # Editor directories and files
 .vscode/*

@@ -9,10 +9,11 @@ use crate::database::{open_db, AccessMode};
 use crate::network::rendezvous::XmrBtcNamespace;
 use crate::protocol::Database;
 use crate::seed::Seed;
-use crate::{bitcoin, common, monero};
+use crate::{common, monero};
 use anyhow::{bail, Context as AnyContext, Error, Result};
 use arti_client::TorClient;
 use futures::future::try_join_all;
+use libp2p::{Multiaddr, PeerId};
 use std::fmt;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -210,6 +211,21 @@ pub use swap_lock::{PendingTaskList, SwapLock};
 
 mod context {
     use super::*;
+    use crate::cli::EventLoopHandle;
+
+    /// Combined state for the EventLoop and its background task
+    /// These must always exist together
+    pub struct EventLoopState {
+        pub handle: EventLoopHandle,
+        #[allow(dead_code)]
+        pub task: JoinHandle<()>,
+    }
+
+    impl EventLoopState {
+        pub fn new(handle: EventLoopHandle, task: JoinHandle<()>) -> Self {
+            Self { handle, task }
+        }
+    }
 
     /// Holds shared data for different parts of the CLI.
     ///
@@ -224,11 +240,12 @@ mod context {
         pub config: Arc<RwLock<Option<Config>>>,
         pub tasks: Arc<PendingTaskList>,
         pub tauri_handle: Option<TauriHandle>,
-        pub(super) bitcoin_wallet: Arc<RwLock<Option<Arc<bitcoin::Wallet>>>>,
+        pub(super) bitcoin_wallet: Arc<RwLock<Option<Arc<bitcoin_wallet::Wallet>>>>,
         pub monero_manager: Arc<RwLock<Option<Arc<monero::Wallets>>>>,
         pub(super) tor_client: Arc<RwLock<Option<Arc<TorClient<TokioRustlsRuntime>>>>>,
         #[allow(dead_code)]
         pub(super) monero_rpc_pool_handle: Arc<RwLock<Option<Arc<monero_rpc_pool::PoolHandle>>>>,
+        pub(super) event_loop_state: Arc<RwLock<Option<EventLoopState>>>,
     }
 
     impl Context {
@@ -252,6 +269,7 @@ mod context {
                 monero_manager: Arc::new(RwLock::new(None)),
                 tor_client: Arc::new(RwLock::new(None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
+                event_loop_state: Arc::new(RwLock::new(None)),
             }
         }
 
@@ -265,7 +283,7 @@ mod context {
         }
 
         /// Get the Bitcoin wallet, returning an error if not initialized
-        pub async fn try_get_bitcoin_wallet(&self) -> Result<Arc<bitcoin::Wallet>> {
+        pub async fn try_get_bitcoin_wallet(&self) -> Result<Arc<bitcoin_wallet::Wallet>> {
             self.bitcoin_wallet
                 .read()
                 .await
@@ -309,11 +327,21 @@ mod context {
                 .context("Tor client not initialized")
         }
 
+        /// Get the event loop handle, returning an error if not initialized
+        pub async fn try_get_event_loop_handle(&self) -> Result<EventLoopHandle> {
+            self.event_loop_state
+                .read()
+                .await
+                .as_ref()
+                .map(|state| state.handle.clone())
+                .context("Event loop not initialized")
+        }
+
         pub async fn for_harness(
             seed: Seed,
             env_config: EnvConfig,
             db_path: PathBuf,
-            bob_bitcoin_wallet: Arc<bitcoin::Wallet>,
+            bob_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
             bob_monero_wallet: Arc<monero::Wallets>,
         ) -> Self {
             let config = Config::for_harness(seed, env_config);
@@ -331,6 +359,7 @@ mod context {
                 tauri_handle: None,
                 tor_client: Arc::new(RwLock::new(None)),
                 monero_rpc_pool_handle: Arc::new(RwLock::new(None)),
+                event_loop_state: Arc::new(RwLock::new(None)),
             }
         }
 
@@ -350,7 +379,7 @@ mod context {
             Ok(())
         }
 
-        pub async fn bitcoin_wallet(&self) -> Option<Arc<bitcoin::Wallet>> {
+        pub async fn bitcoin_wallet(&self) -> Option<Arc<bitcoin_wallet::Wallet>> {
             self.bitcoin_wallet.read().await.clone()
         }
 
@@ -405,6 +434,7 @@ pub use context::Context;
 
 mod builder {
     use super::*;
+    use crate::cli::api::context::EventLoopState;
 
     /// A conveniant builder struct for [`Context`].
     #[must_use = "ContextBuilder must be built to be useful"]
@@ -417,6 +447,7 @@ mod builder {
         tor: bool,
         enable_monero_tor: bool,
         tauri_handle: Option<TauriHandle>,
+        rendezvous_points: Vec<(PeerId, Vec<Multiaddr>)>,
     }
 
     impl ContextBuilder {
@@ -440,6 +471,7 @@ mod builder {
                 tor: false,
                 enable_monero_tor: false,
                 tauri_handle: None,
+                rendezvous_points: Vec::new(),
             }
         }
 
@@ -489,6 +521,14 @@ mod builder {
         /// Whether to route Monero wallet traffic through Tor (default false)
         pub fn with_enable_monero_tor(mut self, enable_monero_tor: bool) -> Self {
             self.enable_monero_tor = enable_monero_tor;
+            self
+        }
+
+        pub fn with_rendezvous_points(
+            mut self,
+            rendezvous_points: Vec<(PeerId, Vec<Multiaddr>)>,
+        ) -> Self {
+            self.rendezvous_points = rendezvous_points;
             self
         }
 
@@ -671,6 +711,17 @@ mod builder {
 
             let wallet_database = Some(Arc::new(wallet_database));
 
+            // Initialize config
+            *context.config.write().await = Some(Config {
+                namespace: XmrBtcNamespace::from_is_testnet(self.is_testnet),
+                env_config,
+                seed: seed.clone().into(),
+                json: self.json,
+                is_testnet: self.is_testnet,
+                data_dir: data_dir.clone(),
+                log_dir: log_dir.clone(),
+            });
+
             // Initialize Monero wallet manager
             async {
                 let manager = Arc::new(
@@ -679,7 +730,7 @@ mod builder {
                         daemon.clone(),
                         env_config.monero_network,
                         false,
-                        self.tauri_handle.clone(),
+                        self.tauri_handle.clone().map(|th| th.into()),
                         wallet,
                         wallet_database,
                     )
@@ -692,17 +743,6 @@ mod builder {
                 Ok::<_, Error>(())
             }
             .await?;
-
-            // Initialize config
-            *context.config.write().await = Some(Config {
-                namespace: XmrBtcNamespace::from_is_testnet(self.is_testnet),
-                env_config,
-                seed: seed.clone().into(),
-                json: self.json,
-                is_testnet: self.is_testnet,
-                data_dir: data_dir.clone(),
-                log_dir: log_dir.clone(),
-            });
 
             // Initialize swap database
             let db = async {
@@ -778,6 +818,57 @@ mod builder {
                 }
             }
 
+            // Initialize persistent EventLoop
+            if let Some(wallet) = bitcoin_wallet.clone() {
+                let namespace = XmrBtcNamespace::from_is_testnet(self.is_testnet);
+                let tor_client_for_swarm = unbootstrapped_tor_client.clone();
+                let db_for_swarm = db.clone();
+
+                let rendezvous_points = self.rendezvous_points;
+                let rendezvous_peer_ids: Vec<PeerId> =
+                    rendezvous_points.iter().map(|(p, _)| *p).collect();
+
+                let behaviour = crate::cli::Behaviour::new(
+                    env_config,
+                    wallet.clone(),
+                    seed.derive_libp2p_identity(),
+                    namespace,
+                    rendezvous_peer_ids,
+                );
+
+                let mut swarm = crate::network::swarm::cli(
+                    seed.derive_libp2p_identity(),
+                    tor_client_for_swarm,
+                    behaviour,
+                )
+                .await?;
+
+                // Add addresses of rendezvous points to the swarm
+                for (peer_id, addrs) in rendezvous_points {
+                    for addr in addrs {
+                        swarm.add_peer_address(peer_id, addr);
+                    }
+                }
+
+                // Add addresses of peers that we have previously connected to to the swarm
+                for (peer_id, addrs) in db.get_all_peer_addresses().await.context(
+                    "Failed to retrieve peer addresses from database to insert into swarm",
+                )? {
+                    for addr in addrs {
+                        swarm.add_peer_address(peer_id, addr);
+                    }
+                }
+
+                let (event_loop, event_loop_handle) =
+                    crate::cli::EventLoop::new(swarm, db_for_swarm, self.tauri_handle.clone())?;
+
+                let event_loop_task = tokio::spawn(event_loop.run());
+
+                // TODO: We need to emit this to the frontend so that certain button can be disabled if the event loop is not yet running
+                *context.event_loop_state.write().await =
+                    Some(EventLoopState::new(event_loop_handle, event_loop_task));
+            }
+
             // Wait for Tor client to fully bootstrap
             bootstrap_tor_client_task.await?;
 
@@ -798,12 +889,13 @@ mod wallet {
         env_config: EnvConfig,
         bitcoin_target_block: u16,
         tauri_handle_option: Option<TauriHandle>,
-    ) -> Result<bitcoin::Wallet<bdk_wallet::rusqlite::Connection, bitcoin::wallet::Client>> {
-        let mut builder = bitcoin::wallet::WalletBuilder::default()
+    ) -> Result<bitcoin_wallet::Wallet<bdk_wallet::rusqlite::Connection, bitcoin_wallet::Client>>
+    {
+        let mut builder = bitcoin_wallet::WalletBuilder::<Seed>::default()
             .seed(seed.clone())
             .network(env_config.bitcoin_network)
             .electrum_rpc_urls(electrum_rpc_urls)
-            .persister(bitcoin::wallet::PersisterConfig::SqliteFile {
+            .persister(bitcoin_wallet::PersisterConfig::SqliteFile {
                 data_dir: data_dir.to_path_buf(),
             })
             .finality_confirmations(env_config.bitcoin_finality_confirmations)

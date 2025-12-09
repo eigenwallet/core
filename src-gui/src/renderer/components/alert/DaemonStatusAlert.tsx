@@ -26,11 +26,13 @@ function AlertWithLinearProgress({
   const BUFFER_PROGRESS_ADDITION_MAX = 20;
 
   const [bufferProgressAddition, setBufferProgressAddition] = useState(
-    Math.random() * BUFFER_PROGRESS_ADDITION_MAX,
+    () => Math.random() * BUFFER_PROGRESS_ADDITION_MAX,
   );
 
   useEffect(() => {
-    setBufferProgressAddition(Math.random() * BUFFER_PROGRESS_ADDITION_MAX);
+    setTimeout(() => {
+      setBufferProgressAddition(Math.random() * BUFFER_PROGRESS_ADDITION_MAX);
+    }, 0);
   }, [progress]);
 
   let displayIcon = icon ?? null;

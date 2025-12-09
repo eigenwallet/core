@@ -234,7 +234,10 @@ impl TorTransport {
         svc_cfg: OnionServiceConfig,
         port: u16,
     ) -> anyhow::Result<Multiaddr> {
-        let (service, request_stream) = self.client.launch_onion_service(svc_cfg)?;
+        let (service, request_stream) = self
+            .client
+            .launch_onion_service(svc_cfg)?
+            .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
         let request_stream = Box::pin(handle_rend_requests(request_stream));
 
         let multiaddr = service

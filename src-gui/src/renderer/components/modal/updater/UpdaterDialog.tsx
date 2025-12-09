@@ -74,7 +74,7 @@ export default function UpdaterDialog() {
           variant: "error",
         });
       });
-  }, []);
+  }, [enqueueSnackbar]);
 
   // If no update is available, don't render the dialog
   if (availableUpdate === null) return null;

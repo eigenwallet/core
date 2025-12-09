@@ -45,9 +45,6 @@ export const logsSlice = createSlice({
         slice.state.logs = slice.state.logs.slice(removeCount);
       }
     },
-    clearLogs(slice) {
-      slice.state.logs = [];
-    },
   },
 });
 
@@ -82,6 +79,6 @@ export function hashLogs(logs: (CliLog | string)[]): HashedLog[] {
   return logs.map(createHashedLog);
 }
 
-export const { receivedCliLog, clearLogs } = logsSlice.actions;
+export const { receivedCliLog } = logsSlice.actions;
 
 export default logsSlice.reducer;

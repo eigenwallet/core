@@ -1,8 +1,3 @@
-import { MakerStatus, ExtendedMakerStatus } from "models/apiModel";
-import { SellerStatus } from "models/tauriModel";
-import { isTestnet } from "store/config";
-import { splitPeerIdFromMultiAddress } from "./parseUtils";
-
 export function satsToBtc(sats: number): number {
   return sats / 100000000;
 }
@@ -42,31 +37,6 @@ export function getMoneroTxExplorerUrl(txid: string, stagenet: boolean) {
     return `https://stagenet.xmrchain.net/tx/${txid}`;
   }
   return `https://xmrchain.net/tx/${txid}`;
-}
-
-export function secondsToDays(seconds: number): number {
-  return seconds / 86400;
-}
-
-// Convert the "Seller" object returned by the list sellers tauri endpoint to a "MakerStatus" object
-// which we use internally to represent the status of a provider. This provides consistency between
-// the models returned by the public registry and the models used internally.
-export function rendezvousSellerToMakerStatus(
-  seller: SellerStatus,
-): ExtendedMakerStatus | null {
-  if (seller.type === "Unreachable") {
-    return null;
-  }
-
-  return {
-    maxSwapAmount: seller.content.quote.max_quantity,
-    minSwapAmount: seller.content.quote.min_quantity,
-    price: seller.content.quote.price,
-    peerId: seller.content.peer_id,
-    multiAddr: seller.content.multiaddr,
-    testnet: isTestnet(),
-    version: seller.content.version,
-  };
 }
 
 export function bytesToMb(bytes: number): number {

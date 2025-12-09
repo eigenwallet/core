@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-monero-harness = { path = "../monero-harness" }
-
 monero = { workspace = true }
+monero-harness = { path = "../monero-harness" }
+monero-sys = { path = "../monero-sys" }
+testcontainers = { workspace = true }
 
 anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }

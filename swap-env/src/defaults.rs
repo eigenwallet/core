@@ -39,6 +39,8 @@ pub const DEFAULT_MAX_BUY_AMOUNT: f64 = 0.02f64;
 pub const DEFAULT_SPREAD: f64 = 0.02f64;
 
 pub const KRAKEN_PRICE_TICKER_WS_URL: &str = "wss://ws.kraken.com";
+pub const BITFINEX_PRICE_TICKER_WS_URL: &str = "wss://api-pub.bitfinex.com/ws/2";
+pub const KUCOIN_PRICE_TICKER_REST_URL: &str = "https://api.kucoin.com/api/v1/bullet-public";
 
 pub fn default_rendezvous_points() -> Vec<Multiaddr> {
     vec![
@@ -46,7 +48,6 @@ pub fn default_rendezvous_points() -> Vec<Multiaddr> {
         "/dns4/discover2.unstoppableswap.net/tcp/8888/p2p/12D3KooWGRvf7qVQDrNR5nfYD6rKrbgeTi9x8RrbdxbmsPvxL4mw".parse().unwrap(),
         "/dns4/darkness.su/tcp/8888/p2p/12D3KooWFQAgVVS9t9UgL6v1sLprJVM7am5hFK7vy9iBCCoCBYmU".parse().unwrap(),
         "/dns4/eigen.center/tcp/8888/p2p/12D3KooWS5RaYJt4ANKMH4zczGVhNcw5W214e2DDYXnjs5Mx5zAT".parse().unwrap(),
-        "/dns4/swapanarchy.cfd/tcp/8888/p2p/12D3KooWRtyVpmyvwzPYXuWyakFbRKhyXGrjhq6tP7RrBofpgQGp".parse().unwrap(),
         "/dns4/rendezvous.observer/tcp/8888/p2p/12D3KooWMjceGXrYuGuDMGrfmJxALnSDbK4km6s1i1sJEgDTgGQa".parse().unwrap(),
         "/dns4/aswap.click/tcp/8888/p2p/12D3KooWQzW52mdsLHTMu1EPiz3APumG6vGwpCuyy494MAQoEa5X".parse().unwrap(),
         "/dns4/getxmr.st/tcp/8888/p2p/12D3KooWHHwiz6WDThPT8cEurstomg3kDSxzL2L8pwxfyX2fpxVk".parse().unwrap()
@@ -109,7 +110,9 @@ pub struct Defaults {
     pub data_dir: PathBuf,
     pub listen_address_tcp: Multiaddr,
     pub electrum_rpc_urls: Vec<Url>,
-    pub price_ticker_ws_url: Url,
+    pub price_ticker_ws_url_kraken: Url,
+    pub price_ticker_ws_url_bitfinex: Url,
+    pub price_ticker_rest_url_kucoin: Url,
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
     pub developer_tip: Decimal,
@@ -124,7 +127,9 @@ impl GetDefaults for Mainnet {
             data_dir: default_asb_data_dir()?.join("mainnet"),
             listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
             electrum_rpc_urls: default_electrum_servers_mainnet(),
-            price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
+            price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
+            price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
+            price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
@@ -141,9 +146,11 @@ impl GetDefaults for Testnet {
                 .join("testnet")
                 .join("config.toml"),
             data_dir: default_asb_data_dir()?.join("testnet"),
-            listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9939")?,
+            listen_address_tcp: Multiaddr::from_str("/ip4/0.0.0.0/tcp/9839")?,
             electrum_rpc_urls: default_electrum_servers_testnet(),
-            price_ticker_ws_url: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
+            price_ticker_ws_url_kraken: Url::parse(KRAKEN_PRICE_TICKER_WS_URL)?,
+            price_ticker_ws_url_bitfinex: Url::parse(BITFINEX_PRICE_TICKER_WS_URL)?,
+            price_ticker_rest_url_kucoin: Url::parse(KUCOIN_PRICE_TICKER_REST_URL)?,
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,

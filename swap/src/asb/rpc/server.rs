@@ -184,23 +184,23 @@ impl AsbApiServer for RpcImpl {
         let registrations = regs
             .into_iter()
             .map(|r| RegistrationStatusItem {
-                address: r.address.to_string(),
-                connection: match r.connection {
-                    crate::asb::register::ConnectionStatus::Disconnected => {
-                        RendezvousConnectionStatus::Disconnected
-                    }
-                    crate::asb::register::ConnectionStatus::Connected => {
-                        RendezvousConnectionStatus::Connected
-                    }
+                address: r.address.map(|a| a.to_string()),
+                connection: if r.is_connected {
+                    RendezvousConnectionStatus::Connected
+                } else {
+                    RendezvousConnectionStatus::Disconnected
                 },
                 registration: match r.registration {
-                    crate::asb::register::RegistrationStatusReport::RegisterOnNextConnection => {
-                        RendezvousRegistrationStatus::RegisterOnNextConnection
+                    crate::network::rendezvous::register::public::RegistrationStatus::RegisterOnceConnected => {
+                        RendezvousRegistrationStatus::RegisterOnceConnected
                     }
-                    crate::asb::register::RegistrationStatusReport::Pending => {
-                        RendezvousRegistrationStatus::Pending
+                    crate::network::rendezvous::register::public::RegistrationStatus::WillRegisterAfterDelay => {
+                        RendezvousRegistrationStatus::WillRegisterAfterDelay
                     }
-                    crate::asb::register::RegistrationStatusReport::Registered => {
+                    crate::network::rendezvous::register::public::RegistrationStatus::RequestInflight => {
+                        RendezvousRegistrationStatus::RequestInflight
+                    }
+                    crate::network::rendezvous::register::public::RegistrationStatus::Registered => {
                         RendezvousRegistrationStatus::Registered
                     }
                 },

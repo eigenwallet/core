@@ -1,4 +1,7 @@
-use crate::defaults::GetDefaults;
+use crate::defaults::{
+    GetDefaults, BITFINEX_PRICE_TICKER_WS_URL, KRAKEN_PRICE_TICKER_WS_URL,
+    KUCOIN_PRICE_TICKER_REST_URL,
+};
 use crate::env::{Mainnet, Testnet};
 use crate::prompt;
 use anyhow::{bail, Context, Result};
@@ -98,7 +101,12 @@ pub struct Maker {
     #[serde(with = "::bitcoin::amount::serde::as_btc")]
     pub max_buy_btc: bitcoin::Amount,
     pub ask_spread: Decimal,
-    pub price_ticker_ws_url: Url,
+    #[serde(default = "default_price_ticker_ws_url_kraken")]
+    pub price_ticker_ws_url_kraken: Url,
+    #[serde(default = "default_price_ticker_ws_url_bitfinex")]
+    pub price_ticker_ws_url_bitfinex: Url,
+    #[serde(default = "default_price_ticker_rest_url_kucoin")]
+    pub price_ticker_rest_url_kucoin: Url,
     #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
     /// Percentage (between 0.0 and 1.0) of the swap amount
@@ -110,6 +118,18 @@ pub struct Maker {
 fn default_developer_tip() -> Decimal {
     // By default, we do not tip
     Decimal::ZERO
+}
+
+fn default_price_ticker_ws_url_kraken() -> Url {
+    Url::parse(KRAKEN_PRICE_TICKER_WS_URL).expect("default kraken ws url to be valid")
+}
+
+fn default_price_ticker_ws_url_bitfinex() -> Url {
+    Url::parse(BITFINEX_PRICE_TICKER_WS_URL).expect("default bitfinex ws url to be valid")
+}
+
+fn default_price_ticker_rest_url_kucoin() -> Url {
+    Url::parse(KUCOIN_PRICE_TICKER_REST_URL).expect("default kucoin rest url to be valid")
 }
 
 impl Config {
@@ -224,7 +244,9 @@ pub fn query_user_for_initial_config_with_network(
             min_buy_btc: min_buy,
             max_buy_btc: max_buy,
             ask_spread,
-            price_ticker_ws_url: defaults.price_ticker_ws_url,
+            price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
+            price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
+            price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
             external_bitcoin_redeem_address: None,
             developer_tip,
         },

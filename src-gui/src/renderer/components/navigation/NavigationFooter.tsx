@@ -1,7 +1,6 @@
 import { Box, Tooltip } from "@mui/material";
 import { BackgroundProgressAlerts } from "../alert/DaemonStatusAlert";
 import UnfinishedSwapsAlert from "../alert/UnfinishedSwapsAlert";
-import BackgroundRefundAlert from "../alert/BackgroundRefundAlert";
 import ContactInfoBox from "../other/ContactInfoBox";
 
 export default function NavigationFooter() {
@@ -15,7 +14,6 @@ export default function NavigationFooter() {
       }}
     >
       <UnfinishedSwapsAlert />
-      <BackgroundRefundAlert />
       <BackgroundProgressAlerts />
       <ContactInfoBox />
     </Box>

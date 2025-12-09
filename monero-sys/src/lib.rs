@@ -127,6 +127,17 @@ pub struct TxStatus {
     pub confirmations: u64,
 }
 
+/// The result of checking a reserve proof.
+#[derive(Debug, Clone)]
+pub struct ReserveProofStatus {
+    /// Whether the proof is valid.
+    pub good: bool,
+    /// The total amount proven
+    pub total: monero::Amount,
+    /// The amount that has been spent from the proven outputs.
+    pub spent: monero::Amount,
+}
+
 /// A receipt returned after successfully publishing a transaction.
 /// Contains basic information needed for later verification.
 pub struct TxReceipt {
@@ -1083,6 +1094,51 @@ impl WalletHandle {
             wallet.sign_message(&message, address.as_deref(), sign_with_view_key)
         })
         .await?
+    }
+
+    /// Get a reserve proof that proves the wallet has a certain amount of XMR.
+    ///
+    /// # Arguments
+    /// * `account_index` - The account index to generate the proof for
+    /// * `amount` - The minimum amount to prove, or `None` to prove the entire balance
+    /// * `message` - A message to include in the proof
+    ///
+    /// # Returns
+    /// A reserve proof string that can be verified with `check_reserve_proof`
+    pub async fn get_reserve_proof(
+        &self,
+        account_index: u32,
+        amount: Option<monero::Amount>,
+        message: &str,
+    ) -> anyhow::Result<String> {
+        let message = message.to_string();
+
+        self.call(move |wallet| wallet.get_reserve_proof(account_index, amount, &message))
+            .await?
+    }
+
+    /// Check a reserve proof against an address.
+    ///
+    /// # Arguments
+    /// * `address` - The address that generated the proof
+    /// * `message` - The message that was included in the proof
+    /// * `signature` - The reserve proof signature to verify
+    ///
+    /// # Returns
+    /// A `ReserveProofStatus` containing whether the proof is valid, the total amount,
+    /// and the spent amount.
+    pub async fn check_reserve_proof(
+        &self,
+        address: &monero::Address,
+        message: &str,
+        signature: &str,
+    ) -> anyhow::Result<ReserveProofStatus> {
+        let address = *address;
+        let message = message.to_string();
+        let signature = signature.to_string();
+
+        self.call(move |wallet| wallet.check_reserve_proof(&address, &message, &signature))
+            .await?
     }
 }
 
@@ -2585,6 +2641,91 @@ impl FfiWallet {
         }
 
         Ok(signature)
+    }
+
+    /// Get a reserve proof that proves the wallet has a certain amount of XMR.
+    ///
+    /// # Arguments
+    /// * `account_index` - The account index to generate the proof for
+    /// * `amount` - The minimum amount to prove, or `None` to prove the entire balance
+    /// * `message` - An optional message to include in the proof
+    ///
+    /// # Returns
+    /// A reserve proof string that can be verified with `check_reserve_proof`
+    pub fn get_reserve_proof(
+        &self,
+        account_index: u32,
+        amount: Option<monero::Amount>,
+        message: &str,
+    ) -> anyhow::Result<String> {
+        let_cxx_string!(message_cxx = message);
+
+        let (all, amount_pico) = match amount {
+            Some(amt) => (false, amt.as_pico()),
+            None => (true, 0),
+        };
+
+        let proof =
+            ffi::getReserveProof(&self.inner, all, account_index, amount_pico, &message_cxx)
+                .context("Failed to construct reserve proof: FFI call failed with exception")?
+                .to_string();
+
+        // If the proof is empty, it cannot be valid
+        if proof.is_empty() {
+            self.check_error()
+                .context("Failed to construct reserve proof")?;
+            anyhow::bail!("Failed to construct reserve proof because wallet2 returned an empty string but no error was returned");
+        }
+
+        Ok(proof)
+    }
+
+    /// Check a reserve proof against an address.
+    ///
+    /// # Arguments
+    /// * `address` - The address that generated the proof
+    /// * `message` - The message that was included in the proof
+    /// * `signature` - The reserve proof signature to verify
+    ///
+    /// # Returns
+    /// A `ReserveProofStatus` containing whether the proof is valid, the total amount,
+    /// and the spent amount.
+    pub fn check_reserve_proof(
+        &self,
+        address: &monero::Address,
+        message: &str,
+        signature: &str,
+    ) -> anyhow::Result<ReserveProofStatus> {
+        let_cxx_string!(address_cxx = address.to_string());
+        let_cxx_string!(message_cxx = message);
+        let_cxx_string!(signature_cxx = signature);
+
+        let mut good = false;
+        let mut total = 0u64;
+        let mut spent = 0u64;
+
+        let success = ffi::checkReserveProof(
+            &self.inner,
+            &address_cxx,
+            &message_cxx,
+            &signature_cxx,
+            &mut good,
+            &mut total,
+            &mut spent,
+        )
+        .context("Failed to check reserve proof: FFI call failed with exception")?;
+
+        if !success {
+            self.check_error()
+                .context("Failed to check reserve proof")?;
+            anyhow::bail!("Failed to check reserve proof");
+        }
+
+        Ok(ReserveProofStatus {
+            good,
+            total: monero::Amount::from_pico(total),
+            spent: monero::Amount::from_pico(spent),
+        })
     }
 }
 

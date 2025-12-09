@@ -6,7 +6,9 @@ use crate::protocols::swap_setup::{
 use anyhow::{Context, Result, anyhow};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
+use futures::StreamExt;
 use futures::future::{BoxFuture, OptionFuture};
+use futures::stream::FuturesUnordered;
 use libp2p::core::upgrade;
 use libp2p::swarm::handler::ConnectionEvent;
 use libp2p::swarm::{ConnectionHandler, ConnectionId};
@@ -15,7 +17,7 @@ use libp2p::{Multiaddr, PeerId};
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::task::Poll;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_feed::LatestRate;
@@ -218,10 +220,8 @@ where
     }
 }
 
-type InboundStream = BoxFuture<'static, Result<(Uuid, State3)>>;
-
 pub struct Handler<LR> {
-    inbound_stream: OptionFuture<InboundStream>,
+    inbound_streams: FuturesUnordered<BoxFuture<'static, Result<(Uuid, State3)>>>,
     events: VecDeque<HandlerOutEvent>,
 
     min_buy: bitcoin::Amount,
@@ -233,10 +233,6 @@ pub struct Handler<LR> {
 
     // This is the timeout for the negotiation phase where Alice and Bob exchange messages
     negotiation_timeout: Duration,
-
-    // If set to None, we will keep the connection alive indefinitely
-    // If set to Some, we will keep the connection alive until the given instant
-    keep_alive_until: Option<Instant>,
 }
 
 impl<LR> Handler<LR> {
@@ -248,15 +244,14 @@ impl<LR> Handler<LR> {
         resume_only: bool,
     ) -> Self {
         Self {
-            inbound_stream: OptionFuture::from(None),
+            inbound_streams: FuturesUnordered::new(),
             events: Default::default(),
             min_buy,
             max_buy,
             env_config,
             latest_rate,
             resume_only,
-            negotiation_timeout: Duration::from_secs(120),
-            keep_alive_until: Some(Instant::now() + Duration::from_secs(30)),
+            negotiation_timeout: crate::defaults::NEGOTIATION_TIMEOUT,
         }
     }
 }
@@ -295,14 +290,13 @@ where
     ) {
         match event {
             ConnectionEvent::FullyNegotiatedInbound(substream) => {
-                self.keep_alive_until = None;
-
                 let substream = substream.protocol;
 
-                let (sender, receiver) = bmrng::channel_with_timeout::<
-                    bitcoin::Amount,
-                    WalletSnapshot,
-                >(1, Duration::from_secs(60));
+                let (sender, receiver) =
+                    bmrng::channel_with_timeout::<bitcoin::Amount, WalletSnapshot>(
+                        1,
+                        crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT,
+                    );
 
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
@@ -327,14 +321,14 @@ where
                 );
 
                 let max_seconds = self.negotiation_timeout.as_secs();
-                self.inbound_stream = OptionFuture::from(Some(
+                self.inbound_streams.push(
                     async move {
                         protocol.await.with_context(|| {
                             format!("Failed to complete execution setup within {}s", max_seconds)
                         })?
                     }
                     .boxed(),
-                ));
+                );
 
                 self.events.push_back(HandlerOutEvent::Initiated(receiver));
             }
@@ -353,12 +347,7 @@ where
     }
 
     fn connection_keep_alive(&self) -> bool {
-        // If keep_alive_until is None, we keep the connection alive indefinitely
-        // If keep_alive_until is Some, we keep the connection alive until the given instant
-        match self.keep_alive_until {
-            None => true,
-            Some(keep_alive_until) => Instant::now() < keep_alive_until,
-        }
+        !self.inbound_streams.is_empty()
     }
 
     #[allow(clippy::type_complexity)]
@@ -374,10 +363,9 @@ where
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(event));
         }
 
-        if let Some(result) = futures::ready!(self.inbound_stream.poll_unpin(cx)) {
-            self.inbound_stream = OptionFuture::from(None);
-
+        if let Poll::Ready(Some(result)) = self.inbound_streams.poll_next_unpin(cx) {
             // Notify the behaviour that the negotiation phase has been completed
+            // (either successfully or with an error)
             return Poll::Ready(ConnectionHandlerEvent::NotifyBehaviour(
                 HandlerOutEvent::Completed(result),
             ));
