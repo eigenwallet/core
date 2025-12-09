@@ -91,7 +91,11 @@ export default function SendSuccessContent({
           gap: 1,
         }}
       >
-        <Button onClick={onClose} variant="contained" color="primary">
+        <Button
+          onClick={() => onClose({}, "buttonClick")}
+          variant="contained"
+          color="primary"
+        >
           Done
         </Button>
         <Button
