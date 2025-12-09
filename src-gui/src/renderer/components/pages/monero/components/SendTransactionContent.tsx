@@ -172,6 +172,7 @@ export default function SendTransactionContent({
           onSuccess={handleSendSuccess}
           onPendingChange={setIsSending}
           contextRequirement={isContextWithMoneroWallet}
+          displayErrorSnackbar
         >
           Send
         </PromiseInvokeButton>
