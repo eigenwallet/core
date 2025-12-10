@@ -11,6 +11,7 @@ async fn happy_path_alice_developer_tip_subaddress() {
     harness::setup_test(
         SlowCancelConfig,
         Some((Decimal::from_f32_retain(0.1).unwrap(), true)),
+        None,
         |mut ctx| async move {
             let (bob_swap, _) = ctx.bob_swap().await;
             let bob_swap = tokio::spawn(bob::run(bob_swap));

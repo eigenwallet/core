@@ -5,7 +5,7 @@ use swap::protocol::bob;
 
 #[tokio::test]
 async fn ensure_same_swap_id_for_alice_and_bob() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, _) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         tokio::spawn(bob::run(bob_swap));

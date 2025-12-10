@@ -7,7 +7,7 @@ use tokio::join;
 
 #[tokio::test]
 async fn happy_path() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, _) = ctx.bob_swap().await;
         let bob_swap = tokio::spawn(bob::run(bob_swap));
 
