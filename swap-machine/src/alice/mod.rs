@@ -9,7 +9,7 @@ use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
     CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
-    TxFullRefund, TxPunish, TxRedeem, Txid, current_epoch,
+    TxFullRefund, TxPartialRefund, TxPunish, TxRedeem, Txid, current_epoch,
 };
 use swap_core::monero;
 use swap_core::monero::ScalarExt;
@@ -575,6 +575,19 @@ impl State3 {
         )
     }
 
+    pub fn tx_partial_refund(&self) -> Result<TxPartialRefund> {
+        swap_core::bitcoin::TxPartialRefund::new(
+            &self.tx_cancel(),
+            &self.refund_address,
+            self.a.public(),
+            self.B,
+            self.btc_amnesty_amount
+                .context("Missing btc_amnesty_amount")?,
+            self.tx_partial_refund_fee
+                .context("Missing tx_partial_refund_fee")?,
+        )
+    }
+
     pub fn tx_redeem(&self) -> TxRedeem {
         TxRedeem::new(&self.tx_lock, &self.redeem_address, self.tx_redeem_fee)
     }
@@ -711,12 +724,30 @@ impl State3 {
         }
     }
 
-    pub async fn watch_for_btc_tx_refund(
+    pub async fn watch_for_btc_tx_full_refund(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<monero::PrivateKey> {
         let tx_refund_status = bitcoin_wallet
             .subscribe_to(Box::new(self.tx_refund()))
+            .await;
+
+        tx_refund_status
+            .wait_until_seen()
+            .await
+            .context("Failed to monitor refund transaction")?;
+
+        self.refund_btc(bitcoin_wallet).await?.context(
+            "Bitcoin refund transaction not found even though we saw it in the mempool previously",
+        )
+    }
+
+    pub async fn watch_for_btc_tx_partial_refund(
+        &self,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    ) -> Result<monero::PrivateKey> {
+        let tx_refund_status = bitcoin_wallet
+            .subscribe_to(Box::new(self.tx_partial_refund()?))
             .await;
 
         tx_refund_status
