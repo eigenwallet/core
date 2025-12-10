@@ -77,7 +77,7 @@ mod tests {
         let message0 = bob_state0.next_message().unwrap();
 
         let (_, alice_state1) = alice_state0.receive(message0).unwrap();
-        let alice_message1 = alice_state1.next_message();
+        let alice_message1 = alice_state1.next_message().unwrap();
 
         let bob_state1 = bob_state0
             .receive(&bob_wallet, alice_message1)
@@ -190,7 +190,7 @@ mod tests {
         // Complete the state machine up to State3
         let message0 = bob_state0.next_message().unwrap();
         let (_, alice_state1) = alice_state0.receive(message0).unwrap();
-        let alice_message1 = alice_state1.next_message();
+        let alice_message1 = alice_state1.next_message().unwrap();
 
         let bob_state1 = bob_state0
             .receive(&bob_wallet, alice_message1)

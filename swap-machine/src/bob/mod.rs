@@ -478,7 +478,7 @@ pub struct State2 {
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
-    btc_amnesty_amount: Option<bitcoin::Amount>,
+    pub btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     #[serde(with = "address_serde")]

@@ -552,9 +552,14 @@ async fn run_swap_setup(
         .receive(message0)
         .context("Failed to transition state0 -> state1 using message0")?;
 
-    swap_setup::write_cbor_message(&mut substream, state1.next_message())
-        .await
-        .context("Failed to send message1")?;
+    swap_setup::write_cbor_message(
+        &mut substream,
+        state1
+            .next_message()
+            .context("Couldn't construct Mesage1")?,
+    )
+    .await
+    .context("Failed to send message1")?;
 
     let message2 = swap_setup::read_cbor_message::<Message2>(&mut substream)
         .await

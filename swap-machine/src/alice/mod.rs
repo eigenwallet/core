@@ -148,7 +148,7 @@ pub struct State0 {
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
-    btc_amnesty_amount: bitcoin::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     redeem_address: bitcoin::Address,
@@ -188,7 +188,7 @@ impl State0 {
                 point: S_a_monero.compress(),
             },
             dleq_proof_s_a,
-            btc_amnesty_amount,
+            btc_amnesty_amount: Some(btc_amnesty_amount),
             redeem_address,
             punish_address,
             btc,
@@ -265,7 +265,7 @@ pub struct State1 {
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
-    btc_amnesty_amount: bitcoin::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -280,8 +280,8 @@ pub struct State1 {
 }
 
 impl State1 {
-    pub fn next_message(&self) -> Message1 {
-        Message1 {
+    pub fn next_message(&self) -> Result<Message1> {
+        Ok(Message1 {
             A: self.a.public(),
             S_a_monero: self.S_a_monero,
             S_a_bitcoin: self.S_a_bitcoin,
@@ -291,8 +291,10 @@ impl State1 {
             punish_address: self.punish_address.clone(),
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
-            amnesty_amount: self.btc_amnesty_amount,
-        }
+            amnesty_amount: self
+                .btc_amnesty_amount
+                .context("Missing btc_amesty_amount for new swap that should have it")?,
+        })
     }
 
     pub fn receive(self, msg: Message2) -> Result<State2> {
@@ -337,7 +339,7 @@ pub struct State2 {
     v: monero::PrivateViewKey,
     btc: bitcoin::Amount,
     xmr: monero::Amount,
-    btc_amnesty_amount: bitcoin::Amount,
+    btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
     refund_address: bitcoin::Address,
@@ -368,7 +370,8 @@ impl State2 {
             &self.refund_address,
             self.a.public(),
             self.B,
-            self.btc_amnesty_amount,
+            self.btc_amnesty_amount
+                .context("Missing btc_amnesty_amount for new swap that should have it")?,
             self.tx_refund_fee,
         )?;
         // Alice encsigns the partial refund transaction(bitcoin) digest with Bob's monero
@@ -472,7 +475,7 @@ pub struct State3 {
     pub v: monero::PrivateViewKey,
     pub btc: bitcoin::Amount,
     pub xmr: monero::Amount,
-    pub btc_amnesty_amount: bitcoin::Amount,
+    pub btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
