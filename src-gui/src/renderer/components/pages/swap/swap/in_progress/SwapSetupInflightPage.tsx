@@ -75,7 +75,7 @@ export default function SwapSetupInflightPage({
     );
   }
 
-  const { btc_network_fee, monero_receive_pool, xmr_receive_amount } =
+  const { btc_network_fee, monero_receive_pool, xmr_receive_amount, btc_amnesty_amount  } =
     request.request.content;
 
   return (
@@ -104,6 +104,7 @@ export default function SwapSetupInflightPage({
           <BitcoinMainBox
             btc_lock_amount={btc_lock_amount}
             btc_network_fee={btc_network_fee}
+            btc_amnesty_amount={btc_amnesty_amount}
           />
         </Box>
 
@@ -187,78 +188,88 @@ export default function SwapSetupInflightPage({
 interface BitcoinSendSectionProps {
   btc_lock_amount: number;
   btc_network_fee: number;
+  btc_amnesty_amount: number;
 }
 
-const BitcoinMainBox = ({
+function BitcoinMainBox ({
   btc_lock_amount,
   btc_network_fee,
-}: {
-  btc_lock_amount: number;
-  btc_network_fee: number;
-}) => (
-  <Box
-    sx={{
-      position: "relative",
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      gap: 1,
-    }}
-  >
+  btc_amnesty_amount
+}: BitcoinSendSectionProps) {
+  const guaranteedRefundPercentage: number = (btc_lock_amount - btc_amnesty_amount) / btc_lock_amount * 100;
+  return (
     <Box
       sx={{
+        position: "relative",
+        height: "100%",
         display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 1.5,
-        border: 1,
-        gap: "0.5rem 1rem",
-        borderColor: "warning.main",
-        borderRadius: 1,
-        flexGrow: 1,
-        backgroundColor: (theme) => theme.palette.warning.light + "10",
-        background: (theme) =>
-          `linear-gradient(135deg, ${theme.palette.warning.light}20, ${theme.palette.warning.light}05)`,
+        flexDirection: "column",
+        gap: 1,
       }}
     >
-      <Typography
-        variant="body1"
-        sx={(theme) => ({
-          color: theme.palette.text.primary,
-        })}
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: 1.5,
+          border: 1,
+          gap: "0.5rem 1rem",
+          borderColor: "warning.main",
+          borderRadius: 1,
+          flexGrow: 1,
+          backgroundColor: (theme) => theme.palette.warning.light + "10",
+          background: (theme) =>
+            `linear-gradient(135deg, ${theme.palette.warning.light}20, ${theme.palette.warning.light}05)`,
+        }}
       >
-        You send
-      </Typography>
-      <Typography
-        variant="h5"
-        sx={(theme) => ({
-          fontWeight: "bold",
-          color: theme.palette.warning.dark,
-          textShadow: "0 1px 2px rgba(0,0,0,0.1)",
-        })}
-      >
-        <SatsAmount amount={btc_lock_amount} />
-      </Typography>
-    </Box>
+        <Typography
+          variant="body1"
+          sx={(theme) => ({
+            color: theme.palette.text.primary,
+          })}
+        >
+          You send
+        </Typography>
+        <Typography
+          variant="h5"
+          sx={(theme) => ({
+            fontWeight: "bold",
+            color: theme.palette.warning.dark,
+            textShadow: "0 1px 2px rgba(0,0,0,0.1)",
+          })}
+        >
+          <SatsAmount amount={btc_lock_amount} />
+        </Typography>
+        <Typography
+          variant="body1"
+          sx={(theme) => ({
+            color: theme.palette.text.primary,
+          })}
+        >
+          ({guaranteedRefundPercentage}% refund guaranteed)
+        </Typography>
+      </Box>
 
-    {/* Network fee box attached to the bottom */}
-    <Box
-      sx={{
-        padding: "0.25rem 0.75rem",
-        backgroundColor: (theme) => theme.palette.warning.main,
-        color: (theme) => theme.palette.warning.contrastText,
-        borderRadius: "4px",
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-        whiteSpace: "nowrap",
-        zIndex: 1,
-      }}
-    >
-      Network fee: <SatsAmount amount={btc_network_fee} />
+      {/* Network fee box attached to the bottom */}
+      <Box
+        sx={{
+          padding: "0.25rem 0.75rem",
+          backgroundColor: (theme) => theme.palette.warning.main,
+          color: (theme) => theme.palette.warning.contrastText,
+          borderRadius: "4px",
+          fontSize: "0.75rem",
+          fontWeight: 600,
+          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+          whiteSpace: "nowrap",
+          zIndex: 1,
+        }}
+      >
+        Network fee: <SatsAmount amount={btc_network_fee} />
+      </Box>
     </Box>
-  </Box>
-);
+  )
+};
 
 interface PoolBreakdownProps {
   monero_receive_pool: Array<{

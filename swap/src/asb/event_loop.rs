@@ -836,16 +836,19 @@ fn apply_bitcoin_amnesty_policy(
     swap_amount: bitcoin::Amount,
     refund_policy: &RefundPolicy,
 ) -> Result<bitcoin::Amount> {
-    let amount_sats = swap_amount.to_sat();
     let btc_amnesty_ratio = Decimal::ONE
         .checked_sub(refund_policy.taker_refund_ratio)
         .context("can't have refund ration > 1")?;
 
-    let btc_amnesty_sats = Decimal::from_u64(amount_sats)
-        .context("Decimal overflowed by Bitcoin sats")?
+    let amount_sats = swap_amount.to_sat();
+    let amount_decimal =
+        Decimal::from_u64(amount_sats).context("Decimal overflowed by Bitcoin sats")?;
+
+    let btc_amnesty_decimal = amount_decimal
         .checked_mul(btc_amnesty_ratio)
         .context("Decimal overflow when computing amnesty amount in sats")?
-        .floor()
+        .floor();
+    let btc_amnesty_sats = btc_amnesty_decimal
         .try_into()
         .context("Couldn't convert Decimal to u64")?;
 

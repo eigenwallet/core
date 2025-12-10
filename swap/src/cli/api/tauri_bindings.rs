@@ -95,6 +95,9 @@ pub struct LockBitcoinDetails {
     pub monero_receive_pool: MoneroAddressPool,
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
+    /// The amount of Bitcoin the taker will only be able to refund with cooperation from the maker
+    #[typeshare(serialized_as = "number")]
+    pub btc_amnesty_amount: bitcoin::Amount,
 }
 
 #[typeshare]
