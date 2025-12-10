@@ -21,6 +21,7 @@ use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChann
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::future::Cache;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -29,6 +30,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
+use swap_env::config::{Config, RefundPolicy};
 use swap_env::env;
 use swap_feed::LatestRate;
 use tokio::sync::{mpsc, oneshot};
@@ -51,6 +53,7 @@ where
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -142,6 +145,7 @@ where
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
         developer_tip: TipConfig,
+        refund_policy: RefundPolicy,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -162,6 +166,7 @@ where
             max_buy,
             external_redeem_address,
             developer_tip,
+            refund_policy,
             quote_cache,
             recv_encrypted_signature: Default::default(),
             inflight_encrypted_signatures: Default::default(),
@@ -247,6 +252,14 @@ where
                                 }
                             };
 
+                            // TODO: propagate error to the swap_setup routine instead of swallowing it
+                            let btc_amnesty_amount = match apply_bitcoin_amnesty_policy(btc, &self.refund_policy) {
+                                Ok(amount) => amount,
+                                Err(error) => {
+                                    tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
+                                    continue;
+                                }
+                            };
                             let wallet_snapshot = match capture_wallet_snapshot(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
                                 Ok(wallet_snapshot) => wallet_snapshot,
                                 Err(error) => {
@@ -256,7 +269,7 @@ where
                             };
 
                             // Ignore result, we should never hit this because the receiver will alive as long as the connection is.
-                            let _ = responder.respond(wallet_snapshot);
+                            let _ = responder.respond((wallet_snapshot, btc_amnesty_amount));
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
                             if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
@@ -815,6 +828,28 @@ impl EventLoopHandle {
 
         Ok(())
     }
+}
+
+/// For a new swap of `swap_amount`, this function calculates how much
+/// Bitcoin should go into the amnesty-lock incase of a refund.
+fn apply_bitcoin_amnesty_policy(
+    swap_amount: bitcoin::Amount,
+    refund_policy: &RefundPolicy,
+) -> Result<bitcoin::Amount> {
+    let amount_sats = swap_amount.to_sat();
+    let btc_amnesty_ratio = Decimal::ONE
+        .checked_sub(refund_policy.taker_refund_ratio)
+        .context("can't have refund ration > 1")?;
+
+    let btc_amnesty_sats = Decimal::from_u64(amount_sats)
+        .context("Decimal overflowed by Bitcoin sats")?
+        .checked_mul(btc_amnesty_ratio)
+        .context("Decimal overflow when computing amnesty amount in sats")?
+        .floor()
+        .try_into()
+        .context("Couldn't convert Decimal to u64")?;
+
+    Ok(bitcoin::Amount::from_sat(btc_amnesty_sats))
 }
 
 async fn capture_wallet_snapshot(

@@ -314,6 +314,7 @@ pub async fn main() -> Result<()> {
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
                 tip_config,
+                config.maker.refund_policy,
             )
             .unwrap();
 

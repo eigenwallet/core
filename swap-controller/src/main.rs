@@ -95,7 +95,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("No rendezvous points configured");
             } else {
                 for item in response.registrations {
-                    let address = item.address.as_deref().unwrap_or("?");
+                    let address = item.address.as_ref().map(String::as_str).unwrap_or("?");
                     println!(
                         "Connection status to rendezvous point at \"{}\" is \"{:?}\". Registration status is \"{:?}\"",
                         address, item.connection, item.registration

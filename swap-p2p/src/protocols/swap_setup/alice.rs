@@ -7,7 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use futures::AsyncWriteExt;
 use futures::FutureExt;
 use futures::StreamExt;
-use futures::future::{BoxFuture, OptionFuture};
+use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use libp2p::core::upgrade;
 use libp2p::swarm::handler::ConnectionEvent;
@@ -29,7 +29,8 @@ use uuid::Uuid;
 #[allow(clippy::large_enum_variant)]
 pub enum OutEvent {
     Initiated {
-        send_wallet_snapshot: bmrng::RequestReceiver<bitcoin::Amount, WalletSnapshot>,
+        send_wallet_snapshot:
+            bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount)>,
     },
     Completed {
         peer_id: PeerId,
@@ -259,7 +260,7 @@ impl<LR> Handler<LR> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum HandlerOutEvent {
-    Initiated(bmrng::RequestReceiver<bitcoin::Amount, WalletSnapshot>),
+    Initiated(bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount)>),
     Completed(Result<(Uuid, State3)>),
 }
 
@@ -292,11 +293,12 @@ where
             ConnectionEvent::FullyNegotiatedInbound(substream) => {
                 let substream = substream.protocol;
 
-                let (sender, receiver) =
-                    bmrng::channel_with_timeout::<bitcoin::Amount, WalletSnapshot>(
-                        1,
-                        crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT,
-                    );
+                let (sender, receiver) = bmrng::channel_with_timeout::<
+                    bitcoin::Amount,
+                    (WalletSnapshot, bitcoin::Amount),
+                >(
+                    1, crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT
+                );
 
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
@@ -442,7 +444,7 @@ impl Error {
 
 async fn run_swap_setup(
     mut substream: libp2p::swarm::Stream,
-    sender: bmrng::RequestSender<bitcoin::Amount, WalletSnapshot>,
+    sender: bmrng::RequestSender<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount)>,
     resume_only: bool,
     env_config: env::Config,
     min_buy: bitcoin::Amount,
@@ -453,7 +455,7 @@ async fn run_swap_setup(
         .await
         .context("Failed to read spot price request")?;
 
-    let wallet_snapshot = sender
+    let (wallet_snapshot, btc_amnesty_amount) = sender
         .send_receive(request.btc)
         .await
         .context("Failed to receive wallet snapshot")?;
