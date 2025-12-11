@@ -69,11 +69,19 @@ pub enum AliceState {
         spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
-    BtcPunishable {
+    BtcPartiallyRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
+        spend_key: monero::PrivateKey,
         state3: Box<State3>,
     },
+    XmrRefundable {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        spend_key: monero::PrivateKey,
+        state3: Box<State3>,
+    },
+    // TODO: save redeem transaction id
     XmrRefunded,
     WaitingForCancelTimelockExpiration {
         monero_wallet_restore_blockheight: BlockHeight,
@@ -81,6 +89,11 @@ pub enum AliceState {
         state3: Box<State3>,
     },
     CancelTimelockExpired {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        state3: Box<State3>,
+    },
+    BtcPunishable {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
         state3: Box<State3>,
@@ -133,6 +146,7 @@ impl fmt::Display for AliceState {
             AliceState::CancelTimelockExpired { .. } => write!(f, "cancel timelock is expired"),
             AliceState::BtcEarlyRefundable { .. } => write!(f, "btc is early refundable"),
             AliceState::BtcEarlyRefunded(_) => write!(f, "btc is early refunded"),
+            AliceState::BtcPartiallyRefunded { .. } => write!(f, "btc is partially refunded"),
         }
     }
 }

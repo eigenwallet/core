@@ -649,6 +649,28 @@ where
             spend_key,
             state3,
             ..
+        } => AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
+        },
+        AliceState::BtcPartiallyRefunded {
+            transfer_proof,
+            spend_key,
+            state3,
+            monero_wallet_restore_blockheight,
+        } => AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
+        },
+        AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
         } => {
             retry(
                 "Refund Monero",

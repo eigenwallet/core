@@ -75,6 +75,13 @@ pub enum Alice {
         #[serde(with = "swap_serde::monero::private_key")]
         spend_key: monero::PrivateKey,
     },
+    BtcPartiallyRefunded {
+        monero_wallet_restore_blockheight: BlockHeight,
+        transfer_proof: TransferProof,
+        state3: alice::State3,
+        #[serde(with = "swap_serde::monero::private_key")]
+        spend_key: monero::PrivateKey,
+    },
     Done(AliceEndState),
 }
 
@@ -169,6 +176,17 @@ impl From<AliceState> for Alice {
                 transfer_proof,
                 spend_key,
                 state3: state3.as_ref().clone(),
+            },
+            AliceState::BtcPartiallyRefunded {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                spend_key,
+                state3,
+            } => Alice::BtcPartiallyRefunded {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                state3: *state3,
+                spend_key,
             },
             AliceState::BtcEarlyRefundable { state3 } => Alice::BtcEarlyRefundable {
                 state3: state3.as_ref().clone(),
@@ -320,6 +338,17 @@ impl From<Alice> for AliceState {
                 spend_key,
                 state3: Box::new(state3),
             },
+            Alice::BtcPartiallyRefunded {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                state3,
+                spend_key,
+            } => AliceState::BtcPartiallyRefunded {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                spend_key,
+                state3: Box::new(state3),
+            },
             Alice::BtcEarlyRefundable { state3 } => AliceState::BtcEarlyRefundable {
                 state3: Box::new(state3),
             },
@@ -366,6 +395,7 @@ impl fmt::Display for Alice {
             Alice::BtcCancelled { .. } => f.write_str("Bitcoin cancel transaction published"),
             Alice::BtcPunishable { .. } => f.write_str("Bitcoin punishable"),
             Alice::BtcRefunded { .. } => f.write_str("Monero refundable"),
+            Alice::BtcPartiallyRefunded { .. } => f.write_str("Monero refundable"),
             Alice::BtcEarlyRefundable { .. } => f.write_str("Bitcoin early refundable"),
             Alice::Done(end_state) => write!(f, "Done: {}", end_state),
         }

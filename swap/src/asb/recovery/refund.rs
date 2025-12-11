@@ -51,6 +51,8 @@ pub async fn refund(
         // Refund possible due to cancel transaction already being published
         | AliceState::BtcCancelled { transfer_proof, state3, .. }
         | AliceState::BtcRefunded { transfer_proof, state3, .. }
+        | AliceState::BtcPartiallyRefunded { transfer_proof, state3, .. }
+        | AliceState::XmrRefundable { transfer_proof, state3, .. }
         | AliceState::BtcPunishable { transfer_proof, state3, .. } => {
             (transfer_proof, state3)
         }
