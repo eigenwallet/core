@@ -131,7 +131,7 @@ impl fmt::Display for BobState {
             BobState::BtcRefundPublished { .. } => write!(f, "btc refund is published"),
             BobState::BtcEarlyRefundPublished { .. } => write!(f, "btc early refund is published"),
             BobState::BtcPartialRefundPublished { .. } => {
-                write!(f, "btc partially refund is published")
+                write!(f, "btc partial refund is published")
             }
             BobState::BtcRefunded(..) => write!(f, "btc is refunded"),
             BobState::XmrRedeemed { .. } => write!(f, "xmr is redeemed"),

@@ -7,6 +7,10 @@ import {
   BitcoinEarlyRefundedPage,
   BitcoinEarlyRefundPublishedPage,
   BitcoinRefundPublishedPage,
+  BitcoinPartialRefundPublished,
+  BitcoinPartiallyRefunded,
+  BitcoinAmnestyPublished,
+  BitcoinAmnestyReceived
 } from "./done/BitcoinRefundedPage";
 import XmrRedeemInMempoolPage from "./done/XmrRedeemInMempoolPage";
 import ProcessExitedPage from "./exited/ProcessExitedPage";
@@ -88,7 +92,7 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "BtcCancelled":
       return <BitcoinCancelledPage />;
 
-    //// 4 different types of Bitcoin refund states we can be in
+    //// 8 different types of Bitcoin refund states we can be in
     case "BtcRefundPublished": // tx_refund has been published but has not been confirmed yet
       if (state.curr.type === "BtcRefundPublished") {
         return <BitcoinRefundPublishedPage {...state.curr.content} />;
@@ -109,6 +113,14 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
         return <BitcoinEarlyRefundedPage {...state.curr.content} />;
       }
       break;
+    case "BtcPartialRefundPublished":
+      return <BitcoinPartialRefundPublished />;
+    case "BtcPartiallyRefunded":
+      return <BitcoinPartiallyRefunded />;
+    case "BtcAmnestyPublished":
+      return <BitcoinAmnestyPublished />;
+    case "BtcAmnestyReceived":
+      return <BitcoinAmnestyReceived />;
 
     //// 4 different types of Bitcoin punished states we can be in
     case "BtcPunished":

@@ -50,9 +50,13 @@ export enum BobStateName {
   CancelTimelockExpired = "cancel timelock is expired",
   BtcCancelled = "btc is cancelled",
   BtcRefundPublished = "btc refund is published",
+  BtcPartialRefundPublished = "btc partial refund is published",
   BtcEarlyRefundPublished = "btc early refund is published",
   BtcRefunded = "btc is refunded",
   BtcEarlyRefunded = "btc is early refunded",
+  BtcPartiallyRefunded = "btc is partially refunded",
+  BtcAmnestyPublished = "btc amnesty is published",
+  BtcAmnestyReceived = "btc amnesty is confirmed",
   XmrRedeemed = "xmr is redeemed",
   BtcPunished = "btc is punished",
   SafelyAborted = "safely aborted",
@@ -84,10 +88,18 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Bitcoin refund published";
     case BobStateName.BtcEarlyRefundPublished:
       return "Bitcoin early refund published";
+    case BobStateName.BtcPartialRefundPublished:
+      return "Bitcoin partial refund published";
+    case BobStateName.BtcAmnestyPublished:
+      return "Bitcoin amnesty was granted";
     case BobStateName.BtcRefunded:
       return "Bitcoin refunded";
     case BobStateName.BtcEarlyRefunded:
       return "Bitcoin early refunded";
+    case BobStateName.BtcPartiallyRefunded:
+      return "Bitcoin partially refunded";
+    case BobStateName.BtcAmnestyReceived:
+      return "Bitcoin amnesty was received";
     case BobStateName.XmrRedeemed:
       return "Monero redeemed";
     case BobStateName.BtcPunished:
@@ -133,6 +145,10 @@ export type BobStateNameRunningSwap = Exclude<
   | BobStateName.Started
   | BobStateName.SwapSetupCompleted
   | BobStateName.BtcRefunded
+  | BobStateName.BtcPartiallyRefunded
+  | BobStateName.BtcAmnestyPublished
+  | BobStateName.BtcAmnestyReceived
+  | BobStateName.BtcRefunded
   | BobStateName.BtcEarlyRefunded
   | BobStateName.BtcPunished
   | BobStateName.SafelyAborted
@@ -151,6 +167,9 @@ export function isBobStateNameRunningSwap(
     BobStateName.SwapSetupCompleted,
     BobStateName.BtcRefunded,
     BobStateName.BtcEarlyRefunded,
+    BobStateName.BtcPartiallyRefunded,
+    BobStateName.BtcAmnestyPublished,
+    BobStateName.BtcAmnestyReceived,
     BobStateName.BtcPunished,
     BobStateName.SafelyAborted,
     BobStateName.XmrRedeemed,

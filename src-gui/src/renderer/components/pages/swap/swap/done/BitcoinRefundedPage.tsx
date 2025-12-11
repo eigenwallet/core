@@ -91,3 +91,25 @@ function MultiBitcoinRefundedPage({
     </>
   );
 }
+
+export function BitcoinPartialRefundPublished() {
+  return (
+    <>TxPartialRefund published</>
+  )
+}
+
+export function BitcoinPartiallyRefunded() {
+  return (
+    <>Bitcoin partially refunded</>
+  )
+}
+export function BitcoinAmnestyPublished() {
+  return (
+    <>TxAmnesty published</>
+  )
+}
+export function BitcoinAmnestyReceived() {
+  return (
+    <>Bitcoin amnesty received</>
+  )
+}
