@@ -108,9 +108,13 @@ fmt:
 generate-sqlx-cache:
 	./dev-scripts/regenerate_sqlx_cache.sh
 
+
+alias eslint := check_gui_eslint
 # Run eslint for the GUI frontend
 check_gui_eslint:
 	cd src-gui && yarn run eslint
+
+alias tsc := check_gui_tsc
 
 # Run the typescript type checker for the GUI frontend
 check_gui_tsc:
