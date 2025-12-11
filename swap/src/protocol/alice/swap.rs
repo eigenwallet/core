@@ -1,5 +1,6 @@
 //! Run an XMR/BTC swap in the role of Alice.
 //! Alice holds XMR and wishes receive BTC.
+use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -648,7 +649,7 @@ where
             transfer_proof,
             spend_key,
             state3,
-            ..
+            monero_wallet_restore_blockheight,
         } => AliceState::XmrRefundable {
             monero_wallet_restore_blockheight,
             transfer_proof,
@@ -660,12 +661,18 @@ where
             spend_key,
             state3,
             monero_wallet_restore_blockheight,
-        } => AliceState::XmrRefundable {
-            monero_wallet_restore_blockheight,
-            transfer_proof,
-            spend_key,
-            state3,
-        },
+        } => {
+            let should_grant_amnesty = true;
+
+            // TODO: Publish amnesty transaction/send amnesty tx sig / decide against it
+
+            AliceState::XmrRefundable {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                spend_key,
+                state3,
+            }
+        }
         AliceState::XmrRefundable {
             monero_wallet_restore_blockheight,
             transfer_proof,

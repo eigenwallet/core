@@ -147,6 +147,7 @@ impl fmt::Display for AliceState {
             AliceState::BtcEarlyRefundable { .. } => write!(f, "btc is early refundable"),
             AliceState::BtcEarlyRefunded(_) => write!(f, "btc is early refunded"),
             AliceState::BtcPartiallyRefunded { .. } => write!(f, "btc is partially refunded"),
+            AliceState::XmrRefundable { .. } => write!(f, "xmr is refundable"),
         }
     }
 }

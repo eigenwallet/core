@@ -87,9 +87,11 @@ pub async fn redeem(
         | AliceState::CancelTimelockExpired { .. }
         | AliceState::BtcCancelled { .. }
         | AliceState::BtcRefunded { .. }
+        | AliceState::BtcPartiallyRefunded { .. }
         | AliceState::BtcPunishable { .. }
         | AliceState::BtcRedeemed
         | AliceState::XmrRefunded
+        | AliceState::XmrRefundable { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }
