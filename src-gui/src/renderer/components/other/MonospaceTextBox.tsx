@@ -17,9 +17,9 @@ export default function MonospaceTextBox({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        backgroundColor: light ? "transparent" : theme.palette.grey[900],
-        borderRadius: 2,
-        border: light ? `1px solid ${theme.palette.grey[800]}` : "none",
+        backgroundColor: theme.palette.action.hover,
+        borderRadius: theme.shape.borderRadius,
+        border: "none",
         padding: theme.spacing(1),
         gap: 1,
       })}
