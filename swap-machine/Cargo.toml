@@ -9,6 +9,7 @@ async-trait = { workspace = true }
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
 curve25519-dalek = { workspace = true }
+curve25519-dalek-ng = { workspace = true }
 ecdsa_fun = { workspace = true }
 libp2p = { workspace = true }
 monero = { workspace = true }

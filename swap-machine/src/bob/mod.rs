@@ -17,6 +17,8 @@ use swap_core::bitcoin::{
     self, current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
     TxLock, Txid,
 };
+use swap_core::compat::IntoDalekNg;
+use swap_core::monero;
 use swap_core::monero::primitives::WatchRequest;
 use swap_core::monero::ScalarExt;
 use swap_core::monero::{self, TransferProof};
@@ -179,7 +181,8 @@ impl State0 {
         let s_b = monero::Scalar::random(rng);
         let v_b = monero::PrivateViewKey::new_random(rng);
 
-        let (dleq_proof_s_b, (S_b_bitcoin, S_b_monero)) = CROSS_CURVE_PROOF_SYSTEM.prove(&s_b, rng);
+        let (dleq_proof_s_b, (S_b_bitcoin, S_b_monero)) =
+            CROSS_CURVE_PROOF_SYSTEM.prove(&s_b.into_dalek_ng(), rng);
 
         Self {
             swap_id,
@@ -467,28 +470,23 @@ pub struct State3 {
 }
 
 impl State3 {
-    pub fn lock_xmr_watch_request(
-        &self,
-        transfer_proof: TransferProof,
-        confirmation_target: u64,
-    ) -> WatchRequest {
-        let S_b_monero =
-            monero::PublicKey::from_private_key(&monero::PrivateKey::from_scalar(self.s_b));
+    pub fn xmr_view_keys(&self) -> (monero::PublicKey, monero::PrivateViewKey) {
+        let S_b_monero = monero::PublicKey::from_private_key(&monero::PrivateKey::from_scalar(
+            self.s_b.into_dalek_ng(),
+        ));
         let S = self.S_a_monero + S_b_monero;
 
-        WatchRequest {
-            public_spend_key: S,
-            public_view_key: self.v.public(),
-            transfer_proof,
-            confirmation_target,
-            expected_amount: self.xmr.into(),
-        }
+        (S, self.v)
+    }
+
+    pub fn xmr_amount(&self) -> monero::Amount {
+        self.xmr
     }
 
     pub fn xmr_locked(
         self,
         monero_wallet_restore_blockheight: BlockHeight,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: TransferProofMaybeWithTxKey,
     ) -> State4 {
         State4 {
             A: self.A,
@@ -619,9 +617,9 @@ impl State4 {
             let tx_redeem_sig =
                 tx_redeem.extract_signature_by_key(tx_redeem_candidate, self.b.public())?;
             let s_a = bitcoin::recover(self.S_a_bitcoin, tx_redeem_sig, tx_redeem_encsig)?;
-            let s_a = monero::PrivateKey::from_scalar(monero::private_key_from_secp256k1_scalar(
-                s_a.into(),
-            ));
+            let s_a = monero::PrivateKey::from_scalar(
+                monero::private_key_from_secp256k1_scalar(s_a.into()).into_dalek_ng(),
+            );
 
             Ok(Some(State5 {
                 s_a,
@@ -724,7 +722,9 @@ pub struct State5 {
 
 impl State5 {
     pub fn xmr_keys(&self) -> (monero::PrivateKey, monero::PrivateViewKey) {
-        let s_b = monero::PrivateKey { scalar: self.s_b };
+        let s_b = monero::PrivateKey {
+            scalar: self.s_b.into_dalek_ng(),
+        };
         let s = self.s_a + s_b;
 
         (s, self.v)
@@ -884,7 +884,7 @@ impl State6 {
         s_a: monero::Scalar,
         lock_transfer_proof: TransferProof,
     ) -> State5 {
-        let s_a = monero::PrivateKey::from_scalar(s_a);
+        let s_a = monero::PrivateKey::from_scalar(s_a.into_dalek_ng());
 
         State5 {
             s_a,

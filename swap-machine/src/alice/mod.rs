@@ -11,6 +11,7 @@ use swap_core::bitcoin::{
     current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
     TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
 };
+use swap_core::compat::IntoDalekNg;
 use swap_core::monero;
 use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
 use swap_core::monero::ScalarExt;
@@ -175,7 +176,8 @@ impl State0 {
         let v_a = monero::PrivateViewKey::new_random(rng);
 
         let s_a = monero::Scalar::random(rng);
-        let (dleq_proof_s_a, (S_a_bitcoin, S_a_monero)) = CROSS_CURVE_PROOF_SYSTEM.prove(&s_a, rng);
+        let (dleq_proof_s_a, (S_a_bitcoin, S_a_monero)) =
+            CROSS_CURVE_PROOF_SYSTEM.prove(&s_a.into_dalek_ng(), rng);
 
         Self {
             a,
@@ -493,7 +495,9 @@ impl State3 {
     }
 
     pub fn lock_xmr_transfer_request(&self) -> TransferRequest {
-        let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey { scalar: self.s_a });
+        let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey {
+            scalar: self.s_a.into_dalek_ng(),
+        });
 
         let public_spend_key = S_a + self.S_b_monero;
         let public_view_key = self.v.public();
@@ -510,7 +514,9 @@ impl State3 {
         transfer_proof: TransferProof,
         conf_target: u64,
     ) -> WatchRequest {
-        let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey { scalar: self.s_a });
+        let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey {
+            scalar: self.s_a.into_dalek_ng(),
+        });
 
         let public_spend_key = S_a + self.S_b_monero;
         let public_view_key = self.v.public();
@@ -560,12 +566,14 @@ impl State3 {
         signed_refund_tx: Arc<bitcoin::Transaction>,
     ) -> Result<monero::PrivateKey> {
         Ok(monero::PrivateKey::from_scalar(
-            self.tx_refund().extract_monero_private_key(
-                signed_refund_tx,
-                self.s_a,
-                self.a.clone(),
-                self.S_b_bitcoin,
-            )?,
+            self.tx_refund()
+                .extract_monero_private_key(
+                    signed_refund_tx,
+                    self.s_a,
+                    self.a.clone(),
+                    self.S_b_bitcoin,
+                )?
+                .into_dalek_ng(),
         ))
     }
 

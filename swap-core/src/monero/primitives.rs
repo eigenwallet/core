@@ -52,7 +52,7 @@ impl fmt::Display for PrivateViewKey {
 impl PrivateViewKey {
     pub fn new_random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
         let scalar = Scalar::random(rng);
-        let private_key = PrivateKey::from_scalar(scalar);
+        let private_key = PrivateKey::from_slice(scalar.as_bytes()).expect("bytes of curve25519-dalek Scalar should by decodable to a PrivateKey which uses curve25519-dalek-ng under the hood");
 
         Self(private_key)
     }
