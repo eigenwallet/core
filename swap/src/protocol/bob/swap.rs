@@ -7,8 +7,8 @@ use crate::monero::MoneroAddressPool;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::common::{
-    InfallibleVerifyXmrLockTransaction, WaitForBtcRedeem, WaitForIncomingXmrLockTransaction,
-    WaitForXmrLockTransactionConfirmation, XmrRedeemable,
+    InfallibleVerifyXmrLockTransaction, RecvTransferProof, WaitForBtcRedeem,
+    WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation, XmrRedeemable,
 };
 use crate::protocol::bob::*;
 use crate::protocol::{bob, Database};
@@ -88,6 +88,8 @@ pub async fn run_until(
     Ok(current_state)
 }
 
+// TODO: We have a lot of nested retry logic here which is not very nice.
+// We retry inside the EventLoop and we also retry inside the state machine.
 #[allow(clippy::too_many_arguments)]
 async fn next_state(
     swap_id: Uuid,
@@ -174,7 +176,7 @@ async fn next_state(
             match approval_result {
                 Ok(true) => {
                     tracing::debug!(
-                        "User approved swap offer, fetching current Monero blockheight"
+                        "User approved swap offer. Fetching current Monero blockheight."
                     );
 
                     // Record the current monero wallet block height so we don't have to scan from
@@ -207,7 +209,7 @@ async fn next_state(
 
                     tracing::debug!(
                         %monero_wallet_restore_blockheight,
-                        "User approved swap offer, recording monero wallet restore blockheight",
+                        "Recording monero wallet restore blockheight",
                     );
 
                     BobState::BtcLockReadyToPublish {
@@ -247,6 +249,7 @@ async fn next_state(
                     // Check if the transaction has already been broadcasted
                     // It could be that the operation was aborted after the transaction reached the Electrum server
                     // but before we transitioned to the BtcLocked state
+                    // TODO: We could also only check this if the broadcast failed
                     if state3
                         .is_tx_lock_published(&*bitcoin_wallet)
                         .await
@@ -312,14 +315,6 @@ async fn next_state(
                 });
             }
 
-            let wait_for_incoming_xmr_lock_transaction = state3
-                .wait_for_incoming_xmr_lock_transaction(
-                    &monero_wallet,
-                    swap_id,
-                    monero_wallet_restore_blockheight,
-                );
-
-            let transfer_proof_watcher = event_loop_handle.recv_transfer_proof();
             let cancel_timelock_expires = tx_lock_status.wait_until(|status| {
                 // Emit a tauri event on new confirmations
                 // TODO: Extract this into some helper function?
@@ -358,6 +353,13 @@ async fn next_state(
                 status.is_confirmed_with(state3.cancel_timelock)
             });
 
+            let wait_for_incoming_xmr_lock_transaction = state3
+                .wait_for_incoming_xmr_lock_transaction(
+                    &monero_wallet,
+                    swap_id,
+                    monero_wallet_restore_blockheight,
+                );
+
             // Wait until any of these things happens:
             // - We see the early refund transaction published by Alice
             // - Alice sends us the XMR transfer proof
@@ -369,10 +371,7 @@ async fn next_state(
                     BobState::BtcEarlyRefundPublished(state3.cancel(monero_wallet_restore_blockheight))
                 },
                 // Wait for Alice to send us the transfer proof for the Monero she locked
-                transfer_proof = transfer_proof_watcher => {
-                    // TODO: Retry this? It can fail
-                    let transfer_proof = transfer_proof?;
-
+                transfer_proof = state3.infallible_recv_transfer_proof(event_loop_handle) => {
                     tracing::info!(transfer_proof = ?transfer_proof, "Received Monero transfer proof from Alice");
 
                     BobState::XmrLockTransactionCandidate {
@@ -383,14 +382,11 @@ async fn next_state(
                 },
                 // Wait for Monero lock to be scanned
                 incoming_xmr_lock_transaction = wait_for_incoming_xmr_lock_transaction => {
-                    // TODO: Make this infallible with retries
-                    let incoming_xmr_lock_transaction = incoming_xmr_lock_transaction?;
-
-                    tracing::info!(txid = %incoming_xmr_lock_transaction, "Found potential Monero lock transaction during scanning of the view-only wallet");
+                    tracing::info!(txid = %incoming_xmr_lock_transaction, "Identified Monero lock transaction candidate during scanning of the view-only wallet");
 
                     let lock_transfer_proof = monero::TransferProofMaybeWithTxKey::new_without_tx_key(incoming_xmr_lock_transaction);
 
-                    BobState::XmrLockTransactionSeen {
+                    BobState::XmrLockTransactionCandidate {
                         state: state3,
                         lock_transfer_proof,
                         monero_wallet_restore_blockheight
@@ -411,7 +407,7 @@ async fn next_state(
             lock_transfer_proof,
             monero_wallet_restore_blockheight,
         } => {
-            tracing::info!(transfer_proof = %lock_transfer_proof.tx_hash(), "Validating Monero lock transaction");
+            tracing::info!(transfer_proof = %lock_transfer_proof.tx_hash(), "Validating Monero lock transaction candidate");
 
             let (tx_early_refund_status, tx_lock_status): (
                 bitcoin_wallet::Subscription,
@@ -471,7 +467,7 @@ async fn next_state(
                 bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
             );
 
-            let wait_for_confirmation = state.wait_for_xmr_lock_transaction_confirmation(
+            let wait_for_confirmation = state.infallible_wait_for_xmr_lock_confirmation(
                 &*monero_wallet,
                 lock_transfer_proof.tx_hash(),
                 env_config.monero_double_spend_safe_confirmations,
@@ -479,10 +475,7 @@ async fn next_state(
 
             select! {
                 // Wait for the Monero lock transaction to be fully confirmed
-                wait_for_confirmation_result = wait_for_confirmation => {
-                    // TODO: Retry here
-                    wait_for_confirmation_result.expect("this should never fail as monero-wallet-ng will retry indefinitely");
-
+                _ = wait_for_confirmation => {
                     BobState::XmrLocked(
                         state.xmr_locked(monero_wallet_restore_blockheight, lock_transfer_proof.clone())
                     )
@@ -580,7 +573,6 @@ async fn next_state(
                 state5 = state.infallible_wait_for_btc_redeem(&*bitcoin_wallet) => {
                     BobState::BtcRedeemed(state5)
                 },
-                // TODO: We should wait for tx_redeem here already because we might have sent the encrypted signature but Alice might not have sent us an acknowledgement
                 // Wait for the cancel timelock to expire
                 result = tx_lock_status.wait_until_confirmed_with(state.cancel_timelock) => {
                     result?;
@@ -682,8 +674,9 @@ async fn next_state(
         BobState::BtcRedeemed(state) => {
             // Now we wait for the full 10 confirmations on the Monero lock transaction
             // because we simply cannot spend it if we don't have 10 confirmations
+            // TODO: Retry here
             state
-                .wait_for_xmr_lock_transaction_confirmation(
+                .infallible_wait_for_xmr_lock_confirmation(
                     &*monero_wallet,
                     state.lock_transfer_proof.tx_hash(),
                     10,
@@ -694,6 +687,7 @@ async fn next_state(
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::RedeemingMonero);
 
+            // TODO: Extract this into a infallible function with a trait
             let xmr_redeem_txid = retry(
                 "Redeeming Monero",
                 || async {
@@ -946,8 +940,11 @@ async fn next_state(
 
                     let state5 = state.attempt_cooperative_redeem(s_a, lock_transfer_proof.into());
 
+                    // TODO: Extract this into an infallible function with a trait
+                    // TODO: This is duplicated in the transition from BtcRedeemed to XmrRedeemed
+                    // TODO: We should transition into BtcRedeemed here. We should rename BtcRedeemed to something like "XmrRedeemable" 
                     state5
-                        .wait_for_xmr_lock_transaction_confirmation(
+                        .infallible_wait_for_xmr_lock_confirmation(
                             &*monero_wallet,
                             state5.lock_transfer_proof.tx_hash(),
                             10,

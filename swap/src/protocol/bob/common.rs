@@ -7,6 +7,7 @@ use bitcoin_wallet;
 use swap_core::monero::TxHash;
 use swap_machine::bob::{State3, State4, State5};
 
+use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
 use crate::monero::MoneroAddressPool;
@@ -18,15 +19,6 @@ pub(super) trait XmrRedeemable {
         swap_id: Uuid,
         monero_receive_pool: MoneroAddressPool,
     ) -> Result<TxHash>;
-}
-
-pub(super) trait WaitForIncomingXmrLockTransaction {
-    async fn wait_for_incoming_xmr_lock_transaction(
-        &self,
-        monero_wallet: &monero::Wallets,
-        swap_id: Uuid,
-        monero_wallet_restore_blockheight: monero::BlockHeight,
-    ) -> Result<monero::TxHash>;
 }
 
 impl XmrRedeemable for State5 {
@@ -72,26 +64,42 @@ impl XmrRedeemable for State5 {
     }
 }
 
+pub(super) trait WaitForIncomingXmrLockTransaction {
+    async fn wait_for_incoming_xmr_lock_transaction(
+        &self,
+        monero_wallet: &monero::Wallets,
+        swap_id: Uuid,
+        monero_wallet_restore_blockheight: monero::BlockHeight,
+    ) -> monero::TxHash;
+}
+
 impl WaitForIncomingXmrLockTransaction for State3 {
     async fn wait_for_incoming_xmr_lock_transaction(
         &self,
         monero_wallet: &monero::Wallets,
         _swap_id: Uuid,
         monero_wallet_restore_blockheight: monero::BlockHeight,
-    ) -> Result<monero::TxHash> {
+    ) -> monero::TxHash {
         let (public_spend_key, private_view_key) = self.xmr_view_keys();
 
-        let tx_hash = monero_wallet
-            .wait_for_incoming_transfer_ng(
-                public_spend_key,
-                private_view_key,
-                self.xmr_amount(),
-                monero_wallet_restore_blockheight,
-            )
-            .await
-            .context("Failed to find incoming XMR lock transaction")?;
-
-        Ok(tx_hash)
+        retry(
+            "Waiting for incoming XMR lock transaction",
+            || async move {
+                monero_wallet
+                    .wait_for_incoming_transfer_ng(
+                        public_spend_key,
+                        private_view_key,
+                        self.xmr_amount(),
+                        monero_wallet_restore_blockheight,
+                    )
+                    .await
+                    .map_err(backoff::Error::transient)
+            },
+            None,
+            None,
+        )
+        .await
+        .expect("we never stop retrying to wait for incoming XMR lock transaction")
     }
 }
 
@@ -100,15 +108,6 @@ pub(super) trait VerifyXmrLockTransaction {
         &self,
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
-    ) -> Result<bool>;
-}
-
-pub(super) trait WaitForXmrLockTransactionConfirmation {
-    async fn wait_for_xmr_lock_transaction_confirmation(
-        &self,
-        monero_wallet: &monero::Wallets,
-        tx_hash: monero::TxHash,
-        confirmation_target: u64,
     ) -> Result<bool>;
 }
 
@@ -173,31 +172,65 @@ where
     }
 }
 
+pub(super) trait WaitForXmrLockTransactionConfirmation {
+    async fn infallible_wait_for_xmr_lock_confirmation(
+        &self,
+        monero_wallet: &monero::Wallets,
+        tx_hash: monero::TxHash,
+        confirmation_target: u64,
+    ) -> Result<bool>;
+}
+
 impl WaitForXmrLockTransactionConfirmation for State3 {
-    async fn wait_for_xmr_lock_transaction_confirmation(
+    async fn infallible_wait_for_xmr_lock_confirmation(
         &self,
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
     ) -> Result<bool> {
-        monero_wallet
-            .wait_until_confirmed_ng(&tx_hash, confirmation_target, None::<fn((u64, u64))>)
-            .await?;
-        Ok(true)
+        retry(
+            "Waiting for XMR lock transaction confirmation",
+            || {
+                let tx_hash = tx_hash.clone();
+                
+                async move {
+                    monero_wallet
+                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, None::<fn((u64, u64))>)
+                        .await
+                        .map(|_| true)
+                        .map_err(backoff::Error::transient)
+                }
+            },
+            None,
+            None,
+        )
+        .await
     }
 }
 
 impl WaitForXmrLockTransactionConfirmation for State5 {
-    async fn wait_for_xmr_lock_transaction_confirmation(
+    async fn infallible_wait_for_xmr_lock_confirmation(
         &self,
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
     ) -> Result<bool> {
-        monero_wallet
-            .wait_until_confirmed_ng(&tx_hash, confirmation_target, None::<fn((u64, u64))>)
-            .await?;
-        Ok(true)
+        retry(
+            "Waiting for XMR lock transaction confirmation",
+            || {
+                let tx_hash = tx_hash.clone();
+                async move {
+                    monero_wallet
+                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, None::<fn((u64, u64))>)
+                        .await
+                        .map(|_| true)
+                        .map_err(backoff::Error::transient)
+                }
+            },
+            None,
+            None,
+        )
+        .await
     }
 }
 
@@ -229,5 +262,32 @@ impl WaitForBtcRedeem for State4 {
         )
         .await
         .expect("we never stop retrying to wait for Bitcoin redeem transaction")
+    }
+}
+
+pub(super) trait RecvTransferProof {
+    async fn infallible_recv_transfer_proof(
+        &self,
+        event_loop_handle: &mut SwapEventLoopHandle,
+    ) -> monero::TransferProof;
+}
+
+impl RecvTransferProof for State3 {
+    async fn infallible_recv_transfer_proof(
+        &self,
+        event_loop_handle: &mut SwapEventLoopHandle,
+    ) -> monero::TransferProof {
+        // TODO: Use a cleaner retry mechanism here
+        // We cannot use the retry function here because we need mut access to the handle
+        // Maybe we can use some macro here?
+        loop {
+            match event_loop_handle.recv_transfer_proof().await {
+                Ok(proof) => return proof,
+                Err(e) => {
+                    tracing::warn!("Failed to receive transfer proof: {:#}, retrying in 1s", e);
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
     }
 }
