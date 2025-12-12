@@ -623,9 +623,14 @@ async fn run_swap_setup(
         "Transitioned into state2 during swap setup",
     );
 
-    write_cbor_message(&mut substream, state2.next_message())
-        .await
-        .context("Failed to send state2 message")?;
+    write_cbor_message(
+        &mut substream,
+        state2
+            .next_message()
+            .context("Couldn't construct Message4")?,
+    )
+    .await
+    .context("Failed to send state2 message")?;
 
     substream
         .flush()

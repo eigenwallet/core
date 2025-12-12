@@ -63,7 +63,7 @@ pub struct Message1 {
 #[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message2 {
-    pub psbt: bitcoin::PartiallySignedTransaction,
+    pub tx_lock_psbt: bitcoin::PartiallySignedTransaction,
 }
 
 #[allow(non_snake_case)]
@@ -71,7 +71,7 @@ pub struct Message2 {
 pub struct Message3 {
     pub tx_cancel_sig: bitcoin::Signature,
     /// The following fields were reworked in [#675](https://github.com/eigenwallet/core/pull/675).
-    /// Alice _may_ choose to commit to a full refund during the swap setup already, but doesn't
+    /// Alice _may_ choose to commit to a full refund for bob during the swap setup already, but doesn't
     /// have to.
     pub tx_partial_refund_encsig: bitcoin::EncryptedSignature,
     pub tx_full_refund_encsig: Option<bitcoin::EncryptedSignature>,
@@ -84,6 +84,7 @@ pub struct Message4 {
     pub tx_punish_sig: bitcoin::Signature,
     pub tx_cancel_sig: bitcoin::Signature,
     pub tx_early_refund_sig: bitcoin::Signature,
+    pub tx_refund_amnesty_sig: bitcoin::Signature,
 }
 
 #[allow(clippy::large_enum_variant)]

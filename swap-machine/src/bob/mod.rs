@@ -14,8 +14,8 @@ use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    self, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxLock, Txid,
-    current_epoch,
+    self, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxLock,
+    TxPartialRefund, TxRefundAmnesty, Txid, current_epoch,
 };
 use swap_core::monero::ScalarExt;
 use swap_core::monero::primitives::WatchRequest;
@@ -380,7 +380,7 @@ pub struct State1 {
 impl State1 {
     pub fn next_message(&self) -> Message2 {
         Message2 {
-            psbt: self.tx_lock.clone().into(),
+            tx_lock_psbt: self.tx_lock.clone().into(),
         }
     }
 
@@ -507,7 +507,7 @@ pub struct State2 {
 }
 
 impl State2 {
-    pub fn next_message(&self) -> Message4 {
+    pub fn next_message(&self) -> Result<Message4> {
         let tx_cancel = TxCancel::new(
             &self.tx_lock,
             self.cancel_timelock,
@@ -532,11 +532,31 @@ impl State2 {
 
         let tx_early_refund_sig = self.b.sign(tx_early_refund.digest());
 
-        Message4 {
+        let tx_partial_refund = TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.A,
+            self.b.public(),
+            self.btc_amnesty_amount
+                .context("missing btc_amnesty_amount")?,
+            self.tx_partial_refund_fee
+                .context("missing tx_partial_refund_fee")?,
+        )
+        .context("Couldn't construct TxPartialRefund")?;
+        let tx_refund_amnesty = TxRefundAmnesty::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_refund_amnesty_fee
+                .context("Missing tx_refund_amnesty_fee")?,
+        );
+        let tx_refund_amnesty_sig = self.b.sign(tx_refund_amnesty.digest());
+
+        Ok(Message4 {
             tx_punish_sig,
             tx_cancel_sig,
             tx_early_refund_sig,
-        }
+            tx_refund_amnesty_sig,
+        })
     }
 
     pub async fn lock_btc(self) -> Result<(State3, TxLock)> {

@@ -5,11 +5,11 @@ use anyhow::{Context, Result, anyhow, bail};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::sync::Arc;
 use swap_core::bitcoin::{
     CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
-    TxFullRefund, TxPartialRefund, TxPunish, TxRedeem, Txid, current_epoch,
+    TxFullRefund, TxPartialRefund, TxPunish, TxRedeem, TxRefundAmnesty, Txid, current_epoch,
 };
 use swap_core::monero;
 use swap_core::monero::ScalarExt;
@@ -63,6 +63,9 @@ pub enum AliceState {
         state3: Box<State3>,
     },
     BtcEarlyRefunded(Box<State3>),
+    // We enter the refund states regardless of whether or not the refund
+    // transaction was confirmed because we do not care. We can extract the key
+    // we need to refund ourself regardless.
     BtcRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -313,9 +316,13 @@ impl State1 {
     }
 
     pub fn receive(self, msg: Message2) -> Result<State2> {
-        let tx_lock =
-            swap_core::bitcoin::TxLock::from_psbt(msg.psbt, self.a.public(), self.B, self.btc)
-                .context("Failed to re-construct TxLock from received PSBT")?;
+        let tx_lock = swap_core::bitcoin::TxLock::from_psbt(
+            msg.tx_lock_psbt,
+            self.a.public(),
+            self.B,
+            self.btc,
+        )
+        .context("Failed to re-construct TxLock from received PSBT")?;
 
         Ok(State2 {
             a: self.a,
@@ -450,6 +457,33 @@ impl State2 {
         )
         .context("Failed to verify early refund transaction")?;
 
+        // Create TxRefundAmnesty ourself
+        let tx_partial_refund = TxPartialRefund::new(
+            &tx_cancel,
+            &self.refund_address,
+            self.a.public(),
+            self.B,
+            self.btc_amnesty_amount
+                .context("missing btc_amnesty_amount")?,
+            self.tx_partial_refund_fee
+                .context("missing tx_partial_refund_fee")?,
+        )
+        .context("Couldn't construct TxPartialRefund")?;
+        let tx_refund_amnesty = TxRefundAmnesty::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_refund_amnesty_fee
+                .context("missing tx_refund_amnesty_fee")?,
+        );
+
+        // Check if the provided signature by Bob is valid for the transaction
+        swap_core::bitcoin::verify_sig(
+            &self.B,
+            &tx_refund_amnesty.digest(),
+            &msg.tx_refund_amnesty_sig,
+        )
+        .context("Failed to verify refund amnesty transaction")?;
+
         Ok(State3 {
             a: self.a,
             B: self.B,
@@ -469,6 +503,7 @@ impl State2 {
             tx_punish_sig_bob: msg.tx_punish_sig,
             tx_cancel_sig_bob: msg.tx_cancel_sig,
             tx_early_refund_sig_bob: msg.tx_early_refund_sig.into(),
+            tx_refund_amnesty_sig_bob: msg.tx_refund_amnesty_sig.into(),
             tx_redeem_fee: self.tx_redeem_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_refund_fee: self.tx_refund_fee,
@@ -513,6 +548,12 @@ pub struct State3 {
     /// to wait for the timelock to expire.
     #[serde(default)]
     tx_early_refund_sig_bob: Option<swap_core::bitcoin::Signature>,
+    /// This field was added in PR [#675](https://github.com/eigenwallet/core/pull/344).
+    /// It is optional to maintain backwards compatibility with old swaps in the database.
+    /// Bob must send this to us during swap setup, in order for us to publish TxRefundAmnesty
+    /// in case of a refund. Otherwise Bob will only be partially refunded.
+    #[serde(default)]
+    tx_refund_amnesty_sig_bob: Option<swap_core::bitcoin::Signature>,
     tx_redeem_fee: bitcoin::Amount,
     pub tx_punish_fee: bitcoin::Amount,
     pub tx_refund_fee: bitcoin::Amount,
@@ -662,6 +703,24 @@ impl State3 {
         let transaction = self.signed_cancel_transaction()?;
         let (tx_id, _) = bitcoin_wallet.broadcast(transaction, "cancel").await?;
         Ok(tx_id)
+    }
+
+    pub fn signed_bitcoin_amnesty_transaction(&self) -> Result<Transaction> {
+        let tx_partial_refund = self.tx_partial_refund()?;
+        let tx_amnesty = TxRefundAmnesty::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_refund_amnesty_fee
+                .context("Missing tx_refund_amnesty_fee")?,
+        );
+
+        tx_amnesty.complete_as_alice(
+            self.a.clone(),
+            self.B,
+            self.tx_refund_amnesty_sig_bob
+                .clone()
+                .context("missing Bob's signature for TxRefundAmnesty")?,
+        )
     }
 
     pub async fn punish_btc(

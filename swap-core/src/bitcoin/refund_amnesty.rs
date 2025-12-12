@@ -1,11 +1,9 @@
 use crate::bitcoin::partial_refund::TxPartialRefund;
-use crate::bitcoin::{
-    Address, Amount, PublicKey, Transaction,
-};
+use crate::bitcoin::{self, Address, Amount, PublicKey, Transaction};
 use ::bitcoin::sighash::SighashCache;
-use ::bitcoin::{secp256k1, ScriptBuf, Weight};
-use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
-use anyhow::Result;
+use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
+use ::bitcoin::{ScriptBuf, Weight, secp256k1};
+use anyhow::{Context, Result};
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
@@ -20,8 +18,13 @@ pub struct TxRefundAmnesty {
 }
 
 impl TxRefundAmnesty {
-    pub fn new(tx_refund: &TxPartialRefund, refund_address: &Address, spending_fee: Amount) -> Self {
-        let tx_refund_amnesty = tx_refund.build_amnesty_spend_transaction(refund_address, spending_fee);
+    pub fn new(
+        tx_refund: &TxPartialRefund,
+        refund_address: &Address,
+        spending_fee: Amount,
+    ) -> Self {
+        let tx_refund_amnesty =
+            tx_refund.build_amnesty_spend_transaction(refund_address, spending_fee);
 
         let digest = SighashCache::new(&tx_refund_amnesty)
             .p2wsh_signature_hash(
@@ -51,6 +54,20 @@ impl TxRefundAmnesty {
         self.digest
     }
 
+    pub fn complete_as_alice(
+        &self,
+        s_a: bitcoin::SecretKey,
+        B: bitcoin::PublicKey,
+        sig_b: Signature,
+    ) -> Result<Transaction> {
+        let digest = self.digest();
+        let sig_a = s_a.sign(digest);
+
+        self.clone()
+            .add_signatures((s_a.public(), sig_a), (B, sig_b))
+            .context("Couldn't add signatures to transaction")
+    }
+
     pub fn add_signatures(
         self,
         (A, sig_a): (PublicKey, Signature),
@@ -70,7 +87,7 @@ impl TxRefundAmnesty {
 
             let sig_a = secp256k1::ecdsa::Signature::from_compact(&sig_a.to_bytes())?;
             let sig_b = secp256k1::ecdsa::Signature::from_compact(&sig_b.to_bytes())?;
-            
+
             // The order in which these are inserted doesn't matter
             satisfier.insert(
                 A,

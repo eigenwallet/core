@@ -89,7 +89,7 @@ mod tests {
         let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
-        let bob_message4 = bob_state2.next_message();
+        let bob_message4 = bob_state2.next_message().unwrap();
 
         let alice_state3 = alice_state2.receive(bob_message4).unwrap();
 
@@ -202,7 +202,7 @@ mod tests {
         let alice_message3 = alice_state2.next_message().unwrap();
 
         let bob_state2 = bob_state1.receive(alice_message3).unwrap();
-        let bob_message4 = bob_state2.next_message();
+        let bob_message4 = bob_state2.next_message().unwrap();
 
         let alice_state3 = alice_state2.receive(bob_message4).unwrap();
 
