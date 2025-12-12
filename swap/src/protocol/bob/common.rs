@@ -192,10 +192,14 @@ impl WaitForXmrLockTransactionConfirmation for State3 {
             "Waiting for XMR lock transaction confirmation",
             || {
                 let tx_hash = tx_hash.clone();
-                
+
                 async move {
                     monero_wallet
-                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, None::<fn((u64, u64))>)
+                        .wait_until_confirmed_ng(
+                            &tx_hash,
+                            confirmation_target,
+                            None::<fn((u64, u64))>,
+                        )
                         .await
                         .map(|_| true)
                         .map_err(backoff::Error::transient)
@@ -221,7 +225,11 @@ impl WaitForXmrLockTransactionConfirmation for State5 {
                 let tx_hash = tx_hash.clone();
                 async move {
                     monero_wallet
-                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, None::<fn((u64, u64))>)
+                        .wait_until_confirmed_ng(
+                            &tx_hash,
+                            confirmation_target,
+                            None::<fn((u64, u64))>,
+                        )
                         .await
                         .map(|_| true)
                         .map_err(backoff::Error::transient)

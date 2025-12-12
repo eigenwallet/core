@@ -942,7 +942,7 @@ async fn next_state(
 
                     // TODO: Extract this into an infallible function with a trait
                     // TODO: This is duplicated in the transition from BtcRedeemed to XmrRedeemed
-                    // TODO: We should transition into BtcRedeemed here. We should rename BtcRedeemed to something like "XmrRedeemable" 
+                    // TODO: We should transition into BtcRedeemed here. We should rename BtcRedeemed to something like "XmrRedeemable"
                     state5
                         .infallible_wait_for_xmr_lock_confirmation(
                             &*monero_wallet,
