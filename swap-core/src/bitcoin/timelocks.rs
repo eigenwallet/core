@@ -130,8 +130,8 @@ mod tests {
     use crate::bitcoin::*;
     use bitcoin::secp256k1;
     use bitcoin_wallet::*;
-    use ecdsa_fun::fun::marker::{NonZero, Public};
     use ecdsa_fun::fun::Point;
+    use ecdsa_fun::fun::marker::{NonZero, Public};
     use rand::rngs::OsRng;
 
     #[test]
@@ -186,7 +186,10 @@ mod tests {
 
         // It should be the same as TxRedeem and TxRefund weights since they have similar structure
         assert_eq!(TxEarlyRefund::weight() as u64, TxRedeem::weight().to_wu());
-        assert_eq!(TxEarlyRefund::weight() as u64, TxRefund::weight().to_wu());
+        assert_eq!(
+            TxEarlyRefund::weight() as u64,
+            TxFullRefund::weight().to_wu()
+        );
     }
 
     #[test]

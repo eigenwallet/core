@@ -1,5 +1,6 @@
 //! Run an XMR/BTC swap in the role of Alice.
 //! Alice holds XMR and wishes receive BTC.
+use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -269,7 +270,7 @@ where
                     // Retry repeatedly to broadcast tx_early_refund
                     result = async {
                         backoff::future::retry_notify(backoff, || async {
-                            bitcoin_wallet.broadcast(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
+                            bitcoin_wallet.ensure_broadcasted(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
                         }, |e, wait_time: Duration| {
                             tracing::warn!(
                                 %tx_early_refund_txid,
@@ -474,7 +475,7 @@ where
                 }
 
                 bitcoin_wallet
-                    .broadcast(tx_redeem.clone(), "redeem")
+                    .ensure_broadcasted(tx_redeem.clone(), "redeem")
                     .await
                     .map(Some)
                     .map_err(backoff::Error::transient)
@@ -607,8 +608,23 @@ where
                 .subscribe_to(Box::new(state3.tx_cancel()))
                 .await;
 
+            // We wait for either TxFullRefund or TxPartialRefund to be published
+            // - both allow us to extract the Monero refund key.
+            // Otherwise we punish, once that timelock expired.
+
+            // TODO: should we retry here?
             select! {
-                spend_key = state3.watch_for_btc_tx_refund(&*bitcoin_wallet) => {
+                spend_key = state3.watch_for_btc_tx_full_refund(&*bitcoin_wallet) => {
+                    let spend_key = spend_key?;
+
+                    AliceState::BtcRefunded {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        spend_key,
+                        state3,
+                    }
+                }
+                spend_key = state3.watch_for_btc_tx_partial_refund(&*bitcoin_wallet) => {
                     let spend_key = spend_key?;
 
                     AliceState::BtcRefunded {
@@ -633,7 +649,41 @@ where
             transfer_proof,
             spend_key,
             state3,
-            ..
+            monero_wallet_restore_blockheight,
+        } => AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
+        },
+        AliceState::BtcPartiallyRefunded {
+            transfer_proof,
+            spend_key,
+            state3,
+            monero_wallet_restore_blockheight,
+        } => {
+            // TODO: Publish amnesty transaction/send amnesty tx sig / decide against it
+            // TODO: retry, maybe in background? we don't want this to block us from refunding the Monero though
+            let tx_refund_amnesty = state3
+                .signed_bitcoin_amnesty_transaction()
+                .context("Couldn't construct Bitcoin refund amnesty transaction")?;
+
+            bitcoin_wallet
+                .ensure_broadcasted(tx_refund_amnesty, "refund amnesty")
+                .await?;
+
+            AliceState::XmrRefundable {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                spend_key,
+                state3,
+            }
+        }
+        AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
         } => {
             retry(
                 "Refund Monero",

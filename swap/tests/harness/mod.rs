@@ -13,6 +13,7 @@ use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
+use swap_env::config::RefundPolicy;
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -50,6 +51,7 @@ use uuid::Uuid;
 pub async fn setup_test<T, F, C>(
     _config: C,
     developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
     testfn: T,
 ) where
     T: Fn(TestContext) -> F,
@@ -158,6 +160,7 @@ pub async fn setup_test<T, F, C>(
         alice_bitcoin_wallet.clone(),
         alice_monero_wallet.clone(),
         developer_tip.clone(),
+        refund_policy.clone().unwrap_or_default(),
     )
     .await;
 
@@ -207,6 +210,7 @@ pub async fn setup_test<T, F, C>(
         bob_monero_wallet,
         developer_tip_monero_wallet,
         developer_tip,
+        refund_policy: refund_policy.unwrap_or_default(),
         monerod_container_id: containers._monerod_container.id().to_string(),
     };
 
@@ -298,6 +302,7 @@ async fn start_alice(
     bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 ) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
@@ -343,6 +348,7 @@ async fn start_alice(
         max_buy,
         None,
         developer_tip,
+        refund_policy,
     )
     .unwrap();
 
@@ -668,6 +674,7 @@ pub struct TestContext {
     btc_amount: bitcoin::Amount,
     xmr_amount: monero::Amount,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
@@ -713,6 +720,7 @@ impl TestContext {
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
             self.developer_tip.clone(),
+            self.refund_policy.clone(),
         )
         .await;
 

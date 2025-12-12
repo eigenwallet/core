@@ -760,6 +760,25 @@ impl Wallet {
         Ok((txid, subscription))
     }
 
+    /// Broadcast a transaction, but only if it's not already in the mempool/blockchain.
+    /// Return txid and a subcription to it's status in either case.
+    pub async fn ensure_broadcasted(
+        &self,
+        tx: Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        let txid = tx.compute_txid();
+
+        let status = self.status_of_script(&tx).await?;
+
+        if matches!(status, ScriptStatus::InMempool | ScriptStatus::Confirmed(_)) {
+            let subscription = self.subscribe_to(Box::new(tx)).await;
+            return Ok((txid, subscription));
+        }
+
+        self.broadcast(tx, kind).await
+    }
+
     pub async fn get_raw_transaction(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
         self.get_tx(txid)
             .await
@@ -2122,12 +2141,12 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
-    async fn broadcast(
+    async fn ensure_broadcasted(
         &self,
-        transaction: bitcoin::Transaction,
+        tx: bitcoin::Transaction,
         kind: &str,
     ) -> Result<(Txid, Subscription)> {
-        Wallet::broadcast(self, transaction, kind).await
+        Wallet::ensure_broadcasted(self, tx, kind).await
     }
 
     async fn sync(&self) -> Result<()> {
@@ -2893,6 +2912,14 @@ impl TestWalletBuilder {
 #[async_trait::async_trait]
 #[allow(unused)]
 impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
+    async fn ensure_broadcasted(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        unimplemented!("stub method called erroneously")
+    }
+
     async fn balance(&self) -> Result<Amount> {
         unimplemented!("stub method called erroneously")
     }
@@ -2929,14 +2956,6 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
-        unimplemented!("stub method called erroneously")
-    }
-
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, Subscription)> {
         unimplemented!("stub method called erroneously")
     }
 

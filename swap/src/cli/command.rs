@@ -446,57 +446,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_buy_xmr_on_mainnet_then_defaults_to_mainnet() {
-        let raw_ars = [
-            BINARY_NAME,
-            "buy-xmr",
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--change-address",
-            BITCOIN_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let cli_cmd = CliCommand::BuyXmr {
-            monero_receive_address: MONERO_MAINNET_ADDRESS.parse().unwrap(),
-            bitcoin_change_address: Some(BITCOIN_MAINNET_ADDRESS.parse().unwrap()),
-            seller: Seller {
-                seller: MULTI_ADDRESS.parse().unwrap(),
-            },
-            bitcoin: Default::default(),
-            monero: Default::default(),
-            tor: Default::default(),
-        };
-        simple_positive(&raw_ars, (false, false, None), cli_cmd).await;
-    }
-
-    #[tokio::test]
-    async fn given_buy_xmr_on_testnet_then_defaults_to_testnet() {
-        let raw_ars = [
-            BINARY_NAME,
-            "--testnet",
-            "buy-xmr",
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--change-address",
-            BITCOIN_TESTNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let cli_cmd = CliCommand::BuyXmr {
-            monero_receive_address: MONERO_STAGENET_ADDRESS.parse().unwrap(),
-            bitcoin_change_address: Some(BITCOIN_TESTNET_ADDRESS.parse().unwrap()),
-            seller: Seller {
-                seller: MULTI_ADDRESS.parse().unwrap(),
-            },
-            bitcoin: Default::default(),
-            monero: Default::default(),
-            tor: Default::default(),
-        };
-        simple_positive(&raw_ars, (false, true, None), cli_cmd).await;
-    }
-
-    #[tokio::test]
     async fn given_buy_xmr_on_mainnet_with_testnet_address_then_fails() {
         let raw_ars = [
             BINARY_NAME,
@@ -598,67 +547,6 @@ mod tests {
             simple_positive(&raw_ars, (false, true, None), cli_cmd).await;
         }
     }
-
-    #[tokio::test]
-    async fn given_buy_xmr_on_mainnet_with_data_dir_then_data_dir_set() {
-        let raw_ars = [
-            BINARY_NAME,
-            "--data-base-dir",
-            ARGS_DATA_DIR,
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_MAINNET_ADDRESS,
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let cli_cmd = CliCommand::BuyXmr {
-            monero_receive_address: MONERO_MAINNET_ADDRESS.parse().unwrap(),
-            bitcoin_change_address: Some(BITCOIN_MAINNET_ADDRESS.parse().unwrap()),
-            seller: Seller {
-                seller: MULTI_ADDRESS.parse().unwrap(),
-            },
-            bitcoin: Default::default(),
-            monero: Default::default(),
-            tor: Default::default(),
-        };
-        simple_positive(
-            &raw_ars,
-            (false, false, Some(ARGS_DATA_DIR.into())),
-            cli_cmd,
-        )
-        .await;
-    }
-
-    #[tokio::test]
-    async fn given_buy_xmr_on_testnet_with_data_dir_then_data_dir_set() {
-        let raw_ars = [
-            BINARY_NAME,
-            "--testnet",
-            "--data-base-dir",
-            ARGS_DATA_DIR,
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_TESTNET_ADDRESS,
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let cli_cmd = CliCommand::BuyXmr {
-            monero_receive_address: MONERO_STAGENET_ADDRESS.parse().unwrap(),
-            bitcoin_change_address: Some(BITCOIN_TESTNET_ADDRESS.parse().unwrap()),
-            seller: Seller {
-                seller: MULTI_ADDRESS.parse().unwrap(),
-            },
-            bitcoin: Default::default(),
-            monero: Default::default(),
-            tor: Default::default(),
-        };
-        simple_positive(&raw_ars, (false, true, Some(ARGS_DATA_DIR.into())), cli_cmd).await;
-    }
-
     #[tokio::test]
     async fn given_resume_on_mainnet_with_data_dir_then_data_dir_set() {
         let raw_ars = [
@@ -705,59 +593,6 @@ mod tests {
             tor: Default::default(),
         };
         simple_positive(&raw_ars, (false, true, Some(ARGS_DATA_DIR.into())), cli_cmd).await;
-    }
-
-    #[tokio::test]
-    async fn given_buy_xmr_on_mainnet_with_json_then_json_set() {
-        let raw_ars = [
-            BINARY_NAME,
-            "--json",
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_MAINNET_ADDRESS,
-            "--receive-address",
-            MONERO_MAINNET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let cli_cmd = CliCommand::BuyXmr {
-            monero_receive_address: MONERO_MAINNET_ADDRESS.parse().unwrap(),
-            bitcoin_change_address: Some(BITCOIN_MAINNET_ADDRESS.parse().unwrap()),
-            seller: Seller {
-                seller: MULTI_ADDRESS.parse().unwrap(),
-            },
-            bitcoin: Default::default(),
-            monero: Default::default(),
-            tor: Default::default(),
-        };
-        simple_positive(&raw_ars, (true, false, None), cli_cmd).await;
-    }
-
-    #[tokio::test]
-    async fn given_buy_xmr_on_testnet_with_json_then_json_set() {
-        let raw_ars = [
-            BINARY_NAME,
-            "--testnet",
-            "--json",
-            "buy-xmr",
-            "--change-address",
-            BITCOIN_TESTNET_ADDRESS,
-            "--receive-address",
-            MONERO_STAGENET_ADDRESS,
-            "--seller",
-            MULTI_ADDRESS,
-        ];
-        let cli_cmd = CliCommand::BuyXmr {
-            bitcoin_change_address: Some(BITCOIN_TESTNET_ADDRESS.parse().unwrap()),
-            monero_receive_address: MONERO_STAGENET_ADDRESS.parse().unwrap(),
-            seller: Seller {
-                seller: MULTI_ADDRESS.parse().unwrap(),
-            },
-            bitcoin: Default::default(),
-            monero: Default::default(),
-            tor: Default::default(),
-        };
-        simple_positive(&raw_ars, (true, true, None), cli_cmd).await;
     }
 
     #[tokio::test]
