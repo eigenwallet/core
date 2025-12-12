@@ -41,12 +41,6 @@ pub trait BitcoinWallet: Send + Sync {
 
     async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction>;
 
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, Subscription)>;
-
     async fn ensure_broadcasted(
         &self,
         transaction: bitcoin::Transaction,

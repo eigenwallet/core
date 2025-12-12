@@ -255,7 +255,7 @@ async fn next_state(
                 tracing::info!(txid = %state3.tx_lock_id(), "Bitcoin lock transaction already published, skipping publish");
             } else {
                 // Publish the signed Bitcoin lock transaction
-                let (..) = bitcoin_wallet.broadcast(btc_lock_tx_signed, "lock").await?;
+                let (..) = bitcoin_wallet.ensure_broadcasted(btc_lock_tx_signed, "lock").await?;
             }
 
             BobState::BtcLocked {

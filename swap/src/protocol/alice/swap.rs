@@ -270,7 +270,7 @@ where
                     // Retry repeatedly to broadcast tx_early_refund
                     result = async {
                         backoff::future::retry_notify(backoff, || async {
-                            bitcoin_wallet.broadcast(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
+                            bitcoin_wallet.ensure_broadcasted(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
                         }, |e, wait_time: Duration| {
                             tracing::warn!(
                                 %tx_early_refund_txid,
@@ -475,7 +475,7 @@ where
                 }
 
                 bitcoin_wallet
-                    .broadcast(tx_redeem.clone(), "redeem")
+                    .ensure_broadcasted(tx_redeem.clone(), "redeem")
                     .await
                     .map(Some)
                     .map_err(backoff::Error::transient)

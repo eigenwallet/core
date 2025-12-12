@@ -2141,14 +2141,6 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, Subscription)> {
-        Wallet::broadcast(self, transaction, kind).await
-    }
-
     async fn ensure_broadcasted(
         &self,
         tx: bitcoin::Transaction,
@@ -2964,14 +2956,6 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
-        unimplemented!("stub method called erroneously")
-    }
-
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, Subscription)> {
         unimplemented!("stub method called erroneously")
     }
 

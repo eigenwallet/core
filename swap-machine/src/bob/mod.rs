@@ -1023,7 +1023,9 @@ impl State6 {
             .complete_as_bob(self.A, self.b.clone(), self.tx_cancel_sig_a.clone())
             .context("Failed to complete Bitcoin cancel transaction")?;
 
-        let (tx_id, subscription) = bitcoin_wallet.broadcast(transaction, "cancel").await?;
+        let (tx_id, subscription) = bitcoin_wallet
+            .ensure_broadcasted(transaction, "cancel")
+            .await?;
 
         Ok((tx_id, subscription))
     }

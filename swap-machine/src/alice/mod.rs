@@ -715,7 +715,9 @@ impl State3 {
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
     ) -> Result<Txid> {
         let transaction = self.signed_cancel_transaction()?;
-        let (tx_id, _) = bitcoin_wallet.broadcast(transaction, "cancel").await?;
+        let (tx_id, _) = bitcoin_wallet
+            .ensure_broadcasted(transaction, "cancel")
+            .await?;
         Ok(tx_id)
     }
 
@@ -743,7 +745,9 @@ impl State3 {
     ) -> Result<Txid> {
         let signed_tx_punish = self.signed_punish_transaction()?;
 
-        let (txid, subscription) = bitcoin_wallet.broadcast(signed_tx_punish, "punish").await?;
+        let (txid, subscription) = bitcoin_wallet
+            .ensure_broadcasted(signed_tx_punish, "punish")
+            .await?;
         subscription.wait_until_final().await?;
 
         Ok(txid)

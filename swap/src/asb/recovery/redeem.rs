@@ -40,7 +40,9 @@ pub async fn redeem(
             tracing::info!(%swap_id, "Trying to redeem swap");
 
             let redeem_tx = state3.signed_redeem_transaction(*encrypted_signature)?;
-            let (txid, subscription) = bitcoin_wallet.broadcast(redeem_tx, "redeem").await?;
+            let (txid, subscription) = bitcoin_wallet
+                .ensure_broadcasted(redeem_tx, "redeem")
+                .await?;
 
             subscription.wait_until_seen().await?;
 
