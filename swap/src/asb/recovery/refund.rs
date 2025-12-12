@@ -73,7 +73,7 @@ pub async fn refund(
         state3.fetch_tx_refund(bitcoin_wallet.as_ref()).await?
     {
         tracing::debug!(%swap_id, "Bitcoin refund transaction found, extracting key to refund Monero");
-        state3.extract_monero_private_key(published_refund_tx)?
+        state3.extract_monero_private_key_from_refund(published_refund_tx)?
     } else {
         let bob_peer_id = db.get_peer_id(swap_id).await?;
         bail!(Error::RefundTransactionNotPublishedYet(bob_peer_id),);

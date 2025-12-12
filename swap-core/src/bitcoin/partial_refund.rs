@@ -2,13 +2,13 @@
 
 use crate::bitcoin;
 use crate::bitcoin::{
-    build_shared_output_descriptor, verify_sig, Address, Amount, EmptyWitnessStack, NoInputs,
-    NotThreeWitnesses, PublicKey, TooManyInputs, Transaction, TxCancel,
+    Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey, TooManyInputs,
+    Transaction, TxCancel, build_shared_output_descriptor, verify_sig,
 };
 use ::bitcoin::sighash::SighashCache;
-use ::bitcoin::{secp256k1, ScriptBuf, Weight};
-use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
-use anyhow::{bail, Context, Result};
+use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
+use ::bitcoin::{ScriptBuf, Weight, secp256k1};
+use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin_wallet::primitives::Watchable;
 use curve25519_dalek::scalar::Scalar;
@@ -88,7 +88,10 @@ impl TxPartialRefund {
         refund_address: &Address,
         spending_fee: Amount,
     ) -> Transaction {
-        use ::bitcoin::{transaction::Version, locktime::absolute::LockTime as PackedLockTime, Sequence, TxIn, TxOut};
+        use ::bitcoin::{
+            Sequence, TxIn, TxOut, locktime::absolute::LockTime as PackedLockTime,
+            transaction::Version,
+        };
 
         let tx_in = TxIn {
             previous_output: self.amnesty_outpoint(),
@@ -129,7 +132,7 @@ impl TxPartialRefund {
 
             let sig_a = secp256k1::ecdsa::Signature::from_compact(&sig_a.to_bytes())?;
             let sig_b = secp256k1::ecdsa::Signature::from_compact(&sig_b.to_bytes())?;
-            
+
             // The order in which these are inserted doesn't matter
             satisfier.insert(
                 A,
@@ -165,7 +168,7 @@ impl TxPartialRefund {
     ) -> Result<Scalar> {
         let tx_refund_sig = self
             .extract_signature_by_key(signed_refund_tx, a.public())
-            .context("Failed to extract signature from Bitcoin refund tx")?;
+            .context("Failed to extract signature from Bitcoin partial refund tx")?;
         let tx_refund_encsig = a.encsign(S_b_bitcoin, self.digest());
 
         let s_b = bitcoin::recover(S_b_bitcoin, tx_refund_sig, tx_refund_encsig)

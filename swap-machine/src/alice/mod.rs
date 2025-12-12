@@ -656,13 +656,27 @@ impl State3 {
         )
     }
 
-    pub fn extract_monero_private_key(
+    pub fn extract_monero_private_key_from_refund(
         &self,
         signed_refund_tx: Arc<bitcoin::Transaction>,
     ) -> Result<monero::PrivateKey> {
         Ok(monero::PrivateKey::from_scalar(
             self.tx_refund().extract_monero_private_key(
                 signed_refund_tx,
+                self.s_a,
+                self.a.clone(),
+                self.S_b_bitcoin,
+            )?,
+        ))
+    }
+
+    pub fn extract_monero_private_key_from_partial_refund(
+        &self,
+        signed_partial_refund_tx: Arc<bitcoin::Transaction>,
+    ) -> Result<monero::PrivateKey> {
+        Ok(monero::PrivateKey::from_scalar(
+            self.tx_partial_refund()?.extract_monero_private_key(
+                signed_partial_refund_tx,
                 self.s_a,
                 self.a.clone(),
                 self.S_b_bitcoin,
@@ -788,13 +802,21 @@ impl State3 {
         let refund_tx = bitcoin_wallet
             .get_raw_transaction(self.tx_refund().txid())
             .await?;
+        let partial_refund_tx = bitcoin_wallet
+            .get_raw_transaction(self.tx_partial_refund()?.txid())
+            .await?;
 
-        match refund_tx {
-            Some(refund_tx) => {
-                let spend_key = self.extract_monero_private_key(refund_tx)?;
+        match (refund_tx, partial_refund_tx) {
+            (Some(refund_tx), _) => {
+                let spend_key = self.extract_monero_private_key_from_refund(refund_tx)?;
                 Ok(Some(spend_key))
             }
-            None => Ok(None),
+            (_, Some(partial_refund_tx)) => {
+                let spend_key =
+                    self.extract_monero_private_key_from_partial_refund(partial_refund_tx)?;
+                Ok(Some(spend_key))
+            }
+            (None, None) => Ok(None),
         }
     }
 
