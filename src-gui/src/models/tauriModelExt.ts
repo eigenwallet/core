@@ -163,6 +163,7 @@ export function isBobStateNameRunningSwap(
 export type BobStateNamePossiblyCancellableSwap =
   | BobStateName.BtcLocked
   | BobStateName.XmrLockCandidateFound
+  | BobStateName.XmrLockTransactionSeen
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
@@ -188,6 +189,7 @@ export function isBobStateNamePossiblyCancellableSwap(
   return [
     BobStateName.BtcLocked,
     BobStateName.XmrLockCandidateFound,
+    BobStateName.XmrLockTransactionSeen,
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,
@@ -199,6 +201,7 @@ export function isBobStateNamePossiblyCancellableSwap(
 export type BobStateNamePossiblyRefundableSwap =
   | BobStateName.BtcLocked
   | BobStateName.XmrLockCandidateFound
+  | BobStateName.XmrLockTransactionSeen
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
@@ -223,6 +226,7 @@ export function isBobStateNamePossiblyRefundableSwap(
   return [
     BobStateName.BtcLocked,
     BobStateName.XmrLockCandidateFound,
+    BobStateName.XmrLockTransactionSeen,
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,
