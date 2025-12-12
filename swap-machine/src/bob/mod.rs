@@ -20,8 +20,7 @@ use swap_core::bitcoin::{
 use swap_core::compat::IntoDalekNg;
 use swap_core::monero;
 use swap_core::monero::primitives::WatchRequest;
-use swap_core::monero::ScalarExt;
-use swap_core::monero::{self, TransferProof};
+use swap_core::monero::{ScalarExt, TransferProofMaybeWithTxKey};
 use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
 
@@ -44,11 +43,27 @@ pub enum BobState {
         state3: State3,
         monero_wallet_restore_blockheight: BlockHeight,
     },
-    XmrLockProofReceived {
+    /// Bob has found a candidate for the Monero lock transaction.
+    /// This could either be that Alice sent us the transfer proof or that we have observed an incoming transfer
+    /// into the view-only wallet that matches the expected amount.
+    ///
+    /// Bob has not yet verified that the transaction sends the correct amount of Monero to the wallet.
+    /// Bob has not yet ensured that the transaction is fully confirmed.
+    XmrLockTransactionCandidate {
         state: State3,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: TransferProofMaybeWithTxKey,
         monero_wallet_restore_blockheight: BlockHeight,
     },
+    /// Bob has seen a Monero transaction for which he has verified that it transfers the correct amount of Monero to the wallet.
+    ///
+    /// Bob has not yet verified that the transaction is fully confirmed.
+    XmrLockTransactionSeen {
+        state: State3,
+        lock_transfer_proof: TransferProofMaybeWithTxKey,
+        monero_wallet_restore_blockheight: BlockHeight,
+    },
+    /// Bob has verified that the correct amount of Monero has been locked and fully confirmed.
+    /// It is safe to transmit the encrypted signature to Alice.
     XmrLocked(State4),
     EncSigSent(State4),
     BtcRedeemed(State5),
@@ -77,9 +92,10 @@ impl fmt::Display for BobState {
                 write!(f, "btc lock ready to publish")
             }
             BobState::BtcLocked { .. } => write!(f, "btc is locked"),
-            BobState::XmrLockProofReceived { .. } => {
-                write!(f, "XMR lock transaction transfer proof received")
+            BobState::XmrLockTransactionCandidate { .. } => {
+                write!(f, "xmr lock transaction candidate found")
             }
+            BobState::XmrLockTransactionSeen { .. } => write!(f, "xmr lock transaction seen"),
             BobState::XmrLocked(..) => write!(f, "xmr is locked"),
             BobState::EncSigSent(..) => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
@@ -109,7 +125,10 @@ impl BobState {
             | BobState::SafelyAborted
             | BobState::SwapSetupCompleted(_) => None,
             BobState::BtcLocked { state3: state, .. }
-            | BobState::XmrLockProofReceived { state, .. } => {
+            | BobState::XmrLockTransactionCandidate { state, .. } => {
+                Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
+            }
+            BobState::XmrLockTransactionSeen { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::XmrLocked(state) | BobState::EncSigSent(state) => {
@@ -572,6 +591,16 @@ impl State3 {
 
         Ok(tx)
     }
+
+    pub async fn is_tx_lock_published(
+        &self,
+        bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
+    ) -> Result<bool> {
+        let tx_lock = self.tx_lock.clone();
+        let tx = bitcoin_wallet.get_raw_transaction(tx_lock.txid()).await?;
+
+        Ok(tx.is_some())
+    }
 }
 
 #[allow(non_snake_case)]
@@ -593,7 +622,8 @@ pub struct State4 {
     tx_cancel_sig_a: Signature,
     tx_refund_encsig: bitcoin::EncryptedSignature,
     monero_wallet_restore_blockheight: BlockHeight,
-    lock_transfer_proof: TransferProof,
+    // TODO: this should be a new type where the tx_key is optional
+    lock_transfer_proof: TransferProofMaybeWithTxKey,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
@@ -717,7 +747,7 @@ pub struct State5 {
     xmr: monero::Amount,
     tx_lock: bitcoin::TxLock,
     pub monero_wallet_restore_blockheight: BlockHeight,
-    pub lock_transfer_proof: TransferProof,
+    pub lock_transfer_proof: TransferProofMaybeWithTxKey,
 }
 
 impl State5 {
@@ -732,23 +762,6 @@ impl State5 {
 
     pub fn tx_lock_id(&self) -> bitcoin::Txid {
         self.tx_lock.txid()
-    }
-
-    pub fn lock_xmr_watch_request_for_sweep(&self) -> swap_core::monero::primitives::WatchRequest {
-        let S_b_monero =
-            monero::PublicKey::from_private_key(&monero::PrivateKey::from_scalar(self.s_b));
-        let S_a_monero = monero::PublicKey::from_private_key(&self.s_a);
-        let S = S_a_monero + S_b_monero;
-
-        swap_core::monero::primitives::WatchRequest {
-            public_spend_key: S,
-            public_view_key: self.v.public(),
-            transfer_proof: self.lock_transfer_proof.clone(),
-            // To sweep the funds we need 10 full confirmations because
-            // Monero requires 10 on an UTXO before it can be spent.
-            confirmation_target: 10,
-            expected_amount: self.xmr.into(),
-        }
     }
 }
 
@@ -882,7 +895,7 @@ impl State6 {
     pub fn attempt_cooperative_redeem(
         &self,
         s_a: monero::Scalar,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: TransferProofMaybeWithTxKey,
     ) -> State5 {
         let s_a = monero::PrivateKey::from_scalar(s_a.into_dalek_ng());
 

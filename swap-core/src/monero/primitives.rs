@@ -479,15 +479,46 @@ pub struct TransferProof {
     pub tx_key: PrivateKey,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransferProofMaybeWithTxKey {
+    pub tx_hash: TxHash,
+    #[serde(with = "swap_serde::monero::optional_private_key")]
+    pub tx_key: Option<PrivateKey>,
+}
+
 impl TransferProof {
     pub fn new(tx_hash: TxHash, tx_key: PrivateKey) -> Self {
         Self { tx_hash, tx_key }
     }
+
     pub fn tx_hash(&self) -> TxHash {
         self.tx_hash.clone()
     }
+
     pub fn tx_key(&self) -> PrivateKey {
         self.tx_key
+    }
+}
+
+impl TransferProofMaybeWithTxKey {
+    pub fn new_without_tx_key(tx_hash: TxHash) -> Self {
+        Self {
+            tx_hash,
+            tx_key: None,
+        }
+    }
+
+    pub fn tx_hash(&self) -> TxHash {
+        self.tx_hash.clone()
+    }
+}
+
+impl From<TransferProof> for TransferProofMaybeWithTxKey {
+    fn from(proof: TransferProof) -> Self {
+        Self {
+            tx_hash: proof.tx_hash,
+            tx_key: Some(proof.tx_key),
+        }
     }
 }
 

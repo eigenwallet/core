@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use swap_core::monero::{BlockHeight, TransferProof};
+use swap_core::monero::{BlockHeight, TransferProof, TransferProofMaybeWithTxKey};
 use swap_machine::bob;
 use swap_machine::bob::BobState;
 
@@ -27,7 +27,12 @@ pub enum Bob {
     },
     XmrLockProofReceived {
         state: bob::State3,
-        lock_transfer_proof: TransferProof,
+        lock_transfer_proof: TransferProofMaybeWithTxKey,
+        monero_wallet_restore_blockheight: BlockHeight,
+    },
+    XmrLockTransactionSeen {
+        state: bob::State3,
+        lock_transfer_proof: TransferProofMaybeWithTxKey,
         monero_wallet_restore_blockheight: BlockHeight,
     },
     XmrLocked {
@@ -85,11 +90,20 @@ impl From<BobState> for Bob {
                 state3,
                 monero_wallet_restore_blockheight,
             },
-            BobState::XmrLockProofReceived {
+            BobState::XmrLockTransactionCandidate {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
             } => Bob::XmrLockProofReceived {
+                state,
+                lock_transfer_proof: lock_transfer_proof.into(),
+                monero_wallet_restore_blockheight,
+            },
+            BobState::XmrLockTransactionSeen {
+                state,
+                lock_transfer_proof,
+                monero_wallet_restore_blockheight,
+            } => Bob::XmrLockTransactionSeen {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
@@ -147,7 +161,16 @@ impl From<Bob> for BobState {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
-            } => BobState::XmrLockProofReceived {
+            } => BobState::XmrLockTransactionCandidate {
+                state,
+                lock_transfer_proof: lock_transfer_proof.into(),
+                monero_wallet_restore_blockheight,
+            },
+            Bob::XmrLockTransactionSeen {
+                state,
+                lock_transfer_proof,
+                monero_wallet_restore_blockheight,
+            } => BobState::XmrLockTransactionSeen {
                 state,
                 lock_transfer_proof,
                 monero_wallet_restore_blockheight,
@@ -180,6 +203,7 @@ impl fmt::Display for Bob {
             Bob::XmrLockProofReceived { .. } => {
                 f.write_str("XMR lock transaction transfer proof received")
             }
+            Bob::XmrLockTransactionSeen { .. } => f.write_str("XMR lock transaction seen"),
             Bob::XmrLocked { .. } => f.write_str("Monero locked"),
             Bob::CancelTimelockExpired(_) => f.write_str("Cancel timelock is expired"),
             Bob::BtcCancelled(_) => f.write_str("Bitcoin refundable"),

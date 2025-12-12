@@ -55,7 +55,7 @@ pub async fn cancel(
             state3,
             monero_wallet_restore_blockheight,
         } => state3.cancel(monero_wallet_restore_blockheight),
-        BobState::XmrLockProofReceived {
+        BobState::XmrLockTransactionCandidate {
             state,
             monero_wallet_restore_blockheight,
             ..
@@ -67,7 +67,6 @@ pub async fn cancel(
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefundPublished(state6) => state6,
         BobState::BtcEarlyRefundPublished(state6) => state6,
-
         BobState::Started { .. }
         | BobState::BtcRedeemed(_)
         | BobState::XmrRedeemed { .. }
@@ -78,6 +77,11 @@ pub async fn cancel(
             swap_id,
             state
         ),
+        BobState::XmrLockTransactionSeen {
+            state,
+            lock_transfer_proof,
+            monero_wallet_restore_blockheight,
+        } => todo!(),
     };
 
     tracing::info!(%swap_id, "Attempting to manually cancel swap");
@@ -158,7 +162,7 @@ pub async fn refund(
             monero_wallet_restore_blockheight,
             ..
         } => state3.cancel(monero_wallet_restore_blockheight),
-        BobState::XmrLockProofReceived {
+        BobState::XmrLockTransactionCandidate {
             state,
             monero_wallet_restore_blockheight,
             ..
@@ -181,6 +185,11 @@ pub async fn refund(
             swap_id,
             state
         ),
+        BobState::XmrLockTransactionSeen {
+            state,
+            lock_transfer_proof,
+            monero_wallet_restore_blockheight,
+        } => todo!(),
     };
 
     tracing::info!(%swap_id, "Attempting to manually refund swap");
