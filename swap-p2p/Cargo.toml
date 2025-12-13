@@ -53,12 +53,8 @@ fetch-quotes-example = []
 test-support = ["libp2p/noise", "libp2p/tcp", "libp2p/yamux", "libp2p/tokio", "libp2p/dns", "dep:async-trait"]
 
 [dev-dependencies]
-arti-client = { workspace = true }
 async-trait = { workspace = true }
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio", "dns"] }
-libp2p-tor = { path = "../libp2p-tor" }
-tor-rtcompat = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true
