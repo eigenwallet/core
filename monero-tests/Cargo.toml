@@ -5,14 +5,21 @@ edition = "2024"
 
 [dependencies]
 monero = { workspace = true }
+monero-daemon-rpc = { workspace = true }
 monero-harness = { path = "../monero-harness" }
+monero-oxide-wallet = { workspace = true }
+monero-simple-request-rpc = { workspace = true }
 monero-sys = { path = "../monero-sys" }
+monero-wallet-ng = { path = "../monero-wallet-ng" }
 testcontainers = { workspace = true }
 
 anyhow = { workspace = true }
+hex = "0.4"
 tokio = { workspace = true, features = ["macros", "rt"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+zeroize = "1.5"
 
 [lints]
 workspace = true

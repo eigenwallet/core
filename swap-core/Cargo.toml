@@ -15,6 +15,9 @@ ecdsa_fun = { workspace = true }
 monero = { workspace = true }
 sha2 = { workspace = true }
 
+# Crypto
+curve25519-dalek-ng = { workspace = true }
+
 # Serialization
 rust_decimal = { workspace = true }
 serde = { workspace = true }

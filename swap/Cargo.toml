@@ -36,7 +36,7 @@ thiserror = { workspace = true }
 
 # Crypto / Decoding / Encoding
 base64 = "0.22"
-curve25519-dalek = { workspace = true }
+curve25519-dalek = { workspace = true, features = ["rand_core"] }
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 

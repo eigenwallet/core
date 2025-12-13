@@ -10,6 +10,7 @@ members = [
   "monero-sys",
   "monero-tests",
   "monero-wallet",
+  "monero-wallet-ng",
   "src-tauri",
   "swap",
   "swap-asb",
@@ -38,10 +39,19 @@ bdk_electrum = { version = "0.23.0", default-features = false }
 bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
+# monero-oxide
+monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet", branch = "rpc-rewrite" }
+monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+
 # Cryptography
-curve25519-dalek = { version = "4", package = "curve25519-dalek-ng" }
+curve25519-dalek = { version = "4", package = "curve25519-dalek", features = ["rand_core", "serde"] }
+curve25519-dalek-ng = { package = "curve25519-dalek-ng", version = "4" }
 ecdsa_fun = { version = "0.10", default-features = false, features = ["libsecp_compat", "serde", "adaptor"] }
 rand = "0.8"
+
 # Randomness
 rand_chacha = "0.3"
 sha2 = "0.10"
