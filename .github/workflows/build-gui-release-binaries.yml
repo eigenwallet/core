@@ -34,9 +34,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - host: "macos-latest" # for Arm based macs (M1 and above).
+          - host: "macos-15" # for Arm based macs (M1 and above).
             target: "aarch64-apple-darwin"
-          - host: "macos-13" # for Intel based macs.
+          - host: "macos-15-intel" # for Intel based macs.
             target: "x86_64-apple-darwin"
           - host: "ubuntu-24.04"
             target: "x86_64-unknown-linux-gnu"
