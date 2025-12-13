@@ -351,7 +351,6 @@ impl Wallets {
             .wait_until(|status| {
                 let current = status.confirmations();
 
-                // Emit event
                 if let Some(ref listener) = listener {
                     listener((current, confirmation_target));
                 }
@@ -359,23 +358,17 @@ impl Wallets {
                 tracing::debug!(
                     confirmations = current,
                     target = confirmation_target,
-                    "Monero lock transaction confirmation update"
+                    "Monero transaction confirmation status update"
                 );
 
                 status.has_confirmations(confirmation_target)
             })
             .await
-            .map_err(|_| {
-                // TODO: We need some way to spawn a new task if the existing one dies
-                anyhow::anyhow!(
-                    "Confirmation subscription closed before reaching {} confirmations",
-                    confirmation_target
-                )
-            })?;
+            .context("Subscription closed before reaching target confirmations")?;
 
-        tracing::info!(
+        tracing::debug!(
             tx_hash = %tx_hash.0,
-            "Monero lock transaction fully confirmed"
+            "Monero transaction fully confirmed"
         );
 
         Ok(())
