@@ -79,9 +79,9 @@ pub async fn cancel(
         ),
         BobState::XmrLockTransactionSeen {
             state,
-            lock_transfer_proof,
             monero_wallet_restore_blockheight,
-        } => todo!(),
+            ..
+        } => state.cancel(monero_wallet_restore_blockheight),
     };
 
     tracing::info!(%swap_id, "Attempting to manually cancel swap");
@@ -167,6 +167,11 @@ pub async fn refund(
             monero_wallet_restore_blockheight,
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
+        BobState::XmrLockTransactionSeen {
+            state,
+            monero_wallet_restore_blockheight,
+            ..
+        } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
         BobState::EncSigSent(state4) => state4.cancel(),
         BobState::CancelTimelockExpired(state6) => state6,
@@ -184,12 +189,7 @@ pub async fn refund(
             "Cannot refund swap {} because it is in state {} which is not refundable.",
             swap_id,
             state
-        ),
-        BobState::XmrLockTransactionSeen {
-            state,
-            lock_transfer_proof,
-            monero_wallet_restore_blockheight,
-        } => todo!(),
+        )
     };
 
     tracing::info!(%swap_id, "Attempting to manually refund swap");

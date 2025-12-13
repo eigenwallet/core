@@ -21,6 +21,15 @@ pub(super) trait XmrRedeemable {
     ) -> Result<TxHash>;
 }
 
+pub(super) trait InfallibleXmrRedeemable {
+    async fn infallible_redeem_xmr(
+        &self,
+        monero_wallet: &monero::Wallets,
+        swap_id: Uuid,
+        monero_receive_pool: MoneroAddressPool,
+    ) -> TxHash;
+}
+
 impl XmrRedeemable for State5 {
     async fn redeem_xmr(
         self: State5,
@@ -61,6 +70,37 @@ impl XmrRedeemable for State5 {
         tracing::info!(%swap_id, %tx_hash, "Redeemed Monero");
 
         Ok(TxHash(tx_hash))
+    }
+}
+
+impl InfallibleXmrRedeemable for State5 {
+    async fn infallible_redeem_xmr(
+        &self,
+        monero_wallet: &monero::Wallets,
+        swap_id: Uuid,
+        monero_receive_pool: MoneroAddressPool,
+    ) -> TxHash {
+        let state_for_retry = self.clone();
+        let monero_receive_pool_for_retry = monero_receive_pool;
+
+        retry(
+            "Redeeming Monero",
+            || {
+                let state = state_for_retry.clone();
+                let monero_receive_pool = monero_receive_pool_for_retry.clone();
+
+                async move {
+                    state
+                        .redeem_xmr(monero_wallet, swap_id, monero_receive_pool)
+                        .await
+                        .map_err(backoff::Error::transient)
+                }
+            },
+            None,
+            None,
+        )
+        .await
+        .expect("we never stop retrying to redeem Monero")
     }
 }
 
@@ -178,6 +218,7 @@ pub(super) trait WaitForXmrLockTransactionConfirmation {
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
+        on_confirmation_update: Option<impl Fn((u64, u64)) + Send + Clone + 'static>,
     ) -> Result<bool>;
 }
 
@@ -187,19 +228,17 @@ impl WaitForXmrLockTransactionConfirmation for State3 {
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
+        on_confirmation_update: Option<impl Fn((u64, u64)) + Send + Clone + 'static>,
     ) -> Result<bool> {
         retry(
             "Waiting for XMR lock transaction confirmation",
             || {
                 let tx_hash = tx_hash.clone();
+                let on_confirmation_update = on_confirmation_update.clone();
 
                 async move {
                     monero_wallet
-                        .wait_until_confirmed_ng(
-                            &tx_hash,
-                            confirmation_target,
-                            None::<fn((u64, u64))>,
-                        )
+                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, on_confirmation_update)
                         .await
                         .map(|_| true)
                         .map_err(backoff::Error::transient)
@@ -218,18 +257,17 @@ impl WaitForXmrLockTransactionConfirmation for State5 {
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
+        on_confirmation_update: Option<impl Fn((u64, u64)) + Send + Clone + 'static>,
     ) -> Result<bool> {
         retry(
             "Waiting for XMR lock transaction confirmation",
             || {
                 let tx_hash = tx_hash.clone();
+                let on_confirmation_update = on_confirmation_update.clone();
+
                 async move {
                     monero_wallet
-                        .wait_until_confirmed_ng(
-                            &tx_hash,
-                            confirmation_target,
-                            None::<fn((u64, u64))>,
-                        )
+                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, on_confirmation_update)
                         .await
                         .map(|_| true)
                         .map_err(backoff::Error::transient)

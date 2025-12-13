@@ -19,7 +19,7 @@ pub enum VerifyError {
 /// Verify that a transaction sends the expected amount to the given view pair.
 ///
 /// This function fetches the transaction from the RPC, scans it using the view pair,
-/// and returns `true` if the total amount received matches the expected amount.
+/// and returns `true` if the transaction contains any single output to this view pair with the expected amount.
 ///
 /// # Arguments
 /// * `provider` - A provider implementing the `ProvidesTransactions` trait
@@ -29,17 +29,17 @@ pub enum VerifyError {
 /// * `expected_amount` - The expected amount in piconero
 ///
 /// # Returns
-/// * `Ok(true)` if the transaction contains outputs to this view pair totaling the expected amount
+/// * `Ok(true)` if the transaction contains any single output to this view pair with the expected amount
 /// * `Ok(false)` if the amounts don't match or no outputs were found
 /// * `Err(...)` if there was an error fetching or scanning the transaction
 ///
 /// Note: This doesn't register any subaddresses which means it will only detect outputs that are sent to the primary addres of the wallet.
 pub async fn verify_transfer<P: ProvidesTransactions>(
     provider: &P,
-    tx_id: [u8; 32], // TODO: wrapper type / trait here
+    tx_id: [u8; 32],
     public_spend_key: Point,
     private_view_key: Zeroizing<Scalar>,
-    expected_amount: u64, // TODO: wrapper type / trait here
+    expected_amount: u64,
 ) -> Result<bool, VerifyError> {
     // Fetch the transaction
     let tx: Transaction<Pruned> = provider.pruned_transaction(tx_id).await?;
@@ -58,16 +58,14 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
     // Scan the block
     let outputs = scanner.scan(scannable_block)?;
 
-    // Sum up all received amounts
-    let total_received: u64 = outputs
+    // Check if any of the outputs have the expected amount
+    let has_expected_amount_output = outputs
         .ignore_additional_timelock()
         .iter()
         .map(|output| output.commitment().amount)
-        .sum();
+        .any(|amount| amount == expected_amount);
 
-    println!("Total received: {}", total_received);
-
-    Ok(total_received == expected_amount)
+    Ok(has_expected_amount_output)
 }
 
 /// Create a fake ScannableBlock containing a single transaction.

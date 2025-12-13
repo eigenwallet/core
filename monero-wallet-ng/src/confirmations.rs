@@ -116,6 +116,7 @@ pub async fn get_confirmations<P>(
 where
     P: ProvidesTransactionStatus + ProvidesBlockchainMeta,
 {
+    // TODO: This could underflow
     fn absolute_confirmations_into_relative(inclusion_height: u64, latest_block: u64) -> u64 {
         latest_block - inclusion_height + 1
     }

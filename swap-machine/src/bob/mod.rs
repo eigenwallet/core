@@ -78,6 +78,7 @@ pub enum BobState {
     },
     BtcPunished {
         state: State6,
+        // TODO: This attribute is redundant and unused
         tx_lock_id: bitcoin::Txid,
     },
     SafelyAborted,
@@ -897,6 +898,7 @@ impl State6 {
         s_a: monero::Scalar,
         lock_transfer_proof: TransferProofMaybeWithTxKey,
     ) -> State5 {
+        // TODO: Validate `s_a` here!
         let s_a = monero::PrivateKey::from_scalar(s_a.into_dalek_ng());
 
         State5 {
