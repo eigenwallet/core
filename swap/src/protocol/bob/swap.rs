@@ -7,8 +7,9 @@ use crate::monero::MoneroAddressPool;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
 use crate::network::swap_setup::bob::NewSwap;
 use crate::protocol::bob::common::{
-    InfallibleVerifyXmrLockTransaction, InfallibleXmrRedeemable, RecvTransferProof, WaitForBtcRedeem,
-    WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation, XmrRedeemable,
+    InfallibleVerifyXmrLockTransaction, InfallibleXmrRedeemable, RecvTransferProof,
+    WaitForBtcRedeem, WaitForIncomingXmrLockTransaction, WaitForXmrLockTransactionConfirmation,
+    XmrRedeemable,
 };
 use crate::protocol::bob::*;
 use crate::protocol::{bob, Database};
@@ -252,7 +253,7 @@ async fn next_state(
                     // It could be that the operation was aborted after the transaction reached the Electrum server
                     // but before we transitioned to the BtcLocked state
                     tracing::info!(txid = %state3.tx_lock_id(), "Checking if Bitcoin lock transaction has already been published");
-                    
+
                     if state3
                         .is_tx_lock_published(&*bitcoin_wallet)
                         .await
@@ -471,7 +472,8 @@ async fn next_state(
                 TauriSwapProgressEvent::XmrLockTxInMempool {
                     xmr_lock_txid: xmr_lock_txid.clone(),
                     xmr_lock_tx_confirmations: None,
-                    xmr_lock_tx_target_confirmations: env_config.monero_double_spend_safe_confirmations,
+                    xmr_lock_tx_target_confirmations: env_config
+                        .monero_double_spend_safe_confirmations,
                 },
             );
 
@@ -489,16 +491,18 @@ async fn next_state(
                 &*monero_wallet,
                 lock_transfer_proof.tx_hash(),
                 env_config.monero_double_spend_safe_confirmations,
-                Some(move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
-                    event_emitter_for_callback.emit_swap_progress_event(
-                        swap_id,
-                        TauriSwapProgressEvent::XmrLockTxInMempool {
-                            xmr_lock_txid: xmr_lock_txid.clone(),
-                            xmr_lock_tx_confirmations: Some(xmr_lock_tx_confirmations),
-                            xmr_lock_tx_target_confirmations,
-                        },
-                    );
-                }),
+                Some(
+                    move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
+                        event_emitter_for_callback.emit_swap_progress_event(
+                            swap_id,
+                            TauriSwapProgressEvent::XmrLockTxInMempool {
+                                xmr_lock_txid: xmr_lock_txid.clone(),
+                                xmr_lock_tx_confirmations: Some(xmr_lock_tx_confirmations),
+                                xmr_lock_tx_target_confirmations,
+                            },
+                        );
+                    },
+                ),
             );
 
             select! {
@@ -710,16 +714,18 @@ async fn next_state(
                     &*monero_wallet,
                     state.lock_transfer_proof.tx_hash(),
                     10,
-                    Some(move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
-                        event_emitter_for_callback.emit_swap_progress_event(
-                            swap_id,
-                            TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
-                                xmr_lock_txid: xmr_lock_txid.clone(),
-                                xmr_lock_tx_confirmations,
-                                xmr_lock_tx_target_confirmations,
-                            },
-                        );
-                    }),
+                    Some(
+                        move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
+                            event_emitter_for_callback.emit_swap_progress_event(
+                                swap_id,
+                                TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
+                                    xmr_lock_txid: xmr_lock_txid.clone(),
+                                    xmr_lock_tx_confirmations,
+                                    xmr_lock_tx_target_confirmations,
+                                },
+                            );
+                        },
+                    ),
                 )
                 .await
                 .context("Failed to wait for Monero lock transaction to be confirmed")?;
@@ -981,8 +987,12 @@ async fn next_state(
                             &*monero_wallet,
                             state5.lock_transfer_proof.tx_hash(),
                             10,
-                            Some(move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
-                                event_emitter_for_callback.emit_swap_progress_event(
+                            Some(
+                                move |(
+                                    xmr_lock_tx_confirmations,
+                                    xmr_lock_tx_target_confirmations,
+                                )| {
+                                    event_emitter_for_callback.emit_swap_progress_event(
                                     swap_id,
                                     TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
                                         xmr_lock_txid: xmr_lock_txid.clone(),
@@ -990,7 +1000,8 @@ async fn next_state(
                                         xmr_lock_tx_target_confirmations,
                                     },
                                 );
-                            }),
+                                },
+                            ),
                         )
                         .await
                         .context("Failed to wait for Monero lock transaction to be confirmed")?;

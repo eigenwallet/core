@@ -320,7 +320,7 @@ where
                 tracing::info!("Locked Monero, waiting for confirmations");
 
                 monero_wallet
-                    .wait_until_confirmed_ng(
+                    .wait_until_confirmed(
                         &transfer_proof.tx_hash(),
                         1,
                         Some(|(confirmations, target_confirmations)| {
@@ -736,7 +736,7 @@ impl XmrRefundable for State3 {
         tracing::info!("Waiting for Monero lock transaction to be confirmed before refunding");
 
         monero_wallet
-            .wait_until_confirmed_ng(
+            .wait_until_confirmed(
                 &transfer_proof.tx_hash(),
                 10,
                 Some(move |(confirmations, target_confirmations)| {

@@ -299,7 +299,7 @@ impl Wallets {
     ///
     /// This verifies that a transaction sends the expected amount to the given view pair
     /// by fetching the transaction from the RPC and scanning it.
-    pub async fn verify_transfer_ng(
+    pub async fn verify_transfer(
         &self,
         tx_hash: &TxHash,
         public_spend_key: monero::PublicKey,
@@ -333,7 +333,7 @@ impl Wallets {
     ///
     /// You can pass a listener function that will be called with
     /// the current number of confirmations every time the status changes.
-    pub async fn wait_until_confirmed_ng(
+    pub async fn wait_until_confirmed(
         &self,
         tx_hash: &TxHash,
         confirmation_target: u64,

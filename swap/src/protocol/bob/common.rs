@@ -161,7 +161,7 @@ impl VerifyXmrLockTransaction for State3 {
         let expected_amount = self.xmr_amount();
 
         monero_wallet
-            .verify_transfer_ng(
+            .verify_transfer(
                 &tx_hash,
                 public_spend_key,
                 private_view_key,
@@ -238,7 +238,7 @@ impl WaitForXmrLockTransactionConfirmation for State3 {
 
                 async move {
                     monero_wallet
-                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, on_confirmation_update)
+                        .wait_until_confirmed(&tx_hash, confirmation_target, on_confirmation_update)
                         .await
                         .map(|_| true)
                         .map_err(backoff::Error::transient)
@@ -267,7 +267,7 @@ impl WaitForXmrLockTransactionConfirmation for State5 {
 
                 async move {
                     monero_wallet
-                        .wait_until_confirmed_ng(&tx_hash, confirmation_target, on_confirmation_update)
+                        .wait_until_confirmed(&tx_hash, confirmation_target, on_confirmation_update)
                         .await
                         .map(|_| true)
                         .map_err(backoff::Error::transient)

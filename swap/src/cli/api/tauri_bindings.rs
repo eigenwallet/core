@@ -8,7 +8,7 @@ use crate::{monero, network::quote::BidQuote};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
-use libp2p::{PeerId};
+use libp2p::PeerId;
 use monero_rpc_pool::pool::PoolStatus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -189,7 +189,7 @@ pub async fn refund(
             "Cannot refund swap {} because it is in state {} which is not refundable.",
             swap_id,
             state
-        )
+        ),
     };
 
     tracing::info!(%swap_id, "Attempting to manually refund swap");
