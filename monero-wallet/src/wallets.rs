@@ -397,7 +397,7 @@ impl Wallets {
         let expected_amount: u64 = expected_amount.into();
         let restore_height = restore_height.height as usize;
 
-        let mut subscription = scanner::scanner(
+        let mut subscription = scanner::naive_scanner(
             rpc_client,
             public_spend_key,
             private_view_key,

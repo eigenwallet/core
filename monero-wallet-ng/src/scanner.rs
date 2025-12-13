@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use monero_interface::{ProvidesBlockchainMeta, ProvidesScannableBlocks, ScannableBlock};
 use monero_oxide::ed25519::{Point, Scalar};
-use monero_oxide_wallet::{GuaranteedViewPair, ViewPair, ViewPairError, WalletOutput};
+use monero_oxide_wallet::{GuaranteedViewPair, ViewPairError, WalletOutput};
 use zeroize::Zeroizing;
 
 /// A subscription to the scanner.
@@ -64,7 +64,10 @@ const BLOCK_QUEUE_SIZE: usize = BLOCKS_PER_BATCH * 5;
 ///
 /// The returned subscription yields `WalletOutput`s as they are discovered.
 /// The background tasks automatically stop when the `Subscription` is dropped.
-pub fn scanner<P>(
+///
+/// NOTE: This scanner is naive because it does not detect re-orgs.
+/// It might miss outputs in some edge cases. It should not be relied upon when one cannot miss an output.
+pub fn naive_scanner<P>(
     provider: P,
     public_spend_key: Point,
     private_view_key: Zeroizing<Scalar>,
@@ -142,6 +145,7 @@ mod fetcher {
         }
     }
 
+    // TODO: This needs to handle re-orgs
     async fn fetch_until_tip<P>(
         provider: &P,
         mut next_height: usize,
