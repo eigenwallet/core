@@ -126,7 +126,7 @@ impl WaitForIncomingXmrLockTransaction for State3 {
             "Waiting for incoming XMR lock transaction",
             || async move {
                 monero_wallet
-                    .wait_for_incoming_transfer_ng(
+                    .wait_for_incoming_transfer(
                         public_spend_key,
                         private_view_key,
                         self.xmr_amount(),

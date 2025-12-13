@@ -7,7 +7,9 @@
 use std::time::Duration;
 
 use monero_interface::{ProvidesBlockchainMeta, ProvidesScannableBlocks, ScannableBlock};
-use monero_oxide_wallet::{ViewPair, WalletOutput};
+use monero_oxide::ed25519::{Point, Scalar};
+use monero_oxide_wallet::{GuaranteedViewPair, ViewPair, ViewPairError, WalletOutput};
+use zeroize::Zeroizing;
 
 /// A subscription to the scanner.
 ///
@@ -64,13 +66,16 @@ const BLOCK_QUEUE_SIZE: usize = BLOCKS_PER_BATCH * 5;
 /// The background tasks automatically stop when the `Subscription` is dropped.
 pub fn scanner<P>(
     provider: P,
-    view_pair: ViewPair,
+    public_spend_key: Point,
+    private_view_key: Zeroizing<Scalar>,
     restore_height: usize,
     poll_interval: Duration,
-) -> Subscription
+) -> Result<Subscription, ViewPairError>
 where
     P: ProvidesScannableBlocks + ProvidesBlockchainMeta + Send + 'static,
 {
+    let view_pair = GuaranteedViewPair::new(public_spend_key, private_view_key)?;
+
     let (outputs_sender, outputs) = tokio::sync::mpsc::unbounded_channel();
     let (blocks_sender, blocks_receiver) =
         tokio::sync::mpsc::channel::<BlockAtHeight>(BLOCK_QUEUE_SIZE);
@@ -203,16 +208,16 @@ mod fetcher {
 }
 
 mod scanner {
-    use monero_oxide_wallet::{Scanner, ViewPair, WalletOutput};
+    use monero_oxide_wallet::{GuaranteedScanner, Scanner, ViewPair, WalletOutput};
 
     use super::BlockAtHeight;
 
     pub(super) async fn run(
-        view_pair: ViewPair,
+        view_pair: GuaranteedViewPair,
         mut blocks_receiver: tokio::sync::mpsc::Receiver<BlockAtHeight>,
         outputs_sender: tokio::sync::mpsc::UnboundedSender<WalletOutput>,
     ) {
-        let mut scanner = Scanner::new(view_pair);
+        let mut scanner = GuaranteedScanner::new(view_pair);
 
         while !outputs_sender.is_closed() {
             let Some(BlockAtHeight { height, block }) = blocks_receiver.recv().await else {
