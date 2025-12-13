@@ -116,11 +116,6 @@ pub async fn get_confirmations<P>(
 where
     P: ProvidesTransactionStatus + ProvidesBlockchainMeta,
 {
-    // TODO: This could underflow
-    fn absolute_confirmations_into_relative(inclusion_height: u64, latest_block: u64) -> u64 {
-        latest_block - inclusion_height + 1
-    }
-
     // Get transaction status
     let tx_status = provider.transaction_status(tx_id).await?;
 
@@ -182,6 +177,16 @@ where
     });
 
     Subscription { receiver, tx_id }
+}
+
+fn absolute_confirmations_into_relative(inclusion_height: u64, latest_block: u64) -> u64 {
+    // If the `inclusion_height`` is greater than the latest block, we assume
+    // that the `latest_block` and we assume that the `inclusion_height` is the latest block.
+    //
+    // This means that if `inclusion_height > latest_block`, we return 1.
+    latest_block
+        .saturating_sub(inclusion_height)
+        .saturating_add(1)
 }
 
 #[cfg(test)]

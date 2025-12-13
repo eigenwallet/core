@@ -5,6 +5,7 @@
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
 
+use monero_oxide_wallet::GuaranteedViewPair;
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
 use anyhow::{Context, Result};
@@ -385,7 +386,7 @@ impl Wallets {
     /// This scans the blockchain from `restore_height` looking for an output
     /// with the expected amount sent to the given view pair. Returns the
     /// transaction hash when found.
-    pub async fn wait_for_incoming_transfer_ng(
+    pub async fn wait_for_incoming_transfer(
         &self,
         public_spend_key: monero::PublicKey,
         private_view_key: PrivateViewKey,
@@ -396,36 +397,33 @@ impl Wallets {
         use monero_wallet_ng::scanner;
 
         let rpc_client = self.rpc_client().await;
+
         let public_spend_key = public_key_to_point(public_spend_key)?;
         let private_view_key = private_view_key_to_scalar(private_view_key)?;
-        let expected_amount: u64 = expected_amount.into();
 
-        let view_pair = ViewPair::new(public_spend_key, private_view_key)
-            .context("Failed to create view pair")?;
+        let expected_amount: u64 = expected_amount.into();
+        let restore_height = restore_height.height as usize;
 
         let mut subscription = scanner::scanner(
             rpc_client,
-            view_pair,
-            restore_height.height as usize,
+            public_spend_key,
+            private_view_key,
+            restore_height,
             POLL_INTERVAL,
-        );
+        )
+        .context("Failed to create scanner")?;
 
         let output = subscription
             .wait_until(|output| output.commitment().amount == expected_amount)
             .await
-            .map_err(|_| {
-                anyhow::anyhow!(
-                    "Scanner subscription closed before finding output with amount {}",
-                    expected_amount
-                )
-            })?;
+            .context("Scanner subscription closed before finding output")?;
 
         let tx_hash = hex::encode(output.transaction());
 
-        tracing::info!(
+        tracing::debug!(
             %tx_hash,
             amount = expected_amount,
-            "Found incoming transfer"
+            "Found incoming transfer with expected amount"
         );
 
         Ok(TxHash(tx_hash))
