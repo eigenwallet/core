@@ -4,8 +4,6 @@
 //! Mostly we do two things:
 //!  - wait for transactions to be confirmed
 //!  - send money from one wallet to another.
-
-use monero_oxide_wallet::GuaranteedViewPair;
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
 use anyhow::{Context, Result};
@@ -14,7 +12,7 @@ use monero_daemon_rpc::MoneroDaemon;
 use monero_simple_request_rpc::SimpleRequestTransport;
 use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
-use swap_core::monero::primitives::{Amount, BlockHeight, PrivateViewKey, TxHash, WatchRequest};
+use swap_core::monero::primitives::{Amount, BlockHeight, PrivateViewKey, TxHash};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -386,7 +384,6 @@ impl Wallets {
         expected_amount: Amount,
         restore_height: BlockHeight,
     ) -> Result<TxHash> {
-        use monero_oxide_wallet::ViewPair;
         use monero_wallet_ng::scanner;
 
         let rpc_client = self.rpc_client().await;

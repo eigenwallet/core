@@ -13,7 +13,7 @@ use swap_core::bitcoin::{
 };
 use swap_core::compat::IntoDalekNg;
 use swap_core::monero;
-use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest, WatchRequest};
+use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest};
 use swap_core::monero::ScalarExt;
 use swap_env::env::Config;
 use uuid::Uuid;
@@ -506,27 +506,6 @@ impl State3 {
             public_spend_key,
             public_view_key,
             amount: self.xmr.into(),
-        }
-    }
-
-    pub fn lock_xmr_watch_request(
-        &self,
-        transfer_proof: TransferProof,
-        conf_target: u64,
-    ) -> WatchRequest {
-        let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey {
-            scalar: self.s_a.into_dalek_ng(),
-        });
-
-        let public_spend_key = S_a + self.S_b_monero;
-        let public_view_key = self.v.public();
-
-        WatchRequest {
-            public_spend_key,
-            public_view_key,
-            transfer_proof,
-            confirmation_target: conf_target,
-            expected_amount: self.xmr.into(),
         }
     }
 

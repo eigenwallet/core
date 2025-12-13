@@ -392,18 +392,6 @@ impl From<::monero::Address> for MoneroAddressPool {
     }
 }
 
-/// A request to watch for a transfer.
-pub struct WatchRequest {
-    pub public_view_key: super::PublicViewKey,
-    pub public_spend_key: monero::PublicKey,
-    /// The proof of the transfer.
-    pub transfer_proof: TransferProof,
-    /// The expected amount of the transfer.
-    pub expected_amount: monero::Amount,
-    /// The number of confirmations required for the transfer to be considered confirmed.
-    pub confirmation_target: u64,
-}
-
 /// Transfer a specified amount of money to a specified address.
 pub struct TransferRequest {
     pub public_spend_key: monero::PublicKey,
