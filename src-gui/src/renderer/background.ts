@@ -32,7 +32,10 @@ import {
   setHistory,
   setSyncProgress,
 } from "store/features/walletSlice";
-import { applyDefaultNodes } from "store/features/settingsSlice";
+import {
+  applyDefaultNodes,
+  validateDonateToDevelopmentTip,
+} from "store/features/settingsSlice";
 import {
   DEFAULT_NODES,
   NEGATIVE_NODES_MAINNET,
@@ -76,6 +79,9 @@ export async function setupBackgroundTasks(): Promise<void> {
       negativeNodesTestnet: NEGATIVE_NODES_TESTNET,
     }),
   );
+
+  // Validate donation tip setting
+  store.dispatch(validateDonateToDevelopmentTip());
 
   // Setup periodic fetch tasks
   setIntervalImmediate(updateAllNodeStatuses, STATUS_UPDATE_INTERVAL);
