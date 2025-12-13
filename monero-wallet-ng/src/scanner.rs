@@ -80,6 +80,8 @@ where
     let (blocks_sender, blocks_receiver) =
         tokio::sync::mpsc::channel::<BlockAtHeight>(BLOCK_QUEUE_SIZE);
 
+    // We do not need to keep the task handles around.
+    // The tasks will kill themselves once all subscribers are dropped.
     tokio::spawn(fetcher::run(
         provider,
         restore_height,
@@ -89,10 +91,10 @@ where
 
     tokio::spawn(scanner::run(view_pair, blocks_receiver, outputs_sender));
 
-    Subscription {
+    Ok(Subscription {
         outputs,
         restore_height,
-    }
+    })
 }
 
 mod fetcher {
@@ -208,7 +210,7 @@ mod fetcher {
 }
 
 mod scanner {
-    use monero_oxide_wallet::{GuaranteedScanner, Scanner, ViewPair, WalletOutput};
+    use monero_oxide_wallet::{GuaranteedScanner, GuaranteedViewPair, WalletOutput};
 
     use super::BlockAtHeight;
 

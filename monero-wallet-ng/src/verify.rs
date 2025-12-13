@@ -58,12 +58,13 @@ pub async fn verify_transfer<P: ProvidesTransactions>(
     // Scan the block
     let outputs = scanner.scan(scannable_block)?;
 
+    // Ignore any timelocked outputs to protect against unspendable outputs
+    let outputs = outputs.ignore_additional_timelock();
+
     // Check if any of the outputs have the expected amount
     let has_expected_amount_output = outputs
-        .ignore_additional_timelock()
         .iter()
-        .map(|output| output.commitment().amount)
-        .any(|amount| amount == expected_amount);
+        .any(|output| output.commitment().amount == expected_amount);
 
     Ok(has_expected_amount_output)
 }
