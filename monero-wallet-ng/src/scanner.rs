@@ -88,17 +88,17 @@ where
     // as they will kill themselves once all subscribers are dropped.
 
     // Spawn the task that fetches blocks
-    let _ = tokio::spawn(fetcher::run(
-        provider,
-        restore_height,
-        poll_interval,
-        blocks_sender,
-    ))
-    .instrument(Span::current());
+    let _ = tokio::spawn(
+        fetcher::run(provider, restore_height, poll_interval, blocks_sender)
+            .instrument(Span::current()),
+    );
 
     // Spawn the task that scans blocks
-    let _ = tokio::spawn(scanner::run(view_pair, blocks_receiver, outputs_sender))
-        .instrument(Span::current());
+    let _ = tokio::spawn(
+        scanner::run(view_pair, blocks_receiver, outputs_sender).instrument(Span::current()),
+    );
+
+    tracing::trace!(restore_height, "Started scanner");
 
     Ok(Subscription {
         outputs,

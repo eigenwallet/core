@@ -157,27 +157,29 @@ where
 
     let (sender, receiver) = tokio::sync::watch::channel(ConfirmationStatus::Unseen);
 
-    let _ = tokio::spawn(async move {
-        let mut backoff = Backoff::new();
+    let _ = tokio::spawn(
+        async move {
+            let mut backoff = Backoff::new();
 
-        while !sender.is_closed() {
-            match get_confirmations(&provider, tx_id).await {
-                Ok(status) => {
-                    backoff.reset();
-                    if sender.send(status).is_err() {
-                        return;
+            while !sender.is_closed() {
+                match get_confirmations(&provider, tx_id).await {
+                    Ok(status) => {
+                        backoff.reset();
+                        if sender.send(status).is_err() {
+                            return;
+                        }
+                        tokio::time::sleep(poll_interval).await;
                     }
-                    tokio::time::sleep(poll_interval).await;
-                }
-                Err(err) => {
-                    backoff
-                        .sleep_on_error(&err, "Failed to refresh confirmation subscription")
-                        .await;
-                }
-            };
+                    Err(err) => {
+                        backoff
+                            .sleep_on_error(&err, "Failed to refresh confirmation subscription")
+                            .await;
+                    }
+                };
+            }
         }
-    })
-    .instrument(Span::current());
+        .instrument(Span::current()),
+    );
 
     Subscription { receiver, tx_id }
 }
