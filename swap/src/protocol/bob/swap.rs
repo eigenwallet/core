@@ -699,7 +699,7 @@ async fn next_state(
         }
         BobState::BtcRedeemed(state) => {
             // Now we wait for the full 10 confirmations on the Monero lock transaction
-            // because we simply cannot spend it if we don't have 10 confirmations
+            // because we simply cannot spend it otherwise
             let xmr_lock_txid = state.lock_transfer_proof.tx_hash();
             let event_emitter_for_callback = event_emitter.clone();
 
@@ -707,7 +707,7 @@ async fn next_state(
                 .infallible_wait_for_xmr_lock_confirmation(
                     &*monero_wallet,
                     state.lock_transfer_proof.tx_hash(),
-                    10,
+                    env_config.monero_finality_confirmations,
                     Some(
                         move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
                             event_emitter_for_callback.emit_swap_progress_event(
@@ -1026,7 +1026,6 @@ async fn next_state(
                         .await
                         .context("Failed to wait for Monero lock transaction to be confirmed")?;
 
-                    // TODO: Once we validate the key, make this infallible
                     match retry(
                         "Redeeming Monero",
                         || async {
@@ -1036,7 +1035,8 @@ async fn next_state(
                                 .await
                                 .map_err(backoff::Error::transient)
                         },
-                        None,
+                        // TODO: Once we validate the key, make this infallible
+                        Some(Duration::from_secs(5 * 60)),
                         None,
                     )
                     .await
