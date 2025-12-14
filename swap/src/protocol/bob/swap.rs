@@ -634,11 +634,11 @@ async fn next_state(
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::EncryptedSignatureSent);
 
-            // TODO: Why are these explicit checks necessary?
             let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
 
-            let (redeem_state, expired_timelocks) = retry(
-                "Checking Bitcoin redeem transaction and cancel timelock status after sending encrypted signature",
+            // TODO: Extract into an infallible trait in ./common.rs
+            let redeem_state = retry(
+                "Checking for Bitcoin redeem transaction after sending encrypted signature",
                 || {
                     let bitcoin_wallet = bitcoin_wallet_for_retry.clone();
                     let state_for_attempt = state.clone();
@@ -653,17 +653,7 @@ async fn next_state(
                             .context("Failed to check for existence of tx_redeem after sending encrypted signature")
                             .map_err(backoff::Error::transient)?;
 
-                        // Then, check timelock status
-                        let expired_timelocks = state_for_attempt
-                            .expired_timelock(&*bitcoin_wallet)
-                            .await
-                            .context("Failed to check for expired timelocks after sending encrypted signature")
-                            .map_err(backoff::Error::transient)?;
-
-                        Ok::<_, backoff::Error<anyhow::Error>>((
-                            redeem_state,
-                            expired_timelocks,
-                        ))
+                        Ok::<_, backoff::Error<anyhow::Error>>(redeem_state)
                     }
                 },
                 None,
@@ -676,12 +666,6 @@ async fn next_state(
             // successful redeem over a refund
             if let Some(state5) = redeem_state {
                 return Ok(BobState::BtcRedeemed(state5));
-            }
-
-            // Check if the cancel timelock has expired AFTER checking for tx_redeem
-            // TODO: Do we need to reserve some time here until the cancel timelock expires?
-            if expired_timelocks.cancel_timelock_expired() {
-                return Ok(BobState::CancelTimelockExpired(state.cancel()));
             }
 
             let (tx_lock_status, tx_early_refund_status): (
