@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use monero_interface::{ProvidesBlockchainMeta, ProvidesScannableBlocks, ScannableBlock};
 use monero_oxide::ed25519::{Point, Scalar};
-use monero_oxide_wallet::{GuaranteedViewPair, ViewPairError, WalletOutput};
+use monero_oxide_wallet::{ViewPair, ViewPairError, WalletOutput};
 use tracing::{Instrument, Span};
 use zeroize::Zeroizing;
 
@@ -78,7 +78,7 @@ pub fn naive_scanner<P>(
 where
     P: ProvidesScannableBlocks + ProvidesBlockchainMeta + Send + 'static,
 {
-    let view_pair = GuaranteedViewPair::new(public_spend_key, private_view_key)?;
+    let view_pair = ViewPair::new(public_spend_key, private_view_key)?;
 
     let (outputs_sender, outputs) = tokio::sync::mpsc::unbounded_channel();
     let (blocks_sender, blocks_receiver) =
@@ -87,13 +87,13 @@ where
     // We do not need to keep the handles around
     // as they will kill themselves once all subscribers are dropped.
 
-    // Spawn the task that fetches blocks
+    // Task that fetches blocks
     let _ = tokio::spawn(
         fetcher::run(provider, restore_height, poll_interval, blocks_sender)
             .instrument(Span::current()),
     );
 
-    // Spawn the task that scans blocks
+    // Task that scans blocks
     let _ = tokio::spawn(
         scanner::run(view_pair, blocks_receiver, outputs_sender).instrument(Span::current()),
     );
@@ -226,16 +226,16 @@ mod fetcher {
 }
 
 mod scanner {
-    use monero_oxide_wallet::{GuaranteedScanner, GuaranteedViewPair, WalletOutput};
+    use monero_oxide_wallet::{Scanner, ViewPair, WalletOutput};
 
     use super::BlockAtHeight;
 
     pub(super) async fn run(
-        view_pair: GuaranteedViewPair,
+        view_pair: ViewPair,
         mut blocks_receiver: tokio::sync::mpsc::Receiver<BlockAtHeight>,
         outputs_sender: tokio::sync::mpsc::UnboundedSender<WalletOutput>,
     ) {
-        let mut scanner = GuaranteedScanner::new(view_pair);
+        let mut scanner = Scanner::new(view_pair);
 
         while !outputs_sender.is_closed() {
             let Some(BlockAtHeight { height, block }) = blocks_receiver.recv().await else {
@@ -252,7 +252,7 @@ mod scanner {
             };
 
             // Ignore any timelocked outputs to protect against unspendable outputs
-            let outputs = outputs.ignore_additional_timelock();
+            let outputs = outputs.not_additionally_locked();
 
             tracing::trace!(found_outputs = outputs.len(), height, "Scanned block");
 
