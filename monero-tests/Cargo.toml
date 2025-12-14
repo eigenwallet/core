@@ -14,12 +14,12 @@ monero-wallet-ng = { path = "../monero-wallet-ng" }
 testcontainers = { workspace = true }
 
 anyhow = { workspace = true }
-hex = "0.4"
+hex = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
-zeroize = "1.5"
+zeroize = { workspace = true }
 
 [lints]
 workspace = true

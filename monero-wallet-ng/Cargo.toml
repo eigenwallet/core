@@ -11,10 +11,10 @@ thiserror = { workspace = true }
 
 # Cryptography
 curve25519-dalek = { workspace = true }
-zeroize = "1.5"
+zeroize = { workspace = true }
 
 # Serialization
-hex = "0.4"
+hex = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

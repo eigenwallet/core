@@ -74,7 +74,7 @@ tauri = { version = "2.0", features = ["config-json5"], optional = true, default
 time = "0.3"
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
-zeroize = "1.8.1"
+zeroize = { workspace = true }
 
 # Tokio
 tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "rt"] }

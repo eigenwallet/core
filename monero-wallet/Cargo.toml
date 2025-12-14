@@ -32,5 +32,5 @@ monero-wallet-ng = { path = "../monero-wallet-ng" }
 
 # Cryptography
 curve25519-dalek = { workspace = true }
-hex = "0.4"
-zeroize = "1.5"
+hex = { workspace = true }
+zeroize = { workspace = true }
