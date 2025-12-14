@@ -1041,6 +1041,10 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "Option<number>")]
         btc_lock_confirmations: Option<u64>,
     },
+    VerifyingXmrLockTx {
+        #[typeshare(serialized_as = "string")]
+        xmr_lock_txid: monero::TxHash,
+    },
     XmrLockTxInMempool {
         #[typeshare(serialized_as = "string")]
         xmr_lock_txid: monero::TxHash,
@@ -1065,6 +1069,7 @@ pub enum TauriSwapProgressEvent {
         xmr_redeem_txids: Vec<monero::TxHash>,
         xmr_receive_pool: MoneroAddressPool,
     },
+    WaitingForCancelTimelockExpiration, // TODO: Add current confirmations and target confirmations here?
     CancelTimelockExpired,
     BtcCancelled {
         #[typeshare(serialized_as = "string")]

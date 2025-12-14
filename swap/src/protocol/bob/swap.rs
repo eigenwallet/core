@@ -413,8 +413,14 @@ async fn next_state(
             lock_transfer_proof,
             monero_wallet_restore_blockheight,
         } => {
-            // TODO: Emit a Tauri event here
             tracing::debug!(transfer_proof = %lock_transfer_proof.tx_hash(), "Validating Monero lock transaction candidate");
+
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::VerifyingXmrLockTx {
+                    xmr_lock_txid: lock_transfer_proof.tx_hash(),
+                },
+            );
 
             let (tx_early_refund_status, tx_lock_status): (
                 bitcoin_wallet::Subscription,
@@ -747,7 +753,11 @@ async fn next_state(
             state,
             monero_wallet_restore_blockheight,
         } => {
-            // TODO: Emit a Tauri event here
+            // TODO: Also emit the confirmations and target here?
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::WaitingForCancelTimelockExpiration,
+            );
 
             let (tx_lock_status, tx_early_refund_status): (
                 bitcoin_wallet::Subscription,

@@ -60,6 +60,13 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
         return <BitcoinLockTxInMempoolPage {...state.curr.content} />;
       }
       break;
+    case "VerifyingXmrLockTx":
+      if (state.curr.type === "VerifyingXmrLockTx") {
+        return (
+          <CircularProgressWithSubtitle description="Validating Monero lock transaction..." />
+        );
+      }
+      break;
     case "XmrLockTxInMempool":
       if (state.curr.type === "XmrLockTxInMempool") {
         return <XmrLockTxInMempoolPage {...state.curr.content} />;
@@ -81,6 +88,14 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "XmrRedeemInMempool":
       if (state.curr.type === "XmrRedeemInMempool") {
         return <XmrRedeemInMempoolPage {...state.curr.content} />;
+      }
+      break;
+    case "WaitingForCancelTimelockExpiration":
+      // TODO: Add better UI here!
+      if (state.curr.type === "WaitingForCancelTimelockExpiration") {
+        return (
+          <CircularProgressWithSubtitle description="Waiting for cancel timelock expiration..." />
+        );
       }
       break;
     case "CancelTimelockExpired":
