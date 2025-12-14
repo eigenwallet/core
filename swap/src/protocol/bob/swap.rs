@@ -549,6 +549,7 @@ async fn next_state(
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::XmrLocked);
 
             // TODO: This pre-requisite check can take quite a while, we should add a type of tauri event here
+            // TODO: Can we already send the encrypted signature to Alice here while we checking for tx_redeem?
             let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
             let (redeem_state, expired_timelocks) = retry(
                 "Checking Bitcoin redeem transaction and cancel timelock status before sending encrypted signature",
@@ -557,25 +558,21 @@ async fn next_state(
                     let state_for_attempt = state.clone();
 
                     async move {
-                        // TODO: Do these in parallel to speed up
+                        let (redeem_state, expired_timelocks) = tokio::join!(
+                            state_for_attempt.check_for_tx_redeem(&*bitcoin_wallet),
+                            state_for_attempt.expired_timelock(&*bitcoin_wallet),
+                        );
 
                         // In case we send the encrypted signature to Alice, but she doesn't give us a confirmation
                         // We need to check if she still published the Bitcoin redeem transaction
                         // Otherwise we risk staying stuck in "XmrLocked"
-                        let redeem_state = state_for_attempt
-                            .check_for_tx_redeem(&*bitcoin_wallet)
-                            .await
+                        let redeem_state = redeem_state
                             .context("Failed to check for existence of tx_redeem before sending encrypted signature")
                             .map_err(backoff::Error::transient)?;
 
-                        // TODO: We should also check for tx_early_refund here?
-                        // TOOD: Alice has no reason to publish the early refund transaction at this stage...? but she could...?
-
                         // We do not want to race tx_refund against tx_redeem
                         // we therefore never send the encrypted signature if the cancel timelock has expired
-                        let expired_timelocks = state_for_attempt
-                            .expired_timelock(&*bitcoin_wallet)
-                            .await
+                        let expired_timelocks = expired_timelocks
                             .context("Failed to check for expired timelocks before sending encrypted signature")
                             .map_err(backoff::Error::transient)?;
 
