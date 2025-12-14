@@ -62,6 +62,10 @@ pub async fn cancel(
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
         BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::WaitingForCancelTimelockExpiration {
+            state,
+            monero_wallet_restore_blockheight,
+        } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
         BobState::BtcRefunded(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
@@ -174,6 +178,10 @@ pub async fn refund(
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
         BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::WaitingForCancelTimelockExpiration {
+            state,
+            monero_wallet_restore_blockheight,
+        } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefunded(state6) => state6,

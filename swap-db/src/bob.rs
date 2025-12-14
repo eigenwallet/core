@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use swap_core::monero::{BlockHeight, TransferProof, TransferProofMaybeWithTxKey};
+use swap_core::monero::{BlockHeight, TransferProofMaybeWithTxKey};
 use swap_machine::bob;
 use swap_machine::bob::BobState;
 
@@ -46,6 +46,10 @@ pub enum Bob {
         tx_lock_id: bitcoin::Txid,
     },
     BtcRedeemed(bob::State5),
+    WaitingForCancelTimelockExpiration {
+        state: bob::State3,
+        monero_wallet_restore_blockheight: BlockHeight,
+    },
     CancelTimelockExpired(bob::State6),
     BtcCancelled(bob::State6),
     BtcRefundPublished(bob::State6),
@@ -111,6 +115,13 @@ impl From<BobState> for Bob {
             BobState::XmrLocked(state4) => Bob::XmrLocked { state4 },
             BobState::EncSigSent(state4) => Bob::EncSigSent { state4 },
             BobState::BtcRedeemed(state5) => Bob::BtcRedeemed(state5),
+            BobState::WaitingForCancelTimelockExpiration {
+                state,
+                monero_wallet_restore_blockheight,
+            } => Bob::WaitingForCancelTimelockExpiration {
+                state,
+                monero_wallet_restore_blockheight,
+            },
             BobState::CancelTimelockExpired(state6) => Bob::CancelTimelockExpired(state6),
             BobState::BtcCancelled(state6) => Bob::BtcCancelled(state6),
             BobState::BtcRefundPublished(state6) => Bob::BtcRefundPublished(state6),
@@ -178,6 +189,13 @@ impl From<Bob> for BobState {
             Bob::XmrLocked { state4 } => BobState::XmrLocked(state4),
             Bob::EncSigSent { state4 } => BobState::EncSigSent(state4),
             Bob::BtcRedeemed(state5) => BobState::BtcRedeemed(state5),
+            Bob::WaitingForCancelTimelockExpiration {
+                state,
+                monero_wallet_restore_blockheight,
+            } => BobState::WaitingForCancelTimelockExpiration {
+                state,
+                monero_wallet_restore_blockheight,
+            },
             Bob::CancelTimelockExpired(state6) => BobState::CancelTimelockExpired(state6),
             Bob::BtcCancelled(state6) => BobState::BtcCancelled(state6),
             Bob::BtcRefundPublished(state6) => BobState::BtcRefundPublished(state6),
@@ -205,6 +223,9 @@ impl fmt::Display for Bob {
             }
             Bob::XmrLockTransactionSeen { .. } => f.write_str("XMR lock transaction seen"),
             Bob::XmrLocked { .. } => f.write_str("Monero locked"),
+            Bob::WaitingForCancelTimelockExpiration { .. } => {
+                f.write_str("Waiting for cancel timelock expiration")
+            }
             Bob::CancelTimelockExpired(_) => f.write_str("Cancel timelock is expired"),
             Bob::BtcCancelled(_) => f.write_str("Bitcoin refundable"),
             Bob::BtcRefundPublished { .. } => f.write_str("Bitcoin refund published"),

@@ -19,7 +19,6 @@ use swap_core::bitcoin::{
 };
 use swap_core::compat::IntoDalekNg;
 use swap_core::monero;
-use swap_core::monero::primitives::WatchRequest;
 use swap_core::monero::{ScalarExt, TransferProofMaybeWithTxKey};
 use swap_serde::bitcoin::address_serde;
 use uuid::Uuid;
@@ -67,6 +66,10 @@ pub enum BobState {
     XmrLocked(State4),
     EncSigSent(State4),
     BtcRedeemed(State5),
+    WaitingForCancelTimelockExpiration {
+        state: State3,
+        monero_wallet_restore_blockheight: BlockHeight,
+    },
     CancelTimelockExpired(State6),
     BtcCancelled(State6),
     BtcRefundPublished(State6),
@@ -100,6 +103,9 @@ impl fmt::Display for BobState {
             BobState::XmrLocked(..) => write!(f, "xmr is locked"),
             BobState::EncSigSent(..) => write!(f, "encrypted signature is sent"),
             BobState::BtcRedeemed(..) => write!(f, "btc is redeemed"),
+            BobState::WaitingForCancelTimelockExpiration { .. } => {
+                write!(f, "waiting for cancel timelock expiration")
+            }
             BobState::CancelTimelockExpired(..) => write!(f, "cancel timelock is expired"),
             BobState::BtcCancelled(..) => write!(f, "btc is cancelled"),
             BobState::BtcRefundPublished { .. } => write!(f, "btc refund is published"),
@@ -129,7 +135,8 @@ impl BobState {
             | BobState::XmrLockTransactionCandidate { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
-            BobState::XmrLockTransactionSeen { state, .. } => {
+            BobState::XmrLockTransactionSeen { state, .. }
+            | BobState::WaitingForCancelTimelockExpiration { state, .. } => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::XmrLocked(state) | BobState::EncSigSent(state) => {
@@ -623,7 +630,6 @@ pub struct State4 {
     tx_cancel_sig_a: Signature,
     tx_refund_encsig: bitcoin::EncryptedSignature,
     monero_wallet_restore_blockheight: BlockHeight,
-    // TODO: this should be a new type where the tx_key is optional
     lock_transfer_proof: TransferProofMaybeWithTxKey,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
     tx_redeem_fee: bitcoin::Amount,

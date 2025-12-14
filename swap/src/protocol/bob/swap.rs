@@ -413,7 +413,8 @@ async fn next_state(
             lock_transfer_proof,
             monero_wallet_restore_blockheight,
         } => {
-            tracing::info!(transfer_proof = %lock_transfer_proof.tx_hash(), "Validating Monero lock transaction candidate");
+            // TODO: Emit a Tauri event here
+            tracing::debug!(transfer_proof = %lock_transfer_proof.tx_hash(), "Validating Monero lock transaction candidate");
 
             let (tx_early_refund_status, tx_lock_status): (
                 bitcoin_wallet::Subscription,
@@ -433,7 +434,7 @@ async fn next_state(
                 // Wait until we have verified the Monero lock transaction candidate
                 is_valid_transfer = xmr_lock_transaction_verification => {
                     if is_valid_transfer {
-                        tracing::info!(txid = %lock_transfer_proof.tx_hash(), "Monero lock transaction candidate is valid. It transfers the correct amount of Monero to the correct address.");
+                        tracing::info!(txid = %lock_transfer_proof.tx_hash(), "Monero lock transaction is valid");
 
                         return Ok(BobState::XmrLockTransactionSeen {
                             state,
@@ -441,7 +442,16 @@ async fn next_state(
                             monero_wallet_restore_blockheight,
                         });
                     } else {
-                        todo!("go into a new BobState::WaitingForCancel state");
+                        tracing::warn!(txid = %lock_transfer_proof.tx_hash(), "Monero lock transaction candidate is invalid. It does not transfer the correct amount of Monero to the correct address. We will wait for a refund.");
+
+                        // TODO: We loose the transfer proof here.
+                        // We might need it later on in case of a cooperative Monero redeem after punish.
+                        // Currently Alice will transmit us the xmr_lock_txid during the cooperative redeem.
+                        // but it'd still be good not to lose this.
+                        return Ok(BobState::WaitingForCancelTimelockExpiration {
+                            state: state.clone(),
+                            monero_wallet_restore_blockheight,
+                        });
                     }
                 }
                 // Wait for the cancel timelock to expire
@@ -747,6 +757,32 @@ async fn next_state(
 
             BobState::XmrRedeemed {
                 tx_lock_id: state.tx_lock_id(),
+            }
+        }
+        BobState::WaitingForCancelTimelockExpiration {
+            state,
+            monero_wallet_restore_blockheight,
+        } => {
+            // TODO: Emit a Tauri event here
+
+            let (tx_lock_status, tx_early_refund_status): (
+                bitcoin_wallet::Subscription,
+                bitcoin_wallet::Subscription,
+            ) = tokio::join!(
+                bitcoin_wallet.subscribe_to(Box::new(state.tx_lock.clone())),
+                bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
+            );
+
+            select! {
+                // Wait for the cancel timelock to expire
+                result = tx_lock_status.wait_until_confirmed_with(state.cancel_timelock) => {
+                    result?;
+                    BobState::CancelTimelockExpired(state.cancel(monero_wallet_restore_blockheight))
+                }
+                // Wait for Alice to publish the early refund transaction
+                _ = tx_early_refund_status.wait_until_seen() => {
+                    BobState::BtcEarlyRefundPublished(state.cancel(monero_wallet_restore_blockheight))
+                },
             }
         }
         BobState::CancelTimelockExpired(state6) => {
