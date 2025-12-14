@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use monero_interface::ProvidesBlockchainMeta;
+use tracing::{Instrument, Span};
 
 use crate::{
     rpc::TransactionStatus,
@@ -156,12 +157,13 @@ where
 
     let (sender, receiver) = tokio::sync::watch::channel(ConfirmationStatus::Unseen);
 
-    tokio::spawn(async move {
+    let _ = tokio::spawn(async move {
         let mut backoff = Backoff::new();
 
         while !sender.is_closed() {
             match get_confirmations(&provider, tx_id).await {
                 Ok(status) => {
+                    backoff.reset();
                     if sender.send(status).is_err() {
                         return;
                     }
@@ -174,7 +176,8 @@ where
                 }
             };
         }
-    });
+    })
+    .instrument(Span::current());
 
     Subscription { receiver, tx_id }
 }
@@ -217,5 +220,26 @@ mod tests {
             ConfirmationStatus::Confirmed { confirmations: 5 }.confirmations(),
             5
         );
+    }
+
+    #[test]
+    fn test_absolute_confirmations_into_relative_normal_case() {
+        // Transaction included at block 95, latest block is 100
+        // Confirmations = 100 - 95 + 1 = 6
+        assert_eq!(absolute_confirmations_into_relative(95, 100), 6);
+    }
+
+    #[test]
+    fn test_absolute_confirmations_into_relative_same_block() {
+        // Transaction included in the latest block
+        // Confirmations = 100 - 100 + 1 = 1
+        assert_eq!(absolute_confirmations_into_relative(100, 100), 1);
+    }
+
+    #[test]
+    fn test_absolute_confirmations_into_relative_inclusion_exceeds_latest() {
+        // Edge case: inclusion_height > latest_block
+        // Returns 1 due to saturating_sub
+        assert_eq!(absolute_confirmations_into_relative(105, 100), 1);
     }
 }

@@ -17,6 +17,15 @@ impl Backoff {
         Self(inner)
     }
 
+    /// Reset the backoff to its initial state.
+    ///
+    /// Call this after a successful operation so that subsequent failures
+    /// start from the initial interval rather than continuing from where
+    /// a previous failure sequence left off.
+    pub fn reset(&mut self) {
+        self.0.reset();
+    }
+
     pub async fn sleep_on_error(&mut self, err: &impl Debug, msg: &'static str) {
         let retry_after = self.0.next_backoff().expect("backoff never exhausts");
 

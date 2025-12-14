@@ -9,6 +9,7 @@ use std::time::Duration;
 use monero_interface::{ProvidesBlockchainMeta, ProvidesScannableBlocks, ScannableBlock};
 use monero_oxide::ed25519::{Point, Scalar};
 use monero_oxide_wallet::{GuaranteedViewPair, ViewPairError, WalletOutput};
+use tracing::{Instrument, Span};
 use zeroize::Zeroizing;
 
 /// A subscription to the scanner.
@@ -83,16 +84,21 @@ where
     let (blocks_sender, blocks_receiver) =
         tokio::sync::mpsc::channel::<BlockAtHeight>(BLOCK_QUEUE_SIZE);
 
-    // We do not need to keep the task handles around.
-    // The tasks will kill themselves once all subscribers are dropped.
-    tokio::spawn(fetcher::run(
+    // We do not need to keep the handles around
+    // as they will kill themselves once all subscribers are dropped.
+
+    // Spawn the task that fetches blocks
+    let _ = tokio::spawn(fetcher::run(
         provider,
         restore_height,
         poll_interval,
         blocks_sender,
-    ));
+    ))
+    .instrument(Span::current());
 
-    tokio::spawn(scanner::run(view_pair, blocks_receiver, outputs_sender));
+    // Spawn the task that scans blocks
+    let _ = tokio::spawn(scanner::run(view_pair, blocks_receiver, outputs_sender))
+        .instrument(Span::current());
 
     Ok(Subscription {
         outputs,
@@ -121,7 +127,10 @@ mod fetcher {
 
         while !blocks_sender.is_closed() {
             let tip = match provider.latest_block_number().await {
-                Ok(tip) => tip,
+                Ok(tip) => {
+                    backoff.reset();
+                    tip
+                }
                 Err(err) => {
                     backoff
                         .sleep_on_error(&err, "Failed to fetch latest block height")
@@ -162,7 +171,10 @@ mod fetcher {
             };
 
             let blocks = match provider.contiguous_scannable_blocks(start..=end).await {
-                Ok(blocks) => blocks,
+                Ok(blocks) => {
+                    backoff.reset();
+                    blocks
+                }
                 Err(err) => {
                     backoff
                         .sleep_on_error(&err, "Failed to fetch scannable blocks")
@@ -230,6 +242,7 @@ mod scanner {
                 return;
             };
 
+            // Scan the block
             let outputs = match scanner.scan(block) {
                 Ok(outputs) => outputs,
                 Err(err) => {
@@ -238,10 +251,12 @@ mod scanner {
                 }
             };
 
+            // Ignore any timelocked outputs to protect against unspendable outputs
             let outputs = outputs.ignore_additional_timelock();
 
             tracing::trace!(found_outputs = outputs.len(), height, "Scanned block");
 
+            // Send the outputs to subscribers
             if send_outputs(&outputs_sender, outputs).is_none() {
                 return;
             }
