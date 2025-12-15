@@ -10,16 +10,19 @@ export default function BitcoinLockTxInMempoolPage({
   btc_lock_confirmations,
   btc_lock_txid,
 }: TauriSwapProgressEventContent<"BtcLockTxInMempool">) {
+  function description() {
+    if (btc_lock_confirmations != null && btc_lock_confirmations > 0) {
+      return "Bitcoin have been locked and confirmed. Waiting for the other party to lock their Monero.";
+    }
+
+    return "We have locked our Bitocin. We are waiting for the transaction to be confirmed.";
+  }
+
   return (
     <>
       {(btc_lock_confirmations === undefined ||
         btc_lock_confirmations < BITCOIN_CONFIRMATIONS_WARNING_THRESHOLD) && (
-        <DialogContentText>
-          Your Bitcoin has been locked.{" "}
-          {btc_lock_confirmations !== undefined && btc_lock_confirmations > 0
-            ? "We are waiting for the other party to lock their Monero."
-            : "We are waiting for the blockchain to confirm the transaction. Once confirmed, the other party will lock their Monero."}
-        </DialogContentText>
+        <DialogContentText>{description()}</DialogContentText>
       )}
       <Box
         style={{

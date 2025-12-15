@@ -252,7 +252,7 @@ async fn next_state(
                     // Check if the transaction has already been broadcasted.
                     // It could be that the operation was aborted after the transaction reached the Electrum server
                     // but before we transitioned to the BtcLocked state
-                    tracing::info!(txid = %state3.tx_lock_id(), "Checking if Bitcoin lock transaction has already been published");
+                    tracing::debug!(txid = %state3.tx_lock_id(), "Checking if Bitcoin lock transaction has already been published");
 
                     if state3
                         .is_tx_lock_published(&*bitcoin_wallet)

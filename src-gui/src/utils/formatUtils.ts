@@ -94,13 +94,21 @@ export function formatConfirmations(
   confirmations: number | undefined | null,
   maxConfirmations?: number,
 ): string {
-  if (confirmations === undefined || confirmations === null) {
-    return maxConfirmations !== undefined ? `?/${maxConfirmations}` : "?";
+  if (confirmations == null) {
+    if (maxConfirmations != null) {
+      return `?/${maxConfirmations} confirmations`;
+    }
+
+    return "Fetching transaction status...";
   }
 
-  if (maxConfirmations !== undefined) {
-    return `${confirmations}/${maxConfirmations}`;
+  if (maxConfirmations != null) {
+    return `${confirmations}/${maxConfirmations} confirmations`;
   }
 
-  return confirmations.toString();
+  if (confirmations === 0) {
+    return "Waiting to be included in a block...";
+  }
+
+  return `${confirmations} confirmations`;
 }

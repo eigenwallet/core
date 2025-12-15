@@ -22,8 +22,8 @@ import XmrLockTxInMempoolPage from "./in_progress/XmrLockInMempoolPage";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
 import InitPage from "./init/InitPage";
-import InflightEncSigPage from "./in_progress/InflightEncSigPage";
 import PreflightEncSigPage from "./in_progress/PreflightEncSig";
+import InflightEncSigPage from "./in_progress/InflightEncSigPage";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
   if (state === null) {
