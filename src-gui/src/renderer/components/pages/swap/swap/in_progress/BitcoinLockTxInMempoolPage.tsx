@@ -15,7 +15,7 @@ export default function BitcoinLockTxInMempoolPage({
       return "Bitcoin have been locked and confirmed. Waiting for the other party to lock their Monero.";
     }
 
-    return "We have locked our Bitocin. We are waiting for the transaction to be confirmed.";
+    return "We have locked our Bitcoin. We are waiting for the transaction to be confirmed.";
   }
 
   return (
