@@ -34,3 +34,10 @@ monero-wallet-ng = { path = "../monero-wallet-ng" }
 curve25519-dalek = { workspace = true }
 hex = { workspace = true }
 zeroize = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+testcontainers = { workspace = true }
+monero-harness = { path = "../monero-harness" }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+tempfile = "3.10"
