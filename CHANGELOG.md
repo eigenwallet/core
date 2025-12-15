@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.1] - 2025-12-15
+
 ## [3.6.0] - 2025-12-15
 
 - GUI (Taker): Previously takers had to receive the Monero transfer proof from the maker over the network. This required interactivity meaning that if the peer-to-peer connection was lost, the taker might not detect that the Monero were locked. This would cause unnecessary refunds of swaps that could have otherwise succeded. The taker will now scan the view-only Monero wallet in the background (while concurrently waiting for the transfer proof over the network). The taker will detect if the Monero are locked even if peer-to-peer connection to the other party is lost. This significantly improves the reliability of swaps.
@@ -807,7 +809,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.6.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.6.1...HEAD
+[3.6.1]: https://github.com/eigenwallet/core/compare/3.6.0...3.6.1
 [3.6.0]: https://github.com/eigenwallet/core/compare/3.5.2...3.6.0
 [3.5.2]: https://github.com/eigenwallet/core/compare/3.5.1...3.5.2
 [3.5.1]: https://github.com/eigenwallet/core/compare/3.5.0...3.5.1
