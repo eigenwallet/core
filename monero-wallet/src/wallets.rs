@@ -336,7 +336,7 @@ impl Wallets {
         &self,
         tx_hash: &TxHash,
         confirmation_target: u64,
-        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
+        listener: Option<impl Fn((TxHash, u64, u64)) + Send + 'static>,
     ) -> Result<()> {
         use monero_wallet_ng::confirmations;
 
@@ -350,7 +350,7 @@ impl Wallets {
                 let current = status.confirmations();
 
                 if let Some(ref listener) = listener {
-                    listener((current, confirmation_target));
+                    listener((tx_hash.clone(), current, confirmation_target));
                 }
 
                 tracing::debug!(

@@ -18,11 +18,12 @@ import EncryptedSignatureSentPage from "./in_progress/EncryptedSignatureSentPage
 import ReceivedQuotePage from "./in_progress/ReceivedQuotePage";
 import SwapSetupInflightPage from "./in_progress/SwapSetupInflightPage";
 import WaitingForXmrConfirmationsBeforeRedeemPage from "./in_progress/WaitingForXmrConfirmationsBeforeRedeemPage";
-import XmrLockedPage from "./in_progress/XmrLockedPage";
 import XmrLockTxInMempoolPage from "./in_progress/XmrLockInMempoolPage";
 import { exhaustiveGuard } from "utils/typescriptUtils";
 import DepositAndChooseOfferPage from "renderer/components/pages/swap/swap/init/deposit_and_choose_offer/DepositAndChooseOfferPage";
 import InitPage from "./init/InitPage";
+import InflightEncSigPage from "./in_progress/InflightEncSigPage";
+import PreflightEncSigPage from "./in_progress/PreflightEncSig";
 
 export default function SwapStatePage({ state }: { state: SwapState | null }) {
   if (state === null) {
@@ -72,8 +73,10 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
         return <XmrLockTxInMempoolPage {...state.curr.content} />;
       }
       break;
-    case "XmrLocked":
-      return <XmrLockedPage />;
+    case "PreflightEncSig":
+      return <PreflightEncSigPage />;
+    case "InflightEncSig":
+      return <InflightEncSigPage />;
     case "EncryptedSignatureSent":
       return <EncryptedSignatureSentPage />;
     case "RedeemingMonero":

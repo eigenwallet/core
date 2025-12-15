@@ -388,7 +388,7 @@ async fn next_state(
                 },
                 // Wait for Monero lock to be scanned
                 incoming_xmr_lock_transaction = wait_for_incoming_xmr_lock_transaction => {
-                    tracing::info!(txid = %incoming_xmr_lock_transaction, "Identified Monero lock transaction candidate during scanning of the view-only wallet");
+                    tracing::info!(txid = %incoming_xmr_lock_transaction, "Identified Monero lock transaction candidate during block scanning");
 
                     let lock_transfer_proof = monero::TransferProofMaybeWithTxKey::new_without_tx_key(incoming_xmr_lock_transaction);
 
@@ -448,7 +448,7 @@ async fn next_state(
                             monero_wallet_restore_blockheight,
                         });
                     } else {
-                        tracing::warn!(txid = %lock_transfer_proof.tx_hash(), "Monero lock transaction candidate is invalid. It does not transfer the correct amount of Monero to the correct address. We will wait for a refund.");
+                        tracing::warn!(txid = %lock_transfer_proof.tx_hash(), "Monero lock transaction is invalid. It does not transfer the correct amount of Monero to the correct address.");
 
                         // TODO: We loose the transfer proof here.
                         // We might need it later on in case of a cooperative Monero redeem after punish.
@@ -480,13 +480,11 @@ async fn next_state(
         } => {
             tracing::info!(txid = %lock_transfer_proof.tx_hash(), "Waiting for Monero lock transaction to be fully confirmed");
 
-            let xmr_lock_txid = lock_transfer_proof.tx_hash();
-
-            // Emit initial event showing transaction is seen but waiting for confirmations
+            // Emit initial event showing transaction
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::XmrLockTxInMempool {
-                    xmr_lock_txid: xmr_lock_txid.clone(),
+                    xmr_lock_txid: lock_transfer_proof.tx_hash(),
                     xmr_lock_tx_confirmations: None,
                     xmr_lock_tx_target_confirmations: env_config
                         .monero_double_spend_safe_confirmations,
@@ -508,11 +506,15 @@ async fn next_state(
                 lock_transfer_proof.tx_hash(),
                 env_config.monero_double_spend_safe_confirmations,
                 Some(
-                    move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
+                    move |(
+                        xmr_lock_txid,
+                        xmr_lock_tx_confirmations,
+                        xmr_lock_tx_target_confirmations,
+                    )| {
                         event_emitter_for_callback.emit_swap_progress_event(
                             swap_id,
                             TauriSwapProgressEvent::XmrLockTxInMempool {
-                                xmr_lock_txid: xmr_lock_txid.clone(),
+                                xmr_lock_txid,
                                 xmr_lock_tx_confirmations: Some(xmr_lock_tx_confirmations),
                                 xmr_lock_tx_target_confirmations,
                             },
@@ -546,7 +548,8 @@ async fn next_state(
         BobState::XmrLocked(state) => {
             tracing::info!("Monero lock transaction is fully confirmed. Sending encrypted signature to Alice to allow her to redeem the Bitcoin.");
 
-            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::XmrLocked);
+            event_emitter
+                .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::PreflightEncSig);
 
             // TODO: This pre-requisite check can take quite a while, we should add a type of tauri event here
             // TODO: Can we already send the encrypted signature to Alice here while we checking for tx_redeem?
@@ -606,6 +609,8 @@ async fn next_state(
                 bitcoin_wallet.subscribe_to(Box::new(state.tx_lock.clone())),
                 bitcoin_wallet.subscribe_to(Box::new(state.construct_tx_early_refund()))
             );
+
+            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::InflightEncSig);
 
             // Alice has locked her Monero
             // Bob sends Alice the encrypted signature which allows her to sign and broadcast the Bitcoin redeem transaction
@@ -750,6 +755,8 @@ async fn next_state(
             state,
             monero_wallet_restore_blockheight,
         } => {
+            tracing::info!("Waiting for cancel timelock to expire");
+
             // TODO: Also emit the confirmations and target here?
             event_emitter.emit_swap_progress_event(
                 swap_id,

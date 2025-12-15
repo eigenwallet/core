@@ -31,6 +31,7 @@ pub(super) trait InfallibleXmrRedeemable {
 }
 
 impl XmrRedeemable for State5 {
+    // TODO: Use monero-wallet-ng with monero-oxide here
     async fn redeem_xmr(
         self: State5,
         monero_wallet: &monero::Wallets,
@@ -218,7 +219,9 @@ pub(super) trait WaitForXmrLockTransactionConfirmation {
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
-        on_confirmation_update: Option<impl Fn((u64, u64)) + Send + Clone + 'static>,
+        on_confirmation_update: Option<
+            impl Fn((monero::TxHash, u64, u64)) + Send + Clone + 'static,
+        >,
     ) -> Result<bool>;
 }
 
@@ -228,7 +231,9 @@ impl WaitForXmrLockTransactionConfirmation for State3 {
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
-        on_confirmation_update: Option<impl Fn((u64, u64)) + Send + Clone + 'static>,
+        on_confirmation_update: Option<
+            impl Fn((monero::TxHash, u64, u64)) + Send + Clone + 'static,
+        >,
     ) -> Result<bool> {
         retry(
             "Waiting for XMR lock transaction confirmation",
@@ -257,7 +262,9 @@ impl WaitForXmrLockTransactionConfirmation for State5 {
         monero_wallet: &monero::Wallets,
         tx_hash: monero::TxHash,
         confirmation_target: u64,
-        on_confirmation_update: Option<impl Fn((u64, u64)) + Send + Clone + 'static>,
+        on_confirmation_update: Option<
+            impl Fn((monero::TxHash, u64, u64)) + Send + Clone + 'static,
+        >,
     ) -> Result<bool> {
         retry(
             "Waiting for XMR lock transaction confirmation",

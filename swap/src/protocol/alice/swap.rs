@@ -323,8 +323,9 @@ where
                     .wait_until_confirmed(
                         &transfer_proof.tx_hash(),
                         1,
-                        Some(|(confirmations, target_confirmations)| {
+                        Some(|(xmr_lock_txid, confirmations, target_confirmations)| {
                             tracing::debug!(
+                                %xmr_lock_txid,
                                 %confirmations,
                                 %target_confirmations,
                                 "Monero lock tx got new confirmation"
@@ -739,13 +740,16 @@ impl XmrRefundable for State3 {
             .wait_until_confirmed(
                 &transfer_proof.tx_hash(),
                 10,
-                Some(move |(confirmations, target_confirmations)| {
-                    tracing::debug!(
-                        %confirmations,
-                        %target_confirmations,
-                        "Monero lock transaction got a confirmation"
-                    );
-                }),
+                Some(
+                    move |(xmr_lock_txid, confirmations, target_confirmations)| {
+                        tracing::debug!(
+                            %xmr_lock_txid,
+                            %confirmations,
+                            %target_confirmations,
+                            "Monero lock transaction got a confirmation"
+                        );
+                    },
+                ),
             )
             .await
             .context("Failed to wait for Monero lock transaction to be confirmed")?;

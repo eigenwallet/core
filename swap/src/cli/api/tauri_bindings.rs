@@ -1053,7 +1053,8 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    XmrLocked,
+    PreflightEncSig,
+    InflightEncSig,
     EncryptedSignatureSent,
     RedeemingMonero,
     WaitingForXmrConfirmationsBeforeRedeem {
