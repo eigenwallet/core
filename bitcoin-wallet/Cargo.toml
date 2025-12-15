@@ -20,7 +20,6 @@ moka = { version = "0.12", features = ["sync", "future"] }
 proptest = "1"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
-rust_decimal_macros = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 swap-env = { path = "../swap-env" }

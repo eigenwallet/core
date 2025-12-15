@@ -1,22 +1,21 @@
 use anyhow::{Context, Result};
-use directories_next::ProjectDirs;
 use std::path::{Path, PathBuf};
 
 /// This is the default location for the overall config-dir specific by system
 // Linux: /home/<user>/.config/xmr-btc-swap/
-// OSX: /Users/<user>/Library/Preferences/xmr-btc-swap/
+// OSX: /Users/<user>/Library/Application Support/xmr-btc-swap/
 pub fn system_config_dir() -> Result<PathBuf> {
-    ProjectDirs::from("", "", "xmr-btc-swap")
-        .map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
+    dirs::config_dir()
+        .map(|cd| cd.join("xmr-btc-swap"))
         .context("Could not generate default system configuration dir path")
 }
 
 /// This is the default location for the overall data-dir specific by system
 // Linux: /home/<user>/.local/share/xmr-btc-swap/
-// OSX: /Users/<user>/Library/ApplicationSupport/xmr-btc-swap/
+// OSX: /Users/<user>/Library/Application Support/xmr-btc-swap/
 pub fn system_data_dir() -> Result<PathBuf> {
-    ProjectDirs::from("", "", "xmr-btc-swap")
-        .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
+    dirs::data_dir()
+        .map(|cd| cd.join("xmr-btc-swap"))
         .context("Could not generate default system data-dir dir path")
 }
 
@@ -26,8 +25,8 @@ pub fn system_data_dir_eigenwallet(testnet: bool) -> Result<PathBuf> {
         false => "eigenwallet",
     };
 
-    ProjectDirs::from("", "", application_directory)
-        .map(|proj_dirs| proj_dirs.data_dir().to_path_buf())
+    dirs::data_dir()
+        .map(|cd| cd.join(application_directory))
         .context("Could not generate default system data-dir dir path")
 }
 

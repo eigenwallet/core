@@ -1174,7 +1174,6 @@ dependencies = [
  "proptest",
  "reqwest 0.12.25",
  "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "serde_json",
  "swap-env",
@@ -2832,16 +2831,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "directories-next"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "339ee130d97a610ea5a5872d2bbb130fdf68884ff09d3028b81bec8a1ac23bbc"
-dependencies = [
- "cfg-if",
- "dirs-sys-next",
-]
-
-[[package]]
 name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2858,19 +2847,8 @@ checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
 dependencies = [
  "libc",
  "option-ext",
- "redox_users 0.5.2",
+ "redox_users",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "dirs-sys-next"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d"
-dependencies = [
- "libc",
- "redox_users 0.4.6",
- "winapi",
 ]
 
 [[package]]
@@ -8728,17 +8706,6 @@ dependencies = [
 
 [[package]]
 name = "redox_users"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
-dependencies = [
- "getrandom 0.2.16",
- "libredox",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "redox_users"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
@@ -8812,7 +8779,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "arti-client",
- "atty",
+ "console 0.16.1",
  "futures",
  "libp2p",
  "libp2p-tor",
@@ -9088,16 +9055,6 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "rust_decimal_macros"
-version = "1.39.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae8c0cb48f413ebe24dc2d148788e0efbe09ba3e011d9277162f2eaf8e1069a3"
-dependencies = [
- "quote",
- "syn 2.0.111",
 ]
 
 [[package]]
@@ -10685,7 +10642,6 @@ dependencies = [
  "arti-client",
  "async-trait",
  "backoff",
- "base64 0.22.1",
  "bdk",
  "bdk_wallet",
  "bitcoin 0.32.8",
@@ -10694,6 +10650,7 @@ dependencies = [
  "bmrng",
  "config",
  "curve25519-dalek",
+ "data-encoding",
  "ecdsa_fun",
  "electrum-pool",
  "futures",
@@ -10861,7 +10818,6 @@ dependencies = [
  "serde",
  "swap-fs",
  "swap-serde",
- "terminal_size",
  "thiserror 1.0.69",
  "time",
  "toml 0.9.8",
@@ -10895,7 +10851,7 @@ name = "swap-fs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "directories-next",
+ "dirs",
  "tracing",
 ]
 
@@ -11651,16 +11607,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "terminal_size"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b8cb979cb11c32ce1603f8137b22262a9d131aaa5c37b5678025f22b8becd0"
-dependencies = [
- "rustix",
- "windows-sys 0.60.2",
 ]
 
 [[package]]
