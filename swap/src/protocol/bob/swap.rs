@@ -551,7 +551,6 @@ async fn next_state(
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::PreflightEncSig);
 
-            // TODO: This pre-requisite check can take quite a while, we should add a type of tauri event here
             // TODO: Can we already send the encrypted signature to Alice here while we checking for tx_redeem?
             let bitcoin_wallet_for_retry = bitcoin_wallet.clone();
             let (redeem_state, expired_timelocks) = retry(
@@ -708,7 +707,6 @@ async fn next_state(
         BobState::BtcRedeemed(state) => {
             // Now we wait for the full 10 confirmations on the Monero lock transaction
             // because we simply cannot spend it otherwise
-            let xmr_lock_txid = state.lock_transfer_proof.tx_hash();
             let event_emitter_for_callback = event_emitter.clone();
 
             state
@@ -717,11 +715,15 @@ async fn next_state(
                     state.lock_transfer_proof.tx_hash(),
                     env_config.monero_finality_confirmations,
                     Some(
-                        move |(xmr_lock_tx_confirmations, xmr_lock_tx_target_confirmations)| {
+                        move |(
+                            xmr_lock_txid,
+                            xmr_lock_tx_confirmations,
+                            xmr_lock_tx_target_confirmations,
+                        )| {
                             event_emitter_for_callback.emit_swap_progress_event(
                                 swap_id,
                                 TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
-                                    xmr_lock_txid: xmr_lock_txid.clone(),
+                                    xmr_lock_txid,
                                     xmr_lock_tx_confirmations,
                                     xmr_lock_tx_target_confirmations,
                                 },
@@ -1013,7 +1015,6 @@ async fn next_state(
                     // TODO: Extract this into an infallible function with a trait
                     // TODO: This is duplicated in the transition from BtcRedeemed to XmrRedeemed
                     // TODO: We should transition into BtcRedeemed here. We should rename BtcRedeemed to something like "XmrRedeemable"
-                    let xmr_lock_txid = state5.lock_transfer_proof.tx_hash();
                     let event_emitter_for_callback = event_emitter.clone();
 
                     state5
@@ -1023,13 +1024,14 @@ async fn next_state(
                             10,
                             Some(
                                 move |(
+                                    xmr_lock_txid,
                                     xmr_lock_tx_confirmations,
                                     xmr_lock_tx_target_confirmations,
                                 )| {
                                     event_emitter_for_callback.emit_swap_progress_event(
                                     swap_id,
                                     TauriSwapProgressEvent::WaitingForXmrConfirmationsBeforeRedeem {
-                                        xmr_lock_txid: xmr_lock_txid.clone(),
+                                        xmr_lock_txid,
                                         xmr_lock_tx_confirmations,
                                         xmr_lock_tx_target_confirmations,
                                     },
