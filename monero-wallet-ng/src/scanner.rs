@@ -228,7 +228,7 @@ mod fetcher {
 mod scanner {
     use monero_oxide_wallet::{Scanner, ViewPair, WalletOutput};
 
-    use super::BlockAtHeight;
+    use super::{BlockAtHeight, BLOCKS_PER_BATCH};
 
     pub(super) async fn run(
         view_pair: ViewPair,
@@ -238,26 +238,42 @@ mod scanner {
         let mut scanner = Scanner::new(view_pair);
 
         while !outputs_sender.is_closed() {
-            let Some(BlockAtHeight { height, block }) = blocks_receiver.recv().await else {
+            let mut batch = Vec::with_capacity(BLOCKS_PER_BATCH);
+
+            let received_blocks = blocks_receiver
+                .recv_many(&mut batch, BLOCKS_PER_BATCH)
+                .await;
+
+            // If no blocks were received, fetcher is dead
+            if received_blocks == 0 {
                 return;
-            };
+            }
 
-            // Scan the block
-            let outputs = match scanner.scan(block) {
-                Ok(outputs) => outputs,
-                Err(err) => {
-                    tracing::warn!(error = ?err, height, "Failed to scan block");
-                    return;
+            // Scan all blocks in the batch
+            let mut all_outputs = Vec::new();
+
+            for BlockAtHeight { height, block } in batch {
+                match scanner.scan(block) {
+                    Ok(scanned) => {
+                        // Swallow any timelocked outputs to protect against unspendable outputs
+                        let outputs = scanned.not_additionally_locked();
+                        all_outputs.extend(outputs);
+                    }
+                    Err(err) => {
+                        // TODO: Retry here?
+                        tracing::warn!(error = ?err, height, "Failed to scan block");
+                    }
                 }
-            };
+            }
 
-            // Ignore any timelocked outputs to protect against unspendable outputs
-            let outputs = outputs.not_additionally_locked();
-
-            tracing::trace!(found_outputs = outputs.len(), height, "Scanned block");
+            tracing::trace!(
+                found_outputs = all_outputs.len(),
+                batch_size = received_blocks,
+                "Scanned batch of blocks"
+            );
 
             // Send the outputs to subscribers
-            if send_outputs(&outputs_sender, outputs).is_none() {
+            if send_outputs(&outputs_sender, all_outputs).is_none() {
                 return;
             }
         }
