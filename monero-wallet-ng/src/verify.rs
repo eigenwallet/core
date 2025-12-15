@@ -6,6 +6,8 @@ use monero_oxide_wallet::interface::{ProvidesTransactions, ScannableBlock, Trans
 use monero_oxide_wallet::transaction::{Input, Pruned, Timelock, Transaction, TransactionPrefix};
 use monero_oxide_wallet::{Scanner, ViewPair};
 
+use crate::HARDFORK_VERSION;
+
 #[derive(Debug, thiserror::Error)]
 pub enum VerifyError {
     #[error("Transaction error: {0}")]
@@ -87,7 +89,7 @@ fn create_scannable_block_for_tx(tx_id: [u8; 32], tx: Transaction<Pruned>) -> Sc
 
     // Fake block header
     let header = BlockHeader {
-        hardfork_version: 16,
+        hardfork_version: HARDFORK_VERSION,
         hardfork_signal: 0,
         timestamp: 0,
         previous: [0u8; 32],
