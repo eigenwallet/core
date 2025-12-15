@@ -13,6 +13,7 @@ use anyhow::{bail, Context, Result};
 use bitcoin_wallet::BitcoinWallet;
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
+use swap_core::monero::BlockHeight;
 use swap_env::env::Config;
 use swap_machine::alice::State3;
 use tokio::select;
@@ -158,7 +159,7 @@ where
                     // Record the current monero wallet block height so we don't have to scan from
                     // block 0 for scenarios where we create a refund wallet.
                     let monero_wallet_restore_blockheight = monero_wallet
-                        .blockchain_height()
+                        .direct_rpc_block_height()
                         .await
                         .context("Failed to get Monero wallet block height")
                         .map_err(backoff::Error::transient)?;
@@ -210,7 +211,9 @@ where
                 // If the transfer was successful, we transition to the next state
                 Ok(Some((monero_wallet_restore_blockheight, transfer_proof))) => {
                     AliceState::XmrLockTransactionSent {
-                        monero_wallet_restore_blockheight,
+                        monero_wallet_restore_blockheight: BlockHeight {
+                            height: monero_wallet_restore_blockheight,
+                        },
                         transfer_proof,
                         state3,
                     }
@@ -315,11 +318,14 @@ where
         } => match state3.expired_timelocks(&*bitcoin_wallet).await? {
             ExpiredTimelocks::None { .. } => {
                 tracing::info!("Locked Monero, waiting for confirmations");
+
                 monero_wallet
                     .wait_until_confirmed(
-                        state3.lock_xmr_watch_request(transfer_proof.clone(), 1),
-                        Some(|(confirmations, target_confirmations)| {
+                        &transfer_proof.tx_hash(),
+                        1,
+                        Some(|(xmr_lock_txid, confirmations, target_confirmations)| {
                             tracing::debug!(
+                                %xmr_lock_txid,
                                 %confirmations,
                                 %target_confirmations,
                                 "Monero lock tx got new confirmation"
@@ -728,39 +734,37 @@ impl XmrRefundable for State3 {
 
         // Ensure that the XMR to be refunded are spendable by awaiting 10 confirmations
         // on the lock transaction.
-        tracing::info!("Waiting for Monero lock transaction to be confirmed");
-        let transfer_proof_2 = transfer_proof.clone();
+        tracing::info!("Waiting for Monero lock transaction to be confirmed before refunding");
+
         monero_wallet
             .wait_until_confirmed(
-                self.lock_xmr_watch_request(transfer_proof_2, 10),
-                Some(move |(confirmations, target_confirmations)| {
-                    tracing::debug!(
-                        %confirmations,
-                        %target_confirmations,
-                        "Monero lock transaction got a confirmation"
-                    );
-                }),
+                &transfer_proof.tx_hash(),
+                10,
+                Some(
+                    move |(xmr_lock_txid, confirmations, target_confirmations)| {
+                        tracing::debug!(
+                            %xmr_lock_txid,
+                            %confirmations,
+                            %target_confirmations,
+                            "Monero lock transaction got a confirmation"
+                        );
+                    },
+                ),
             )
             .await
             .context("Failed to wait for Monero lock transaction to be confirmed")?;
 
-        tracing::info!("Refunding Monero");
+        tracing::debug!(%swap_id, "Opening temporary Monero wallet from keys for refunding");
 
-        tracing::debug!(%swap_id, "Opening temporary Monero wallet from keys");
         let swap_wallet = monero_wallet
-            .swap_wallet(swap_id, spend_key, view_key, transfer_proof.tx_hash())
+            .swap_wallet_spendable(swap_id, spend_key, view_key, transfer_proof.tx_hash())
             .await
             .context(format!("Failed to open/create swap wallet `{}`", swap_id))?;
 
-        // Update blockheight to ensure that the wallet knows the funds are unlocked
-        tracing::debug!(%swap_id, "Updating temporary Monero wallet's blockheight");
-        let _ = swap_wallet
-            .blockchain_height()
-            .await
-            .context("Couldn't get Monero blockheight")?;
-
         tracing::debug!(%swap_id, "Sweeping Monero to redeem address");
         let main_address = monero_wallet.main_wallet().await.main_address().await?;
+
+        swap_wallet.refresh_blocking().await?;
 
         swap_wallet
             .sweep(&main_address)

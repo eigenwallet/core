@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI (Taker): Previously takers had to receive the Monero transfer proof from the maker over the network. This required interactivity meaning that if the peer-to-peer connection was lost, the taker might not detect that the Monero were locked. This would cause unnecessary refunds of swaps that could have otherwise succeded. The taker will now scan the view-only Monero wallet in the background (while concurrently waiting for the transfer proof over the network). The taker will detect if the Monero are locked even if peer-to-peer connection to the other party is lost. This significantly improves the reliability of swaps.
+- GUI: Fix an issue where it'd take a while for swaps to show up after a restart.
+
 ## [3.5.2] - 2025-12-08
 
 ## [3.5.1] - 2025-12-07

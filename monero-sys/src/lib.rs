@@ -16,14 +16,13 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
-use throttle::Throttle;
-
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
     path::PathBuf, pin::Pin, str::FromStr, time::Duration,
 };
+use throttle::Throttle;
 
 use anyhow::{anyhow, bail, Context, Result};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
@@ -873,73 +872,6 @@ impl WalletHandle {
     pub async fn scan_transaction(&self, txid: String) -> anyhow::Result<()> {
         self.call(move |wallet| wallet.scan_transaction(txid))
             .await?
-    }
-
-    /// Wait until a transaction is confirmed.
-    pub async fn wait_until_confirmed(
-        &self,
-        txid: String,
-        tx_key: monero::PrivateKey,
-        destination_address: &monero::Address,
-        expected_amount: monero::Amount,
-        confirmations: u64,
-        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
-    ) -> anyhow::Result<()> {
-        tracing::info!(%txid, %destination_address, amount=%expected_amount, %confirmations, "Waiting until transaction is confirmed");
-
-        const DEFAULT_CHECK_INTERVAL_SECS: u64 = 15;
-
-        let mut poll_interval = tokio::time::interval(tokio::time::Duration::from_secs(
-            DEFAULT_CHECK_INTERVAL_SECS,
-        ));
-
-        loop {
-            poll_interval.tick().await;
-
-            let tx_status = match self
-                .check_tx_status(txid.clone(), tx_key, destination_address)
-                .await
-            {
-                Ok(tx_status) => tx_status,
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to check tx status: {}, rechecking in {}s",
-                        e,
-                        DEFAULT_CHECK_INTERVAL_SECS
-                    );
-                    continue;
-                }
-            };
-
-            // Make sure the amount is correct
-            if tx_status.received != expected_amount {
-                tracing::error!(
-                    "Transaction received amount mismatch: expected {}, got {}",
-                    expected_amount,
-                    tx_status.received
-                );
-                return Err(anyhow::anyhow!(
-                    "Transaction received amount mismatch: expected {}, got {}",
-                    expected_amount,
-                    tx_status.received
-                ));
-            }
-
-            // If the listener exists, notify it of the result
-            if let Some(listener) = &listener {
-                listener((tx_status.confirmations, confirmations));
-            }
-
-            // Stop when we have the required number of confirmations
-            if tx_status.confirmations >= confirmations {
-                break;
-            }
-
-            tracing::trace!("Transaction not confirmed yet, polling again later");
-        }
-
-        // Signal success
-        Ok(())
     }
 
     /// Creates pending transaction, gets approval, then publishes or disposes based on approval.

@@ -36,6 +36,7 @@ import {
   selectAllSwapInfos,
   selectPendingApprovals,
   selectSwapInfoWithTimelock,
+  selectSwapInfosRaw,
 } from "./selectors";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
@@ -124,7 +125,7 @@ export function useSwapInfo(
   swapId: string | null,
 ): GetSwapInfoResponseExt | null {
   return useAppSelector((state) =>
-    swapId ? (state.rpc.state.swapInfos[swapId] ?? null) : null,
+    swapId ? (state.rpc.state.swapInfos?.[swapId] ?? null) : null,
   );
 }
 
@@ -179,6 +180,13 @@ export function useSwapInfosSortedByDate() {
   const swapInfos = useSaneSwapInfos();
 
   return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
+}
+
+/// Returns true if swapInfos has been loaded
+/// False means means we haven't fetched the swap infos yet
+export function useAreSwapInfosLoaded(): boolean {
+  const swapInfos = useAppSelector(selectSwapInfosRaw);
+  return swapInfos !== null;
 }
 
 export function useSettings<T>(selector: (settings: SettingsState) => T): T {

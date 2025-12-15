@@ -44,12 +44,6 @@ import {
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 
-// Update the public registry every 5 minutes
-const PROVIDER_UPDATE_INTERVAL = 5 * 60 * 1_000;
-
-// Discover peers every 5 minutes
-const DISCOVER_PEERS_INTERVAL = 5 * 60 * 1_000;
-
 // Update node statuses every 2 minutes
 const STATUS_UPDATE_INTERVAL = 2 * 60 * 1_000;
 
