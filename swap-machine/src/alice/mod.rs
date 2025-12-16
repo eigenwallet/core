@@ -8,8 +8,9 @@ use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
-    TxFullRefund, TxPartialRefund, TxPunish, TxRedeem, TxRefundAmnesty, Txid, current_epoch,
+    CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
+    TxCancel, TxEarlyRefund, TxFullRefund, TxPartialRefund, TxPunish, TxRedeem, TxRefundAmnesty,
+    Txid, current_epoch,
 };
 use swap_core::monero;
 use swap_core::monero::ScalarExt;
@@ -169,6 +170,7 @@ pub struct State0 {
     btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
     tx_redeem_fee: bitcoin::Amount,
@@ -213,6 +215,7 @@ impl State0 {
             xmr,
             cancel_timelock: env_config.bitcoin_cancel_timelock.into(),
             punish_timelock: env_config.bitcoin_punish_timelock.into(),
+            remaining_refund_timelock: Some(env_config.bitcoin_remaining_refund_timelock.into()),
             tx_redeem_fee,
             tx_punish_fee,
         }
@@ -254,6 +257,7 @@ impl State0 {
                 btc_amnesty_amount: self.btc_amnesty_amount,
                 cancel_timelock: self.cancel_timelock,
                 punish_timelock: self.punish_timelock,
+                remaining_refund_timelock: self.remaining_refund_timelock,
                 refund_address: msg.refund_address,
                 redeem_address: self.redeem_address,
                 punish_address: self.punish_address,
@@ -286,6 +290,7 @@ pub struct State1 {
     btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     refund_address: bitcoin::Address,
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
@@ -336,6 +341,7 @@ impl State1 {
             btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             redeem_address: self.redeem_address,
             punish_address: self.punish_address,
@@ -364,6 +370,7 @@ pub struct State2 {
     btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     refund_address: bitcoin::Address,
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
@@ -474,6 +481,8 @@ impl State2 {
             &self.refund_address,
             self.tx_refund_amnesty_fee
                 .context("missing tx_refund_amnesty_fee")?,
+            self.remaining_refund_timelock
+                .context("missing remaining_refund_timelock")?,
         );
 
         // Check if the provided signature by Bob is valid for the transaction
@@ -496,6 +505,7 @@ impl State2 {
             btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             redeem_address: self.redeem_address,
             punish_address: self.punish_address,
@@ -528,6 +538,7 @@ pub struct State3 {
     pub btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     refund_address: bitcoin::Address,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
@@ -728,6 +739,8 @@ impl State3 {
             &self.refund_address,
             self.tx_refund_amnesty_fee
                 .context("Missing tx_refund_amnesty_fee")?,
+            self.remaining_refund_timelock
+                .context("Missing remaining_refund_timelock")?,
         );
 
         tx_amnesty.complete_as_alice(

@@ -573,6 +573,7 @@ async fn run_swap_setup(
         xmr,
         env_config.bitcoin_cancel_timelock.into(),
         env_config.bitcoin_punish_timelock.into(),
+        env_config.bitcoin_remaining_refund_timelock.into(),
         new_swap_request.bitcoin_refund_address.clone(),
         env_config.monero_finality_confirmations,
         new_swap_request.tx_partial_refund_fee,

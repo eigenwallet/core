@@ -14,8 +14,8 @@ use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    self, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxLock,
-    TxPartialRefund, TxRefundAmnesty, Txid, current_epoch,
+    self, CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
+    TxCancel, TxLock, TxPartialRefund, TxRefundAmnesty, Txid, current_epoch,
 };
 use swap_core::monero::ScalarExt;
 use swap_core::monero::primitives::WatchRequest;
@@ -217,6 +217,7 @@ pub struct State0 {
     xmr: monero::Amount,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     refund_address: bitcoin::Address,
     min_monero_confirmations: u64,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
@@ -235,6 +236,7 @@ impl State0 {
         xmr: monero::Amount,
         cancel_timelock: CancelTimelock,
         punish_timelock: PunishTimelock,
+        remaining_refund_timelock: RemainingRefundTimelock,
         refund_address: bitcoin::Address,
         min_monero_confirmations: u64,
         tx_partial_refund_fee: bitcoin::Amount,
@@ -264,6 +266,7 @@ impl State0 {
             dleq_proof_s_b,
             cancel_timelock,
             punish_timelock,
+            remaining_refund_timelock: Some(remaining_refund_timelock),
             refund_address,
             min_monero_confirmations,
             tx_partial_refund_fee: Some(tx_partial_refund_fee),
@@ -336,6 +339,7 @@ impl State0 {
             btc_amnesty_amount: Some(msg.amnesty_amount),
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             redeem_address: msg.redeem_address,
             punish_address: msg.punish_address,
@@ -364,6 +368,7 @@ pub struct State1 {
     btc_amnesty_amount: Option<bitcoin::Amount>,
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     refund_address: bitcoin::Address,
     redeem_address: bitcoin::Address,
     punish_address: bitcoin::Address,
@@ -431,6 +436,8 @@ impl State1 {
                 &self.refund_address,
                 self.tx_refund_amnesty_fee
                     .context("tx_refund_amnesty_fee missing but required to setup swap")?,
+                self.remaining_refund_timelock
+                    .context("remaining_refund_timelock missing but required to setup swap")?,
             );
             bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), tx_refund_amnesty_sig)?;
         }
@@ -450,6 +457,7 @@ impl State1 {
             btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             redeem_address: self.redeem_address,
             punish_address: self.punish_address,
@@ -481,6 +489,7 @@ pub struct State2 {
     pub btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "address_serde")]
     pub refund_address: bitcoin::Address,
     #[serde(with = "address_serde")]
@@ -548,6 +557,8 @@ impl State2 {
             &self.refund_address,
             self.tx_refund_amnesty_fee
                 .context("Missing tx_refund_amnesty_fee")?,
+            self.remaining_refund_timelock
+                .context("missing remaining_refund_timelock")?,
         );
         let tx_refund_amnesty_sig = self.b.sign(tx_refund_amnesty.digest());
 
@@ -572,6 +583,7 @@ impl State2 {
                 btc_amnesty_amount: self.btc_amnesty_amount,
                 cancel_timelock: self.cancel_timelock,
                 punish_timelock: self.punish_timelock,
+                remaining_refund_timelock: self.remaining_refund_timelock,
                 refund_address: self.refund_address,
                 redeem_address: self.redeem_address,
                 tx_lock: self.tx_lock.clone(),
@@ -603,6 +615,7 @@ pub struct State3 {
     btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "address_serde")]
     refund_address: bitcoin::Address,
     #[serde(with = "address_serde")]
@@ -661,6 +674,7 @@ impl State3 {
             btc_amnesty_amount: self.btc_amnesty_amount,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             redeem_address: self.redeem_address,
             tx_lock: self.tx_lock,
@@ -686,6 +700,7 @@ impl State3 {
             monero_wallet_restore_blockheight,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address.clone(),
             tx_lock: self.tx_lock.clone(),
             tx_cancel_sig_a: self.tx_cancel_sig_a.clone(),
@@ -757,6 +772,7 @@ pub struct State4 {
     btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "address_serde")]
     refund_address: bitcoin::Address,
     #[serde(with = "address_serde")]
@@ -872,6 +888,7 @@ impl State4 {
             monero_wallet_restore_blockheight: self.monero_wallet_restore_blockheight,
             cancel_timelock: self.cancel_timelock,
             punish_timelock: self.punish_timelock,
+            remaining_refund_timelock: self.remaining_refund_timelock,
             refund_address: self.refund_address,
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: self.tx_cancel_sig_a,
@@ -948,6 +965,7 @@ pub struct State6 {
     pub monero_wallet_restore_blockheight: BlockHeight,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "address_serde")]
     refund_address: bitcoin::Address,
     pub tx_lock: bitcoin::TxLock,
@@ -1150,6 +1168,9 @@ impl State6 {
             &self.refund_address,
             self.tx_refund_amnesty_fee.context(
                 "Can't construct TxRefundAmnesty because tx_refund_amnesty_fee is missing",
+            )?,
+            self.remaining_refund_timelock.context(
+                "Can't construct TxRefundAmnesty because remaining_refund_timelock is missing",
             )?,
         ))
     }

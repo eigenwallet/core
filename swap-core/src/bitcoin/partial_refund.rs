@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::extract_ecdsa_sig;
+use super::timelocks::RemainingRefundTimelock;
 
 #[derive(Debug, Clone)]
 pub struct TxPartialRefund {
@@ -87,6 +88,7 @@ impl TxPartialRefund {
         &self,
         refund_address: &Address,
         spending_fee: Amount,
+        remaining_refund_timelock: RemainingRefundTimelock,
     ) -> Transaction {
         use ::bitcoin::{
             Sequence, TxIn, TxOut, locktime::absolute::LockTime as PackedLockTime,
@@ -96,7 +98,7 @@ impl TxPartialRefund {
         let tx_in = TxIn {
             previous_output: self.amnesty_outpoint(),
             script_sig: Default::default(),
-            sequence: Sequence(0xFFFF_FFFF),
+            sequence: Sequence(remaining_refund_timelock.0),
             witness: Default::default(),
         };
 

@@ -9,6 +9,8 @@ use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
 use std::collections::HashMap;
 
+use super::timelocks::RemainingRefundTimelock;
+
 #[derive(Debug, Clone)]
 pub struct TxRefundAmnesty {
     inner: Transaction,
@@ -22,9 +24,13 @@ impl TxRefundAmnesty {
         tx_refund: &TxPartialRefund,
         refund_address: &Address,
         spending_fee: Amount,
+        remaining_refund_timelock: RemainingRefundTimelock,
     ) -> Self {
-        let tx_refund_amnesty =
-            tx_refund.build_amnesty_spend_transaction(refund_address, spending_fee);
+        let tx_refund_amnesty = tx_refund.build_amnesty_spend_transaction(
+            refund_address,
+            spending_fee,
+            remaining_refund_timelock,
+        );
 
         let digest = SighashCache::new(&tx_refund_amnesty)
             .p2wsh_signature_hash(

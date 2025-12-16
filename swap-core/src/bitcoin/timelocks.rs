@@ -106,12 +106,58 @@ impl PartialEq<PunishTimelock> for u32 {
     }
 }
 
+/// How long a taker has to wait to refund the remaining Bitcoin after publishing
+/// TxPartialRefund.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(transparent)]
+#[typeshare]
+pub struct RemainingRefundTimelock(pub u32);
+
+impl From<RemainingRefundTimelock> for u32 {
+    fn from(remainin_refund_timelock: RemainingRefundTimelock) -> Self {
+        remainin_refund_timelock.0
+    }
+}
+
+impl From<u32> for RemainingRefundTimelock {
+    fn from(number_of_blocks: u32) -> Self {
+        Self(number_of_blocks)
+    }
+}
+
+impl RemainingRefundTimelock {
+    pub const fn new(number_of_blocks: u32) -> Self {
+        Self(number_of_blocks)
+    }
+}
+
+impl Add<RemainingRefundTimelock> for BlockHeight {
+    type Output = BlockHeight;
+
+    fn add(self, rhs: RemainingRefundTimelock) -> Self::Output {
+        self + rhs.0
+    }
+}
+
+impl PartialOrd<RemainingRefundTimelock> for u32 {
+    fn partial_cmp(&self, other: &RemainingRefundTimelock) -> Option<Ordering> {
+        self.partial_cmp(&other.0)
+    }
+}
+
+impl PartialEq<RemainingRefundTimelock> for u32 {
+    fn eq(&self, other: &RemainingRefundTimelock) -> bool {
+        self.eq(&other.0)
+    }
+}
+
 #[typeshare]
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(tag = "type", content = "content")]
 pub enum ExpiredTimelocks {
     None { blocks_left: u32 },
     Cancel { blocks_left: u32 },
+    RemainingRefund { block_left: u32 },
     Punish,
 }
 
