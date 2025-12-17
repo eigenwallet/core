@@ -2,6 +2,7 @@
 
 mod cancel;
 mod early_refund;
+mod final_amnesty;
 mod full_refund;
 mod lock;
 mod partial_refund;
@@ -13,6 +14,7 @@ mod timelocks;
 
 pub use crate::bitcoin::cancel::TxCancel;
 pub use crate::bitcoin::early_refund::TxEarlyRefund;
+pub use crate::bitcoin::final_amnesty::TxFinalAmnesty;
 pub use crate::bitcoin::full_refund::TxFullRefund;
 pub use crate::bitcoin::lock::TxLock;
 pub use crate::bitcoin::partial_refund::TxPartialRefund;
