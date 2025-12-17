@@ -182,6 +182,8 @@ jobs:
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
           - package: swap
             test_name: happy_path_alice_does_not_send_transfer_proof
+          - package: swap
+            test_name: partial_refund_bob_claims_amnesty
           - package: monero-tests
             test_name: reserve_proof
           - package: monero-tests
