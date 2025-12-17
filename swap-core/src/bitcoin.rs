@@ -8,6 +8,7 @@ mod partial_refund;
 mod punish;
 mod redeem;
 mod refund_amnesty;
+mod refund_burn;
 mod timelocks;
 
 pub use crate::bitcoin::cancel::TxCancel;
@@ -18,6 +19,7 @@ pub use crate::bitcoin::partial_refund::TxPartialRefund;
 pub use crate::bitcoin::punish::TxPunish;
 pub use crate::bitcoin::redeem::TxRedeem;
 pub use crate::bitcoin::refund_amnesty::TxRefundAmnesty;
+pub use crate::bitcoin::refund_burn::TxRefundBurn;
 pub use crate::bitcoin::timelocks::{BlockHeight, ExpiredTimelocks};
 pub use crate::bitcoin::timelocks::{CancelTimelock, PunishTimelock, RemainingRefundTimelock};
 pub use bitcoin_wallet::ScriptStatus;

@@ -115,6 +115,47 @@ impl TxPartialRefund {
         }
     }
 
+    /// Build a transaction that spends the amnesty output to a new 2-of-2 multisig (burn output).
+    /// This is used by TxRefundBurn to "burn" the amnesty by moving it to another multisig.
+    /// Unlike `build_amnesty_spend_transaction`, this has no timelock.
+    pub fn build_burn_spend_transaction(
+        &self,
+        burn_output_descriptor: &Descriptor<::bitcoin::PublicKey>,
+        spending_fee: Amount,
+    ) -> Transaction {
+        use ::bitcoin::{
+            Sequence, TxIn, TxOut, locktime::absolute::LockTime as PackedLockTime,
+            transaction::Version,
+        };
+
+        // TODO: Handle case where fee >= amnesty_amount more gracefully
+        assert!(
+            self.amnesty_amount() > spending_fee,
+            "Burn spend fee ({}) must be less than amnesty amount ({})",
+            spending_fee,
+            self.amnesty_amount()
+        );
+
+        let tx_in = TxIn {
+            previous_output: self.amnesty_outpoint(),
+            script_sig: Default::default(),
+            sequence: Sequence(0xFFFF_FFFF), // No timelock
+            witness: Default::default(),
+        };
+
+        let tx_out = TxOut {
+            value: self.amnesty_amount() - spending_fee,
+            script_pubkey: burn_output_descriptor.script_pubkey(),
+        };
+
+        Transaction {
+            version: Version(2),
+            lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
+            input: vec![tx_in],
+            output: vec![tx_out],
+        }
+    }
+
     pub fn add_signatures(
         self,
         (A, sig_a): (PublicKey, Signature),
