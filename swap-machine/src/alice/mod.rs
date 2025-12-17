@@ -425,9 +425,20 @@ impl State2 {
         let tx_refund_encsig = self.a.encsign(self.S_b_bitcoin, tx_partial_refund.digest());
 
         let tx_cancel_sig = self.a.sign(tx_cancel.digest());
-        // TODO: When to send these?
+
+        // Construct and sign TxRefundAmnesty
+        let tx_refund_amnesty = swap_core::bitcoin::TxRefundAmnesty::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_refund_amnesty_fee
+                .context("Missing tx_refund_amnesty_fee for new swap")?,
+            self.remaining_refund_timelock
+                .context("Missing remaining_refund_timelock for new swap")?,
+        );
+        let tx_refund_amnesty_sig = self.a.sign(tx_refund_amnesty.digest());
+
+        // TODO: When to send full refund encsig?
         let tx_full_refund_encsig = None;
-        let tx_refund_amnesty_sig = None;
 
         Ok(Message3 {
             tx_cancel_sig,

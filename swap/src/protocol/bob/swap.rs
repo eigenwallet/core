@@ -955,7 +955,7 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::BtcPartialRefundPublished {
                     btc_partial_refund_txid: state.construct_tx_partial_refund()?.txid(),
-                    has_amnesty_signature: state.tx_refund_amnesty_sig.is_some(),
+                    has_amnesty_signature: state.refund_signatures.tx_refund_amnesty_sig().is_some(),
                 },
             );
 
@@ -982,7 +982,7 @@ async fn next_state(
             }
         }
         BobState::BtcPartiallyRefunded(state) => {
-            let has_amnesty_signature = state.tx_refund_amnesty_sig.is_some();
+            let has_amnesty_signature = state.refund_signatures.tx_refund_amnesty_sig().is_some();
 
             event_emitter.emit_swap_progress_event(
                 swap_id,

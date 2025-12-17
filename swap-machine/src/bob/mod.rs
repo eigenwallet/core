@@ -95,22 +95,26 @@ pub enum BobState {
 #[serde(untagged)]
 pub enum RefundSignatures {
     /// Alice has only signed the partial refund transaction (most cases).
+    /// Includes the amnesty signature which is always provided in new swaps.
     Partial {
         tx_partial_refund_encsig: bitcoin::EncryptedSignature,
+        tx_refund_amnesty_sig: bitcoin::Signature,
     },
     /// Alice has signed both the partial and full refund transactions.
+    /// Includes the amnesty signature which is always provided in new swaps.
     Full {
         tx_partial_refund_encsig: bitcoin::EncryptedSignature,
         // Serde rename keeps + untagged + flatten keeps this backwards compatible with old swaps in the database.
         #[serde(rename = "tx_refund_encsig")]
         tx_full_refund_encsig: bitcoin::EncryptedSignature,
+        tx_refund_amnesty_sig: bitcoin::Signature,
     },
     /// Alice has only signed the full refund transaction.
     /// This is only used to maintain backwards compatibility for older swaps
     /// from before the partial refund protocol change.
     /// See [#675](https://github.com/eigenwallet/core/pull/675).
     Legacy {
-        // Serde raname keeps + untagged + flatten keeps this backwards compatible with old swaps in the database.
+        // Serde rename keeps + untagged + flatten keeps this backwards compatible with old swaps in the database.
         #[serde(rename = "tx_refund_encsig")]
         tx_full_refund_encsig: bitcoin::EncryptedSignature,
     },
@@ -474,22 +478,21 @@ impl State1 {
             )?;
         }
 
-        // Verify the refund amnesty signature if it is present
-        if let Some(tx_refund_amnesty_sig) = &msg.tx_refund_amnesty_sig {
-            let tx_refund_amnesty = bitcoin::TxRefundAmnesty::new(
-                &tx_partial_refund,
-                &self.refund_address,
-                self.tx_refund_amnesty_fee
-                    .context("tx_refund_amnesty_fee missing but required to setup swap")?,
-                self.remaining_refund_timelock
-                    .context("remaining_refund_timelock missing but required to setup swap")?,
-            );
-            bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), tx_refund_amnesty_sig)?;
-        }
+        // Verify the refund amnesty signature (always provided in new swaps)
+        let tx_refund_amnesty = bitcoin::TxRefundAmnesty::new(
+            &tx_partial_refund,
+            &self.refund_address,
+            self.tx_refund_amnesty_fee
+                .context("tx_refund_amnesty_fee missing but required to setup swap")?,
+            self.remaining_refund_timelock
+                .context("remaining_refund_timelock missing but required to setup swap")?,
+        );
+        bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), &msg.tx_refund_amnesty_sig)?;
 
         let refund_signatures = RefundSignatures::from_possibly_full_refund_sig(
             msg.tx_partial_refund_encsig,
             msg.tx_full_refund_encsig,
+            msg.tx_refund_amnesty_sig,
         );
         Ok(State2 {
             A: self.A,
@@ -509,7 +512,6 @@ impl State1 {
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: msg.tx_cancel_sig,
             refund_signatures,
-            tx_refund_amnesty_sig: msg.tx_refund_amnesty_sig,
             min_monero_confirmations: self.min_monero_confirmations,
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
@@ -549,10 +551,6 @@ pub struct State2 {
     /// It boils down to the same json except that it now may also contain a partial refund signature.
     #[serde(flatten)]
     refund_signatures: RefundSignatures,
-    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
-    /// It allows Bob to retrieve the refund fee introduced in the PR.
-    /// This signature is voluntarily revealed by alice.
-    tx_refund_amnesty_sig: Option<Signature>,
     min_monero_confirmations: u64,
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
@@ -657,7 +655,6 @@ impl State2 {
                 tx_lock: self.tx_lock.clone(),
                 tx_cancel_sig_a: self.tx_cancel_sig_a,
                 refund_signatures: self.refund_signatures,
-                tx_refund_amnesty_sig: self.tx_refund_amnesty_sig,
                 min_monero_confirmations: self.min_monero_confirmations,
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_refund_fee: self.tx_refund_fee,
@@ -698,10 +695,6 @@ pub struct State3 {
     /// It boils down to the same json except that it now may also contain a partial refund signature.
     #[serde(flatten)]
     refund_signatures: RefundSignatures,
-    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
-    /// It allows Bob to retrieve the refund fee introduced in the PR.
-    /// This signature is voluntarily revealed by alice.
-    tx_refund_amnesty_sig: Option<Signature>,
     min_monero_confirmations: u64,
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
@@ -752,7 +745,6 @@ impl State3 {
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: self.tx_cancel_sig_a,
             refund_signatures: self.refund_signatures,
-            tx_refund_amnesty_sig: self.tx_refund_amnesty_sig,
             monero_wallet_restore_blockheight,
             lock_transfer_proof,
             tx_redeem_fee: self.tx_redeem_fee,
@@ -779,7 +771,6 @@ impl State3 {
             tx_lock: self.tx_lock.clone(),
             tx_cancel_sig_a: self.tx_cancel_sig_a.clone(),
             refund_signatures: self.refund_signatures.clone(),
-            tx_refund_amnesty_sig: self.tx_refund_amnesty_sig.clone(),
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
@@ -877,10 +868,6 @@ pub struct State4 {
     /// It boils down to the same json except that it now may also contain a partial refund signature.
     #[serde(flatten)]
     refund_signatures: RefundSignatures,
-    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
-    /// It allows Bob to retrieve the refund fee introduced in the PR.
-    /// This signature is voluntarily revealed by alice.
-    tx_refund_amnesty_sig: Option<Signature>,
     monero_wallet_restore_blockheight: BlockHeight,
     lock_transfer_proof: TransferProof,
     tx_redeem_fee: bitcoin::Amount,
@@ -1007,7 +994,6 @@ impl State4 {
             tx_lock: self.tx_lock,
             tx_cancel_sig_a: self.tx_cancel_sig_a,
             refund_signatures: self.refund_signatures,
-            tx_refund_amnesty_sig: self.tx_refund_amnesty_sig,
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             xmr: self.xmr,
@@ -1090,10 +1076,6 @@ pub struct State6 {
     /// It boils down to the same json except that it now may also contain a partial refund signature.
     #[serde(flatten)]
     pub refund_signatures: RefundSignatures,
-    /// This field was added in [#675](https://github.com/eigenwallet/core/pull/675).
-    /// It allows Bob to retrieve the refund fee introduced in the PR.
-    /// This signature is voluntarily revealed by alice.
-    pub tx_refund_amnesty_sig: Option<Signature>,
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
@@ -1278,7 +1260,7 @@ impl State6 {
     pub fn signed_amnesty_transaction(&self) -> Result<Transaction> {
         let tx_amnesty = self.construct_tx_amnesty()?;
 
-        let sig_a = self.tx_refund_amnesty_sig.clone().context(
+        let sig_a = self.refund_signatures.tx_refund_amnesty_sig().context(
             "Can't sign amnesty transaction because Alice's amnesty signature is missing",
         )?;
         let sig_b = self.b.sign(tx_amnesty.digest());
@@ -1373,22 +1355,19 @@ impl RefundSignatures {
     pub fn from_possibly_full_refund_sig(
         partial_refund_encsig: bitcoin::EncryptedSignature,
         full_refund_encsig: Option<bitcoin::EncryptedSignature>,
+        refund_amnesty_sig: bitcoin::Signature,
     ) -> Self {
         if let Some(full_refund_encsig) = full_refund_encsig {
             Self::Full {
                 tx_partial_refund_encsig: partial_refund_encsig,
                 tx_full_refund_encsig: full_refund_encsig,
+                tx_refund_amnesty_sig: refund_amnesty_sig,
             }
         } else {
             Self::Partial {
                 tx_partial_refund_encsig: partial_refund_encsig,
+                tx_refund_amnesty_sig: refund_amnesty_sig,
             }
-        }
-    }
-
-    pub fn from_partial_refund_sig(partial_refund_encsig: bitcoin::EncryptedSignature) -> Self {
-        Self::Partial {
-            tx_partial_refund_encsig: partial_refund_encsig,
         }
     }
 
@@ -1409,11 +1388,28 @@ impl RefundSignatures {
         match self {
             RefundSignatures::Partial {
                 tx_partial_refund_encsig,
+                ..
             } => Some(tx_partial_refund_encsig.clone()),
             RefundSignatures::Full {
                 tx_partial_refund_encsig,
                 ..
             } => Some(tx_partial_refund_encsig.clone()),
+            RefundSignatures::Legacy { .. } => None,
+        }
+    }
+
+    /// Returns Alice's signature for the amnesty transaction.
+    /// Only available for new swaps (Partial/Full variants), not Legacy swaps.
+    pub fn tx_refund_amnesty_sig(&self) -> Option<bitcoin::Signature> {
+        match self {
+            RefundSignatures::Partial {
+                tx_refund_amnesty_sig,
+                ..
+            } => Some(tx_refund_amnesty_sig.clone()),
+            RefundSignatures::Full {
+                tx_refund_amnesty_sig,
+                ..
+            } => Some(tx_refund_amnesty_sig.clone()),
             RefundSignatures::Legacy { .. } => None,
         }
     }

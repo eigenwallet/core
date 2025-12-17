@@ -77,7 +77,8 @@ pub struct Message3 {
     /// have to.
     pub tx_partial_refund_encsig: bitcoin::EncryptedSignature,
     pub tx_full_refund_encsig: Option<bitcoin::EncryptedSignature>,
-    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
+    /// Alice's signature for the amnesty transaction - always provided.
+    pub tx_refund_amnesty_sig: bitcoin::Signature,
 }
 
 #[allow(non_snake_case)]
