@@ -904,6 +904,121 @@ impl TestContext {
         .unwrap();
     }
 
+    pub async fn assert_bob_partially_refunded(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
+            BobState::BtcPartiallyRefunded(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.btc_amnesty_amount.expect("amnesty amount"),
+            ),
+            _ => panic!("Bob is not in btc partially refunded state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_amount;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_amnesty_received(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_fee) = match state {
+            BobState::BtcAmnestyConfirmed(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.tx_refund_amnesty_fee.expect("amnesty fee"),
+            ),
+            _ => panic!("Bob is not in btc amnesty confirmed state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob gets full amount back minus all the fees
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_fee;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_refund_burnt(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
+            BobState::BtcRefundBurnt(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.btc_amnesty_amount.expect("amnesty amount"),
+            ),
+            _ => panic!("Bob is not in btc refund burnt state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob lost the amnesty amount (it was burnt)
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_amount;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_final_amnesty_received(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, final_amnesty_fee) = match state {
+            BobState::BtcFinalAmnestyConfirmed(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.tx_final_amnesty_fee.expect("final amnesty fee"),
+            ),
+            _ => panic!("Bob is not in btc final amnesty confirmed state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob gets full amount back via final amnesty
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - final_amnesty_fee;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
     fn alice_redeemed_xmr_balance(&self) -> monero::Amount {
         self.alice_starting_balances.xmr - self.xmr_amount
     }
@@ -1218,6 +1333,10 @@ pub mod alice_run_until {
     pub fn is_btc_redeemed(state: &AliceState) -> bool {
         matches!(state, AliceState::BtcRedeemed { .. })
     }
+
+    pub fn is_btc_partially_refunded(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcPartiallyRefunded { .. })
+    }
 }
 
 pub mod bob_run_until {
@@ -1237,6 +1356,30 @@ pub mod bob_run_until {
 
     pub fn is_encsig_sent(state: &BobState) -> bool {
         matches!(state, BobState::EncSigSent(..))
+    }
+
+    pub fn is_btc_partially_refunded(state: &BobState) -> bool {
+        matches!(state, BobState::BtcPartiallyRefunded(..))
+    }
+
+    pub fn is_waiting_for_remaining_refund_timelock(state: &BobState) -> bool {
+        matches!(state, BobState::WaitingForRemainingRefundTimelockExpiration(..))
+    }
+
+    pub fn is_remaining_refund_timelock_expired(state: &BobState) -> bool {
+        matches!(state, BobState::RemainingRefundTimelockExpired(..))
+    }
+
+    pub fn is_btc_amnesty_confirmed(state: &BobState) -> bool {
+        matches!(state, BobState::BtcAmnestyConfirmed(..))
+    }
+
+    pub fn is_btc_refund_burnt(state: &BobState) -> bool {
+        matches!(state, BobState::BtcRefundBurnt(..))
+    }
+
+    pub fn is_btc_final_amnesty_confirmed(state: &BobState) -> bool {
+        matches!(state, BobState::BtcFinalAmnestyConfirmed(..))
     }
 }
 
@@ -1269,6 +1412,18 @@ impl GetConfig for FastPunishConfig {
         Config {
             bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
             bitcoin_punish_timelock: PunishTimelock::new(10).into(),
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+pub struct FastAmnestyConfig;
+
+impl GetConfig for FastAmnestyConfig {
+    fn get_config() -> Config {
+        Config {
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_remaining_refund_timelock: 3,
             ..env::Regtest::get_config()
         }
     }
