@@ -59,6 +59,19 @@ pub enum BobState {
     BtcPartiallyRefunded(State6),
     BtcAmnestyPublished(State6),
     BtcAmnestyConfirmed(State6),
+    /// Waiting for RemainingRefundTimelock to expire after partial refund confirmed.
+    /// During this time, Alice may publish TxRefundBurn.
+    WaitingForRemainingRefundTimelockExpiration(State6),
+    /// RemainingRefundTimelock has expired, we can now publish TxRefundAmnesty.
+    RemainingRefundTimelockExpired(State6),
+    /// Alice published TxRefundBurn before we could publish TxRefundAmnesty.
+    BtcRefundBurnPublished(State6),
+    /// TxRefundBurn has been confirmed. The amnesty output is now burnt.
+    BtcRefundBurnt(State6),
+    /// Alice published TxFinalAmnesty (using our presigned signature) to refund us.
+    BtcFinalAmnestyPublished(State6),
+    /// TxFinalAmnesty has been confirmed. We received the burnt funds back.
+    BtcFinalAmnestyConfirmed(State6),
     XmrRedeemed {
         tx_lock_id: bitcoin::Txid,
     },
@@ -140,6 +153,20 @@ impl fmt::Display for BobState {
             BobState::BtcPartiallyRefunded { .. } => write!(f, "btc is partially refunded"),
             BobState::BtcAmnestyPublished { .. } => write!(f, "btc amnesty is published"),
             BobState::BtcAmnestyConfirmed { .. } => write!(f, "btc amnesty is confirmed"),
+            BobState::WaitingForRemainingRefundTimelockExpiration { .. } => {
+                write!(f, "waiting for remaining refund timelock to expire")
+            }
+            BobState::RemainingRefundTimelockExpired { .. } => {
+                write!(f, "remaining refund timelock expired")
+            }
+            BobState::BtcRefundBurnPublished { .. } => write!(f, "btc refund burn is published"),
+            BobState::BtcRefundBurnt { .. } => write!(f, "btc refund is burnt"),
+            BobState::BtcFinalAmnestyPublished { .. } => {
+                write!(f, "btc final amnesty is published")
+            }
+            BobState::BtcFinalAmnestyConfirmed { .. } => {
+                write!(f, "btc final amnesty is confirmed")
+            }
             BobState::SafelyAborted => write!(f, "safely aborted"),
         }
     }
@@ -180,10 +207,16 @@ impl BobState {
             | BobState::BtcPartialRefundPublished(state)
             | BobState::BtcPartiallyRefunded(state)
             | BobState::BtcAmnestyPublished(state)
-            | BobState::BtcAmnestyConfirmed(state) => {
+            | BobState::BtcAmnestyConfirmed(state)
+            | BobState::WaitingForRemainingRefundTimelockExpiration(state)
+            | BobState::RemainingRefundTimelockExpired(state)
+            | BobState::BtcRefundBurnPublished(state)
+            | BobState::BtcRefundBurnt(state)
+            | BobState::BtcFinalAmnestyPublished(state) => {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::BtcPunished { .. } => Some(ExpiredTimelocks::Punish),
+            BobState::BtcFinalAmnestyConfirmed(_) => Some(ExpiredTimelocks::RemainingRefund),
             BobState::BtcRefunded(_)
             | BobState::BtcEarlyRefunded { .. }
             | BobState::BtcRedeemed(_)
@@ -198,6 +231,7 @@ pub fn is_complete(state: &BobState) -> bool {
         BobState::BtcRefunded(..)
             | BobState::BtcEarlyRefunded { .. }
             | BobState::BtcAmnestyConfirmed { .. }
+            | BobState::BtcFinalAmnestyConfirmed { .. }
             | BobState::XmrRedeemed { .. }
             | BobState::SafelyAborted
     )

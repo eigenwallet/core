@@ -72,12 +72,18 @@ pub async fn cancel(
         BobState::BtcPartiallyRefunded(state6) => state6,
         BobState::BtcAmnestyConfirmed(state6) => state6,
         BobState::BtcAmnestyPublished(state6) => state6,
+        BobState::WaitingForRemainingRefundTimelockExpiration(state6) => state6,
+        BobState::RemainingRefundTimelockExpired(state6) => state6,
+        BobState::BtcRefundBurnPublished(state6) => state6,
+        BobState::BtcFinalAmnestyPublished(state6) => state6,
 
         BobState::Started { .. }
         | BobState::BtcRedeemed(_)
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
         | BobState::BtcEarlyRefunded { .. }
+        | BobState::BtcRefundBurnt { .. }
+        | BobState::BtcFinalAmnestyConfirmed { .. }
         | BobState::SafelyAborted => bail!(
             "Cannot cancel swap {} because it is in state {} which is not cancellable.",
             swap_id,
@@ -190,12 +196,18 @@ pub async fn refund(
         BobState::BtcPartiallyRefunded(state6) => state6,
         BobState::BtcAmnestyPublished(state6) => state6,
         BobState::BtcAmnestyConfirmed(state6) => state6,
+        BobState::WaitingForRemainingRefundTimelockExpiration(state6) => state6,
+        BobState::RemainingRefundTimelockExpired(state6) => state6,
+        BobState::BtcRefundBurnPublished(state6) => state6,
+        BobState::BtcFinalAmnestyPublished(state6) => state6,
         BobState::Started { .. }
         | BobState::SwapSetupCompleted(_)
         | BobState::BtcRedeemed(_)
         | BobState::BtcEarlyRefunded { .. }
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
+        | BobState::BtcRefundBurnt { .. }
+        | BobState::BtcFinalAmnestyConfirmed { .. }
         | BobState::SafelyAborted => bail!(
             "Cannot refund swap {} because it is in state {} which is not refundable.",
             swap_id,

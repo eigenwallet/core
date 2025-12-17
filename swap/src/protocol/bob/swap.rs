@@ -1214,8 +1214,40 @@ async fn next_state(
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcAmnestyReceived {
                 btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
             });
-            BobState::BtcAmnestyConfirmed(state) 
+            BobState::BtcAmnestyConfirmed(state)
         },
+        BobState::WaitingForRemainingRefundTimelockExpiration(_state) => {
+            // TODO: Wait for timelock expiry while watching for TxRefundBurn
+            // If timelock expires -> RemainingRefundTimelockExpired
+            // If TxRefundBurn seen -> BtcRefundBurnPublished
+            todo!("WaitingForRemainingRefundTimelockExpiration state transition not yet implemented")
+        }
+        BobState::RemainingRefundTimelockExpired(_state) => {
+            // TODO: Check if TxRefundBurn was published/confirmed first
+            // If TxRefundBurn confirmed -> BtcRefundBurnt
+            // If TxRefundBurn published -> BtcRefundBurnPublished
+            // Otherwise publish TxRefundAmnesty -> BtcAmnestyPublished
+            todo!("RemainingRefundTimelockExpired state transition not yet implemented")
+        }
+        BobState::BtcRefundBurnPublished(_state) => {
+            // TODO: Wait for TxRefundBurn confirmation
+            // Then -> BtcRefundBurnt
+            todo!("BtcRefundBurnPublished state transition not yet implemented")
+        }
+        BobState::BtcRefundBurnt(state) => {
+            // Terminal state - Alice needs to manually publish TxFinalAmnesty
+            // Similar to BtcPunished, we stop here
+            BobState::BtcRefundBurnt(state)
+        }
+        BobState::BtcFinalAmnestyPublished(_state) => {
+            // TODO: Wait for TxFinalAmnesty confirmation
+            // Then -> BtcFinalAmnestyConfirmed
+            todo!("BtcFinalAmnestyPublished state transition not yet implemented")
+        }
+        BobState::BtcFinalAmnestyConfirmed(state) => {
+            // Terminal state - we received the burnt funds back
+            BobState::BtcFinalAmnestyConfirmed(state)
+        }
         BobState::SafelyAborted => BobState::SafelyAborted,
         BobState::XmrRedeemed { tx_lock_id } => {
             event_emitter.emit_swap_progress_event(
