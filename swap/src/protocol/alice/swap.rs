@@ -667,16 +667,9 @@ where
             state3,
             monero_wallet_restore_blockheight,
         } => {
-            // TODO: Publish amnesty transaction/send amnesty tx sig / decide against it
-            // TODO: retry, maybe in background? we don't want this to block us from refunding the Monero though
-            let tx_refund_amnesty = state3
-                .signed_bitcoin_amnesty_transaction()
-                .context("Couldn't construct Bitcoin refund amnesty transaction")?;
-
-            bitcoin_wallet
-                .ensure_broadcasted(tx_refund_amnesty, "refund amnesty")
-                .await?;
-
+            // Bob has the pre-signed TxRefundAmnesty from swap setup and can
+            // publish it himself after the remaining refund timelock expires.
+            // TODO: implement system for publishing TxRefundBurn at this point
             AliceState::XmrRefundable {
                 monero_wallet_restore_blockheight,
                 transfer_proof,
