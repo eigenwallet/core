@@ -3,6 +3,8 @@ mod containers;
 mod images;
 mod prompt;
 
+use swap_orchestrator as _;
+
 use crate::compose::{
     ASB_DATA_DIR, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage,
     OrchestratorImages, OrchestratorInput, OrchestratorNetworks,

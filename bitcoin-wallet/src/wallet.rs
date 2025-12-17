@@ -13,8 +13,6 @@ use bdk_wallet::template::{Bip84, DescriptorTemplate};
 use bdk_wallet::KeychainKind;
 use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
-#[allow(deprecated)]
-use bitcoin::bip32::ExtendedPrivKey;
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Address, Amount, Transaction, Txid};
 use bitcoin::{Psbt, ScriptBuf, Weight};
@@ -69,7 +67,7 @@ pub trait BitcoinTauriBackgroundTask: Send + Sync {
 }
 
 pub trait BitcoinWalletSeed {
-    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<ExtendedPrivKey>;
+    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<Xpriv>;
 
     /// Same as `derive_extended_private_key`, but using the legacy BDK API.
     ///

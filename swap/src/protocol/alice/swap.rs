@@ -1,6 +1,5 @@
 //! Run an XMR/BTC swap in the role of Alice.
 //! Alice holds XMR and wishes receive BTC.
-use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -680,7 +679,7 @@ where
             }
         }
         AliceState::XmrRefundable {
-            monero_wallet_restore_blockheight,
+            monero_wallet_restore_blockheight: _,
             transfer_proof,
             spend_key,
             state3,

@@ -3,7 +3,6 @@ use crate::cli::api::request::{
     MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
 };
 use crate::cli::api::Context;
-use crate::monero::{self, MoneroAddressPool};
 use anyhow::Result;
 use bitcoin::address::NetworkUnchecked;
 use bitcoin_wallet::{bitcoin_address, Amount};

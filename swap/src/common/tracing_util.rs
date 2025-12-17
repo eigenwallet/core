@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal};
+use std::io;
 use std::path::Path;
 use std::str::FromStr;
 

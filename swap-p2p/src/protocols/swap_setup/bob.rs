@@ -6,8 +6,6 @@ use crate::protocols::swap_setup::{
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
 use futures::AsyncWriteExt;
-use futures::FutureExt;
-use futures::future::{BoxFuture, OptionFuture};
 use libp2p::core::upgrade;
 use libp2p::swarm::behaviour::ConnectionEstablished;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};

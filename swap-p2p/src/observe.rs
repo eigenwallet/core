@@ -126,7 +126,7 @@ impl NetworkBehaviour for Behaviour {
 
     fn poll(
         &mut self,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, libp2p::swarm::THandlerInEvent<Self>>> {
         if let Some(event) = self.to_swarm.pop_front() {
             return Poll::Ready(ToSwarm::GenerateEvent(event));

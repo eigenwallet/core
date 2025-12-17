@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use config::ConfigError;
 use libp2p::core::Multiaddr;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize, de};
+use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};

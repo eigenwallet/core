@@ -3,7 +3,6 @@ use crate::env::{Mainnet, Testnet};
 use anyhow::{Context, Result};
 use libp2p::Multiaddr;
 use rust_decimal::Decimal;
-use std::cell::Ref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use swap_fs::{system_config_dir, system_data_dir};
