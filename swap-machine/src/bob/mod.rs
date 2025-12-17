@@ -663,6 +663,8 @@ impl State2 {
                 tx_refund_fee: self.tx_refund_fee,
                 tx_partial_refund_fee: self.tx_partial_refund_fee,
                 tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+                tx_refund_burn_fee: self.tx_refund_burn_fee,
+                tx_final_amnesty_fee: self.tx_final_amnesty_fee,
                 tx_cancel_fee: self.tx_cancel_fee,
             },
             self.tx_lock,
@@ -705,6 +707,8 @@ pub struct State3 {
     tx_refund_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -756,6 +760,8 @@ impl State3 {
             tx_cancel_fee: self.tx_cancel_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+            tx_refund_burn_fee: self.tx_refund_burn_fee,
+            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
         }
     }
 
@@ -778,6 +784,8 @@ impl State3 {
             tx_cancel_fee: self.tx_cancel_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+            tx_refund_burn_fee: self.tx_refund_burn_fee,
+            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
             xmr: self.xmr,
             btc_amnesty_amount: self.btc_amnesty_amount,
         }
@@ -879,6 +887,8 @@ pub struct State4 {
     tx_refund_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -1004,6 +1014,8 @@ impl State4 {
             btc_amnesty_amount: self.btc_amnesty_amount,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+            tx_refund_burn_fee: self.tx_refund_burn_fee,
+            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
         }
     }
 
@@ -1069,7 +1081,7 @@ pub struct State6 {
     pub monero_wallet_restore_blockheight: BlockHeight,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
-    remaining_refund_timelock: Option<RemainingRefundTimelock>,
+    pub remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "address_serde")]
     refund_address: bitcoin::Address,
     pub tx_lock: bitcoin::TxLock,
@@ -1086,6 +1098,8 @@ pub struct State6 {
     pub tx_cancel_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
 }
 
 impl State6 {
@@ -1286,6 +1300,29 @@ impl State6 {
             )?,
             self.remaining_refund_timelock.context(
                 "Can't construct TxRefundAmnesty because remaining_refund_timelock is missing",
+            )?,
+        ))
+    }
+
+    pub fn construct_tx_refund_burn(&self) -> Result<bitcoin::TxRefundBurn> {
+        let tx_partial_refund = self.construct_tx_partial_refund()?;
+        bitcoin::TxRefundBurn::new(
+            &tx_partial_refund,
+            self.A,
+            self.b.public(),
+            self.tx_refund_burn_fee.context(
+                "Can't construct TxRefundBurn because tx_refund_burn_fee is missing",
+            )?,
+        )
+    }
+
+    pub fn construct_tx_final_amnesty(&self) -> Result<bitcoin::TxFinalAmnesty> {
+        let tx_refund_burn = self.construct_tx_refund_burn()?;
+        Ok(bitcoin::TxFinalAmnesty::new(
+            &tx_refund_burn,
+            &self.refund_address,
+            self.tx_final_amnesty_fee.context(
+                "Can't construct TxFinalAmnesty because tx_final_amnesty_fee is missing",
             )?,
         ))
     }
