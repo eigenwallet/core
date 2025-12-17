@@ -9,8 +9,8 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 use swap_core::bitcoin::{
     CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
-    TxCancel, TxEarlyRefund, TxFullRefund, TxPartialRefund, TxPunish, TxRedeem, TxRefundAmnesty,
-    Txid, current_epoch,
+    TxCancel, TxEarlyRefund, TxFinalAmnesty, TxFullRefund, TxPartialRefund, TxPunish, TxRedeem,
+    TxRefundAmnesty, TxRefundBurn, Txid, current_epoch,
 };
 use swap_core::monero;
 use swap_core::monero::ScalarExt;
@@ -175,6 +175,7 @@ pub struct State0 {
     punish_address: bitcoin::Address,
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
 }
 
 impl State0 {
@@ -188,6 +189,7 @@ impl State0 {
         punish_address: bitcoin::Address,
         tx_redeem_fee: bitcoin::Amount,
         tx_punish_fee: bitcoin::Amount,
+        tx_refund_burn_fee: bitcoin::Amount,
         rng: &mut R,
     ) -> Self
     where
@@ -218,6 +220,7 @@ impl State0 {
             remaining_refund_timelock: Some(env_config.bitcoin_remaining_refund_timelock.into()),
             tx_redeem_fee,
             tx_punish_fee,
+            tx_refund_burn_fee: Some(tx_refund_burn_fee),
         }
     }
 
@@ -266,6 +269,8 @@ impl State0 {
                 tx_refund_fee: msg.tx_refund_fee,
                 tx_partial_refund_fee: Some(msg.tx_partial_refund_fee),
                 tx_refund_amnesty_fee: Some(msg.tx_refund_amnesty_fee),
+                tx_refund_burn_fee: self.tx_refund_burn_fee,
+                tx_final_amnesty_fee: Some(msg.tx_final_amnesty_fee),
                 tx_cancel_fee: msg.tx_cancel_fee,
             },
         ))
@@ -299,6 +304,8 @@ pub struct State1 {
     tx_refund_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -317,6 +324,9 @@ impl State1 {
             amnesty_amount: self
                 .btc_amnesty_amount
                 .context("Missing btc_amesty_amount for new swap that should have it")?,
+            tx_refund_burn_fee: self
+                .tx_refund_burn_fee
+                .context("Missing tx_refund_burn_fee for new swap that should have it")?,
         })
     }
 
@@ -351,6 +361,8 @@ impl State1 {
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+            tx_refund_burn_fee: self.tx_refund_burn_fee,
+            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }
@@ -380,6 +392,8 @@ pub struct State2 {
     tx_refund_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -492,6 +506,39 @@ impl State2 {
             &msg.tx_refund_amnesty_sig,
         )
         .context("Failed to verify refund amnesty transaction")?;
+
+        // Create TxRefundBurn ourself
+        let tx_refund_burn = TxRefundBurn::new(
+            &tx_partial_refund,
+            self.a.public(),
+            self.B,
+            self.tx_refund_burn_fee
+                .context("missing tx_refund_burn_fee")?,
+        )?;
+
+        // Check if the provided signature by Bob is valid for the transaction
+        swap_core::bitcoin::verify_sig(
+            &self.B,
+            &tx_refund_burn.digest(),
+            &msg.tx_refund_burn_sig,
+        )
+        .context("Failed to verify refund burn transaction")?;
+
+        // Create TxFinalAmnesty ourself
+        let tx_final_amnesty = TxFinalAmnesty::new(
+            &tx_refund_burn,
+            &self.refund_address,
+            self.tx_final_amnesty_fee
+                .context("missing tx_final_amnesty_fee")?,
+        );
+
+        // Check if the provided signature by Bob is valid for the transaction
+        swap_core::bitcoin::verify_sig(
+            &self.B,
+            &tx_final_amnesty.digest(),
+            &msg.tx_final_amnesty_sig,
+        )
+        .context("Failed to verify final amnesty transaction")?;
 
         Ok(State3 {
             a: self.a,

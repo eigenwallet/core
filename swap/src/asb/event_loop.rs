@@ -879,6 +879,9 @@ async fn capture_wallet_snapshot(
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
+    let refund_burn_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxRefundBurn::weight(), Some(transfer_amount))
+        .await?;
 
     Ok(WalletSnapshot::new(
         unlocked_balance.into(),
@@ -886,6 +889,7 @@ async fn capture_wallet_snapshot(
         punish_address,
         redeem_fee,
         punish_fee,
+        refund_burn_fee,
     ))
 }
 

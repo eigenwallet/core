@@ -331,6 +331,7 @@ pub struct NewSwap {
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_partial_refund_fee: bitcoin::Amount,
     pub tx_refund_amnesty_fee: bitcoin::Amount,
+    pub tx_final_amnesty_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
     pub bitcoin_refund_address: bitcoin::Address,
 }
@@ -576,6 +577,7 @@ async fn run_swap_setup(
         env_config.monero_finality_confirmations,
         new_swap_request.tx_partial_refund_fee,
         new_swap_request.tx_refund_amnesty_fee,
+        new_swap_request.tx_final_amnesty_fee,
         new_swap_request.tx_refund_fee,
         new_swap_request.tx_cancel_fee,
         new_swap_request.tx_lock_fee,

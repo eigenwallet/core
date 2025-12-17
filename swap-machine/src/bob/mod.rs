@@ -15,7 +15,8 @@ use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
     self, CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
-    TxCancel, TxLock, TxPartialRefund, TxRefundAmnesty, Txid, current_epoch,
+    TxCancel, TxFinalAmnesty, TxLock, TxPartialRefund, TxRefundAmnesty, TxRefundBurn, Txid,
+    current_epoch,
 };
 use swap_core::monero::ScalarExt;
 use swap_core::monero::primitives::WatchRequest;
@@ -256,6 +257,7 @@ pub struct State0 {
     min_monero_confirmations: u64,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_refund_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
     tx_lock_fee: bitcoin::Amount,
@@ -275,6 +277,7 @@ impl State0 {
         min_monero_confirmations: u64,
         tx_partial_refund_fee: bitcoin::Amount,
         tx_refund_amnesty_fee: bitcoin::Amount,
+        tx_final_amnesty_fee: bitcoin::Amount,
         tx_refund_fee: bitcoin::Amount,
         tx_cancel_fee: bitcoin::Amount,
         tx_lock_fee: bitcoin::Amount,
@@ -305,6 +308,7 @@ impl State0 {
             min_monero_confirmations,
             tx_partial_refund_fee: Some(tx_partial_refund_fee),
             tx_refund_amnesty_fee: Some(tx_refund_amnesty_fee),
+            tx_final_amnesty_fee: Some(tx_final_amnesty_fee),
             tx_refund_fee,
             tx_cancel_fee,
             tx_lock_fee,
@@ -327,6 +331,9 @@ impl State0 {
             tx_refund_amnesty_fee: self
                 .tx_refund_amnesty_fee
                 .context("tx_refund_amnesty_fee missing but required to setup swap")?,
+            tx_final_amnesty_fee: self
+                .tx_final_amnesty_fee
+                .context("tx_final_amnesty_fee missing but required to setup swap")?,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }
@@ -383,6 +390,8 @@ impl State0 {
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+            tx_refund_burn_fee: Some(msg.tx_refund_burn_fee),
+            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
             tx_punish_fee: msg.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
@@ -410,6 +419,8 @@ pub struct State1 {
     min_monero_confirmations: u64,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
@@ -504,6 +515,8 @@ impl State1 {
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
             tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
+            tx_refund_burn_fee: self.tx_refund_burn_fee,
+            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
@@ -547,6 +560,8 @@ pub struct State2 {
     pub tx_cancel_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
     tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    tx_refund_burn_fee: Option<bitcoin::Amount>,
+    tx_final_amnesty_fee: Option<bitcoin::Amount>,
 }
 
 impl State2 {
@@ -596,11 +611,30 @@ impl State2 {
         );
         let tx_refund_amnesty_sig = self.b.sign(tx_refund_amnesty.digest());
 
+        let tx_refund_burn = TxRefundBurn::new(
+            &tx_partial_refund,
+            self.A,
+            self.b.public(),
+            self.tx_refund_burn_fee
+                .context("Missing tx_refund_burn_fee")?,
+        )?;
+        let tx_refund_burn_sig = self.b.sign(tx_refund_burn.digest());
+
+        let tx_final_amnesty = TxFinalAmnesty::new(
+            &tx_refund_burn,
+            &self.refund_address,
+            self.tx_final_amnesty_fee
+                .context("Missing tx_final_amnesty_fee")?,
+        );
+        let tx_final_amnesty_sig = self.b.sign(tx_final_amnesty.digest());
+
         Ok(Message4 {
             tx_punish_sig,
             tx_cancel_sig,
             tx_early_refund_sig,
             tx_refund_amnesty_sig,
+            tx_refund_burn_sig,
+            tx_final_amnesty_sig,
         })
     }
 
