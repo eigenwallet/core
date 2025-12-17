@@ -188,7 +188,8 @@ export function StateAlert({
     // These are states that are at risk of punishment because the Bitcoin have been locked
     // but has not been redeemed yet by the other party
     case BobStateName.BtcLocked:
-    case BobStateName.XmrLockProofReceived:
+    case BobStateName.XmrLockCandidateFound:
+    case BobStateName.XmrLockTransactionSeen:
     case BobStateName.XmrLocked:
     case BobStateName.EncSigSent:
     case BobStateName.CancelTimelockExpired:

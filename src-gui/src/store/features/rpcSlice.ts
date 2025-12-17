@@ -14,7 +14,7 @@ import { GetSwapInfoResponseExt } from "models/tauriModelExt";
 interface State {
   swapInfos: {
     [swapId: string]: GetSwapInfoResponseExt;
-  };
+  } | null;
   swapTimelocks: {
     [swapId: string]: ExpiredTimelocks;
   };
@@ -48,7 +48,7 @@ export interface RPCSlice {
 const initialState: RPCSlice = {
   status: null,
   state: {
-    swapInfos: {},
+    swapInfos: null,
     swapTimelocks: {},
     moneroRecovery: null,
     background: {},
@@ -83,8 +83,16 @@ export const rpcSlice = createSlice({
       }
     },
     rpcSetSwapInfo(slice, action: PayloadAction<GetSwapInfoResponse>) {
+      if (slice.state.swapInfos === null) {
+        slice.state.swapInfos = {};
+      }
       slice.state.swapInfos[action.payload.swap_id] =
         action.payload as GetSwapInfoResponseExt;
+    },
+    rpcSetSwapInfosLoaded(slice) {
+      if (slice.state.swapInfos === null) {
+        slice.state.swapInfos = {};
+      }
     },
     rpcSetMoneroRecoveryKeys(
       slice,
@@ -126,6 +134,7 @@ export const {
   contextStatusEventReceived,
   contextInitializationFailed,
   rpcSetSwapInfo,
+  rpcSetSwapInfosLoaded,
   rpcSetMoneroRecoveryKeys,
   rpcResetMoneroRecoveryKeys,
   timelockChangeEventReceived,

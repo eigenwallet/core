@@ -3,7 +3,7 @@ description: "Sets up the build environment with Node, Rust, dependencies, and t
 
 inputs:
   host:
-    description: "The host being built on (e.g., ubuntu-24.04, macos-latest)"
+    description: "The host being built on (e.g., ubuntu-24.04, macos-15)"
     required: true
   target:
     description: "Additional Rust targets to install and prepare for (e.g. x86_64-pc-windows-gnu when crossbuilding)"
@@ -33,7 +33,7 @@ runs:
         corepack enable
 
     - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@1.88
+      uses: dtolnay/rust-toolchain@1.90
       with:
         targets: ${{ inputs.target }}
 

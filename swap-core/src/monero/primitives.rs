@@ -52,7 +52,7 @@ impl fmt::Display for PrivateViewKey {
 impl PrivateViewKey {
     pub fn new_random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
         let scalar = Scalar::random(rng);
-        let private_key = PrivateKey::from_scalar(scalar);
+        let private_key = PrivateKey::from_slice(scalar.as_bytes()).expect("bytes of curve25519-dalek Scalar should by decodable to a PrivateKey which uses curve25519-dalek-ng under the hood");
 
         Self(private_key)
     }
@@ -392,18 +392,6 @@ impl From<::monero::Address> for MoneroAddressPool {
     }
 }
 
-/// A request to watch for a transfer.
-pub struct WatchRequest {
-    pub public_view_key: super::PublicViewKey,
-    pub public_spend_key: monero::PublicKey,
-    /// The proof of the transfer.
-    pub transfer_proof: TransferProof,
-    /// The expected amount of the transfer.
-    pub expected_amount: monero::Amount,
-    /// The number of confirmations required for the transfer to be considered confirmed.
-    pub confirmation_target: u64,
-}
-
 /// Transfer a specified amount of money to a specified address.
 pub struct TransferRequest {
     pub public_spend_key: monero::PublicKey,
@@ -479,15 +467,46 @@ pub struct TransferProof {
     pub tx_key: PrivateKey,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransferProofMaybeWithTxKey {
+    pub tx_hash: TxHash,
+    #[serde(with = "swap_serde::monero::optional_private_key")]
+    pub tx_key: Option<PrivateKey>,
+}
+
 impl TransferProof {
     pub fn new(tx_hash: TxHash, tx_key: PrivateKey) -> Self {
         Self { tx_hash, tx_key }
     }
+
     pub fn tx_hash(&self) -> TxHash {
         self.tx_hash.clone()
     }
+
     pub fn tx_key(&self) -> PrivateKey {
         self.tx_key
+    }
+}
+
+impl TransferProofMaybeWithTxKey {
+    pub fn new_without_tx_key(tx_hash: TxHash) -> Self {
+        Self {
+            tx_hash,
+            tx_key: None,
+        }
+    }
+
+    pub fn tx_hash(&self) -> TxHash {
+        self.tx_hash.clone()
+    }
+}
+
+impl From<TransferProof> for TransferProofMaybeWithTxKey {
+    fn from(proof: TransferProof) -> Self {
+        Self {
+            tx_hash: proof.tx_hash,
+            tx_key: Some(proof.tx_key),
+        }
     }
 }
 
@@ -549,6 +568,7 @@ pub mod monero_amount {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compat::IntoDalekNg;
 
     #[test]
     fn display_monero_min() {
@@ -706,7 +726,9 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_json() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
+            Scalar::random(&mut OsRng).into_dalek_ng(),
+        ));
         let encoded = serde_json::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -714,7 +736,9 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_cbor() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
+            Scalar::random(&mut OsRng).into_dalek_ng(),
+        ));
         let encoded = serde_cbor::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);

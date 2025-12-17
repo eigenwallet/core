@@ -4,7 +4,7 @@ use crate::defaults::{
     default_rendezvous_points, DEFAULT_MAX_BUY_AMOUNT, DEFAULT_MIN_BUY_AMOUNT, DEFAULT_SPREAD,
 };
 use anyhow::{bail, Context, Result};
-use console::Style;
+use console::{Style, Term};
 use dialoguer::Confirm;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use libp2p::Multiaddr;
@@ -304,7 +304,9 @@ where
     L: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let terminal_width = terminal_size::terminal_size().map_or(200, |(width, _)| width.0 as usize);
+    let terminal_width = Term::stdout()
+        .size_checked()
+        .map_or(200, |(_, width)| width as usize);
 
     let border = Style::new().cyan();
     let content = Style::new().bold();

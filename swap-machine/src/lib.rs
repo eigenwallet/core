@@ -12,6 +12,7 @@ mod tests {
     use monero::PrivateKey;
     use rand::rngs::OsRng;
     use swap_core::bitcoin::*;
+    use swap_core::compat::IntoDalekNg;
     use swap_core::monero::TransferProof;
     use swap_env::env::{GetConfig, Regtest};
     use uuid::Uuid;
@@ -102,8 +103,9 @@ mod tests {
             // We use bogus values here, because they're irrelevant to this test
             TransferProof::new(
                 swap_core::monero::TxHash("foo".into()),
-                PrivateKey::from_scalar(Scalar::one()),
-            ),
+                PrivateKey::from_scalar(Scalar::random(&mut OsRng).into_dalek_ng()),
+            )
+            .into(),
         );
         let encrypted_signature = bob_state4.tx_redeem_encsig();
         let bob_state6 = bob_state4.cancel();

@@ -56,13 +56,17 @@ pub async fn cancel(
             state3,
             monero_wallet_restore_blockheight,
         } => state3.cancel(monero_wallet_restore_blockheight),
-        BobState::XmrLockProofReceived {
+        BobState::XmrLockTransactionCandidate {
             state,
             monero_wallet_restore_blockheight,
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
         BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::WaitingForCancelTimelockExpiration {
+            state,
+            monero_wallet_restore_blockheight,
+        } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
         BobState::BtcRefunded(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
@@ -89,6 +93,11 @@ pub async fn cancel(
             swap_id,
             state
         ),
+        BobState::XmrLockTransactionSeen {
+            state,
+            monero_wallet_restore_blockheight,
+            ..
+        } => state.cancel(monero_wallet_restore_blockheight),
     };
 
     tracing::info!(%swap_id, "Attempting to manually cancel swap");
@@ -180,13 +189,22 @@ pub async fn refund(
             monero_wallet_restore_blockheight,
             ..
         } => state3.cancel(monero_wallet_restore_blockheight),
-        BobState::XmrLockProofReceived {
+        BobState::XmrLockTransactionCandidate {
+            state,
+            monero_wallet_restore_blockheight,
+            ..
+        } => state.cancel(monero_wallet_restore_blockheight),
+        BobState::XmrLockTransactionSeen {
             state,
             monero_wallet_restore_blockheight,
             ..
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::XmrLocked(state4) => state4.cancel(),
         BobState::EncSigSent(state4) => state4.cancel(),
+        BobState::WaitingForCancelTimelockExpiration {
+            state,
+            monero_wallet_restore_blockheight,
+        } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefunded(state6) => state6,

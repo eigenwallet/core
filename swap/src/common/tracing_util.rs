@@ -223,6 +223,7 @@ mod crates {
         // Library crates
         "bitcoin_wallet",
         "monero_wallet",
+        "monero_wallet_ng",
         "swap_p2p",
         "swap_env",
         "swap_core",

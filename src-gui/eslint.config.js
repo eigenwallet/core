@@ -38,7 +38,7 @@ export default [
         {
           name: "open",
           message:
-            "Use the open(...) function from @tauri-apps/plugin-shell instead",
+            "Use the openUrl(...) function from @tauri-apps/plugin-opener instead",
         },
       ],
       "no-restricted-properties": [
@@ -47,7 +47,7 @@ export default [
           object: "window",
           property: "open",
           message:
-            "Use the open(...) function from @tauri-apps/plugin-shell instead",
+            "Use the openUrl(...) function from @tauri-apps/plugin-opener instead",
         },
       ],
     },

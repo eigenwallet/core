@@ -43,7 +43,8 @@ export enum BobStateName {
   SwapSetupCompleted = "execution setup done",
   BtcLockReadyToPublish = "btc lock ready to publish",
   BtcLocked = "btc is locked",
-  XmrLockProofReceived = "XMR lock transaction transfer proof received",
+  XmrLockCandidateFound = "xmr lock transaction candidate found",
+  XmrLockTransactionSeen = "xmr lock transaction seen",
   XmrLocked = "xmr is locked",
   EncSigSent = "encrypted signature is sent",
   BtcRedeemed = "btc is redeemed",
@@ -72,8 +73,10 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Bitcoin lock ready to publish";
     case BobStateName.BtcLocked:
       return "Bitcoin locked";
-    case BobStateName.XmrLockProofReceived:
-      return "Monero locked";
+    case BobStateName.XmrLockCandidateFound:
+      return "Monero lock transaction found but not yet verified";
+    case BobStateName.XmrLockTransactionSeen:
+      return "Monero lock transaction waiting for confirmation";
     case BobStateName.XmrLocked:
       return "Monero locked and fully confirmed";
     case BobStateName.EncSigSent:
@@ -178,7 +181,8 @@ export function isBobStateNameRunningSwap(
 
 export type BobStateNamePossiblyCancellableSwap =
   | BobStateName.BtcLocked
-  | BobStateName.XmrLockProofReceived
+  | BobStateName.XmrLockCandidateFound
+  | BobStateName.XmrLockTransactionSeen
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
@@ -203,7 +207,8 @@ export function isBobStateNamePossiblyCancellableSwap(
 ): state is BobStateNamePossiblyCancellableSwap {
   return [
     BobStateName.BtcLocked,
-    BobStateName.XmrLockProofReceived,
+    BobStateName.XmrLockCandidateFound,
+    BobStateName.XmrLockTransactionSeen,
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,
@@ -214,7 +219,8 @@ export function isBobStateNamePossiblyCancellableSwap(
 
 export type BobStateNamePossiblyRefundableSwap =
   | BobStateName.BtcLocked
-  | BobStateName.XmrLockProofReceived
+  | BobStateName.XmrLockCandidateFound
+  | BobStateName.XmrLockTransactionSeen
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
@@ -238,7 +244,8 @@ export function isBobStateNamePossiblyRefundableSwap(
 ): state is BobStateNamePossiblyRefundableSwap {
   return [
     BobStateName.BtcLocked,
-    BobStateName.XmrLockProofReceived,
+    BobStateName.XmrLockCandidateFound,
+    BobStateName.XmrLockTransactionSeen,
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,

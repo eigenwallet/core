@@ -3,7 +3,15 @@ import { Theme } from "renderer/components/theme";
 import { DEFAULT_NODES, DEFAULT_RENDEZVOUS_POINTS } from "../defaults";
 import { Network, Blockchain } from "../types";
 
-export type DonateToDevelopmentTip = false | 0.0005 | 0.0075;
+// false = user hasn't selected yet (show dialog)
+// 0 = user explicitly selected no tip
+export type DonateToDevelopmentTip = false | 0 | 0.005 | 0.012 | 0.02;
+
+// Options shown in the UI (excludes false since that means "not selected yet")
+export const DONATE_TO_DEVELOPMENT_OPTIONS: Exclude<
+  DonateToDevelopmentTip,
+  false
+>[] = [0, 0.005, 0.012, 0.02];
 
 const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 14 * 24 * 60 * 60 * 1000; // 14 days
 
@@ -284,6 +292,30 @@ const alertsSlice = createSlice({
         slice.lastAppliedDefaultNodes = now;
       }
     },
+    /// Validates the donate to development tip setting.
+    /// If the current tip is not in the valid options array, it will be replaced
+    /// with the closest smaller valid option.
+    /// false means "not yet selected" and is kept as-is
+    validateDonateToDevelopmentTip(slice) {
+      const currentTip = slice.donateToDevelopment;
+
+      // false means "not yet selected" - keep it to show the dialog
+      if (currentTip === false) {
+        return;
+      }
+
+      // Check if current tip is a valid option
+      if (DONATE_TO_DEVELOPMENT_OPTIONS.includes(currentTip)) {
+        return;
+      }
+
+      // Invalid numeric tip - find closest smaller valid option
+      const sorted = [...DONATE_TO_DEVELOPMENT_OPTIONS].sort((a, b) => b - a);
+      const match = sorted.find((o) => o <= currentTip);
+
+      // If no match was found, set to false to show the dialog and let the user choose explicitly
+      slice.donateToDevelopment = match ?? false;
+    },
   },
 });
 
@@ -307,6 +339,7 @@ export const {
   setMoneroRedeemAddress,
   setBitcoinRefundAddress,
   applyDefaultNodes,
+  validateDonateToDevelopmentTip,
 } = alertsSlice.actions;
 
 export default alertsSlice.reducer;

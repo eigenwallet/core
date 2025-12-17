@@ -21,7 +21,6 @@ use electrum_pool::ElectrumBalancer;
 use moka;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -80,7 +79,8 @@ pub trait BitcoinWalletSeed {
 
 /// We allow transaction fees of up to 20% of the transferred amount to ensure
 /// that lock transactions can always be published, even when fees are high.
-pub const MAX_RELATIVE_TX_FEE: Decimal = dec!(0.20);
+const TWENTY_PERCENT: Decimal = Decimal::from_parts(20, 0, 0, false, 2);
+pub const MAX_RELATIVE_TX_FEE: Decimal = TWENTY_PERCENT;
 pub const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
 pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);

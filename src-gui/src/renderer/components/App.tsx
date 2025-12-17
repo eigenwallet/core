@@ -4,7 +4,6 @@ import {
   Theme,
   StyledEngineProvider,
 } from "@mui/material/styles";
-import "@tauri-apps/plugin-shell";
 import { Route, MemoryRouter as Router, Routes } from "react-router-dom";
 import Navigation, { drawerWidth } from "./navigation/Navigation";
 import SettingsPage from "./pages/help/SettingsPage";
@@ -26,6 +25,7 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import PasswordEntryDialog from "./modal/password-entry/PasswordEntryDialog";
 import ContextErrorDialog from "./modal/context-error/ContextErrorDialog";
+import { GlobalDonationTipDialog } from "./modal/donation-tip/DonationTipDialog";
 import ErrorBoundary from "./other/ErrorBoundary";
 
 declare module "@mui/material/styles" {
@@ -55,6 +55,7 @@ export default function App() {
             <CssBaseline />
             <GlobalSnackbarProvider>
               <IntroductionModal />
+              <GlobalDonationTipDialog />
               <SeedSelectionDialog />
               <PasswordEntryDialog />
               <ContextErrorDialog />

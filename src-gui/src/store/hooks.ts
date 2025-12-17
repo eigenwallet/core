@@ -1,4 +1,4 @@
-import { sortBy, sum } from "lodash";
+import { sortBy, sum, throttle } from "lodash";
 import {
   BobStateName,
   GetSwapInfoResponseExt,
@@ -21,7 +21,7 @@ import {
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "renderer/store/storeRenderer";
 import { parseDateString } from "utils/parseUtils";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isCliLogRelatedToSwap } from "models/cliModel";
 import { SettingsState } from "./features/settingsSlice";
 import { NodesSlice } from "./features/nodesSlice";
@@ -36,6 +36,7 @@ import {
   selectAllSwapInfos,
   selectPendingApprovals,
   selectSwapInfoWithTimelock,
+  selectSwapInfosRaw,
 } from "./selectors";
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
@@ -124,7 +125,7 @@ export function useSwapInfo(
   swapId: string | null,
 ): GetSwapInfoResponseExt | null {
   return useAppSelector((state) =>
-    swapId ? (state.rpc.state.swapInfos[swapId] ?? null) : null,
+    swapId ? (state.rpc.state.swapInfos?.[swapId] ?? null) : null,
   );
 }
 
@@ -179,6 +180,13 @@ export function useSwapInfosSortedByDate() {
   const swapInfos = useSaneSwapInfos();
 
   return sortBy(swapInfos, (swap) => -parseDateString(swap.start_date));
+}
+
+/// Returns true if swapInfos has been loaded
+/// False means means we haven't fetched the swap infos yet
+export function useAreSwapInfosLoaded(): boolean {
+  const swapInfos = useAppSelector(selectSwapInfosRaw);
+  return swapInfos !== null;
 }
 
 export function useSettings<T>(selector: (settings: SettingsState) => T): T {
@@ -332,4 +340,80 @@ export function useAlerts(): Alert[] {
         ),
     ),
   );
+}
+
+/// Returns true if the we heuristically determine that the user has used the app at least a little bit
+/// We don't want to annoy completely new users with a bunch of stuff
+export function useIsExperiencedUser(): boolean {
+  // Returns true if either:
+  // - the Monero wallet balance > 0
+  // - the Bitcoin wallet balance > 0
+  // - the user has made at least 1 swap
+  const moneroBalance = useAppSelector(
+    (state) => state.wallet.state.balance?.total_balance,
+  );
+  const bitcoinBalance = useAppSelector((state) => state.bitcoinWallet.balance);
+  const swapCount = useAppSelector(selectAllSwapInfos).length;
+
+  const hasMoneroBalance =
+    moneroBalance !== undefined && parseFloat(moneroBalance) > 0;
+  const hasBitcoinBalance =
+    bitcoinBalance !== null &&
+    bitcoinBalance !== undefined &&
+    bitcoinBalance > 0;
+  const hasSwaps = swapCount > 0;
+
+  return hasMoneroBalance || hasBitcoinBalance || hasSwaps;
+}
+
+/**
+ * Hook that returns true if the user has been idle (no mouse/keyboard activity) for a given duration.
+ * Uses throttling to avoid excessive event handler calls during rapid input.
+ */
+export function useIsIdle(idleTimeMs: number): boolean {
+  const [isIdle, setIsIdle] = useState(false);
+
+  useEffect(() => {
+    let timeoutId: number;
+
+    const handleTimeout = () => {
+      setIsIdle(true);
+    };
+
+    const handleEvent = throttle(() => {
+      setIsIdle(false);
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(handleTimeout, idleTimeMs);
+    }, 500);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        handleEvent();
+      }
+    };
+
+    timeoutId = window.setTimeout(handleTimeout, idleTimeMs);
+
+    window.addEventListener("mousemove", handleEvent);
+    window.addEventListener("mousedown", handleEvent);
+    window.addEventListener("resize", handleEvent);
+    window.addEventListener("keydown", handleEvent);
+    window.addEventListener("touchstart", handleEvent);
+    window.addEventListener("wheel", handleEvent);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("mousemove", handleEvent);
+      window.removeEventListener("mousedown", handleEvent);
+      window.removeEventListener("resize", handleEvent);
+      window.removeEventListener("keydown", handleEvent);
+      window.removeEventListener("touchstart", handleEvent);
+      window.removeEventListener("wheel", handleEvent);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearTimeout(timeoutId);
+      handleEvent.cancel();
+    };
+  }, [idleTimeMs]);
+
+  return isIdle;
 }

@@ -26,12 +26,12 @@ jobs:
             do_smoke_test: true
             ext: ""
           - target: aarch64-apple-darwin
-            host: macos-latest
+            host: macos-15
             archive_extension: tar
             do_smoke_test: true
             ext: ""
           - target: x86_64-apple-darwin
-            host: macos-13
+            host: macos-15-intel
             archive_extension: tar
             do_smoke_test: true
             ext: ""

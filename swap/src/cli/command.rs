@@ -240,34 +240,6 @@ struct Arguments {
 
 #[derive(structopt::StructOpt, Debug, PartialEq)]
 enum CliCommand {
-    // TODO: Add this back once our CLI is more flexible
-    // Start a BTC for XMR swap
-    // BuyXmr {
-    //     #[structopt(flatten)]
-    //     seller: Seller,
-
-    //     #[structopt(flatten)]
-    //     bitcoin: Bitcoin,
-
-    //     #[structopt(
-    //         long = "change-address",
-    //         help = "The bitcoin address where any form of change or excess funds should be sent to. If omitted they will be sent to the internal wallet.",
-    //         parse(try_from_str = bitcoin_address::parse)
-    //     )]
-    //     bitcoin_change_address: Option<bitcoin::Address<NetworkUnchecked>>,
-
-    //     #[structopt(flatten)]
-    //     monero: Monero,
-
-    //     #[structopt(long = "receive-address",
-    //         help = "The monero address where you would like to receive monero",
-    //         parse(try_from_str = swap_serde::monero::address::parse)
-    //     )]
-    //     monero_receive_address: monero::Address,
-
-    //     #[structopt(flatten)]
-    //     tor: Tor,
-    // },
     /// Show a list of past, ongoing and completed swaps
     History,
     /// Output all logging messages that have been issued.
@@ -546,6 +518,7 @@ mod tests {
             simple_positive(&raw_ars, (false, true, None), cli_cmd).await;
         }
     }
+
     #[tokio::test]
     async fn given_resume_on_mainnet_with_data_dir_then_data_dir_set() {
         let raw_ars = [

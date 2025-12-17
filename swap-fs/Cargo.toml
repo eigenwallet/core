@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
-directories-next = "2"
+dirs = "6.0"
 tracing = { workspace = true }
 
 [lints]
