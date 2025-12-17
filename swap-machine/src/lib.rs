@@ -55,6 +55,7 @@ mod tests {
             punish_address,
             tx_redeem_fee,
             tx_punish_fee,
+            spending_fee,
             &mut OsRng,
         );
 
@@ -65,8 +66,10 @@ mod tests {
             xmr_amount,
             CancelTimelock::new(config.bitcoin_cancel_timelock),
             PunishTimelock::new(config.bitcoin_punish_timelock),
+            RemainingRefundTimelock::new(config.bitcoin_remaining_refund_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
+            spending_fee,
             spending_fee,
             spending_fee,
             spending_fee,
@@ -168,6 +171,7 @@ mod tests {
             punish_address,
             tx_redeem_fee,
             tx_punish_fee,
+            spending_fee,
             &mut OsRng,
         );
 
@@ -178,8 +182,10 @@ mod tests {
             xmr_amount,
             CancelTimelock::new(config.bitcoin_cancel_timelock),
             PunishTimelock::new(config.bitcoin_punish_timelock),
+            RemainingRefundTimelock::new(config.bitcoin_remaining_refund_timelock),
             bob_wallet.new_address().await.unwrap(),
             config.monero_finality_confirmations,
+            spending_fee,
             spending_fee,
             spending_fee,
             spending_fee,
