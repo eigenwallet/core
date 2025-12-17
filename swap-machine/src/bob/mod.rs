@@ -1084,7 +1084,7 @@ pub struct State6 {
     pub xmr: monero::Amount,
     /// How much of the locked Bitcoin will stay locked in case of a partial refund.
     /// May still be retrieve by publishing the `TxAmnesty` transaction.
-    btc_amnesty_amount: Option<bitcoin::Amount>,
+    pub btc_amnesty_amount: Option<bitcoin::Amount>,
     pub monero_wallet_restore_blockheight: BlockHeight,
     pub cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
@@ -1099,10 +1099,10 @@ pub struct State6 {
     pub refund_signatures: RefundSignatures,
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
-    tx_partial_refund_fee: Option<bitcoin::Amount>,
-    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
-    tx_refund_burn_fee: Option<bitcoin::Amount>,
-    tx_final_amnesty_fee: Option<bitcoin::Amount>,
+    pub tx_partial_refund_fee: Option<bitcoin::Amount>,
+    pub tx_refund_amnesty_fee: Option<bitcoin::Amount>,
+    pub tx_refund_burn_fee: Option<bitcoin::Amount>,
+    pub tx_final_amnesty_fee: Option<bitcoin::Amount>,
 }
 
 impl State6 {
