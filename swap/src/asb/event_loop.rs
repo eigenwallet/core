@@ -832,10 +832,16 @@ impl EventLoopHandle {
 
 /// For a new swap of `swap_amount`, this function calculates how much
 /// Bitcoin should go into the amnesty-lock incase of a refund.
+/// Returns ZERO when taker_refund_ratio is 1.0 (100%), indicating full refund.
 fn apply_bitcoin_amnesty_policy(
     swap_amount: bitcoin::Amount,
     refund_policy: &RefundPolicy,
 ) -> Result<bitcoin::Amount> {
+    // When ratio is 1.0, no amnesty - use full refund path
+    if refund_policy.taker_refund_ratio == Decimal::ONE {
+        return Ok(bitcoin::Amount::ZERO);
+    }
+
     let btc_amnesty_ratio = Decimal::ONE
         .checked_sub(refund_policy.taker_refund_ratio)
         .context("can't have refund ration > 1")?;
