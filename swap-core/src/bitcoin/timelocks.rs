@@ -157,7 +157,8 @@ impl PartialEq<RemainingRefundTimelock> for u32 {
 pub enum ExpiredTimelocks {
     None { blocks_left: u32 },
     Cancel { blocks_left: u32 },
-    RemainingRefund { block_left: u32 },
+    WaitingForRemainingRefund { blocks_left: u32 },
+    RemainingRefund,
     Punish,
 }
 
@@ -188,8 +189,10 @@ mod tests {
         let expired_timelock = current_epoch(
             CancelTimelock::new(5),
             PunishTimelock::new(5),
+            None,
             tx_lock_status,
             tx_cancel_status,
+            None,
         );
 
         assert!(matches!(expired_timelock, ExpiredTimelocks::None { .. }));
@@ -203,8 +206,10 @@ mod tests {
         let expired_timelock = current_epoch(
             CancelTimelock::new(5),
             PunishTimelock::new(5),
+            None,
             tx_lock_status,
             tx_cancel_status,
+            None,
         );
 
         assert!(matches!(expired_timelock, ExpiredTimelocks::Cancel { .. }));
@@ -218,11 +223,52 @@ mod tests {
         let expired_timelock = current_epoch(
             CancelTimelock::new(5),
             PunishTimelock::new(5),
+            None,
             tx_lock_status,
             tx_cancel_status,
+            None,
         );
 
         assert_eq!(expired_timelock, ExpiredTimelocks::Punish)
+    }
+
+    #[test]
+    fn partial_refund_confirmed_waiting_for_remaining_refund_timelock() {
+        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_cancel_status = ScriptStatus::from_confirmations(5);
+        let tx_partial_refund_status = ScriptStatus::from_confirmations(2);
+
+        let expired_timelock = current_epoch(
+            CancelTimelock::new(5),
+            PunishTimelock::new(10),
+            Some(RemainingRefundTimelock::new(5)),
+            tx_lock_status,
+            tx_cancel_status,
+            Some(tx_partial_refund_status),
+        );
+
+        assert!(matches!(
+            expired_timelock,
+            ExpiredTimelocks::WaitingForRemainingRefund { .. }
+        ));
+    }
+
+    #[test]
+    fn partial_refund_remaining_timelock_expired() {
+        let tx_lock_status = ScriptStatus::from_confirmations(10);
+        let tx_cancel_status = ScriptStatus::from_confirmations(5);
+        let tx_partial_refund_status = ScriptStatus::from_confirmations(5);
+
+        let expired_timelock = current_epoch(
+            CancelTimelock::new(5),
+            PunishTimelock::new(10),
+            Some(RemainingRefundTimelock::new(5)),
+            tx_lock_status,
+            tx_cancel_status,
+            Some(tx_partial_refund_status),
+        );
+
+        assert_eq!(expired_timelock, ExpiredTimelocks::RemainingRefund);
     }
 
     #[test]

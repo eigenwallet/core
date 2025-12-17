@@ -733,12 +733,30 @@ impl State3 {
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
         let tx_cancel_status = bitcoin_wallet.status_of_script(&tx_cancel).await?;
+        let tx_partial_refund_status =
+            if let (Some(btc_amnesty_amount), Some(tx_partial_refund_fee)) =
+                (self.btc_amnesty_amount, self.tx_partial_refund_fee)
+            {
+                let tx = TxPartialRefund::new(
+                    &tx_cancel,
+                    &self.refund_address,
+                    self.A,
+                    self.b.public(),
+                    btc_amnesty_amount,
+                    tx_partial_refund_fee,
+                )?;
+                Some(bitcoin_wallet.status_of_script(&tx).await?)
+            } else {
+                None
+            };
 
         Ok(current_epoch(
             self.cancel_timelock,
             self.punish_timelock,
+            self.remaining_refund_timelock,
             tx_lock_status,
             tx_cancel_status,
+            tx_partial_refund_status,
         ))
     }
 
@@ -870,12 +888,30 @@ impl State4 {
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
         let tx_cancel_status = bitcoin_wallet.status_of_script(&tx_cancel).await?;
+        let tx_partial_refund_status =
+            if let (Some(btc_amnesty_amount), Some(tx_partial_refund_fee)) =
+                (self.btc_amnesty_amount, self.tx_partial_refund_fee)
+            {
+                let tx = TxPartialRefund::new(
+                    &tx_cancel,
+                    &self.refund_address,
+                    self.A,
+                    self.b.public(),
+                    btc_amnesty_amount,
+                    tx_partial_refund_fee,
+                )?;
+                Some(bitcoin_wallet.status_of_script(&tx).await?)
+            } else {
+                None
+            };
 
         Ok(current_epoch(
             self.cancel_timelock,
             self.punish_timelock,
+            self.remaining_refund_timelock,
             tx_lock_status,
             tx_cancel_status,
+            tx_partial_refund_status,
         ))
     }
 
@@ -999,12 +1035,23 @@ impl State6 {
 
         let tx_lock_status = bitcoin_wallet.status_of_script(&self.tx_lock).await?;
         let tx_cancel_status = bitcoin_wallet.status_of_script(&tx_cancel).await?;
+        // Only check partial refund status if we have the data to construct it
+        // (old swaps won't have these fields)
+        let tx_partial_refund_status =
+            if let (Some(_), Some(_)) = (self.btc_amnesty_amount, self.tx_partial_refund_fee) {
+                let tx = self.construct_tx_partial_refund()?;
+                Some(bitcoin_wallet.status_of_script(&tx).await?)
+            } else {
+                None
+            };
 
         Ok(current_epoch(
             self.cancel_timelock,
             self.punish_timelock,
+            self.remaining_refund_timelock,
             tx_lock_status,
             tx_cancel_status,
+            tx_partial_refund_status,
         ))
     }
 

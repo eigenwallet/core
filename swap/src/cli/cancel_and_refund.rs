@@ -136,6 +136,17 @@ pub async fn cancel(
                 Ok(ExpiredTimelocks::Cancel { .. }) => {
                     bail!(err.context("Failed to cancel swap even though cancel timelock has expired. This is unexpected."));
                 }
+                Ok(ExpiredTimelocks::WaitingForRemainingRefund { blocks_left }) => {
+                    bail!(err.context(
+                        format!(
+                            "Cannot cancel swap because partial refund is already in progress. Waiting {} blocks for amnesty timelock.",
+                            blocks_left
+                        )
+                    ));
+                }
+                Ok(ExpiredTimelocks::RemainingRefund) => {
+                    bail!(err.context("Cannot cancel swap because we are in the partial refund phase. TxRefundAmnesty can be published."));
+                }
                 Err(timelock_err) => {
                     bail!(err
                         .context(timelock_err)
@@ -242,6 +253,18 @@ pub async fn refund(
                 }
                 Ok(ExpiredTimelocks::Cancel { .. }) => {
                     bail!(bitcoin_publication_err.context("Failed to refund swap even though cancel timelock has expired. This is unexpected."));
+                }
+                Ok(ExpiredTimelocks::WaitingForRemainingRefund { blocks_left }) => {
+                    bail!(
+                        bitcoin_publication_err.context(format!(
+                            "Cannot refund swap yet. Partial refund was published but waiting {} blocks for amnesty timelock to expire.",
+                            blocks_left
+                        ))
+                    );
+                }
+                Ok(ExpiredTimelocks::RemainingRefund) => {
+                    // TODO: Try to publish TxRefundAmnesty here instead of just reporting the state
+                    bail!(bitcoin_publication_err.context("Amnesty timelock has expired. TxRefundAmnesty can be published."));
                 }
                 Err(e) => {
                     bail!(bitcoin_publication_err

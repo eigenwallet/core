@@ -822,6 +822,22 @@ async fn next_state(
                                 state,
                             })
                         }
+                        ExpiredTimelocks::WaitingForRemainingRefund { blocks_left } => {
+                            // TxPartialRefund has been published, waiting for remaining_refund_timelock
+                            // This is unusual from BtcCancelled state - means we published partial refund but crashed
+                            // Retry until timelock expires
+                            tracing::debug!("Partial refund published, waiting {} blocks for amnesty timelock", blocks_left);
+                            Err(backoff::Error::transient(anyhow::anyhow!(
+                                "Waiting for remaining refund timelock to expire. Blocks left: {}",
+                                blocks_left
+                            )))
+                        }
+                        ExpiredTimelocks::RemainingRefund => {
+                            // TxPartialRefund was published and timelock expired - publish TxRefundAmnesty
+                            // Transition to BtcPartiallyRefunded which handles amnesty publication
+                            tracing::info!("Remaining refund timelock expired, can publish amnesty transaction");
+                            Ok(BobState::BtcPartiallyRefunded(state))
+                        }
                     }
                     }
                 },

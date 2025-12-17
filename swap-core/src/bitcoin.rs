@@ -20,6 +20,7 @@ pub use crate::bitcoin::redeem::TxRedeem;
 pub use crate::bitcoin::refund_amnesty::TxRefundAmnesty;
 pub use crate::bitcoin::timelocks::{BlockHeight, ExpiredTimelocks};
 pub use crate::bitcoin::timelocks::{CancelTimelock, PunishTimelock, RemainingRefundTimelock};
+pub use bitcoin_wallet::ScriptStatus;
 pub use ::bitcoin::amount::Amount;
 pub use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 pub use ::bitcoin::{Address, AddressType, Network, Transaction, Txid};
@@ -33,7 +34,6 @@ use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
 use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::descriptor::Wsh;
 use bdk_wallet::miniscript::{Descriptor, Segwitv0};
-use bitcoin_wallet::primitives::ScriptStatus;
 use ecdsa_fun::ECDSA;
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::fun::Point;
@@ -246,11 +246,28 @@ pub fn recover(S: PublicKey, sig: Signature, encsig: EncryptedSignature) -> Resu
 pub fn current_epoch(
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     tx_lock_status: ScriptStatus,
     tx_cancel_status: ScriptStatus,
+    tx_partial_refund_status: Option<ScriptStatus>,
 ) -> ExpiredTimelocks {
     if tx_cancel_status.is_confirmed_with(punish_timelock) {
         return ExpiredTimelocks::Punish;
+    }
+
+    // Check if TxPartialRefund is confirmed and handle remaining refund timelock
+    // For old swaps, these will be None and we skip the partial refund checks
+    if let (Some(remaining_refund_timelock), Some(tx_partial_refund_status)) =
+        (remaining_refund_timelock, tx_partial_refund_status)
+    {
+        if tx_partial_refund_status.is_confirmed_with(remaining_refund_timelock) {
+            return ExpiredTimelocks::RemainingRefund;
+        }
+        if tx_partial_refund_status.is_confirmed() {
+            return ExpiredTimelocks::WaitingForRemainingRefund {
+                blocks_left: tx_partial_refund_status.blocks_left_until(remaining_refund_timelock),
+            };
+        }
     }
 
     if tx_lock_status.is_confirmed_with(cancel_timelock) {
