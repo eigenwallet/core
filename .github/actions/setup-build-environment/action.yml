@@ -33,7 +33,7 @@ runs:
         corepack enable
 
     - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@1.88
+      uses: dtolnay/rust-toolchain@1.90
       with:
         targets: ${{ inputs.target }}
 

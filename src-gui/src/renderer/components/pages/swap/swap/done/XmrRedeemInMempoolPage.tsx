@@ -11,8 +11,8 @@ export default function XmrRedeemInMempoolPage(
   return (
     <>
       <DialogContentText>
-        The swap was successful and the Monero has been sent to the following
-        address(es). The swap is completed and you may exit the application now.
+        The swap was successful and the Monero was redeemed. The swap is
+        complete. You may exit the application now.
       </DialogContentText>
       <Box
         style={{

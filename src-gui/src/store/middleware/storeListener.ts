@@ -93,51 +93,63 @@ export function createMainListeners() {
 
       if (!status) return;
 
-      // If the Bitcoin wallet just came available, check the Bitcoin balance and get address
-      if (
+      const initTasks: Promise<void>[] = [];
+
+      const bitcoinWalletJustBecameAvailable =
         status.bitcoin_wallet_available &&
-        !previousContextStatus?.bitcoin_wallet_available
-      ) {
-        logger.info(
-          "Bitcoin wallet just became available, checking balance and getting address...",
+        !previousContextStatus?.bitcoin_wallet_available;
+      const moneroWalletJustBecameAvailable =
+        status.monero_wallet_available &&
+        !previousContextStatus?.monero_wallet_available;
+      const databaseJustBecameAvailable =
+        status.database_available && !previousContextStatus?.database_available;
+
+      // If the Bitcoin wallet just came available, check the Bitcoin balance and get address
+      if (bitcoinWalletJustBecameAvailable) {
+        initTasks.push(
+          (async () => {
+            logger.info(
+              "Bitcoin wallet just became available, checking balance and getting address...",
+            );
+            await Promise.all([
+              checkBitcoinBalance(),
+              getBitcoinAddress()
+                .then((address) => store.dispatch(setBitcoinAddress(address)))
+                .catch((error) =>
+                  logger.error("Failed to fetch Bitcoin address", error),
+                ),
+            ]);
+          })(),
         );
-        await checkBitcoinBalance();
-        try {
-          const address = await getBitcoinAddress();
-          store.dispatch(setBitcoinAddress(address));
-        } catch (error) {
-          logger.error("Failed to fetch Bitcoin address", error);
-        }
       }
 
       // If the Monero wallet just came available, initialize the Monero wallet
-      if (
-        status.monero_wallet_available &&
-        !previousContextStatus?.monero_wallet_available
-      ) {
-        logger.info("Monero wallet just became available, initializing...");
-        await initializeMoneroWallet();
+      if (moneroWalletJustBecameAvailable) {
+        initTasks.push(
+          (async () => {
+            logger.info("Monero wallet just became available, initializing...");
+            await initializeMoneroWallet();
 
-        // Also set the Monero node to the current one
-        const nodeConfig = await getCurrentMoneroNodeConfig();
-        await changeMoneroNode(nodeConfig);
-      }
-
-      // If the database and Bitcoin wallet just came available, fetch all swap infos
-      if (
-        status.database_available &&
-        status.bitcoin_wallet_available &&
-        !(
-          previousContextStatus?.database_available &&
-          previousContextStatus?.bitcoin_wallet_available
-        )
-      ) {
-        logger.info(
-          "Database & Bitcoin wallet just became available, fetching swap infos...",
+            // Also set the Monero node to the current one
+            const nodeConfig = await getCurrentMoneroNodeConfig();
+            await changeMoneroNode(nodeConfig);
+          })(),
         );
-        await getAllSwapInfos();
-        await getAllSwapTimelocks();
       }
+
+      // If the database or the Bitcoin wallet just came available fetch swaps
+      if (databaseJustBecameAvailable || bitcoinWalletJustBecameAvailable) {
+        initTasks.push(
+          (async () => {
+            logger.info(
+              "Database or Bitcoin wallet just became available, fetching swaps...",
+            );
+            await Promise.all([getAllSwapInfos(), getAllSwapTimelocks()]);
+          })(),
+        );
+      }
+
+      await Promise.all(initTasks);
     },
   });
 

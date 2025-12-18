@@ -53,6 +53,7 @@ import {
 } from "models/tauriModel";
 import {
   rpcSetSwapInfo,
+  rpcSetSwapInfosLoaded,
   approvalRequestsReplaced,
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
@@ -309,6 +310,8 @@ export async function getAllSwapInfos() {
   response.forEach((swapInfo) => {
     store.dispatch(rpcSetSwapInfo(swapInfo));
   });
+
+  store.dispatch(rpcSetSwapInfosLoaded());
 }
 
 export async function getSwapInfo(swapId: string) {

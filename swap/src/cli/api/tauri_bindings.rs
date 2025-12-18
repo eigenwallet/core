@@ -8,7 +8,7 @@ use crate::{monero, network::quote::BidQuote};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
-use libp2p::{Multiaddr, PeerId};
+use libp2p::PeerId;
 use monero_rpc_pool::pool::PoolStatus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -1041,6 +1041,10 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "Option<number>")]
         btc_lock_confirmations: Option<u64>,
     },
+    VerifyingXmrLockTx {
+        #[typeshare(serialized_as = "string")]
+        xmr_lock_txid: monero::TxHash,
+    },
     XmrLockTxInMempool {
         #[typeshare(serialized_as = "string")]
         xmr_lock_txid: monero::TxHash,
@@ -1049,7 +1053,8 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    XmrLocked,
+    PreflightEncSig,
+    InflightEncSig,
     EncryptedSignatureSent,
     RedeemingMonero,
     WaitingForXmrConfirmationsBeforeRedeem {
@@ -1065,6 +1070,7 @@ pub enum TauriSwapProgressEvent {
         xmr_redeem_txids: Vec<monero::TxHash>,
         xmr_receive_pool: MoneroAddressPool,
     },
+    WaitingForCancelTimelockExpiration, // TODO: Add current confirmations and target confirmations here?
     CancelTimelockExpired,
     BtcCancelled {
         #[typeshare(serialized_as = "string")]

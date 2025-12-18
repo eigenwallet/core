@@ -6,7 +6,7 @@ pub fn init_tracing(level: LevelFilter) {
         return;
     }
 
-    let is_terminal = std::io::stderr().is_terminal();
+    let is_terminal = console::Term::stderr().is_term();
 
     FmtSubscriber::builder()
         .with_env_filter(format!(

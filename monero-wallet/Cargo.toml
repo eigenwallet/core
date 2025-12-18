@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 # Error handling
 anyhow = { workspace = true }
+backoff = { workspace = true }
 
 # Other stuff
 monero = { workspace = true }
@@ -22,5 +23,12 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 # monero-oxide
-monero-oxide-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git", package = "monero-rpc" }
-monero-simple-request-rpc = { git = "https://github.com/monero-oxide/monero-oxide.git" }
+monero-daemon-rpc = { workspace = true }
+monero-oxide-wallet = { workspace = true }
+monero-simple-request-rpc = { workspace = true }
+monero-wallet-ng = { path = "../monero-wallet-ng" }
+
+# Cryptography
+curve25519-dalek = { workspace = true }
+hex = { workspace = true }
+zeroize = { workspace = true }
