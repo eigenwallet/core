@@ -8,10 +8,14 @@ publish = false
 [dependencies]
 anyhow = { workspace = true }
 monero = { workspace = true }
+monero-address = { workspace = true }
 monero-daemon-rpc = { workspace = true }
+monero-simple-request-rpc = { workspace = true }
 monero-sys = { path = "../monero-sys" }
 rand = { workspace = true }
 reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 testcontainers = "0.15"
 tokio = { workspace = true, features = ["rt-multi-thread", "time", "macros"] }
 tracing = { workspace = true }

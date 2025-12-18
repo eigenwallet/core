@@ -1,5 +1,4 @@
-use monero_harness::Monero;
-use monero_rpc::monerod::MonerodRpc as _;
+use monero_harness::{Monero, ProvidesGetBlockCount};
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use tokio::time;
@@ -32,10 +31,10 @@ async fn init_miner_and_mine_to_miner_address() {
     tracing::info!("Mining 10 blocks directly to miner address");
     let blocks = monero
         .monerod()
-        .generate_blocks(10, miner_address.to_string())
+        .generate_blocks(10, &miner_address.to_string())
         .await
         .unwrap();
-    tracing::info!("Generated {} blocks manually", blocks.blocks.len());
+    tracing::info!("Generated {} blocks manually", blocks);
 
     // Force refresh
     tracing::info!("Refreshing wallet after manual mining");
@@ -54,7 +53,7 @@ async fn init_miner_and_mine_to_miner_address() {
 
     // Print information about monerod status
     let monerod = monero.monerod();
-    let block_height = monerod.client().get_block_count().await.unwrap().count;
+    let block_height = monerod.client().get_block_count().await.unwrap();
     tracing::info!("Current block height: {}", block_height);
 
     // Refresh wallet and check balance again
