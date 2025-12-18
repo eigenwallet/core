@@ -440,7 +440,8 @@ impl State2 {
         let tx_refund_amnesty_sig = self.a.sign(tx_refund_amnesty.digest());
 
         // Send full refund encsig when btc_amnesty_amount is None or ZERO (ratio = 1.0)
-        let tx_full_refund = TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+        let tx_full_refund =
+            TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
         let tx_full_refund_encsig =
             if self.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO) == bitcoin::Amount::ZERO {
                 Some(self.a.encsign(self.S_b_bitcoin, tx_full_refund.digest()))
@@ -536,12 +537,8 @@ impl State2 {
         )?;
 
         // Check if the provided signature by Bob is valid for the transaction
-        swap_core::bitcoin::verify_sig(
-            &self.B,
-            &tx_refund_burn.digest(),
-            &msg.tx_refund_burn_sig,
-        )
-        .context("Failed to verify refund burn transaction")?;
+        swap_core::bitcoin::verify_sig(&self.B, &tx_refund_burn.digest(), &msg.tx_refund_burn_sig)
+            .context("Failed to verify refund burn transaction")?;
 
         // Create TxFinalAmnesty ourself
         let tx_final_amnesty = TxFinalAmnesty::new(
