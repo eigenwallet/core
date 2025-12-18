@@ -6417,8 +6417,6 @@ dependencies = [
  "monero-sys",
  "rand 0.8.5",
  "reqwest 0.12.25",
- "serde",
- "serde_json",
  "testcontainers",
  "tokio",
  "tracing",

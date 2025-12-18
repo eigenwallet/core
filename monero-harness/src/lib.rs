@@ -36,23 +36,6 @@ use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_P
 
 pub mod image;
 
-pub trait ProvidesGetBlockCount: Sync {
-    /// Look up how many blocks are in the longest chain known to the node.
-    fn get_block_count(&self) -> impl Send + std::future::Future<Output = Result<u64>>;
-}
-impl<T: monero_daemon_rpc::HttpTransport> ProvidesGetBlockCount for MoneroDaemon<T> {
-    fn get_block_count(&self) -> impl Send + std::future::Future<Output = Result<u64>> {
-        async move {
-            #[derive(serde::Deserialize)]
-            struct BlockCountResponse {
-                count: u64,
-            }
-            let json = self.json_rpc_call("get_block_count", None, 0).await?;
-            Ok(serde_json::from_str::<BlockCountResponse>(&json)?.count)
-        }
-    }
-}
-
 /// How often we mine a block.
 const BLOCK_TIME_SECS: u64 = 1;
 
@@ -214,12 +197,7 @@ impl<'c> Monero {
         }
 
         // Make sure to refresh the wallet to see the new balance
-        let block_height = monerod.client().get_block_count().await?;
-
-        tracing::info!(
-            "Waiting for miner wallet to catch up to blockchain height {}",
-            block_height
-        );
+        tracing::info!("Waiting for miner wallet to catch up to blockchain",);
         miner_wallet.refresh().await?;
 
         // Debug: Check wallet balance after initial block generation
