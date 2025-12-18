@@ -5,6 +5,7 @@ members = [
   "electrum-pool",
   "libp2p-rendezvous-node",
   "libp2p-tor",
+  "monero-oxide-ext",
   "monero-rpc-pool",
   "monero-sys",
   "monero-tests",
