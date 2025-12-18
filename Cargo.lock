@@ -10744,6 +10744,7 @@ version = "3.6.1"
 dependencies = [
  "anyhow",
  "clap 4.5.53",
+ "comfy-table",
  "jsonrpsee",
  "monero",
  "rustyline",

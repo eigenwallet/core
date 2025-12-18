@@ -1,9 +1,11 @@
 mod cli;
 mod repl;
+mod util;
 
 use clap::Parser;
 use cli::{Cli, Cmd};
 use swap_controller_api::{AsbApiClient, MoneroSeedResponse};
+use util::ToTable;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -76,13 +78,17 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::GetSwaps => {
             let swaps = client.get_swaps().await?;
+
+            // Create a table containing the swap id and state
+            let mut table = swaps.iter().map(|swap| (&swap.id, &swap.state)).to_table();
+
             if swaps.is_empty() {
-                println!("No swaps found");
-            } else {
-                for swap in swaps {
-                    println!("{}: {}", swap.id, swap.state);
-                }
+                table.add_row(["No swaps found"]);
             }
+
+            table.set_header(["ID", "State"]);
+
+            println!("{table}");
         }
         Cmd::BitcoinSeed => {
             let response = client.bitcoin_seed().await?;
