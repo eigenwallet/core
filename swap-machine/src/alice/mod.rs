@@ -601,6 +601,7 @@ pub struct State3 {
     pub btc_amnesty_amount: Option<bitcoin::Amount>,
     pub cancel_timelock: CancelTimelock,
     pub punish_timelock: PunishTimelock,
+    #[serde(default)]
     remaining_refund_timelock: Option<RemainingRefundTimelock>,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     refund_address: bitcoin::Address,
@@ -631,7 +632,9 @@ pub struct State3 {
     tx_redeem_fee: bitcoin::Amount,
     pub tx_punish_fee: bitcoin::Amount,
     pub tx_refund_fee: bitcoin::Amount,
+    #[serde(default)]
     pub tx_partial_refund_fee: Option<bitcoin::Amount>,
+    #[serde(default)]
     pub tx_refund_amnesty_fee: Option<bitcoin::Amount>,
     pub tx_cancel_fee: bitcoin::Amount,
 }

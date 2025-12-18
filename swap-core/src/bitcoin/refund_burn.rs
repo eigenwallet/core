@@ -1,7 +1,9 @@
 #![allow(non_snake_case)]
 
 use crate::bitcoin::partial_refund::TxPartialRefund;
-use crate::bitcoin::{self, build_shared_output_descriptor, Address, Amount, PublicKey, Transaction};
+use crate::bitcoin::{
+    self, Address, Amount, PublicKey, Transaction, build_shared_output_descriptor,
+};
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
 use ::bitcoin::{OutPoint, ScriptBuf, Weight, secp256k1};
@@ -45,10 +47,8 @@ impl TxRefundBurn {
 
         let burn_output_descriptor = build_shared_output_descriptor(A.0, B.0)?;
 
-        let tx_refund_burn = tx_partial_refund.build_burn_spend_transaction(
-            &burn_output_descriptor,
-            spending_fee,
-        );
+        let tx_refund_burn =
+            tx_partial_refund.build_burn_spend_transaction(&burn_output_descriptor, spending_fee);
 
         let digest = SighashCache::new(&tx_refund_burn)
             .p2wsh_signature_hash(
@@ -189,6 +189,7 @@ impl TxRefundBurn {
         }
     }
 
+    // TODO: calculate actual weight
     pub fn weight() -> Weight {
         Weight::from_wu(548)
     }

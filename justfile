@@ -62,7 +62,7 @@ tests:
 
 # Run docker tests (e.g., "just docker_test happy_path_alice_developer_tip")
 docker_test test_name:
-	cargo test --package swap --test {{test_name}} -- --nocapture
+	RUST_BACKTRACE=1 cargo test --package swap --test {{test_name}} -- --nocapture
 
 docker_test_happy_path:
 	just docker_test happy_path

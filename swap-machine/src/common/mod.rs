@@ -169,6 +169,26 @@ pub trait Database {
     async fn get_state(&self, swap_id: Uuid) -> Result<State>;
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;
     async fn all(&self) -> Result<Vec<(Uuid, State)>>;
+
+    /// Returns the current (latest) state and the starting state for a swap.
+    async fn get_current_and_starting_state(&self, swap_id: Uuid) -> Result<(State, State)> {
+        use anyhow::Context;
+
+        let states = self
+            .get_states(swap_id)
+            .await
+            .context("Error fetching all states of swap from database")?;
+        let starting = states.first().cloned().context("No states found")?;
+        let current = states.last().cloned().context("No states found")?;
+
+        // Sanity check: both states must be from the same role
+        match (&current, &starting) {
+            (State::Alice(_), State::Alice(_)) | (State::Bob(_), State::Bob(_)) => {}
+            _ => anyhow::bail!("Current and starting states have mismatched roles"),
+        }
+
+        Ok((current, starting))
+    }
     async fn insert_buffered_transfer_proof(
         &self,
         swap_id: Uuid,

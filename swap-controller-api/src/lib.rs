@@ -64,10 +64,22 @@ pub struct RegistrationStatusResponse {
     pub registrations: Vec<RegistrationStatusItem>,
 }
 
+// TODO: we should not need both this and asb::SwapDetails
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Swap {
-    pub id: String,
+    pub swap_id: String,
+    pub start_date: String,
     pub state: String,
+    pub btc_lock_txid: String,
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub btc_amount: bitcoin::Amount,
+    /// Monero amount in piconero
+    pub xmr_amount: u64,
+    /// Exchange rate: BTC per XMR (amount of BTC needed to buy 1 XMR)
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub exchange_rate: bitcoin::Amount,
+    pub peer_id: String,
+    pub completed: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

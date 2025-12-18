@@ -411,18 +411,29 @@ impl Database for SqliteDatabase {
 
         let result = rows
             .iter()
-            .map(|row| {
+            .filter_map(|row| {
                 let state_str: &str = &row.state;
 
-                let state = match serde_json::from_str::<Swap>(state_str) {
-                    Ok(a) => Ok(State::from(a)),
-                    Err(e) => Err(e),
-                }?;
-                Ok(state)
+                match serde_json::from_str::<Swap>(state_str) {
+                    Ok(a) => {
+                        // debugging
+                        if swap_id.to_string().as_str() == "ef5435d3-bb7d-4b3a-a83b-42f2b9f7ca4b" {
+                            tracing::info!("Managed to deserialize swap: {a}")
+                        }
+                        Some(State::from(a))
+                    }
+                    Err(e) => {
+                        // debugging
+                        if swap_id.to_string().as_str() == "ef5435d3-bb7d-4b3a-a83b-42f2b9f7ca4b" {
+                            tracing::error!(error=%e, "Failed to deserialize swap")
+                        }
+                        None
+                    }
+                }
             })
-            .collect::<Result<Vec<State>>>();
+            .collect::<Vec<State>>();
 
-        result
+        Ok(result)
     }
 
     async fn insert_buffered_transfer_proof(

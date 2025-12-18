@@ -1,11 +1,9 @@
 mod cli;
 mod repl;
-mod util;
 
 use clap::Parser;
 use cli::{Cli, Cmd};
 use swap_controller_api::{AsbApiClient, MoneroSeedResponse};
-use util::ToTable;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -79,14 +77,37 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         Cmd::GetSwaps => {
             let swaps = client.get_swaps().await?;
 
-            // Create a table containing the swap id and state
-            let mut table = swaps.iter().map(|swap| (&swap.id, &swap.state)).to_table();
+            let mut table = comfy_table::Table::new();
+            table.set_header([
+                "ID",
+                "Started",
+                "State",
+                "BTC Lock TxID",
+                "BTC",
+                "XMR",
+                "Rate (BTC/XMR)",
+                "Peer ID",
+                "Completed",
+            ]);
 
             if swaps.is_empty() {
                 table.add_row(["No swaps found"]);
+            } else {
+                for swap in &swaps {
+                    let xmr = monero::Amount::from_pico(swap.xmr_amount);
+                    table.add_row([
+                        &swap.swap_id,
+                        &swap.start_date,
+                        &swap.state,
+                        &swap.btc_lock_txid,
+                        &swap.btc_amount.to_string(),
+                        &format!("{:.12} XMR", xmr.as_xmr()),
+                        &swap.exchange_rate.to_string(),
+                        &swap.peer_id,
+                        &swap.completed.to_string(),
+                    ]);
+                }
             }
-
-            table.set_header(["ID", "State"]);
 
             println!("{table}");
         }

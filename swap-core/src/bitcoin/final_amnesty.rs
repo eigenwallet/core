@@ -40,10 +40,7 @@ impl TxFinalAmnesty {
             tx_refund_burn.amount()
         );
 
-        let tx_final_amnesty = tx_refund_burn.build_spend_transaction(
-            refund_address,
-            spending_fee,
-        );
+        let tx_final_amnesty = tx_refund_burn.build_spend_transaction(refund_address, spending_fee);
 
         let digest = SighashCache::new(&tx_final_amnesty)
             .p2wsh_signature_hash(
@@ -132,6 +129,7 @@ impl TxFinalAmnesty {
         Ok(tx)
     }
 
+    // TODO: calculate actual weight
     pub fn weight() -> Weight {
         Weight::from_wu(548)
     }
