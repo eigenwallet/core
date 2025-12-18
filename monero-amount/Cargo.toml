@@ -1,0 +1,6 @@
+[package]
+name = "monero-amount"
+version = "0.1.0"
+authors = ["Monero Rust Contributors"]
+edition = "2021"
+description = "Trimmed-down monero::Amount"
