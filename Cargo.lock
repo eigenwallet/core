@@ -6326,6 +6326,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "monero-oxide-ext"
+version = "0.1.0"
+
+[[package]]
 name = "monero-base58"
 version = "0.1.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
@@ -10754,7 +10758,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.53",
  "jsonrpsee",
- "monero",
+ "monero-oxide-ext",
  "rustyline",
  "shell-words",
  "swap-controller-api",
