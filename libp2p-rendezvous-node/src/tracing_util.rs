@@ -6,7 +6,7 @@ pub fn init_tracing(level: LevelFilter) {
         return;
     }
 
-    let is_terminal = atty::is(atty::Stream::Stderr);
+    let is_terminal = std::io::stderr().is_terminal();
 
     FmtSubscriber::builder()
         .with_env_filter(format!(

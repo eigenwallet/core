@@ -6790,10 +6790,8 @@ dependencies = [
  "monero-sys",
  "swap-core",
  "throttle",
- "time",
  "tokio",
  "tracing",
- "tracing-appender",
  "tracing-subscriber",
  "uuid",
 ]
@@ -8950,7 +8948,6 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "arti-client",
- "atty",
  "futures",
  "libp2p",
  "libp2p-tor",
