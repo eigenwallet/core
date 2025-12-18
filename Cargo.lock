@@ -6406,22 +6406,14 @@ version = "0.2.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
 
 [[package]]
-name = "monero-epee-bin-serde"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f8a3f7f7ef5bb1fd6c953be9187e48df8cc1a0ffc7d94f9fbabd4a23e37321e"
-dependencies = [
- "byteorder",
- "serde",
-]
-
-[[package]]
 name = "monero-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "monero",
- "monero-rpc",
+ "monero-address",
+ "monero-daemon-rpc",
+ "monero-simple-request-rpc",
  "monero-sys",
  "rand 0.8.5",
  "reqwest 0.12.25",
@@ -6488,21 +6480,6 @@ version = "0.1.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
 dependencies = [
  "sha3",
-]
-
-[[package]]
-name = "monero-rpc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "data-encoding",
- "jsonrpc_client",
- "monero",
- "monero-epee-bin-serde",
- "reqwest 0.12.25",
- "rust_decimal",
- "serde",
- "serde_json",
 ]
 
 [[package]]

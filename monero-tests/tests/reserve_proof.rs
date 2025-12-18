@@ -14,7 +14,7 @@ type TestSetup<'a> = (
 async fn setup(cli: &Cli) -> anyhow::Result<TestSetup<'_>> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_sys=trace,reserve_proof=trace",
+            "info,test=debug,monero_harness=debug,monero_sys=trace,reserve_proof=trace",
         )
         .try_init()
         .ok();

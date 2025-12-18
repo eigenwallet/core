@@ -63,7 +63,7 @@ pub async fn setup_test<T, F, C>(
     let cli = Cli::default();
 
     tracing_subscriber::fmt()
-        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,monero_rpc=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug,monero_wallet_ng=trace") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
+        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug,monero_wallet_ng=trace") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
         .with_test_writer()
         .init();
 
