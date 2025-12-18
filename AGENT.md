@@ -10,7 +10,7 @@ This repository hosts the core of the eigenwallet project. The code base is a Ru
     It also hosts library code shared between the binaries and integration tests.
 - **src-tauri/** – Rust crate that exposes the `swap` functionality to the Tauri front end and bundles the application.
 - **src-gui/** – The front‑end written in TypeScript/React and bundled by Tauri. Communicates with `src-tauri` via Tauri commands.
-- **monero-rpc/** and **monero-wallet/** – helper crates for interacting with the Monero ecosystem.
+- **monero-wallet/** – helper crates for interacting with the Monero ecosystem.
 - **docs/** – Next.js documentation site.
 - **dev-docs/** – additional markdown documentation for CLI and ASB.
 
@@ -34,7 +34,7 @@ Other files such as `swap/src/bin/asb.rs`, `swap/src/cli/api.rs`, and `src-gui/p
 - The **swap** crate implements the atomic swap logic and provides a CLI. The binaries under `swap/src/bin` (`swap.rs` and `asb.rs`) start the client and maker services respectively.
 - **src-tauri** wraps the swap crate and exposes its functionality to the GUI via Tauri commands. It also bundles the application with the `src-gui` assets.
 - **src-gui** is the TypeScript/React interface. It communicates with the Rust back end through the commands defined in `src-tauri`.
-- Helper crates like **monero-rpc** and **monero-wallet** provide abstractions over external services. They are used by the swap crate to interact with Monero.
+- Helper crates like **monero-wallet** provide abstractions over external services. They are used by the swap crate to interact with Monero.
 - Continuous integration and release workflows live in `.github/workflows`. They build binaries, create releases and lint the code base.
 
 ## Pull request titles

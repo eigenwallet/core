@@ -8,7 +8,7 @@ use tokio::time;
 async fn init_miner_and_mine_to_miner_address() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_sys=debug,monerod=debug,monero_cpp=debug",
+            "info,test=debug,monero_harness=debug,monero_sys=debug,monerod=debug,monero_cpp=debug",
         )
         .with_test_writer()
         .init();
