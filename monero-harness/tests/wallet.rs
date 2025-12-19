@@ -1,4 +1,4 @@
-use monero::Amount;
+use monero_amount::Amount;
 use monero_harness::{Monero, MoneroWalletRpc};
 use std::time::Duration;
 use testcontainers::clients::Cli;
