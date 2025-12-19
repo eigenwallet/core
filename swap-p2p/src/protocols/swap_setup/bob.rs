@@ -621,7 +621,7 @@ async fn run_swap_setup(
     Ok(state2)
 }
 
-impl From<SpotPriceResponse> for Result<swap_core::monero_amount::Amount, Error> {
+impl From<SpotPriceResponse> for Result<swap_core::monero::Amount, Error> {
     fn from(response: SpotPriceResponse) -> Self {
         match response {
             SpotPriceResponse::Xmr(amount) => Ok(amount),

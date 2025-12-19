@@ -44,8 +44,8 @@ pub enum OutEvent {
 
 #[derive(Debug)]
 pub struct WalletSnapshot {
-    unlocked_balance: swap_core::monero_amount::Amount,
-    lock_fee: swap_core::monero_amount::Amount,
+    unlocked_balance: swap_core::monero::Amount,
+    lock_fee: swap_core::monero::Amount,
 
     // TODO: Consider using the same address for punish and redeem (they are mutually exclusive, so
     // effectively the address will only be used once)
@@ -58,7 +58,7 @@ pub struct WalletSnapshot {
 
 impl WalletSnapshot {
     pub fn new(
-        unlocked_balance: swap_core::monero_amount::Amount,
+        unlocked_balance: swap_core::monero::Amount,
         redeem_address: bitcoin::Address,
         punish_address: bitcoin::Address,
         redeem_fee: bitcoin::Amount,
@@ -497,7 +497,7 @@ where
 }
 
 impl SpotPriceResponse {
-    pub fn from_result_ref(result: &Result<swap_core::monero_amount::Amount, Error>) -> Self {
+    pub fn from_result_ref(result: &Result<swap_core::monero::Amount, Error>) -> Self {
         match result {
             Ok(amount) => SpotPriceResponse::Xmr(*amount),
             Err(error) => SpotPriceResponse::Error(error.to_error_response()),
@@ -521,7 +521,7 @@ pub enum Error {
     },
     #[error("Unlocked balance ({balance}) too low to fulfill swapping {buy}")]
     BalanceTooLow {
-        balance: swap_core::monero_amount::Amount,
+        balance: swap_core::monero::Amount,
         buy: bitcoin::Amount,
     },
     #[error("Failed to fetch latest rate")]

@@ -10908,7 +10908,6 @@ dependencies = [
  "libp2p",
  "libp2p-tor",
  "monero-address",
- "monero-amount",
  "rand 0.8.5",
  "semver",
  "serde",
