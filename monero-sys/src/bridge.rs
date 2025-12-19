@@ -447,23 +447,23 @@ pub mod ffi {
     }
 }
 
-impl From<monero::Network> for ffi::NetworkType {
-    fn from(network: monero::Network) -> Self {
+impl From<monero_address::Network> for ffi::NetworkType {
+    fn from(network: monero_address::Network) -> Self {
         match network {
-            monero::Network::Mainnet => ffi::NetworkType::Mainnet,
-            monero::Network::Testnet => ffi::NetworkType::Testnet,
-            monero::Network::Stagenet => ffi::NetworkType::Stagenet,
+            monero_address::Network::Mainnet => ffi::NetworkType::Mainnet,
+            monero_address::Network::Testnet => ffi::NetworkType::Testnet,
+            monero_address::Network::Stagenet => ffi::NetworkType::Stagenet,
         }
     }
 }
 
 /// We want do use the `monero-rs` type so we convert as early as possible.
-impl From<ffi::NetworkType> for monero::Network {
+impl From<ffi::NetworkType> for monero_address::Network {
     fn from(network: ffi::NetworkType) -> Self {
         match network {
-            ffi::NetworkType::Mainnet => monero::Network::Mainnet,
-            ffi::NetworkType::Testnet => monero::Network::Testnet,
-            ffi::NetworkType::Stagenet => monero::Network::Stagenet,
+            ffi::NetworkType::Mainnet => monero_address::Network::Mainnet,
+            ffi::NetworkType::Testnet => monero_address::Network::Testnet,
+            ffi::NetworkType::Stagenet => monero_address::Network::Stagenet,
             // We have to include this path due to the way C++ translates the enum.
             // The enum only has these 3 values.
             _ => unreachable!(

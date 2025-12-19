@@ -6326,10 +6326,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monero-oxide-ext"
-version = "0.1.0"
-
-[[package]]
 name = "monero-base58"
 version = "0.1.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
@@ -6500,6 +6496,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "monero-oxide-ext"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
+]
+
+[[package]]
 name = "monero-primitives"
 version = "0.1.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
@@ -6577,7 +6582,8 @@ dependencies = [
  "diffy",
  "fs_extra",
  "futures",
- "monero",
+ "monero-address",
+ "monero-oxide-ext",
  "num_cpus",
  "quickcheck",
  "quickcheck_macros",
