@@ -41,7 +41,7 @@ pub fn private_key_from_secp256k1_scalar(
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PrivateViewKey(#[serde(with = "swap_serde::monero::private_key")] PrivateKey);
+pub struct PrivateViewKey(#[serde(with = "swap_serde::monero::private_key")] pub PrivateKey);
 
 impl fmt::Display for PrivateViewKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
