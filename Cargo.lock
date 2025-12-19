@@ -10831,7 +10831,7 @@ dependencies = [
  "console 0.16.1",
  "dialoguer",
  "libp2p",
- "monero",
+ "monero-address",
  "rust_decimal",
  "serde",
  "swap-fs",
