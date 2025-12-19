@@ -61,7 +61,7 @@ arti-client = { workspace = true, features = ["tokio"] }
 tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
 
 # Monero/Project specific
-monero = { workspace = true }
+monero-address = { workspace = true }
 swap-serde = { path = "../swap-serde" }
 
 # Optional dependencies (for features)
