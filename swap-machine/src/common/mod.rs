@@ -72,13 +72,12 @@ pub struct Message2 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message3 {
     pub tx_cancel_sig: bitcoin::Signature,
-    /// The following fields were reworked in [#675](https://github.com/eigenwallet/core/pull/675).
-    /// Alice _may_ choose to commit to a full refund for bob during the swap setup already, but doesn't
-    /// have to.
-    pub tx_partial_refund_encsig: bitcoin::EncryptedSignature,
+    // The following fields were reworked in [#675](https://github.com/eigenwallet/core/pull/675).
+    // Alice will send either the full refund encsig or signatures for both partial refund
+    // and tx refund amnesty.
     pub tx_full_refund_encsig: Option<bitcoin::EncryptedSignature>,
-    /// Alice's signature for the amnesty transaction - always provided.
-    pub tx_refund_amnesty_sig: bitcoin::Signature,
+    pub tx_partial_refund_encsig: Option<bitcoin::EncryptedSignature>,
+    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
 }
 
 #[allow(non_snake_case)]
@@ -87,9 +86,9 @@ pub struct Message4 {
     pub tx_punish_sig: bitcoin::Signature,
     pub tx_cancel_sig: bitcoin::Signature,
     pub tx_early_refund_sig: bitcoin::Signature,
-    pub tx_refund_amnesty_sig: bitcoin::Signature,
-    pub tx_refund_burn_sig: bitcoin::Signature,
-    pub tx_final_amnesty_sig: bitcoin::Signature,
+    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
+    pub tx_refund_burn_sig: Option<bitcoin::Signature>,
+    pub tx_final_amnesty_sig: Option<bitcoin::Signature>,
 }
 
 #[allow(clippy::large_enum_variant)]

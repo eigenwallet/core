@@ -89,7 +89,7 @@ impl TxPartialRefund {
         refund_address: &Address,
         spending_fee: Amount,
         remaining_refund_timelock: RemainingRefundTimelock,
-    ) -> Transaction {
+    ) -> Result<Transaction> {
         use ::bitcoin::{
             Sequence, TxIn, TxOut, locktime::absolute::LockTime as PackedLockTime,
             transaction::Version,
@@ -103,16 +103,19 @@ impl TxPartialRefund {
         };
 
         let tx_out = TxOut {
-            value: self.amnesty_amount() - spending_fee,
+            value: self
+                .amnesty_amount()
+                .checked_sub(spending_fee)
+                .context("btc amnesty amount is less than spending fee")?,
             script_pubkey: refund_address.script_pubkey(),
         };
 
-        Transaction {
+        Ok(Transaction {
             version: Version(2),
             lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
             input: vec![tx_in],
             output: vec![tx_out],
-        }
+        })
     }
 
     /// Build a transaction that spends the amnesty output to a new 2-of-2 multisig (burn output).
@@ -252,6 +255,7 @@ impl TxPartialRefund {
         Ok(sig)
     }
 
+    // TODO: calculate actual weight
     pub fn weight() -> Weight {
         Weight::from_wu(548)
     }

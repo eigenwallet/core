@@ -15,8 +15,8 @@ use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
     self, CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
-    TxCancel, TxFinalAmnesty, TxLock, TxPartialRefund, TxRefundAmnesty, TxRefundBurn, Txid,
-    current_epoch,
+    TxCancel, TxFinalAmnesty, TxFullRefund, TxLock, TxPartialRefund, TxRefundAmnesty, TxRefundBurn,
+    Txid, current_epoch,
 };
 use swap_core::compat::IntoDalekNg;
 use swap_core::monero;
@@ -477,53 +477,67 @@ impl State1 {
             self.tx_cancel_fee,
         )?;
 
-        let tx_partial_refund = bitcoin::TxPartialRefund::new(
-            &tx_cancel,
-            &self.refund_address,
-            self.A,
-            self.b.public(),
-            self.btc_amnesty_amount
-                .context("btc_amnesty_amount is missing but required to create TxPartialRefund")?,
-            self.tx_partial_refund_fee
-                .context("tx_partial_refund_fee missing but required to setup swap")?,
-        )?;
-
-        bitcoin::verify_sig(&self.A, &tx_cancel.digest(), &msg.tx_cancel_sig)?;
-        bitcoin::verify_encsig(
-            self.A,
-            bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
-            &tx_partial_refund.digest(),
-            &msg.tx_partial_refund_encsig,
-        )?;
-
-        // Verify the full refund signature if it is present
-        if let Some(tx_full_refund_encsig) = &msg.tx_full_refund_encsig {
-            let tx_full_refund =
-                bitcoin::TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
-            bitcoin::verify_encsig(
-                self.A,
-                bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
-                &tx_full_refund.digest(),
-                tx_full_refund_encsig,
-            )?;
-        }
-
-        // Verify the refund amnesty signature (always provided in new swaps)
-        let tx_refund_amnesty = bitcoin::TxRefundAmnesty::new(
-            &tx_partial_refund,
-            &self.refund_address,
-            self.tx_refund_amnesty_fee
-                .context("tx_refund_amnesty_fee missing but required to setup swap")?,
-            self.remaining_refund_timelock
-                .context("remaining_refund_timelock missing but required to setup swap")?,
-        );
-        bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), &msg.tx_refund_amnesty_sig)?;
-
-        let refund_signatures = RefundSignatures::from_possibly_full_refund_sig(
-            msg.tx_partial_refund_encsig,
+        // Depending on which signatures we get, verify and store them
+        let refund_signatures = match (
             msg.tx_full_refund_encsig,
+            msg.tx_partial_refund_encsig,
             msg.tx_refund_amnesty_sig,
-        );
+        ) {
+            // We got the encrypted signature for the full refund - awesome
+            (Some(tx_full_refund_encsig), _, _) => {
+                let tx_full_refund =
+                    TxFullRefund::new(&tx_cancel, &self.refund_address, self.tx_refund_fee);
+                bitcoin::verify_encsig(
+                    self.A,
+                    bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
+                    &tx_full_refund.digest(),
+                    &tx_full_refund_encsig,
+                )
+                .context("Couldn't verify Alice's signature on TxFullRefund")?;
+
+                RefundSignatures::Legacy {
+                    tx_full_refund_encsig,
+                }
+            }
+            // We got the encrypted signatures for the partial refund path.
+            (None, Some(tx_partial_refund_encsig), Some(tx_refund_amnesty_sig)) => {
+                let tx_partial_refund = TxPartialRefund::new(
+                    &tx_cancel,
+                    &self.refund_address,
+                    self.A,
+                    self.b.public(),
+                    self.btc_amnesty_amount
+                        .context("Missing btc_amnesty_amount")?,
+                    self.tx_partial_refund_fee
+                        .context("Missing tx_partial_refund_fee")?,
+                )?;
+                bitcoin::verify_encsig(
+                    self.A,
+                    bitcoin::PublicKey::from(self.s_b.to_secpfun_scalar()),
+                    &tx_partial_refund.digest(),
+                    &tx_partial_refund_encsig,
+                )?;
+
+                let tx_refund_amnesty = TxRefundAmnesty::new(
+                    &tx_partial_refund,
+                    &self.refund_address,
+                    self.tx_refund_amnesty_fee
+                        .context("missing tx_refund_amnesty_fee")?,
+                    self.remaining_refund_timelock
+                        .context("missing remaining_refund_timelock")?,
+                )?;
+                bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), &tx_refund_amnesty_sig)?;
+
+                RefundSignatures::Partial {
+                    tx_partial_refund_encsig,
+                    tx_refund_amnesty_sig,
+                }
+            }
+            (_, _, _) => anyhow::bail!(
+                "Alice sent us neither TxFullRefund encsig nor signatures for the partial refund path"
+            ),
+        };
+
         Ok(State2 {
             A: self.A,
             b: self.b,
@@ -618,43 +632,57 @@ impl State2 {
 
         let tx_early_refund_sig = self.b.sign(tx_early_refund.digest());
 
-        let tx_partial_refund = TxPartialRefund::new(
-            &tx_cancel,
-            &self.refund_address,
-            self.A,
-            self.b.public(),
-            self.btc_amnesty_amount
-                .context("missing btc_amnesty_amount")?,
-            self.tx_partial_refund_fee
-                .context("missing tx_partial_refund_fee")?,
-        )
-        .context("Couldn't construct TxPartialRefund")?;
-        let tx_refund_amnesty = TxRefundAmnesty::new(
-            &tx_partial_refund,
-            &self.refund_address,
-            self.tx_refund_amnesty_fee
-                .context("Missing tx_refund_amnesty_fee")?,
-            self.remaining_refund_timelock
-                .context("missing remaining_refund_timelock")?,
-        );
-        let tx_refund_amnesty_sig = self.b.sign(tx_refund_amnesty.digest());
+        // We can only construct a valid TxRefundAmnesty/TxRefundBurn/TxFinalAmnesty when the amnesty amount
+        // is greater than zero. Thus we only send our signatures for them if that is the case.
+        // Alice accepts this because she sent us her signature for TxFullRefund already anyway.
+        let (tx_refund_amnesty_sig, tx_refund_burn_sig, tx_final_amnesty_sig) =
+            if self.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO) == bitcoin::Amount::ZERO {
+                (None, None, None)
+            } else {
+                let tx_partial_refund = TxPartialRefund::new(
+                    &tx_cancel,
+                    &self.refund_address,
+                    self.A,
+                    self.b.public(),
+                    self.btc_amnesty_amount
+                        .context("missing btc_amnesty_amount")?,
+                    self.tx_partial_refund_fee
+                        .context("missing tx_partial_refund_fee")?,
+                )
+                .context("Couldn't construct TxPartialRefund")?;
+                let tx_refund_amnesty = TxRefundAmnesty::new(
+                    &tx_partial_refund,
+                    &self.refund_address,
+                    self.tx_refund_amnesty_fee
+                        .context("Missing tx_refund_amnesty_fee")?,
+                    self.remaining_refund_timelock
+                        .context("missing remaining_refund_timelock")?,
+                )?;
+                let tx_refund_amnesty_sig = self.b.sign(tx_refund_amnesty.digest());
 
-        let tx_refund_burn = TxRefundBurn::new(
-            &tx_partial_refund,
-            self.A,
-            self.b.public(),
-            self.tx_refund_burn_fee
-                .context("Missing tx_refund_burn_fee")?,
-        )?;
-        let tx_refund_burn_sig = self.b.sign(tx_refund_burn.digest());
+                let tx_refund_burn = TxRefundBurn::new(
+                    &tx_partial_refund,
+                    self.A,
+                    self.b.public(),
+                    self.tx_refund_burn_fee
+                        .context("Missing tx_refund_burn_fee")?,
+                )?;
+                let tx_refund_burn_sig = self.b.sign(tx_refund_burn.digest());
 
-        let tx_final_amnesty = TxFinalAmnesty::new(
-            &tx_refund_burn,
-            &self.refund_address,
-            self.tx_final_amnesty_fee
-                .context("Missing tx_final_amnesty_fee")?,
-        );
-        let tx_final_amnesty_sig = self.b.sign(tx_final_amnesty.digest());
+                let tx_final_amnesty = TxFinalAmnesty::new(
+                    &tx_refund_burn,
+                    &self.refund_address,
+                    self.tx_final_amnesty_fee
+                        .context("Missing tx_final_amnesty_fee")?,
+                );
+                let tx_final_amnesty_sig = self.b.sign(tx_final_amnesty.digest());
+
+                (
+                    Some(tx_refund_amnesty_sig),
+                    Some(tx_refund_burn_sig),
+                    Some(tx_final_amnesty_sig),
+                )
+            };
 
         Ok(Message4 {
             tx_punish_sig,
@@ -1295,7 +1323,7 @@ impl State6 {
     pub fn construct_tx_amnesty(&self) -> Result<bitcoin::TxRefundAmnesty> {
         let tx_partial_refund = self.construct_tx_partial_refund()?;
 
-        Ok(bitcoin::TxRefundAmnesty::new(
+        bitcoin::TxRefundAmnesty::new(
             &tx_partial_refund,
             &self.refund_address,
             self.tx_refund_amnesty_fee.context(
@@ -1304,7 +1332,7 @@ impl State6 {
             self.remaining_refund_timelock.context(
                 "Can't construct TxRefundAmnesty because remaining_refund_timelock is missing",
             )?,
-        ))
+        )
     }
 
     pub fn construct_tx_refund_burn(&self) -> Result<bitcoin::TxRefundBurn> {
@@ -1313,9 +1341,8 @@ impl State6 {
             &tx_partial_refund,
             self.A,
             self.b.public(),
-            self.tx_refund_burn_fee.context(
-                "Can't construct TxRefundBurn because tx_refund_burn_fee is missing",
-            )?,
+            self.tx_refund_burn_fee
+                .context("Can't construct TxRefundBurn because tx_refund_burn_fee is missing")?,
         )
     }
 
