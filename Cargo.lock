@@ -10936,7 +10936,6 @@ dependencies = [
  "futures",
  "libp2p",
  "monero-address",
- "monero-oxide-ext",
  "rand 0.8.5",
  "semver",
  "serde",

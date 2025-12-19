@@ -39,6 +39,7 @@ pub struct Request {
 pub enum Response {
     Fullfilled {
         swap_id: Uuid,
+        #[serde(with = "swap_serde::monero::scalar")]
         s_a: Scalar,
         lock_transfer_proof: TransferProof,
     },

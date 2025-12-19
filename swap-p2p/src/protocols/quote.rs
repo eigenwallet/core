@@ -21,7 +21,7 @@ impl AsRef<str> for BidQuoteProtocol {
 }
 
 /// Represents a quote for buying XMR.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[typeshare]
 pub struct BidQuote {
     /// The price at which the maker is willing to buy at.
@@ -58,7 +58,7 @@ impl BidQuote {
 #[error("Received quote of 0")]
 pub struct ZeroQuoteReceived;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[typeshare]
 pub struct ReserveProofWithAddress {
     #[serde(with = "swap_serde::monero::address_serde")]
