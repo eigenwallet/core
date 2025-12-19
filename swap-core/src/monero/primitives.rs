@@ -401,11 +401,11 @@ impl From<::monero_address::MoneroAddress> for MoneroAddressPool {
 pub struct TransferRequest {
     pub public_spend_key: PublicKey,
     pub public_view_key: super::PublicViewKey,
-    pub amount: Amount,
+    pub amount: ::monero_amount::Amount,
 }
 
 impl TransferRequest {
-    pub fn address_and_amount(&self, network: Network) -> (MoneroAddress, Amount) {
+    pub fn address_and_amount(&self, network: Network) -> (MoneroAddress, ::monero_amount::Amount) {
         (
             MoneroAddress::new(
                 network,

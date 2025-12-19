@@ -221,6 +221,7 @@ pub mod address_serde {
             use serde::de::Deserialize;
 
             #[derive(serde::Deserialize)]
+            #[serde(transparent)]
             struct Helper(#[serde(with = "super")] monero_address::MoneroAddress);
 
             Option::<Helper>::deserialize(deserializer).map(|opt| opt.map(|h| h.0))
