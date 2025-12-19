@@ -20,7 +20,7 @@ pub enum ElectrumServerType {
     Remote(Vec<Url>), // Use a specific remote Electrum server
 }
 
-pub fn network() -> (bitcoin::Network, monero::Network) {
+pub fn network() -> (bitcoin::Network, monero_address::Network) {
     let network = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Which network do you want to run on?")
         .items(&[
@@ -32,8 +32,8 @@ pub fn network() -> (bitcoin::Network, monero::Network) {
         .expect("Failed to select network");
 
     match network {
-        0 => (bitcoin::Network::Bitcoin, monero::Network::Mainnet),
-        1 => (bitcoin::Network::Testnet, monero::Network::Stagenet),
+        0 => (bitcoin::Network::Bitcoin, monero_address::Network::Mainnet),
+        1 => (bitcoin::Network::Testnet, monero_address::Network::Stagenet),
         _ => unreachable!(),
     }
 }
