@@ -10821,7 +10821,7 @@ dependencies = [
  "backoff",
  "bitcoin 0.32.8",
  "futures",
- "monero",
+ "monero-amount",
  "reqwest 0.12.25",
  "rust_decimal",
  "serde",
