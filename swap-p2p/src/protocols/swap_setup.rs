@@ -50,7 +50,7 @@ pub struct SpotPriceRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum SpotPriceResponse {
-    Xmr(swap_core::monero::Amount),
+    Xmr(swap_core::monero_amount::Amount),
     Error(SpotPriceError),
 }
 

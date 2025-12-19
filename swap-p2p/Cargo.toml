@@ -25,7 +25,8 @@ unsigned-varint = { version = "0.8.0", features = ["codec", "asynchronous_codec"
 
 # Crypto
 bitcoin = { workspace = true }
-monero = { workspace = true }
+monero-address = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
 rand = { workspace = true }
 
 # Utils

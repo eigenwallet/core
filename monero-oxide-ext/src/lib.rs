@@ -66,8 +66,73 @@ impl std::ops::Add<PrivateKey> for PrivateKey {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub mod serde_compressed_edwards {
+    // https://docs.rs/curve25519-dalek/4.1.3/src/curve25519_dalek/edwards.rs.html#279-292
+    // https://docs.rs/curve25519-dalek/4.1.3/src/curve25519_dalek/edwards.rs.html#330-362
+
+    use serde::de::Visitor;
+    use serde::{Deserializer, Serializer};
+
+    use super::PublicKey;
+    use monero_oxide_wallet::ed25519::CompressedPoint;
+
+    pub fn serialize<S>(
+        compressed_point: &CompressedPoint,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeTuple;
+        let mut buf = [0u8; 32];
+        compressed_point
+            .write(&mut &mut buf[..])
+            .expect("writing 32 into 32 bytes can't panic");
+
+        let mut tup = serializer.serialize_tuple(32)?;
+        for byte in &buf {
+            tup.serialize_element(byte)?;
+        }
+        tup.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<CompressedPoint, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CompressedEdwardsYVisitor;
+
+        impl<'de> Visitor<'de> for CompressedEdwardsYVisitor {
+            type Value = CompressedPoint;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str("32 bytes of data")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<CompressedPoint, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut bytes = [0u8; 32];
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..32 {
+                    bytes[i] = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(i, &"expected 32 bytes"))?;
+                }
+                Ok(PublicKey::from_slice(&bytes)
+                    .map_err(|e| serde::de::Error::custom(e))?
+                    .point)
+            }
+        }
+
+        deserializer.deserialize_tuple(32, CompressedEdwardsYVisitor)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PublicKey {
+    #[serde(with = "serde_compressed_edwards")]
     pub point: CompressedPoint,
 }
 
@@ -83,12 +148,12 @@ impl PublicKey {
     }
 
     /// Deserialize a public key from a slice.
-    pub fn from_slice(mut data: &[u8]) -> Result<PublicKey, Error> {
+    pub fn from_slice(data: &[u8]) -> Result<PublicKey, Error> {
         if data.len() != 32 {
             return Err(anyhow!("invalid length scalar"));
         }
 
-        let point = CompressedPoint::read(&mut data)?;
+        let point = CompressedPoint::read(&mut &data[..])?;
         // Check that the point is valid and canonical.
         // https://github.com/dalek-cryptography/curve25519-dalek/issues/380
         match point.decompress() {
@@ -118,6 +183,18 @@ impl PublicKey {
     pub fn decompress(&self) -> Point {
         self.point.decompress().expect("validated in constructor")
     }
+
+    pub fn decompress_ng(&self) -> curve25519_dalek_ng::edwards::EdwardsPoint {
+        curve25519_dalek_ng::edwards::CompressedEdwardsY::from_slice(&self.as_bytes())
+            .decompress()
+            .expect("validated in constructor")
+    }
+}
+
+impl From<curve25519_dalek_ng::edwards::CompressedEdwardsY> for PublicKey {
+    fn from(ng: curve25519_dalek_ng::edwards::CompressedEdwardsY) -> Self {
+        PublicKey::from_slice(&ng.to_bytes()).expect("validated by curve25519-dalek-ng")
+    }
 }
 
 impl fmt::Display for PublicKey {
@@ -131,6 +208,15 @@ impl FromStr for PublicKey {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
         Self::from_slice(&bytes[..])
+    }
+}
+
+impl ops::Add<PublicKey> for PublicKey {
+    type Output = PublicKey;
+
+    fn add(self, other: PublicKey) -> Self::Output {
+        let point = self.decompress_ng() + other.decompress_ng();
+        point.compress().into()
     }
 }
 

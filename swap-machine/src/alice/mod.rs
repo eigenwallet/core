@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
@@ -11,7 +11,7 @@ use swap_core::bitcoin::{
     current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
     TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
 };
-use swap_core::compat::IntoDalekNg;
+use swap_core::compat::{IntoDalek, IntoDalekNg, IntoMoneroOxide};
 use swap_core::monero;
 use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest};
 use swap_core::monero::ScalarExt;
@@ -67,7 +67,7 @@ pub enum AliceState {
     BtcRefunded {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
-        spend_key: monero::PrivateKey,
+        spend_key: monero_oxide_ext::PrivateKey,
         state3: Box<State3>,
     },
     BtcPunishable {
@@ -142,9 +142,9 @@ impl fmt::Display for AliceState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct State0 {
     a: swap_core::bitcoin::SecretKey,
-    s_a: monero::Scalar,
+    s_a: swap_core::monero::Scalar,
     v_a: monero::PrivateViewKey,
-    S_a_monero: monero::PublicKey,
+    S_a_monero: monero_oxide_ext::PublicKey,
     S_a_bitcoin: swap_core::bitcoin::PublicKey,
     dleq_proof_s_a: CrossCurveDLEQProof,
     btc: bitcoin::Amount,
@@ -175,7 +175,7 @@ impl State0 {
         let a = swap_core::bitcoin::SecretKey::new_random(rng);
         let v_a = monero::PrivateViewKey::new_random(rng);
 
-        let s_a = monero::Scalar::random(rng);
+        let s_a = swap_core::monero::Scalar::random(rng);
         let (dleq_proof_s_a, (S_a_bitcoin, S_a_monero)) =
             CROSS_CURVE_PROOF_SYSTEM.prove(&s_a.into_dalek_ng(), rng);
 
@@ -184,9 +184,7 @@ impl State0 {
             s_a,
             v_a,
             S_a_bitcoin: S_a_bitcoin.into(),
-            S_a_monero: monero::PublicKey {
-                point: S_a_monero.compress(),
-            },
+            S_a_monero: S_a_monero.compress().into(),
             dleq_proof_s_a,
             redeem_address,
             punish_address,
@@ -202,13 +200,7 @@ impl State0 {
     pub fn receive(self, msg: Message0) -> Result<(Uuid, State1)> {
         let valid = CROSS_CURVE_PROOF_SYSTEM.verify(
             &msg.dleq_proof_s_b,
-            (
-                msg.S_b_bitcoin.into(),
-                msg.S_b_monero
-                    .point
-                    .decompress()
-                    .ok_or_else(|| anyhow!("S_b is not a monero curve point"))?,
-            ),
+            (msg.S_b_bitcoin.into(), msg.S_b_monero.decompress_ng()),
         );
 
         if !valid {
@@ -252,9 +244,9 @@ pub struct State1 {
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
     s_a: swap_core::monero::Scalar,
-    S_a_monero: monero::PublicKey,
+    S_a_monero: monero_oxide_ext::PublicKey,
     S_a_bitcoin: swap_core::bitcoin::PublicKey,
-    S_b_monero: monero::PublicKey,
+    S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     v_a: monero::PrivateViewKey,
@@ -320,8 +312,8 @@ impl State1 {
 pub struct State2 {
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
-    s_a: monero::Scalar,
-    S_b_monero: monero::PublicKey,
+    s_a: swap_core::monero::Scalar,
+    S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     btc: bitcoin::Amount,
@@ -437,8 +429,9 @@ impl State2 {
 pub struct State3 {
     a: swap_core::bitcoin::SecretKey,
     B: swap_core::bitcoin::PublicKey,
-    pub s_a: monero::Scalar,
-    S_b_monero: monero::PublicKey,
+    #[serde(with = "swap_serde::monero::scalar")]
+    pub s_a: swap_core::monero::Scalar,
+    S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: swap_core::bitcoin::PublicKey,
     pub v: monero::PrivateViewKey,
     #[serde(with = "::bitcoin::amount::serde::as_sat")]
@@ -495,8 +488,8 @@ impl State3 {
     }
 
     pub fn lock_xmr_transfer_request(&self) -> TransferRequest {
-        let S_a = monero::PublicKey::from_private_key(&monero::PrivateKey {
-            scalar: self.s_a.into_dalek_ng(),
+        let S_a = monero_oxide_ext::PublicKey::from_private_key(&monero_oxide_ext::PrivateKey {
+            scalar: self.s_a,
         });
 
         let public_spend_key = S_a + self.S_b_monero;
@@ -543,16 +536,16 @@ impl State3 {
     pub fn extract_monero_private_key(
         &self,
         signed_refund_tx: Arc<bitcoin::Transaction>,
-    ) -> Result<monero::PrivateKey> {
-        Ok(monero::PrivateKey::from_scalar(
+    ) -> Result<monero_oxide_ext::PrivateKey> {
+        Ok(monero_oxide_ext::PrivateKey::from_scalar(
             self.tx_refund()
                 .extract_monero_private_key(
                     signed_refund_tx,
-                    self.s_a,
+                    self.s_a.into_dalek(),
                     self.a.clone(),
                     self.S_b_bitcoin,
                 )?
-                .into_dalek_ng(),
+                .into_monero_oxide(),
         ))
     }
 
@@ -652,7 +645,7 @@ impl State3 {
     pub async fn refund_btc(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
-    ) -> Result<Option<monero::PrivateKey>> {
+    ) -> Result<Option<monero_oxide_ext::PrivateKey>> {
         let refund_tx = bitcoin_wallet
             .get_raw_transaction(self.tx_refund().txid())
             .await?;
@@ -669,7 +662,7 @@ impl State3 {
     pub async fn watch_for_btc_tx_refund(
         &self,
         bitcoin_wallet: &dyn bitcoin_wallet::BitcoinWallet,
-    ) -> Result<monero::PrivateKey> {
+    ) -> Result<monero_oxide_ext::PrivateKey> {
         let tx_refund_status = bitcoin_wallet
             .subscribe_to(Box::new(self.tx_refund()))
             .await;
