@@ -38,7 +38,7 @@ pub struct BlockchainNetwork {
     #[serde(with = "swap_serde::bitcoin::network")]
     pub bitcoin: bitcoin::Network,
     #[serde(with = "swap_serde::monero::network")]
-    pub monero: monero::Network,
+    pub monero: monero_address::Network,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -50,7 +50,7 @@ pub struct SpotPriceRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum SpotPriceResponse {
-    Xmr(swap_core::monero_amount::Amount),
+    Xmr(swap_core::monero::Amount),
     Error(SpotPriceError),
 }
 
