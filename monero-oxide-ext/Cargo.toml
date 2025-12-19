@@ -3,9 +3,10 @@ name = "monero-oxide-ext"
 version = "0.1.0"
 authors = ["Monero Rust Contributors"]
 edition = "2021"
-description = "Supplementary monero-oxide types with serialisation: Amount, PrivateKey"
+description = "Supplementary monero-oxide types with serialisation: Amount, PrivateKey, PublicKey"
 
 [dependencies]
 anyhow = { workspace = true }
+curve25519-dalek = "4"
 hex = { workspace = true }
-monero-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-oxide-wallet = { workspace = true }

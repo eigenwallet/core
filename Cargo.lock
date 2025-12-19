@@ -6500,6 +6500,7 @@ name = "monero-oxide-ext"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "curve25519-dalek",
  "hex",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
 ]
@@ -10791,7 +10792,9 @@ dependencies = [
  "curve25519-dalek-ng",
  "ecdsa_fun",
  "futures",
- "monero",
+ "monero-address",
+ "monero-oxide-ext",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",

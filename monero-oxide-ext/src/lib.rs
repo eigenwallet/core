@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Error};
-use monero_wallet::ed25519::Scalar;
+use monero_oxide_wallet::ed25519::{CompressedPoint, Point, Scalar};
 use std::str::FromStr;
 use std::{fmt, ops};
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PrivateKey {
     pub scalar: Scalar,
 }
@@ -45,6 +45,88 @@ impl fmt::Display for PrivateKey {
 }
 
 impl FromStr for PrivateKey {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = hex::decode(s)?;
+        Self::from_slice(&bytes[..])
+    }
+}
+
+impl std::ops::Add<PrivateKey> for PrivateKey {
+    type Output = PrivateKey;
+
+    fn add(self, other: PrivateKey) -> Self::Output {
+        // https://docs.rs/monero/0.21.0/src/monero/util/key.rs.html#152
+        PrivateKey::from_slice(
+            &(curve25519_dalek::Scalar::from_bytes_mod_order(self.as_bytes())
+                + curve25519_dalek::Scalar::from_bytes_mod_order(other.as_bytes()))
+            .to_bytes(),
+        )
+        .unwrap()
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct PublicKey {
+    pub point: CompressedPoint,
+}
+
+impl PublicKey {
+    /// Serialize the public key to bytes.
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.point.to_bytes()
+    }
+
+    /// Serialize the public key to bytes.
+    pub fn to_bytes(self) -> [u8; 32] {
+        self.point.to_bytes()
+    }
+
+    /// Deserialize a public key from a slice.
+    pub fn from_slice(mut data: &[u8]) -> Result<PublicKey, Error> {
+        if data.len() != 32 {
+            return Err(anyhow!("invalid length scalar"));
+        }
+
+        let point = CompressedPoint::read(&mut data)?;
+        // Check that the point is valid and canonical.
+        // https://github.com/dalek-cryptography/curve25519-dalek/issues/380
+        match point.decompress() {
+            Some(point) => {
+                if point.compress().to_bytes() != data {
+                    return Err(anyhow!("invalid point"));
+                }
+            }
+            None => {
+                return Err(anyhow!("invalid point"));
+            }
+        };
+        Ok(PublicKey { point })
+    }
+
+    /// Generate a public key from the private key.
+    pub fn from_private_key(privkey: &PrivateKey) -> PublicKey {
+        let point = &curve25519_dalek::Scalar::from_canonical_bytes(privkey.as_bytes())
+            .expect("invalid private key")
+            * curve25519_dalek::constants::ED25519_BASEPOINT_TABLE;
+        PublicKey {
+            point: CompressedPoint::read(&mut &point.compress().to_bytes()[..])
+                .expect("invalid freshly-compressed point?"),
+        }
+    }
+
+    pub fn decompress(&self) -> Point {
+        self.point.decompress().expect("validated in constructor")
+    }
+}
+
+impl fmt::Display for PublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", hex::encode(&self.as_bytes()))
+    }
+}
+
+impl FromStr for PublicKey {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s)?;
