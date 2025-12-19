@@ -8,7 +8,8 @@ anyhow = { workspace = true }
 bitcoin = { workspace = true }
 data-encoding = { workspace = true }
 libp2p = { workspace = true }
-monero = { workspace = true }
+monero-address = { workspace = true }
+monero-amount = { path = "../monero-amount" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
