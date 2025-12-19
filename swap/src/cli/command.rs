@@ -433,8 +433,8 @@ mod tests {
         assert_eq!(
             err.downcast_ref::<MoneroAddressNetworkMismatch>().unwrap(),
             &MoneroAddressNetworkMismatch {
-                expected: monero::Network::Mainnet,
-                actual: monero::Network::Stagenet
+                expected: monero_address::Network::Mainnet,
+                actual: monero_address::Network::Stagenet
             }
         );
     }
@@ -457,8 +457,8 @@ mod tests {
         assert_eq!(
             err.downcast_ref::<MoneroAddressNetworkMismatch>().unwrap(),
             &MoneroAddressNetworkMismatch {
-                expected: monero::Network::Stagenet,
-                actual: monero::Network::Mainnet
+                expected: monero_address::Network::Stagenet,
+                actual: monero_address::Network::Mainnet
             }
         );
     }
