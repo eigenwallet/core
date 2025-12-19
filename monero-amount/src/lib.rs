@@ -1,5 +1,55 @@
-use std::{fmt,ops};
+use anyhow::{anyhow, Error};
+use monero_wallet::ed25519::Scalar;
 use std::str::FromStr;
+use std::{fmt, ops};
+
+pub struct PrivateKey {
+    pub scalar: Scalar,
+}
+
+impl PrivateKey {
+    /// Serialize the private key to bytes.
+    pub fn as_bytes(&self) -> [u8; 32] {
+        let mut output = [0u8; 32];
+        self.scalar
+            .write(&mut &mut output[..])
+            .expect("writing 32 into 32");
+        output
+    }
+
+    /// Serialize the private key to bytes.
+    pub fn to_bytes(self) -> [u8; 32] {
+        self.as_bytes()
+    }
+
+    /// Deserialize a private key from a slice.
+    pub fn from_slice(mut data: &[u8]) -> Result<PrivateKey, Error> {
+        if data.len() != 32 {
+            return Err(anyhow!("invalid length scalar"));
+        }
+        let scalar = Scalar::read(&mut data)?;
+        Ok(PrivateKey { scalar })
+    }
+
+    /// Create a secret key from a raw curve25519 scalar.
+    pub fn from_scalar(scalar: Scalar) -> PrivateKey {
+        PrivateKey { scalar }
+    }
+}
+
+impl fmt::Display for PrivateKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", hex::encode(&self.as_bytes()))
+    }
+}
+
+impl FromStr for PrivateKey {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = hex::decode(s)?;
+        Self::from_slice(&bytes[..])
+    }
+}
 
 /// Represent an unsigned quantity of Monero, internally as piconero.
 ///
@@ -33,7 +83,7 @@ impl Amount {
     pub fn as_xmr(self) -> f64 {
         let mut buf = String::new();
         self.fmt_value_in_xmr(&mut buf).unwrap();
-         f64::from_str(&buf).unwrap()
+        f64::from_str(&buf).unwrap()
     }
 
     fn fmt_value_in_xmr(self, f: &mut dyn fmt::Write) -> fmt::Result {
@@ -161,10 +211,7 @@ impl ops::DivAssign<u64> for Amount {
 }
 
 /// Format the given piconero amount in the given denomination without including the denomination.
-fn fmt_piconero_in_xmr(
-    piconero: u64,
-    f: &mut dyn fmt::Write,
-) -> fmt::Result {
+fn fmt_piconero_in_xmr(piconero: u64, f: &mut dyn fmt::Write) -> fmt::Result {
     // need to inject a comma in the number
     let nb_decimals = 12usize;
     let real = format!("{:0width$}", piconero, width = nb_decimals);

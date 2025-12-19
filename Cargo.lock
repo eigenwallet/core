@@ -6307,6 +6307,11 @@ dependencies = [
 [[package]]
 name = "monero-amount"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
+]
 
 [[package]]
 name = "monero-base58"
@@ -6414,8 +6419,8 @@ name = "monero-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "monero",
  "monero-address",
+ "monero-amount",
  "monero-daemon-rpc",
  "monero-simple-request-rpc",
  "monero-sys",
@@ -6556,7 +6561,8 @@ dependencies = [
  "diffy",
  "fs_extra",
  "futures",
- "monero",
+ "monero-address",
+ "monero-amount",
  "num_cpus",
  "quickcheck",
  "quickcheck_macros",

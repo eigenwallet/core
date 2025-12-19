@@ -3,4 +3,9 @@ name = "monero-amount"
 version = "0.1.0"
 authors = ["Monero Rust Contributors"]
 edition = "2021"
-description = "Trimmed-down monero::Amount"
+description = "Trimmed-down monero::Amount, monero::PrivateKey"
+
+[dependencies]
+anyhow = { workspace = true }
+hex = { workspace = true }
+monero-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
