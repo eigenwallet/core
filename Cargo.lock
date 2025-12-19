@@ -6431,9 +6431,9 @@ name = "monero-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "monero",
  "monero-address",
  "monero-daemon-rpc",
+ "monero-oxide-ext",
  "monero-simple-request-rpc",
  "monero-sys",
  "rand 0.8.5",
@@ -6589,6 +6589,7 @@ dependencies = [
  "quickcheck_macros",
  "serde",
  "sqlx",
+ "swap-serde",
  "tempfile",
  "thiserror 2.0.17",
  "throttle",
@@ -6637,10 +6638,8 @@ dependencies = [
  "monero-wallet-ng",
  "swap-core",
  "throttle",
- "time",
  "tokio",
  "tracing",
- "tracing-appender",
  "tracing-subscriber",
  "uuid",
  "zeroize",
@@ -8798,7 +8797,6 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "arti-client",
- "console 0.16.1",
  "futures",
  "libp2p",
  "libp2p-tor",

@@ -27,8 +27,9 @@ pub use testcontainers::clients::Cli;
 use testcontainers::{Container, RunnableImage};
 use tokio::time;
 
-use monero::{Address, Amount};
+use monero_address::MoneroAddress;
 use monero_daemon_rpc::MoneroDaemon;
+use monero_oxide_ext::Amount;
 use monero_simple_request_rpc::SimpleRequestTransport;
 use monero_sys::SubaddressSummary;
 use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
@@ -440,7 +441,7 @@ impl MoneroWallet {
         let wallet = WalletHandle::open_or_create(
             wallet_path.display().to_string(),
             daemon,
-            monero::Network::Mainnet,
+            monero_address::Network::Mainnet,
             background_sync,
         )
         .await
@@ -461,12 +462,12 @@ impl MoneroWallet {
         &self.name
     }
 
-    pub async fn address(&self) -> Result<Address> {
+    pub async fn address(&self) -> Result<MoneroAddress> {
         Ok(self.wallet.main_address().await?)
     }
 
     /// Get address at a given account and subaddress index.
-    pub async fn address_at(&self, account_index: u32, address_index: u32) -> Result<Address> {
+    pub async fn address_at(&self, account_index: u32, address_index: u32) -> Result<MoneroAddress> {
         Ok(self.wallet.address(account_index, address_index).await?)
     }
 
@@ -487,7 +488,11 @@ impl MoneroWallet {
         Ok(total)
     }
 
-    pub async fn check_tx_key(&self, txid: String, txkey: monero::PrivateKey) -> Result<TxStatus> {
+    pub async fn check_tx_key(
+        &self,
+        txid: String,
+        txkey: monero_oxide_ext::PrivateKey,
+    ) -> Result<TxStatus> {
         let status = self
             .wallet
             .check_tx_status(txid.clone(), txkey, &self.address().await?)
@@ -540,7 +545,7 @@ impl MoneroWallet {
         Ok(())
     }
 
-    pub async fn transfer(&self, address: &Address, amount_pico: u64) -> Result<TxReceipt> {
+    pub async fn transfer(&self, address: &MoneroAddress, amount_pico: u64) -> Result<TxReceipt> {
         tracing::info!(
             "`{}` transferring {}",
             self.name,
@@ -553,7 +558,7 @@ impl MoneroWallet {
             .context("Failed to perform transfer")
     }
 
-    pub async fn sweep(&self, address: &Address) -> Result<TxReceipt> {
+    pub async fn sweep(&self, address: &MoneroAddress) -> Result<TxReceipt> {
         tracing::info!("`{}` sweeping", self.name);
 
         self.wallet
@@ -565,7 +570,11 @@ impl MoneroWallet {
     /// Sweep multiple addresses with different ratios
     /// If the address is `None`, the address will be set to the primary address of the
     /// main wallet.
-    pub async fn sweep_multi(&self, addresses: &[Address], ratios: &[f64]) -> Result<TxReceipt> {
+    pub async fn sweep_multi(
+        &self,
+        addresses: &[MoneroAddress],
+        ratios: &[f64],
+    ) -> Result<TxReceipt> {
         tracing::info!("`{}` sweeping multi ({:?})", self.name, ratios);
         self.balance().await?;
 
