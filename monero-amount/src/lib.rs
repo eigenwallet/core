@@ -3,6 +3,7 @@ use monero_wallet::ed25519::Scalar;
 use std::str::FromStr;
 use std::{fmt, ops};
 
+#[derive(Copy, Clone)]
 pub struct PrivateKey {
     pub scalar: Scalar,
 }

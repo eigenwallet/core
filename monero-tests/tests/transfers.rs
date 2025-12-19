@@ -46,12 +46,12 @@ async fn monero_transfers() -> anyhow::Result<()> {
 
     let alice_txkey = tx_receipt
         .tx_keys
-        .get(&alice.address().await?)
+        .get(&alice.address().await?.to_string())
         .context("tx key not found for alice")?;
 
     let bob_txkey = tx_receipt
         .tx_keys
-        .get(&bob.address().await?)
+        .get(&bob.address().await?.to_string())
         .context("tx key not found for bob")?;
 
     tracing::info!("Importing tx keys");

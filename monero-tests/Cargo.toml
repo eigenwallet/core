@@ -3,8 +3,9 @@ name = "monero-tests"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-monero = { workspace = true }
+[dev-dependencies]
+monero-address = { workspace = true }
+monero-amount = { path = "../monero-amount" }
 monero-daemon-rpc = { workspace = true }
 monero-harness = { path = "../monero-harness" }
 monero-oxide-wallet = { workspace = true }
