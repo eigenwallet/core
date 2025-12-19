@@ -1,5 +1,5 @@
-use monero::Amount;
 use monero_harness::{Monero, MoneroWalletRpc};
+use monero_oxide_ext::Amount;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use tokio::time::sleep;
