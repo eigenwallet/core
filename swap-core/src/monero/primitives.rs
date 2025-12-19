@@ -1,7 +1,7 @@
 use crate::bitcoin;
 use anyhow::{bail, Result};
-pub use curve25519_dalek::scalar::Scalar;
-use monero::Address;
+use monero_address::{MoneroAddress, Network};
+pub use monero_oxide_wallet::ed25519::Scalar;
 use rand::{CryptoRng, RngCore};
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
@@ -12,8 +12,7 @@ use std::ops::{Add, Mul, Sub};
 use std::str::FromStr;
 use typeshare::typeshare;
 
-use ::monero::network::Network;
-pub use ::monero::{PrivateKey, PublicKey};
+pub use ::monero_oxide_ext::{PrivateKey, PublicKey};
 
 pub const PICONERO_OFFSET: u64 = 1_000_000_000_000;
 
@@ -29,14 +28,16 @@ impl fmt::Display for BlockHeight {
     }
 }
 
-pub fn private_key_from_secp256k1_scalar(scalar: bitcoin::Scalar) -> Scalar {
+pub fn private_key_from_secp256k1_scalar(
+    scalar: bitcoin::Scalar,
+) -> curve25519_dalek::scalar::Scalar {
     let mut bytes = scalar.to_bytes();
 
     // we must reverse the bytes because a secp256k1 scalar is big endian, whereas a
     // ed25519 scalar is little endian
     bytes.reverse();
 
-    Scalar::from_bytes_mod_order(bytes)
+    curve25519_dalek::scalar::Scalar::from_bytes_mod_order(bytes)
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,7 +53,7 @@ impl fmt::Display for PrivateViewKey {
 impl PrivateViewKey {
     pub fn new_random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
         let scalar = Scalar::random(rng);
-        let private_key = PrivateKey::from_slice(scalar.as_bytes()).expect("bytes of curve25519-dalek Scalar should by decodable to a PrivateKey which uses curve25519-dalek-ng under the hood");
+        let private_key = PrivateKey::from_slice(&PrivateKey { scalar }.as_bytes()).expect("bytes of curve25519-dalek Scalar should by decodable to a PrivateKey which uses curve25519-dalek-ng under the hood");
 
         Self(private_key)
     }
@@ -218,7 +219,8 @@ pub struct LabeledMoneroAddress {
     // If this is None, we will use an address of the internal Monero wallet
     // TODO: This should be string | null but typeshare cannot do that yet
     #[typeshare(serialized_as = "string")]
-    address: Option<monero::Address>,
+    #[serde(with = "swap_serde::monero::address_serde::opt")]
+    address: Option<monero_address::MoneroAddress>,
     #[typeshare(serialized_as = "number")]
     percentage: Decimal,
     label: String,
@@ -237,7 +239,7 @@ impl LabeledMoneroAddress {
     ///
     /// Returns an error if the percentage is not between 0.0 and 1.0 inclusive.
     fn new(
-        address: impl Into<Option<monero::Address>>,
+        address: impl Into<Option<monero_address::MoneroAddress>>,
         percentage: Decimal,
         label: String,
     ) -> Result<Self> {
@@ -256,7 +258,7 @@ impl LabeledMoneroAddress {
     }
 
     pub fn with_address(
-        address: monero::Address,
+        address: monero_address::MoneroAddress,
         percentage: Decimal,
         label: String,
     ) -> Result<Self> {
@@ -268,7 +270,7 @@ impl LabeledMoneroAddress {
     }
 
     /// Returns the Monero address.
-    pub fn address(&self) -> Option<monero::Address> {
+    pub fn address(&self) -> Option<monero_address::MoneroAddress> {
         self.address
     }
 
@@ -305,7 +307,7 @@ impl MoneroAddressPool {
     }
 
     /// Returns a vector of all Monero addresses in the pool.
-    pub fn addresses(&self) -> Vec<Option<monero::Address>> {
+    pub fn addresses(&self) -> Vec<Option<monero_address::MoneroAddress>> {
         self.0.iter().map(|address| address.address()).collect()
     }
 
@@ -339,11 +341,11 @@ impl MoneroAddressPool {
     pub fn assert_network(&self, network: Network) -> Result<()> {
         for address in self.0.iter() {
             if let Some(address) = address.address {
-                if address.network != network {
+                if address.network() != network {
                     bail!(
                         "Address pool contains addresses on the wrong network (address {} is on {:?}, expected {:?})",
                         address,
-                        address.network,
+                        address.network(),
                         network
                     );
                 }
@@ -373,7 +375,10 @@ impl MoneroAddressPool {
     }
 
     /// Returns a vector of addresses with the empty addresses filled with the given primary address
-    pub fn fill_empty_addresses(&self, primary_address: monero::Address) -> Vec<monero::Address> {
+    pub fn fill_empty_addresses(
+        &self,
+        primary_address: monero_address::MoneroAddress,
+    ) -> Vec<monero_address::MoneroAddress> {
         self.0
             .iter()
             .map(|address| address.address().unwrap_or(primary_address))
@@ -381,8 +386,8 @@ impl MoneroAddressPool {
     }
 }
 
-impl From<::monero::Address> for MoneroAddressPool {
-    fn from(address: ::monero::Address) -> Self {
+impl From<::monero_address::MoneroAddress> for MoneroAddressPool {
+    fn from(address: ::monero_address::MoneroAddress) -> Self {
         Self(vec![LabeledMoneroAddress::new(
             address,
             Decimal::from(1),
@@ -394,15 +399,20 @@ impl From<::monero::Address> for MoneroAddressPool {
 
 /// Transfer a specified amount of money to a specified address.
 pub struct TransferRequest {
-    pub public_spend_key: monero::PublicKey,
+    pub public_spend_key: PublicKey,
     pub public_view_key: super::PublicViewKey,
-    pub amount: monero::Amount,
+    pub amount: Amount,
 }
 
 impl TransferRequest {
-    pub fn address_and_amount(&self, network: Network) -> (Address, monero::Amount) {
+    pub fn address_and_amount(&self, network: Network) -> (MoneroAddress, Amount) {
         (
-            Address::standard(network, self.public_spend_key, self.public_view_key.0),
+            MoneroAddress::new(
+                network,
+                monero_address::AddressType::Legacy,
+                self.public_spend_key.decompress(),
+                self.public_view_key.0.decompress(),
+            ),
             self.amount,
         )
     }
@@ -438,15 +448,15 @@ impl From<Amount> for u64 {
     }
 }
 
-impl From<::monero::Amount> for Amount {
-    fn from(from: ::monero::Amount) -> Self {
+impl From<::monero_oxide_ext::Amount> for Amount {
+    fn from(from: ::monero_oxide_ext::Amount) -> Self {
         Amount::from_piconero(from.as_pico())
     }
 }
 
-impl From<Amount> for ::monero::Amount {
+impl From<Amount> for ::monero_oxide_ext::Amount {
     fn from(from: Amount) -> Self {
-        ::monero::Amount::from_pico(from.as_piconero())
+        ::monero_oxide_ext::Amount::from_pico(from.as_piconero())
     }
 }
 
@@ -544,14 +554,14 @@ pub struct InsufficientFunds {
 pub struct OverflowError(pub String);
 
 pub mod monero_amount {
-    use crate::monero::Amount;
+    use ::monero_oxide_ext::Amount;
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(x: &Amount, s: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        s.serialize_u64(x.as_piconero())
+        s.serialize_u64(x.as_pico())
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Amount, <D as Deserializer<'de>>::Error>
@@ -559,7 +569,7 @@ pub mod monero_amount {
         D: Deserializer<'de>,
     {
         let picos = u64::deserialize(deserializer)?;
-        let amount = Amount::from_piconero(picos);
+        let amount = Amount::from_pico(picos);
 
         Ok(amount)
     }
@@ -717,15 +727,19 @@ mod tests {
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
     pub struct MoneroPrivateKey(
-        #[serde(with = "swap_serde::monero::private_key")] ::monero::PrivateKey,
+        #[serde(with = "swap_serde::monero::private_key")] ::monero_oxide_ext::PrivateKey,
     );
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct MoneroAmount(#[serde(with = "swap_serde::monero::amount")] ::monero::Amount);
+    pub struct MoneroAmount(
+        #[serde(with = "swap_serde::monero::amount")] ::monero_oxide_ext::Amount,
+    );
 
     #[test]
     fn serde_monero_private_key_json() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        let key = MoneroPrivateKey(::monero_oxide_ext::PrivateKey::from_scalar(Scalar::random(
+            &mut OsRng,
+        )));
         let encoded = serde_json::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -733,7 +747,9 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_cbor() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        let key = MoneroPrivateKey(::monero_oxide_ext::PrivateKey::from_scalar(Scalar::random(
+            &mut OsRng,
+        )));
         let encoded = serde_cbor::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -741,7 +757,7 @@ mod tests {
 
     #[test]
     fn serde_monero_amount() {
-        let amount = MoneroAmount(::monero::Amount::from_pico(1000));
+        let amount = MoneroAmount(::monero_oxide_ext::Amount::from_pico(1000));
         let encoded = serde_cbor::to_vec(&amount).unwrap();
         let decoded: MoneroAmount = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(amount, decoded);
@@ -869,7 +885,7 @@ mod tests {
     fn labeled_monero_address_percentage_validation() {
         use rust_decimal::Decimal;
 
-        let address = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a".parse::<monero::Address>().unwrap();
+        let address = monero_address::MoneroAddress::from_str_with_unchecked_network("53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a").unwrap();
 
         // Valid percentages should work (0-1 range)
         assert!(LabeledMoneroAddress::new(address, Decimal::ZERO, "test".to_string()).is_ok());
