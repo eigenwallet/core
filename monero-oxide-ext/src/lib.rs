@@ -396,3 +396,97 @@ fn fmt_piconero_in_xmr(piconero: u64, f: &mut dyn fmt::Write) -> fmt::Result {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PICOS_XMR: &[(u64, &str)] = &[
+        (123456789, "0.000123456789"),
+        (1234567891011, "1.234567891011"),
+    ];
+
+    #[test]
+    fn display() {
+        for &(pico, xmr) in PICOS_XMR {
+            assert_eq!(Amount::from_pico(pico).to_string(), format!("{xmr} XMR"));
+        }
+    }
+
+    #[test]
+    fn debug() {
+        for &(pico, xmr) in PICOS_XMR {
+            assert_eq!(
+                format!("{:?}", Amount::from_pico(pico)),
+                format!("Amount({xmr} XMR)")
+            );
+        }
+    }
+}
+
+pub mod serde_address {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(
+        address: &monero_address::MoneroAddress,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        address.to_string().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<monero_address::MoneroAddress, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        monero_address::MoneroAddress::from_str_with_unchecked_network(&s)
+            .map_err(serde::de::Error::custom)
+    }
+
+    pub mod opt {
+        use super::*;
+
+        pub fn serialize<S>(
+            x: &Option<monero_address::MoneroAddress>,
+            s: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            match x {
+                Some(key) => super::serialize(key, s),
+                None => s.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D>(
+            deserializer: D,
+        ) -> Result<Option<monero_address::MoneroAddress>, <D as Deserializer<'de>>::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            use serde::de::Deserialize;
+
+            #[derive(serde::Deserialize)]
+            #[serde(transparent)]
+            struct Helper(#[serde(with = "super")] monero_address::MoneroAddress);
+
+            Option::<Helper>::deserialize(deserializer).map(|opt| opt.map(|h| h.0))
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Address(#[serde(with = "serde_address")] pub monero_address::MoneroAddress);
+
+impl std::ops::Deref for Address {
+    type Target = monero_address::MoneroAddress;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}

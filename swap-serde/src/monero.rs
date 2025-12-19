@@ -2,6 +2,8 @@ use monero_address::Network;
 use monero_oxide_ext::Amount;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+pub use monero_oxide_ext::serde_address as address_serde;
+
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Network")]
 #[allow(non_camel_case_types)]
@@ -171,60 +173,6 @@ pub mod address {
             monero_address::Network::Mainnet
         };
         validate(address, expected_network)
-    }
-}
-
-pub mod address_serde {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(
-        address: &monero_address::MoneroAddress,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        address.to_string().serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<monero_address::MoneroAddress, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        monero_address::MoneroAddress::from_str_with_unchecked_network(&s)
-            .map_err(serde::de::Error::custom)
-    }
-
-    pub mod opt {
-        use super::*;
-
-        pub fn serialize<S>(
-            x: &Option<monero_address::MoneroAddress>,
-            s: S,
-        ) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            match x {
-                Some(key) => super::serialize(key, s),
-                None => s.serialize_none(),
-            }
-        }
-
-        pub fn deserialize<'de, D>(
-            deserializer: D,
-        ) -> Result<Option<monero_address::MoneroAddress>, <D as Deserializer<'de>>::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            use serde::de::Deserialize;
-
-            #[derive(serde::Deserialize)]
-            struct Helper(#[serde(with = "super")] monero_address::MoneroAddress);
-
-            Option::<Helper>::deserialize(deserializer).map(|opt| opt.map(|h| h.0))
-        }
     }
 }
 

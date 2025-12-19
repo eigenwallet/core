@@ -32,5 +32,5 @@ pub struct Swap {
 #[derive(Clone)]
 pub struct TipConfig {
     pub ratio: Decimal,
-    pub address: ::monero::Address,
+    pub address: monero_address::MoneroAddress,
 }

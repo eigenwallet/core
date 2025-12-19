@@ -14,7 +14,6 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
 
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use swap::asb::FixedRate;
@@ -535,7 +534,9 @@ impl BobParams {
         )
     }
 
-    pub async fn get_change_receive_addresses(&self) -> (bitcoin::Address, monero::Address) {
+    pub async fn get_change_receive_addresses(
+        &self,
+    ) -> (bitcoin::Address, monero_address::MoneroAddress) {
         (
             self.bitcoin_wallet.new_address().await.unwrap(),
             self.monero_wallet
@@ -1024,7 +1025,7 @@ impl TestContext {
     }
 
     pub async fn empty_alice_monero_wallet(&self) {
-        let burn_address = monero::Address::from_str("49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa").unwrap();
+        let burn_address = monero_address::MoneroAddress::from_str_with_unchecked_network("49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa").unwrap();
         let wallet = self.alice_monero_wallet.main_wallet().await;
 
         wallet
