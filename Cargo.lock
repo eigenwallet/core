@@ -6607,9 +6607,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
- "monero",
+ "monero-address",
  "monero-daemon-rpc",
  "monero-harness",
+ "monero-oxide-ext",
  "monero-simple-request-rpc",
  "monero-sys",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",

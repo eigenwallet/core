@@ -52,7 +52,10 @@ async fn monero_transfers() -> anyhow::Result<()> {
     alice
         .check_tx_key(
             proof.txid.clone(),
-            *proof.tx_keys.get(&alice.address().await?).unwrap(),
+            *proof
+                .tx_keys
+                .get(&alice.address().await?.to_string())
+                .unwrap(),
         )
         .await?;
 
