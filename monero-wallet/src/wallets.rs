@@ -7,7 +7,7 @@
 pub use monero_sys::{Daemon, WalletHandle as Wallet, WalletHandleListener};
 
 use anyhow::{Context, Result};
-use monero::Network;
+use monero_address::Network;
 use monero_daemon_rpc::MoneroDaemon;
 use monero_simple_request_rpc::SimpleRequestTransport;
 use std::time::Duration;
@@ -15,8 +15,9 @@ use std::{path::PathBuf, sync::Arc};
 use swap_core::monero::primitives::{Amount, BlockHeight, PrivateViewKey, TxHash};
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
-use crate::compat::{private_view_key_to_scalar, public_key_to_point, tx_hash_to_bytes};
+use crate::compat::tx_hash_to_bytes;
 use crate::listener::{MoneroTauriHandle, TauriWalletListener};
 
 /// Default poll interval for blockchain queries.
@@ -207,16 +208,21 @@ impl Wallets {
     pub async fn swap_wallet_spendable(
         &self,
         swap_id: Uuid,
-        spend_key: monero::PrivateKey,
+        spend_key: monero_oxide_ext::PrivateKey,
         view_key: PrivateViewKey,
         tx_lock_id: TxHash,
     ) -> Result<Arc<Wallet>> {
         // Derive wallet address from the keys
         let address = {
-            let public_spend_key = monero::PublicKey::from_private_key(&spend_key);
-            let public_view_key = monero::PublicKey::from_private_key(&view_key.into());
+            let public_spend_key = monero_oxide_ext::PublicKey::from_private_key(&spend_key);
+            let public_view_key = monero_oxide_ext::PublicKey::from_private_key(&view_key.into());
 
-            monero::Address::standard(self.network, public_spend_key, public_view_key)
+            monero_address::MoneroAddress::new(
+                self.network,
+                monero_address::AddressType::Legacy,
+                public_spend_key.decompress(),
+                public_view_key.decompress(),
+            )
         };
 
         let wallet_path = swap_wallet_path(swap_id, &self.wallet_dir, true)
@@ -301,15 +307,15 @@ impl Wallets {
     pub async fn verify_transfer(
         &self,
         tx_hash: &TxHash,
-        public_spend_key: monero::PublicKey,
+        public_spend_key: monero_oxide_ext::PublicKey,
         private_view_key: PrivateViewKey,
         expected_amount: Amount,
     ) -> Result<bool> {
         let rpc_client = self.rpc_client().await;
 
         let tx_id = tx_hash_to_bytes(tx_hash)?;
-        let public_spend_key = public_key_to_point(public_spend_key)?;
-        let private_view_key = private_view_key_to_scalar(private_view_key)?;
+        let public_spend_key = public_spend_key.decompress();
+        let private_view_key = Zeroizing::new(private_view_key.0.scalar);
         let expected_amount: u64 = expected_amount.into();
 
         let result = monero_wallet_ng::verify::verify_transfer(
@@ -379,7 +385,7 @@ impl Wallets {
     /// transaction hash when found.
     pub async fn wait_for_incoming_transfer(
         &self,
-        public_spend_key: monero::PublicKey,
+        public_spend_key: monero_oxide_ext::PublicKey,
         private_view_key: PrivateViewKey,
         expected_amount: Amount,
         restore_height: BlockHeight,
@@ -388,8 +394,8 @@ impl Wallets {
 
         let rpc_client = self.rpc_client().await;
 
-        let public_spend_key = public_key_to_point(public_spend_key)?;
-        let private_view_key = private_view_key_to_scalar(private_view_key)?;
+        let public_spend_key = public_spend_key.decompress();
+        let private_view_key = Zeroizing::new(private_view_key.0.scalar);
 
         let expected_amount: u64 = expected_amount.into();
         let restore_height = restore_height.height as usize;
