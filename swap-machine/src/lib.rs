@@ -8,11 +8,10 @@ mod tests {
     use ::bitcoin::hashes::Hash;
     use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
     use bitcoin_wallet::*;
-    use curve25519_dalek::scalar::Scalar;
-    use monero::PrivateKey;
+    use monero_oxide_ext::PrivateKey;
     use rand::rngs::OsRng;
     use swap_core::bitcoin::*;
-    use swap_core::monero::TransferProof;
+    use swap_core::monero::{Scalar, TransferProof};
     use swap_env::env::{GetConfig, Regtest};
     use uuid::Uuid;
 
@@ -95,8 +94,9 @@ mod tests {
             // We use bogus values here, because they're irrelevant to this test
             TransferProof::new(
                 swap_core::monero::TxHash("foo".into()),
-                PrivateKey::from_scalar(Scalar::one()),
-            ),
+                PrivateKey::from_scalar(Scalar::ONE),
+            )
+            .into(),
         );
         let encrypted_signature = bob_state4.tx_redeem_encsig();
         let bob_state6 = bob_state4.cancel();
