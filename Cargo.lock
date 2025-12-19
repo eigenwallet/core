@@ -10663,6 +10663,7 @@ dependencies = [
  "bitcoin-wallet",
  "comfy-table",
  "libp2p",
+ "monero-address",
  "monero-rpc-pool",
  "monero-sys",
  "reqwest 0.12.25",
