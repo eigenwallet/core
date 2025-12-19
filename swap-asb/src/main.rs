@@ -20,7 +20,6 @@ use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::convert::TryInto;
 use std::env;
-use std::str::FromStr;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
@@ -280,19 +279,22 @@ pub async fn main() -> Result<()> {
             }
 
             let tip_config = {
-                let tip_address = monero::Address::from_str(match env_config.monero_network {
-                    monero::Network::Mainnet => {
-                        swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
-                    }
-                    monero::Network::Stagenet => {
-                        swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
-                    }
-                    monero::Network::Testnet => panic!("Testnet is not supported"),
-                })
+                let tip_address = monero_address::MoneroAddress::from_str_with_unchecked_network(
+                    match env_config.monero_network {
+                        monero::Network::Mainnet => {
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_MAINNET
+                        }
+                        monero::Network::Stagenet => {
+                            swap_env::defaults::DEFAULT_DEVELOPER_TIP_ADDRESS_STAGENET
+                        }
+                        monero::Network::Testnet => panic!("Testnet is not supported"),
+                    },
+                )
                 .expect("Hardcoded developer tip address to be valid");
 
                 assert_eq!(
-                    tip_address.network, env_config.monero_network,
+                    tip_address.network(),
+                    env_config.monero_network,
                     "Developer tip address must be on the correct Monero network"
                 );
 
@@ -557,7 +559,12 @@ pub async fn main() -> Result<()> {
                 let public_spend_key = monero::PublicKey::from_private_key(&secret_spend_key);
                 let public_view_key = monero::PublicKey::from_private_key(&secret_view_key.into());
 
-                monero::Address::standard(config.monero.network, public_spend_key, public_view_key)
+                monero_address::MoneroAddress::new(
+                    config.monero.network,
+                    monero_address::AddressType::Subaddress,
+                    public_spend_key.decompress(),
+                    public_view_key.decompress(),
+                )
             };
 
             println!("Retrieved the refund secret from taker's refund transaction. Below are the keys to the Monero lock wallet:

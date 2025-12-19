@@ -13,6 +13,7 @@ path = "src/main.rs"
 # Core
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
+monero-address = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
