@@ -60,6 +60,10 @@ build-gui-windows:
 tests:
         cargo nextest run
 
+# List all available docker integration tests
+list-docker-tests:
+	@find swap/tests -maxdepth 1 -type f -name "*.rs" | xargs -n1 basename | sed 's/\.rs$//' | sort
+
 # Run docker tests (e.g., "just docker_test happy_path_alice_developer_tip")
 docker_test test_name:
 	RUST_BACKTRACE=1 cargo test --package swap --test {{test_name}} -- --nocapture
