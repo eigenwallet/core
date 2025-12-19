@@ -8,7 +8,6 @@ anyhow = { workspace = true }
 backoff = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
 cxx = "1.0.137"
-monero = { workspace = true }
 serde = { workspace = true }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros", "chrono"] }
 thiserror = "2.0.17"
@@ -18,7 +17,11 @@ typeshare = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 
+monero-address = { workspace = true }
+
 # Our crates
+monero-oxide-ext = { path = "../monero-oxide-ext" }
+swap-serde = { path = "../swap-serde" }
 throttle = { path = "../throttle" }
 
 [build-dependencies]
