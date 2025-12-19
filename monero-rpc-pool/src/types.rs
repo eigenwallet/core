@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use monero::Network;
+use monero_address::Network;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

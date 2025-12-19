@@ -1,4 +1,4 @@
-use monero::Network;
+use monero_address::Network;
 use std::path::PathBuf;
 
 use crate::TorClientArc;
