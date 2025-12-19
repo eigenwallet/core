@@ -20,10 +20,10 @@ fn main() {
     let (bitcoin_network, monero_network) = prompt::network();
 
     let defaults = match (bitcoin_network, monero_network) {
-        (bitcoin::Network::Bitcoin, monero::Network::Mainnet) => {
+        (bitcoin::Network::Bitcoin, monero_address::Network::Mainnet) => {
             Mainnet::get_config_file_defaults().expect("defaults to be available")
         }
-        (bitcoin::Network::Testnet, monero::Network::Stagenet) => {
+        (bitcoin::Network::Testnet, monero_address::Network::Stagenet) => {
             Testnet::get_config_file_defaults().expect("defaults to be available")
         }
         _ => panic!("Unsupported Bitcoin / Monero network combination"),

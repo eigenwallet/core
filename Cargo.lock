@@ -10914,7 +10914,7 @@ dependencies = [
  "chrono",
  "compose_spec",
  "dialoguer",
- "monero",
+ "monero-address",
  "serde_yaml",
  "swap-env",
  "toml 0.9.8",

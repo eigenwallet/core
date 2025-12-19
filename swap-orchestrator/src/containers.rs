@@ -30,22 +30,22 @@ pub mod bitcoind {
 pub mod monerod {
     use super::*;
 
-    impl IntoFlag for monero::Network {
+    impl IntoFlag for monero_address::Network {
         /// This is documented here:
         /// https://docs.getmonero.org/interacting/monerod-reference/#pick-monero-network-blockchain
         fn to_flag(self) -> Flag {
             Flag(match self {
-                monero::Network::Mainnet => None,
-                monero::Network::Stagenet => Some("--stagenet".to_string()),
-                monero::Network::Testnet => Some("--testnet".to_string()),
+                monero_address::Network::Mainnet => None,
+                monero_address::Network::Stagenet => Some("--stagenet".to_string()),
+                monero_address::Network::Testnet => Some("--testnet".to_string()),
             })
         }
 
         fn to_display(self) -> &'static str {
             match self {
-                monero::Network::Mainnet => "mainnet",
-                monero::Network::Stagenet => "stagenet",
-                monero::Network::Testnet => "testnet",
+                monero_address::Network::Mainnet => "mainnet",
+                monero_address::Network::Stagenet => "stagenet",
+                monero_address::Network::Testnet => "testnet",
             }
         }
     }
@@ -93,10 +93,10 @@ pub mod asb {
     /// There are only two combinations of networks that are supported:
     /// - Mainnet Bitcoin & Mainnet Monero
     /// - Testnet Bitcoin & Stagenet Monero
-    pub struct Network((monero::Network, bitcoin::Network));
+    pub struct Network((monero_address::Network, bitcoin::Network));
 
     impl Network {
-        pub fn new(monero: monero::Network, bitcoin: bitcoin::Network) -> Self {
+        pub fn new(monero: monero_address::Network, bitcoin: bitcoin::Network) -> Self {
             Self((monero, bitcoin))
         }
     }
@@ -105,9 +105,9 @@ pub mod asb {
         fn to_flag(self) -> Flag {
             match self.0 {
                 // Mainnet is the default for the asb
-                (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => Flag(None),
+                (monero_address::Network::Mainnet, bitcoin::Network::Bitcoin) => Flag(None),
                 // Testnet requires the --testnet flag
-                (monero::Network::Stagenet, bitcoin::Network::Testnet) => flag!("--testnet"),
+                (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => flag!("--testnet"),
                 _ => panic!(
                     "Only either Mainnet Bitcoin & Mainnet Monero or Testnet Bitcoin & Stagenet Monero are supported"
                 ),
@@ -116,8 +116,8 @@ pub mod asb {
 
         fn to_display(self) -> &'static str {
             match self.0 {
-                (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => "mainnet",
-                (monero::Network::Stagenet, bitcoin::Network::Testnet) => "testnet",
+                (monero_address::Network::Mainnet, bitcoin::Network::Bitcoin) => "mainnet",
+                (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => "testnet",
                 _ => panic!(
                     "Only either Mainnet Bitcoin & Mainnet Monero or Testnet Bitcoin & Stagenet Monero are supported"
                 ),

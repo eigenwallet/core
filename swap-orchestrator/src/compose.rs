@@ -13,7 +13,7 @@ pub const DOCKER_COMPOSE_FILE: &str = "./docker-compose.yml";
 
 pub struct OrchestratorInput {
     pub ports: OrchestratorPorts,
-    pub networks: OrchestratorNetworks<monero::Network, bitcoin::Network>,
+    pub networks: OrchestratorNetworks<monero_address::Network, bitcoin::Network>,
     pub images: OrchestratorImages<OrchestratorImage>,
     pub directories: OrchestratorDirectories,
     pub want_tor: bool,
@@ -51,10 +51,10 @@ pub struct OrchestratorPorts {
     pub rendezvous_node_port: u16,
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for OrchestratorPorts {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for OrchestratorPorts {
+    fn from(val: OrchestratorNetworks<monero_address::Network, bitcoin::Network>) -> Self {
         match (val.monero, val.bitcoin) {
-            (monero::Network::Mainnet, bitcoin::Network::Bitcoin) => OrchestratorPorts {
+            (monero_address::Network::Mainnet, bitcoin::Network::Bitcoin) => OrchestratorPorts {
                 monerod_rpc: 18081,
                 bitcoind_rpc: 8332,
                 bitcoind_p2p: 8333,
@@ -64,7 +64,7 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
                 asb_rpc_port: 9944,
                 rendezvous_node_port: 8888,
             },
-            (monero::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
+            (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => OrchestratorPorts {
                 monerod_rpc: 38081,
                 bitcoind_rpc: 18332,
                 bitcoind_p2p: 18333,
@@ -79,14 +79,14 @@ impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for Orchestra
     }
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for asb::Network {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for asb::Network {
+    fn from(val: OrchestratorNetworks<monero_address::Network, bitcoin::Network>) -> Self {
         containers::asb::Network::new(val.monero, val.bitcoin)
     }
 }
 
-impl From<OrchestratorNetworks<monero::Network, bitcoin::Network>> for electrs::Network {
-    fn from(val: OrchestratorNetworks<monero::Network, bitcoin::Network>) -> Self {
+impl From<OrchestratorNetworks<monero_address::Network, bitcoin::Network>> for electrs::Network {
+    fn from(val: OrchestratorNetworks<monero_address::Network, bitcoin::Network>) -> Self {
         containers::electrs::Network::new(val.bitcoin)
     }
 }
