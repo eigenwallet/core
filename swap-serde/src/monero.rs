@@ -227,3 +227,63 @@ pub mod address_serde {
         }
     }
 }
+
+pub mod scalar {
+    // https://docs.rs/curve25519-dalek/4.1.3/src/curve25519_dalek/scalar.rs.html#405-458
+
+    use serde::de::Visitor;
+    use serde::{Deserializer, Serializer};
+
+    use monero_oxide_wallet::ed25519::Scalar;
+
+    pub fn serialize<S>(scalar: &Scalar, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeTuple;
+        let mut buf = [0u8; 32];
+        scalar
+            .write(&mut &mut buf[..])
+            .expect("writing 32 into 32 bytes can't panic");
+
+        let mut tup = serializer.serialize_tuple(32)?;
+        for byte in &buf {
+            tup.serialize_element(byte)?;
+        }
+        tup.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Scalar, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ScalarVisitor;
+
+        impl<'de> Visitor<'de> for ScalarVisitor {
+            type Value = Scalar;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str(
+                    "a sequence of 32 bytes whose little-endian interpretation is less than the \
+                    basepoint order ℓ",
+                )
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Scalar, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut bytes = [0u8; 32];
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..32 {
+                    bytes[i] = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(i, &"expected 32 bytes"))?;
+                }
+                Scalar::read(&mut &bytes[..]).map_err(|e| serde::de::Error::custom(e))
+            }
+        }
+
+        deserializer.deserialize_tuple(32, ScalarVisitor)
+    }
+}

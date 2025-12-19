@@ -7,6 +7,8 @@ description = "Trimmed-down monero::Amount, monero::PrivateKey, monero::PublicKe
 
 [dependencies]
 anyhow = { workspace = true }
-curve25519-dalek = "4"
+curve25519-dalek = { workspace = true }
+curve25519-dalek-ng = { workspace = true }
 hex = { workspace = true }
 monero-oxide-wallet = { workspace = true }
+serde = { workspace = true }

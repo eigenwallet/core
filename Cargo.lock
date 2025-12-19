@@ -6310,8 +6310,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "curve25519-dalek",
+ "curve25519-dalek-ng",
  "hex",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
+ "serde",
 ]
 
 [[package]]
@@ -10855,11 +10857,11 @@ dependencies = [
  "async-trait",
  "bitcoin 0.32.8",
  "bitcoin-wallet",
- "curve25519-dalek",
  "curve25519-dalek-ng",
  "ecdsa_fun",
  "libp2p",
- "monero",
+ "monero-address",
+ "monero-amount",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
@@ -10905,7 +10907,8 @@ dependencies = [
  "futures",
  "libp2p",
  "libp2p-tor",
- "monero",
+ "monero-address",
+ "monero-amount",
  "rand 0.8.5",
  "semver",
  "serde",
@@ -10945,6 +10948,7 @@ dependencies = [
  "libp2p",
  "monero-address",
  "monero-amount",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
