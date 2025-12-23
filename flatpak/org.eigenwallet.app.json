@@ -1,8 +1,8 @@
 {
   "id": "org.eigenwallet.app",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "47",
-  "sdk": "org.gnome.Sdk",
+  "runtime-version": "48",
+  "sdk": "org.gnome.Sdk//48",
   "command": "unstoppableswap-gui-rs.flatpak.sh",
   "finish-args": [
     "--socket=wayland",
@@ -22,8 +22,8 @@
         {
           "type": "file",
           "url": "https://cdn.crabnebula.app/download/unstoppableswap/unstoppableswap-gui-rs/latest/platform/debian-x86_64",
-          "sha256": "f1fdb9dc164ed45e31fbba7209da23fa4cb1d461442c9dd0b6bc763b8bf1bb59",
-          "only-arches": ["x86_64"]
+          "sha256": "2f424d29b8ab9d949534d844cd2a70ab926cb5fa52192a3913cdf39b1a0eb975",
+          "dest-filename": "eigenwallet.deb"
         },
         {
           "type": "file",
