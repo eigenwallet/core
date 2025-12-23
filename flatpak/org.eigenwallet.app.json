@@ -22,8 +22,9 @@
         {
           "type": "file",
           "url": "https://cdn.crabnebula.app/download/unstoppableswap/unstoppableswap-gui-rs/latest/platform/debian-x86_64",
-          "sha256": "2f424d29b8ab9d949534d844cd2a70ab926cb5fa52192a3913cdf39b1a0eb975",
-          "dest-filename": "eigenwallet.deb"
+          "sha256": "2f424d29b8ab9d949534d844cd2a70ab926cb5fa52192a3913cdf39b1a0eb975", 
+          "dest-filename": "eigenwallet.deb",
+          "only-arches": ["x86_64"]
         },
         {
           "type": "file",
@@ -45,3 +46,4 @@
     }
   ]
 }
+
