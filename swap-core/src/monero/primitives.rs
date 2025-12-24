@@ -725,7 +725,14 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_json() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        // Generate a random curve25519-dalek Scalar and convert it to a Monero private key
+        // via its byte representation. The monero crate internally uses curve25519-dalek-ng,
+        // but accepts raw scalar bytes, so this avoids mixing the two Scalar types.
+        let scalar = Scalar::random(&mut OsRng);
+        let key = MoneroPrivateKey(
+            monero::PrivateKey::from_slice(scalar.as_bytes())
+                .expect("valid Scalar bytes to form a PrivateKey"),
+        );
         let encoded = serde_json::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -733,7 +740,11 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_cbor() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        let scalar = Scalar::random(&mut OsRng);
+        let key = MoneroPrivateKey(
+            monero::PrivateKey::from_slice(scalar.as_bytes())
+                .expect("valid Scalar bytes to form a PrivateKey"),
+        );
         let encoded = serde_cbor::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
