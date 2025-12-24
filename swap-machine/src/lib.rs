@@ -8,7 +8,6 @@ mod tests {
     use ::bitcoin::hashes::Hash;
     use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
     use bitcoin_wallet::*;
-    use curve25519_dalek::scalar::Scalar;
     use monero::PrivateKey;
     use rand::rngs::OsRng;
     use swap_core::bitcoin::*;
@@ -90,13 +89,16 @@ mod tests {
         let alice_state3 = alice_state2.receive(bob_message4).unwrap();
 
         let (bob_state3, _tx_lock) = bob_state2.lock_btc().await.unwrap();
+
+        // We use bogus values here, because they're irrelevant to this test.
+        // Construct a deterministic-but-dummy Monero private key from fixed bytes.
+        let dummy_key_bytes = [1u8; 32];
+        let dummy_priv_key =
+            PrivateKey::from_slice(&dummy_key_bytes).expect("32 bytes to form a PrivateKey");
+
         let bob_state4 = bob_state3.xmr_locked(
             swap_core::monero::BlockHeight { height: 0 },
-            // We use bogus values here, because they're irrelevant to this test
-            TransferProof::new(
-                swap_core::monero::TxHash("foo".into()),
-                PrivateKey::from_scalar(Scalar::one()),
-            ),
+            TransferProof::new(swap_core::monero::TxHash("foo".into()), dummy_priv_key).into(),
         );
         let encrypted_signature = bob_state4.tx_redeem_encsig();
         let bob_state6 = bob_state4.cancel();

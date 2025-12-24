@@ -148,7 +148,7 @@ fn main() {
         depends_lib_dir.display()
     );
 
-    let output_directory = config
+    config
         .build_target("wallet_api")
         // Builds currently fail in Release mode
         // .define("CMAKE_BUILD_TYPE", "Release")
@@ -173,7 +173,14 @@ fn main() {
         .define("SODIUM_LIBRARY", "libsodium.a")
         // Use lightweight crypto library
         .define("MONERO_WALLET_CRYPTO_LIBRARY", "cn")
-        .define("CMAKE_CROSSCOMPILING", "OFF")
+        .define("CMAKE_CROSSCOMPILING", "OFF");
+    
+    // Limit link parallelism on macOS to prevent deadlocks during final linking
+    if target.contains("apple-darwin") {
+        config.define("MONERO_PARALLEL_LINK_JOBS", "1");
+    }
+    
+    let output_directory = config
         .define(
             "SODIUM_INCLUDE_PATH",
             contrib_depends_dir
@@ -182,14 +189,21 @@ fn main() {
                 .to_string(),
         ) // This is needed for libsodium.a to be found on mingw-w64
         .build_arg("-Wno-dev") // Disable warnings we can't fix anyway
-        .build_arg(format!(
-            "-j{}",
-            if is_github_actions || is_docker_build {
+        .build_arg({
+            let jobs = if is_github_actions || is_docker_build {
                 1
             } else {
-                num_cpus::get()
-            }
-        ))
+                // Reduce parallelism on macOS to prevent deadlocks during final linking
+                // of large static libraries (wallet_api, wallet) at targets 256-258
+                if target.contains("apple-darwin") {
+                    // Use 2 jobs on macOS to avoid linker deadlocks with parallel static linking
+                    2
+                } else {
+                    num_cpus::get()
+                }
+            };
+            format!("-j{jobs}")
+        })
         .build_arg("-I.")
         .build();
 
