@@ -27,6 +27,5 @@ tracing-subscriber = { workspace = true, default-features = false, features = ["
 anyhow = "1"
 
 # Other
-console = { workspace = true }
 structopt = { version = "0.3", default-features = false }
 swap-env = { path = "../swap-env" }
