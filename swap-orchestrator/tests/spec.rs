@@ -18,7 +18,7 @@ fn test_orchestrator_spec_generation() {
             rendezvous_node_port: 8888,
         },
         networks: OrchestratorNetworks {
-            monero: monero::Network::Stagenet,
+            monero: monero_address::Network::Stagenet,
             bitcoin: bitcoin::Network::Testnet,
         },
         images: OrchestratorImages {

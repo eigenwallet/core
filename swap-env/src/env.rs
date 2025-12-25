@@ -23,7 +23,7 @@ pub struct Config {
     // After this many confirmations we assume that the Monero transaction is safe from double spending
     pub monero_double_spend_safe_confirmations: u64,
     #[serde(with = "swap_serde::monero::network")]
-    pub monero_network: monero::Network,
+    pub monero_network: monero_address::Network,
 }
 
 impl Config {
@@ -68,7 +68,7 @@ impl GetConfig for Mainnet {
             monero_lock_retry_timeout: 10.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
-            monero_network: monero::Network::Mainnet,
+            monero_network: monero_address::Network::Mainnet,
         }
     }
 }
@@ -88,7 +88,7 @@ impl GetConfig for Testnet {
             monero_lock_retry_timeout: 10.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
-            monero_network: monero::Network::Stagenet,
+            monero_network: monero_address::Network::Stagenet,
         }
     }
 }
@@ -108,7 +108,7 @@ impl GetConfig for Regtest {
             monero_lock_retry_timeout: 1.std_minutes(),
             monero_finality_confirmations: 10,
             monero_double_spend_safe_confirmations: 10,
-            monero_network: monero::Network::Mainnet, // yes this is strange
+            monero_network: monero_address::Network::Mainnet, // yes this is strange
         }
     }
 }

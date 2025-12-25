@@ -163,10 +163,12 @@ impl Database for SqliteDatabase {
         let addresses = row
             .iter()
             .map(|row| -> Result<LabeledMoneroAddress> {
-                let address: Option<monero::Address> = row
+                let address = row
                     .address
-                    .clone()
-                    .map(|address| address.parse())
+                    .as_ref()
+                    .map(|address| {
+                        monero_address::MoneroAddress::from_str_with_unchecked_network(&address)
+                    })
                     .transpose()?;
                 let percentage = Decimal::from_f64(row.percentage).expect("Invalid percentage");
                 let label = row.label.clone();
@@ -183,7 +185,7 @@ impl Database for SqliteDatabase {
         Ok(MoneroAddressPool::new(addresses))
     }
 
-    async fn get_monero_addresses(&self) -> Result<Vec<monero::Address>> {
+    async fn get_monero_addresses(&self) -> Result<Vec<monero_address::MoneroAddress>> {
         let rows =
             sqlx::query!("SELECT DISTINCT address FROM monero_addresses WHERE address IS NOT NULL")
                 .fetch_all(&self.pool)
@@ -191,7 +193,7 @@ impl Database for SqliteDatabase {
 
         let addresses = rows
             .iter()
-            .filter_map(|row| row.address.as_ref().and_then(|address| address.parse().inspect_err(|e| tracing::error!(%address, error = ?e, "Failed to parse monero address")).ok()))
+            .filter_map(|row| row.address.as_ref().and_then(|address| monero_address::MoneroAddress::from_str_with_unchecked_network(address).inspect_err(|e| tracing::error!(%address, error = ?e, "Failed to parse monero address")).ok()))
             .collect::<Vec<_>>();
 
         Ok(addresses)
@@ -560,9 +562,9 @@ mod tests {
         let swap_id = Uuid::new_v4();
 
         // Create multiple labeled addresses with valid percentages that sum to 1
-        let address1 = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a".parse()?; // Stagenet address
-        let address2 = "44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa".parse()?; // Mainnet address
-        let address3 = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a".parse()?; // Same as address1 for simplicity
+        let address1 = monero_address::MoneroAddress::from_str_with_unchecked_network("53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a")?; // Stagenet address
+        let address2 = monero_address::MoneroAddress::from_str_with_unchecked_network("44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa")?; // Mainnet address
+        let address3 = monero_address::MoneroAddress::from_str_with_unchecked_network("53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a")?; // Same as address1 for simplicity
 
         let labeled_addresses = vec![
             LabeledMoneroAddress::with_address(address1, Decimal::new(5, 1), "Primary".to_string())

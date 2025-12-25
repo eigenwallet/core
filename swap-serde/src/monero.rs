@@ -1,4 +1,5 @@
-use monero::{Amount, Network};
+use monero_address::Network;
+use monero_amount::Amount;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Serialize, Deserialize)]
@@ -11,13 +12,17 @@ pub enum network {
 }
 
 pub mod private_key {
-    use monero::consensus::{Decodable, Encodable};
-    use monero::PrivateKey;
+    use monero_amount::PrivateKey;
     use serde::de::Visitor;
-    use serde::ser::Error;
     use serde::{de, Deserializer, Serializer};
     use std::fmt;
-    use std::io::Cursor;
+
+    fn trunc_at_32(s: &[u8]) -> &[u8] {
+        match s.split_at_checked(32) {
+            Some((trunc, _)) => trunc,
+            None => s,
+        }
+    }
 
     struct BytesVisitor;
 
@@ -32,8 +37,7 @@ pub mod private_key {
         where
             E: de::Error,
         {
-            let mut s = s;
-            PrivateKey::consensus_decode(&mut s).map_err(|err| E::custom(format!("{err:?}")))
+            PrivateKey::from_slice(trunc_at_32(s)).map_err(E::custom)
         }
 
         fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
@@ -43,8 +47,7 @@ pub mod private_key {
             let bytes = data_encoding::HEXLOWER_PERMISSIVE
                 .decode(s.as_bytes())
                 .map_err(|err| E::custom(format!("{err:?}")))?;
-            PrivateKey::consensus_decode(&mut bytes.as_slice())
-                .map_err(|err| E::custom(format!("{err:?}")))
+            self.visit_bytes(&bytes)
         }
     }
 
@@ -52,13 +55,10 @@ pub mod private_key {
     where
         S: Serializer,
     {
-        let mut bytes = Cursor::new(vec![]);
-        x.consensus_encode(&mut bytes)
-            .map_err(|err| S::Error::custom(format!("{err:?}")))?;
         if s.is_human_readable() {
-            s.serialize_str(&data_encoding::HEXLOWER.encode(&bytes.into_inner()))
+            s.serialize_str(&data_encoding::HEXLOWER.encode(&x.as_bytes()))
         } else {
-            s.serialize_bytes(bytes.into_inner().as_ref())
+            s.serialize_bytes(&x.as_bytes())
         }
     }
 
@@ -80,7 +80,7 @@ pub mod private_key {
 }
 
 pub mod optional_private_key {
-    use monero::PrivateKey;
+    use monero_amount::PrivateKey;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(x: &Option<PrivateKey>, s: S) -> Result<S::Ok, S::Error>
@@ -130,19 +130,18 @@ pub mod amount {
 
 pub mod address {
     use anyhow::{bail, Context, Result};
-    use std::str::FromStr;
 
     #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq)]
     #[error(
         "Invalid monero address provided, expected address on network {expected:?} but address provided is on {actual:?}"
     )]
     pub struct MoneroAddressNetworkMismatch {
-        pub expected: monero::Network,
-        pub actual: monero::Network,
+        pub expected: monero_address::Network,
+        pub actual: monero_address::Network,
     }
 
-    pub fn parse(s: &str) -> Result<monero::Address> {
-        monero::Address::from_str(s).with_context(|| {
+    pub fn parse(s: &str) -> Result<monero_address::MoneroAddress> {
+        monero_address::MoneroAddress::from_str_with_unchecked_network(s).with_context(|| {
             format!(
                 "Failed to parse {s} as a monero address, please make sure it is a valid address",
             )
@@ -150,48 +149,142 @@ pub mod address {
     }
 
     pub fn validate(
-        address: monero::Address,
-        expected_network: monero::Network,
-    ) -> Result<monero::Address> {
-        if address.network != expected_network {
+        address: monero_address::MoneroAddress,
+        expected_network: monero_address::Network,
+    ) -> Result<monero_address::MoneroAddress> {
+        if address.network() != expected_network {
             bail!(MoneroAddressNetworkMismatch {
                 expected: expected_network,
-                actual: address.network,
+                actual: address.network(),
             });
         }
         Ok(address)
     }
 
     pub fn validate_is_testnet(
-        address: monero::Address,
+        address: monero_address::MoneroAddress,
         is_testnet: bool,
-    ) -> Result<monero::Address> {
+    ) -> Result<monero_address::MoneroAddress> {
         let expected_network = if is_testnet {
-            monero::Network::Stagenet
+            monero_address::Network::Stagenet
         } else {
-            monero::Network::Mainnet
+            monero_address::Network::Mainnet
         };
         validate(address, expected_network)
     }
 }
 
 pub mod address_serde {
-    use std::str::FromStr;
-
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(address: &monero::Address, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(
+        address: &monero_address::MoneroAddress,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         address.to_string().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<monero::Address, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<monero_address::MoneroAddress, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        monero::Address::from_str(&s).map_err(serde::de::Error::custom)
+        monero_address::MoneroAddress::from_str_with_unchecked_network(&s)
+            .map_err(serde::de::Error::custom)
+    }
+
+    pub mod opt {
+        use super::*;
+
+        pub fn serialize<S>(
+            x: &Option<monero_address::MoneroAddress>,
+            s: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            match x {
+                Some(key) => super::serialize(key, s),
+                None => s.serialize_none(),
+            }
+        }
+
+        pub fn deserialize<'de, D>(
+            deserializer: D,
+        ) -> Result<Option<monero_address::MoneroAddress>, <D as Deserializer<'de>>::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            use serde::de::Deserialize;
+
+            #[derive(serde::Deserialize)]
+            #[serde(transparent)]
+            struct Helper(#[serde(with = "super")] monero_address::MoneroAddress);
+
+            Option::<Helper>::deserialize(deserializer).map(|opt| opt.map(|h| h.0))
+        }
+    }
+}
+
+pub mod scalar {
+    // https://docs.rs/curve25519-dalek/4.1.3/src/curve25519_dalek/scalar.rs.html#405-458
+
+    use serde::de::Visitor;
+    use serde::{Deserializer, Serializer};
+
+    use monero_oxide_wallet::ed25519::Scalar;
+
+    pub fn serialize<S>(scalar: &Scalar, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeTuple;
+        let mut buf = [0u8; 32];
+        scalar
+            .write(&mut &mut buf[..])
+            .expect("writing 32 into 32 bytes can't panic");
+
+        let mut tup = serializer.serialize_tuple(32)?;
+        for byte in &buf {
+            tup.serialize_element(byte)?;
+        }
+        tup.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Scalar, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ScalarVisitor;
+
+        impl<'de> Visitor<'de> for ScalarVisitor {
+            type Value = Scalar;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                formatter.write_str(
+                    "a sequence of 32 bytes whose little-endian interpretation is less than the \
+                    basepoint order ℓ",
+                )
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Scalar, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut bytes = [0u8; 32];
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..32 {
+                    bytes[i] = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(i, &"expected 32 bytes"))?;
+                }
+                Scalar::read(&mut &bytes[..]).map_err(|e| serde::de::Error::custom(e))
+            }
+        }
+
+        deserializer.deserialize_tuple(32, ScalarVisitor)
     }
 }

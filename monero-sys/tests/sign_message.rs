@@ -19,7 +19,7 @@ async fn test_sign_message() -> anyhow::Result<()> {
     let wallet = WalletHandle::open_or_create(
         wallet_path,
         daemon,
-        monero::Network::Stagenet,
+        monero_address::Network::Stagenet,
         false, // No background sync
     )
     .await

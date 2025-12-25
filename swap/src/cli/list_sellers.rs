@@ -8,7 +8,7 @@ use typeshare::typeshare;
 // TODO: Move these types into swap-p2p?
 #[serde_as]
 #[typeshare]
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct QuoteWithAddress {
     /// The multiaddr of the seller (at which we were able to connect to and get the quote from)
     #[serde_as(as = "DisplayFromStr")]

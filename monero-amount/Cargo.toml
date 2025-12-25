@@ -1,0 +1,14 @@
+[package]
+name = "monero-amount"
+version = "0.1.0"
+authors = ["Monero Rust Contributors"]
+edition = "2021"
+description = "Trimmed-down monero::Amount, monero::PrivateKey, monero::PublicKey"
+
+[dependencies]
+anyhow = { workspace = true }
+curve25519-dalek = { workspace = true }
+curve25519-dalek-ng = { workspace = true }
+hex = { workspace = true }
+monero-oxide-wallet = { workspace = true }
+serde = { workspace = true }

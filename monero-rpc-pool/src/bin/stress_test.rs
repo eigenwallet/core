@@ -1,6 +1,6 @@
 use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
-use monero::Network;
+use monero_address::Network;
 use monero_rpc_pool::{
     config::Config,
     create_app_with_receiver,

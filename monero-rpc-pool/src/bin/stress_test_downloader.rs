@@ -2,7 +2,7 @@ use arti_client::{TorClient, TorClientConfig};
 use clap::Parser;
 use cuprate_epee_encoding::{epee_object, from_bytes, to_bytes};
 use futures::stream::{self, StreamExt};
-use monero::Network;
+use monero_address::Network;
 use monero_rpc_pool::{
     config::Config,
     create_app_with_receiver,

@@ -20,14 +20,14 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
-    path::PathBuf, pin::Pin, str::FromStr, time::Duration,
+    path::PathBuf, pin::Pin, time::Duration,
 };
 use throttle::Throttle;
 
 use anyhow::{anyhow, bail, Context, Result};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
 use cxx::{let_cxx_string, CxxString, CxxVector, UniquePtr};
-use monero::Amount;
+use monero_amount::Amount;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -42,7 +42,11 @@ use uuid::Uuid;
 /// Approval callback for transactions
 /// The callback receives (txid, amount, fee) and returns whether to proceed with the transaction
 pub type ApprovalCallback = Arc<
-    dyn Fn(String, monero::Amount, monero::Amount) -> Pin<Box<dyn Future<Output = bool> + Send>>
+    dyn Fn(
+            String,
+            monero_amount::Amount,
+            monero_amount::Amount,
+        ) -> Pin<Box<dyn Future<Output = bool> + Send>>
         + Send
         + Sync,
 >;
@@ -119,7 +123,7 @@ pub struct SyncProgress {
 #[derive(Debug, Clone)]
 pub struct TxStatus {
     /// The amount received in the transaction.
-    pub received: monero::Amount,
+    pub received: monero_amount::Amount,
     /// Whether the transaction is in the mempool.
     pub in_pool: bool,
     /// The number of confirmations the transaction has.
@@ -132,9 +136,9 @@ pub struct ReserveProofStatus {
     /// Whether the proof is valid.
     pub good: bool,
     /// The total amount proven
-    pub total: monero::Amount,
+    pub total: monero_amount::Amount,
     /// The amount that has been spent from the proven outputs.
-    pub spent: monero::Amount,
+    pub spent: monero_amount::Amount,
 }
 
 /// A receipt returned after successfully publishing a transaction.
@@ -145,7 +149,9 @@ pub struct TxReceipt {
     /// where the key is the output's address and the value is the transfer key
     /// corresponding to that output. We use these for our transfer proofs.
     /// In Monero lingo, this is the r for each K^s/K^v.
-    pub tx_keys: HashMap<monero::Address, monero::PrivateKey>,
+    ///
+    /// Key is `MoneroAddress::to_string()`. It's not viable to use the address directly.
+    pub tx_keys: HashMap<String, monero_amount::PrivateKey>,
     /// The blockchain height at the time of publication.
     pub height: u64,
 }
@@ -162,9 +168,9 @@ pub struct Daemon {
 #[typeshare]
 pub struct TransactionInfo {
     #[serde(with = "monero_serde")]
-    pub fee: monero::Amount,
+    pub fee: monero_amount::Amount,
     #[serde(with = "monero_serde")]
-    pub amount: monero::Amount,
+    pub amount: monero_amount::Amount,
     #[typeshare(serialized_as = "number")]
     pub confirmations: u64,
     pub tx_hash: String,
@@ -204,7 +210,7 @@ impl WalletHandle {
     pub async fn open_or_create(
         path: String,
         daemon: Daemon,
-        network: monero::Network,
+        network: monero_address::Network,
         background_sync: bool,
     ) -> anyhow::Result<Self> {
         Self::open_or_create_with_password(path, None, daemon, network, background_sync).await
@@ -281,7 +287,7 @@ impl WalletHandle {
         path: String,
         password: impl Into<Option<String>>,
         daemon: Daemon,
-        network: monero::Network,
+        network: monero_address::Network,
         background_sync: bool,
     ) -> anyhow::Result<Self> {
         let password: Option<String> = password.into();
@@ -304,7 +310,7 @@ impl WalletHandle {
     pub async fn open_or_create_from_seed(
         path: String,
         mnemonic: String,
-        network: monero::Network,
+        network: monero_address::Network,
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
@@ -325,7 +331,7 @@ impl WalletHandle {
         path: String,
         mnemonic: String,
         password: impl Into<Option<String>>,
-        network: monero::Network,
+        network: monero_address::Network,
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
@@ -363,10 +369,10 @@ impl WalletHandle {
     pub async fn open_or_create_from_keys(
         path: String,
         password: Option<String>,
-        network: monero::Network,
-        address: monero::Address,
-        view_key: monero::PrivateKey,
-        spend_key: monero::PrivateKey,
+        network: monero_address::Network,
+        address: monero_address::MoneroAddress,
+        view_key: monero_amount::PrivateKey,
+        spend_key: monero_amount::PrivateKey,
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
@@ -441,7 +447,7 @@ impl WalletHandle {
 
     /// Get the main address of the wallet.
     /// The main address is the first address of the first account.
-    pub async fn main_address(&self) -> anyhow::Result<monero::Address> {
+    pub async fn main_address(&self) -> anyhow::Result<monero_address::MoneroAddress> {
         self.call(move |wallet| wallet.main_address())
             .await
             .context("Couldn't complete wallet call")?
@@ -452,7 +458,7 @@ impl WalletHandle {
         &self,
         account_index: u32,
         address_index: u32,
-    ) -> anyhow::Result<monero::Address> {
+    ) -> anyhow::Result<monero_address::MoneroAddress> {
         self.call(move |wallet| wallet.address(account_index, address_index))
             .await
             .context("Couldn't complete wallet call")?
@@ -493,8 +499,8 @@ impl WalletHandle {
     /// Transfer funds to an address without approval.
     pub async fn transfer_single_destination(
         &self,
-        address: &monero::Address,
-        amount: monero::Amount,
+        address: &monero_address::MoneroAddress,
+        amount: monero_amount::Amount,
     ) -> anyhow::Result<TxReceipt> {
         self.transfer_multi_destination(&[(*address, amount)]).await
     }
@@ -502,7 +508,7 @@ impl WalletHandle {
     /// Transfer funds to multiple addresses in a single transaction without approval.
     pub async fn transfer_multi_destination(
         &self,
-        destinations: &[(monero::Address, monero::Amount)],
+        destinations: &[(monero_address::MoneroAddress, monero_amount::Amount)],
     ) -> anyhow::Result<TxReceipt> {
         let destinations = destinations.to_vec();
 
@@ -525,7 +531,7 @@ impl WalletHandle {
     pub async fn sweep_multi_destination(
         &self,
         // TOOD: Change this to &[(Address, f64)]
-        addresses: &[monero::Address],
+        addresses: &[monero_address::MoneroAddress],
         percentages: &[f64],
     ) -> anyhow::Result<TxReceipt> {
         tracing::debug!(addresses=?addresses, percentages=?percentages, "Sweeping to multiple destinations");
@@ -548,7 +554,10 @@ impl WalletHandle {
     }
 
     /// Sweep all funds to an address.
-    pub async fn sweep(&self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
+    pub async fn sweep(
+        &self,
+        address: &monero_address::MoneroAddress,
+    ) -> anyhow::Result<TxReceipt> {
         // TODO: This could call sweep_multi_destination under the hood?
         //  however this here calls a completely different function in wallet2 (create_transactions_all instead of create_transactions_2)
         //  I think there is a case to be made that going full in with our custom implementation is better
@@ -595,14 +604,14 @@ impl WalletHandle {
     }
 
     /// Get the unlocked balance of the wallet.
-    pub async fn unlocked_balance(&self) -> anyhow::Result<monero::Amount> {
+    pub async fn unlocked_balance(&self) -> anyhow::Result<monero_amount::Amount> {
         self.call(move |wallet| wallet.unlocked_balance())
             .await
             .context("Couldn't complete wallet call")
     }
 
     /// Get the total balance of the wallet (unlocked + locked).
-    pub async fn total_balance(&self) -> anyhow::Result<monero::Amount> {
+    pub async fn total_balance(&self) -> anyhow::Result<monero_amount::Amount> {
         self.call(move |wallet| wallet.total_balance())
             .await
             .context("Couldn't complete wallet call")
@@ -859,8 +868,8 @@ impl WalletHandle {
     pub async fn check_tx_status(
         &self,
         txid: String,
-        tx_key: monero::PrivateKey,
-        destination_address: &monero::Address,
+        tx_key: monero_amount::PrivateKey,
+        destination_address: &monero_address::MoneroAddress,
     ) -> anyhow::Result<TxStatus> {
         let destination_address = *destination_address;
         self.call(move |wallet| wallet.check_tx_status(&txid, tx_key, &destination_address))
@@ -881,10 +890,10 @@ impl WalletHandle {
     /// Returns (TxReceipt, amount, fee) if the transaction is published, `None` otherwise.
     pub async fn transfer_with_approval(
         &self,
-        address: &monero::Address,
-        amount: Option<monero::Amount>,
+        address: &monero_address::MoneroAddress,
+        amount: Option<monero_amount::Amount>,
         approval_callback: ApprovalCallback,
-    ) -> anyhow::Result<Option<(TxReceipt, monero::Amount, monero::Amount)>> {
+    ) -> anyhow::Result<Option<(TxReceipt, monero_amount::Amount, monero_amount::Amount)>> {
         let address = *address;
 
         // Construct and sign the transaction. Do not publish the transaction yet
@@ -899,17 +908,17 @@ impl WalletHandle {
                 };
 
                 // Closure that returns (txid, amount, fee) or error
-                let result = (|| -> Result<(String, monero::Amount, monero::Amount), anyhow::Error> {
+                let result = (|| -> Result<(String, monero_amount::Amount, monero_amount::Amount), anyhow::Error> {
                     let (txid, _) = pending_tx.validate_single_txid(&[address])
                         .context("Failed to validate PendingTransaction to have single txid and single tx key")?;
 
                     let amount = ffi::pendingTransactionAmount(&pending_tx)
                         .context("Failed to get amount from pending transaction")?;
-                    let amount = monero::Amount::from_pico(amount);
+                    let amount = monero_amount::Amount::from_pico(amount);
 
                     let fee = ffi::pendingTransactionFee(&pending_tx)
                         .context("Failed to get fee from pending transaction")?;
-                    let fee = monero::Amount::from_pico(fee);
+                    let fee = monero_amount::Amount::from_pico(fee);
 
                     Ok((txid, amount, fee))
                 })();
@@ -926,7 +935,7 @@ impl WalletHandle {
                 let uuid = Uuid::new_v4();
                 pending_txs.insert(uuid, pending_tx);
 
-                Ok::<(Uuid, String, monero::Amount, monero::Amount), anyhow::Error>((
+                Ok::<(Uuid, String, monero_amount::Amount, monero_amount::Amount), anyhow::Error>((
                     uuid, txid, amount, fee,
                 ))
             })
@@ -1040,7 +1049,7 @@ impl WalletHandle {
     pub async fn get_reserve_proof(
         &self,
         account_index: u32,
-        amount: Option<monero::Amount>,
+        amount: Option<monero_amount::Amount>,
         message: &str,
     ) -> anyhow::Result<String> {
         let message = message.to_string();
@@ -1061,7 +1070,7 @@ impl WalletHandle {
     /// and the spent amount.
     pub async fn check_reserve_proof(
         &self,
-        address: &monero::Address,
+        address: &monero_address::MoneroAddress,
         message: &str,
         signature: &str,
     ) -> anyhow::Result<ReserveProofStatus> {
@@ -1196,7 +1205,7 @@ impl WalletManager {
         &mut self,
         path: &str,
         password: Option<&String>,
-        network: monero::Network,
+        network: monero_address::Network,
         background_sync: bool,
         daemon: Daemon,
     ) -> anyhow::Result<FfiWallet> {
@@ -1257,10 +1266,10 @@ impl WalletManager {
         &mut self,
         path: &str,
         password: Option<&str>,
-        network: monero::Network,
-        address: &monero::Address,
-        view_key: monero::PrivateKey,
-        spend_key: monero::PrivateKey,
+        network: monero_address::Network,
+        address: &monero_address::MoneroAddress,
+        view_key: monero_amount::PrivateKey,
+        spend_key: monero_amount::PrivateKey,
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
@@ -1342,7 +1351,7 @@ impl WalletManager {
         path: &str,
         password: Option<&str>,
         mnemonic: &str,
-        network: monero::Network,
+        network: monero_address::Network,
         restore_height: u64,
         background_sync: bool,
         daemon: Daemon,
@@ -1397,7 +1406,7 @@ impl WalletManager {
         &mut self,
         path: &str,
         password: Option<&String>,
-        network_type: monero::Network,
+        network_type: monero_address::Network,
         background_sync: bool,
         daemon: Daemon,
         listener: Box<dyn WalletEventListener>,
@@ -1624,12 +1633,14 @@ impl FfiWallet {
         &self,
         account_index: u32,
         address_index: u32,
-    ) -> anyhow::Result<monero::Address> {
+    ) -> anyhow::Result<monero_address::MoneroAddress> {
         let address = ffi::address(&self.inner, account_index, address_index)
             .context("Failed to get wallet address: FFI call failed with exception")?;
 
-        Ok(monero::Address::from_str(&address.to_string())
-            .context("wallet's own address is not valid")?)
+        Ok(
+            monero_address::MoneroAddress::from_str_with_unchecked_network(&address.to_string())
+                .context("wallet's own address is not valid")?,
+        )
     }
 
     pub fn set_daemon(&mut self, daemon: &Daemon) -> anyhow::Result<()> {
@@ -1653,7 +1664,7 @@ impl FfiWallet {
     }
 
     /// Get the main address of the walllet (account 0, address 0).
-    pub fn main_address(&self) -> anyhow::Result<monero::Address> {
+    pub fn main_address(&self) -> anyhow::Result<monero_address::MoneroAddress> {
         self.address(Self::MAIN_ACCOUNT_INDEX, 0)
     }
 
@@ -2005,23 +2016,23 @@ impl FfiWallet {
     }
 
     /// Get the total balance across all accounts.
-    fn total_balance(&mut self) -> monero::Amount {
+    fn total_balance(&mut self) -> monero_amount::Amount {
         let balance = self
             .inner
             .balanceAll()
             .context("Failed to get total balance: FFI call failed with exception")
             .expect("Getting the total balance is a simple lookup and shouldn't fail");
-        monero::Amount::from_pico(balance)
+        monero_amount::Amount::from_pico(balance)
     }
 
     /// Get the total unlocked balance across all accounts in atomic units.
-    fn unlocked_balance(&mut self) -> monero::Amount {
+    fn unlocked_balance(&mut self) -> monero_amount::Amount {
         let balance = self
             .inner
             .unlockedBalanceAll()
             .context("Failed to get unlocked balance: FFI call failed with exception")
             .expect("Getting the unlocked balance is a simple lookup and shouldn't fail");
-        monero::Amount::from_pico(balance)
+        monero_amount::Amount::from_pico(balance)
     }
 
     /// Check if the wallet is synced with the daemon.
@@ -2051,8 +2062,8 @@ impl FfiWallet {
     fn check_tx_status(
         &mut self,
         txid: &str,
-        tx_key: monero::PrivateKey,
-        address: &monero::Address,
+        tx_key: monero_amount::PrivateKey,
+        address: &monero_address::MoneroAddress,
     ) -> anyhow::Result<TxStatus> {
         let_cxx_string!(txid = txid);
         let_cxx_string!(tx_key = tx_key.to_string());
@@ -2081,7 +2092,7 @@ impl FfiWallet {
         }
 
         Ok(TxStatus {
-            received: monero::Amount::from_pico(received),
+            received: monero_amount::Amount::from_pico(received),
             in_pool,
             confirmations,
         })
@@ -2108,7 +2119,7 @@ impl FfiWallet {
 
     /// Sweep all funds from the wallet to a specified address.
     /// Returns a list of transaction ids of the created transactions.
-    fn sweep(&mut self, address: &monero::Address) -> anyhow::Result<TxReceipt> {
+    fn sweep(&mut self, address: &monero_address::MoneroAddress) -> anyhow::Result<TxReceipt> {
         self.ensure_synchronized_blocking()
             .context("Cannot sweep when wallet is not synchronized")?;
 
@@ -2131,7 +2142,7 @@ impl FfiWallet {
     fn sweep_multi(
         &mut self,
         // TOOD: Change this to &[(Address, f64)]
-        addresses: &[monero::Address],
+        addresses: &[monero_address::MoneroAddress],
         ratios: &[f64],
     ) -> anyhow::Result<TxReceipt> {
         self.ensure_synchronized_blocking()
@@ -2159,7 +2170,7 @@ impl FfiWallet {
         tracing::debug!(%balance, num_outputs = addresses.len(), outputs=?amounts, "Distributing funds to outputs");
 
         // Build destinations vector for create_pending_transaction_multi_dest
-        let destinations: Vec<(monero::Address, monero::Amount)> = addresses
+        let destinations: Vec<(monero_address::MoneroAddress, monero_amount::Amount)> = addresses
             .iter()
             .zip(amounts.iter())
             .map(|(addr, &amount)| (addr.clone(), amount))
@@ -2188,7 +2199,7 @@ impl FfiWallet {
     /// to prove the transfer or to wait for confirmations.
     fn transfer_multi_destination(
         &mut self,
-        destinations: &[(monero::Address, monero::Amount)],
+        destinations: &[(monero_address::MoneroAddress, monero_amount::Amount)],
     ) -> anyhow::Result<TxReceipt> {
         self.ensure_synchronized_blocking()
             .context("Cannot transfer when wallet is not synchronized")?;
@@ -2215,8 +2226,8 @@ impl FfiWallet {
     /// Returns the pending transaction that can be inspected before publishing.
     fn create_pending_transaction_single_dest(
         &mut self,
-        address: &monero::Address,
-        amount: monero::Amount,
+        address: &monero_address::MoneroAddress,
+        amount: monero_amount::Amount,
     ) -> anyhow::Result<PendingTransactionHandle> {
         // This is just a wrapper around the function that creates a multi-destination transaction
         // This is what wallet2 does under the hood:
@@ -2230,7 +2241,7 @@ impl FfiWallet {
     /// Destinations with zero amount are filtered out.
     fn create_pending_transaction_multi_dest(
         &mut self,
-        destinations: &[(monero::Address, monero::Amount)],
+        destinations: &[(monero_address::MoneroAddress, monero_amount::Amount)],
         // If set to true, the fee will be subtracted from output with the highest amount
         // If set to false, the fee will be paid by the wallet and the exact amounts will be sent to the destinations
         subtract_fee_from_outputs: bool,
@@ -2286,7 +2297,7 @@ impl FfiWallet {
     /// Returns the pending transaction that can be inspected before publishing.
     fn create_pending_sweep_transaction(
         &mut self,
-        address: &monero::Address,
+        address: &monero_address::MoneroAddress,
     ) -> anyhow::Result<PendingTransactionHandle> {
         self.ensure_synchronized_blocking()
             .context("Cannot construct transaction when wallet is not synchronized")?;
@@ -2309,7 +2320,7 @@ impl FfiWallet {
     fn publish_pending_transaction(
         &mut self,
         pending_tx: &mut PendingTransactionHandle,
-        output_addresses: &[monero::Address],
+        output_addresses: &[monero_address::MoneroAddress],
     ) -> anyhow::Result<TxReceipt> {
         // Ensure the transaction only has a single txid and tx key
         //
@@ -2384,7 +2395,10 @@ impl FfiWallet {
     /// - Percentages don't sum to 1.0
     /// - Balance is zero
     /// - There are more outputs than piconeros in balance
-    fn distribute(balance: monero::Amount, percentages: &[f64]) -> Result<Vec<monero::Amount>> {
+    fn distribute(
+        balance: monero_amount::Amount,
+        percentages: &[f64],
+    ) -> Result<Vec<monero_amount::Amount>> {
         if percentages.is_empty() {
             bail!("No ratios to distribute to");
         }
@@ -2587,7 +2601,7 @@ impl FfiWallet {
     pub fn get_reserve_proof(
         &self,
         account_index: u32,
-        amount: Option<monero::Amount>,
+        amount: Option<monero_amount::Amount>,
         message: &str,
     ) -> anyhow::Result<String> {
         let_cxx_string!(message_cxx = message);
@@ -2624,7 +2638,7 @@ impl FfiWallet {
     /// and the spent amount.
     pub fn check_reserve_proof(
         &self,
-        address: &monero::Address,
+        address: &monero_address::MoneroAddress,
         message: &str,
         signature: &str,
     ) -> anyhow::Result<ReserveProofStatus> {
@@ -2655,8 +2669,8 @@ impl FfiWallet {
 
         Ok(ReserveProofStatus {
             good,
-            total: monero::Amount::from_pico(total),
-            spent: monero::Amount::from_pico(spent),
+            total: monero_amount::Amount::from_pico(total),
+            spent: monero_amount::Amount::from_pico(spent),
         })
     }
 }
@@ -2717,8 +2731,8 @@ impl PendingTransactionHandle {
     /// the transfer key for each output.
     fn validate_single_txid(
         self: &mut Self,
-        output_addresses: &[monero::Address],
-    ) -> Result<(String, HashMap<monero::Address, monero::PrivateKey>), anyhow::Error> {
+        output_addresses: &[monero_address::MoneroAddress],
+    ) -> Result<(String, HashMap<String, monero_amount::PrivateKey>), anyhow::Error> {
         // This can return multiple txids if wallet2 decided to split the transaction
         let txids = ffi::pendingTransactionTxIds(self)
             .context("Failed to get txid from pending transaction: FFI call failed with exception")?
@@ -2754,28 +2768,30 @@ impl PendingTransactionHandle {
         // - one primary tx key
         // - one tx key for each output
         let_cxx_string!(txid_cxx = &txid);
-        let tx_keys: Vec<(monero::Address, monero::PrivateKey)> =
+        let tx_keys: Vec<(monero_address::MoneroAddress, monero_amount::PrivateKey)> =
             ffi::pendingTransactionTxKeys(self, &txid_cxx)
                 .context(
                     "Failed to get tx key from pending transaction: FFI call failed with exception",
                 )?
                 .into_iter()
-                .map(|tx_key| -> Result<(monero::Address, monero::PrivateKey)> {
-                    Ok((
-                        tx_key
-                            .address
-                            .to_str()
-                            .context("Got non-utf8 address string")?
-                            .parse()
-                            .context("Got invalid Monero address")?,
-                        tx_key
-                            .key
-                            .to_str()
-                            .context("Got non-utf8 key string")?
-                            .parse()
-                            .context("Got invalid Monero private key")?,
-                    ))
-                })
+                .map(
+                    |tx_key| -> Result<(monero_address::MoneroAddress, monero_amount::PrivateKey)> {
+                        Ok((
+                            monero_address::MoneroAddress::from_str_with_unchecked_network(
+                                tx_key
+                                    .address
+                                    .to_str()
+                                    .context("Got non-utf8 address string")?,
+                            )?,
+                            tx_key
+                                .key
+                                .to_str()
+                                .context("Got non-utf8 key string")?
+                                .parse()
+                                .context("Got invalid Monero private key")?,
+                        ))
+                    },
+                )
                 .collect::<Result<Vec<_>, anyhow::Error>>()?;
 
         if tx_keys.is_empty() {
@@ -2784,6 +2800,7 @@ impl PendingTransactionHandle {
 
         let mut keys_map = HashMap::new();
         for (address, tx_key) in tx_keys {
+            let address = address.to_string();
             if keys_map.contains_key(&address) {
                 anyhow::bail!("Address {} is used for multiple outputs", address);
             } else {
@@ -2792,7 +2809,8 @@ impl PendingTransactionHandle {
         }
 
         for address in output_addresses {
-            if !keys_map.contains_key(address) {
+            let address = address.to_string();
+            if !keys_map.contains_key(&address) {
                 anyhow::bail!(
                     "Output address {} is not mentioned in tx keys for tx {}. tx_keys.len() = {}. Sending funds to your own primary address is NOT supported.",
                     address,
@@ -3036,8 +3054,8 @@ impl TransactionInfoHandle {
             .ok()?;
 
         Some(TransactionInfo {
-            fee: monero::Amount::from_pico(fee),
-            amount: monero::Amount::from_pico(amount),
+            fee: monero_amount::Amount::from_pico(fee),
+            amount: monero_amount::Amount::from_pico(amount),
             confirmations,
             tx_hash,
             direction,
@@ -3148,7 +3166,7 @@ impl WalletEventListener for WalletHandleListener {
 }
 
 pub mod monero_serde {
-    use monero::Amount;
+    use monero_amount::Amount;
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(x: &Amount, s: S) -> Result<S::Ok, S::Error>
@@ -3210,7 +3228,7 @@ mod tests {
             return TestResult::discard();
         }
 
-        let balance = monero::Amount::from_pico(balance_pico);
+        let balance = monero_amount::Amount::from_pico(balance_pico);
 
         let amounts = FfiWallet::distribute(balance, &percentages);
 
@@ -3239,7 +3257,7 @@ mod tests {
             return TestResult::discard();
         }
 
-        let balance = monero::Amount::from_pico(balance_pico);
+        let balance = monero_amount::Amount::from_pico(balance_pico);
 
         let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
 
@@ -3265,7 +3283,7 @@ mod tests {
             return TestResult::discard();
         }
 
-        let balance = monero::Amount::from_pico(balance_pico);
+        let balance = monero_amount::Amount::from_pico(balance_pico);
 
         let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
 
@@ -3285,7 +3303,7 @@ mod tests {
 
     #[test]
     fn test_distribute_empty_percentages() {
-        let balance = monero::Amount::from_pico(1000);
+        let balance = monero_amount::Amount::from_pico(1000);
         let percentages: Vec<f64> = vec![];
 
         let amounts = FfiWallet::distribute(balance, &percentages);
@@ -3294,7 +3312,7 @@ mod tests {
 
     #[test]
     fn test_distribute_zero_balance() {
-        let balance = monero::Amount::from_pico(0);
+        let balance = monero_amount::Amount::from_pico(0);
         let percentages = vec![0.5, 0.5];
 
         let amounts = FfiWallet::distribute(balance, &percentages);
@@ -3303,7 +3321,7 @@ mod tests {
 
     #[test]
     fn test_distribute_insufficient_balance_for_outputs() {
-        let balance = monero::Amount::from_pico(2);
+        let balance = monero_amount::Amount::from_pico(2);
         let percentages = vec![0.3, 0.3, 0.4]; // 3 outputs but only 2 piconeros
 
         let amounts = FfiWallet::distribute(balance, &percentages);
@@ -3312,7 +3330,7 @@ mod tests {
 
     #[test]
     fn test_distribute_simple_case() {
-        let balance = monero::Amount::from_pico(1000);
+        let balance = monero_amount::Amount::from_pico(1000);
         let percentages = vec![0.5, 0.3, 0.2];
 
         let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
@@ -3332,7 +3350,7 @@ mod tests {
 
     #[test]
     fn test_distribute_small_donation() {
-        let balance = monero::Amount::from_pico(1000);
+        let balance = monero_amount::Amount::from_pico(1000);
         let percentages = vec![0.999, 0.001];
 
         let amounts = FfiWallet::distribute(balance, &percentages).unwrap();
@@ -3351,7 +3369,7 @@ mod tests {
 
     #[test]
     fn test_distribute_percentages_not_sum_to_1() {
-        let balance = monero::Amount::from_pico(1000);
+        let balance = monero_amount::Amount::from_pico(1000);
         let percentages = vec![0.5, 0.3]; // Only sums to 0.8
 
         let amounts = FfiWallet::distribute(balance, &percentages);
