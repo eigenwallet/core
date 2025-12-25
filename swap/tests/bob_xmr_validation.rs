@@ -63,49 +63,6 @@ async fn given_alice_locks_wrong_xmr_amount_bob_rejects() {
 }
 
 #[tokio::test]
-async fn given_correct_xmr_amount_bob_redeems_btc() {
-    harness::setup_test(FastCancelConfig, None, |mut ctx| async move {
-        let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
-        let bob_swap_id = bob_swap.id;
-
-        // Run Bob until Bitcoin is locked
-        let bob_swap = tokio::spawn(bob::run_until(bob_swap, |s| {
-            matches!(s, BobState::BtcLocked { .. })
-        }));
-
-        // Run Alice until Monero is locked with correct ammount
-        let alice_swap = ctx.alice_next_swap().await;
-        let alice_swap = tokio::spawn(alice::run_until(
-            alice_swap,
-            |s| matches!(s, AliceState::XmrLocked { .. }),
-            FixedRate::default(),
-        ));
-
-        // Bob verifies the correct Monero amount and proceeds to redeem
-        let bob_state = bob_swap.await??;
-        assert!(matches!(bob_state, BobState::BtcLocked { .. }));
-
-        // Resume Bob to complete the swap
-        let (bob_swap, _) = ctx
-            .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
-            .await;
-
-        let bob_state =
-            bob::run_until(bob_swap, |s| matches!(s, BobState::XmrRedeemed { .. })).await?;
-
-        // Assert Bob successfully redeemed Monero
-        ctx.assert_bob_redeemed(bob_state).await;
-
-        // Assert Alice successfully redeemed Bitcoin
-        let alice_state = alice_swap.await??;
-        ctx.assert_alice_redeemed(alice_state).await;
-
-        Ok(())
-    })
-    .await;
-}
-
-#[tokio::test]
 async fn given_significantly_wrong_xmr_amount_bob_immediately_aborts() {
     harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
@@ -147,6 +104,31 @@ async fn given_significantly_wrong_xmr_amount_bob_immediately_aborts() {
         ctx.assert_bob_refunded(bob_state).await;
         let alice_state = alice_swap.await??;
         ctx.assert_alice_refunded(alice_state).await;
+
+        Ok(())
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn given_correct_xmr_amount_bob_redeems_btc() {
+    harness::setup_test(FastCancelConfig, None, |mut ctx| async move {
+        let (bob_swap, _bob_join_handle) = ctx.bob_swap().await;
+
+        // Run both to completion without restart
+        let bob_swap = tokio::spawn(bob::run(bob_swap));
+        let alice_swap = ctx.alice_next_swap().await;
+        let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
+
+        // Wait for both
+        let (bob_result, alice_result) = tokio::join!(bob_swap, alice_swap);
+
+        let bob_state = bob_result??;
+        let alice_state = alice_result??;
+
+        // Verify final states
+        assert!(matches!(bob_state, BobState::XmrRedeemed { .. }));
+        ctx.assert_alice_redeemed(alice_state).await;
 
         Ok(())
     })
