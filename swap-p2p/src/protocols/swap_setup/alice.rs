@@ -30,7 +30,7 @@ use uuid::Uuid;
 pub enum OutEvent {
     Initiated {
         send_wallet_snapshot:
-            bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount)>,
+            bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
     },
     Completed {
         peer_id: PeerId,
@@ -263,7 +263,7 @@ impl<LR> Handler<LR> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum HandlerOutEvent {
-    Initiated(bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount)>),
+    Initiated(bmrng::RequestReceiver<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>),
     Completed(Result<(Uuid, State3)>),
 }
 
@@ -296,12 +296,11 @@ where
             ConnectionEvent::FullyNegotiatedInbound(substream) => {
                 let substream = substream.protocol;
 
-                let (sender, receiver) = bmrng::channel_with_timeout::<
-                    bitcoin::Amount,
-                    (WalletSnapshot, bitcoin::Amount),
-                >(
-                    1, crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT
-                );
+                let (sender, receiver) =
+                    bmrng::channel_with_timeout::<
+                        bitcoin::Amount,
+                        (WalletSnapshot, bitcoin::Amount, bool),
+                    >(1, crate::defaults::SWAP_SETUP_CHANNEL_TIMEOUT);
 
                 let resume_only = self.resume_only;
                 let min_buy = self.min_buy;
@@ -447,7 +446,7 @@ impl Error {
 
 async fn run_swap_setup(
     mut substream: libp2p::swarm::Stream,
-    sender: bmrng::RequestSender<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount)>,
+    sender: bmrng::RequestSender<bitcoin::Amount, (WalletSnapshot, bitcoin::Amount, bool)>,
     resume_only: bool,
     env_config: env::Config,
     min_buy: bitcoin::Amount,
@@ -458,7 +457,7 @@ async fn run_swap_setup(
         .await
         .context("Failed to read spot price request")?;
 
-    let (wallet_snapshot, btc_amnesty_amount) = sender
+    let (wallet_snapshot, btc_amnesty_amount, should_burn_on_refund) = sender
         .send_receive(request.btc)
         .await
         .context("Failed to receive wallet snapshot")?;
@@ -546,6 +545,7 @@ async fn run_swap_setup(
         wallet_snapshot.redeem_fee,
         wallet_snapshot.punish_fee,
         wallet_snapshot.refund_burn_fee,
+        should_burn_on_refund,
         &mut rand::thread_rng(),
     );
 

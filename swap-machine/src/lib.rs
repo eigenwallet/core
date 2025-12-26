@@ -28,6 +28,7 @@ mod tests {
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
         let btc_amnesty_amount = Amount::from_sat(100_000);
+        let should_publish_tx_refund = false;
         let xmr_amount = swap_core::monero::primitives::Amount::from_piconero(10000);
 
         let tx_redeem_fee = alice_wallet
@@ -57,6 +58,7 @@ mod tests {
             tx_redeem_fee,
             tx_punish_fee,
             spending_fee,
+            should_publish_tx_refund,
             &mut OsRng,
         );
 
@@ -149,6 +151,7 @@ mod tests {
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
         let btc_amnesty_amount = Amount::from_sat(100_000);
+        let should_publish_tx_refund = false;
         let xmr_amount = swap_core::monero::primitives::Amount::from_piconero(10000);
 
         let tx_redeem_fee = alice_wallet
@@ -174,6 +177,7 @@ mod tests {
             tx_redeem_fee,
             tx_punish_fee,
             spending_fee,
+            should_publish_tx_refund,
             &mut OsRng,
         );
 

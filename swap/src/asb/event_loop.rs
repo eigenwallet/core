@@ -13,6 +13,7 @@ use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use anyhow::{anyhow, Context, Result};
+use bdk::bitcoin::hashes::sha1;
 use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
@@ -253,13 +254,14 @@ where
                             };
 
                             // TODO: propagate error to the swap_setup routine instead of swallowing it
-                            let btc_amnesty_amount = match apply_bitcoin_amnesty_policy(btc, &self.refund_policy) {
+                            let (btc_amnesty_amount, should_publish_tx_refund_burn )= match apply_bitcoin_amnesty_policy(btc, &self.refund_policy) {
                                 Ok(amount) => amount,
                                 Err(error) => {
                                     tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
                                     continue;
                                 }
                             };
+
                             let wallet_snapshot = match capture_wallet_snapshot(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
                                 Ok(wallet_snapshot) => wallet_snapshot,
                                 Err(error) => {
@@ -269,7 +271,7 @@ where
                             };
 
                             // Ignore result, we should never hit this because the receiver will alive as long as the connection is.
-                            let _ = responder.respond((wallet_snapshot, btc_amnesty_amount));
+                            let _ = responder.respond((wallet_snapshot, btc_amnesty_amount, should_publish_tx_refund_burn));
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
                             if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
@@ -833,13 +835,17 @@ impl EventLoopHandle {
 /// For a new swap of `swap_amount`, this function calculates how much
 /// Bitcoin should go into the amnesty-lock incase of a refund.
 /// Returns ZERO when taker_refund_ratio is 1.0 (100%), indicating full refund.
+/// Also returns whether or not to burn the the amnesty output if the taker refunds.
 fn apply_bitcoin_amnesty_policy(
     swap_amount: bitcoin::Amount,
     refund_policy: &RefundPolicy,
-) -> Result<bitcoin::Amount> {
+) -> Result<(bitcoin::Amount, bool)> {
+    // TODO: decide this somehow
+    let should_burn_on_refund = false;
+
     // When ratio is 1.0, no amnesty - use full refund path
     if refund_policy.taker_refund_ratio == Decimal::ONE {
-        return Ok(bitcoin::Amount::ZERO);
+        return Ok((bitcoin::Amount::ZERO, should_burn_on_refund));
     }
 
     let btc_amnesty_ratio = Decimal::ONE
@@ -858,7 +864,10 @@ fn apply_bitcoin_amnesty_policy(
         .try_into()
         .context("Couldn't convert Decimal to u64")?;
 
-    Ok(bitcoin::Amount::from_sat(btc_amnesty_sats))
+    Ok((
+        bitcoin::Amount::from_sat(btc_amnesty_sats),
+        should_burn_on_refund,
+    ))
 }
 
 async fn capture_wallet_snapshot(

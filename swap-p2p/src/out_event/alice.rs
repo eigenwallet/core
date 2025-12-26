@@ -22,7 +22,7 @@ pub enum OutEvent {
         // should go into the amnesty output
         send_wallet_snapshot: bmrng::RequestReceiver<
             bitcoin::Amount,
-            (swap_setup::alice::WalletSnapshot, bitcoin::Amount),
+            (swap_setup::alice::WalletSnapshot, bitcoin::Amount, bool),
         >,
     },
     SwapSetupCompleted {

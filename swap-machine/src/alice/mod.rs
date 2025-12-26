@@ -177,6 +177,7 @@ pub struct State0 {
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
     tx_refund_burn_fee: Option<bitcoin::Amount>,
+    should_publish_tx_refund_burn: Option<bool>,
 }
 
 impl State0 {
@@ -191,6 +192,7 @@ impl State0 {
         tx_redeem_fee: bitcoin::Amount,
         tx_punish_fee: bitcoin::Amount,
         tx_refund_burn_fee: bitcoin::Amount,
+        should_publish_tx_refund_burn: bool,
         rng: &mut R,
     ) -> Self
     where
@@ -223,6 +225,7 @@ impl State0 {
             tx_redeem_fee,
             tx_punish_fee,
             tx_refund_burn_fee: Some(tx_refund_burn_fee),
+            should_publish_tx_refund_burn: Some(should_publish_tx_refund_burn),
         }
     }
 
@@ -274,6 +277,7 @@ impl State0 {
                 tx_refund_burn_fee: self.tx_refund_burn_fee,
                 tx_final_amnesty_fee: Some(msg.tx_final_amnesty_fee),
                 tx_cancel_fee: msg.tx_cancel_fee,
+                should_publish_tx_refund_burn: self.should_publish_tx_refund_burn,
             },
         ))
     }
@@ -309,6 +313,7 @@ pub struct State1 {
     tx_refund_burn_fee: Option<bitcoin::Amount>,
     tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
+    should_publish_tx_refund_burn: Option<bool>,
 }
 
 impl State1 {
@@ -366,6 +371,7 @@ impl State1 {
             tx_refund_burn_fee: self.tx_refund_burn_fee,
             tx_final_amnesty_fee: self.tx_final_amnesty_fee,
             tx_cancel_fee: self.tx_cancel_fee,
+            should_publish_tx_refund_burn: self.should_publish_tx_refund_burn,
         })
     }
 }
@@ -397,6 +403,7 @@ pub struct State2 {
     tx_refund_burn_fee: Option<bitcoin::Amount>,
     tx_final_amnesty_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
+    should_publish_tx_refund_burn: Option<bool>,
 }
 
 impl State2 {
@@ -540,6 +547,7 @@ impl State2 {
                 tx_cancel_fee: self.tx_cancel_fee,
                 tx_refund_burn_sig_bob: None,
                 tx_final_amnesty_sig_bob: None,
+                should_publish_tx_refund_burn: self.should_publish_tx_refund_burn,
             });
         }
 
@@ -636,6 +644,7 @@ impl State2 {
             tx_cancel_fee: self.tx_cancel_fee,
             tx_refund_burn_sig_bob: msg.tx_refund_burn_sig,
             tx_final_amnesty_sig_bob: msg.tx_final_amnesty_sig,
+            should_publish_tx_refund_burn: self.should_publish_tx_refund_burn,
         })
     }
 }
@@ -698,6 +707,12 @@ pub struct State3 {
     tx_refund_burn_sig_bob: Option<swap_core::bitcoin::Signature>,
     #[serde(default)]
     tx_final_amnesty_sig_bob: Option<swap_core::bitcoin::Signature>,
+    /// Whether Alice should publish TxRefundBurn to deny Bob's amnesty.
+    /// None = no decision yet (legacy swaps or awaiting controller input)
+    /// Some(false) = don't burn (default for new swaps)
+    /// Some(true) = burn the amnesty output
+    #[serde(default)]
+    pub should_publish_tx_refund_burn: Option<bool>,
 }
 
 impl State3 {
