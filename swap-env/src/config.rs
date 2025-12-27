@@ -126,12 +126,18 @@ pub struct RefundPolicy {
     /// This protects the maker against griefing attacks.
     #[serde(default = "default_taker_refund_ratio")]
     pub taker_refund_ratio: Decimal,
+    /// If true, Alice will publish TxRefundBurn after refunding her XMR,
+    /// denying Bob access to the amnesty output. Alice can later grant
+    /// final amnesty to return the funds to Bob.
+    #[serde(default)]
+    pub burn_on_refund: bool,
 }
 
 impl Default for RefundPolicy {
     fn default() -> Self {
         Self {
             taker_refund_ratio: default_taker_refund_ratio(),
+            burn_on_refund: false,
         }
     }
 }

@@ -702,7 +702,9 @@ where
             .await
             .expect("We should never run out of retries while refunding Monero");
 
-            AliceState::XmrRefunded
+            AliceState::XmrRefunded {
+                state3: Some(state3),
+            }
         }
         AliceState::BtcPunishable {
             monero_wallet_restore_blockheight,
@@ -739,7 +741,76 @@ where
             .await
             .expect("We should never run out of retries while publishing the punish transaction")
         }
-        AliceState::XmrRefunded => AliceState::XmrRefunded,
+        AliceState::XmrRefunded { state3 } => {
+            let Some(state3) = state3 else {
+                tracing::info!(
+                    "Running a pre-partial refund swap, there is no amnesty output to burn"
+                );
+                return Ok(AliceState::XmrRefunded { state3: None });
+            };
+
+            let signed_tx = state3.signed_refund_burn_transaction().context("Can't burn the amnesty output after Bob refunded because we couldn't construct the ")?;
+
+            bitcoin_wallet
+                .ensure_broadcasted(signed_tx, "refund_burn")
+                .await
+                .context("Couldn't publish TxRefundBurn")?;
+
+            AliceState::BtcRefundBurnPublished { state3 }
+        }
+        AliceState::BtcRefundBurnPublished { state3 } => {
+            let tx_refund_burn = state3
+                .tx_refund_burn()
+                .context("Can't construct TxRefundBurn even though we published it")?;
+
+            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_refund_burn)).await;
+
+            subscription
+                .wait_until_final()
+                .await
+                .context("Failed to wait for TxRefundBurn to be confirmed")?;
+
+            AliceState::BtcRefundBurnConfirmed { state3 }
+        }
+        AliceState::BtcRefundBurnConfirmed { state3 } => {
+            // Nothing to do here. Final amnesty is triggered manually.
+            AliceState::BtcRefundBurnConfirmed { state3 }
+        }
+        AliceState::BtcFinalAmnestyGranted { state3 } => {
+            // Operator has decided to grant final amnesty to Bob
+            let signed_tx = state3
+                .signed_final_amnesty_transaction()
+                .context("Failed to construct signed TxFinalAmnesty")?;
+
+            bitcoin_wallet
+                .ensure_broadcasted(signed_tx, "final_amnesty")
+                .await
+                .context("Failed to publish TxFinalAmnesty")?;
+
+            tracing::info!("TxFinalAmnesty published successfully");
+
+            AliceState::BtcRefundFinalAmnestyPublished { state3 }
+        }
+        AliceState::BtcRefundFinalAmnestyPublished { state3 } => {
+            // Wait for TxFinalAmnesty to be confirmed
+            let tx_final_amnesty = state3
+                .tx_final_amnesty()
+                .context("Couldn't construct TxFinalAmnesty even though we have published it")?;
+
+            let subscription = bitcoin_wallet
+                .subscribe_to(Box::new(tx_final_amnesty))
+                .await;
+
+            subscription
+                .wait_until_final()
+                .await
+                .context("Failed to wait for TxFinalAmnesty to be confirmed")?;
+
+            AliceState::BtcRefundFinalAmnestyConfirmed { state3 }
+        }
+        AliceState::BtcRefundFinalAmnestyConfirmed { state3 } => {
+            AliceState::BtcRefundFinalAmnestyConfirmed { state3 }
+        }
         AliceState::BtcRedeemed => AliceState::BtcRedeemed,
         AliceState::BtcPunished {
             state3,

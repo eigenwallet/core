@@ -41,7 +41,12 @@ pub async fn cancel(
 
         // Alice already in final state
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcRefundBurnPublished { .. }
+        | AliceState::BtcRefundBurnConfirmed { .. }
+        | AliceState::BtcFinalAmnestyGranted { .. }
+        | AliceState::BtcRefundFinalAmnestyPublished { .. }
+        | AliceState::BtcRefundFinalAmnestyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }

@@ -42,7 +42,12 @@ pub async fn punish(
         | AliceState::BtcLockTransactionSeen { .. }
         | AliceState::BtcLocked { .. }
         | AliceState::BtcRedeemed { .. }
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcRefundBurnPublished { .. }
+        | AliceState::BtcRefundBurnConfirmed { .. }
+        | AliceState::BtcFinalAmnestyGranted { .. }
+        | AliceState::BtcRefundFinalAmnestyPublished { .. }
+        | AliceState::BtcRefundFinalAmnestyConfirmed { .. }
         | AliceState::BtcPunished { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)

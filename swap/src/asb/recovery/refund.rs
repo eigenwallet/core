@@ -60,7 +60,12 @@ pub async fn refund(
         // Alice already in final state
         AliceState::BtcRedeemTransactionPublished { .. }
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcRefundBurnPublished { .. }
+        | AliceState::BtcRefundBurnConfirmed { .. }
+        | AliceState::BtcFinalAmnestyGranted { .. }
+        | AliceState::BtcRefundFinalAmnestyPublished { .. }
+        | AliceState::BtcRefundFinalAmnestyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }
@@ -97,7 +102,9 @@ pub async fn refund(
     )
     .await?;
 
-    let state = AliceState::XmrRefunded;
+    let state = AliceState::XmrRefunded {
+        state3: Some(state3),
+    };
     db.insert_latest_state(swap_id, state.clone().into())
         .await?;
 

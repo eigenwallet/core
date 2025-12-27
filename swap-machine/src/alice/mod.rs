@@ -87,7 +87,26 @@ pub enum AliceState {
         state3: Box<State3>,
     },
     // TODO: save redeem transaction id
-    XmrRefunded,
+    XmrRefunded {
+        state3: Option<Box<State3>>,
+    },
+    BtcRefundBurnPublished {
+        state3: Box<State3>,
+    },
+    BtcRefundBurnConfirmed {
+        state3: Box<State3>,
+    },
+    /// Operator has decided to grant final amnesty to Bob.
+    /// This state will publish TxFinalAmnesty and transition to BtcRefundFinalAmnestyPublished.
+    BtcFinalAmnestyGranted {
+        state3: Box<State3>,
+    },
+    BtcRefundFinalAmnestyPublished {
+        state3: Box<State3>,
+    },
+    BtcRefundFinalAmnestyConfirmed {
+        state3: Box<State3>,
+    },
     WaitingForCancelTimelockExpiration {
         monero_wallet_restore_blockheight: BlockHeight,
         transfer_proof: TransferProof,
@@ -111,14 +130,20 @@ pub enum AliceState {
 }
 
 pub fn is_complete(state: &AliceState) -> bool {
-    matches!(
-        state,
-        AliceState::XmrRefunded
-            | AliceState::BtcRedeemed
-            | AliceState::BtcPunished { .. }
-            | AliceState::SafelyAborted
-            | AliceState::BtcEarlyRefunded(_)
-    )
+    match state {
+        // XmrRefunded is only complete if we don't need to publish TxRefundBurn
+        AliceState::XmrRefunded { state3 } => match state3 {
+            Some(s3) if s3.should_publish_tx_refund_burn == Some(true) => false,
+            _ => true,
+        },
+        AliceState::BtcRedeemed
+        | AliceState::BtcPunished { .. }
+        | AliceState::SafelyAborted
+        | AliceState::BtcEarlyRefunded(_)
+        | AliceState::BtcRefundBurnConfirmed { .. }
+        | AliceState::BtcRefundFinalAmnestyConfirmed { .. } => true,
+        _ => false,
+    }
 }
 
 impl fmt::Display for AliceState {
@@ -144,7 +169,16 @@ impl fmt::Display for AliceState {
             AliceState::BtcPunished { .. } => write!(f, "btc is punished"),
             AliceState::SafelyAborted => write!(f, "safely aborted"),
             AliceState::BtcPunishable { .. } => write!(f, "btc is punishable"),
-            AliceState::XmrRefunded => write!(f, "xmr is refunded"),
+            AliceState::XmrRefunded { .. } => write!(f, "xmr is refunded"),
+            AliceState::BtcRefundBurnPublished { .. } => write!(f, "btc refund burn published"),
+            AliceState::BtcRefundBurnConfirmed { .. } => write!(f, "btc refund burn confirmed"),
+            AliceState::BtcFinalAmnestyGranted { .. } => write!(f, "btc final amnesty granted"),
+            AliceState::BtcRefundFinalAmnestyPublished { .. } => {
+                write!(f, "btc final amnesty published")
+            }
+            AliceState::BtcRefundFinalAmnestyConfirmed { .. } => {
+                write!(f, "btc final amnesty confirmed")
+            }
             AliceState::WaitingForCancelTimelockExpiration { .. } => {
                 write!(f, "waiting for cancel timelock expiration")
             }
@@ -889,6 +923,58 @@ impl State3 {
             self.tx_refund_amnesty_sig_bob
                 .clone()
                 .context("missing Bob's signature for TxRefundAmnesty")?,
+        )
+    }
+
+    /// Check if we have Bob's signature for TxRefundBurn.
+    pub fn has_tx_refund_burn_sig(&self) -> bool {
+        self.tx_refund_burn_sig_bob.is_some()
+    }
+
+    /// Construct TxRefundBurn from tx_partial_refund output.
+    pub fn tx_refund_burn(&self) -> Result<TxRefundBurn> {
+        TxRefundBurn::new(
+            &self.tx_partial_refund()?,
+            self.a.public(),
+            self.B,
+            self.tx_refund_burn_fee
+                .context("Missing tx_refund_burn_fee")?,
+        )
+    }
+
+    /// Construct signed TxRefundBurn using Alice's key and Bob's presigned signature.
+    pub fn signed_refund_burn_transaction(&self) -> Result<Transaction> {
+        let tx_refund_burn = self.tx_refund_burn()?;
+
+        tx_refund_burn.complete_as_alice(
+            self.a.clone(),
+            self.B,
+            self.tx_refund_burn_sig_bob
+                .clone()
+                .context("missing Bob's signature for TxRefundBurn")?,
+        )
+    }
+
+    /// Construct TxFinalAmnesty from tx_refund_burn output.
+    pub fn tx_final_amnesty(&self) -> Result<TxFinalAmnesty> {
+        Ok(TxFinalAmnesty::new(
+            &self.tx_refund_burn()?,
+            &self.refund_address,
+            self.tx_final_amnesty_fee
+                .context("Missing tx_final_amnesty_fee")?,
+        ))
+    }
+
+    /// Construct signed TxFinalAmnesty using Alice's key and Bob's presigned signature.
+    pub fn signed_final_amnesty_transaction(&self) -> Result<Transaction> {
+        let tx_final_amnesty = self.tx_final_amnesty()?;
+
+        tx_final_amnesty.complete_as_alice(
+            self.a.clone(),
+            self.B,
+            self.tx_final_amnesty_sig_bob
+                .clone()
+                .context("missing Bob's signature for TxFinalAmnesty")?,
         )
     }
 

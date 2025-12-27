@@ -13,8 +13,10 @@ use swap_env::config::RefundPolicy;
 #[tokio::test]
 async fn given_partial_refund_bob_claims_amnesty_after_timelock() {
     // Use 95% refund ratio - Bob gets 95% immediately, 5% locked in amnesty
+    // Alice does NOT burn - Bob can claim amnesty after timelock
     let refund_policy = Some(RefundPolicy {
         taker_refund_ratio: Decimal::new(95, 2), // 0.95 = 95%
+        burn_on_refund: false,
     });
 
     harness::setup_test(FastAmnestyConfig, None, refund_policy, |mut ctx| async move {

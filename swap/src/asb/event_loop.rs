@@ -840,8 +840,7 @@ fn apply_bitcoin_amnesty_policy(
     swap_amount: bitcoin::Amount,
     refund_policy: &RefundPolicy,
 ) -> Result<(bitcoin::Amount, bool)> {
-    // TODO: decide this somehow
-    let should_burn_on_refund = false;
+    let should_burn_on_refund = refund_policy.burn_on_refund;
 
     // When ratio is 1.0, no amnesty - use full refund path
     if refund_policy.taker_refund_ratio == Decimal::ONE {

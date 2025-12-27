@@ -212,6 +212,7 @@ pub async fn setup_test<T, F, C>(
         developer_tip,
         refund_policy: refund_policy.unwrap_or_default(),
         monerod_container_id: containers._monerod_container.id().to_string(),
+        monero,
     };
 
     testfn(test).await.unwrap()
@@ -695,6 +696,10 @@ pub struct TestContext {
 
     // Store the container ID as String instead of reference
     monerod_container_id: String,
+
+    // Handle for the Monero deamon. This allows us to skip waiting times by generating
+    // blocks instantly
+    pub monero: Monero,
 }
 
 impl TestContext {
@@ -781,7 +786,7 @@ impl TestContext {
     }
 
     pub async fn assert_alice_refunded(&mut self, state: AliceState) {
-        assert!(matches!(state, AliceState::XmrRefunded));
+        assert!(matches!(state, AliceState::XmrRefunded { .. }));
 
         assert_eventual_balance(
             self.alice_bitcoin_wallet.as_ref(),
@@ -792,6 +797,51 @@ impl TestContext {
         .unwrap();
 
         // Alice pays fees - comparison does not take exact lock fee into account
+        assert_eventual_balance(
+            &*self.alice_monero_wallet.main_wallet().await,
+            Ordering::Greater,
+            self.alice_refunded_xmr_balance(),
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn assert_alice_refund_burn_confirmed(&mut self, state: AliceState) {
+        assert!(matches!(state, AliceState::BtcRefundBurnConfirmed { .. }));
+
+        // Same as refunded - Alice still has her XMR back
+        assert_eventual_balance(
+            self.alice_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.alice_refunded_btc_balance(),
+        )
+        .await
+        .unwrap();
+
+        assert_eventual_balance(
+            &*self.alice_monero_wallet.main_wallet().await,
+            Ordering::Greater,
+            self.alice_refunded_xmr_balance(),
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn assert_alice_final_amnesty_confirmed(&mut self, state: AliceState) {
+        assert!(matches!(
+            state,
+            AliceState::BtcRefundFinalAmnestyConfirmed { .. }
+        ));
+
+        // Same as refunded - Alice still has her XMR back
+        assert_eventual_balance(
+            self.alice_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.alice_refunded_btc_balance(),
+        )
+        .await
+        .unwrap();
+
         assert_eventual_balance(
             &*self.alice_monero_wallet.main_wallet().await,
             Ordering::Greater,
@@ -1000,7 +1050,10 @@ impl TestContext {
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
                 state6.tx_final_amnesty_fee.expect("final amnesty fee"),
             ),
-            _ => panic!("Bob is not in btc final amnesty confirmed state: {:?}", state),
+            _ => panic!(
+                "Bob is not in btc final amnesty confirmed state: {:?}",
+                state
+            ),
         };
         let lock_tx_bitcoin_fee = self
             .bob_bitcoin_wallet
@@ -1337,6 +1390,18 @@ pub mod alice_run_until {
     pub fn is_btc_partially_refunded(state: &AliceState) -> bool {
         matches!(state, AliceState::BtcPartiallyRefunded { .. })
     }
+
+    pub fn is_xmr_refunded(state: &AliceState) -> bool {
+        matches!(state, AliceState::XmrRefunded { .. })
+    }
+
+    pub fn is_btc_refund_burn_confirmed(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcRefundBurnConfirmed { .. })
+    }
+
+    pub fn is_btc_final_amnesty_confirmed(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcRefundFinalAmnestyConfirmed { .. })
+    }
 }
 
 pub mod bob_run_until {
@@ -1363,7 +1428,10 @@ pub mod bob_run_until {
     }
 
     pub fn is_waiting_for_remaining_refund_timelock(state: &BobState) -> bool {
-        matches!(state, BobState::WaitingForRemainingRefundTimelockExpiration(..))
+        matches!(
+            state,
+            BobState::WaitingForRemainingRefundTimelockExpiration(..)
+        )
     }
 
     pub fn is_remaining_refund_timelock_expired(state: &BobState) -> bool {
@@ -1424,6 +1492,26 @@ impl GetConfig for FastAmnestyConfig {
         Config {
             bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
             bitcoin_remaining_refund_timelock: 3,
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+/// Config with a longer remaining refund timelock for burn tests.
+/// Alice needs time to refund XMR (which waits for 10 Monero confirmations)
+/// before publishing the burn transaction.
+pub struct SlowAmnestyConfig;
+
+impl GetConfig for SlowAmnestyConfig {
+    fn get_config() -> Config {
+        Config {
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            // Much longer timelock to give Alice time to:
+            // 1. Wait for 10 Monero confirmations on the lock tx
+            // 2. Sweep the XMR to her wallet
+            // 3. Then publish the burn transaction
+            // In regtest, each BTC block is ~5s, so 100 blocks is ~8 minutes
+            bitcoin_remaining_refund_timelock: 100,
             ..env::Regtest::get_config()
         }
     }
