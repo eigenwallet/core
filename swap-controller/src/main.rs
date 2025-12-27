@@ -130,6 +130,14 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 }
             }
         }
+        Cmd::SetBurnOnRefund { swap_id, burn } => {
+            client.set_burn_on_refund(swap_id.clone(), burn).await?;
+            if burn {
+                println!("Burn on refund enabled for swap {swap_id}");
+            } else {
+                println!("Burn on refund disabled for swap {swap_id}");
+            }
+        }
     }
     Ok(())
 }
