@@ -243,6 +243,23 @@ impl AsbApiServer for RpcImpl {
 
         Ok(RegistrationStatusResponse { registrations })
     }
+
+    async fn set_burn_on_refund(
+        &self,
+        swap_id: String,
+        burn: bool,
+    ) -> Result<(), ErrorObjectOwned> {
+        let swap_id = uuid::Uuid::parse_str(&swap_id)
+            .context("Invalid swap ID")
+            .into_json_rpc_result()?;
+
+        self.event_loop_service
+            .set_burn_on_refund(swap_id, burn)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
+    }
 }
 
 trait IntoJsonRpcResult<T> {

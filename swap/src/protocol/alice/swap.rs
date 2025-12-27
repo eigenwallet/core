@@ -425,6 +425,17 @@ where
                         state3,
                     }
                 }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_refund_burn = Some(burn);
+
+                    AliceState::XmrLockTransferProofSent {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::EncSigLearned {
@@ -543,15 +554,26 @@ where
                 .subscribe_to(Box::new(state3.tx_lock.clone()))
                 .await;
 
-            // TODO: Retry here
-            tx_lock_status_subscription
-                .wait_until_confirmed_with(state3.cancel_timelock)
-                .await?;
+            select! {
+                result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                    result?;
+                    AliceState::CancelTimelockExpired {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3,
+                    }
+                }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_refund_burn = Some(burn);
 
-            AliceState::CancelTimelockExpired {
-                monero_wallet_restore_blockheight,
-                transfer_proof,
-                state3,
+                    AliceState::WaitingForCancelTimelockExpiration {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::CancelTimelockExpired {
@@ -648,6 +670,17 @@ where
                         state3,
                     }
                 }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_refund_burn = Some(burn);
+
+                    AliceState::BtcCancelled {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::BtcRefunded {
@@ -742,12 +775,25 @@ where
             .expect("We should never run out of retries while publishing the punish transaction")
         }
         AliceState::XmrRefunded { state3 } => {
-            let Some(state3) = state3 else {
+            // Only publish TxRefundBurn
+            let Some(mut state3) = state3 else {
                 tracing::info!(
                     "Running a pre-partial refund swap, there is no amnesty output to burn"
                 );
                 return Ok(AliceState::XmrRefunded { state3: None });
             };
+
+            // Fetch the burn decision, if it was made via the controller
+            if let Some(burn_decision) = event_loop_handle.get_burn_on_refund_instruction().await {
+                state3.should_publish_tx_refund_burn = Some(burn_decision);
+            }
+
+            if !state3.should_publish_tx_refund_burn.unwrap_or(false) {
+                tracing::info!("Not instructed to partially burn the takers refund. Finishing");
+                return Ok(AliceState::XmrRefunded {
+                    state3: Some(state3),
+                });
+            }
 
             let signed_tx = state3.signed_refund_burn_transaction().context("Can't burn the amnesty output after Bob refunded because we couldn't construct the ")?;
 

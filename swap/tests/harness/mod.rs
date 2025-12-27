@@ -152,7 +152,13 @@ pub async fn setup_test<T, F, C>(
         .parse()
         .expect("failed to parse Alice's address");
 
-    let (alice_handle, alice_swap_handle) = start_alice(
+    let alice_rpc_port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+
+    let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
         &alice_seed,
         alice_db_path.clone(),
         alice_listen_address.clone(),
@@ -161,8 +167,13 @@ pub async fn setup_test<T, F, C>(
         alice_monero_wallet.clone(),
         developer_tip.clone(),
         refund_policy.clone().unwrap_or_default(),
+        alice_rpc_port,
     )
     .await;
+
+    let alice_rpc_client = jsonrpsee::http_client::HttpClientBuilder::default()
+        .build(format!("http://127.0.0.1:{}", alice_rpc_port))
+        .expect("Failed to create RPC client");
 
     let bob_seed = Seed::random().unwrap();
     let bob_starting_balances = StartingBalances::new(btc_amount * 10, monero::Amount::ZERO, None);
@@ -199,6 +210,9 @@ pub async fn setup_test<T, F, C>(
         alice_seed,
         alice_db_path,
         alice_listen_address,
+        alice_rpc_port,
+        alice_rpc_server_handle,
+        alice_rpc_client,
         alice_starting_balances,
         alice_bitcoin_wallet,
         alice_monero_wallet,
@@ -304,7 +318,12 @@ async fn start_alice(
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
     refund_policy: RefundPolicy,
-) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
+    rpc_port: u16,
+) -> (
+    AliceApplicationHandle,
+    Receiver<alice::Swap>,
+    tokio_util::task::AbortOnDropHandle<()>,
+) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
     }
@@ -338,12 +357,12 @@ async fn start_alice(
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
-    let (event_loop, swap_handle, _service) = asb::EventLoop::new(
+    let (event_loop, swap_handle, service) = asb::EventLoop::new(
         swarm,
         env_config,
-        bitcoin_wallet,
-        monero_wallet,
-        db,
+        bitcoin_wallet.clone(),
+        monero_wallet.clone(),
+        db.clone(),
         FixedRate::default(),
         min_buy,
         max_buy,
@@ -353,10 +372,26 @@ async fn start_alice(
     )
     .unwrap();
 
+    let rpc_server_handle = asb::rpc::RpcServer::start(
+        "127.0.0.1".to_string(),
+        rpc_port,
+        bitcoin_wallet,
+        monero_wallet,
+        service,
+        db,
+    )
+    .await
+    .expect("Failed to start RPC server")
+    .spawn();
+
     let peer_id = event_loop.peer_id();
     let handle = tokio::spawn(event_loop.run());
 
-    (AliceApplicationHandle { handle, peer_id }, swap_handle)
+    (
+        AliceApplicationHandle { handle, peer_id },
+        swap_handle,
+        rpc_server_handle,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -680,6 +715,10 @@ pub struct TestContext {
     alice_seed: Seed,
     alice_db_path: PathBuf,
     alice_listen_address: Multiaddr,
+    alice_rpc_port: u16,
+    #[allow(dead_code)]
+    alice_rpc_server_handle: tokio_util::task::AbortOnDropHandle<()>,
+    pub alice_rpc_client: jsonrpsee::http_client::HttpClient,
 
     alice_starting_balances: StartingBalances,
     alice_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
@@ -716,8 +755,12 @@ impl TestContext {
 
     pub async fn restart_alice(&mut self) {
         self.alice_handle.abort();
+        // Abort the old RPC server to release the port before starting a new one
+        self.alice_rpc_server_handle.abort();
+        // Small delay to ensure port is released
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let (alice_handle, alice_swap_handle) = start_alice(
+        let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
             &self.alice_seed,
             self.alice_db_path.clone(),
             self.alice_listen_address.clone(),
@@ -726,11 +769,13 @@ impl TestContext {
             self.alice_monero_wallet.clone(),
             self.developer_tip.clone(),
             self.refund_policy.clone(),
+            self.alice_rpc_port,
         )
         .await;
 
         self.alice_handle = alice_handle;
         self.alice_swap_handle = alice_swap_handle;
+        self.alice_rpc_server_handle = alice_rpc_server_handle;
     }
 
     pub async fn alice_next_swap(&mut self) -> alice::Swap {

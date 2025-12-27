@@ -69,6 +69,12 @@ where
     /// the sender is removed from this map.
     recv_encrypted_signature: HashMap<Uuid, bmrng::RequestSender<bitcoin::EncryptedSignature, ()>>,
 
+    /// Stores where to send burn-on-refund instructions to
+    /// The corresponding receiver is stored in the EventLoopHandle
+    /// Uses watch channel to allow multiple updates before consumption
+    recv_burn_on_refund_instruction:
+        HashMap<Uuid, tokio::sync::watch::Sender<Option<bool>>>,
+
     /// Once we receive an [`EncryptedSignature`] from Bob, we forward it to the EventLoopHandle.
     /// Once the EventLoopHandle acknowledges the receipt of the [`EncryptedSignature`], we need to confirm this to Bob.
     /// When the EventLoopHandle acknowledges the receipt, a future in this collection resolves and returns the libp2p channel
@@ -170,6 +176,7 @@ where
             refund_policy,
             quote_cache,
             recv_encrypted_signature: Default::default(),
+            recv_burn_on_refund_instruction: Default::default(),
             inflight_encrypted_signatures: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
@@ -555,6 +562,15 @@ where
 
                             let _ = respond_to.send(registrations);
                         }
+                        EventLoopRequest::SetBurnOnRefund { swap_id, burn, respond_to } => {
+                            let result = if let Some(sender) = self.recv_burn_on_refund_instruction.get(&swap_id) {
+                                sender.send(Some(burn))
+                                    .map_err(|_| anyhow!("Failed to send burn instruction - receiver dropped"))
+                            } else {
+                                Err(anyhow!("No active swap found with id {}", swap_id))
+                            };
+                            let _ = respond_to.send(result);
+                        }
                     }
                 }
             }
@@ -692,12 +708,20 @@ where
         self.recv_encrypted_signature
             .insert(swap_id, encrypted_signature_sender);
 
+        // Create a watch channel for burn-on-refund instructions
+        // Uses watch instead of bmrng to allow multiple updates before consumption
+        let (burn_instruction_sender, burn_instruction_receiver) =
+            tokio::sync::watch::channel(None);
+        self.recv_burn_on_refund_instruction
+            .insert(swap_id, burn_instruction_sender);
+
         let transfer_proof_sender = self.outgoing_transfer_proofs_sender.clone();
 
         EventLoopHandle {
             swap_id,
             peer,
             recv_encrypted_signature: tokio::sync::Mutex::new(Some(encrypted_signature_receiver)),
+            recv_burn_on_refund_instruction: tokio::sync::Mutex::new(burn_instruction_receiver),
             transfer_proof_sender: tokio::sync::Mutex::new(Some(transfer_proof_sender)),
         }
     }
@@ -710,6 +734,8 @@ pub struct EventLoopHandle {
     peer: PeerId,
     recv_encrypted_signature:
         tokio::sync::Mutex<Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>>,
+    recv_burn_on_refund_instruction:
+        tokio::sync::Mutex<tokio::sync::watch::Receiver<Option<bool>>>,
     #[allow(clippy::type_complexity)]
     transfer_proof_sender: tokio::sync::Mutex<
         Option<
@@ -830,6 +856,34 @@ impl EventLoopHandle {
 
         Ok(())
     }
+
+    /// Wait for a NEW burn-on-refund instruction from the operator
+    ///
+    /// This method waits until the operator sends a new decision via the EventLoopService.
+    /// Use this in select! arms to react to operator commands.
+    ///
+    /// Returns the new burn decision when one is received.
+    pub async fn wait_for_burn_on_refund_instruction(&self) -> Result<bool> {
+        let mut guard = self.recv_burn_on_refund_instruction.lock().await;
+
+        guard
+            .changed()
+            .await
+            .map_err(|_| anyhow!("Burn instruction sender was dropped"))?;
+
+        let value = *guard.borrow();
+        Ok(value.expect("changed() returned Ok, so value should be set"))
+    }
+
+    /// Get the current burn-on-refund instruction value
+    ///
+    /// Returns Some(bool) if an instruction has been set, None otherwise.
+    /// Use this to check the current decision before taking action.
+    pub async fn get_burn_on_refund_instruction(&self) -> Option<bool> {
+        let guard = self.recv_burn_on_refund_instruction.lock().await;
+        let value = *guard.borrow();
+        value
+    }
 }
 
 /// For a new swap of `swap_amount`, this function calculates how much
@@ -924,6 +978,11 @@ mod service {
                 Vec<swap_p2p::protocols::rendezvous::register::public::RendezvousNodeStatus>,
             >,
         },
+        SetBurnOnRefund {
+            swap_id: Uuid,
+            burn: bool,
+            respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -968,6 +1027,23 @@ mod service {
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Set the burn-on-refund decision for a specific swap
+        ///
+        /// This can be called multiple times to update the decision before
+        /// the swap state machine polls for it.
+        pub async fn set_burn_on_refund(&self, swap_id: Uuid, burn: bool) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::SetBurnOnRefund {
+                    swap_id,
+                    burn,
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
         }
     }
 }

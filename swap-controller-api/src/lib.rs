@@ -88,6 +88,12 @@ pub struct MoneroSeedResponse {
     pub restore_height: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SetBurnOnRefundRequest {
+    pub swap_id: String,
+    pub burn: bool,
+}
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -112,4 +118,10 @@ pub trait AsbApi {
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
     #[method(name = "registration_status")]
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
+    #[method(name = "set_burn_on_refund")]
+    async fn set_burn_on_refund(
+        &self,
+        swap_id: String,
+        burn: bool,
+    ) -> Result<(), ErrorObjectOwned>;
 }
