@@ -13,6 +13,7 @@ use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
+use swap_env::config::RefundPolicy;
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -50,6 +51,7 @@ use uuid::Uuid;
 pub async fn setup_test<T, F, C>(
     _config: C,
     developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
     testfn: T,
 ) where
     T: Fn(TestContext) -> F,
@@ -158,6 +160,7 @@ pub async fn setup_test<T, F, C>(
         alice_bitcoin_wallet.clone(),
         alice_monero_wallet.clone(),
         developer_tip.clone(),
+        refund_policy.clone().unwrap_or_default(),
     )
     .await;
 
@@ -207,7 +210,9 @@ pub async fn setup_test<T, F, C>(
         bob_monero_wallet,
         developer_tip_monero_wallet,
         developer_tip,
+        refund_policy: refund_policy.unwrap_or_default(),
         monerod_container_id: containers._monerod_container.id().to_string(),
+        monero,
     };
 
     testfn(test).await.unwrap()
@@ -298,6 +303,7 @@ async fn start_alice(
     bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 ) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
@@ -343,6 +349,7 @@ async fn start_alice(
         max_buy,
         None,
         developer_tip,
+        refund_policy,
     )
     .unwrap();
 
@@ -668,6 +675,7 @@ pub struct TestContext {
     btc_amount: bitcoin::Amount,
     xmr_amount: monero::Amount,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
@@ -688,6 +696,10 @@ pub struct TestContext {
 
     // Store the container ID as String instead of reference
     monerod_container_id: String,
+
+    // Handle for the Monero deamon. This allows us to skip waiting times by generating
+    // blocks instantly
+    pub monero: Monero,
 }
 
 impl TestContext {
@@ -713,6 +725,7 @@ impl TestContext {
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
             self.developer_tip.clone(),
+            self.refund_policy.clone(),
         )
         .await;
 
@@ -773,7 +786,7 @@ impl TestContext {
     }
 
     pub async fn assert_alice_refunded(&mut self, state: AliceState) {
-        assert!(matches!(state, AliceState::XmrRefunded));
+        assert!(matches!(state, AliceState::XmrRefunded { .. }));
 
         assert_eventual_balance(
             self.alice_bitcoin_wallet.as_ref(),
@@ -784,6 +797,51 @@ impl TestContext {
         .unwrap();
 
         // Alice pays fees - comparison does not take exact lock fee into account
+        assert_eventual_balance(
+            &*self.alice_monero_wallet.main_wallet().await,
+            Ordering::Greater,
+            self.alice_refunded_xmr_balance(),
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn assert_alice_refund_burn_confirmed(&mut self, state: AliceState) {
+        assert!(matches!(state, AliceState::BtcRefundBurnConfirmed { .. }));
+
+        // Same as refunded - Alice still has her XMR back
+        assert_eventual_balance(
+            self.alice_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.alice_refunded_btc_balance(),
+        )
+        .await
+        .unwrap();
+
+        assert_eventual_balance(
+            &*self.alice_monero_wallet.main_wallet().await,
+            Ordering::Greater,
+            self.alice_refunded_xmr_balance(),
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn assert_alice_final_amnesty_confirmed(&mut self, state: AliceState) {
+        assert!(matches!(
+            state,
+            AliceState::BtcRefundFinalAmnestyConfirmed { .. }
+        ));
+
+        // Same as refunded - Alice still has her XMR back
+        assert_eventual_balance(
+            self.alice_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.alice_refunded_btc_balance(),
+        )
+        .await
+        .unwrap();
+
         assert_eventual_balance(
             &*self.alice_monero_wallet.main_wallet().await,
             Ordering::Greater,
@@ -894,6 +952,124 @@ impl TestContext {
         )
         .await
         .unwrap();
+    }
+
+    pub async fn assert_bob_partially_refunded(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
+            BobState::BtcPartiallyRefunded(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.btc_amnesty_amount.expect("amnesty amount"),
+            ),
+            _ => panic!("Bob is not in btc partially refunded state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_amount;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_amnesty_received(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_fee) = match state {
+            BobState::BtcAmnestyConfirmed(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.tx_refund_amnesty_fee.expect("amnesty fee"),
+            ),
+            _ => panic!("Bob is not in btc amnesty confirmed state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob gets full amount back minus all the fees
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_fee;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_refund_burnt(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
+            BobState::BtcRefundBurnt(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.btc_amnesty_amount.expect("amnesty amount"),
+            ),
+            _ => panic!("Bob is not in btc refund burnt state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob lost the amnesty amount (it was burnt)
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_amount;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_final_amnesty_received(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, final_amnesty_fee) = match state {
+            BobState::BtcFinalAmnestyConfirmed(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.tx_final_amnesty_fee.expect("final amnesty fee"),
+            ),
+            _ => panic!(
+                "Bob is not in btc final amnesty confirmed state: {:?}",
+                state
+            ),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob gets full amount back via final amnesty
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - final_amnesty_fee;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
     }
 
     fn alice_redeemed_xmr_balance(&self) -> monero::Amount {
@@ -1210,6 +1386,22 @@ pub mod alice_run_until {
     pub fn is_btc_redeemed(state: &AliceState) -> bool {
         matches!(state, AliceState::BtcRedeemed { .. })
     }
+
+    pub fn is_btc_partially_refunded(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcPartiallyRefunded { .. })
+    }
+
+    pub fn is_xmr_refunded(state: &AliceState) -> bool {
+        matches!(state, AliceState::XmrRefunded { .. })
+    }
+
+    pub fn is_btc_refund_burn_confirmed(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcRefundBurnConfirmed { .. })
+    }
+
+    pub fn is_btc_final_amnesty_confirmed(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcRefundFinalAmnestyConfirmed { .. })
+    }
 }
 
 pub mod bob_run_until {
@@ -1229,6 +1421,33 @@ pub mod bob_run_until {
 
     pub fn is_encsig_sent(state: &BobState) -> bool {
         matches!(state, BobState::EncSigSent(..))
+    }
+
+    pub fn is_btc_partially_refunded(state: &BobState) -> bool {
+        matches!(state, BobState::BtcPartiallyRefunded(..))
+    }
+
+    pub fn is_waiting_for_remaining_refund_timelock(state: &BobState) -> bool {
+        matches!(
+            state,
+            BobState::WaitingForRemainingRefundTimelockExpiration(..)
+        )
+    }
+
+    pub fn is_remaining_refund_timelock_expired(state: &BobState) -> bool {
+        matches!(state, BobState::RemainingRefundTimelockExpired(..))
+    }
+
+    pub fn is_btc_amnesty_confirmed(state: &BobState) -> bool {
+        matches!(state, BobState::BtcAmnestyConfirmed(..))
+    }
+
+    pub fn is_btc_refund_burnt(state: &BobState) -> bool {
+        matches!(state, BobState::BtcRefundBurnt(..))
+    }
+
+    pub fn is_btc_final_amnesty_confirmed(state: &BobState) -> bool {
+        matches!(state, BobState::BtcFinalAmnestyConfirmed(..))
     }
 }
 
@@ -1261,6 +1480,38 @@ impl GetConfig for FastPunishConfig {
         Config {
             bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
             bitcoin_punish_timelock: PunishTimelock::new(10).into(),
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+pub struct FastAmnestyConfig;
+
+impl GetConfig for FastAmnestyConfig {
+    fn get_config() -> Config {
+        Config {
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_remaining_refund_timelock: 3,
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+/// Config with a longer remaining refund timelock for burn tests.
+/// Alice needs time to refund XMR (which waits for 10 Monero confirmations)
+/// before publishing the burn transaction.
+pub struct SlowAmnestyConfig;
+
+impl GetConfig for SlowAmnestyConfig {
+    fn get_config() -> Config {
+        Config {
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            // Much longer timelock to give Alice time to:
+            // 1. Wait for 10 Monero confirmations on the lock tx
+            // 2. Sweep the XMR to her wallet
+            // 3. Then publish the burn transaction
+            // In regtest, each BTC block is ~5s, so 100 blocks is ~8 minutes
+            bitcoin_remaining_refund_timelock: 100,
             ..env::Regtest::get_config()
         }
     }

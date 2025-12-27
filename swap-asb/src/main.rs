@@ -314,6 +314,7 @@ pub async fn main() -> Result<()> {
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
                 tip_config,
+                config.maker.refund_policy,
             )
             .unwrap();
 
@@ -542,7 +543,8 @@ pub async fn main() -> Result<()> {
                 .next()
                 .context("Couldn't find state Started for this swap")?;
 
-            let secret_spend_key = match state3.watch_for_btc_tx_refund(&bitcoin_wallet).await {
+            let secret_spend_key = match state3.watch_for_btc_tx_full_refund(&bitcoin_wallet).await
+            {
                 Ok(secret) => secret,
                 Err(error) => {
                     tracing::error!(

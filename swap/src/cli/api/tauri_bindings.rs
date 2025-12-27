@@ -87,16 +87,17 @@ pub struct ContextStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LockBitcoinDetails {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_lock_amount: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_network_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
     pub xmr_receive_amount: monero::Amount,
     pub monero_receive_pool: MoneroAddressPool,
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
+    /// The amount of Bitcoin the taker will only be able to refund with cooperation from the maker
+    #[typeshare(serialized_as = "number")]
+    pub btc_amnesty_amount: bitcoin::Amount,
 }
 
 #[typeshare]
@@ -105,7 +106,6 @@ pub struct SelectMakerDetails {
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_amount_to_swap: bitcoin::Amount,
     pub maker: QuoteWithAddress,
 }
@@ -1021,16 +1021,13 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         deposit_address: bitcoin::Address,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         max_giveable: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         min_bitcoin_lock_tx_fee: bitcoin::Amount,
         known_quotes: Vec<QuoteWithAddress>,
     },
     SwapSetupInflight {
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_lock_amount: bitcoin::Amount,
     },
     RetrievingMoneroBlockheight,
@@ -1088,6 +1085,20 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
     },
+    BtcPartialRefundPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        /// Whether we have Alice's signature on the amnesty transaction
+        /// such that we will be able to refund the rest of the locked Bitcoin
+        /// after the partial refund went through.
+        has_amnesty_signature: bool,
+    },
+    // BtcAmnesty was published but not yet confirmed.
+    // Requires BtcPartialRefund to be published first.
+    BtcAmnestyPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
+    },
     // tx_early_refund has been confirmed
     BtcEarlyRefunded {
         #[typeshare(serialized_as = "string")]
@@ -1097,6 +1108,20 @@ pub enum TauriSwapProgressEvent {
     BtcRefunded {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
+    },
+    // We got partially refunded. Might still be able to get amnesty.
+    BtcPartiallyRefunded {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        /// Whether we have Alice's signature on the amnesty transaction
+        /// such that we will be able to refund the rest of the locked Bitcoin
+        /// after the partial refund went through.
+        has_amnesty_signature: bool,
+    },
+    // BtcAmnesty was published but not yet confirmed.
+    BtcAmnestyReceived {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
     },
     BtcPunished,
     AttemptingCooperativeRedeem,
