@@ -28,4 +28,22 @@
   - keep the code succint. Prefer `if let` and `let ... else` to `match` whenever possible.
   - avoid nesting if possible.
   - prefer early returns to nesting.
+
+- Docker tests: We have an extended test suite that simulates a whole blockchain environment for the purpose of testing swaps end to end.
+  The docker tests are located in `swap/tests` and can be executed using `just docker_test <name>`. Get a list of all docker tests by `just list-docker-tests`.
+- If you changed something could possibly affect the success of a swap, make sure to run the integration tests that could possibly be affected.
+  Be very liberal with assuming what might be affected.
+- If not explicitly instructed yet, ask the user whether you should add {unit, integration} tests if you just added / changed some behaviour/code
+- The docker tests are long (multiple minutes) and produce tens of thousands of log messages.
+  Don't try to read all of that output, it will fill you context up before finishing
+  the initialization.
+  Instead, spawn them as a background-task (each as it's own).
+  Then you can simply check in on the current status by checking it's output every minute or so.
+  If you are claude, use claude codes native background task system and read from the `/tmp/claude/tasks/foo/output.tmp` pipe file, or whatever the path is.
+  If you are not claude, then do the thing that best accomplishises this.
+
+- Before claiming you finished, make sure everything compiles (`cargo c --all-features`).
+  Also all tests (`cargo c --tests`) and all targets (`cargo c --all-targets`) must compile.
+
+
   
