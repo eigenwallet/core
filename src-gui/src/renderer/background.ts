@@ -32,7 +32,10 @@ import {
   setHistory,
   setSyncProgress,
 } from "store/features/walletSlice";
-import { applyDefaultNodes } from "store/features/settingsSlice";
+import {
+  applyDefaultNodes,
+  validateDonateToDevelopmentTip,
+} from "store/features/settingsSlice";
 import {
   DEFAULT_NODES,
   NEGATIVE_NODES_MAINNET,
@@ -42,17 +45,11 @@ import { setSubaddresses } from "store/features/walletSlice";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 
-// Update the public registry every 5 minutes
-const PROVIDER_UPDATE_INTERVAL = 5 * 60 * 1_000;
-
-// Discover peers every 5 minutes
-const DISCOVER_PEERS_INTERVAL = 5 * 60 * 1_000;
-
 // Update node statuses every 2 minutes
 const STATUS_UPDATE_INTERVAL = 2 * 60 * 1_000;
 
-// Update the exchange rate every 5 minutes
-const UPDATE_RATE_INTERVAL = 5 * 60 * 1_000;
+// Update the exchange rate every 1 minute
+const UPDATE_RATE_INTERVAL = 1 * 60 * 1_000;
 
 // Fetch all conversations every 10 minutes
 const FETCH_CONVERSATIONS_INTERVAL = 10 * 60 * 1_000;
@@ -77,6 +74,9 @@ export async function setupBackgroundTasks(): Promise<void> {
       negativeNodesTestnet: NEGATIVE_NODES_TESTNET,
     }),
   );
+
+  // Validate donation tip setting
+  store.dispatch(validateDonateToDevelopmentTip());
 
   // Setup periodic fetch tasks
   setIntervalImmediate(updateAllNodeStatuses, STATUS_UPDATE_INTERVAL);

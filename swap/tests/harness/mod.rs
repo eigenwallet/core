@@ -18,7 +18,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use swap::asb::FixedRate;
-use swap::bitcoin::{CancelTimelock, PunishTimelock};
 use swap::cli::api;
 use swap::database::{AccessMode, SqliteDatabase};
 use swap::monero::wallet::no_listener;
@@ -29,7 +28,8 @@ use swap::protocol::alice::{AliceState, Swap, TipConfig};
 use swap::protocol::bob::BobState;
 use swap::protocol::{alice, bob, Database};
 use swap::seed::Seed;
-use swap::{asb, bitcoin, cli, monero};
+use swap::{asb, cli, monero};
+use swap_core::bitcoin::{CancelTimelock, PunishTimelock};
 use swap_env::env;
 use swap_env::env::{Config, GetConfig};
 use swap_fs::ensure_directory_exists;
@@ -63,7 +63,7 @@ pub async fn setup_test<T, F, C>(
     let cli = Cli::default();
 
     tracing_subscriber::fmt()
-        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,monero_rpc=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
+        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug,monero_wallet_ng=trace") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
         .with_test_writer()
         .init();
 
@@ -295,7 +295,7 @@ async fn start_alice(
     db_path: PathBuf,
     listen_address: Multiaddr,
     env_config: Config,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
 ) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
@@ -363,7 +363,7 @@ async fn init_test_wallets(
     electrum_rpc_port: u16,
     seed: &Seed,
     env_config: Config,
-) -> (Arc<bitcoin::Wallet>, Arc<monero::Wallets>) {
+) -> (Arc<bitcoin_wallet::Wallet>, Arc<monero::Wallets>) {
     let monerod_port = monerod_container
         .ports()
         .map_to_host_port_ipv4(image::RPC_PORT)
@@ -416,11 +416,11 @@ async fn init_test_wallets(
         Url::parse(&input).unwrap()
     };
 
-    let btc_wallet = swap::bitcoin::wallet::WalletBuilder::default()
+    let btc_wallet = bitcoin_wallet::WalletBuilder::<Seed>::default()
         .seed(seed.clone())
         .network(env_config.bitcoin_network)
         .electrum_rpc_urls(vec![electrum_rpc_url.as_str().to_string()])
-        .persister(swap::bitcoin::wallet::PersisterConfig::InMemorySqlite)
+        .persister(bitcoin_wallet::PersisterConfig::InMemorySqlite)
         .finality_confirmations(1_u32)
         .target_block(1_u32)
         .sync_interval(Duration::from_secs(3)) // high sync interval to speed up tests
@@ -519,7 +519,7 @@ impl StartingBalances {
 pub struct BobParams {
     seed: Seed,
     db_path: PathBuf,
-    bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     alice_address: Multiaddr,
     alice_peer_id: PeerId,
@@ -674,14 +674,14 @@ pub struct TestContext {
     alice_listen_address: Multiaddr,
 
     alice_starting_balances: StartingBalances,
-    alice_bitcoin_wallet: Arc<bitcoin::Wallet>,
+    alice_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     alice_monero_wallet: Arc<monero::Wallets>,
     alice_swap_handle: mpsc::Receiver<Swap>,
     alice_handle: AliceApplicationHandle,
 
     pub bob_params: BobParams,
     bob_starting_balances: StartingBalances,
-    bob_bitcoin_wallet: Arc<bitcoin::Wallet>,
+    bob_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     bob_monero_wallet: Arc<monero::Wallets>,
 
     developer_tip_monero_wallet: Arc<monero::Wallets>,
@@ -1109,7 +1109,7 @@ impl Wallet for monero::Wallet {
     }
 }
 
-impl Wallet for bitcoin::Wallet {
+impl Wallet for bitcoin_wallet::Wallet {
     type Amount = bitcoin::Amount;
 
     async fn refresh(&self) -> Result<()> {
@@ -1220,7 +1220,7 @@ pub mod bob_run_until {
     }
 
     pub fn is_lock_proof_received(state: &BobState) -> bool {
-        matches!(state, BobState::XmrLockProofReceived { .. })
+        matches!(state, BobState::XmrLockTransactionCandidate { .. })
     }
 
     pub fn is_xmr_locked(state: &BobState) -> bool {

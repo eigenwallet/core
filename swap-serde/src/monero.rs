@@ -79,6 +79,34 @@ pub mod private_key {
     }
 }
 
+pub mod optional_private_key {
+    use monero::PrivateKey;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S>(x: &Option<PrivateKey>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match x {
+            Some(key) => super::private_key::serialize(key, s),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<PrivateKey>, <D as Deserializer<'de>>::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Deserialize;
+        Option::<PrivateKeyHelper>::deserialize(deserializer).map(|opt| opt.map(|h| h.0))
+    }
+
+    #[derive(serde::Deserialize)]
+    struct PrivateKeyHelper(#[serde(with = "super::private_key")] PrivateKey);
+}
+
 pub mod amount {
     use super::*;
 
@@ -144,5 +172,26 @@ pub mod address {
             monero::Network::Mainnet
         };
         validate(address, expected_network)
+    }
+}
+
+pub mod address_serde {
+    use std::str::FromStr;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(address: &monero::Address, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        address.to_string().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<monero::Address, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        monero::Address::from_str(&s).map_err(serde::de::Error::custom)
     }
 }

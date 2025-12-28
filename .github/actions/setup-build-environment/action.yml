@@ -3,7 +3,7 @@ description: "Sets up the build environment with Node, Rust, dependencies, and t
 
 inputs:
   host:
-    description: "The host being built on (e.g., ubuntu-24.04, macos-latest)"
+    description: "The host being built on (e.g., ubuntu-24.04, macos-15)"
     required: true
   target:
     description: "Additional Rust targets to install and prepare for (e.g. x86_64-pc-windows-gnu when crossbuilding)"
@@ -26,13 +26,14 @@ runs:
       with:
         node-version: lts/*
 
-    - name: Setup yarn
+    - name: Setup yarn via corepack
+      working-directory: src-gui
       shell: bash
       run: |
-        npm install --global yarn@1
+        corepack enable
 
     - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@1.88
+      uses: dtolnay/rust-toolchain@1.90
       with:
         targets: ${{ inputs.target }}
 
@@ -74,7 +75,7 @@ runs:
     - name: Install frontend dependencies
       working-directory: src-gui
       shell: bash
-      run: yarn install --network-timeout 600000
+      run: YARN_HTTP_TIMEOUT=10m yarn install --immutable
 
     - name: Install tauri-cli via yarn
       shell: bash

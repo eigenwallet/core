@@ -6,7 +6,25 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-bdk_wallet = { workspace = true }
+backoff = { workspace = true }
+bdk = { workspace = true }
+bdk_chain = { workspace = true }
+bdk_core = { workspace = true }
+bdk_electrum = { workspace = true, features = ["use-rustls-ring"] }
+bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
 bitcoin = { workspace = true }
+derive_builder = "0.20.2"
+electrum-pool = { path = "../electrum-pool" }
+futures = { workspace = true }
+moka = { version = "0.12", features = ["sync", "future"] }
+proptest = "1"
+reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
+rust_decimal = { version = "1", features = ["serde-float"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+swap-env = { path = "../swap-env" }
+swap-proptest = { path = "../swap-proptest" }
+swap-serde = { path = "../swap-serde" }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

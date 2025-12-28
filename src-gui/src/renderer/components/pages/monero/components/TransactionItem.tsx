@@ -19,7 +19,7 @@ import {
 import ConfirmationsBadge from "./ConfirmationsBadge";
 import { getMoneroTxExplorerUrl } from "utils/conversionUtils";
 import { isTestnet } from "store/config";
-import { open } from "@tauri-apps/plugin-shell";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { useMoneroMainAddress, useMoneroSubaddresses } from "store/hooks";
@@ -194,7 +194,7 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
           </MenuItem>
           <MenuItem
             onClick={() => {
-              open(getMoneroTxExplorerUrl(transaction.tx_hash, isTestnet()));
+              openUrl(getMoneroTxExplorerUrl(transaction.tx_hash, isTestnet()));
               setMenuAnchorEl(null);
             }}
           >

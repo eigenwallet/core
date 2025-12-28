@@ -197,7 +197,7 @@ export default function SubaddressesModal({ open, onClose }: Props) {
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Monero Subaddresses</DialogTitle>
+      <DialogTitle>Subaddresses</DialogTitle>
       <DialogContent dividers>
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
           <TableContainer>
@@ -290,14 +290,10 @@ export default function SubaddressesModal({ open, onClose }: Props) {
                         display: "flex",
                         gap: 1,
                         alignItems: "center",
-                        justifyContent: "space-between",
+                        justifyContent: "flex-end",
                         flexWrap: "wrap",
                       }}
                     >
-                      <Typography variant="body2" color="text.secondary">
-                        Labels auto-save after 5 seconds of inactivity or when
-                        the field loses focus.
-                      </Typography>
                       <PromiseInvokeButton
                         startIcon={<AddOutlinedIcon />}
                         variant="contained"

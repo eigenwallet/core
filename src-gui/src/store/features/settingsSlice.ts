@@ -3,9 +3,17 @@ import { Theme } from "renderer/components/theme";
 import { DEFAULT_NODES, DEFAULT_RENDEZVOUS_POINTS } from "../defaults";
 import { Network, Blockchain } from "../types";
 
-export type DonateToDevelopmentTip = false | 0.0005 | 0.0075;
+// false = user hasn't selected yet (show dialog)
+// 0 = user explicitly selected no tip
+export type DonateToDevelopmentTip = false | 0 | 0.005 | 0.012 | 0.02;
 
-const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 14 * 24 * 60 * 60 * 1000; // 14 days
+// Options shown in the UI (excludes false since that means "not selected yet")
+export const DONATE_TO_DEVELOPMENT_OPTIONS: Exclude<
+  DonateToDevelopmentTip,
+  false
+>[] = [0, 0.005, 0.012, 0.02];
+
+const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface SettingsState {
   /// This is an ordered list of node urls for each network and blockchain
@@ -38,7 +46,7 @@ export interface SettingsState {
   /// The external Bitcoin refund address
   externalBitcoinRefundAddress: string;
   /// UTC timestamp (in milliseconds) when default nodes were last applied
-  lastAppliedDefaultNodes?: number | null;
+  lastAppliedDefaultNodesV2?: number | null;
 }
 
 export enum RedeemPolicy {
@@ -117,7 +125,7 @@ const initialState: SettingsState = {
   bitcoinRefundPolicy: RefundPolicy.Internal,
   externalMoneroRedeemAddress: "",
   externalBitcoinRefundAddress: "",
-  lastAppliedDefaultNodes: null,
+  lastAppliedDefaultNodesV2: null,
 };
 
 const alertsSlice = createSlice({
@@ -236,12 +244,11 @@ const alertsSlice = createSlice({
       }>,
     ) {
       const now = Date.now();
-      const twoWeeksInMs = 14 * 24 * 60 * 60 * 1000;
 
-      // Check if we should apply defaults (first time or more than 2 weeks)
+      // Check if we should apply defaults (first time or more than 7 days)
       if (
-        slice.lastAppliedDefaultNodes == null ||
-        now - slice.lastAppliedDefaultNodes >
+        slice.lastAppliedDefaultNodesV2 == null ||
+        now - slice.lastAppliedDefaultNodesV2 >
           MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY
       ) {
         // Remove negative nodes from mainnet
@@ -265,7 +272,7 @@ const alertsSlice = createSlice({
           if (
             !slice.nodes[Network.Mainnet][Blockchain.Bitcoin].includes(node)
           ) {
-            slice.nodes[Network.Mainnet][Blockchain.Bitcoin].push(node);
+            slice.nodes[Network.Mainnet][Blockchain.Bitcoin].unshift(node);
           }
         });
 
@@ -276,13 +283,37 @@ const alertsSlice = createSlice({
           if (
             !slice.nodes[Network.Testnet][Blockchain.Bitcoin].includes(node)
           ) {
-            slice.nodes[Network.Testnet][Blockchain.Bitcoin].push(node);
+            slice.nodes[Network.Testnet][Blockchain.Bitcoin].unshift(node);
           }
         });
 
         // Update the timestamp
-        slice.lastAppliedDefaultNodes = now;
+        slice.lastAppliedDefaultNodesV2 = now;
       }
+    },
+    /// Validates the donate to development tip setting.
+    /// If the current tip is not in the valid options array, it will be replaced
+    /// with the closest smaller valid option.
+    /// false means "not yet selected" and is kept as-is
+    validateDonateToDevelopmentTip(slice) {
+      const currentTip = slice.donateToDevelopment;
+
+      // false means "not yet selected" - keep it to show the dialog
+      if (currentTip === false) {
+        return;
+      }
+
+      // Check if current tip is a valid option
+      if (DONATE_TO_DEVELOPMENT_OPTIONS.includes(currentTip)) {
+        return;
+      }
+
+      // Invalid numeric tip - find closest smaller valid option
+      const sorted = [...DONATE_TO_DEVELOPMENT_OPTIONS].sort((a, b) => b - a);
+      const match = sorted.find((o) => o <= currentTip);
+
+      // If no match was found, set to false to show the dialog and let the user choose explicitly
+      slice.donateToDevelopment = match ?? false;
     },
   },
 });
@@ -307,6 +338,7 @@ export const {
   setMoneroRedeemAddress,
   setBitcoinRefundAddress,
   applyDefaultNodes,
+  validateDonateToDevelopmentTip,
 } = alertsSlice.actions;
 
 export default alertsSlice.reducer;

@@ -415,6 +415,35 @@ pub mod ffi {
             address_index: u32,
             label: &CxxString,
         ) -> Result<()>;
+
+        /**
+         * Get a reserve proof that proves the wallet has a certain amount of Monero.
+         * If `all` is true, proves the entire balance; otherwise proves at least `amount` piconero.
+         */
+        fn getReserveProof(
+            wallet: &Wallet,
+            all: bool,
+            account_index: u32,
+            amount: u64,
+            message: &CxxString,
+        ) -> Result<UniquePtr<CxxString>>;
+
+        /**
+         * Check a reserve proof against an address.
+         * Returns true if the check completed without errors, false if an error occurred
+         * (e.g., invalid address, address is a subaddress, or exception during verification).
+         * The `good` out-parameter indicates whether the proof is actually valid.
+         * `total` and `spent` are in piconero.
+         */
+        fn checkReserveProof(
+            wallet: &Wallet,
+            address: &CxxString,
+            message: &CxxString,
+            signature: &CxxString,
+            good: &mut bool,
+            total: &mut u64,
+            spent: &mut u64,
+        ) -> Result<bool>;
     }
 }
 

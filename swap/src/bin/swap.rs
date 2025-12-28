@@ -47,8 +47,8 @@ mod tests {
     use swap::cli::api::request::determine_btc_to_swap;
     use swap::cli::QuoteWithAddress;
     use swap::network::quote::BidQuote;
-    use swap::tracing_ext::capture_logs;
     use tracing::level_filters::LevelFilter;
+    use tracing_ext::capture_logs;
 
     const SWAP_ID: &str = "ea030832-3be9-454f-bb98-5ea9a788406b";
 
@@ -424,6 +424,7 @@ mod tests {
                 price: Amount::from_btc(0.001).unwrap(),
                 max_quantity,
                 min_quantity,
+                reserve_proof: None,
             },
             version: Some("1.0.0".parse().unwrap()),
         }]);

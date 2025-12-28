@@ -8,3 +8,5 @@
 
 # Tauri windows .dll dependencies - build by `just prepare-windows-build`
 *.dll
+
+.yarn/

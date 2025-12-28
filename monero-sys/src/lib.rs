@@ -16,14 +16,13 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
-use throttle::Throttle;
-
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
     path::PathBuf, pin::Pin, str::FromStr, time::Duration,
 };
+use throttle::Throttle;
 
 use anyhow::{anyhow, bail, Context, Result};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
@@ -125,6 +124,17 @@ pub struct TxStatus {
     pub in_pool: bool,
     /// The number of confirmations the transaction has.
     pub confirmations: u64,
+}
+
+/// The result of checking a reserve proof.
+#[derive(Debug, Clone)]
+pub struct ReserveProofStatus {
+    /// Whether the proof is valid.
+    pub good: bool,
+    /// The total amount proven
+    pub total: monero::Amount,
+    /// The amount that has been spent from the proven outputs.
+    pub spent: monero::Amount,
 }
 
 /// A receipt returned after successfully publishing a transaction.
@@ -930,73 +940,6 @@ impl WalletHandle {
             .await?
     }
 
-    /// Wait until a transaction is confirmed.
-    pub async fn wait_until_confirmed(
-        &self,
-        txid: String,
-        tx_key: monero::PrivateKey,
-        destination_address: &monero::Address,
-        expected_amount: monero::Amount,
-        confirmations: u64,
-        listener: Option<impl Fn((u64, u64)) + Send + 'static>,
-    ) -> anyhow::Result<()> {
-        tracing::info!(%txid, %destination_address, amount=%expected_amount, %confirmations, "Waiting until transaction is confirmed");
-
-        const DEFAULT_CHECK_INTERVAL_SECS: u64 = 15;
-
-        let mut poll_interval = tokio::time::interval(tokio::time::Duration::from_secs(
-            DEFAULT_CHECK_INTERVAL_SECS,
-        ));
-
-        loop {
-            poll_interval.tick().await;
-
-            let tx_status = match self
-                .check_tx_status(txid.clone(), tx_key, destination_address)
-                .await
-            {
-                Ok(tx_status) => tx_status,
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to check tx status: {}, rechecking in {}s",
-                        e,
-                        DEFAULT_CHECK_INTERVAL_SECS
-                    );
-                    continue;
-                }
-            };
-
-            // Make sure the amount is correct
-            if tx_status.received != expected_amount {
-                tracing::error!(
-                    "Transaction received amount mismatch: expected {}, got {}",
-                    expected_amount,
-                    tx_status.received
-                );
-                return Err(anyhow::anyhow!(
-                    "Transaction received amount mismatch: expected {}, got {}",
-                    expected_amount,
-                    tx_status.received
-                ));
-            }
-
-            // If the listener exists, notify it of the result
-            if let Some(listener) = &listener {
-                listener((tx_status.confirmations, confirmations));
-            }
-
-            // Stop when we have the required number of confirmations
-            if tx_status.confirmations >= confirmations {
-                break;
-            }
-
-            tracing::trace!("Transaction not confirmed yet, polling again later");
-        }
-
-        // Signal success
-        Ok(())
-    }
-
     /// Creates pending transaction, gets approval, then publishes or disposes based on approval.
     /// Return `None` if the transaction is not published, `Some(receipt)` if it is published.
     /// If the amount is `None`, the transaction will be a sweep (whole balance)
@@ -1149,6 +1092,51 @@ impl WalletHandle {
             wallet.sign_message(&message, address.as_deref(), sign_with_view_key)
         })
         .await?
+    }
+
+    /// Get a reserve proof that proves the wallet has a certain amount of XMR.
+    ///
+    /// # Arguments
+    /// * `account_index` - The account index to generate the proof for
+    /// * `amount` - The minimum amount to prove, or `None` to prove the entire balance
+    /// * `message` - A message to include in the proof
+    ///
+    /// # Returns
+    /// A reserve proof string that can be verified with `check_reserve_proof`
+    pub async fn get_reserve_proof(
+        &self,
+        account_index: u32,
+        amount: Option<monero::Amount>,
+        message: &str,
+    ) -> anyhow::Result<String> {
+        let message = message.to_string();
+
+        self.call(move |wallet| wallet.get_reserve_proof(account_index, amount, &message))
+            .await?
+    }
+
+    /// Check a reserve proof against an address.
+    ///
+    /// # Arguments
+    /// * `address` - The address that generated the proof
+    /// * `message` - The message that was included in the proof
+    /// * `signature` - The reserve proof signature to verify
+    ///
+    /// # Returns
+    /// A `ReserveProofStatus` containing whether the proof is valid, the total amount,
+    /// and the spent amount.
+    pub async fn check_reserve_proof(
+        &self,
+        address: &monero::Address,
+        message: &str,
+        signature: &str,
+    ) -> anyhow::Result<ReserveProofStatus> {
+        let address = *address;
+        let message = message.to_string();
+        let signature = signature.to_string();
+
+        self.call(move |wallet| wallet.check_reserve_proof(&address, &message, &signature))
+            .await?
     }
 }
 
@@ -2838,6 +2826,91 @@ impl FfiWallet {
         }
 
         Ok(signature)
+    }
+
+    /// Get a reserve proof that proves the wallet has a certain amount of XMR.
+    ///
+    /// # Arguments
+    /// * `account_index` - The account index to generate the proof for
+    /// * `amount` - The minimum amount to prove, or `None` to prove the entire balance
+    /// * `message` - An optional message to include in the proof
+    ///
+    /// # Returns
+    /// A reserve proof string that can be verified with `check_reserve_proof`
+    pub fn get_reserve_proof(
+        &self,
+        account_index: u32,
+        amount: Option<monero::Amount>,
+        message: &str,
+    ) -> anyhow::Result<String> {
+        let_cxx_string!(message_cxx = message);
+
+        let (all, amount_pico) = match amount {
+            Some(amt) => (false, amt.as_pico()),
+            None => (true, 0),
+        };
+
+        let proof =
+            ffi::getReserveProof(&self.inner, all, account_index, amount_pico, &message_cxx)
+                .context("Failed to construct reserve proof: FFI call failed with exception")?
+                .to_string();
+
+        // If the proof is empty, it cannot be valid
+        if proof.is_empty() {
+            self.check_error()
+                .context("Failed to construct reserve proof")?;
+            anyhow::bail!("Failed to construct reserve proof because wallet2 returned an empty string but no error was returned");
+        }
+
+        Ok(proof)
+    }
+
+    /// Check a reserve proof against an address.
+    ///
+    /// # Arguments
+    /// * `address` - The address that generated the proof
+    /// * `message` - The message that was included in the proof
+    /// * `signature` - The reserve proof signature to verify
+    ///
+    /// # Returns
+    /// A `ReserveProofStatus` containing whether the proof is valid, the total amount,
+    /// and the spent amount.
+    pub fn check_reserve_proof(
+        &self,
+        address: &monero::Address,
+        message: &str,
+        signature: &str,
+    ) -> anyhow::Result<ReserveProofStatus> {
+        let_cxx_string!(address_cxx = address.to_string());
+        let_cxx_string!(message_cxx = message);
+        let_cxx_string!(signature_cxx = signature);
+
+        let mut good = false;
+        let mut total = 0u64;
+        let mut spent = 0u64;
+
+        let success = ffi::checkReserveProof(
+            &self.inner,
+            &address_cxx,
+            &message_cxx,
+            &signature_cxx,
+            &mut good,
+            &mut total,
+            &mut spent,
+        )
+        .context("Failed to check reserve proof: FFI call failed with exception")?;
+
+        if !success {
+            self.check_error()
+                .context("Failed to check reserve proof")?;
+            anyhow::bail!("Failed to check reserve proof");
+        }
+
+        Ok(ReserveProofStatus {
+            good,
+            total: monero::Amount::from_pico(total),
+            spent: monero::Amount::from_pico(spent),
+        })
     }
 }
 

@@ -16,6 +16,7 @@ use swap_env::env;
 pub use crate::protocol::bob::swap::*;
 pub use swap_machine::bob::*;
 
+pub(crate) mod common;
 pub mod swap;
 
 pub struct Swap {

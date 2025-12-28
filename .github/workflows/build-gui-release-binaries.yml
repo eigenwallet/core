@@ -34,9 +34,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - host: "macos-latest" # for Arm based macs (M1 and above).
+          - host: "macos-15" # for Arm based macs (M1 and above).
             target: "aarch64-apple-darwin"
-          - host: "macos-13" # for Intel based macs.
+          - host: "macos-15-intel" # for Intel based macs.
             target: "x86_64-apple-darwin"
           - host: "ubuntu-24.04"
             target: "x86_64-unknown-linux-gnu"
@@ -140,6 +140,8 @@ jobs:
               -u "$GPG_FPR" --armor --output "${file}.asc" --detach-sign "$file"
           done
 
+
+          
       - name: Upload artifact signatures to GitHub release
         if: github.event_name == 'release'
         shell: bash
@@ -155,6 +157,13 @@ jobs:
               "$sig_file" \
               --clobber
           done
+
+      - name: Clean up Rust build cache before building Flatpak
+        if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && matrix.target == 'x86_64-unknown-linux-gnu' }}
+        shell: bash
+        run: |
+          rm -rf target/*/release/{deps,build,incremental}
+          df -h .
 
       - name: Upload flatpak release
         if: ${{ github.event_name != 'pull_request' && !contains(github.ref_name, 'preview') && matrix.target == 'x86_64-unknown-linux-gnu' }}

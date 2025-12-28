@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.3] - 2025-12-23
+
+## [3.6.2] - 2025-12-22
+
+## [3.6.1] - 2025-12-15
+
+- GUI (Taker): Previously takers had to receive the Monero transfer proof from the maker over the network. This required interactivity meaning that if the peer-to-peer connection was lost, the taker might not detect that the Monero were locked. This would cause unnecessary refunds of swaps that could have otherwise succeded. The taker will now scan the view-only Monero wallet in the background (while concurrently waiting for the transfer proof over the network). The taker will detect if the Monero are locked even if peer-to-peer connection to the other party is lost. This significantly improves the reliability of swaps.
+- GUI: Fix an issue where it'd take a while for swaps to show up after a restart.
+
+## [3.5.2] - 2025-12-08
+
+## [3.5.1] - 2025-12-07
+
 ## [3.5.0] - 2025-12-04
 
 - ASB: Now also uses Bitfinex and KuCoin as a source of truth for XMR/BTC exchange rates. It is used to calculate the base price for quotes upon which the markup is then added. If one or two of the three exchanges is unreachable, it will fallback to the arithmetic average of the rate of the remaining available exchanges.
@@ -798,7 +811,13 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.5.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.6.3...HEAD
+[3.6.3]: https://github.com/eigenwallet/core/compare/3.6.2...3.6.3
+[3.6.2]: https://github.com/eigenwallet/core/compare/3.6.1...3.6.2
+[3.6.1]: https://github.com/eigenwallet/core/compare/3.6.0...3.6.1
+[3.6.0]: https://github.com/eigenwallet/core/compare/3.5.2...3.6.0
+[3.5.2]: https://github.com/eigenwallet/core/compare/3.5.1...3.5.2
+[3.5.1]: https://github.com/eigenwallet/core/compare/3.5.0...3.5.1
 [3.5.0]: https://github.com/eigenwallet/core/compare/3.4.2...3.5.0
 [3.4.2]: https://github.com/eigenwallet/core/compare/3.4.1...3.4.2
 [3.4.1]: https://github.com/eigenwallet/core/compare/3.4.0...3.4.1

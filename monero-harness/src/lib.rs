@@ -28,8 +28,8 @@ use testcontainers::{Container, RunnableImage};
 use tokio::time;
 
 use monero::{Address, Amount};
-use monero_rpc::monerod::MonerodRpc as _;
-use monero_rpc::monerod::{self, GenerateBlocks};
+use monero_daemon_rpc::MoneroDaemon;
+use monero_simple_request_rpc::SimpleRequestTransport;
 use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
 use std::collections::HashMap;
 use monero_sys::SubaddressSummary;
@@ -82,7 +82,7 @@ impl<'c> Monero {
         let network = format!("{}{}", prefix, MONEROD_DEFAULT_NETWORK);
 
         tracing::info!("Starting monerod: {}", monerod_name);
-        let (monerod, monerod_container) = Monerod::new(cli, monerod_name, network)?;
+        let (monerod, monerod_container) = Monerod::new(cli, monerod_name, network).await?;
         let containers: Vec<Container<'c, image::MoneroWalletRpc>> = vec![];
         let mut wallets = vec![];
 
@@ -184,31 +184,22 @@ impl<'c> Monero {
         // Generate the first 120 blocks in bulk
         let amount_of_blocks = 120;
         let monerod = &self.monerod;
-        let res = monerod
-            .generate_blocks(amount_of_blocks, miner_address.clone())
+        let blocks = monerod
+            .generate_blocks(amount_of_blocks, &miner_address)
             .await
             .context("Failed to generate blocks")?;
-        tracing::info!(
-            "Generated {:?} blocks to {}",
-            res.blocks.len(),
-            miner_address
-        );
-        if res.blocks.len() < amount_of_blocks.try_into().unwrap() {
+        tracing::info!("Generated {:?} blocks to {}", blocks, miner_address);
+        if blocks < amount_of_blocks.try_into().unwrap() {
             tracing::error!(
                 "Expected to generate {} blocks, but only generated {}",
                 amount_of_blocks,
-                res.blocks.len()
+                blocks
             );
             bail!("Failed to generate enough blocks");
         }
 
         // Make sure to refresh the wallet to see the new balance
-        let block_height = monerod.client().get_block_count().await?.count as u64;
-
-        tracing::info!(
-            "Waiting for miner wallet to catch up to blockchain height {}",
-            block_height
-        );
+        tracing::info!("Waiting for miner wallet to catch up to blockchain",);
         miner_wallet.refresh().await?;
 
         // Debug: Check wallet balance after initial block generation
@@ -274,7 +265,7 @@ impl<'c> Monero {
             name,
             Amount::from_pico(expected_total)
         );
-        monerod.generate_blocks(10, miner_address.clone()).await?;
+        monerod.generate_blocks(10, &miner_address).await?;
         tracing::info!("Generated 10 blocks to unlock. Waiting for wallet to catch up.");
         tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -311,9 +302,7 @@ impl<'c> Monero {
     pub async fn generate_block(&self) -> Result<()> {
         let miner_wallet = self.wallet("miner")?;
         let miner_address = miner_wallet.address().await?.to_string();
-        self.monerod()
-            .generate_blocks(15, miner_address.clone())
-            .await?;
+        self.monerod().generate_blocks(15, &miner_address).await?;
         Ok(())
     }
 
@@ -353,7 +342,7 @@ fn random_prefix() -> String {
 pub struct Monerod {
     name: String,
     network: String,
-    client: monerod::Client,
+    client: MoneroDaemon<SimpleRequestTransport>,
     rpc_port: u16,
 }
 
@@ -373,7 +362,7 @@ pub type MoneroWalletRpc = MoneroWallet;
 
 impl<'c> Monerod {
     /// Starts a new regtest monero container.
-    fn new(
+    async fn new(
         cli: &'c Cli,
         name: String,
         network: String,
@@ -390,14 +379,18 @@ impl<'c> Monerod {
             Self {
                 name,
                 network,
-                client: monerod::Client::localhost(monerod_rpc_port)?,
+                client: SimpleRequestTransport::new(format!(
+                    "http://127.0.0.1:{}",
+                    monerod_rpc_port
+                ))
+                .await?,
                 rpc_port: monerod_rpc_port,
             },
             container,
         ))
     }
 
-    pub fn client(&self) -> &monerod::Client {
+    pub fn client(&self) -> &MoneroDaemon<SimpleRequestTransport> {
         &self.client
     }
 
@@ -405,28 +398,23 @@ impl<'c> Monerod {
     /// address
     pub async fn start_miner(&self, miner_wallet_address: &str) -> Result<()> {
         let monerod = self.client().clone();
-        tokio::spawn(mine(monerod, miner_wallet_address.to_string()));
+        let address =
+            monero_address::MoneroAddress::from_str_with_unchecked_network(miner_wallet_address)?;
+        tokio::spawn(mine(monerod, address));
         Ok(())
     }
 
     /// Maybe this helps with wallet syncing?
-    pub async fn generate_blocks(
-        &self,
-        amount: u64,
-        address: impl Into<String>,
-    ) -> Result<GenerateBlocks> {
-        let address = address.into();
+    pub async fn generate_blocks(&self, amount: u64, address: &str) -> Result<u64> {
+        let address = monero_address::MoneroAddress::from_str_with_unchecked_network(address)?;
 
         for _ in 0..amount {
-            self.client().generateblocks(1, address.clone()).await?;
+            self.client().generate_blocks(&address, 1).await?;
             tracing::trace!("Generated block, sleeping for 250ms");
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
 
-        Ok(GenerateBlocks {
-            blocks: vec!["".to_string(); amount.try_into().unwrap()],
-            height: u32::try_from(amount).unwrap(),
-        })
+        Ok(amount)
     }
 }
 
@@ -591,12 +579,19 @@ impl MoneroWallet {
     pub async fn blockchain_height(&self) -> Result<u64> {
         self.wallet.blockchain_height().await
     }
+
+    pub fn wallet(&self) -> &WalletHandle {
+        &self.wallet
+    }
 }
 
 /// Mine a block ever BLOCK_TIME_SECS seconds.
-async fn mine(monerod: monerod::Client, reward_address: String) -> Result<()> {
+async fn mine(
+    monerod: MoneroDaemon<SimpleRequestTransport>,
+    reward_address: monero_address::MoneroAddress,
+) -> Result<()> {
     loop {
         time::sleep(Duration::from_secs(BLOCK_TIME_SECS)).await;
-        monerod.generateblocks(1, reward_address.clone()).await?;
+        monerod.generate_blocks(&reward_address, 1).await?;
     }
 }

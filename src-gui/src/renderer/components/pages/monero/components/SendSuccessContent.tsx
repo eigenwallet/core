@@ -9,13 +9,13 @@ import ArrowOutwardIcon from "@mui/icons-material/ArrowOutward";
 import { SendMoneroResponse } from "models/tauriModel";
 import { getMoneroTxExplorerUrl } from "../../../../../utils/conversionUtils";
 import { isTestnet } from "store/config";
-import { open } from "@tauri-apps/plugin-shell";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 export default function SendSuccessContent({
   onClose,
   successDetails,
 }: {
-  onClose: () => void;
+  onClose: (event: unknown, reason: string) => void;
   successDetails: SendMoneroResponse | null;
 }) {
   const address = successDetails?.address;
@@ -91,7 +91,11 @@ export default function SendSuccessContent({
           gap: 1,
         }}
       >
-        <Button onClick={onClose} variant="contained" color="primary">
+        <Button
+          onClick={() => onClose({}, "buttonClick")}
+          variant="contained"
+          color="primary"
+        >
           Done
         </Button>
         <Button
@@ -101,7 +105,7 @@ export default function SendSuccessContent({
           endIcon={<ArrowOutwardIcon />}
           onClick={() => {
             if (explorerUrl != null) {
-              open(explorerUrl);
+              openUrl(explorerUrl);
             }
           }}
         >

@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
 config = { version = "0.14", default-features = false, features = ["toml"] }
-console = "0.16"
+console = { workspace = true }
 dialoguer = { workspace = true }
 libp2p = { workspace = true, features = ["serde"] }
 monero = { workspace = true }
@@ -15,7 +15,6 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 swap-fs = { path = "../swap-fs" }
 swap-serde = { path = "../swap-serde" }
-terminal_size = "0.4"
 thiserror = { workspace = true }
 time = "0.3"
 toml = { workspace = true }

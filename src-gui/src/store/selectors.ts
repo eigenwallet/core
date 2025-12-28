@@ -10,12 +10,18 @@ import {
 const selectRpcState = (state: RootState) => state.rpc.state;
 const selectP2pState = (state: RootState) => state.p2p;
 
-export const selectAllSwapIds = createSelector([selectRpcState], (rpcState) =>
-  Object.keys(rpcState.swapInfos),
+export const selectSwapInfosRaw = createSelector(
+  [selectRpcState],
+  (rpcState) => rpcState.swapInfos,
 );
 
-export const selectAllSwapInfos = createSelector([selectRpcState], (rpcState) =>
-  Object.values(rpcState.swapInfos),
+export const selectAllSwapIds = createSelector([selectRpcState], (rpcState) =>
+  rpcState.swapInfos ? Object.keys(rpcState.swapInfos) : [],
+);
+
+export const selectAllSwapInfos = createSelector(
+  [selectRpcState],
+  (rpcState) => (rpcState.swapInfos ? Object.values(rpcState.swapInfos) : []),
 );
 
 export const selectSwapTimelocks = createSelector(
@@ -36,6 +42,7 @@ export const selectSwapInfoWithTimelock = (swapId: string) =>
     ):
       | (GetSwapInfoResponseExt & { timelock: ExpiredTimelocks | null })
       | null => {
+      if (!rpcState.swapInfos) return null;
       const swapInfo = rpcState.swapInfos[swapId];
       if (!swapInfo) return null;
       return {

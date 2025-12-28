@@ -43,31 +43,6 @@ impl Seed {
         Ok(Seed(*monero_seed.entropy()))
     }
 
-    pub fn derive_extended_private_key(
-        &self,
-        network: bitcoin::Network,
-    ) -> Result<ExtendedPrivKey> {
-        let seed = self.derive(b"BITCOIN_EXTENDED_PRIVATE_KEY").bytes();
-        let private_key = ExtendedPrivKey::new_master(network, &seed)
-            .with_context(|| "Failed to create new master extended private key")?;
-
-        Ok(private_key)
-    }
-
-    /// Same as `derive_extended_private_key`, but using the legacy BDK API.
-    ///
-    /// This is only used for the migration path from the old wallet format to the new one.
-    pub fn derive_extended_private_key_legacy(
-        &self,
-        network: bdk::bitcoin::Network,
-    ) -> Result<bdk::bitcoin::util::bip32::ExtendedPrivKey> {
-        let seed = self.derive(b"BITCOIN_EXTENDED_PRIVATE_KEY").bytes();
-        let private_key = bdk::bitcoin::util::bip32::ExtendedPrivKey::new_master(network, &seed)
-            .with_context(|| "Failed to create new master extended private key")?;
-
-        Ok(private_key)
-    }
-
     pub fn derive_libp2p_identity(&self) -> identity::Keypair {
         let bytes = self.derive(b"NETWORK").derive(b"LIBP2P_IDENTITY").bytes();
 
@@ -159,6 +134,30 @@ impl Seed {
     }
 }
 
+impl bitcoin_wallet::BitcoinWalletSeed for Seed {
+    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<ExtendedPrivKey> {
+        let seed = self.derive(b"BITCOIN_EXTENDED_PRIVATE_KEY").bytes();
+        let private_key = ExtendedPrivKey::new_master(network, &seed)
+            .with_context(|| "Failed to create new master extended private key")?;
+
+        Ok(private_key)
+    }
+
+    /// Same as `derive_extended_private_key`, but using the legacy BDK API.
+    ///
+    /// This is only used for the migration path from the old wallet format to the new one.
+    fn derive_extended_private_key_legacy(
+        &self,
+        network: bdk::bitcoin::Network,
+    ) -> Result<bdk::bitcoin::util::bip32::ExtendedPrivKey> {
+        let seed = self.derive(b"BITCOIN_EXTENDED_PRIVATE_KEY").bytes();
+        let private_key = bdk::bitcoin::util::bip32::ExtendedPrivKey::new_master(network, &seed)
+            .with_context(|| "Failed to create new master extended private key")?;
+
+        Ok(private_key)
+    }
+}
+
 impl fmt::Debug for Seed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Seed([*****])")
@@ -212,9 +211,6 @@ mod tests {
 
     #[test]
     fn seed_from_pem_works() {
-        use base64::engine::general_purpose;
-        use base64::Engine;
-
         let payload: &str = "syl9wSYaruvgxg9P5Q1qkZaq5YkM6GvXkxe+VYrL/XM=";
 
         // 32 bytes base64 encoded.
@@ -223,7 +219,7 @@ syl9wSYaruvgxg9P5Q1qkZaq5YkM6GvXkxe+VYrL/XM=
 -----END SEED-----
 ";
 
-        let want = general_purpose::STANDARD.decode(payload).unwrap();
+        let want = data_encoding::BASE64.decode(payload.as_bytes()).unwrap();
         let pem = pem::parse(pem_string).unwrap();
         let got = Seed::from_pem(pem).unwrap();
 

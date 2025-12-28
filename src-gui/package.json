@@ -31,7 +31,6 @@
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.5.0",
     "@tauri-apps/plugin-process": "^2.3.0",
-    "@tauri-apps/plugin-shell": "^2.3.0",
     "@tauri-apps/plugin-store": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.9.0",
     "dayjs": "^1.11.13",
@@ -78,5 +77,6 @@
     "vite-plugin-watch": "^0.3.1",
     "vite-tsconfig-paths": "^4.3.2",
     "vitest": "^2.1.1"
-  }
+  },
+  "packageManager": "yarn@4.12.0"
 }

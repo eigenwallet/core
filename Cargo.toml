@@ -5,10 +5,11 @@ members = [
   "electrum-pool",
   "libp2p-rendezvous-node",
   "libp2p-tor",
-  "monero-rpc",
   "monero-rpc-pool",
   "monero-sys",
   "monero-tests",
+  "monero-wallet",
+  "monero-wallet-ng",
   "src-tauri",
   "swap",
   "swap-asb",
@@ -25,6 +26,7 @@ members = [
   "swap-proptest",
   "swap-serde",
   "throttle",
+  "tracing-ext",
 ]
 
 [workspace.dependencies]
@@ -36,14 +38,25 @@ bdk_electrum = { version = "0.23.0", default-features = false }
 bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
+# monero-oxide
+monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet", branch = "rpc-rewrite" }
+monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+
 # Cryptography
-curve25519-dalek = { version = "4", package = "curve25519-dalek-ng" }
+curve25519-dalek = { version = "4", package = "curve25519-dalek", features = ["rand_core", "serde"] }
+curve25519-dalek-ng = { package = "curve25519-dalek-ng", version = "4" }
 ecdsa_fun = { version = "0.10", default-features = false, features = ["libsecp_compat", "serde", "adaptor"] }
 rand = "0.8"
+
 # Randomness
 rand_chacha = "0.3"
 sha2 = "0.10"
 sigma_fun = { version = "0.7", default-features = false }
+zeroize = "^1.5"
 
 # Async
 async-trait = "0.1"
@@ -63,12 +76,12 @@ monero = { version = "0.12", features = ["serde_support"] }
 once_cell = "1.19"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
-rust_decimal_macros = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
 
 data-encoding = "2.6.0"
+hex = "0.4"
 toml = "0.9.5"
 tracing = { version = "0.1", features = ["attributes"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "time", "tracing-log", "json"] }
@@ -77,6 +90,7 @@ url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 
 # Tokio
+testcontainers = "0.15"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 
@@ -89,6 +103,7 @@ tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_
 tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 
 # Terminal Utilities
+console = "0.16"
 dialoguer = "0.11"
 
 # Our dependencies in other git repositories

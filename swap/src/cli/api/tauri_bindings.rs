@@ -8,7 +8,7 @@ use crate::{monero, network::quote::BidQuote};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use bitcoin::Txid;
-use libp2p::{Multiaddr, PeerId};
+use libp2p::PeerId;
 use monero_rpc_pool::pool::PoolStatus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -448,6 +448,92 @@ impl TauriHandle {
                 Err(anyhow!("Approval not found or already handled"))
             }
         }
+    }
+}
+
+struct BitcoinTauriHandle(TauriHandle);
+
+impl Into<bitcoin_wallet::TauriHandle> for TauriHandle {
+    fn into(self) -> bitcoin_wallet::TauriHandle {
+        Some(Arc::new(BitcoinTauriHandle(self)))
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriHandle for BitcoinTauriHandle {
+    fn start_full_scan(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::FullScanningBitcoinWallet,
+            TauriBitcoinFullScanProgress::Unknown,
+        ))
+    }
+
+    fn start_sync(&self) -> Arc<dyn bitcoin_wallet::BitcoinTauriBackgroundTask> {
+        Arc::new(self.0.new_background_process_with_initial_progress(
+            TauriBackgroundProgress::SyncingBitcoinWallet,
+            TauriBitcoinSyncProgress::Unknown,
+        ))
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriBackgroundTask
+    for TauriBackgroundProgressHandle<TauriBitcoinFullScanProgress>
+{
+    fn update(&self, consumed: u64, total: u64) {
+        self.update(TauriBitcoinFullScanProgress::Known {
+            current_index: consumed,
+            assumed_total: total,
+        });
+    }
+
+    fn finish(&self) {
+        TauriBackgroundProgressHandle::finish(self)
+    }
+}
+
+impl bitcoin_wallet::BitcoinTauriBackgroundTask
+    for TauriBackgroundProgressHandle<TauriBitcoinSyncProgress>
+{
+    fn update(&self, consumed: u64, total: u64) {
+        self.update(TauriBitcoinSyncProgress::Known { consumed, total });
+    }
+
+    fn finish(&self) {
+        TauriBackgroundProgressHandle::finish(self)
+    }
+}
+
+struct MoneroTauriHandle(TauriHandle);
+
+impl Into<monero_wallet::TauriHandle> for TauriHandle {
+    fn into(self) -> monero_wallet::TauriHandle {
+        Arc::new(MoneroTauriHandle(self))
+    }
+}
+
+impl monero_wallet::MoneroTauriHandle for MoneroTauriHandle {
+    fn balance_change(&self, total_balance: monero::Amount, unlocked_balance: monero::Amount) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::BalanceChange(GetMoneroBalanceResponse {
+                total_balance,
+                unlocked_balance,
+            }),
+        ))
+    }
+
+    fn history_update(&self, transactions: Vec<monero_sys::TransactionInfo>) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::HistoryUpdate(GetMoneroHistoryResponse { transactions }),
+        ))
+    }
+
+    fn sync_progress(&self, current_block: u64, target_block: u64, progress_percentage: f32) {
+        self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
+            MoneroWalletUpdate::SyncProgress(GetMoneroSyncProgressResponse {
+                current_block,
+                target_block,
+                progress_percentage,
+            }),
+        ))
     }
 }
 
@@ -956,6 +1042,10 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "Option<number>")]
         btc_lock_confirmations: Option<u64>,
     },
+    VerifyingXmrLockTx {
+        #[typeshare(serialized_as = "string")]
+        xmr_lock_txid: monero::TxHash,
+    },
     XmrLockTxInMempool {
         #[typeshare(serialized_as = "string")]
         xmr_lock_txid: monero::TxHash,
@@ -964,7 +1054,8 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         xmr_lock_tx_target_confirmations: u64,
     },
-    XmrLocked,
+    PreflightEncSig,
+    InflightEncSig,
     EncryptedSignatureSent,
     RedeemingMonero,
     WaitingForXmrConfirmationsBeforeRedeem {
@@ -980,6 +1071,7 @@ pub enum TauriSwapProgressEvent {
         xmr_redeem_txids: Vec<monero::TxHash>,
         xmr_receive_pool: MoneroAddressPool,
     },
+    WaitingForCancelTimelockExpiration, // TODO: Add current confirmations and target confirmations here?
     CancelTimelockExpired,
     BtcCancelled {
         #[typeshare(serialized_as = "string")]

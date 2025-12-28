@@ -222,6 +222,9 @@ mod crates {
 
     pub const OUR_CRATES: &[&str] = &[
         // Library crates
+        "bitcoin_wallet",
+        "monero_wallet",
+        "monero_wallet_ng",
         "swap_p2p",
         "swap_env",
         "swap_core",
@@ -229,6 +232,7 @@ mod crates {
         "swap_serde",
         "swap_feed",
         "monero_sys",
+        "tracing_ext",
         // Binary crates
         "swap",
         "asb",

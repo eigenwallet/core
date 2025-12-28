@@ -9,6 +9,7 @@ async-trait = { workspace = true }
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
 curve25519-dalek = { workspace = true }
+curve25519-dalek-ng = { workspace = true }
 ecdsa_fun = { workspace = true }
 libp2p = { workspace = true }
 monero = { workspace = true }
@@ -22,6 +23,9 @@ swap-env = { path = "../swap-env" }
 swap-serde = { path = "../swap-serde" }
 thiserror = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
 
 [lints]
 workspace = true

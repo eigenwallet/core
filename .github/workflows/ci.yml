@@ -81,9 +81,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-15-intel
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-15
           - target: x86_64-pc-windows-gnu
             os: ubuntu-22.04
 
@@ -116,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest]
+        os: [ubuntu-22.04, macos-15]
     runs-on: ${{ matrix.host }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
@@ -180,6 +180,12 @@ jobs:
             test_name: alice_empty_balance_after_started_btc_early_refund
           - package: swap
             test_name: alice_broken_wallet_rpc_after_started_btc_early_refund
+          - package: swap
+            test_name: happy_path_alice_does_not_send_transfer_proof
+          - package: monero-tests
+            test_name: reserve_proof
+          - package: monero-tests
+            test_name: transaction_keys
           - package: monero-tests
             test_name: transfers
           - package: monero-tests
