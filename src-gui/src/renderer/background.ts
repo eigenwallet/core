@@ -41,6 +41,7 @@ import {
   NEGATIVE_NODES_MAINNET,
   NEGATIVE_NODES_TESTNET,
 } from "store/defaults";
+import { setSubaddresses } from "store/features/walletSlice";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 
@@ -184,6 +185,9 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
       }
       if (eventData.type === "SyncProgress") {
         store.dispatch(setSyncProgress(eventData.content));
+      }
+      if (eventData.type === "SubaddressesUpdate") {
+        store.dispatch(setSubaddresses(eventData.content.subaddresses));
       }
       break;
 

@@ -7,15 +7,17 @@ use swap::cli::{
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
-            CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, DfxAuthenticateResponse,
-            ExportBitcoinWalletArgs, GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs,
-            GetHistoryArgs, GetLogsArgs, GetMoneroAddressesArgs, GetMoneroBalanceArgs,
-            GetMoneroHistoryArgs, GetMoneroMainAddressArgs, GetMoneroSeedArgs,
+            CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, CreateMoneroSubaddressArgs,
+            DfxAuthenticateResponse, ExportBitcoinWalletArgs, GetBitcoinAddressArgs,
+            GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
+            GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
+            GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSubaddressesArgs,
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
             GetSwapInfoArgs, GetSwapInfosAllArgs, GetSwapTimelockArgs, MoneroRecoveryArgs,
             RedactArgs, RefreshP2PArgs, RejectApprovalArgs, RejectApprovalResponse,
-            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroWalletPasswordArgs,
-            SetRestoreHeightArgs, SuspendCurrentSwapArgs, WithdrawBtcArgs,
+            ResolveApprovalArgs, ResumeSwapArgs, SendMoneroArgs, SetMoneroSubaddressLabelArgs,
+            SetMoneroWalletPasswordArgs, SetRestoreHeightArgs, SuspendCurrentSwapArgs,
+            WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
         ContextBuilder,
@@ -74,7 +76,9 @@ macro_rules! generate_command_handlers {
             dfx_authenticate,
             change_monero_node,
             get_context_status,
-            refresh_p2p
+            get_monero_subaddresses,
+            create_monero_subaddress,
+            set_monero_subaddress_label
         ]
     };
 }
@@ -463,5 +467,8 @@ tauri_command!(set_monero_wallet_password, SetMoneroWalletPasswordArgs);
 tauri_command!(get_monero_main_address, GetMoneroMainAddressArgs, no_args);
 tauri_command!(get_monero_balance, GetMoneroBalanceArgs, no_args);
 tauri_command!(get_monero_sync_progress, GetMoneroSyncProgressArgs, no_args);
+tauri_command!(get_monero_subaddresses, GetMoneroSubaddressesArgs);
+tauri_command!(create_monero_subaddress, CreateMoneroSubaddressArgs);
+tauri_command!(set_monero_subaddress_label, SetMoneroSubaddressLabelArgs);
 tauri_command!(get_monero_seed, GetMoneroSeedArgs, no_args);
 tauri_command!(refresh_p2p, RefreshP2PArgs, no_args);

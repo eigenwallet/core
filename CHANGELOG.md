@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Add support for subaddress in the Monero wallet (thanks to @rafael-xmr !)
+
 ## [3.6.3] - 2025-12-23
 
 ## [3.6.2] - 2025-12-22

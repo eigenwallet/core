@@ -30,7 +30,9 @@ use tokio::time;
 use monero::{Address, Amount};
 use monero_daemon_rpc::MoneroDaemon;
 use monero_simple_request_rpc::SimpleRequestTransport;
+use monero_sys::SubaddressSummary;
 use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
+use std::collections::HashMap;
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
 
@@ -463,6 +465,11 @@ impl MoneroWallet {
         Ok(self.wallet.main_address().await?)
     }
 
+    /// Get address at a given account and subaddress index.
+    pub async fn address_at(&self, account_index: u32, address_index: u32) -> Result<Address> {
+        Ok(self.wallet.address(account_index, address_index).await)
+    }
+
     pub async fn balance(&self) -> Result<u64> {
         // First make sure we're connected to the daemon
         let connected = self.wallet.connected().await?;
@@ -493,6 +500,28 @@ impl MoneroWallet {
 
     pub async fn unlocked_balance(&self) -> Result<u64> {
         Ok(self.wallet.unlocked_balance().await?.as_pico())
+    }
+
+    /// Create a new subaddress for the given account with the provided label.
+    pub async fn create_subaddress(
+        &self,
+        account_index: u32,
+        label: impl Into<String>,
+    ) -> Result<()> {
+        self.wallet
+            .create_subaddress(account_index, label.into())
+            .await?;
+        Ok(())
+    }
+
+    /// Get summaries for subaddresses within a given account.
+    pub async fn subaddress_summaries(&self, account_index: u32) -> Result<Vec<SubaddressSummary>> {
+        Ok(self.wallet.subaddress_summaries(account_index).await?)
+    }
+
+    /// Get non-strict balance per subaddress for main account (index 0).
+    pub async fn balance_per_subaddress(&self) -> Result<HashMap<u32, u64>> {
+        Ok(self.wallet.balance_per_subaddress().await)
     }
 
     pub async fn refresh(&self) -> Result<()> {

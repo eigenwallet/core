@@ -171,6 +171,31 @@ pub struct TransactionInfo {
     pub direction: TransactionDirection,
     #[typeshare(serialized_as = "number")]
     pub timestamp: u64,
+    /// For incoming transactions, the address that received the funds (if determinable)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[typeshare(serialized_as = "Option<String>")]
+    pub received_address: Option<String>,
+}
+
+#[typeshare]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubaddressSummary {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+    #[typeshare(serialized_as = "number")]
+    pub address_index: u32,
+    #[typeshare(serialized_as = "String")]
+    pub address: monero::Address,
+    pub label: String,
+    /// The total amount historically received from this subaddress in atomic units
+    #[typeshare(serialized_as = "number")]
+    pub received: u64,
+    /// The total number of transactions received into this subaddress
+    #[typeshare(serialized_as = "number")]
+    pub tx_count: u32,
+    /// Currently spendable (confirmed/unlocked) balance for this subaddress in atomic units
+    #[typeshare(serialized_as = "number")]
+    pub unlocked_balance: u64,
 }
 
 #[typeshare]
@@ -447,6 +472,37 @@ impl WalletHandle {
             .context("Couldn't complete wallet call")?
     }
 
+    /// Compute subaddress summaries for an account on the wallet thread.
+    pub async fn subaddress_summaries(
+        &self,
+        account_index: u32,
+    ) -> anyhow::Result<Vec<SubaddressSummary>> {
+        self.call(move |wallet| wallet.subaddress_summaries_sync(account_index))
+            .await
+            .context("Failed to get subaddress summaries")?
+    }
+
+    /// Create a new subaddress in the specified account.
+    pub async fn create_subaddress(&self, account_index: u32, label: String) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.add_subaddress(account_index, &label))
+            .await?
+            .context("Failed to add subaddress")?;
+        Ok(())
+    }
+
+    /// Update the label of an existing subaddress.
+    pub async fn update_subaddress_label(
+        &self,
+        account_index: u32,
+        address_index: u32,
+        label: String,
+    ) -> anyhow::Result<()> {
+        self.call(move |wallet| wallet.set_subaddress_label(account_index, address_index, &label))
+            .await?
+            .context("Failed to set subaddress label")?;
+        Ok(())
+    }
+
     /// Get the address of the wallet for a given account and address index.
     pub async fn address(
         &self,
@@ -606,6 +662,16 @@ impl WalletHandle {
         self.call(move |wallet| wallet.total_balance())
             .await
             .context("Couldn't complete wallet call")
+    }
+
+    /// Get the current non-strict balance per subaddress for the main account (index 0).
+    /// Returns a map of subaddress index -> balance (in atomic units).
+    /// strict: If true, only includes confirmed and unlocked balance.
+    ///         If false, pending and unconfirmed transactions are also included.
+    pub async fn balance_per_subaddress(&self) -> std::collections::HashMap<u32, u64> {
+        self.call(move |wallet| wallet.balance_per_subaddress_sync())
+            .await
+            .expect("wallet thread closed while fetching balance per subaddress")
     }
 
     /// Check if the wallet is synchronized.
@@ -1657,7 +1723,154 @@ impl FfiWallet {
         self.address(Self::MAIN_ACCOUNT_INDEX, 0)
     }
 
-    /// Initialize the wallet and download initial values from the remote node.
+    /// Get the address for the given account and subaddress index.
+    pub fn address_at(&self, account_index: u32, address_index: u32) -> monero::Address {
+        // Reuse the private `address` helper
+        self.address(account_index, address_index)
+            .expect("failed to fetch address at index")
+    }
+
+    /// Get the number of subaddresses for a given account.
+    pub fn num_subaddresses(&self, account_index: u32) -> usize {
+        ffi::numSubaddresses(&self.inner, account_index) as usize
+    }
+
+    /// Get the label for a specific subaddress.
+    pub fn get_subaddress_label(
+        &self,
+        account_index: u32,
+        address_index: u32,
+    ) -> anyhow::Result<String> {
+        Ok(
+            ffi::getSubaddressLabel(&self.inner, account_index, address_index)
+                .context("Failed to get subaddress label: FFI call failed with exception")?
+                .to_string(),
+        )
+    }
+
+    /// Compute subaddress summaries for a given account index.
+    fn subaddress_summaries_sync(
+        &mut self,
+        account_index: u32,
+    ) -> anyhow::Result<Vec<SubaddressSummary>> {
+        let history_ptr = self
+            .inner
+            .pinned()
+            .history()
+            .context("Failed to get transaction history: FFI call failed with exception")?;
+
+        let history = unsafe {
+            Pin::new_unchecked(history_ptr.as_mut().ok_or_else(|| {
+                anyhow!("Failed to get transaction history: history pointer is null")
+            })?)
+        };
+        let _ = history
+            .refresh()
+            .context("Failed to refresh transaction history: FFI call failed with exception")
+            .inspect_err(|e| tracing::error!(error=%e,"Failed to refresh transaction history"));
+
+        let history_handle = TransactionHistoryHandle(history_ptr);
+        let count = history_handle.count();
+
+        let size = self.num_subaddresses(account_index) as u32;
+        let mut received: Vec<u64> = vec![0; size as usize];
+        let mut tx_count: Vec<u32> = vec![0; size as usize];
+        let mut unlocked_balances: Vec<u64> = vec![0; size as usize];
+
+        for i in 0..count {
+            if let Some(tx_info) = history_handle.transaction(i) {
+                let Ok(direction) = tx_info.direction() else {
+                    anyhow::bail!("Failed to get transaction direction at index {}", i);
+                };
+                if direction != TransactionDirection::In {
+                    continue;
+                }
+
+                let tx_account = ffi::transactionInfoSubaddrAccount(tx_info.deref());
+                if tx_account != account_index {
+                    continue;
+                }
+
+                let amount = tx_info.amount();
+                let indices_vec = ffi::transactionInfoSubaddrIndices(tx_info.deref());
+                let indices_ref = indices_vec
+                    .as_ref()
+                    .expect("vector should not be null after FFI call");
+                for j in 0..indices_ref.len() {
+                    let address_index = unsafe { *indices_ref.get_unchecked(j) } as usize;
+                    if (address_index) < received.len() {
+                        received[address_index] = received[address_index].saturating_add(amount);
+                        tx_count[address_index] = tx_count[address_index].saturating_add(1);
+                    }
+                }
+            } else {
+                anyhow::bail!("Failed to get transaction info at index {}", i);
+            }
+        }
+
+        let unlocked_indices =
+            ffi::walletUnlockedBalancePerSubaddrIndices(self.inner.pinned(), account_index, false);
+        let unlocked_amounts =
+            ffi::walletUnlockedBalancePerSubaddrAmounts(self.inner.pinned(), account_index, false);
+
+        if let (Some(indices_ref), Some(amounts_ref)) =
+            (unlocked_indices.as_ref(), unlocked_amounts.as_ref())
+        {
+            let len = std::cmp::min(indices_ref.len(), amounts_ref.len());
+            for i in 0..len {
+                let address_index = unsafe { *indices_ref.get_unchecked(i) } as usize;
+                let amount = unsafe { *amounts_ref.get_unchecked(i) };
+                if address_index < unlocked_balances.len() {
+                    unlocked_balances[address_index] = amount;
+                }
+            }
+        }
+
+        // Build result list
+        let list = (0..size)
+            .map(|address_index| {
+                let address = self.address_at(account_index, address_index);
+                let label = self.get_subaddress_label(account_index, address_index)?;
+
+                Ok(SubaddressSummary {
+                    account_index,
+                    address_index,
+                    address,
+                    label,
+                    received: received[address_index as usize],
+                    tx_count: tx_count[address_index as usize],
+                    unlocked_balance: unlocked_balances[address_index as usize],
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        Ok(list)
+    }
+
+    /// Compute non-strict balances per subaddress for the main account (index 0).
+    /// Uses wallet2::balance_per_subaddress via WalletImpl bridge.
+    /// strict: If true, only includes confirmed and unlocked balance.
+    ///         If false, pending and unconfirmed transactions are also included.
+    fn balance_per_subaddress_sync(&mut self) -> std::collections::HashMap<u32, u64> {
+        let account_index = Self::MAIN_ACCOUNT_INDEX;
+        let indices =
+            ffi::walletBalancePerSubaddrIndices(self.inner.pinned(), account_index, false);
+        let amounts =
+            ffi::walletBalancePerSubaddrAmounts(self.inner.pinned(), account_index, false);
+
+        let indices_ref = indices.as_ref().expect("indices vector not null");
+        let amounts_ref = amounts.as_ref().expect("amounts vector not null");
+
+        let mut map = std::collections::HashMap::with_capacity(indices_ref.len());
+        let len = std::cmp::min(indices_ref.len(), amounts_ref.len());
+        for i in 0..len {
+            let address_index = unsafe { *indices_ref.get_unchecked(i) };
+            let amount = unsafe { *amounts_ref.get_unchecked(i) };
+            map.insert(address_index, amount);
+        }
+        map
+    }
+
     /// Does not actuallyt sync the wallet, use any of the refresh methods to do that.
     fn init(&mut self, daemon: &Daemon) -> anyhow::Result<()> {
         let daemon_address = format!("{}:{}", daemon.hostname, daemon.port);
@@ -1925,6 +2138,31 @@ impl FfiWallet {
             anyhow::bail!("Failed to refresh wallet (no reason given)");
         }
 
+        Ok(())
+    }
+
+    /// Create a new subaddress for an account with a label.
+    fn add_subaddress(&mut self, account_index: u32, label: &str) -> anyhow::Result<()> {
+        let_cxx_string!(label = label);
+        self.inner
+            .pinned()
+            .addSubaddress(account_index, &label)
+            .context("Failed to add subaddress: FFI call failed with exception")?;
+        Ok(())
+    }
+
+    /// Set the label for an existing subaddress.
+    fn set_subaddress_label(
+        &mut self,
+        account_index: u32,
+        address_index: u32,
+        label: &str,
+    ) -> anyhow::Result<()> {
+        let_cxx_string!(label = label);
+        self.inner
+            .pinned()
+            .setSubaddressLabel(account_index, address_index, &label)
+            .context("Failed to add subaddress: FFI call failed with exception")?;
         Ok(())
     }
 
@@ -2461,7 +2699,22 @@ impl FfiWallet {
         let mut transactions = Vec::new();
         for i in 0..count {
             if let Some(tx_info_handle) = history_handle.transaction(i) {
-                if let Some(serialized_tx) = tx_info_handle.serialize() {
+                if let Some(mut serialized_tx) = tx_info_handle.serialize() {
+                    // If incoming, attempt to resolve received address from subaddress indices
+                    if serialized_tx.direction == TransactionDirection::In {
+                        let account_index =
+                            ffi::transactionInfoSubaddrAccount(tx_info_handle.deref());
+                        let indices_vec =
+                            ffi::transactionInfoSubaddrIndices(tx_info_handle.deref());
+                        let indices_ref = indices_vec
+                            .as_ref()
+                            .expect("vector should not be null after FFI call");
+                        if !indices_ref.is_empty() {
+                            let address_index = unsafe { *indices_ref.get_unchecked(0) };
+                            let address = self.address_at(account_index, address_index);
+                            serialized_tx.received_address = Some(address.to_string());
+                        }
+                    }
                     transactions.push(serialized_tx);
                 }
             }
@@ -3042,6 +3295,7 @@ impl TransactionInfoHandle {
             tx_hash,
             direction,
             timestamp,
+            received_address: None,
         })
     }
 }

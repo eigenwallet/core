@@ -552,6 +552,100 @@ impl Request for GetMoneroMainAddressArgs {
 }
 
 #[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetMoneroSubaddressesArgs {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GetMoneroSubaddressesResponse {
+    pub subaddresses: Vec<monero_sys::SubaddressSummary>,
+}
+
+impl Request for GetMoneroSubaddressesArgs {
+    type Response = GetMoneroSubaddressesResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        let subaddresses = wallet.subaddress_summaries(self.account_index).await?;
+        Ok(GetMoneroSubaddressesResponse { subaddresses })
+    }
+}
+
+// Create a new subaddress and optionally set its label
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CreateMoneroSubaddressArgs {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+    pub label: String,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateMoneroSubaddressResponse {
+    pub subaddress: monero_sys::SubaddressSummary,
+}
+
+impl Request for CreateMoneroSubaddressArgs {
+    type Response = CreateMoneroSubaddressResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        wallet
+            .create_subaddress(self.account_index, self.label.clone())
+            .await?;
+
+        // Fetch summaries and return the most recent one (highest address_index)
+        let summaries = wallet.subaddress_summaries(self.account_index).await?;
+        let subaddress = summaries
+            .into_iter()
+            .max_by_key(|s| s.address_index)
+            .ok_or_else(|| anyhow::anyhow!("No subaddresses found after creation"))?;
+
+        Ok(CreateMoneroSubaddressResponse { subaddress })
+    }
+}
+
+// Set the label of an existing subaddress
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SetMoneroSubaddressLabelArgs {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+    #[typeshare(serialized_as = "number")]
+    pub address_index: u32,
+    pub label: String,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetMoneroSubaddressLabelResponse {
+    pub success: bool,
+}
+
+impl Request for SetMoneroSubaddressLabelArgs {
+    type Response = SetMoneroSubaddressLabelResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        wallet
+            .update_subaddress_label(self.account_index, self.address_index, self.label.clone())
+            .await?;
+
+        Ok(SetMoneroSubaddressLabelResponse { success: true })
+    }
+}
+
+#[typeshare]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Date {
     #[typeshare(serialized_as = "number")]
