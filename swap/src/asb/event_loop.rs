@@ -571,6 +571,10 @@ where
                             };
                             let _ = respond_to.send(result);
                         }
+                        EventLoopRequest::GrantFinalAmnesty { swap_id, respond_to } => {
+                            let result = self.handle_grant_final_amnesty(swap_id).await;
+                            let _ = respond_to.send(result);
+                        }
                     }
                 }
             }
@@ -724,6 +728,53 @@ where
             recv_burn_on_refund_instruction: tokio::sync::Mutex::new(burn_instruction_receiver),
             transfer_proof_sender: tokio::sync::Mutex::new(Some(transfer_proof_sender)),
         }
+    }
+
+    /// Handle a request to grant final amnesty for a swap.
+    ///
+    /// This checks that the swap is not currently running, transitions the
+    /// state to BtcFinalAmnestyGranted, and resumes the swap.
+    async fn handle_grant_final_amnesty(&mut self, swap_id: Uuid) -> Result<()> {
+        use crate::asb::grant_final_amnesty;
+
+        // Check if swap is currently running
+        if self.recv_encrypted_signature.contains_key(&swap_id)
+            || self.recv_burn_on_refund_instruction.contains_key(&swap_id)
+        {
+            return Err(anyhow!(
+                "Cannot grant final amnesty while swap {} is still running",
+                swap_id
+            ));
+        }
+
+        // Use the grant_final_amnesty function to transition the state
+        let new_state = grant_final_amnesty(swap_id, self.db.clone()).await?;
+
+        // Get peer ID for this swap
+        let peer_id = self.db.get_peer_id(swap_id).await?;
+
+        // Create handle and swap to resume
+        let handle = self.new_handle(peer_id, swap_id);
+        let swap = Swap {
+            event_loop_handle: handle,
+            bitcoin_wallet: self.bitcoin_wallet.clone(),
+            monero_wallet: self.monero_wallet.clone(),
+            env_config: self.env_config,
+            db: self.db.clone(),
+            state: new_state,
+            swap_id,
+            developer_tip: self.developer_tip.clone(),
+        };
+
+        // Send swap to be resumed
+        self.swap_sender
+            .send(swap)
+            .await
+            .context("Failed to send swap to be resumed")?;
+
+        tracing::info!(%swap_id, "Granted final amnesty and resumed swap");
+
+        Ok(())
     }
 }
 
@@ -983,6 +1034,10 @@ mod service {
             burn: bool,
             respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
         },
+        GrantFinalAmnesty {
+            swap_id: Uuid,
+            respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -1039,6 +1094,22 @@ mod service {
                 .send(EventLoopRequest::SetBurnOnRefund {
                     swap_id,
                     burn,
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        /// Grant final amnesty for a swap in BtcRefundBurnConfirmed state
+        ///
+        /// This transitions the swap to BtcFinalAmnestyGranted and resumes
+        /// the swap state machine to publish the final amnesty transaction.
+        pub async fn grant_final_amnesty(&self, swap_id: Uuid) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GrantFinalAmnesty {
+                    swap_id,
                     respond_to: tx,
                 })
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;

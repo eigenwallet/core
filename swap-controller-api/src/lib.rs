@@ -1,6 +1,7 @@
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObjectOwned;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BitcoinBalanceResponse {
@@ -119,9 +120,7 @@ pub trait AsbApi {
     #[method(name = "registration_status")]
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
     #[method(name = "set_burn_on_refund")]
-    async fn set_burn_on_refund(
-        &self,
-        swap_id: String,
-        burn: bool,
-    ) -> Result<(), ErrorObjectOwned>;
+    async fn set_burn_on_refund(&self, swap_id: Uuid, burn: bool) -> Result<(), ErrorObjectOwned>;
+    #[method(name = "grant_final_amnesty")]
+    async fn grant_final_amnesty(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned>;
 }

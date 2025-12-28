@@ -27,7 +27,7 @@ use structopt::clap::ErrorKind;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
+use swap::asb::{cancel, grant_final_amnesty, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
@@ -481,6 +481,13 @@ pub async fn main() -> Result<()> {
             safely_abort(swap_id, db).await?;
 
             tracing::info!("Swap safely aborted");
+        }
+        Command::GrantFinalAmnesty { swap_id } => {
+            let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
+
+            grant_final_amnesty(swap_id, db).await?;
+
+            tracing::info!("Final amnesty granted for swap {}", swap_id);
         }
         Command::Redeem {
             swap_id,

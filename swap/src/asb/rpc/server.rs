@@ -14,6 +14,7 @@ use swap_controller_api::{
     RendezvousRegistrationStatus, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
+use uuid::Uuid;
 
 pub struct RpcServer {
     handle: ServerHandle,
@@ -244,17 +245,18 @@ impl AsbApiServer for RpcImpl {
         Ok(RegistrationStatusResponse { registrations })
     }
 
-    async fn set_burn_on_refund(
-        &self,
-        swap_id: String,
-        burn: bool,
-    ) -> Result<(), ErrorObjectOwned> {
-        let swap_id = uuid::Uuid::parse_str(&swap_id)
-            .context("Invalid swap ID")
-            .into_json_rpc_result()?;
-
+    async fn set_burn_on_refund(&self, swap_id: Uuid, burn: bool) -> Result<(), ErrorObjectOwned> {
         self.event_loop_service
             .set_burn_on_refund(swap_id, burn)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
+    }
+
+    async fn grant_final_amnesty(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned> {
+        self.event_loop_service
+            .grant_final_amnesty(swap_id)
             .await
             .into_json_rpc_result()?;
 

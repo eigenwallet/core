@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(name = "asb-controller")]
@@ -40,9 +41,14 @@ pub enum Cmd {
     /// Set whether to burn Bitcoin on refund for a swap
     SetBurnOnRefund {
         /// The swap ID
-        swap_id: String,
+        swap_id: Uuid,
         /// Whether to burn the Bitcoin (true or false)
         #[arg(action = clap::ArgAction::Set)]
         burn: bool,
+    },
+    /// Grant final amnesty for a swap in BtcRefundBurnConfirmed state
+    GrantFinalAmnesty {
+        /// The swap ID
+        swap_id: Uuid,
     },
 }

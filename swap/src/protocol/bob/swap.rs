@@ -48,8 +48,10 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
 // - We want to attempt recovery via cooperative XMR redeem once.
 // - If unsuccessful, we exit to avoid an infinite retry loop.
 // - The swap can still be manually resumed later and retried if desired.
+//
+// The same is true for the BtcRefundBurnt. 
 pub fn is_run_at_most_once(state: &BobState) -> bool {
-    matches!(state, BobState::BtcPunished { .. })
+    matches!(state, BobState::BtcPunished { .. } | BobState::BtcRefundBurnt(..))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1311,9 +1313,20 @@ async fn next_state(
             BobState::BtcRefundBurnt(state)
         }
         BobState::BtcRefundBurnt(state) => {
-            // Terminal state - Alice needs to manually publish TxFinalAmnesty
-            // Similar to BtcPunished, we stop here
-            BobState::BtcRefundBurnt(state)
+            // Watch for Alice publishing TxFinalAmnesty
+            // Alice may grant final amnesty after burning our refund
+            // However, we don't expect Alice to publish the tx at once, if at all.
+            // Thus we only check once, and then stop the swap.
+            // User's can still manually resume the swap to check again.
+            let tx_final_amnesty = state.construct_tx_final_amnesty()?;
+
+            let final_amnesty_status = bitcoin_wallet.status_of_script(&tx_final_amnesty).await.context("Failed to check TxFinalAmnesty status")?;
+
+            if final_amnesty_status.has_been_seen() {
+                BobState::BtcFinalAmnestyPublished(state)
+            } else {
+                BobState::BtcRefundBurnt(state)
+            }
         }
         BobState::BtcFinalAmnestyPublished(state) => {
             // Wait for TxFinalAmnesty confirmation

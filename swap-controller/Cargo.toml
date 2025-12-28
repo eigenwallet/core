@@ -17,6 +17,7 @@ rustyline = "17.0.0"
 shell-words = "1.1"
 swap-controller-api = { path = "../swap-controller-api" }
 tokio = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
 
 [lints]
 workspace = true

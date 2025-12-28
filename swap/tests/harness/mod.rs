@@ -466,6 +466,7 @@ async fn init_test_wallets(
         .finality_confirmations(1_u32)
         .target_block(1_u32)
         .sync_interval(Duration::from_secs(3)) // high sync interval to speed up tests
+        .use_mempool_space_fee_estimation(false)
         .build()
         .await
         .expect("could not init btc wallet");
@@ -685,7 +686,7 @@ impl BobParams {
     }
 }
 
-pub struct BobApplicationHandle(JoinHandle<()>);
+pub struct BobApplicationHandle(pub JoinHandle<()>);
 
 impl BobApplicationHandle {
     pub fn abort(&self) {

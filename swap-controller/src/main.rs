@@ -131,12 +131,16 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             }
         }
         Cmd::SetBurnOnRefund { swap_id, burn } => {
-            client.set_burn_on_refund(swap_id.clone(), burn).await?;
+            client.set_burn_on_refund(swap_id, burn).await?;
             if burn {
                 println!("Burn on refund enabled for swap {swap_id}");
             } else {
                 println!("Burn on refund disabled for swap {swap_id}");
             }
+        }
+        Cmd::GrantFinalAmnesty { swap_id } => {
+            client.grant_final_amnesty(swap_id).await?;
+            println!("Final amnesty granted for swap {swap_id}");
         }
     }
     Ok(())

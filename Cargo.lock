@@ -10751,6 +10751,7 @@ dependencies = [
  "shell-words",
  "swap-controller-api",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -10760,6 +10761,7 @@ dependencies = [
  "bitcoin 0.32.8",
  "jsonrpsee",
  "serde",
+ "uuid",
 ]
 
 [[package]]
