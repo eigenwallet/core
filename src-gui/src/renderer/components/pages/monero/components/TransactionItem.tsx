@@ -48,11 +48,11 @@ export default function TransactionItem({ transaction }: TransactionItemProps) {
 
   const shouldShowSubaddressChip = Boolean(
     isIncoming &&
-    transaction.received_address &&
-    (transaction.received_address.trim() !== moneroMainAddress?.trim() ||
-      (subaddress?.account_index === 0 && subaddress?.address_index !== 0)) &&
-    subaddress &&
-    addressLabel,
+      transaction.received_address &&
+      (transaction.received_address.trim() !== moneroMainAddress?.trim() ||
+        (subaddress?.account_index === 0 && subaddress?.address_index !== 0)) &&
+      subaddress &&
+      addressLabel,
   );
 
   const displayDate = dayjs(transaction.timestamp * 1000).format(

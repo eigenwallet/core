@@ -30,9 +30,9 @@ use tokio::time;
 use monero::{Address, Amount};
 use monero_daemon_rpc::MoneroDaemon;
 use monero_simple_request_rpc::SimpleRequestTransport;
+use monero_sys::SubaddressSummary;
 use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
 use std::collections::HashMap;
-use monero_sys::SubaddressSummary;
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
 
@@ -508,8 +508,7 @@ impl MoneroWallet {
         account_index: u32,
         label: impl Into<String>,
     ) -> Result<()> {
-        self
-            .wallet
+        self.wallet
             .create_subaddress(account_index, label.into())
             .await?;
         Ok(())
