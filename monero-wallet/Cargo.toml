@@ -34,3 +34,20 @@ monero-wallet-ng = { path = "../monero-wallet-ng" }
 curve25519-dalek = { workspace = true }
 hex = { workspace = true }
 zeroize = { workspace = true }
+
+
+[dev-dependencies]
+data-encoding = { workspace = true }
+mockito = "1.4"
+monero-harness = { path = "../monero-harness" }
+proptest = "1"
+swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
+tempfile = "3"
+testcontainers = "0.15"
+serial_test = "3"
+tracing-ext = { path = "../tracing-ext" }
+rustls = { version = "0.23", features = ["ring"] }
+
+[build-dependencies]
+anyhow = { workspace = true }
+vergen-git2 = { workspace = true }
