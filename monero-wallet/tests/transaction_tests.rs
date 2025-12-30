@@ -42,6 +42,7 @@ async fn test_receive_funds() -> Result<()> {
         Ok(())
     })
     .await;
+    Ok(())
 }
 
 #[tokio::test]
@@ -61,8 +62,8 @@ async fn test_transfer_funds() -> Result<()> {
         miner_wallet.transfer(&alice_address, amount).await?;
 
         // Generate blocks to confirm the transaction
-        // We need enough blocks for the transaction to be unlocked (10 blocks)
-        // and ideally enough outputs on chain for ring signatures (though coinbase outputs help)
+        // We need enough blocks for the transaction to be unlocked
+        // and ideally enough outputs on chain for ring signatures
         for _ in 0..20 {
             context.monero.generate_block().await?;
         }
