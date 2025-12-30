@@ -10,6 +10,42 @@ use std::time::Duration;
 
 #[tokio::test]
 #[serial]
+async fn test_receive_funds() -> Result<()> {
+    setup_test(|context| async move {
+        let wallets = context.create_wallets().await?;
+        let main_wallet = wallets.main_wallet().await;
+        let address = main_wallet.main_address().await?;
+
+        // Receive funds
+        let miner_wallet = context.monero.wallet("miner")?;
+        let amount = 1_000_000_000_000; // 1 XMR
+        miner_wallet.transfer(&address, amount).await?;
+
+        context.monero.generate_block().await?;
+        context.monero.generate_block().await?;
+
+        for _ in 0..20 {
+            main_wallet
+                .wait_until_synced(monero_sys::no_listener())
+                .await?;
+            let b = main_wallet.unlocked_balance().await?;
+            if b.as_pico() > 0 {
+                break;
+            }
+            // Pause execution for a while before checking again
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+
+        let wallet_balance = main_wallet.unlocked_balance().await?;
+        assert_eq!(wallet_balance.as_pico(), amount);
+
+        Ok(())
+    })
+    .await;
+}
+
+#[tokio::test]
+#[serial]
 async fn test_transfer_funds() -> Result<()> {
     setup_test(|context| async move {
         // Create Alice wallet
