@@ -87,3 +87,52 @@ async fn test_tauri_listener() -> Result<()> {
     .await;
     Ok(())
 }
+
+#[tokio::test]
+#[serial]
+async fn test_change_monero_node() -> Result<()> {
+    setup_test(|context| async move {
+        let wallets = context.create_wallets().await?;
+        let main_wallet = wallets.main_wallet().await;
+
+        let initial_height = main_wallet.blockchain_height().await?;
+
+        let same_daemon = context.daemon.clone();
+        wallets.change_monero_node(same_daemon).await?;
+
+        let height_after = main_wallet.blockchain_height().await?;
+        assert!(height_after >= initial_height);
+
+        Ok(())
+    })
+    .await;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn test_recent_wallets() -> Result<()> {
+    setup_test(|context| async move {
+        let db_dir = tempfile::TempDir::new()?;
+        let db = Arc::new(monero_sys::Database::new(db_dir.path().to_path_buf()).await?);
+
+        let wallets = Wallets::new(
+            context.wallet_dir.path().to_path_buf(),
+            WALLET_NAME.to_string(),
+            context.daemon.clone(),
+            Network::Mainnet,
+            true,
+            None,
+            Some(db.clone()),
+        )
+        .await?;
+
+        let recent = wallets.get_recent_wallets().await?;
+        assert!(!recent.is_empty());
+        assert!(recent.iter().any(|p| p.contains(WALLET_NAME)));
+
+        Ok(())
+    })
+    .await;
+    Ok(())
+}
