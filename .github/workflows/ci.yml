@@ -190,6 +190,14 @@ jobs:
             test_name: transfers
           - package: monero-tests
             test_name: transfers_wrong_key
+          - package: monero-wallet
+            test_name: advanced_wallet_tests
+          - package: monero-wallet
+            test_name: tauri_wallet_listener_tests
+          - package: monero-wallet
+            test_name: transaction_tests
+          - package: monero-wallet
+            test_name: wallet_operations
 
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' || !github.event.pull_request.draft
