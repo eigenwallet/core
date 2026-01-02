@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "dangerousDisableAssetCspModification": true
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
