@@ -53,8 +53,8 @@ hyper-util = { version = "0.1", features = ["full"] }
 tower-http = { version = "0.6.6", features = ["cors"] }
 
 # TLS/Security
-rustls = { version = "0.21", features = ["dangerous_configuration"] }
 tokio-rustls = "0.26"
+webpki-roots = "0.26"
 
 # Tor networking
 arti-client = { workspace = true, features = ["tokio"] }

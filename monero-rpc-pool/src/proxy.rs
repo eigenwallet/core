@@ -16,9 +16,8 @@ use tokio::{
 };
 
 use tokio_rustls::rustls::{
-    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
-    pki_types::{CertificateDer, ServerName, UnixTime},
-    DigitallySignedStruct, Error as TlsError, SignatureScheme,
+    pki_types::ServerName,
+    ClientConfig, RootCertStore,
 };
 use tracing::{error, info_span, Instrument};
 
@@ -36,56 +35,15 @@ static SOFT_TIMEOUT: Duration = TIMEOUT.checked_div(2).unwrap();
 trait HyperStream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> HyperStream for T {}
 
-#[derive(Debug)]
-struct NoCertificateVerification;
+/// Creates a TLS client config with proper certificate verification
+/// using Mozilla's root certificates via webpki-roots
+fn create_tls_config() -> ClientConfig {
+    let mut root_store = RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-impl ServerCertVerifier for NoCertificateVerification {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, TlsError> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, TlsError> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, TlsError> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::RSA_PKCS1_SHA1,
-            SignatureScheme::ECDSA_SHA1_Legacy,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::ECDSA_NISTP521_SHA512,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::ED25519,
-            SignatureScheme::ED448,
-        ]
-    }
+    ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth()
 }
 
 #[axum::debug_handler]
@@ -320,17 +278,15 @@ async fn proxy_to_multiple_nodes(
 }
 
 /// Wraps a stream with TLS if HTTPS is being used
+/// Uses proper certificate verification with Mozilla's root CA certificates
 async fn maybe_wrap_with_tls(
     stream: impl AsyncRead + AsyncWrite + Unpin + Send + 'static,
     scheme: &str,
     host: &str,
 ) -> Result<Box<dyn HyperStream>, SingleRequestError> {
     if scheme == "https" {
-        // Create a TLS client config that accepts all certificates and versions
-        let config = tokio_rustls::rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
-            .with_no_client_auth();
+        // Create a TLS client config with proper certificate verification
+        let config = create_tls_config();
 
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
 
