@@ -47,6 +47,8 @@ testcontainers = "0.15"
 serial_test = "3"
 tracing-ext = { path = "../tracing-ext" }
 rustls = { version = "0.23", features = ["ring"] }
+rand = "0.8"
+
 
 [build-dependencies]
 anyhow = { workspace = true }
