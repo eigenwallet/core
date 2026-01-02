@@ -39,10 +39,23 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+/// SECURITY: This type contains secret key material.
+/// - Implements Serialize/Deserialize for state persistence (encrypted at rest recommended)
+/// - Debug output is REDACTED to prevent accidental logging of secrets
+/// - Clone creates untracked copies - use sparingly
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
 pub struct SecretKey {
     inner: Scalar,
     public: Point,
+}
+
+impl std::fmt::Debug for SecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretKey")
+            .field("inner", &"[REDACTED]")
+            .field("public", &self.public)
+            .finish()
+    }
 }
 
 impl SecretKey {
