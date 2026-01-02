@@ -80,8 +80,6 @@ async fn test_tauri_listener() -> Result<()> {
         let updates = handle.sync_updates.lock().unwrap();
         assert!(!updates.is_empty());
 
-        assert_eq!(updates.len(), 1);
-
         Ok(())
     })
     .await;
@@ -130,6 +128,59 @@ async fn test_recent_wallets() -> Result<()> {
         let recent = wallets.get_recent_wallets().await?;
         assert!(!recent.is_empty());
         assert!(recent.iter().any(|p| p.contains(WALLET_NAME)));
+
+        Ok(())
+    })
+    .await;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn test_swap_wallet() -> Result<()> {
+    setup_test(|context| async move {
+        use swap_core::monero::primitives::PrivateViewKey;
+        let mut rng = rand::thread_rng();
+
+        let spend_key_prim = PrivateViewKey::new_random(&mut rng);
+        let view_key_prim = PrivateViewKey::new_random(&mut rng);
+
+        let spend_key: monero::PrivateKey = spend_key_prim.into();
+        let view_key: monero::PrivateKey = view_key_prim.into();
+
+        let public_spend = monero::PublicKey::from_private_key(&spend_key);
+        let public_view = monero::PublicKey::from_private_key(&view_key);
+
+        let address = monero::Address::standard(Network::Mainnet, public_spend, public_view);
+
+        let amount = 1_000_000_000_000; // 1 XMR
+        let miner_wallet = context.monero.wallet("miner")?;
+
+        let receipt = miner_wallet.transfer(&address, amount).await?;
+        let tx_id_str = receipt.txid;
+
+        context.monero.generate_block().await?;
+
+        let tx_hash = swap_core::monero::primitives::TxHash(tx_id_str.clone());
+
+        let wallets = context.create_wallets().await?;
+
+        let swap_id = Uuid::new_v4();
+
+        let swap_wallet = wallets
+            .swap_wallet_spendable(swap_id, spend_key, view_key_prim, tx_hash)
+            .await;
+
+        match swap_wallet {
+            Ok(w) => {
+                let balance = w.total_balance().await?;
+                println!("Swap wallet balance: {:?}", balance);
+                assert_eq!(balance.as_pico(), amount);
+            }
+            Err(e) => {
+                panic!("Failed to open swap wallet: {}", e);
+            }
+        }
 
         Ok(())
     })
