@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::FmtSubscriber;
 
@@ -6,7 +7,7 @@ pub fn init_tracing(level: LevelFilter) {
         return;
     }
 
-    let is_terminal = console::Term::stderr().is_term();
+    let is_terminal = std::io::stderr().is_terminal();
 
     FmtSubscriber::builder()
         .with_env_filter(format!(
