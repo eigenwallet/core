@@ -359,7 +359,7 @@ where
                         let unlocked = wallet_snapshot.unlocked_balance;
 
                         let needed_balance = xmr + wallet_snapshot.lock_fee.into();
-                        if unlocked.as_piconero() < needed_balance.as_pico() {
+                        if unlocked.as_pico() < needed_balance.as_pico() {
                             tracing::warn!(
                                 unlocked_balance = %unlocked,
                                 needed_balance = %needed_balance,

@@ -13,3 +13,4 @@ hex = { workspace = true }
 monero-address = { workspace = true }
 monero-oxide-wallet = { workspace = true }
 serde = { workspace = true }
+typeshare = { workspace = true }

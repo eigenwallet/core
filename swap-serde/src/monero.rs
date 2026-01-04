@@ -1,6 +1,5 @@
 use monero_address::Network;
-use monero_oxide_ext::Amount;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 pub use monero_oxide_ext::serde_address as address_serde;
 
@@ -107,27 +106,6 @@ pub mod optional_private_key {
 
     #[derive(serde::Deserialize)]
     struct PrivateKeyHelper(#[serde(with = "super::private_key")] PrivateKey);
-}
-
-pub mod amount {
-    use super::*;
-
-    pub fn serialize<S>(x: &Amount, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        s.serialize_u64(x.as_pico())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Amount, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let picos = u64::deserialize(deserializer)?;
-        let amount = Amount::from_pico(picos);
-
-        Ok(amount)
-    }
 }
 
 pub mod address {

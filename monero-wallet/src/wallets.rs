@@ -316,7 +316,7 @@ impl Wallets {
         let tx_id = tx_hash_to_bytes(tx_hash)?;
         let public_spend_key = public_spend_key.decompress();
         let private_view_key = Zeroizing::new(private_view_key.0.scalar);
-        let expected_amount: u64 = expected_amount.into();
+        let expected_amount = expected_amount.as_pico();
 
         let result = monero_wallet_ng::verify::verify_transfer(
             &rpc_client,
@@ -397,7 +397,7 @@ impl Wallets {
         let public_spend_key = public_spend_key.decompress();
         let private_view_key = Zeroizing::new(private_view_key.0.scalar);
 
-        let expected_amount: u64 = expected_amount.into();
+        let expected_amount = expected_amount.as_pico();
         let restore_height = restore_height.height as usize;
 
         let mut subscription = scanner::naive_scanner(
