@@ -1873,11 +1873,11 @@ __metadata:
   linkType: hard
 
 "@types/react-is@npm:^19.0.0":
-  version: 19.0.0
-  resolution: "@types/react-is@npm:19.0.0"
+  version: 19.2.0
+  resolution: "@types/react-is@npm:19.2.0"
   dependencies:
     "@types/react": "npm:*"
-  checksum: 10c0/d5fa0294f95cf301540f3e28fb44c00524c74a7de3ef9757703d76067206f3ecc002da6486e1581f23b54173b6449db8631acc3088009116e4569ff216df3ecc
+  checksum: 10c0/ff49ac8b8d439c3377e11d2f9f491ed4f8c8ee800225a40093c7941715ca8ccbde1b3833c5435354a8e39305fd0a163019d97f033c9402bc4b46f515851d2290
   languageName: node
   linkType: hard
 
