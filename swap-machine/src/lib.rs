@@ -25,7 +25,7 @@ mod tests {
             .await;
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
-        let xmr_amount = swap_core::monero::primitives::Amount::from_piconero(10000);
+        let xmr_amount = swap_core::monero::primitives::Amount::from_pico(10000);
 
         let tx_redeem_fee = alice_wallet
             .estimate_fee(TxRedeem::weight(), Some(btc_amount))
@@ -135,7 +135,7 @@ mod tests {
             .await;
         let spending_fee = Amount::from_sat(1_000);
         let btc_amount = Amount::from_sat(500_000);
-        let xmr_amount = swap_core::monero::primitives::Amount::from_piconero(10000);
+        let xmr_amount = swap_core::monero::primitives::Amount::from_pico(10000);
 
         let tx_redeem_fee = alice_wallet
             .estimate_fee(TxRedeem::weight(), Some(btc_amount))

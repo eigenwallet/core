@@ -2,6 +2,7 @@ use anyhow::{anyhow, Error};
 use monero_oxide_wallet::ed25519::{CompressedPoint, Point, Scalar};
 use std::str::FromStr;
 use std::{fmt, ops};
+use typeshare::typeshare;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PrivateKey {
@@ -226,7 +227,11 @@ impl ops::Add<PublicKey> for PublicKey {
 /// conversion to various denominations.
 ///
 /// Replicates a reduced [monero-rs `Amount` API](https://docs.rs/monero/0.21.0/monero/util/amount/struct.Amount.html).
-#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[typeshare(serialized_as = "number")]
+#[serde(transparent)]
 pub struct Amount(u64);
 
 impl Amount {
@@ -236,6 +241,8 @@ impl Amount {
     pub const ONE_PICO: Amount = Amount(1);
     /// Exactly one monero.
     pub const ONE_XMR: Amount = Amount(1_000_000_000_000);
+    /// `1 * 10^XMR_SCALE = ONE_XMR`
+    pub const XMR_SCALE: u32 = Amount::ONE_XMR.0.ilog10();
 
     /// Create an [`Amount`] with piconero precision and the given number of piconero.
     pub const fn from_pico(piconero: u64) -> Amount {
@@ -245,6 +252,33 @@ impl Amount {
     /// Get the number of piconeros in this [`Amount`].
     pub const fn as_pico(self) -> u64 {
         self.0
+    }
+
+    /// Create an [`Amount`] with monero precision and the given number of monero, string in the format `"1.2"` or `"1"`.
+    pub fn parse_monero(xmr: &str) -> Result<Amount, Error> {
+        if xmr.is_empty() {
+            return Err(anyhow!("empty"));
+        }
+        let mut sections = xmr.splitn(2, '.');
+        let mut section = || match sections.next().unwrap_or("") {
+            "" => "0",
+            s => s,
+        };
+        let (int_s, sub_s) = (section(), section());
+        let (int, sub_num): (u64, u64) = (int_s.parse()?, sub_s.parse()?);
+
+        let sub_scale = Amount::XMR_SCALE
+            .checked_sub(sub_s.len() as _)
+            .ok_or_else(|| anyhow!("{} too precise", xmr))?;
+        let sub = 10u64.pow(sub_scale).checked_mul(sub_num);
+
+        Amount::ONE_XMR
+            .checked_mul(int as _)
+            .and_then(|intxmr| {
+                sub.map(Amount::from_pico)
+                    .and_then(|sub| intxmr.checked_add(sub))
+            })
+            .ok_or_else(|| anyhow!("{} too big", xmr))
     }
 
     // Some arithmetic that doesn't fit in `std::ops` traits.
@@ -408,6 +442,49 @@ mod tests {
                 format!("Amount({xmr} XMR)")
             );
         }
+    }
+
+    #[test]
+    fn parse_monero() {
+        for (from, to) in [
+            ("0", 0_000_000_000_000),
+            ("1", 1_000_000_000_000),
+            ("1.", 1_000_000_000_000),
+            (".1", 0_100_000_000_000),
+            ("0.1", 0_100_000_000_000),
+            ("1.1", 1_100_000_000_000),
+            ("1.12", 1_120_000_000_000),
+            ("2.123", 2_123_000_000_000),
+            ("3.1234", 3_123_400_000_000),
+            ("4.12345", 4_123_450_000_000),
+            ("5.123456", 5_123_456_000_000),
+            ("6.1234567", 6_123_456_700_000),
+            ("7.12345678", 7_123_456_780_000),
+            ("8.123456789", 8_123_456_789_000),
+            ("9.1234567891", 9_123_456_789_100),
+            ("10.12345678912", 10_123_456_789_120),
+            ("11.123456789123", 11_123_456_789_123),
+            ("12.0234567", 12_023_456_700_000),
+            ("13.0034567", 13_003_456_700_000),
+            ("14.0004567", 14_000_456_700_000),
+            ("15.0000567", 15_000_056_700_000),
+            ("16.0000067", 16_000_006_700_000),
+            ("17.0000007", 17_000_000_700_000),
+            ("18.023456789123", 18_023_456_789_123),
+            ("19.003456789123", 19_003_456_789_123),
+            ("20.000456789123", 20_000_456_789_123),
+            ("21.000056789123", 21_000_056_789_123),
+            ("22.000006789123", 22_000_006_789_123),
+            ("23.000000789123", 23_000_000_789_123),
+            ("24.000000089123", 24_000_000_089_123),
+            ("25.000000009123", 25_000_000_009_123),
+            ("26.000000000123", 26_000_000_000_123),
+            ("27.000000000023", 27_000_000_000_023),
+            ("28.000000000003", 28_000_000_000_003),
+        ] {
+            assert_eq!(Amount::parse_monero(from).unwrap(), Amount::from_pico(to));
+        }
+        Amount::parse_monero("1.0234567891234").unwrap_err();
     }
 }
 

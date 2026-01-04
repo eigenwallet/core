@@ -72,7 +72,8 @@ pub async fn setup_test<T, F, C>(
     monero.init_miner().await.unwrap();
 
     let btc_amount = bitcoin::Amount::from_sat(1_000_000);
-    let xmr_amount = monero::Amount::from_monero(btc_amount.to_btc() / FixedRate::RATE).unwrap();
+    let xmr_amount =
+        monero::Amount::parse_monero(&(btc_amount.to_btc() / FixedRate::RATE).to_string()).unwrap();
     let electrs_rpc_port = containers.electrs.get_host_port_ipv4(electrs::RPC_PORT);
 
     let developer_seed = Seed::random().unwrap();
@@ -398,7 +399,7 @@ async fn init_test_wallets(
             starting_balances
                 .xmr_outputs
                 .into_iter()
-                .map(|amount| amount.as_piconero())
+                .map(|amount| amount.as_pico())
                 .collect(),
         )
         .await
@@ -945,16 +946,16 @@ impl TestContext {
     fn developer_tip_wallet_received_xmr_balance(&self) -> monero::Amount {
         use rust_decimal::prelude::ToPrimitive;
 
-        let effective_tip_amount = monero::Amount::from_piconero(
+        let effective_tip_amount = monero::Amount::from_pico(
             self.developer_tip
                 .ratio
-                .saturating_mul(self.xmr_amount.as_piconero_decimal())
+                .saturating_mul(Decimal::from(self.xmr_amount.as_pico()))
                 .to_u64()
                 .unwrap(),
         );
 
         // This is defined in `swap/src/protocol/alice/swap.rs` in `build_transfer_destinations`
-        if effective_tip_amount.as_piconero() < 30_000_000 {
+        if effective_tip_amount.as_pico() < 30_000_000 {
             return monero::Amount::ZERO;
         }
 

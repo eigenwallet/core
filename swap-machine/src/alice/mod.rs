@@ -13,7 +13,7 @@ use swap_core::bitcoin::{
 };
 use swap_core::compat::{IntoDalek, IntoDalekNg, IntoMoneroOxide};
 use swap_core::monero;
-use swap_core::monero::primitives::{BlockHeight, TransferProof, TransferRequest};
+use swap_core::monero::primitives::{AmountExt, BlockHeight, TransferProof, TransferRequest};
 use swap_core::monero::ScalarExt;
 use swap_env::env::Config;
 use uuid::Uuid;

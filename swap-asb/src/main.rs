@@ -196,15 +196,15 @@ pub async fn main() -> Result<()> {
                     )
                 }
                 (total, 0) => {
-                    let total = monero::Amount::from_piconero(total);
+                    let total = monero::Amount::from_pico(total);
                     tracing::warn!(
                         %total,
                         "Unlocked Monero balance is 0, total balance is",
                     )
                 }
                 (total, unlocked) => {
-                    let total = monero::Amount::from_piconero(total);
-                    let unlocked = monero::Amount::from_piconero(unlocked);
+                    let total = monero::Amount::from_pico(total);
+                    let unlocked = monero::Amount::from_pico(unlocked);
                     tracing::info!(%total, %unlocked, "Monero wallet balance");
                 }
             }
@@ -721,8 +721,7 @@ impl SwapDetails {
     fn calculate_exchange_rate(btc: bitcoin::Amount, xmr: monero::Amount) -> Result<String> {
         let btc_decimal = Decimal::from_f64(btc.to_btc())
             .ok_or_else(|| anyhow::anyhow!("Failed to convert BTC amount to Decimal"))?;
-        let xmr_decimal = Decimal::from_f64(xmr.as_xmr())
-            .ok_or_else(|| anyhow::anyhow!("Failed to convert XMR amount to Decimal"))?;
+        let xmr_decimal = Decimal::new(xmr.as_pico().try_into()?, monero::Amount::XMR_SCALE);
 
         let rate = btc_decimal
             .checked_div(xmr_decimal)

@@ -790,8 +790,8 @@ impl Request for GetMoneroBalanceArgs {
         let unlocked_balance = wallet.unlocked_balance().await?;
 
         Ok(GetMoneroBalanceResponse {
-            total_balance: crate::monero::Amount::from_piconero(total_balance.as_pico()),
-            unlocked_balance: crate::monero::Amount::from_piconero(unlocked_balance.as_pico()),
+            total_balance: crate::monero::Amount::from_pico(total_balance.as_pico()),
+            unlocked_balance: crate::monero::Amount::from_pico(unlocked_balance.as_pico()),
         })
     }
 }
