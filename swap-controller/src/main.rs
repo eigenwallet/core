@@ -37,7 +37,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             let response = client.monero_balance().await?;
             let amount = monero_oxide_ext::Amount::from_pico(response.balance);
 
-            println!("Current Monero balance is {:.12} XMR", amount.as_xmr());
+            println!("Current Monero balance is {}", amount);
         }
         Cmd::MoneroAddress => {
             let response = client.monero_address().await?;

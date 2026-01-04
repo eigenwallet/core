@@ -247,19 +247,6 @@ impl Amount {
         self.0
     }
 
-    /// Express this [`Amount`] as a floating-point value in Monero.
-    ///
-    /// Please be aware of the risk of using floating-point numbers.
-    pub fn as_xmr(self) -> f64 {
-        let mut buf = String::new();
-        self.fmt_value_in_xmr(&mut buf).unwrap();
-        f64::from_str(&buf).unwrap()
-    }
-
-    fn fmt_value_in_xmr(self, f: &mut dyn fmt::Write) -> fmt::Result {
-        fmt_piconero_in_xmr(self.as_pico(), f)
-    }
-
     // Some arithmetic that doesn't fit in `std::ops` traits.
 
     /// Checked addition.
@@ -297,7 +284,7 @@ impl Amount {
 
 impl fmt::Debug for Amount {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Amount({:.12} xmr)", self.as_xmr())
+        write!(f, "Amount({})", self)
     }
 }
 
@@ -305,7 +292,7 @@ impl fmt::Debug for Amount {
 // Just using Monero denominated string.
 impl fmt::Display for Amount {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.fmt_value_in_xmr(f)?;
+        fmt_piconero_in_xmr(self.as_pico(), f)?;
         f.write_str(" XMR")
     }
 }
@@ -381,7 +368,7 @@ impl ops::DivAssign<u64> for Amount {
 }
 
 /// Format the given piconero amount in the given denomination without including the denomination.
-fn fmt_piconero_in_xmr(piconero: u64, f: &mut dyn fmt::Write) -> fmt::Result {
+fn fmt_piconero_in_xmr(piconero: u64, f: &mut impl fmt::Write) -> fmt::Result {
     // need to inject a comma in the number
     let nb_decimals = 12usize;
     let real = format!("{:0width$}", piconero, width = nb_decimals);
