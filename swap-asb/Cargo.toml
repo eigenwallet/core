@@ -1,6 +1,6 @@
 [package]
 name = "swap-asb"
-version = "3.6.3"
+version = "3.6.4"
 authors = ["The eigenwallet guys <hello@eigenwallet.org>", "The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "ASB (Automated Swap Backend) binary for XMR/BTC atomic swaps."
