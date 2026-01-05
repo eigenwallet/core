@@ -162,6 +162,77 @@ function PunishTimelockExpiredAlert() {
 }
 
 /**
+ * Sub-component for alerts when waiting for remaining refund timelock.
+ * This occurs after a partial refund was confirmed but we're waiting for the amnesty timelock.
+ */
+function WaitingForRemainingRefundTimelockAlert({
+  blocksLeft,
+}: {
+  blocksLeft: number;
+}) {
+  return (
+    <MessageList
+      messages={[
+        "Your Bitcoin was partially refunded",
+        <>
+          Waiting{" "}
+          <HumanizedBitcoinBlockDuration blocks={blocksLeft} displayBlocks />{" "}
+          for the amnesty timelock to expire
+        </>,
+        "The maker can burn the remaining Bitcoin before the timelock expires",
+        "If the maker doesn't burn it, you can claim the remaining Bitcoin once the timelock expires",
+        "Keep the app running or resume the swap once the timelock expires",
+      ]}
+    />
+  );
+}
+
+/**
+ * Sub-component for alerts when remaining refund timelock has expired.
+ * The amnesty transaction can now be published.
+ */
+function RemainingRefundTimelockExpiredAlert() {
+  return (
+    <MessageList
+      messages={[
+        "Your Bitcoin was partially refunded",
+        "The amnesty timelock has expired",
+        "Resume the swap to claim the remaining Bitcoin",
+      ]}
+    />
+  );
+}
+
+/**
+ * Sub-component for alerts when the maker has burnt the amnesty output.
+ */
+function BtcRefundBurnPublishedAlert() {
+  return (
+    <MessageList
+      messages={[
+        "The remaining Bitcoin was burnt by the maker",
+        "Waiting for the maker to grant final amnesty",
+        "Keep the app running or resume the swap to receive the final amnesty",
+      ]}
+    />
+  );
+}
+
+/**
+ * Sub-component for alerts when the maker has published the final amnesty transaction.
+ */
+function BtcFinalAmnestyPublishedAlert() {
+  return (
+    <MessageList
+      messages={[
+        "The maker granted final amnesty",
+        "Waiting for the final amnesty transaction to be confirmed",
+      ]}
+    />
+  );
+}
+
+/**
  * Main component for displaying the appropriate swap alert status text.
  * @param swap - The swap information.
  * @returns JSX.Element | null
@@ -193,10 +264,12 @@ export function StateAlert({
     case BobStateName.XmrLocked:
     case BobStateName.EncSigSent:
     case BobStateName.CancelTimelockExpired:
+    // Even if the refund transactions have been published, it cannot be
+    // guaranteed that they will be confirmed in time
     case BobStateName.BtcCancelled:
-    case BobStateName.BtcRefundPublished: // Even if the transactions have been published, it cannot be
-    case BobStateName.BtcPartialRefundPublished: // Even if the transactions have been published, it cannot be
-    case BobStateName.BtcEarlyRefundPublished: // guaranteed that they will be confirmed in time
+    case BobStateName.BtcRefundPublished:
+    case BobStateName.BtcPartialRefundPublished:
+    case BobStateName.BtcEarlyRefundPublished:
       if (timelock != null) {
         switch (timelock.type) {
           case "None":
@@ -214,16 +287,50 @@ export function StateAlert({
             );
           case "Punish":
             return <PunishTimelockExpiredAlert />;
+          // These two timelock types only exist once the partial refund tx has been confirmed
+          // They shouldn't occur for these states, so return null
+          case "WaitingForRemainingRefund":
+          case "RemainingRefund":
+            return null;
           default:
             exhaustiveGuard(timelock);
         }
       }
       return <PunishTimelockExpiredAlert />;
 
+    case BobStateName.BtcPartiallyRefunded:
+      // Reuse existing timelock alerts for the amnesty waiting period
+      if (timelock != null) {
+        switch (timelock.type) {
+          case "WaitingForRemainingRefund":
+            return (
+              <WaitingForRemainingRefundTimelockAlert
+                blocksLeft={timelock.content.blocks_left}
+              />
+            );
+          case "RemainingRefund":
+            return <RemainingRefundTimelockExpiredAlert />;
+          default:
+            return null;
+        }
+      }
+      return null;
+
+    case BobStateName.BtcRefundBurnPublished:
+      return <BtcRefundBurnPublishedAlert />;
+
+    case BobStateName.BtcFinalAmnestyPublished:
+      return <BtcFinalAmnestyPublishedAlert />;
+
+    case BobStateName.BtcAmnestyPublished:
+      // Amnesty tx published, waiting for confirmation - no specific alert needed
+      return null;
+
     // If the Bitcoin lock transaction has not been published yet
     // there is no need to display an alert
     case BobStateName.BtcLockReadyToPublish:
       return null;
+
     default:
       exhaustiveGuard(swap.state_name);
   }

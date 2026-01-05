@@ -188,6 +188,7 @@ async fn next_state(
                 xmr_receive_amount,
                 monero_receive_pool,
                 swap_id,
+                has_full_refund_signature: state3.refund_signatures.has_full_refund_encsig()
             };
 
             // We request approval before publishing the Bitcoin lock transaction,
@@ -1306,6 +1307,12 @@ async fn next_state(
         BobState::BtcRefundBurnPublished(state) => {
             // Wait for TxRefundBurn confirmation
             let tx_refund_burn = state.construct_tx_refund_burn()?;
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcRefundBurnPublished {
+                    btc_refund_burn_txid: tx_refund_burn.txid(),
+                },
+            );
             let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_refund_burn)).await;
 
             subscription.wait_until_final().await?;
@@ -1318,6 +1325,14 @@ async fn next_state(
             // However, we don't expect Alice to publish the tx at once, if at all.
             // Thus we only check once, and then stop the swap.
             // User's can still manually resume the swap to check again.
+            let tx_refund_burn = state.construct_tx_refund_burn()?;
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcRefundBurnt {
+                    btc_refund_burn_txid: tx_refund_burn.txid(),
+                },
+            );
+
             let tx_final_amnesty = state.construct_tx_final_amnesty()?;
 
             let final_amnesty_status = bitcoin_wallet.status_of_script(&tx_final_amnesty).await.context("Failed to check TxFinalAmnesty status")?;
@@ -1331,6 +1346,12 @@ async fn next_state(
         BobState::BtcFinalAmnestyPublished(state) => {
             // Wait for TxFinalAmnesty confirmation
             let tx_final_amnesty = state.construct_tx_final_amnesty()?;
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcFinalAmnestyPublished {
+                    btc_final_amnesty_txid: tx_final_amnesty.txid(),
+                },
+            );
             let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_final_amnesty)).await;
 
             subscription.wait_until_final().await?;
@@ -1339,6 +1360,13 @@ async fn next_state(
         }
         BobState::BtcFinalAmnestyConfirmed(state) => {
             // Terminal state - we received the burnt funds back
+            let tx_final_amnesty = state.construct_tx_final_amnesty()?;
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcFinalAmnestyConfirmed {
+                    btc_final_amnesty_txid: tx_final_amnesty.txid(),
+                },
+            );
             BobState::BtcFinalAmnestyConfirmed(state)
         }
         BobState::SafelyAborted => BobState::SafelyAborted,

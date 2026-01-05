@@ -594,7 +594,7 @@ pub struct State2 {
     /// This field was changed in [#675](https://github.com/eigenwallet/core/pull/675).
     /// It boils down to the same json except that it now may also contain a partial refund signature.
     #[serde(flatten)]
-    refund_signatures: RefundSignatures,
+    pub refund_signatures: RefundSignatures,
     min_monero_confirmations: u64,
     tx_redeem_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
@@ -752,7 +752,7 @@ pub struct State3 {
     /// This field was changed in [#675](https://github.com/eigenwallet/core/pull/675).
     /// It boils down to the same json except that it now may also contain a partial refund signature.
     #[serde(flatten)]
-    refund_signatures: RefundSignatures,
+    pub refund_signatures: RefundSignatures,
     min_monero_confirmations: u64,
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,

@@ -98,6 +98,8 @@ pub struct LockBitcoinDetails {
     /// The amount of Bitcoin the taker will only be able to refund with cooperation from the maker
     #[typeshare(serialized_as = "number")]
     pub btc_amnesty_amount: bitcoin::Amount,
+    /// Whether we can guarantee we'll get the full refund
+    pub has_full_refund_signature: bool,
 }
 
 #[typeshare]
@@ -1122,6 +1124,26 @@ pub enum TauriSwapProgressEvent {
     BtcAmnestyReceived {
         #[typeshare(serialized_as = "string")]
         btc_amnesty_txid: Txid,
+    },
+    // TxRefundBurn has been published (waiting for confirmation)
+    BtcRefundBurnPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_refund_burn_txid: Txid,
+    },
+    // TxRefundBurn has been confirmed - amnesty output is burnt
+    BtcRefundBurnt {
+        #[typeshare(serialized_as = "string")]
+        btc_refund_burn_txid: Txid,
+    },
+    // Alice published TxFinalAmnesty
+    BtcFinalAmnestyPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_final_amnesty_txid: Txid,
+    },
+    // TxFinalAmnesty has been confirmed - user received burnt funds back
+    BtcFinalAmnestyConfirmed {
+        #[typeshare(serialized_as = "string")]
+        btc_final_amnesty_txid: Txid,
     },
     BtcPunished,
     AttemptingCooperativeRedeem,

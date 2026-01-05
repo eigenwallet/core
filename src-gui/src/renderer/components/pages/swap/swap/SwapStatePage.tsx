@@ -7,11 +7,17 @@ import {
   BitcoinEarlyRefundedPage,
   BitcoinEarlyRefundPublishedPage,
   BitcoinRefundPublishedPage,
+} from "./done/BitcoinRefundedPage";
+import {
   BitcoinPartialRefundPublished,
   BitcoinPartiallyRefunded,
   BitcoinAmnestyPublished,
-  BitcoinAmnestyReceived
-} from "./done/BitcoinRefundedPage";
+  BitcoinAmnestyReceived,
+  BitcoinRefundBurnPublished,
+  BitcoinRefundBurnt,
+  BitcoinFinalAmnestyPublished,
+  BitcoinFinalAmnestyConfirmed,
+} from "./done/BitcoinPartialRefundPage";
 import XmrRedeemInMempoolPage from "./done/XmrRedeemInMempoolPage";
 import ProcessExitedPage from "./exited/ProcessExitedPage";
 import BitcoinCancelledPage from "./in_progress/BitcoinCancelledPage";
@@ -139,6 +145,16 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       return <BitcoinAmnestyPublished />;
     case "BtcAmnestyReceived":
       return <BitcoinAmnestyReceived />;
+
+    //// 4 different types of refund burn / final amnesty states
+    case "BtcRefundBurnPublished":
+      return <BitcoinRefundBurnPublished />;
+    case "BtcRefundBurnt":
+      return <BitcoinRefundBurnt />;
+    case "BtcFinalAmnestyPublished":
+      return <BitcoinFinalAmnestyPublished />;
+    case "BtcFinalAmnestyConfirmed":
+      return <BitcoinFinalAmnestyConfirmed />;
 
     //// 4 different types of Bitcoin punished states we can be in
     case "BtcPunished":

@@ -58,6 +58,10 @@ export enum BobStateName {
   BtcPartiallyRefunded = "btc is partially refunded",
   BtcAmnestyPublished = "btc amnesty is published",
   BtcAmnestyReceived = "btc amnesty is confirmed",
+  BtcRefundBurnPublished = "btc refund burn is published",
+  BtcRefundBurnt = "btc refund is burnt",
+  BtcFinalAmnestyPublished = "btc final amnesty is published",
+  BtcFinalAmnestyConfirmed = "btc final amnesty is confirmed",
   XmrRedeemed = "xmr is redeemed",
   BtcPunished = "btc is punished",
   SafelyAborted = "safely aborted",
@@ -103,6 +107,14 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Bitcoin partially refunded";
     case BobStateName.BtcAmnestyReceived:
       return "Bitcoin amnesty was received";
+    case BobStateName.BtcRefundBurnPublished:
+      return "Bitcoin refund burn published";
+    case BobStateName.BtcRefundBurnt:
+      return "Bitcoin refund is burnt";
+    case BobStateName.BtcFinalAmnestyPublished:
+      return "Bitcoin final amnesty published";
+    case BobStateName.BtcFinalAmnestyConfirmed:
+      return "Bitcoin final amnesty received";
     case BobStateName.XmrRedeemed:
       return "Monero redeemed";
     case BobStateName.BtcPunished:
@@ -122,6 +134,14 @@ export type GetSwapInfoResponseExt = GetSwapInfoResponse & {
 export type TimelockNone = Extract<ExpiredTimelocks, { type: "None" }>;
 export type TimelockCancel = Extract<ExpiredTimelocks, { type: "Cancel" }>;
 export type TimelockPunish = Extract<ExpiredTimelocks, { type: "Punish" }>;
+export type TimelockWaitingForRemainingRefund = Extract<
+  ExpiredTimelocks,
+  { type: "WaitingForRemainingRefund" }
+>;
+export type TimelockRemainingRefund = Extract<
+  ExpiredTimelocks,
+  { type: "RemainingRefund" }
+>;
 
 // This function returns the absolute block number of the timelock relative to the block the tx_lock was included in
 export function getAbsoluteBlock(
@@ -138,6 +158,13 @@ export function getAbsoluteBlock(
   if (timelock.type === "Punish") {
     return cancelTimelock + punishTimelock;
   }
+  // These states are for the partial refund path - we're past cancel/punish timelocks
+  if (timelock.type === "WaitingForRemainingRefund") {
+    return cancelTimelock + punishTimelock;
+  }
+  if (timelock.type === "RemainingRefund") {
+    return cancelTimelock + punishTimelock;
+  }
 
   // We match all cases
   return exhaustiveGuard(timelock);
@@ -148,11 +175,11 @@ export type BobStateNameRunningSwap = Exclude<
   | BobStateName.Started
   | BobStateName.SwapSetupCompleted
   | BobStateName.BtcRefunded
-  | BobStateName.BtcPartiallyRefunded
-  | BobStateName.BtcAmnestyPublished
   | BobStateName.BtcAmnestyReceived
   | BobStateName.BtcRefunded
   | BobStateName.BtcEarlyRefunded
+  | BobStateName.BtcRefundBurnt
+  | BobStateName.BtcFinalAmnestyConfirmed
   | BobStateName.BtcPunished
   | BobStateName.SafelyAborted
   | BobStateName.XmrRedeemed
@@ -170,9 +197,9 @@ export function isBobStateNameRunningSwap(
     BobStateName.SwapSetupCompleted,
     BobStateName.BtcRefunded,
     BobStateName.BtcEarlyRefunded,
-    BobStateName.BtcPartiallyRefunded,
-    BobStateName.BtcAmnestyPublished,
     BobStateName.BtcAmnestyReceived,
+    BobStateName.BtcRefundBurnt,
+    BobStateName.BtcFinalAmnestyConfirmed,
     BobStateName.BtcPunished,
     BobStateName.SafelyAborted,
     BobStateName.XmrRedeemed,
