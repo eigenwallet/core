@@ -38,11 +38,37 @@ use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::str::FromStr;
+use zeroize::Zeroize;
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+/// SECURITY: This type contains secret key material.
+/// - Implements Serialize/Deserialize for state persistence (encrypted at rest recommended)
+/// - Debug output is REDACTED to prevent accidental logging of secrets
+/// - Clone creates untracked copies - use sparingly
+/// - Implements Drop to attempt zeroization (limited by upstream Scalar type)
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
 pub struct SecretKey {
     inner: Scalar,
     public: Point,
+}
+
+impl std::fmt::Debug for SecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretKey")
+            .field("inner", &"[REDACTED]")
+            .field("public", &self.public)
+            .finish()
+    }
+}
+
+impl Drop for SecretKey {
+    fn drop(&mut self) {
+        // Zeroize the scalar bytes via conversion
+        // Note: This is best-effort as Scalar is an external type
+        let mut bytes = self.inner.to_bytes();
+        bytes.zeroize();
+        // The original Scalar remains in memory but we've zeroized our copy
+        // Full zeroization requires upstream ecdsa_fun to implement Zeroize on Scalar
+    }
 }
 
 impl SecretKey {

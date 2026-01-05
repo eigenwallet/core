@@ -36,6 +36,9 @@ thiserror = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 
+# Security
+zeroize = { workspace = true }
+
 [dev-dependencies]
 futures = { workspace = true }
 proptest = "1"
