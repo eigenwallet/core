@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "dangerousDisableAssetCspModification": true
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.eigenwallet.org https://api.coingecko.com"
     }
   },
   "bundle": {
