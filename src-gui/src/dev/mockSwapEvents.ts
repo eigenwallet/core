@@ -27,6 +27,10 @@ const MOCK_BTC_REFUND_BURN_TXID =
 const MOCK_BTC_FINAL_AMNESTY_TXID =
   "c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
 
+// Mock amounts for partial refund scenarios
+const MOCK_BTC_LOCK_AMOUNT = 50_000_000; // 0.5 BTC
+const MOCK_BTC_AMNESTY_AMOUNT = 2_500_000; // 0.025 BTC (5% of lock amount)
+
 // Mock addresses
 const MOCK_BTC_DEPOSIT_ADDRESS = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
 const MOCK_XMR_ADDRESS =
@@ -135,14 +139,36 @@ const partialRefundWithAmnesty: TauriSwapProgressEvent[] = [
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
-    content: { btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID, has_amnesty_signature: true },
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
   },
   {
     type: "BtcPartiallyRefunded",
-    content: { btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID, has_amnesty_signature: true },
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
   },
-  { type: "BtcAmnestyPublished", content: { btc_amnesty_txid: MOCK_BTC_AMNESTY_TXID } },
-  { type: "BtcAmnestyReceived", content: { btc_amnesty_txid: MOCK_BTC_AMNESTY_TXID } },
+  {
+    type: "BtcAmnestyPublished",
+    content: {
+      btc_amnesty_txid: MOCK_BTC_AMNESTY_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
+  {
+    type: "BtcAmnestyReceived",
+    content: {
+      btc_amnesty_txid: MOCK_BTC_AMNESTY_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
   { type: "Released" },
 ];
 
@@ -153,14 +179,36 @@ const partialRefundWithBurn: TauriSwapProgressEvent[] = [
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
-    content: { btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID, has_amnesty_signature: false },
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
   },
   {
     type: "BtcPartiallyRefunded",
-    content: { btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID, has_amnesty_signature: false },
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
   },
-  { type: "BtcRefundBurnPublished", content: { btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID } },
-  { type: "BtcRefundBurnt", content: { btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID } },
+  {
+    type: "BtcRefundBurnPublished",
+    content: {
+      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
+  {
+    type: "BtcRefundBurnt",
+    content: {
+      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
   { type: "Released" },
 ];
 
@@ -171,16 +219,52 @@ const partialRefundWithBurnAndFinalAmnesty: TauriSwapProgressEvent[] = [
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
-    content: { btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID, has_amnesty_signature: false },
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
   },
   {
     type: "BtcPartiallyRefunded",
-    content: { btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID, has_amnesty_signature: false },
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
   },
-  { type: "BtcRefundBurnPublished", content: { btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID } },
-  { type: "BtcRefundBurnt", content: { btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID } },
-  { type: "BtcFinalAmnestyPublished", content: { btc_final_amnesty_txid: MOCK_BTC_FINAL_AMNESTY_TXID } },
-  { type: "BtcFinalAmnestyConfirmed", content: { btc_final_amnesty_txid: MOCK_BTC_FINAL_AMNESTY_TXID } },
+  {
+    type: "BtcRefundBurnPublished",
+    content: {
+      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
+  {
+    type: "BtcRefundBurnt",
+    content: {
+      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
+  {
+    type: "BtcFinalAmnestyPublished",
+    content: {
+      btc_final_amnesty_txid: MOCK_BTC_FINAL_AMNESTY_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
+  {
+    type: "BtcFinalAmnestyConfirmed",
+    content: {
+      btc_final_amnesty_txid: MOCK_BTC_FINAL_AMNESTY_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+    },
+  },
   { type: "Released" },
 ];
 

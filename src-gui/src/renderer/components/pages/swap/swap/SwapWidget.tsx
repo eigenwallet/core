@@ -28,6 +28,7 @@ export default function SwapWidget() {
           onlyShowIfUnusualAmountOfTimeHasPassed
         />
       )}
+      {import.meta.env.DEV && <MockSwapControls onMockStateChange={setMockState} />}
       <Dialog
         fullWidth
         maxWidth="md"
@@ -79,7 +80,6 @@ export default function SwapWidget() {
               <CancelButton />
               <DebugPageSwitchBadge enabled={debug} setEnabled={setDebug} />
             </Box>
-            {import.meta.env.DEV && <MockSwapControls onMockStateChange={setMockState} />}
           </>
         )}
       </Paper>

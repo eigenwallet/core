@@ -138,23 +138,47 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       }
       break;
     case "BtcPartialRefundPublished":
-      return <BitcoinPartialRefundPublished />;
+      if (state.curr.type === "BtcPartialRefundPublished") {
+        return <BitcoinPartialRefundPublished {...state.curr.content} />;
+      }
+      break;
     case "BtcPartiallyRefunded":
-      return <BitcoinPartiallyRefunded />;
+      if (state.curr.type === "BtcPartiallyRefunded") {
+        return <BitcoinPartiallyRefunded {...state.curr.content} />;
+      }
+      break;
     case "BtcAmnestyPublished":
-      return <BitcoinAmnestyPublished />;
+      if (state.curr.type === "BtcAmnestyPublished") {
+        return <BitcoinAmnestyPublished {...state.curr.content} />;
+      }
+      break;
     case "BtcAmnestyReceived":
-      return <BitcoinAmnestyReceived />;
+      if (state.curr.type === "BtcAmnestyReceived") {
+        return <BitcoinAmnestyReceived {...state.curr.content} />;
+      }
+      break;
 
     //// 4 different types of refund burn / final amnesty states
     case "BtcRefundBurnPublished":
-      return <BitcoinRefundBurnPublished />;
+      if (state.curr.type === "BtcRefundBurnPublished") {
+        return <BitcoinRefundBurnPublished {...state.curr.content} />;
+      }
+      break;
     case "BtcRefundBurnt":
-      return <BitcoinRefundBurnt />;
+      if (state.curr.type === "BtcRefundBurnt") {
+        return <BitcoinRefundBurnt {...state.curr.content} />;
+      }
+      break;
     case "BtcFinalAmnestyPublished":
-      return <BitcoinFinalAmnestyPublished />;
+      if (state.curr.type === "BtcFinalAmnestyPublished") {
+        return <BitcoinFinalAmnestyPublished {...state.curr.content} />;
+      }
+      break;
     case "BtcFinalAmnestyConfirmed":
-      return <BitcoinFinalAmnestyConfirmed />;
+      if (state.curr.type === "BtcFinalAmnestyConfirmed") {
+        return <BitcoinFinalAmnestyConfirmed {...state.curr.content} />;
+      }
+      break;
 
     //// 4 different types of Bitcoin punished states we can be in
     case "BtcPunished":

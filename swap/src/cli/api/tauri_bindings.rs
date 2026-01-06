@@ -1090,16 +1090,20 @@ pub enum TauriSwapProgressEvent {
     BtcPartialRefundPublished {
         #[typeshare(serialized_as = "string")]
         btc_partial_refund_txid: Txid,
-        /// Whether we have Alice's signature on the amnesty transaction
-        /// such that we will be able to refund the rest of the locked Bitcoin
-        /// after the partial refund went through.
-        has_amnesty_signature: bool,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     // BtcAmnesty was published but not yet confirmed.
     // Requires BtcPartialRefund to be published first.
     BtcAmnestyPublished {
         #[typeshare(serialized_as = "string")]
         btc_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     // tx_early_refund has been confirmed
     BtcEarlyRefunded {
@@ -1115,35 +1119,55 @@ pub enum TauriSwapProgressEvent {
     BtcPartiallyRefunded {
         #[typeshare(serialized_as = "string")]
         btc_partial_refund_txid: Txid,
-        /// Whether we have Alice's signature on the amnesty transaction
-        /// such that we will be able to refund the rest of the locked Bitcoin
-        /// after the partial refund went through.
-        has_amnesty_signature: bool,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
-    // BtcAmnesty was published but not yet confirmed.
+    // BtcAmnesty was confirmed.
     BtcAmnestyReceived {
         #[typeshare(serialized_as = "string")]
         btc_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     // TxRefundBurn has been published (waiting for confirmation)
     BtcRefundBurnPublished {
         #[typeshare(serialized_as = "string")]
         btc_refund_burn_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     // TxRefundBurn has been confirmed - amnesty output is burnt
     BtcRefundBurnt {
         #[typeshare(serialized_as = "string")]
         btc_refund_burn_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     // Alice published TxFinalAmnesty
     BtcFinalAmnestyPublished {
         #[typeshare(serialized_as = "string")]
         btc_final_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     // TxFinalAmnesty has been confirmed - user received burnt funds back
     BtcFinalAmnestyConfirmed {
         #[typeshare(serialized_as = "string")]
         btc_final_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     BtcPunished,
     AttemptingCooperativeRedeem,

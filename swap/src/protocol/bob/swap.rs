@@ -1027,7 +1027,8 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::BtcPartialRefundPublished {
                     btc_partial_refund_txid: state.construct_tx_partial_refund()?.txid(),
-                    has_amnesty_signature: state.refund_signatures.tx_refund_amnesty_sig().is_some(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
 
@@ -1054,13 +1055,12 @@ async fn next_state(
             }
         }
         BobState::BtcPartiallyRefunded(state) => {
-            let has_amnesty_signature = state.refund_signatures.tx_refund_amnesty_sig().is_some();
-
             event_emitter.emit_swap_progress_event(
                 swap_id,
                 TauriSwapProgressEvent::BtcPartiallyRefunded {
                     btc_partial_refund_txid: state.construct_tx_partial_refund()?.txid(),
-                    has_amnesty_signature,
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
 
@@ -1086,9 +1086,11 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::BtcAmnestyPublished {
                     btc_amnesty_txid: tx_amnesty.txid(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
-            
+
             let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_amnesty.clone())).await;
 
             retry("Waiting for Bitcoin amnesty transaction to be published by Alice", || async {
@@ -1102,6 +1104,8 @@ async fn next_state(
                     swap_id,
                     TauriSwapProgressEvent::BtcAmnestyReceived {
                         btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
+                        btc_lock_amount: state.tx_lock.lock_amount(),
+                        btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                     },
                 );
 
@@ -1251,6 +1255,8 @@ async fn next_state(
         BobState::BtcAmnestyConfirmed(state) => {
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcAmnestyReceived {
                 btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
+                btc_lock_amount: state.tx_lock.lock_amount(),
+                btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
             });
             BobState::BtcAmnestyConfirmed(state)
         },
@@ -1311,6 +1317,8 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::BtcRefundBurnPublished {
                     btc_refund_burn_txid: tx_refund_burn.txid(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
             let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_refund_burn)).await;
@@ -1330,6 +1338,8 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::BtcRefundBurnt {
                     btc_refund_burn_txid: tx_refund_burn.txid(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
 
@@ -1350,6 +1360,8 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::BtcFinalAmnestyPublished {
                     btc_final_amnesty_txid: tx_final_amnesty.txid(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
             let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_final_amnesty)).await;
@@ -1365,6 +1377,8 @@ async fn next_state(
                 swap_id,
                 TauriSwapProgressEvent::BtcFinalAmnestyConfirmed {
                     btc_final_amnesty_txid: tx_final_amnesty.txid(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
             BobState::BtcFinalAmnestyConfirmed(state)
