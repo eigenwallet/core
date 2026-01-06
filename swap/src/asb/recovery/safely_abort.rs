@@ -29,9 +29,16 @@ pub async fn safely_abort(swap_id: Uuid, db: Arc<dyn Database>) -> Result<AliceS
         | AliceState::CancelTimelockExpired { .. }
         | AliceState::BtcCancelled { .. }
         | AliceState::BtcRefunded { .. }
+        | AliceState::BtcPartiallyRefunded { .. }
+        | AliceState::XmrRefundable { .. }
         | AliceState::BtcPunishable { .. }
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcRefundBurnPublished { .. }
+        | AliceState::BtcRefundBurnConfirmed { .. }
+        | AliceState::BtcFinalAmnestyGranted { .. }
+        | AliceState::BtcRefundFinalAmnestyPublished { .. }
+        | AliceState::BtcRefundFinalAmnestyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }

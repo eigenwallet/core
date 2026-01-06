@@ -1,4 +1,5 @@
 import { Box, Button, Dialog, DialogActions, Paper } from "@mui/material";
+import { useState } from "react";
 import { useActiveSwapInfo, useAppSelector } from "store/hooks";
 import SwapStatePage from "renderer/components/pages/swap/swap/SwapStatePage";
 import CancelButton from "./CancelButton";
@@ -6,13 +7,16 @@ import SwapStateStepper from "renderer/components/modal/swap/SwapStateStepper";
 import SwapStatusAlert from "renderer/components/alert/SwapStatusAlert/SwapStatusAlert";
 import DebugPageSwitchBadge from "renderer/components/modal/swap/pages/DebugPageSwitchBadge";
 import DebugPage from "renderer/components/modal/swap/pages/DebugPage";
-import { useState } from "react";
+import MockSwapControls from "renderer/components/modal/swap/pages/MockSwapControls";
+import { SwapState } from "models/storeModel";
 
 export default function SwapWidget() {
-  const swap = useAppSelector((state) => state.swap);
+  const swapState = useAppSelector((state) => state.swap.state);
   const swapInfo = useActiveSwapInfo();
-
   const [debug, setDebug] = useState(false);
+  const [mockState, setMockState] = useState<SwapState | null>(null);
+
+  const displayState = mockState ?? swapState;
 
   return (
     <Box
@@ -24,6 +28,7 @@ export default function SwapWidget() {
           onlyShowIfUnusualAmountOfTimeHasPassed
         />
       )}
+      {import.meta.env.DEV && <MockSwapControls onMockStateChange={setMockState} />}
       <Dialog
         fullWidth
         maxWidth="md"
@@ -60,11 +65,11 @@ export default function SwapWidget() {
             justifyContent: "center",
           }}
         >
-          <SwapStatePage state={swap.state} />
+          <SwapStatePage state={displayState} />
         </Box>
-        {swap.state !== null && (
+        {displayState !== null && (
           <>
-            <SwapStateStepper state={swap.state} />
+            <SwapStateStepper state={displayState} />
             <Box
               sx={{
                 display: "flex",

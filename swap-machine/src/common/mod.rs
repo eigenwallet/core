@@ -1,14 +1,14 @@
-use crate::alice::is_complete as alice_is_complete;
 use crate::alice::AliceState;
-use crate::bob::is_complete as bob_is_complete;
+use crate::alice::is_complete as alice_is_complete;
 use crate::bob::BobState;
+use crate::bob::is_complete as bob_is_complete;
 use anyhow::Result;
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use sigma_fun::HashTranscript;
+use sigma_fun::ext::dl_secp256k1_ed25519_eq::{CrossCurveDLEQ, CrossCurveDLEQProof};
 use std::convert::TryInto;
 use std::sync::LazyLock;
 use swap_core::bitcoin;
@@ -35,10 +35,11 @@ pub struct Message0 {
     pub v_b: monero::PrivateViewKey,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     pub refund_address: bitcoin::Address,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
+    pub tx_partial_refund_fee: bitcoin::Amount,
+    pub tx_refund_amnesty_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
+    pub tx_final_amnesty_fee: bitcoin::Amount,
 }
 
 #[allow(non_snake_case)]
@@ -53,23 +54,30 @@ pub struct Message1 {
     pub redeem_address: bitcoin::Address,
     #[serde(with = "swap_serde::bitcoin::address_serde")]
     pub punish_address: bitcoin::Address,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_redeem_fee: bitcoin::Amount,
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_punish_fee: bitcoin::Amount,
+    /// The amount of Bitcoin that Bob not get refunded unless Alice decides so.
+    /// Introduced in [#675](https://github.com/eigenwallet/core/pull/675) to combat spam.
+    pub amnesty_amount: bitcoin::Amount,
+    pub tx_refund_burn_fee: bitcoin::Amount,
 }
 
 #[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message2 {
-    pub psbt: bitcoin::PartiallySignedTransaction,
+    pub tx_lock_psbt: bitcoin::PartiallySignedTransaction,
 }
 
 #[allow(non_snake_case)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message3 {
     pub tx_cancel_sig: bitcoin::Signature,
-    pub tx_refund_encsig: bitcoin::EncryptedSignature,
+    // The following fields were reworked in [#675](https://github.com/eigenwallet/core/pull/675).
+    // Alice will send either the full refund encsig or signatures for both partial refund
+    // and tx refund amnesty.
+    pub tx_full_refund_encsig: Option<bitcoin::EncryptedSignature>,
+    pub tx_partial_refund_encsig: Option<bitcoin::EncryptedSignature>,
+    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
 }
 
 #[allow(non_snake_case)]
@@ -78,6 +86,9 @@ pub struct Message4 {
     pub tx_punish_sig: bitcoin::Signature,
     pub tx_cancel_sig: bitcoin::Signature,
     pub tx_early_refund_sig: bitcoin::Signature,
+    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
+    pub tx_refund_burn_sig: Option<bitcoin::Signature>,
+    pub tx_final_amnesty_sig: Option<bitcoin::Signature>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -157,6 +168,26 @@ pub trait Database {
     async fn get_state(&self, swap_id: Uuid) -> Result<State>;
     async fn get_states(&self, swap_id: Uuid) -> Result<Vec<State>>;
     async fn all(&self) -> Result<Vec<(Uuid, State)>>;
+
+    /// Returns the current (latest) state and the starting state for a swap.
+    async fn get_current_and_starting_state(&self, swap_id: Uuid) -> Result<(State, State)> {
+        use anyhow::Context;
+
+        let states = self
+            .get_states(swap_id)
+            .await
+            .context("Error fetching all states of swap from database")?;
+        let starting = states.first().cloned().context("No states found")?;
+        let current = states.last().cloned().context("No states found")?;
+
+        // Sanity check: both states must be from the same role
+        match (&current, &starting) {
+            (State::Alice(_), State::Alice(_)) | (State::Bob(_), State::Bob(_)) => {}
+            _ => anyhow::bail!("Current and starting states have mismatched roles"),
+        }
+
+        Ok((current, starting))
+    }
     async fn insert_buffered_transfer_proof(
         &self,
         swap_id: Uuid,

@@ -40,7 +40,7 @@ async fn monero_transfers_wrong_key() {
         "Expect one tx key for the output"
     );
 
-    monero.generate_block().await.unwrap();
+    monero.generate_blocks().await.unwrap();
 
     // Use a wrong private key (just a simple constant key, not the real transfer key)
     let wrong_key = monero::PrivateKey::from_slice(&[

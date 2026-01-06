@@ -12,7 +12,7 @@ use swap::{asb, cli};
 
 #[tokio::test]
 async fn given_alice_and_bob_manually_cancel_when_timelock_not_expired_errors() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));

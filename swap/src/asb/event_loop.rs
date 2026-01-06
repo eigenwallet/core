@@ -13,6 +13,7 @@ use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
 use anyhow::{anyhow, Context, Result};
+use bdk::bitcoin::hashes::sha1;
 use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
@@ -21,6 +22,7 @@ use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChann
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::future::Cache;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -29,6 +31,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
+use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
 use tokio::sync::{mpsc, oneshot};
@@ -51,6 +54,7 @@ where
     max_buy: bitcoin::Amount,
     external_redeem_address: Option<bitcoin::Address>,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 
     /// Cache for quotes
     quote_cache: Cache<QuoteCacheKey, Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
@@ -64,6 +68,12 @@ where
     /// Once a [`EncryptedSignature`] has been sent to the EventLoopHandle,
     /// the sender is removed from this map.
     recv_encrypted_signature: HashMap<Uuid, bmrng::RequestSender<bitcoin::EncryptedSignature, ()>>,
+
+    /// Stores where to send burn-on-refund instructions to
+    /// The corresponding receiver is stored in the EventLoopHandle
+    /// Uses watch channel to allow multiple updates before consumption
+    recv_burn_on_refund_instruction:
+        HashMap<Uuid, tokio::sync::watch::Sender<Option<bool>>>,
 
     /// Once we receive an [`EncryptedSignature`] from Bob, we forward it to the EventLoopHandle.
     /// Once the EventLoopHandle acknowledges the receipt of the [`EncryptedSignature`], we need to confirm this to Bob.
@@ -142,6 +152,7 @@ where
         max_buy: bitcoin::Amount,
         external_redeem_address: Option<bitcoin::Address>,
         developer_tip: TipConfig,
+        refund_policy: RefundPolicy,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -162,8 +173,10 @@ where
             max_buy,
             external_redeem_address,
             developer_tip,
+            refund_policy,
             quote_cache,
             recv_encrypted_signature: Default::default(),
+            recv_burn_on_refund_instruction: Default::default(),
             inflight_encrypted_signatures: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
@@ -247,6 +260,15 @@ where
                                 }
                             };
 
+                            // TODO: propagate error to the swap_setup routine instead of swallowing it
+                            let (btc_amnesty_amount, should_publish_tx_refund_burn )= match apply_bitcoin_amnesty_policy(btc, &self.refund_policy) {
+                                Ok(amount) => amount,
+                                Err(error) => {
+                                    tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
+                                    continue;
+                                }
+                            };
+
                             let wallet_snapshot = match capture_wallet_snapshot(self.bitcoin_wallet.clone(), &self.monero_wallet, &self.external_redeem_address, btc).await {
                                 Ok(wallet_snapshot) => wallet_snapshot,
                                 Err(error) => {
@@ -256,7 +278,7 @@ where
                             };
 
                             // Ignore result, we should never hit this because the receiver will alive as long as the connection is.
-                            let _ = responder.respond(wallet_snapshot);
+                            let _ = responder.respond((wallet_snapshot, btc_amnesty_amount, should_publish_tx_refund_burn));
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
                             if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
@@ -540,6 +562,19 @@ where
 
                             let _ = respond_to.send(registrations);
                         }
+                        EventLoopRequest::SetBurnOnRefund { swap_id, burn, respond_to } => {
+                            let result = if let Some(sender) = self.recv_burn_on_refund_instruction.get(&swap_id) {
+                                sender.send(Some(burn))
+                                    .map_err(|_| anyhow!("Failed to send burn instruction - receiver dropped"))
+                            } else {
+                                Err(anyhow!("No active swap found with id {}", swap_id))
+                            };
+                            let _ = respond_to.send(result);
+                        }
+                        EventLoopRequest::GrantFinalAmnesty { swap_id, respond_to } => {
+                            let result = self.handle_grant_final_amnesty(swap_id).await;
+                            let _ = respond_to.send(result);
+                        }
                     }
                 }
             }
@@ -677,14 +712,69 @@ where
         self.recv_encrypted_signature
             .insert(swap_id, encrypted_signature_sender);
 
+        // Create a watch channel for burn-on-refund instructions
+        // Uses watch instead of bmrng to allow multiple updates before consumption
+        let (burn_instruction_sender, burn_instruction_receiver) =
+            tokio::sync::watch::channel(None);
+        self.recv_burn_on_refund_instruction
+            .insert(swap_id, burn_instruction_sender);
+
         let transfer_proof_sender = self.outgoing_transfer_proofs_sender.clone();
 
         EventLoopHandle {
             swap_id,
             peer,
             recv_encrypted_signature: tokio::sync::Mutex::new(Some(encrypted_signature_receiver)),
+            recv_burn_on_refund_instruction: tokio::sync::Mutex::new(burn_instruction_receiver),
             transfer_proof_sender: tokio::sync::Mutex::new(Some(transfer_proof_sender)),
         }
+    }
+
+    /// Handle a request to grant final amnesty for a swap.
+    ///
+    /// This checks that the swap is not currently running, transitions the
+    /// state to BtcFinalAmnestyGranted, and resumes the swap.
+    async fn handle_grant_final_amnesty(&mut self, swap_id: Uuid) -> Result<()> {
+        use crate::asb::grant_final_amnesty;
+
+        // Check if swap is currently running
+        if self.recv_encrypted_signature.contains_key(&swap_id)
+            || self.recv_burn_on_refund_instruction.contains_key(&swap_id)
+        {
+            return Err(anyhow!(
+                "Cannot grant final amnesty while swap {} is still running",
+                swap_id
+            ));
+        }
+
+        // Use the grant_final_amnesty function to transition the state
+        let new_state = grant_final_amnesty(swap_id, self.db.clone()).await?;
+
+        // Get peer ID for this swap
+        let peer_id = self.db.get_peer_id(swap_id).await?;
+
+        // Create handle and swap to resume
+        let handle = self.new_handle(peer_id, swap_id);
+        let swap = Swap {
+            event_loop_handle: handle,
+            bitcoin_wallet: self.bitcoin_wallet.clone(),
+            monero_wallet: self.monero_wallet.clone(),
+            env_config: self.env_config,
+            db: self.db.clone(),
+            state: new_state,
+            swap_id,
+            developer_tip: self.developer_tip.clone(),
+        };
+
+        // Send swap to be resumed
+        self.swap_sender
+            .send(swap)
+            .await
+            .context("Failed to send swap to be resumed")?;
+
+        tracing::info!(%swap_id, "Granted final amnesty and resumed swap");
+
+        Ok(())
     }
 }
 
@@ -695,6 +785,8 @@ pub struct EventLoopHandle {
     peer: PeerId,
     recv_encrypted_signature:
         tokio::sync::Mutex<Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>>,
+    recv_burn_on_refund_instruction:
+        tokio::sync::Mutex<tokio::sync::watch::Receiver<Option<bool>>>,
     #[allow(clippy::type_complexity)]
     transfer_proof_sender: tokio::sync::Mutex<
         Option<
@@ -815,6 +907,71 @@ impl EventLoopHandle {
 
         Ok(())
     }
+
+    /// Wait for a NEW burn-on-refund instruction from the operator
+    ///
+    /// This method waits until the operator sends a new decision via the EventLoopService.
+    /// Use this in select! arms to react to operator commands.
+    ///
+    /// Returns the new burn decision when one is received.
+    pub async fn wait_for_burn_on_refund_instruction(&self) -> Result<bool> {
+        let mut guard = self.recv_burn_on_refund_instruction.lock().await;
+
+        guard
+            .changed()
+            .await
+            .map_err(|_| anyhow!("Burn instruction sender was dropped"))?;
+
+        let value = *guard.borrow();
+        Ok(value.expect("changed() returned Ok, so value should be set"))
+    }
+
+    /// Get the current burn-on-refund instruction value
+    ///
+    /// Returns Some(bool) if an instruction has been set, None otherwise.
+    /// Use this to check the current decision before taking action.
+    pub async fn get_burn_on_refund_instruction(&self) -> Option<bool> {
+        let guard = self.recv_burn_on_refund_instruction.lock().await;
+        let value = *guard.borrow();
+        value
+    }
+}
+
+/// For a new swap of `swap_amount`, this function calculates how much
+/// Bitcoin should go into the amnesty-lock incase of a refund.
+/// Returns ZERO when taker_refund_ratio is 1.0 (100%), indicating full refund.
+/// Also returns whether or not to burn the the amnesty output if the taker refunds.
+fn apply_bitcoin_amnesty_policy(
+    swap_amount: bitcoin::Amount,
+    refund_policy: &RefundPolicy,
+) -> Result<(bitcoin::Amount, bool)> {
+    let should_burn_on_refund = refund_policy.burn_on_refund;
+
+    // When ratio is 1.0, no amnesty - use full refund path
+    if refund_policy.taker_refund_ratio == Decimal::ONE {
+        return Ok((bitcoin::Amount::ZERO, should_burn_on_refund));
+    }
+
+    let btc_amnesty_ratio = Decimal::ONE
+        .checked_sub(refund_policy.taker_refund_ratio)
+        .context("can't have refund ration > 1")?;
+
+    let amount_sats = swap_amount.to_sat();
+    let amount_decimal =
+        Decimal::from_u64(amount_sats).context("Decimal overflowed by Bitcoin sats")?;
+
+    let btc_amnesty_decimal = amount_decimal
+        .checked_mul(btc_amnesty_ratio)
+        .context("Decimal overflow when computing amnesty amount in sats")?
+        .floor();
+    let btc_amnesty_sats = btc_amnesty_decimal
+        .try_into()
+        .context("Couldn't convert Decimal to u64")?;
+
+    Ok((
+        bitcoin::Amount::from_sat(btc_amnesty_sats),
+        should_burn_on_refund,
+    ))
 }
 
 async fn capture_wallet_snapshot(
@@ -841,6 +998,9 @@ async fn capture_wallet_snapshot(
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
+    let refund_burn_fee = bitcoin_wallet
+        .estimate_fee(bitcoin::TxRefundBurn::weight(), Some(transfer_amount))
+        .await?;
 
     Ok(WalletSnapshot::new(
         unlocked_balance.into(),
@@ -848,6 +1008,7 @@ async fn capture_wallet_snapshot(
         punish_address,
         redeem_fee,
         punish_fee,
+        refund_burn_fee,
     ))
 }
 
@@ -867,6 +1028,15 @@ mod service {
             respond_to: oneshot::Sender<
                 Vec<swap_p2p::protocols::rendezvous::register::public::RendezvousNodeStatus>,
             >,
+        },
+        SetBurnOnRefund {
+            swap_id: Uuid,
+            burn: bool,
+            respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        },
+        GrantFinalAmnesty {
+            swap_id: Uuid,
+            respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
         },
     }
 
@@ -912,6 +1082,39 @@ mod service {
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Set the burn-on-refund decision for a specific swap
+        ///
+        /// This can be called multiple times to update the decision before
+        /// the swap state machine polls for it.
+        pub async fn set_burn_on_refund(&self, swap_id: Uuid, burn: bool) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::SetBurnOnRefund {
+                    swap_id,
+                    burn,
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        /// Grant final amnesty for a swap in BtcRefundBurnConfirmed state
+        ///
+        /// This transitions the swap to BtcFinalAmnestyGranted and resumes
+        /// the swap state machine to publish the final amnesty transaction.
+        pub async fn grant_final_amnesty(&self, swap_id: Uuid) -> anyhow::Result<()> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GrantFinalAmnesty {
+                    swap_id,
+                    respond_to: tx,
+                })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
         }
     }
 }

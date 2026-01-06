@@ -27,7 +27,7 @@ use structopt::clap::ErrorKind;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
+use swap::asb::{cancel, grant_final_amnesty, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
@@ -314,6 +314,7 @@ pub async fn main() -> Result<()> {
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
                 tip_config,
+                config.maker.refund_policy,
             )
             .unwrap();
 
@@ -481,6 +482,13 @@ pub async fn main() -> Result<()> {
 
             tracing::info!("Swap safely aborted");
         }
+        Command::GrantFinalAmnesty { swap_id } => {
+            let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
+
+            grant_final_amnesty(swap_id, db).await?;
+
+            tracing::info!("Final amnesty granted for swap {}", swap_id);
+        }
         Command::Redeem {
             swap_id,
             do_not_await_finality,
@@ -542,7 +550,8 @@ pub async fn main() -> Result<()> {
                 .next()
                 .context("Couldn't find state Started for this swap")?;
 
-            let secret_spend_key = match state3.watch_for_btc_tx_refund(&bitcoin_wallet).await {
+            let secret_spend_key = match state3.watch_for_btc_tx_full_refund(&bitcoin_wallet).await
+            {
                 Ok(secret) => secret,
                 Err(error) => {
                     tracing::error!(
