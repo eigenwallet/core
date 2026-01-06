@@ -80,9 +80,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
 
             // Simulate alice's controller sending the final amnesty command via `controller` cli
             ctx.restart_alice().await;
-            ctx.alice_rpc_client
-                .grant_final_amnesty(swap_id.to_string())
-                .await?;
+            ctx.alice_rpc_client.grant_final_amnesty(swap_id).await?;
 
             let alice_swap = ctx.alice_next_swap().await;
             let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));

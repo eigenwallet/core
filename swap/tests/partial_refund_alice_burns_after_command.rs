@@ -63,7 +63,7 @@ async fn given_partial_refund_alice_burns_after_command() {
             // Send RPC command to Alice to burn this swap's amnesty
             // Must be done AFTER restart (so EventLoopHandle exists) but BEFORE running the swap
             ctx.alice_rpc_client
-                .set_burn_on_refund(alice_swap_id.to_string(), true)
+                .set_burn_on_refund(alice_swap_id, true)
                 .await
                 .expect("Failed to send burn command to Alice");
 
