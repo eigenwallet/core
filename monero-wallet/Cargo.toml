@@ -13,6 +13,7 @@ monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-sys = { path = "../monero-sys" }
 swap-core = { path = "../swap-core" }
+swap-tor = { path = "../swap-tor" }
 throttle = { path = "../throttle" }
 uuid = { workspace = true }
 

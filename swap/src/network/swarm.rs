@@ -3,17 +3,14 @@ use crate::network::rendezvous::XmrBtcNamespace;
 use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
-use arti_client::TorClient;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{identity, Multiaddr, Swarm};
 use libp2p::{PeerId, SwarmBuilder};
 use std::fmt::Debug;
-use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
-use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 // We keep connections open for 15 minutes
 const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 15);
@@ -28,7 +25,7 @@ pub fn asb<LR>(
     env_config: env::Config,
     namespace: XmrBtcNamespace,
     rendezvous_addrs: &[Multiaddr],
-    maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    maybe_tor_client: swap_tor::TorBackend,
     register_hidden_service: bool,
     num_intro_points: u8,
 ) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
@@ -81,7 +78,7 @@ where
 
 pub async fn cli<T>(
     identity: identity::Keypair,
-    maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
+    maybe_tor_client: swap_tor::TorBackend,
     behaviour: T,
 ) -> Result<Swarm<T>>
 where

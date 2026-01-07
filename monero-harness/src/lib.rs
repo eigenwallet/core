@@ -467,7 +467,11 @@ impl MoneroWallet {
     }
 
     /// Get address at a given account and subaddress index.
-    pub async fn address_at(&self, account_index: u32, address_index: u32) -> Result<MoneroAddress> {
+    pub async fn address_at(
+        &self,
+        account_index: u32,
+        address_index: u32,
+    ) -> Result<MoneroAddress> {
         Ok(self.wallet.address(account_index, address_index).await?)
     }
 
