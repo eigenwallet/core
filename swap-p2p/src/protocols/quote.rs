@@ -1,15 +1,46 @@
 use crate::out_event;
 use libp2p::request_response::{self, ProtocolSupport};
 use libp2p::{PeerId, StreamProtocol};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use swap_core::bitcoin;
+use swap_env::config::RefundPolicy;
 use typeshare::typeshare;
 
-pub(crate) const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/1.0.0";
+pub(crate) const PROTOCOL: &str = "/comit/xmr/btc/bid-quote/2.0.0";
 pub type OutEvent = request_response::Event<(), BidQuote>;
 pub type Message = request_response::Message<(), BidQuote>;
 
 pub type Behaviour = request_response::json::Behaviour<(), BidQuote>;
+
+/// The refund policy that will apply if the swap is cancelled.
+/// Communicated in quotes so takers know the terms upfront.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(tag = "type", content = "content")]
+#[typeshare]
+pub enum RefundPolicyWire {
+    /// Taker receives 100% of their Bitcoin back on refund.
+    FullRefund,
+    /// Taker receives a partial refund; the remainder goes to an amnesty output
+    /// that the maker may or may not release later.
+    PartialRefund {
+        /// Ratio (0.0-1.0) of Bitcoin the taker receives immediately.
+        #[typeshare(serialized_as = "number")]
+        taker_refund_ratio: Decimal,
+    },
+}
+
+impl From<RefundPolicy> for RefundPolicyWire {
+    fn from(policy: RefundPolicy) -> Self {
+        if policy.taker_refund_ratio == Decimal::ONE {
+            RefundPolicyWire::FullRefund
+        } else {
+            RefundPolicyWire::PartialRefund {
+                taker_refund_ratio: policy.taker_refund_ratio,
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BidQuoteProtocol;
@@ -33,6 +64,8 @@ pub struct BidQuote {
     /// The maximum quantity the maker is willing to buy.
     #[typeshare(serialized_as = "number")]
     pub max_quantity: bitcoin::Amount,
+    /// The refund policy that will apply if the swap is cancelled.
+    pub refund_policy: RefundPolicyWire,
     /// Monero "ReserveProofV2" which proves that Alice has the funds to fulfill the quote.
     /// See "Zero to Monero" section 8.1.6 for more details.
     ///
@@ -47,6 +80,7 @@ impl BidQuote {
         price: bitcoin::Amount::ZERO,
         min_quantity: bitcoin::Amount::ZERO,
         max_quantity: bitcoin::Amount::ZERO,
+        refund_policy: RefundPolicyWire::FullRefund,
         reserve_proof: None,
     };
 }

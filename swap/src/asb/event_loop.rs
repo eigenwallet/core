@@ -6,7 +6,7 @@ use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
 use crate::network::cooperative_xmr_redeem_after_punish::CooperativeXmrRedeemRejectReason;
 use crate::network::cooperative_xmr_redeem_after_punish::Response::{Fullfilled, Rejected};
-use crate::network::quote::BidQuote;
+use crate::network::quote::{BidQuote, RefundPolicyWire};
 use crate::network::swap_setup::alice::WalletSnapshot;
 use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
@@ -289,7 +289,7 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio).await {
+                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio, self.refund_policy.clone().into()).await {
                                 Ok(quote_arc) => {
                                     if self.swarm.behaviour_mut().quote.send_response(channel, (*quote_arc).clone()).is_err() {
                                         tracing::debug!(%peer, "Failed to respond with quote");
@@ -588,6 +588,7 @@ where
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         developer_tip: Decimal,
+        refund_policy: RefundPolicyWire,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>> {
         // We use the min and max buy amounts to create a unique key for the cache
         // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
@@ -638,6 +639,7 @@ where
             get_reserved_items,
             get_reserve_proof,
             developer_tip,
+            refund_policy,
         )
         .await;
 
@@ -1128,7 +1130,7 @@ mod quote {
     use tokio::time::timeout;
 
     use crate::{
-        network::quote::{BidQuote, ReserveProofWithAddress},
+        network::quote::{BidQuote, RefundPolicyWire, ReserveProofWithAddress},
         protocol::alice::ReservesMonero,
     };
 
@@ -1152,6 +1154,7 @@ mod quote {
         get_reserved_items: I,
         get_reserve_proof: P,
         developer_tip: Decimal,
+        refund_policy: RefundPolicyWire,
     ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>>
     where
         LR: LatestRate,
@@ -1221,6 +1224,7 @@ mod quote {
                 price: ask_price,
                 min_quantity: bitcoin::Amount::ZERO,
                 max_quantity: bitcoin::Amount::ZERO,
+                refund_policy: refund_policy.clone(),
                 reserve_proof,
             }));
         }
@@ -1235,6 +1239,7 @@ mod quote {
                 price: ask_price,
                 min_quantity: min_buy,
                 max_quantity: max_bitcoin_for_monero,
+                refund_policy: refund_policy.clone(),
                 reserve_proof,
             }));
         }
@@ -1243,6 +1248,7 @@ mod quote {
             price: ask_price,
             min_quantity: min_buy,
             max_quantity: max_buy,
+            refund_policy,
             reserve_proof,
         }))
     }
@@ -1485,6 +1491,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1517,6 +1524,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1544,6 +1552,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1569,6 +1578,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1599,6 +1609,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
@@ -1623,6 +1634,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await;
 
@@ -1649,6 +1661,7 @@ mod tests {
             || async { Ok(reserved_items) },
             || async { Err(anyhow::anyhow!("no reserve proof")) },
             Decimal::ZERO,
+            RefundPolicyWire::FullRefund,
         )
         .await
         .unwrap();
