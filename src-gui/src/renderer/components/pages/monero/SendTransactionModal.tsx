@@ -27,7 +27,7 @@ export default function SendTransactionModal({
 
   const showSuccess = successResponse !== null;
 
-  const handleClose = (_: any, reason: string) => {
+  const handleClose = (_: unknown, reason: string) => {
     // We want the user to explicitly close the dialog.
     // We do not close the dialog upon a backdrop click.
     if (reason === "backdropClick") {

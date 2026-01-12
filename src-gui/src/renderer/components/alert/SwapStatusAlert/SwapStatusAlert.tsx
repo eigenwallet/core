@@ -266,6 +266,7 @@ export function StateAlert({
     case BobStateName.CancelTimelockExpired:
     // Even if the refund transactions have been published, it cannot be
     // guaranteed that they will be confirmed in time
+    // falls through
     case BobStateName.BtcCancelled:
     case BobStateName.BtcRefundPublished:
     case BobStateName.BtcPartialRefundPublished:

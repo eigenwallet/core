@@ -29,6 +29,8 @@ export default function SwapSetupInflightPage({
   btc_lock_amount,
 }: TauriSwapProgressEventContent<"SwapSetupInflight">) {
   const request = useActiveLockBitcoinApprovalRequest();
+  // Get market rate for markup calculation (must be called unconditionally)
+  const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
 
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const expirationTs =
@@ -78,9 +80,6 @@ export default function SwapSetupInflightPage({
 
   const { btc_network_fee, monero_receive_pool, xmr_receive_amount, btc_amnesty_amount } =
     request.request.content;
-
-  // Get market rate for markup calculation
-  const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
 
   // Calculate markup compared to market rate
   const makerRate = satsToBtc(btc_lock_amount) / piconerosToXmr(Number(xmr_receive_amount));

@@ -42,10 +42,15 @@ export default function NumberInput({
     return 0;
   };
 
-  const [userPrecision, setUserPrecision] = useState(() =>
-    getDecimalPrecision(step),
-  ); // Track user's decimal precision
-  const [minPrecision, setMinPrecision] = useState(3);
+  // minPrecision is purely derived from step - no state needed
+  const minPrecision = getDecimalPrecision(step);
+
+  // Track user's decimal precision, reset when step changes
+  const [userPrecision, setUserPrecision] = useState(() => minPrecision);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reset state when prop changes
+  useEffect(() => setUserPrecision(minPrecision), [step, minPrecision]);
+
   const appliedPrecision =
     userPrecision > minPrecision ? userPrecision : minPrecision;
 
@@ -60,12 +65,6 @@ export default function NumberInput({
       onChange(placeholder);
     }
   }, [placeholder, isFocused, value, onChange]);
-
-  // Update precision when step changes
-  useEffect(() => {
-    setUserPrecision(getDecimalPrecision(step));
-    setMinPrecision(getDecimalPrecision(step));
-  }, [step]);
 
   // Measure text width to size input dynamically
   useEffect(() => {
