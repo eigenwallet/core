@@ -244,16 +244,30 @@ pub async fn refund(
         .ensure_broadcasted(refund_tx, &refund_type.to_string())
         .await
     {
-        Ok(_) => {
-            let state = match refund_type {
-                RefundType::Full => BobState::BtcRefundPublished(state6),
-                RefundType::Partial { .. } => BobState::BtcPartialRefundPublished(state6),
+        Ok((_txid, subscription)) => {
+            // First save the "published" state
+            let published_state = match &refund_type {
+                RefundType::Full => BobState::BtcRefundPublished(state6.clone()),
+                RefundType::Partial { .. } => BobState::BtcPartialRefundPublished(state6.clone()),
             };
 
-            db.insert_latest_state(swap_id, state.clone().into())
+            db.insert_latest_state(swap_id, published_state.into())
                 .await?;
 
-            Ok(state)
+            // Wait for the transaction to be confirmed
+            tracing::info!("Waiting for refund transaction to be confirmed...");
+            subscription.wait_until_final().await?;
+
+            // Now save and return the confirmed state
+            let confirmed_state = match refund_type {
+                RefundType::Full => BobState::BtcRefunded(state6),
+                RefundType::Partial { .. } => BobState::BtcPartiallyRefunded(state6),
+            };
+
+            db.insert_latest_state(swap_id, confirmed_state.clone().into())
+                .await?;
+
+            Ok(confirmed_state)
         }
 
         // If we fail to submit the refund transaction it can have one of two reasons:
