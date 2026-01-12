@@ -159,6 +159,11 @@ export function createMainListeners() {
   listener.startListening({
     actionCreator: swapProgressEventReceived,
     effect: async (action) => {
+      // Skip Tauri calls when mocking is enabled (DEV only)
+      if (store.getState().swap._mockOnlyDisableTauriCallsOnSwapProgress) {
+        return;
+      }
+
       if (action.payload.event.type === "Released") {
         logger.info("Swap released, updating bitcoin balance...");
         await checkBitcoinBalance();

@@ -642,6 +642,11 @@ export async function rejectApproval<T>(
 }
 
 export async function refreshApprovals(): Promise<void> {
+  // Skip when mocking is enabled (DEV only)
+  if (store.getState().swap._mockOnlyDisableTauriCallsOnSwapProgress) {
+    return;
+  }
+
   const response = await invokeNoArgs<GetPendingApprovalsResponse>(
     "get_pending_approvals",
   );

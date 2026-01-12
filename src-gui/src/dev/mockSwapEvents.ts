@@ -1,5 +1,7 @@
 import {
+  ApprovalRequest,
   BidQuote,
+  LockBitcoinDetails,
   MoneroAddressPool,
   QuoteWithAddress,
   TauriSwapProgressEvent,
@@ -29,7 +31,7 @@ const MOCK_BTC_FINAL_AMNESTY_TXID =
 
 // Mock amounts for partial refund scenarios
 const MOCK_BTC_LOCK_AMOUNT = 50_000_000; // 0.5 BTC
-const MOCK_BTC_AMNESTY_AMOUNT = 2_500_000; // 0.025 BTC (5% of lock amount)
+const MOCK_BTC_AMNESTY_AMOUNT = 1_000_000; // 0.01 BTC (2% of lock amount)
 
 // Mock addresses
 const MOCK_BTC_DEPOSIT_ADDRESS = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
@@ -42,13 +44,28 @@ const MOCK_QUOTE: BidQuote = {
   price: 0.007,
   min_quantity: 10_000_000,
   max_quantity: 100_000_000,
+  refund_policy: { type: "FullRefund" },
 };
 
 const MOCK_QUOTE_WITH_ADDRESS: QuoteWithAddress = {
   multiaddr: "/ip4/127.0.0.1/tcp/9939",
   peer_id: "12D3KooWCdMKjesXMJz1SiZ7HgotrxuqhQJbP5sgBm2BwP1cqThi",
   quote: MOCK_QUOTE,
-  version: "0.13.0",
+  version: "3.6.1",
+};
+
+const MOCK_QUOTE_PARTIAL_REFUND: BidQuote = {
+  price: 0.0068,
+  min_quantity: 5_000_000,
+  max_quantity: 200_000_000,
+  refund_policy: { type: "PartialRefund", content: { taker_refund_ratio: 0.98 } },
+};
+
+const MOCK_QUOTE_WITH_ADDRESS_PARTIAL: QuoteWithAddress = {
+  multiaddr: "/ip4/192.168.1.50/tcp/9940",
+  peer_id: "12D3KooWEyoppNCUzN3sX7atGxPHvqgZvUNQmKzz1mQvNfFhuqP9",
+  quote: MOCK_QUOTE_PARTIAL_REFUND,
+  version: "3.6.1",
 };
 
 const MOCK_RECEIVE_POOL: MoneroAddressPool = [
@@ -66,7 +83,7 @@ const baseScenario: TauriSwapProgressEvent[] = [
       deposit_address: MOCK_BTC_DEPOSIT_ADDRESS,
       max_giveable: 0,
       min_bitcoin_lock_tx_fee: 1000,
-      known_quotes: [MOCK_QUOTE_WITH_ADDRESS],
+      known_quotes: [MOCK_QUOTE_WITH_ADDRESS, MOCK_QUOTE_WITH_ADDRESS_PARTIAL],
     },
   },
   { type: "SwapSetupInflight", content: { btc_lock_amount: 50_000_000 } },
@@ -279,3 +296,54 @@ export const scenarios: Record<string, TauriSwapProgressEvent[]> = {
 };
 
 export type MockScenario = keyof typeof scenarios;
+
+// Mock LockBitcoin approval requests for testing confirmation screen
+
+// Partial refund version (5% amnesty)
+const MOCK_LOCK_BITCOIN_DETAILS_PARTIAL: LockBitcoinDetails = {
+  btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+  btc_network_fee: 5000,
+  xmr_receive_amount: 7_000_000_000_000, // 7 XMR in piconeros
+  monero_receive_pool: MOCK_RECEIVE_POOL,
+  swap_id: MOCK_SWAP_ID,
+  btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+  has_full_refund_signature: false,
+};
+
+// Full refund version (no amnesty)
+const MOCK_LOCK_BITCOIN_DETAILS_FULL: LockBitcoinDetails = {
+  btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+  btc_network_fee: 5000,
+  xmr_receive_amount: 7_000_000_000_000, // 7 XMR in piconeros
+  monero_receive_pool: MOCK_RECEIVE_POOL,
+  swap_id: MOCK_SWAP_ID,
+  btc_amnesty_amount: 0,
+  has_full_refund_signature: true,
+};
+
+const PARTIAL_REFUND_SCENARIOS: MockScenario[] = [
+  "partialRefundWithAmnesty",
+  "partialRefundWithBurn",
+  "partialRefundWithBurnAndFinalAmnesty",
+];
+
+export function isPartialRefundScenario(scenario: MockScenario): boolean {
+  return PARTIAL_REFUND_SCENARIOS.includes(scenario);
+}
+
+export function getMockLockBitcoinApproval(scenario: MockScenario | null): ApprovalRequest {
+  const isPartial = scenario !== null && isPartialRefundScenario(scenario);
+  return {
+    request_id: "00000000-0000-0000-0000-000000000001",
+    request: {
+      type: "LockBitcoin",
+      content: isPartial ? MOCK_LOCK_BITCOIN_DETAILS_PARTIAL : MOCK_LOCK_BITCOIN_DETAILS_FULL,
+    },
+    request_status: {
+      state: "Pending",
+      content: {
+        expiration_ts: Number.MAX_SAFE_INTEGER,
+      },
+    },
+  };
+}

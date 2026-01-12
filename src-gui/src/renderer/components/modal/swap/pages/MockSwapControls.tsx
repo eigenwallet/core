@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Box,
+  Button,
   IconButton,
   MenuItem,
   Paper,
@@ -10,60 +11,70 @@ import {
 } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { scenarios, MockScenario, MOCK_SWAP_ID } from "dev/mockSwapEvents";
-import { SwapState } from "models/storeModel";
+import { scenarios, MockScenario, MOCK_SWAP_ID, getMockLockBitcoinApproval } from "dev/mockSwapEvents";
+import { useAppDispatch } from "store/hooks";
+import { approvalEventReceived } from "store/features/rpcSlice";
+import {
+  swapProgressEventReceived,
+  swapReset,
+  setMockOnlyDisableTauriCallsOnSwapProgress,
+} from "store/features/swapSlice";
 
-function buildMockState(scenario: MockScenario, index: number): SwapState {
-  const events = scenarios[scenario];
-  return {
-    curr: events[index],
-    prev: index > 0 ? events[index - 1] : null,
-    swapId: MOCK_SWAP_ID,
-  };
-}
-
-interface Props {
-  onMockStateChange: (state: SwapState | null) => void;
-}
-
-export default function MockSwapControls({ onMockStateChange }: Props) {
+export default function MockSwapControls() {
+  const dispatch = useAppDispatch();
   const [scenario, setScenario] = useState<MockScenario | null>(null);
   const [index, setIndex] = useState(0);
 
   const enabled = scenario !== null;
   const total = scenario ? scenarios[scenario].length : 0;
 
+  const dispatchMockState = (mockScenario: MockScenario, eventIndex: number) => {
+    const event = scenarios[mockScenario][eventIndex];
+    dispatch(
+      swapProgressEventReceived({
+        swap_id: MOCK_SWAP_ID,
+        event,
+      }),
+    );
+  };
+
+  const handleMockConfirmation = () => {
+    dispatch(approvalEventReceived(getMockLockBitcoinApproval(scenario)));
+  };
+
   const handleToggle = (checked: boolean) => {
     if (checked) {
       const firstScenario = Object.keys(scenarios)[0] as MockScenario;
       setScenario(firstScenario);
       setIndex(0);
-      onMockStateChange(buildMockState(firstScenario, 0));
+      dispatch(setMockOnlyDisableTauriCallsOnSwapProgress(true));
+      dispatchMockState(firstScenario, 0);
     } else {
       setScenario(null);
       setIndex(0);
-      onMockStateChange(null);
+      dispatch(setMockOnlyDisableTauriCallsOnSwapProgress(false));
+      dispatch(swapReset());
     }
   };
 
   const handleScenarioChange = (newScenario: MockScenario) => {
     setScenario(newScenario);
     setIndex(0);
-    onMockStateChange(buildMockState(newScenario, 0));
+    dispatchMockState(newScenario, 0);
   };
 
   const prev = () => {
     if (!scenario || index === 0) return;
     const newIndex = index - 1;
     setIndex(newIndex);
-    onMockStateChange(buildMockState(scenario, newIndex));
+    dispatchMockState(scenario, newIndex);
   };
 
   const next = () => {
     if (!scenario || index >= total - 1) return;
     const newIndex = index + 1;
     setIndex(newIndex);
-    onMockStateChange(buildMockState(scenario, newIndex));
+    dispatchMockState(scenario, newIndex);
   };
 
   const currentStateName = scenario ? scenarios[scenario][index].type : null;
@@ -119,6 +130,9 @@ export default function MockSwapControls({ onMockStateChange }: Props) {
             </Typography>
           </>
         )}
+        <Button size="small" variant="outlined" onClick={handleMockConfirmation}>
+          Mock Confirmation
+        </Button>
       </Box>
     </Paper>
   );

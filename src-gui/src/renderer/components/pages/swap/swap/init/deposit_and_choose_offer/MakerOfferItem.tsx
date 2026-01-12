@@ -1,6 +1,6 @@
 import { Box, Chip, Divider, Paper, Tooltip, Typography } from "@mui/material";
 import Jdenticon from "renderer/components/other/Jdenticon";
-import { QuoteWithAddress } from "models/tauriModel";
+import { QuoteWithAddress, RefundPolicyWire } from "models/tauriModel";
 import {
   MoneroSatsExchangeRate,
   MoneroSatsMarkup,
@@ -10,6 +10,13 @@ import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
+
+function getRefundPercentage(policy: RefundPolicyWire): number {
+  if (policy.type === "FullRefund") {
+    return 100;
+  }
+  return policy.content.taker_refund_ratio * 100;
+}
 
 export default function MakerOfferItem({
   quoteWithAddress,
@@ -128,6 +135,17 @@ export default function MakerOfferItem({
               </>
             }
             size="small"
+          />
+        </Tooltip>
+        <Tooltip
+          title="Minimum guaranteed refund if swap is cancelled"
+          arrow
+          placement="top"
+        >
+          <Chip
+            label={`${getRefundPercentage(quote.refund_policy)}% refund`}
+            size="small"
+            color={quote.refund_policy.type === "FullRefund" ? "success" : "warning"}
           />
         </Tooltip>
         {isMakerVersionOutdated(version) ? (

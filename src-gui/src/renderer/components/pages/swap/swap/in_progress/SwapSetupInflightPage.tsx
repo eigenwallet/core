@@ -5,8 +5,9 @@ import {
   TauriSwapProgressEventContent,
 } from "models/tauriModelExt";
 import { SatsAmount, PiconeroAmount } from "renderer/components/other/Units";
-import { Box, Typography, Divider, Theme } from "@mui/material";
-import { useActiveSwapId, usePendingLockBitcoinApproval } from "store/hooks";
+import { Box, Typography, Paper, Divider, Theme } from "@mui/material";
+import { useActiveSwapId, usePendingLockBitcoinApproval, useAppSelector } from "store/hooks";
+import { getMarkup, satsToBtc, piconerosToXmr } from "utils/conversionUtils";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
 import CheckIcon from "@mui/icons-material/Check";
@@ -75,8 +76,20 @@ export default function SwapSetupInflightPage({
     );
   }
 
-  const { btc_network_fee, monero_receive_pool, xmr_receive_amount, btc_amnesty_amount  } =
+  const { btc_network_fee, monero_receive_pool, xmr_receive_amount, btc_amnesty_amount } =
     request.request.content;
+
+  // Get market rate for markup calculation
+  const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
+
+  // Calculate markup compared to market rate
+  const makerRate = satsToBtc(btc_lock_amount) / piconerosToXmr(Number(xmr_receive_amount));
+  const markupPercent = xmrBtcRate != null ? getMarkup(makerRate, xmrBtcRate) : null;
+
+  // Calculate refund percentages
+  const guaranteedRefundPercent = ((btc_lock_amount - btc_amnesty_amount) / btc_lock_amount) * 100;
+  const depositPercent = (btc_amnesty_amount / btc_lock_amount) * 100;
+  const hasDeposit = btc_amnesty_amount > 0;
 
   return (
     <Box
@@ -104,7 +117,6 @@ export default function SwapSetupInflightPage({
           <BitcoinMainBox
             btc_lock_amount={btc_lock_amount}
             btc_network_fee={btc_network_fee}
-            btc_amnesty_amount={btc_amnesty_amount}
           />
         </Box>
 
@@ -127,6 +139,77 @@ export default function SwapSetupInflightPage({
           />
         </Box>
       </Box>
+
+      {/* Info section: Rate and Refund details */}
+      <Paper
+        elevation={2}
+        sx={{
+          p: 2,
+          mt: 2,
+          bgcolor: "background.paper",
+          borderRadius: 1,
+        }}
+      >
+        {markupPercent != null && (
+          <>
+            <Typography variant="body2">
+              Rate: {Math.abs(markupPercent).toFixed(1)}% {markupPercent >= 0 ? "above" : "below"} market
+            </Typography>
+            <Divider sx={{ my: 1.5 }} />
+          </>
+        )}
+        {hasDeposit ? (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Box
+              sx={{
+                p: 1.5,
+                bgcolor: (theme) => theme.palette.success.main + "15",
+                borderRadius: 1,
+                borderLeft: 3,
+                borderColor: "success.main",
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500, color: "success.main" }}>
+                {guaranteedRefundPercent.toFixed(0)}% guaranteed refund
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                p: 1.5,
+                bgcolor: (theme) => theme.palette.info.main + "15",
+                borderRadius: 1,
+                borderLeft: 3,
+                borderColor: "info.main",
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500, color: "info.main" }}>
+                {depositPercent.toFixed(0)}% anti-spam deposit
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.5 }}
+              >
+                └ Usually returned; maker may lock for abuse
+              </Typography>
+            </Box>
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              p: 1.5,
+              bgcolor: (theme) => theme.palette.success.main + "15",
+              borderRadius: 1,
+              borderLeft: 3,
+              borderColor: "success.main",
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 500, color: "success.main" }}>
+              Full refund if swap fails (guaranteed)
+            </Typography>
+          </Box>
+        )}
+      </Paper>
 
       <Box
         sx={{
@@ -188,15 +271,12 @@ export default function SwapSetupInflightPage({
 interface BitcoinSendSectionProps {
   btc_lock_amount: number;
   btc_network_fee: number;
-  btc_amnesty_amount: number;
 }
 
-function BitcoinMainBox ({
+function BitcoinMainBox({
   btc_lock_amount,
   btc_network_fee,
-  btc_amnesty_amount
 }: BitcoinSendSectionProps) {
-  const guaranteedRefundPercentage: number = (btc_lock_amount - btc_amnesty_amount) / btc_lock_amount * 100;
   return (
     <Box
       sx={{
@@ -240,14 +320,6 @@ function BitcoinMainBox ({
           })}
         >
           <SatsAmount amount={btc_lock_amount} />
-        </Typography>
-        <Typography
-          variant="body1"
-          sx={(theme) => ({
-            color: theme.palette.text.primary,
-          })}
-        >
-          ({guaranteedRefundPercentage}% refund guaranteed)
         </Typography>
       </Box>
 
