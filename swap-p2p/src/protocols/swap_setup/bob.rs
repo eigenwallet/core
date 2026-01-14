@@ -1,7 +1,7 @@
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
 use crate::protocols::swap_setup::{
-    protocol, BlockchainNetwork, SpotPriceError, SpotPriceResponse,
+    BlockchainNetwork, SpotPriceError, SpotPriceResponse, protocol,
 };
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
@@ -25,7 +25,7 @@ use swap_machine::bob::{State0, State2};
 use swap_machine::common::{Message1, Message3};
 use uuid::Uuid;
 
-use super::{read_cbor_message, write_cbor_message, SpotPriceRequest};
+use super::{SpotPriceRequest, read_cbor_message, write_cbor_message};
 
 // TODO: This should use redial::Behaviour to keep connections alive for peers with queued requests
 // TODO: Do not use swap_id as key inside the ConnectionHandler, use another key
@@ -174,7 +174,10 @@ impl NetworkBehaviour for Behaviour {
                 result,
             });
         } else {
-            debug_assert!(false, "Received a swap setup result from a connection handler for which we have no inflight request stored");
+            debug_assert!(
+                false,
+                "Received a swap setup result from a connection handler for which we have no inflight request stored"
+            );
         }
     }
 
@@ -326,6 +329,9 @@ pub struct NewSwap {
     pub btc: bitcoin::Amount,
     pub tx_lock_fee: bitcoin::Amount,
     pub tx_refund_fee: bitcoin::Amount,
+    pub tx_partial_refund_fee: bitcoin::Amount,
+    pub tx_refund_amnesty_fee: bitcoin::Amount,
+    pub tx_final_amnesty_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
     pub bitcoin_refund_address: bitcoin::Address,
 }
@@ -401,7 +407,10 @@ impl ConnectionHandler for Handler {
                 // In poll(..), we ensure that we never dispatch multiple concurrent swap setup requests for the same swap on the same ConnectionHandler
                 // This invariant should therefore never be violated
                 // TODO: Is this truly true?
-                assert!(!did_replace_existing_future, "Replacing an existing inflight swap setup request is not allowed. We should have checked for this invariant before instructing the Behaviour to start a substream.");
+                assert!(
+                    !did_replace_existing_future,
+                    "Replacing an existing inflight swap setup request is not allowed. We should have checked for this invariant before instructing the Behaviour to start a substream."
+                );
             }
             libp2p::swarm::handler::ConnectionEvent::DialUpgradeError(
                 libp2p::swarm::handler::DialUpgradeError { info, error },
@@ -462,7 +471,10 @@ impl ConnectionHandler for Handler {
                 );
 
                 // TODO: Potentially make this a production assert
-                debug_assert!(false, "Multiple concurrent swap setup requests with the same swap id are not allowed.");
+                debug_assert!(
+                    false,
+                    "Multiple concurrent swap setup requests with the same swap id are not allowed."
+                );
 
                 continue;
             }
@@ -478,7 +490,10 @@ impl ConnectionHandler for Handler {
                 );
 
                 // TODO: Potentially make this a production assert
-                debug_assert!(false, "Multiple concurrent substream negotiations for the same swap id are not allowed.");
+                debug_assert!(
+                    false,
+                    "Multiple concurrent substream negotiations for the same swap id are not allowed."
+                );
 
                 continue;
             }
@@ -557,8 +572,12 @@ async fn run_swap_setup(
         xmr,
         env_config.bitcoin_cancel_timelock.into(),
         env_config.bitcoin_punish_timelock.into(),
+        env_config.bitcoin_remaining_refund_timelock.into(),
         new_swap_request.bitcoin_refund_address.clone(),
         env_config.monero_finality_confirmations,
+        new_swap_request.tx_partial_refund_fee,
+        new_swap_request.tx_refund_amnesty_fee,
+        new_swap_request.tx_final_amnesty_fee,
         new_swap_request.tx_refund_fee,
         new_swap_request.tx_cancel_fee,
         new_swap_request.tx_lock_fee,
@@ -569,9 +588,14 @@ async fn run_swap_setup(
         "Transitioned into state0 during swap setup",
     );
 
-    write_cbor_message(&mut substream, state0.next_message())
-        .await
-        .context("Failed to send state0 message to Alice")?;
+    write_cbor_message(
+        &mut substream,
+        state0
+            .next_message()
+            .context("Couldn't generate Message0")?,
+    )
+    .await
+    .context("Failed to send state0 message to Alice")?;
     let message1 = read_cbor_message::<Message1>(&mut substream)
         .await
         .context("Failed to read message1 from Alice")?;
@@ -600,9 +624,14 @@ async fn run_swap_setup(
         "Transitioned into state2 during swap setup",
     );
 
-    write_cbor_message(&mut substream, state2.next_message())
-        .await
-        .context("Failed to send state2 message")?;
+    write_cbor_message(
+        &mut substream,
+        state2
+            .next_message()
+            .context("Couldn't construct Message4")?,
+    )
+    .await
+    .context("Failed to send state2 message")?;
 
     substream
         .flush()
@@ -644,10 +673,14 @@ pub enum Error {
         max: bitcoin::Amount,
         buy: bitcoin::Amount,
     },
-    #[error("Seller's XMR balance is currently too low to fulfill the swap request to buy {buy}, please try again later")]
+    #[error(
+        "Seller's XMR balance is currently too low to fulfill the swap request to buy {buy}, please try again later"
+    )]
     BalanceTooLow { buy: bitcoin::Amount },
 
-    #[error("Seller blockchain network {asb:?} setup did not match your blockchain network setup {cli:?}")]
+    #[error(
+        "Seller blockchain network {asb:?} setup did not match your blockchain network setup {cli:?}"
+    )]
     BlockchainNetworkMismatch {
         cli: BlockchainNetwork,
         asb: BlockchainNetwork,

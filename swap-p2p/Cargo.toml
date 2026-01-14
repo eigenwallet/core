@@ -27,6 +27,7 @@ unsigned-varint = { version = "0.8.0", features = ["codec", "asynchronous_codec"
 bitcoin = { workspace = true }
 monero = { workspace = true }
 rand = { workspace = true }
+rust_decimal = { workspace = true }
 
 # Utils
 anyhow = { workspace = true }

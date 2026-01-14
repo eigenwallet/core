@@ -1,14 +1,25 @@
 import { Step, StepLabel, Stepper, Typography } from "@mui/material";
 import { SwapState } from "models/storeModel";
-import { useAppSelector } from "store/hooks";
 import logger from "utils/logger";
 
 export enum PathType {
   HAPPY_PATH = "happy path",
-  UNHAPPY_PATH = "unhappy path",
+  RECOVERY_PATH = "recovery path",
 }
 
-type PathStep = [type: PathType, step: number, isError: boolean];
+export enum RecoveryScenario {
+  GENERIC = "generic",
+  FULL_REFUND = "full_refund",
+  PARTIAL_REFUND = "partial_refund",
+  COOPERATIVE_REDEEM = "cooperative_redeem",
+}
+
+type PathStep = [
+  type: PathType,
+  step: number,
+  isError: boolean,
+  scenario?: RecoveryScenario,
+];
 
 /**
  * Determines the current step in the swap process based on the previous and latest state.
@@ -92,38 +103,62 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     case "XmrRedeemInMempool":
       return [PathType.HAPPY_PATH, 4, false];
 
-    // Unhappy Path States
+    // Recovery Path States - Generic (early states before we know outcome)
 
-    // Step 1: Cancel timelock has expired. Waiting for cancel transaction to be published
+    case "WaitingForCancelTimelockExpiration":
     case "CancelTimelockExpired":
-      return [PathType.UNHAPPY_PATH, 0, isReleased];
+      return [PathType.RECOVERY_PATH, 0, isReleased, RecoveryScenario.GENERIC];
 
-    // Step 2: Swap has been cancelled. Waiting for Bitcoin to be refunded
     case "BtcCancelled":
-      return [PathType.UNHAPPY_PATH, 1, isReleased];
+      return [PathType.RECOVERY_PATH, 1, isReleased, RecoveryScenario.GENERIC];
 
-    // Step 2: One of the two Bitcoin refund transactions have been published
-    // but they haven't been confirmed yet
+    // Recovery Path States - Full Refund
+
     case "BtcRefundPublished":
     case "BtcEarlyRefundPublished":
-      return [PathType.UNHAPPY_PATH, 1, isReleased];
+      return [PathType.RECOVERY_PATH, 1, isReleased, RecoveryScenario.FULL_REFUND];
 
-    // Step 2: One of the two Bitcoin refund transactions have been confirmed
     case "BtcRefunded":
     case "BtcEarlyRefunded":
-      return [PathType.UNHAPPY_PATH, 2, false];
+      return [PathType.RECOVERY_PATH, 2, false, RecoveryScenario.FULL_REFUND];
 
-    // Step 2 (Failed): Failed to refund Bitcoin
-    // The timelock expired before we could refund, resulting in punishment
+    // Recovery Path States - Partial Refund
+
+    case "BtcPartialRefundPublished":
+      return [PathType.RECOVERY_PATH, 1, isReleased, RecoveryScenario.PARTIAL_REFUND];
+
+    case "BtcPartiallyRefunded":
+      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
+
+    case "BtcAmnestyPublished":
+      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
+
+    case "BtcAmnestyReceived":
+      return [PathType.RECOVERY_PATH, 3, false, RecoveryScenario.PARTIAL_REFUND];
+
+    case "BtcRefundBurnPublished":
+      return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.PARTIAL_REFUND];
+
+    case "BtcRefundBurnt":
+      return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.PARTIAL_REFUND];
+
+    case "BtcFinalAmnestyPublished":
+      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
+
+    case "BtcFinalAmnestyConfirmed":
+      return [PathType.RECOVERY_PATH, 3, false, RecoveryScenario.PARTIAL_REFUND];
+
+    // Recovery Path States - Cooperative Redeem (after punishment)
+
     case "BtcPunished":
-      return [PathType.UNHAPPY_PATH, 1, true];
+      return [PathType.RECOVERY_PATH, 1, true, RecoveryScenario.COOPERATIVE_REDEEM];
 
-    // Attempting cooperative redemption after punishment
     case "AttemptingCooperativeRedeem":
     case "CooperativeRedeemAccepted":
-      return [PathType.UNHAPPY_PATH, 1, isReleased];
+      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.COOPERATIVE_REDEEM];
+
     case "CooperativeRedeemRejected":
-      return [PathType.UNHAPPY_PATH, 1, true];
+      return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.COOPERATIVE_REDEEM];
 
     case "Resuming":
       return null;
@@ -163,15 +198,34 @@ function SwapStepper({
 
 const HAPPY_PATH_STEP_LABELS = [
   { label: "Locking your BTC", duration: "~12min" },
-  { label: "They lock their XMR", duration: "~10min" },
+  { label: "They lock their XMR", duration: "~20min" },
   { label: "They redeem the BTC", duration: "~2min" },
-  { label: "Redeeming your XMR", duration: "~10min" },
+  { label: "Redeeming your XMR", duration: "~1min" },
 ];
 
-const UNHAPPY_PATH_STEP_LABELS = [
-  { label: "Cancelling swap", duration: "~1min" },
-  { label: "Attempting recovery", duration: "~5min" },
-];
+const RECOVERY_STEP_LABELS: Record<
+  RecoveryScenario,
+  Array<{ label: string; duration: string }>
+> = {
+  [RecoveryScenario.GENERIC]: [
+    { label: "Cancelling swap", duration: "~1min" },
+    { label: "Attempting recovery", duration: "" },
+  ],
+  [RecoveryScenario.FULL_REFUND]: [
+    { label: "Cancelling swap", duration: "~1min" },
+    { label: "Bitcoin refunded", duration: "~5min" },
+  ],
+  [RecoveryScenario.PARTIAL_REFUND]: [
+    { label: "Cancelling swap", duration: "~1min" },
+    { label: "Partial refund", duration: "~30min" },
+    { label: "Remaining Bitcoin", duration: "~2min" },
+  ],
+  [RecoveryScenario.COOPERATIVE_REDEEM]: [
+    { label: "Cancelling swap", duration: "~1min" },
+    { label: "We have been punished", duration: "" },
+    { label: "Attempting cooperative recovery", duration: "~2min" },
+  ],
+};
 
 export default function SwapStateStepper({
   state,
@@ -184,12 +238,14 @@ export default function SwapStateStepper({
     return null;
   }
 
-  const [pathType, activeStep, error] = result;
+  const [pathType, activeStep, error, scenario] = result;
 
-  const steps =
-    pathType === PathType.HAPPY_PATH
-      ? HAPPY_PATH_STEP_LABELS
-      : UNHAPPY_PATH_STEP_LABELS;
+  let steps: Array<{ label: string; duration: string }>;
+  if (pathType === PathType.HAPPY_PATH) {
+    steps = HAPPY_PATH_STEP_LABELS;
+  } else {
+    steps = RECOVERY_STEP_LABELS[scenario ?? RecoveryScenario.GENERIC];
+  }
 
   return <SwapStepper steps={steps} activeStep={activeStep} error={error} />;
 }

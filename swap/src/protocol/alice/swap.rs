@@ -272,7 +272,7 @@ where
                     // Retry repeatedly to broadcast tx_early_refund
                     result = async {
                         backoff::future::retry_notify(backoff, || async {
-                            bitcoin_wallet.broadcast(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
+                            bitcoin_wallet.ensure_broadcasted(tx_early_refund.clone(), "early_refund").await.map_err(backoff::Error::transient)
                         }, |e, wait_time: Duration| {
                             tracing::warn!(
                                 %tx_early_refund_txid,
@@ -425,6 +425,17 @@ where
                         state3,
                     }
                 }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_refund_burn = Some(burn);
+
+                    AliceState::XmrLockTransferProofSent {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::EncSigLearned {
@@ -480,7 +491,7 @@ where
                 }
 
                 bitcoin_wallet
-                    .broadcast(tx_redeem.clone(), "redeem")
+                    .ensure_broadcasted(tx_redeem.clone(), "redeem")
                     .await
                     .map(Some)
                     .map_err(backoff::Error::transient)
@@ -543,15 +554,26 @@ where
                 .subscribe_to(Box::new(state3.tx_lock.clone()))
                 .await;
 
-            // TODO: Retry here
-            tx_lock_status_subscription
-                .wait_until_confirmed_with(state3.cancel_timelock)
-                .await?;
+            select! {
+                result = tx_lock_status_subscription.wait_until_confirmed_with(state3.cancel_timelock) => {
+                    result?;
+                    AliceState::CancelTimelockExpired {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3,
+                    }
+                }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_refund_burn = Some(burn);
 
-            AliceState::CancelTimelockExpired {
-                monero_wallet_restore_blockheight,
-                transfer_proof,
-                state3,
+                    AliceState::WaitingForCancelTimelockExpiration {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::CancelTimelockExpired {
@@ -613,8 +635,23 @@ where
                 .subscribe_to(Box::new(state3.tx_cancel()))
                 .await;
 
+            // We wait for either TxFullRefund or TxPartialRefund to be published
+            // - both allow us to extract the Monero refund key.
+            // Otherwise we punish, once that timelock expired.
+
+            // TODO: should we retry here?
             select! {
-                spend_key = state3.watch_for_btc_tx_refund(&*bitcoin_wallet) => {
+                spend_key = state3.watch_for_btc_tx_full_refund(&*bitcoin_wallet) => {
+                    let spend_key = spend_key?;
+
+                    AliceState::BtcRefunded {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        spend_key,
+                        state3,
+                    }
+                }
+                spend_key = state3.watch_for_btc_tx_partial_refund(&*bitcoin_wallet) => {
                     let spend_key = spend_key?;
 
                     AliceState::BtcRefunded {
@@ -633,13 +670,51 @@ where
                         state3,
                     }
                 }
+                burn_instruction = event_loop_handle.wait_for_burn_on_refund_instruction() => {
+                    let burn = burn_instruction.context("Failed to receive burn instruction")?;
+                    let mut updated_state3 = (*state3).clone();
+                    updated_state3.should_publish_tx_refund_burn = Some(burn);
+
+                    AliceState::BtcCancelled {
+                        monero_wallet_restore_blockheight,
+                        transfer_proof,
+                        state3: Box::new(updated_state3),
+                    }
+                }
             }
         }
         AliceState::BtcRefunded {
             transfer_proof,
             spend_key,
             state3,
-            ..
+            monero_wallet_restore_blockheight,
+        } => AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
+        },
+        AliceState::BtcPartiallyRefunded {
+            transfer_proof,
+            spend_key,
+            state3,
+            monero_wallet_restore_blockheight,
+        } => {
+            // Bob has the pre-signed TxRefundAmnesty from swap setup and can
+            // publish it himself after the remaining refund timelock expires.
+            // TODO: implement system for publishing TxRefundBurn at this point
+            AliceState::XmrRefundable {
+                monero_wallet_restore_blockheight,
+                transfer_proof,
+                spend_key,
+                state3,
+            }
+        }
+        AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight: _,
+            transfer_proof,
+            spend_key,
+            state3,
         } => {
             retry(
                 "Refund Monero",
@@ -660,7 +735,9 @@ where
             .await
             .expect("We should never run out of retries while refunding Monero");
 
-            AliceState::XmrRefunded
+            AliceState::XmrRefunded {
+                state3: Some(state3),
+            }
         }
         AliceState::BtcPunishable {
             monero_wallet_restore_blockheight,
@@ -697,7 +774,89 @@ where
             .await
             .expect("We should never run out of retries while publishing the punish transaction")
         }
-        AliceState::XmrRefunded => AliceState::XmrRefunded,
+        AliceState::XmrRefunded { state3 } => {
+            // Only publish TxRefundBurn
+            let Some(mut state3) = state3 else {
+                tracing::info!(
+                    "Running a pre-partial refund swap, there is no amnesty output to burn"
+                );
+                return Ok(AliceState::XmrRefunded { state3: None });
+            };
+
+            // Fetch the burn decision, if it was made via the controller
+            if let Some(burn_decision) = event_loop_handle.get_burn_on_refund_instruction().await {
+                state3.should_publish_tx_refund_burn = Some(burn_decision);
+            }
+
+            if !state3.should_publish_tx_refund_burn.unwrap_or(false) {
+                tracing::info!("Not instructed to partially burn the takers refund. Finishing");
+                return Ok(AliceState::XmrRefunded {
+                    state3: Some(state3),
+                });
+            }
+
+            let signed_tx = state3.signed_refund_burn_transaction().context("Can't burn the amnesty output after Bob refunded because we couldn't construct the ")?;
+
+            bitcoin_wallet
+                .ensure_broadcasted(signed_tx, "refund_burn")
+                .await
+                .context("Couldn't publish TxRefundBurn")?;
+
+            AliceState::BtcRefundBurnPublished { state3 }
+        }
+        AliceState::BtcRefundBurnPublished { state3 } => {
+            let tx_refund_burn = state3
+                .tx_refund_burn()
+                .context("Can't construct TxRefundBurn even though we published it")?;
+
+            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_refund_burn)).await;
+
+            subscription
+                .wait_until_final()
+                .await
+                .context("Failed to wait for TxRefundBurn to be confirmed")?;
+
+            AliceState::BtcRefundBurnConfirmed { state3 }
+        }
+        AliceState::BtcRefundBurnConfirmed { state3 } => {
+            // Nothing to do here. Final amnesty is triggered manually.
+            AliceState::BtcRefundBurnConfirmed { state3 }
+        }
+        AliceState::BtcFinalAmnestyGranted { state3 } => {
+            // Operator has decided to grant final amnesty to Bob
+            let signed_tx = state3
+                .signed_final_amnesty_transaction()
+                .context("Failed to construct signed TxFinalAmnesty")?;
+
+            bitcoin_wallet
+                .ensure_broadcasted(signed_tx, "final_amnesty")
+                .await
+                .context("Failed to publish TxFinalAmnesty")?;
+
+            tracing::info!("TxFinalAmnesty published successfully");
+
+            AliceState::BtcRefundFinalAmnestyPublished { state3 }
+        }
+        AliceState::BtcRefundFinalAmnestyPublished { state3 } => {
+            // Wait for TxFinalAmnesty to be confirmed
+            let tx_final_amnesty = state3
+                .tx_final_amnesty()
+                .context("Couldn't construct TxFinalAmnesty even though we have published it")?;
+
+            let subscription = bitcoin_wallet
+                .subscribe_to(Box::new(tx_final_amnesty))
+                .await;
+
+            subscription
+                .wait_until_final()
+                .await
+                .context("Failed to wait for TxFinalAmnesty to be confirmed")?;
+
+            AliceState::BtcRefundFinalAmnestyConfirmed { state3 }
+        }
+        AliceState::BtcRefundFinalAmnestyConfirmed { state3 } => {
+            AliceState::BtcRefundFinalAmnestyConfirmed { state3 }
+        }
         AliceState::BtcRedeemed => AliceState::BtcRedeemed,
         AliceState::BtcPunished {
             state3,

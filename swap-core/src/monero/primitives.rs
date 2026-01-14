@@ -568,6 +568,7 @@ pub mod monero_amount {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compat::IntoDalekNg;
 
     #[test]
     fn display_monero_min() {
@@ -725,7 +726,9 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_json() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
+            Scalar::random(&mut OsRng).into_dalek_ng(),
+        ));
         let encoded = serde_json::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -733,7 +736,9 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_cbor() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(Scalar::random(&mut OsRng)));
+        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
+            Scalar::random(&mut OsRng).into_dalek_ng(),
+        ));
         let encoded = serde_cbor::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);

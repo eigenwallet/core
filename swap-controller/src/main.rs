@@ -76,13 +76,40 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::GetSwaps => {
             let swaps = client.get_swaps().await?;
+
+            let mut table = comfy_table::Table::new();
+            table.set_header([
+                "ID",
+                "Started",
+                "State",
+                "BTC Lock TxID",
+                "BTC",
+                "XMR",
+                "Rate (BTC/XMR)",
+                "Peer ID",
+                "Completed",
+            ]);
+
             if swaps.is_empty() {
-                println!("No swaps found");
+                table.add_row(["No swaps found"]);
             } else {
-                for swap in swaps {
-                    println!("{}: {}", swap.id, swap.state);
+                for swap in &swaps {
+                    let xmr = monero::Amount::from_pico(swap.xmr_amount);
+                    table.add_row([
+                        &swap.swap_id,
+                        &swap.start_date,
+                        &swap.state,
+                        &swap.btc_lock_txid,
+                        &swap.btc_amount.to_string(),
+                        &format!("{:.12} XMR", xmr.as_xmr()),
+                        &swap.exchange_rate.to_string(),
+                        &swap.peer_id,
+                        &swap.completed.to_string(),
+                    ]);
                 }
             }
+
+            println!("{table}");
         }
         Cmd::BitcoinSeed => {
             let response = client.bitcoin_seed().await?;
@@ -95,13 +122,25 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("No rendezvous points configured");
             } else {
                 for item in response.registrations {
-                    let address = item.address.as_deref().unwrap_or("?");
+                    let address = item.address.as_ref().map(String::as_str).unwrap_or("?");
                     println!(
                         "Connection status to rendezvous point at \"{}\" is \"{:?}\". Registration status is \"{:?}\"",
                         address, item.connection, item.registration
                     );
                 }
             }
+        }
+        Cmd::SetBurnOnRefund { swap_id, burn } => {
+            client.set_burn_on_refund(swap_id, burn).await?;
+            if burn {
+                println!("Burn on refund enabled for swap {swap_id}");
+            } else {
+                println!("Burn on refund disabled for swap {swap_id}");
+            }
+        }
+        Cmd::GrantFinalAmnesty { swap_id } => {
+            client.grant_final_amnesty(swap_id).await?;
+            println!("Final amnesty granted for swap {swap_id}");
         }
     }
     Ok(())

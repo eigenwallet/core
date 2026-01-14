@@ -5,8 +5,9 @@ import {
   TauriSwapProgressEventContent,
 } from "models/tauriModelExt";
 import { SatsAmount, PiconeroAmount } from "renderer/components/other/Units";
-import { Box, Typography, Divider, Theme } from "@mui/material";
-import { useActiveSwapId, usePendingLockBitcoinApproval } from "store/hooks";
+import { Box, Typography, Paper, Divider, Theme } from "@mui/material";
+import { useActiveSwapId, usePendingLockBitcoinApproval, useAppSelector } from "store/hooks";
+import { getMarkup, satsToBtc, piconerosToXmr } from "utils/conversionUtils";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
 import CheckIcon from "@mui/icons-material/Check";
@@ -28,6 +29,8 @@ export default function SwapSetupInflightPage({
   btc_lock_amount,
 }: TauriSwapProgressEventContent<"SwapSetupInflight">) {
   const request = useActiveLockBitcoinApprovalRequest();
+  // Get market rate for markup calculation (must be called unconditionally)
+  const xmrBtcRate = useAppSelector((state) => state.rates.xmrBtcRate);
 
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const expirationTs =
@@ -75,8 +78,17 @@ export default function SwapSetupInflightPage({
     );
   }
 
-  const { btc_network_fee, monero_receive_pool, xmr_receive_amount } =
+  const { btc_network_fee, monero_receive_pool, xmr_receive_amount, btc_amnesty_amount } =
     request.request.content;
+
+  // Calculate markup compared to market rate
+  const makerRate = satsToBtc(btc_lock_amount) / piconerosToXmr(Number(xmr_receive_amount));
+  const markupPercent = xmrBtcRate != null ? getMarkup(makerRate, xmrBtcRate) : null;
+
+  // Calculate refund percentages
+  const guaranteedRefundPercent = ((btc_lock_amount - btc_amnesty_amount) / btc_lock_amount) * 100;
+  const depositPercent = (btc_amnesty_amount / btc_lock_amount) * 100;
+  const hasDeposit = btc_amnesty_amount > 0;
 
   return (
     <Box
@@ -126,6 +138,77 @@ export default function SwapSetupInflightPage({
           />
         </Box>
       </Box>
+
+      {/* Info section: Rate and Refund details */}
+      <Paper
+        elevation={2}
+        sx={{
+          p: 2,
+          mt: 2,
+          bgcolor: "background.paper",
+          borderRadius: 1,
+        }}
+      >
+        {markupPercent != null && (
+          <>
+            <Typography variant="body2">
+              Rate: {Math.abs(markupPercent).toFixed(1)}% {markupPercent >= 0 ? "above" : "below"} market
+            </Typography>
+            <Divider sx={{ my: 1.5 }} />
+          </>
+        )}
+        {hasDeposit ? (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Box
+              sx={{
+                p: 1.5,
+                bgcolor: (theme) => theme.palette.success.main + "15",
+                borderRadius: 1,
+                borderLeft: 3,
+                borderColor: "success.main",
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500, color: "success.main" }}>
+                {guaranteedRefundPercent.toFixed(0)}% guaranteed refund
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                p: 1.5,
+                bgcolor: (theme) => theme.palette.info.main + "15",
+                borderRadius: 1,
+                borderLeft: 3,
+                borderColor: "info.main",
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 500, color: "info.main" }}>
+                {depositPercent.toFixed(0)}% anti-spam deposit
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.5 }}
+              >
+                └ Usually returned; maker may lock for abuse
+              </Typography>
+            </Box>
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              p: 1.5,
+              bgcolor: (theme) => theme.palette.success.main + "15",
+              borderRadius: 1,
+              borderLeft: 3,
+              borderColor: "success.main",
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 500, color: "success.main" }}>
+              Full refund if swap fails (guaranteed)
+            </Typography>
+          </Box>
+        )}
+      </Paper>
 
       <Box
         sx={{
@@ -189,76 +272,75 @@ interface BitcoinSendSectionProps {
   btc_network_fee: number;
 }
 
-const BitcoinMainBox = ({
+function BitcoinMainBox({
   btc_lock_amount,
   btc_network_fee,
-}: {
-  btc_lock_amount: number;
-  btc_network_fee: number;
-}) => (
-  <Box
-    sx={{
-      position: "relative",
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      gap: 1,
-    }}
-  >
+}: BitcoinSendSectionProps) {
+  return (
     <Box
       sx={{
+        position: "relative",
+        height: "100%",
         display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 1.5,
-        border: 1,
-        gap: "0.5rem 1rem",
-        borderColor: "warning.main",
-        borderRadius: 1,
-        flexGrow: 1,
-        backgroundColor: (theme) => theme.palette.warning.light + "10",
-        background: (theme) =>
-          `linear-gradient(135deg, ${theme.palette.warning.light}20, ${theme.palette.warning.light}05)`,
+        flexDirection: "column",
+        gap: 1,
       }}
     >
-      <Typography
-        variant="body1"
-        sx={(theme) => ({
-          color: theme.palette.text.primary,
-        })}
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: 1.5,
+          border: 1,
+          gap: "0.5rem 1rem",
+          borderColor: "warning.main",
+          borderRadius: 1,
+          flexGrow: 1,
+          backgroundColor: (theme) => theme.palette.warning.light + "10",
+          background: (theme) =>
+            `linear-gradient(135deg, ${theme.palette.warning.light}20, ${theme.palette.warning.light}05)`,
+        }}
       >
-        You send
-      </Typography>
-      <Typography
-        variant="h5"
-        sx={(theme) => ({
-          fontWeight: "bold",
-          color: theme.palette.warning.dark,
-          textShadow: "0 1px 2px rgba(0,0,0,0.1)",
-        })}
-      >
-        <SatsAmount amount={btc_lock_amount} />
-      </Typography>
-    </Box>
+        <Typography
+          variant="body1"
+          sx={(theme) => ({
+            color: theme.palette.text.primary,
+          })}
+        >
+          You send
+        </Typography>
+        <Typography
+          variant="h5"
+          sx={(theme) => ({
+            fontWeight: "bold",
+            color: theme.palette.warning.dark,
+            textShadow: "0 1px 2px rgba(0,0,0,0.1)",
+          })}
+        >
+          <SatsAmount amount={btc_lock_amount} />
+        </Typography>
+      </Box>
 
-    {/* Network fee box attached to the bottom */}
-    <Box
-      sx={{
-        padding: "0.25rem 0.75rem",
-        backgroundColor: (theme) => theme.palette.warning.main,
-        color: (theme) => theme.palette.warning.contrastText,
-        borderRadius: "4px",
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-        whiteSpace: "nowrap",
-        zIndex: 1,
-      }}
-    >
-      Network fee: <SatsAmount amount={btc_network_fee} />
+      {/* Network fee box attached to the bottom */}
+      <Box
+        sx={{
+          padding: "0.25rem 0.75rem",
+          backgroundColor: (theme) => theme.palette.warning.main,
+          color: (theme) => theme.palette.warning.contrastText,
+          borderRadius: "4px",
+          fontSize: "0.75rem",
+          fontWeight: 600,
+          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+          whiteSpace: "nowrap",
+          zIndex: 1,
+        }}
+      >
+        Network fee: <SatsAmount amount={btc_network_fee} />
+      </Box>
     </Box>
-  </Box>
-);
+  )
+};
 
 interface PoolBreakdownProps {
   monero_receive_pool: Array<{

@@ -11,6 +11,7 @@ pub use recovery::cancel::cancel;
 pub use recovery::punish::punish;
 pub use recovery::redeem::{redeem, Finality};
 pub use recovery::refund::refund;
+pub use recovery::grant_final_amnesty::grant_final_amnesty;
 pub use recovery::safely_abort::safely_abort;
 pub use recovery::{cancel, refund};
 pub use swap_feed::{ExchangeRate, FixedRate, LatestRate, Rate};

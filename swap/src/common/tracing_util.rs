@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal};
+use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -110,10 +110,9 @@ pub fn init(
     );
 
     // Layer for writing to the terminal
-    let is_terminal = std::io::stderr().is_terminal();
     let terminal_layer = fmt::layer()
         .with_writer(std::io::stderr)
-        .with_ansi(is_terminal)
+        .with_ansi(true)
         .with_timer(UtcTime::rfc_3339())
         .with_target(true)
         .with_file(true)

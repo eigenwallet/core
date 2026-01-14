@@ -10744,12 +10744,14 @@ version = "3.6.1"
 dependencies = [
  "anyhow",
  "clap 4.5.53",
+ "comfy-table",
  "jsonrpsee",
  "monero",
  "rustyline",
  "shell-words",
  "swap-controller-api",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -10759,6 +10761,7 @@ dependencies = [
  "bitcoin 0.32.8",
  "jsonrpsee",
  "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -10878,6 +10881,7 @@ dependencies = [
  "swap-serde",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -10915,6 +10919,7 @@ dependencies = [
  "libp2p-tor",
  "monero",
  "rand 0.8.5",
+ "rust_decimal",
  "semver",
  "serde",
  "serde_cbor",

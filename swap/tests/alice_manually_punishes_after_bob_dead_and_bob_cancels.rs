@@ -14,7 +14,7 @@ use swap::protocol::{alice, bob};
 /// punish command. Then Bob tries to refund.
 #[tokio::test]
 async fn alice_manually_punishes_after_bob_dead_and_bob_cancels() {
-    harness::setup_test(FastPunishConfig, None, |mut ctx| async move {
+    harness::setup_test(FastPunishConfig, None, None, |mut ctx| async move {
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
         let bob_swap = tokio::spawn(bob::run_until(bob_swap, is_btc_locked));

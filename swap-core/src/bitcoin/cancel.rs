@@ -2,14 +2,14 @@
 
 use crate::bitcoin::{self, CancelTimelock, PunishTimelock};
 use crate::bitcoin::{
-    build_shared_output_descriptor, Address, Amount, PublicKey, Transaction, TxLock,
+    Address, Amount, PublicKey, Transaction, TxLock, build_shared_output_descriptor,
 };
+use ::bitcoin::Weight;
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::transaction::Version;
-use ::bitcoin::Weight;
 use ::bitcoin::{
-    locktime::absolute::LockTime as PackedLockTime, secp256k1, sighash::SegwitV0Sighash as Sighash,
     EcdsaSighashType, OutPoint, ScriptBuf, Sequence, TxIn, TxOut, Txid,
+    locktime::absolute::LockTime as PackedLockTime, secp256k1, sighash::SegwitV0Sighash as Sighash,
 };
 use anyhow::Result;
 use bdk_wallet::miniscript::Descriptor;
@@ -190,6 +190,43 @@ impl TxCancel {
             lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
             input: vec![tx_in],
             output: vec![tx_out],
+        }
+    }
+
+    pub fn build_refund_with_amnesty_transaction(
+        &self,
+        refund_address: &Address,
+        amnesty_descriptor: &Descriptor<::bitcoin::PublicKey>,
+        amnesty_amount: Amount,
+        spending_fee: Amount,
+    ) -> Transaction {
+        let previous_output = self.as_outpoint();
+
+        let tx_in = TxIn {
+            previous_output,
+            script_sig: Default::default(),
+            sequence: Sequence(0xFFFF_FFFF),
+            witness: Default::default(),
+        };
+
+        assert!(self.amount() > (amnesty_amount + spending_fee));
+        let refund_amount = self.amount() - amnesty_amount - spending_fee;
+
+        let tx_out_refund = TxOut {
+            value: refund_amount,
+            script_pubkey: refund_address.script_pubkey(),
+        };
+
+        let tx_out_amnesty = TxOut {
+            value: amnesty_amount,
+            script_pubkey: amnesty_descriptor.script_pubkey(),
+        };
+
+        Transaction {
+            version: Version(2),
+            lock_time: PackedLockTime::from_height(0).expect("0 to be below lock time threshold"),
+            input: vec![tx_in],
+            output: vec![tx_out_refund, tx_out_amnesty],
         }
     }
 
