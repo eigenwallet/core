@@ -6626,6 +6626,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "backoff",
+ "chacha20",
  "curve25519-dalek",
  "hex",
  "monero-daemon-rpc",
