@@ -61,6 +61,7 @@ import {
 import {
   rpcSetSwapInfo,
   rpcSetSwapInfosLoaded,
+  rpcSetTorNetworkConfig,
   approvalRequestsReplaced,
   timelockChangeEventReceived,
 } from "store/features/rpcSlice";
@@ -95,6 +96,7 @@ const DONATION_ADDRESS_STAGENET =
 ///
 /// Get the key from:
 /// - https://github.com/eigenwallet/core/blob/master/utils/gpg_keys/binarybaron.asc
+/// - https://unstoppableswap.net/binarybaron.asc
 const DONATION_ADDRESS_MAINNET_SIG = `
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256
@@ -215,6 +217,12 @@ export async function buyXmr() {
 }
 
 export async function initializeContext() {
+  store.dispatch(
+    rpcSetTorNetworkConfig(
+      await invokeNoArgs<[string, string | null]>("get_tor_network_config"),
+    ),
+  );
+
   const network = getNetwork();
   const testnet = isTestnet();
   const useTor = store.getState().settings.enableTor;

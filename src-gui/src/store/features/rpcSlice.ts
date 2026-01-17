@@ -29,6 +29,8 @@ interface State {
   background: {
     [key: string]: TauriBackgroundProgress;
   };
+  torForcedExcuse: string;
+  updaterProxy: string | null;
 }
 
 export enum ContextStatusType {
@@ -53,6 +55,8 @@ const initialState: RPCSlice = {
     moneroRecovery: null,
     background: {},
     approvalRequests: {},
+    torForcedExcuse: "",
+    updaterProxy: null,
   },
 };
 
@@ -127,6 +131,12 @@ export const rpcSlice = createSlice({
     ) {
       slice.state.background[action.payload.id] = action.payload.event;
     },
+    rpcSetTorNetworkConfig(
+      slice,
+      action: PayloadAction<[string, string | null]>,
+    ) {
+      [slice.state.torForcedExcuse, slice.state.updaterProxy] = action.payload;
+    },
   },
 });
 
@@ -141,6 +151,7 @@ export const {
   approvalEventReceived,
   approvalRequestsReplaced,
   backgroundProgressEventReceived,
+  rpcSetTorNetworkConfig,
 } = rpcSlice.actions;
 
 export default rpcSlice.reducer;

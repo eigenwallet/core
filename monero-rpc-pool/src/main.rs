@@ -74,9 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-        Some(client)
+        swap_tor::TorBackend::Arti(client)
     } else {
-        None
+        swap_tor::TorBackend::None
     };
 
     let config = Config::new_with_port_and_tor_client(

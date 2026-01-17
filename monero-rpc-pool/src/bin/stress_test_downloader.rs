@@ -133,9 +133,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .expect("Failed to bootstrap Tor client");
 
-        Some(client)
+        swap_tor::TorBackend::Arti(client)
     } else {
-        None
+        swap_tor::TorBackend::None
     };
 
     // Start the pool server
