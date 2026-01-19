@@ -129,7 +129,7 @@ function AmnestyPage({
 
   const mainMessage = confirmed
     ? "All your Bitcoin have been refunded. The swap is complete."
-    : "The remaingin Bitcoin (earnest deposit) are being released to you. Waiting for confirmation.";
+    : "The remaining Bitcoin (earnest deposit) are being released to you. Waiting for confirmation.";
 
   const additionalContent = swap ? (
     <>
@@ -141,12 +141,9 @@ function AmnestyPage({
 
   return (
     <>
-      <DialogContentText sx={{ mb: 2 }}>{mainMessage}</DialogContentText>
       <Alert severity="success" sx={{ mb: 2 }}>
         <Typography variant="body2">
-          <strong>{confirmed ? "Complete:" : "Almost there:"}</strong> The
-          remaining Bitcoin from your partial refund{" "}
-          {confirmed ? "has been" : "is being"} released to you.
+          <strong>{confirmed ? "Complete:" : "Almost there:"}</strong>{" "}{mainMessage}
         </Typography>
       </Alert>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
