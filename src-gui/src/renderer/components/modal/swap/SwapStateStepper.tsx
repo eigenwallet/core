@@ -218,7 +218,7 @@ const RECOVERY_STEP_LABELS: Record<
   [RecoveryScenario.PARTIAL_REFUND]: [
     { label: "Cancelling swap", duration: "~1min" },
     { label: "Partial refund", duration: "~30min" },
-    { label: "Remaining Bitcoin", duration: "~2min" },
+    { label: "Claiming deposit", duration: "~2min" },
   ],
   [RecoveryScenario.COOPERATIVE_REDEEM]: [
     { label: "Cancelling swap", duration: "~1min" },

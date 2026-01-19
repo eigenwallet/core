@@ -67,8 +67,8 @@ function PartialRefundPage({
   const atRiskPercent = Math.round((btcAmnestyAmount / btcLockAmount) * 100);
 
   const mainMessage = confirmed
-    ? `Refunded the first ${guaranteedPercent}% of your Bitcoin. The maker has a short time window to revoke the remaining ${atRiskPercent}%. Unless they do that we will claim it shortly.`
-    : `Refunding the first ${guaranteedPercent}% of your Bitcoin. The maker has a short time window to revoke the remaining ${atRiskPercent}%. Unless they do that we will claim it shortly.`;
+    ? `Refunded the first ${guaranteedPercent}% of your Bitcoin. The maker has a short time window to withhold the earnest deposit of ${atRiskPercent}%. Unless they do that we will claim it shortly.`
+    : `Refunding the first ${guaranteedPercent}% of your Bitcoin. The maker has a short time window to withhold the earnest deposit of ${atRiskPercent}%. Unless they do that we will claim it shortly.`;
 
   const additionalContent = swap ? (
     <>
@@ -83,9 +83,9 @@ function PartialRefundPage({
       <DialogContentText sx={{ mb: 2 }}>{mainMessage}</DialogContentText>
       <Alert severity="info" sx={{ mb: 2 }}>
         <Typography variant="body2">
-          <strong>Patience:</strong> We are first claiming the guaranteed <strong>{guaranteedPercent}%</strong> of the Bitcoin refund.
-          It is <strong>not guaranteed</strong> that we can claim the remaining <strong>{atRiskPercent}%</strong>.
-          We will be able to claim the remaining Bitcoin shortly unless the market maker decides to revoke it.
+          <strong>Patience:</strong> We are first refunding the guaranteed <strong>{guaranteedPercent}%</strong> of the Bitcoin refund.
+          It is <strong>not guaranteed</strong> that we can claim the earnest deposit, which makes up the remaining <strong>{atRiskPercent}%</strong>.
+          The maker has a short timeframe to withhold the deposit, after that we can claim it.
         </Typography>
       </Alert>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -128,8 +128,8 @@ function AmnestyPage({
   const swap = useActiveSwapInfo();
 
   const mainMessage = confirmed
-    ? "All your Bitcoin has been refunded. The swap is complete."
-    : "The remaining Bitcoin is being released to you. Waiting for confirmation.";
+    ? "All your Bitcoin have been refunded. The swap is complete."
+    : "The remaingin Bitcoin (earnest deposit) are being released to you. Waiting for confirmation.";
 
   const additionalContent = swap ? (
     <>
@@ -162,7 +162,7 @@ function AmnestyPage({
   );
 }
 
-// Refund Burn pages - The maker actively burned the remaining Bitcoin (bad outcome)
+// Refund Burn pages - The maker actively withheld the remaining Bitcoin (bad outcome)
 // Note: By default, the user would have received the remaining Bitcoin after a timelock.
 // If we're in this state, it means the maker actively published TxBurn to revoke it.
 
@@ -209,30 +209,33 @@ function RefundBurnPage({
 }) {
   const atRiskPercent = Math.round((btcAmnestyAmount / btcLockAmount) * 100);
 
-  const mainMessage = confirmed
-    ? "The market maker has revoked your remaining Bitcoin refund."
-    : "The market maker is revoking your remaining Bitcoin refund.";
+  const mainMessage = "The market maker is withholding the earnest deposit."
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <DialogContentText>{mainMessage}</DialogContentText>
       <Alert severity="error">
         <Typography variant="body2">
-          <strong>Refund revoked:</strong> The market maker has revoked the remaining <strong>{atRiskPercent}%</strong> of your Bitcoin refund.
-          This portion is now lost and we cannot recover it on our own.
+          <strong>Earnest deposit withheld:</strong> The market maker has choosen to withhold the remaining <strong>{atRiskPercent}%</strong> of your Bitcoin refund.
+
         </Typography>
       </Alert>
       <Alert severity="info">
-        <Typography variant="body2">
+        <Typography variant="body2" gutterBottom>
           <strong>Why did this happen?</strong> Aborting a swap incurs significant costs on makers.
-          To prevent spam attacks, they can revoke a previously agreed upon part of the refund.
-          The maker has exercised this option because they think you are spamming them.
+          To prevent spam attacks, makers can choose to require an "earnest deposit",
+          which they can withhold if the swap is aborted.
+        </Typography>
+        <Typography variant="body2">
+          Makers do not have access to the withheld deposit.
+          The maker you are swapping with has exercised their option to withhold, because they think you are spamming them.
         </Typography>
       </Alert>
       <Alert severity="info">
         <Typography variant="body2">
-          <strong>You can appeal.</strong> If you did not mean to spam the market maker, contact them through our official
-          community. The maker can still help you recover the remaining Bitcoin.
+          <strong>You can contact the maker:</strong> If you think this was a mistake, you can contact the maker through our official
+          community channels.
+          The maker can still release the deposit.
         </Typography>
         <br />
         <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
@@ -255,14 +258,14 @@ function RefundBurnPage({
         </Box>
       </Alert>
       <BitcoinTransactionInfoBox
-        title="Burn Transaction"
+        title="Withhold Transaction"
         txId={txid}
         loading={!confirmed}
         additionalContent={
           !confirmed ? "Waiting for transaction to be confirmed..." : null
         }
       />
-    </Box>
+    </Box >
   );
 }
 
@@ -290,8 +293,8 @@ function FinalAmnestyPage({
   const swap = useActiveSwapInfo();
 
   const mainMessage = confirmed
-    ? "The market maker has granted you final amnesty. The remaining Bitcoin has been recovered."
-    : "The market maker is granting you final amnesty. Waiting for confirmation.";
+    ? "The market maker has release the earnest deposit they withheld. The refund is complete."
+    : "The market maker is releasing the earnest deposit they withheld. Waiting for transaction confirmation.";
 
   const additionalContent = swap ? (
     <>
@@ -306,14 +309,14 @@ function FinalAmnestyPage({
       <DialogContentText sx={{ mb: 2 }}>{mainMessage}</DialogContentText>
       <Alert severity="success" sx={{ mb: 2 }}>
         <Typography variant="body2">
-          <strong>Appeal successful:</strong> The market maker has decided to
-          release the remaining Bitcoin to you. All your Bitcoin has now been
+          <strong>Mercy granted:</strong> The market maker has decided to
+          release the earnest deposit, which they previously withheld. All your Bitcoin has now been
           fully refunded.
         </Typography>
       </Alert>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <BitcoinTransactionInfoBox
-          title="Final Amnesty Transaction"
+          title="Mercy Transaction"
           txId={txid}
           loading={!confirmed}
           additionalContent={additionalContent}
