@@ -1,6 +1,6 @@
 import { Box, Chip, Divider, Paper, Tooltip, Typography } from "@mui/material";
 import Jdenticon from "renderer/components/other/Jdenticon";
-import { QuoteWithAddress, RefundPolicyWire } from "models/tauriModel";
+import { BidQuote, QuoteWithAddress, RefundPolicyWire } from "models/tauriModel";
 import {
   MoneroSatsExchangeRate,
   MoneroSatsMarkup,
@@ -10,6 +10,7 @@ import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
+import { RefundPolicy } from "store/features/settingsSlice";
 
 function getRefundPercentage(policy: RefundPolicyWire): number {
   if (policy.type === "FullRefund") {
@@ -137,17 +138,7 @@ export default function MakerOfferItem({
             size="small"
           />
         </Tooltip>
-        <Tooltip
-          title="Minimum guaranteed refund if swap is cancelled"
-          arrow
-          placement="top"
-        >
-          <Chip
-            label={`${getRefundPercentage(quote.refund_policy)}% refund`}
-            size="small"
-            color={quote.refund_policy.type === "FullRefund" ? "success" : "warning"}
-          />
-        </Tooltip>
+        {EarnestDepositChip(quote)}
         {isMakerVersionOutdated(version) ? (
           <Tooltip title="Outdated software — may cause issues" arrow>
             <Chip
@@ -199,3 +190,25 @@ export default function MakerOfferItem({
     </Paper>
   );
 }
+
+function EarnestDepositChip(quote: BidQuote) {
+  const full_refund: boolean = quote.refund_policy.type === "FullRefund" ? true : quote.refund_policy.content.taker_refund_ratio === 1;
+  // Rounded to 0.001 precision
+  const earnest_deposit_ratio = Math.round(
+    (quote.refund_policy.type === "FullRefund" ? 0 : 1 - quote.refund_policy.content?.taker_refund_ratio)
+    * 1000
+  ) / 1000;
+  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `If the swap is refunded, the maker may choose to freeze ${earnest_deposit_ratio * 100}% of your refund. This is allows them to protect themselves against griefing.`;
+  const text = full_refund ? "No earnest deposit" : `${earnest_deposit_ratio * 100}% earnest deposit`;
+
+  return <Tooltip
+    title={tooltip_text}
+    arrow
+  >
+    <Chip
+      label={text}
+      size="small"
+      color={quote.refund_policy.type === "FullRefund" ? "success" : "warning"} />
+  </Tooltip>;
+}
+
