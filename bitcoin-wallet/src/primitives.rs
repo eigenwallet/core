@@ -266,4 +266,13 @@ impl ScriptStatus {
     pub fn has_been_seen(&self) -> bool {
         matches!(self, ScriptStatus::InMempool | ScriptStatus::Confirmed(_))
     }
+
+    pub fn confirmations(&self) -> u32 {
+        match self {
+            ScriptStatus::Unseen => 0,
+            ScriptStatus::InMempool => 0,
+            ScriptStatus::Retrying => 0,
+            ScriptStatus::Confirmed(depth) => depth,
+        }
+    }
 }

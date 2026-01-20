@@ -1124,6 +1124,21 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         btc_amnesty_amount: bitcoin::Amount,
     },
+    /// Waiting for the earnest deposit timelock to expire after partial refund confirmed.
+    WaitingForEarnestDepositTimelockExpiration {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+        /// Total blocks required for timelock (target)
+        #[typeshare(serialized_as = "number")]
+        target_blocks: u32,
+        /// Blocks remaining until expiry
+        #[typeshare(serialized_as = "number")]
+        blocks_until_expiry: u32,
+    },
     // BtcAmnesty was confirmed.
     BtcAmnestyReceived {
         #[typeshare(serialized_as = "string")]

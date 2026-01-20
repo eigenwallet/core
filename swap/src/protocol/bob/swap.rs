@@ -1271,17 +1271,45 @@ async fn next_state(
                 "Can't wait for remaining refund timelock because remaining_refund_timelock is missing",
             )?;
 
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::WaitingForEarnestDepositTimelockExpiration {
+                    btc_partial_refund_txid: tx_partial_refund.txid(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
+                    target_blocks: remaining_refund_timelock.into(),
+                    blocks_until_expiry: remaining_refund_timelock.into(),
+                },
+            );
+
             let (tx_partial_refund_status, tx_refund_burn_status) = tokio::join!(
                 bitcoin_wallet.subscribe_to(Box::new(tx_partial_refund)),
                 bitcoin_wallet.subscribe_to(Box::new(tx_refund_burn)),
             );
 
+            // Emit a tauri event everytime the TxPartialRefund status changes so we can
+            // show an estimate when we will be able to claim the remaining bitcoin
+            let timelock_expired_future = tx_partial_refund_status.wait_until(|status| {
+                event_emitter.emit_swap_progress_event(
+                    swap_id,
+                    TauriSwapProgressEvent::WaitingForEarnestDepositTimelockExpiration {
+                        btc_partial_refund_txid: tx_partial_refund.txid(),
+                        btc_lock_amount: state.tx_lock.lock_amount(),
+                        btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
+                        target_blocks: remaining_refund_timelock.into(),
+                        blocks_until_expiry: status.confirmations(),
+                    },
+                );
+
+                status.is_confirmed_with(remaining_refund_timelock.0)
+            });
+
             select! {
                 // Wait for remaining_refund_timelock confirmations on tx_partial_refund
-                result = tx_partial_refund_status.wait_until_confirmed_with(remaining_refund_timelock) => {
+                result =  timelock_expired_future => {
                     result?;
-                    tracing::info!("Remaining refund timelock expired, can now publish TxRefundAmnesty");
-                    BobState::RemainingRefundTimelockExpired(state)
+                    tracing::info!("RemainingBitcoinTimelock expired");
+                    BobState::BtcRemainingTimelockExpired(state)
                 }
                 // Watch for Alice publishing TxRefundBurn
                 _ = tx_refund_burn_status.wait_until_seen() => {
