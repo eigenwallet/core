@@ -272,7 +272,7 @@ impl ScriptStatus {
             ScriptStatus::Unseen => 0,
             ScriptStatus::InMempool => 0,
             ScriptStatus::Retrying => 0,
-            ScriptStatus::Confirmed(depth) => depth,
+            ScriptStatus::Confirmed(confirmed) => confirmed.confirmations(),
         }
     }
 }

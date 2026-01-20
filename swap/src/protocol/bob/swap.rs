@@ -1283,7 +1283,7 @@ async fn next_state(
             );
 
             let (tx_partial_refund_status, tx_refund_burn_status) = tokio::join!(
-                bitcoin_wallet.subscribe_to(Box::new(tx_partial_refund)),
+                bitcoin_wallet.subscribe_to(Box::new(tx_partial_refund.clone())),
                 bitcoin_wallet.subscribe_to(Box::new(tx_refund_burn)),
             );
 
@@ -1308,8 +1308,8 @@ async fn next_state(
                 // Wait for remaining_refund_timelock confirmations on tx_partial_refund
                 result =  timelock_expired_future => {
                     result?;
-                    tracing::info!("RemainingBitcoinTimelock expired");
-                    BobState::BtcRemainingTimelockExpired(state)
+                    tracing::info!("Remaining refund timelock expired, can now publish TxRefundAmnesty");
+                    BobState::RemainingRefundTimelockExpired(state)
                 }
                 // Watch for Alice publishing TxRefundBurn
                 _ = tx_refund_burn_status.wait_until_seen() => {
