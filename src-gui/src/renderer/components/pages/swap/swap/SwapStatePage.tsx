@@ -11,6 +11,7 @@ import {
 import {
   BitcoinPartialRefundPublished,
   BitcoinPartiallyRefunded,
+  WaitingForEarnestDepositTimelockExpirationPage,
   BitcoinAmnestyPublished,
   BitcoinAmnestyReceived,
   BitcoinRefundBurnPublished,
@@ -145,6 +146,11 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "BtcPartiallyRefunded":
       if (state.curr.type === "BtcPartiallyRefunded") {
         return <BitcoinPartiallyRefunded {...state.curr.content} />;
+      }
+      break;
+    case "WaitingForEarnestDepositTimelockExpiration":
+      if (state.curr.type === "WaitingForEarnestDepositTimelockExpiration") {
+        return <WaitingForEarnestDepositTimelockExpirationPage {...state.curr.content} />;
       }
       break;
     case "BtcAmnestyPublished":

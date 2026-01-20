@@ -128,8 +128,7 @@ function getActiveStep(state: SwapState | null): PathStep | null {
       return [PathType.RECOVERY_PATH, 1, isReleased, RecoveryScenario.PARTIAL_REFUND];
 
     case "BtcPartiallyRefunded":
-      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
-
+    case "WaitingForEarnestDepositTimelockExpiration":
     case "BtcAmnestyPublished":
       return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
 
@@ -217,8 +216,8 @@ const RECOVERY_STEP_LABELS: Record<
   ],
   [RecoveryScenario.PARTIAL_REFUND]: [
     { label: "Cancelling swap", duration: "~1min" },
-    { label: "Partial refund", duration: "~30min" },
-    { label: "Claiming deposit", duration: "~2min" },
+    { label: "Partial refund", duration: "~2min" },
+    { label: "Claiming deposit", duration: "~30min" },
   ],
   [RecoveryScenario.COOPERATIVE_REDEEM]: [
     { label: "Cancelling swap", duration: "~1min" },

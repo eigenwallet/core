@@ -12,8 +12,9 @@
  *       -> optionally BtcFinalAmnestyPublished -> BtcFinalAmnestyConfirmed (Alice grants final amnesty)
  */
 
-import { Alert, Box, Button, DialogContentText, Typography } from "@mui/material";
+import { Alert, Box, Button, DialogContentText, LinearProgress, Typography } from "@mui/material";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
+import HumanizedBitcoinBlockDuration from "renderer/components/other/HumanizedBitcoinBlockDuration";
 import { useActiveSwapInfo } from "store/hooks";
 import FeedbackInfoBox from "renderer/components/pages/help/FeedbackInfoBox";
 import BitcoinTransactionInfoBox from "renderer/components/pages/swap/swap/components/BitcoinTransactionInfoBox";
@@ -47,6 +48,56 @@ export function BitcoinPartiallyRefunded({
       btcLockAmount={btc_lock_amount}
       btcAmnestyAmount={btc_amnesty_amount}
     />
+  );
+}
+
+export function WaitingForEarnestDepositTimelockExpirationPage({
+  btc_partial_refund_txid,
+  btc_lock_amount,
+  btc_amnesty_amount,
+  target_blocks,
+  blocks_until_expiry,
+}: TauriSwapProgressEventContent<"WaitingForEarnestDepositTimelockExpiration">) {
+  const swap = useActiveSwapInfo();
+
+  const blocksConfirmed = target_blocks - blocks_until_expiry;
+  const progressPercent = Math.round((blocksConfirmed / target_blocks) * 100);
+  const atRiskPercent = Math.round((btc_amnesty_amount / btc_lock_amount) * 100);
+
+  const additionalContent = swap ? (
+    <>Refund address: {swap.btc_refund_address}</>
+  ) : null;
+
+  return (
+    <>
+      <DialogContentText sx={{ mb: 2 }}>
+        Waiting to claim the earnest deposit ({atRiskPercent}% of your Bitcoin).
+        The maker can still withhold it during this time.
+      </DialogContentText>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        <Typography variant="body2">
+          <strong>Timelock progress:</strong> {blocksConfirmed} of {target_blocks} blocks confirmed ({progressPercent}%).
+          {blocks_until_expiry > 0 && (
+            <>
+              {" "}Approximately <HumanizedBitcoinBlockDuration blocks={blocks_until_expiry} /> remaining.
+            </>
+          )}
+        </Typography>
+        <LinearProgress
+          variant="determinate"
+          value={progressPercent}
+          sx={{ mt: 1, height: 8, borderRadius: 1 }}
+        />
+      </Alert>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <BitcoinTransactionInfoBox
+          title="Partial Refund Transaction"
+          txId={btc_partial_refund_txid}
+          loading={true}
+          additionalContent={additionalContent}
+        />
+      </Box>
+    </>
   );
 }
 
