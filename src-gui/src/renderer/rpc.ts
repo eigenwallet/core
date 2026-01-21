@@ -24,6 +24,7 @@ import {
   CheckElectrumNodeResponse,
   GetMoneroAddressesResponse,
   GetDataDirArgs,
+  DeleteAllLogsArgs,
   ResolveApprovalArgs,
   ResolveApprovalResponse,
   RedactArgs,
@@ -658,6 +659,13 @@ export async function sendMoneroTransaction(
 export async function getDataDir(): Promise<string> {
   const testnet = isTestnet();
   return await invoke<GetDataDirArgs, string>("get_data_dir", {
+    is_testnet: testnet,
+  });
+}
+
+export async function deleteAllLogs(): Promise<void> {
+  const testnet = isTestnet();
+  await invoke<DeleteAllLogsArgs, void>("delete_all_logs", {
     is_testnet: testnet,
   });
 }

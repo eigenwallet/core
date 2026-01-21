@@ -47,6 +47,8 @@ export interface SettingsState {
   externalBitcoinRefundAddress: string;
   /// UTC timestamp (in milliseconds) when default nodes were last applied
   lastAppliedDefaultNodesV2?: number | null;
+  /// Whether we have already cleared logs after upgrading
+  hasClearedLogsOnUpgrade: boolean;
 }
 
 export enum RedeemPolicy {
@@ -126,6 +128,7 @@ const initialState: SettingsState = {
   externalMoneroRedeemAddress: "",
   externalBitcoinRefundAddress: "",
   lastAppliedDefaultNodesV2: null,
+  hasClearedLogsOnUpgrade: false,
 };
 
 const alertsSlice = createSlice({
@@ -204,6 +207,9 @@ const alertsSlice = createSlice({
     },
     setUserHasSeenIntroduction(slice, action: PayloadAction<boolean>) {
       slice.userHasSeenIntroduction = action.payload;
+    },
+    setHasClearedLogsOnUpgrade(slice, action: PayloadAction<boolean>) {
+      slice.hasClearedLogsOnUpgrade = action.payload;
     },
     resetSettings(_) {
       return initialState;
@@ -330,6 +336,7 @@ export const {
   setEnableMoneroTor,
   setUseMoneroRpcPool,
   setUserHasSeenIntroduction,
+  setHasClearedLogsOnUpgrade,
   addRendezvousPoint,
   removeRendezvousPoint,
   setDonateToDevelopment,

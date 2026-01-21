@@ -1731,6 +1731,12 @@ pub struct GetDataDirArgs {
     pub is_testnet: bool,
 }
 
+#[typeshare]
+#[derive(Deserialize, Serialize)]
+pub struct DeleteAllLogsArgs {
+    pub is_testnet: bool,
+}
+
 #[derive(Error, Debug)]
 #[error("this is not one of the known monero networks")]
 struct UnknownMoneroNetwork(String);
