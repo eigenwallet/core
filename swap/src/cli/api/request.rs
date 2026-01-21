@@ -1472,7 +1472,7 @@ pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
     let wallet_export = bitcoin_wallet.wallet_export("cli").await?;
-    tracing::info!(descriptor=%wallet_export.to_string(), "Exported bitcoin wallet");
+    tracing::info!("Exported bitcoin wallet");
     Ok(json!({
         "descriptor": wallet_export.to_string(),
     }))
