@@ -29,6 +29,9 @@ const MOCK_BTC_REFUND_BURN_TXID =
 const MOCK_BTC_FINAL_AMNESTY_TXID =
   "c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
 
+// Mock timelock blocks for earnest deposit
+const EARNEST_DEPOSIT_TARGET_BLOCKS = 3;
+
 // Mock amounts for partial refund scenarios
 const MOCK_BTC_LOCK_AMOUNT = 50_000_000; // 0.5 BTC
 const MOCK_BTC_AMNESTY_AMOUNT = 1_000_000; // 0.01 BTC (2% of lock amount)
@@ -170,6 +173,17 @@ const partialRefundWithAmnesty: TauriSwapProgressEvent[] = [
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
+  // Waiting for earnest deposit timelock: 3/3, 2/3, 1/3, 0/3 blocks remaining
+  ...Array.from({ length: EARNEST_DEPOSIT_TARGET_BLOCKS + 1 }, (_, i) => ({
+    type: "WaitingForEarnestDepositTimelockExpiration" as const,
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+      target_blocks: EARNEST_DEPOSIT_TARGET_BLOCKS,
+      blocks_until_expiry: EARNEST_DEPOSIT_TARGET_BLOCKS - i,
+    },
+  })),
   {
     type: "BtcAmnestyPublished",
     content: {
@@ -210,6 +224,17 @@ const partialRefundWithBurn: TauriSwapProgressEvent[] = [
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
+  // Waiting for earnest deposit timelock: 3/3, 2/3, 1/3, 0/3 blocks remaining
+  ...Array.from({ length: EARNEST_DEPOSIT_TARGET_BLOCKS + 1 }, (_, i) => ({
+    type: "WaitingForEarnestDepositTimelockExpiration" as const,
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+      target_blocks: EARNEST_DEPOSIT_TARGET_BLOCKS,
+      blocks_until_expiry: EARNEST_DEPOSIT_TARGET_BLOCKS - i,
+    },
+  })),
   {
     type: "BtcRefundBurnPublished",
     content: {
@@ -250,6 +275,17 @@ const partialRefundWithBurnAndFinalAmnesty: TauriSwapProgressEvent[] = [
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
+  // Waiting for earnest deposit timelock: 3/3, 2/3, 1/3, 0/3 blocks remaining
+  ...Array.from({ length: EARNEST_DEPOSIT_TARGET_BLOCKS + 1 }, (_, i) => ({
+    type: "WaitingForEarnestDepositTimelockExpiration" as const,
+    content: {
+      btc_partial_refund_txid: MOCK_BTC_PARTIAL_REFUND_TXID,
+      btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
+      btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
+      target_blocks: EARNEST_DEPOSIT_TARGET_BLOCKS,
+      blocks_until_expiry: EARNEST_DEPOSIT_TARGET_BLOCKS - i,
+    },
+  })),
   {
     type: "BtcRefundBurnPublished",
     content: {

@@ -23,8 +23,7 @@ type PathStep = [
 
 /**
  * Determines the current step in the swap process based on the previous and latest state.
- * @param prevState - The previous state of the swap process (null if it's the initial state)
- * @param latestState - The latest state of the swap process
+ * @param state - The state of the swap process (null if it's the initial state)
  * @returns A tuple containing [PathType, activeStep, errorFlag]
  */
 function getActiveStep(state: SwapState | null): PathStep | null {
@@ -217,7 +216,7 @@ const RECOVERY_STEP_LABELS: Record<
   [RecoveryScenario.PARTIAL_REFUND]: [
     { label: "Cancelling swap", duration: "~1min" },
     { label: "Partial refund", duration: "~2min" },
-    { label: "Claiming deposit", duration: "~30min" },
+    { label: "Reclaiming deposit", duration: "~30min" },
   ],
   [RecoveryScenario.COOPERATIVE_REDEEM]: [
     { label: "Cancelling swap", duration: "~1min" },
