@@ -1,20 +1,20 @@
 #![allow(non_snake_case)]
 
-use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
-use anyhow::{Context, Result, bail};
+use crate::common::{Message0, Message1, Message2, Message3, Message4, CROSS_CURVE_PROOF_SYSTEM};
+use anyhow::{bail, Context, Result};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
 use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
-    CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel, TxEarlyRefund,
-    TxPunish, TxRedeem, TxRefund, Txid, current_epoch,
+    current_epoch, CancelTimelock, ExpiredTimelocks, PunishTimelock, Transaction, TxCancel,
+    TxEarlyRefund, TxPunish, TxRedeem, TxRefund, Txid,
 };
 use swap_core::compat::{IntoDalek, IntoDalekNg, IntoMoneroOxide};
 use swap_core::monero;
-use swap_core::monero::ScalarExt;
 use swap_core::monero::primitives::{AmountExt, BlockHeight, TransferProof, TransferRequest};
+use swap_core::monero::ScalarExt;
 use swap_env::env::Config;
 use uuid::Uuid;
 
@@ -691,9 +691,9 @@ impl ReservesMonero for AliceState {
             // We must assume he will not lock the Bitcoin to avoid being
             // susceptible to a DoS attack
             AliceState::Started { .. } => monero::Amount::ZERO,
-            // This is the only state where we are certain we will have to lock
+            // These are the only states where we have to assume we will have to lock
             // our Monero, and we haven't done so yet.
-            AliceState::BtcLocked { state3 } => {
+            AliceState::BtcLockTransactionSeen { state3 } | AliceState::BtcLocked { state3 } => {
                 // We reserve as much Monero as we need for the output of the lock transaction
                 // and as we need for the network fee
                 state3.xmr.min_conservative_balance_to_spend()
