@@ -96,6 +96,7 @@ const DONATION_ADDRESS_STAGENET =
 ///
 /// Get the key from:
 /// - https://github.com/eigenwallet/core/blob/master/utils/gpg_keys/binarybaron.asc
+/// - https://unstoppableswap.net/binarybaron.asc
 const DONATION_ADDRESS_MAINNET_SIG = `
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256

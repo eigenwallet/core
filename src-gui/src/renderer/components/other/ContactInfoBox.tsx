@@ -36,7 +36,7 @@ export default function ContactInfoBox() {
       </Tooltip>
       <Tooltip title="Read our official documentation">
         <span>
-          <LinkIconButton url="https://docs.eigenwallet.org">
+          <LinkIconButton url="https://docs.unstoppableswap.net">
             <MenuBook />
           </LinkIconButton>
         </span>

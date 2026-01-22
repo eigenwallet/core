@@ -7,7 +7,7 @@ export default function SwapMakerTable() {
   }
 
   async function getMakers() {
-    const response = await fetch("https://api.eigenwallet.org/api/list");
+    const response = await fetch("https://api.unstoppableswap.net/api/list");
     const data = await response.json();
     return data;
   }

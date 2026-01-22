@@ -17,7 +17,7 @@ import { setAlerts } from "store/features/alertsSlice";
 import logger from "utils/logger";
 import { setConversation } from "store/features/conversationsSlice";
 
-const PUBLIC_REGISTRY_API_BASE_URL = "https://api.eigenwallet.org";
+const PUBLIC_REGISTRY_API_BASE_URL = "https://api.unstoppableswap.net";
 
 async function fetchAlertsViaHttp(): Promise<Alert[]> {
   const response = await fetch(`${PUBLIC_REGISTRY_API_BASE_URL}/api/alerts`);
