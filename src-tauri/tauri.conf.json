@@ -23,7 +23,22 @@
       }
     ],
     "security": {
-      "dangerousDisableAssetCspModification": true
+      "csp": {
+        "default-src": "'self' asset: http://asset.localhost",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost https://api.eigenwallet.org https://api.coingecko.com https://cdn.crabnebula.app"
+      },
+      "devCsp": {
+        "default-src": "'self' asset: http://asset.localhost",
+        "script-src": "'self' 'unsafe-eval' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost data: blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:* https://api.eigenwallet.org https://api.coingecko.com https://cdn.crabnebula.app"
+      }
     }
   },
   "bundle": {
