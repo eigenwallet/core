@@ -349,6 +349,40 @@ pub mod ffi {
         /// Get the timestamp of the transaction.
         fn transactionInfoTimestamp(tx_info: &TransactionInfo) -> u64;
 
+        /// Get the subaddress account of a transaction (free function form).
+        fn transactionInfoSubaddrAccount(tx_info: &TransactionInfo) -> u32;
+
+        /// Get the subaddress indices of a transaction as a vector (free function form).
+        fn transactionInfoSubaddrIndices(tx_info: &TransactionInfo) -> UniquePtr<CxxVector<u32>>;
+
+        /// Get subaddress indices for a given account with balance.
+        /// strict: If true, only includes confirmed and unlocked balance.
+        ///         If false, pending and unconfirmed transactions are also included.
+        fn walletBalancePerSubaddrIndices(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u32>>;
+        /// Get balance amounts received by subaddresses by a given account.
+        /// strict: If true, only includes confirmed and unlocked balance.
+        ///         If false, pending and unconfirmed transactions are also included.
+        fn walletBalancePerSubaddrAmounts(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u64>>;
+        /// Get non-strict or strict unlocked balance per subaddress for a given account (indices).
+        fn walletUnlockedBalancePerSubaddrIndices(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u32>>;
+        /// Get non-strict or strict unlocked balance per subaddress for a given account (amounts).
+        fn walletUnlockedBalancePerSubaddrAmounts(
+            wallet: Pin<&mut Wallet>,
+            account_index: u32,
+            strict: bool,
+        ) -> UniquePtr<CxxVector<u64>>;
         /// Sign a message with the wallet's private key.
         fn signMessage(
             wallet: Pin<&mut Wallet>,
@@ -356,6 +390,31 @@ pub mod ffi {
             address: &CxxString,
             sign_with_view_key: bool,
         ) -> Result<UniquePtr<CxxString>>;
+
+        /// Get the number of subaddresses for a given account index.
+        fn numSubaddresses(wallet: &Wallet, account_index: u32) -> usize;
+
+        /// Get the label for a given subaddress.
+        fn getSubaddressLabel(
+            wallet: &Wallet,
+            account_index: u32,
+            address_index: u32,
+        ) -> Result<UniquePtr<CxxString>>;
+
+        /// Create a new subaddress for the given account with an optional label.
+        fn addSubaddress(
+            self: Pin<&mut Wallet>,
+            account_index: u32,
+            label: &CxxString,
+        ) -> Result<()>;
+
+        /// Set a label for a specific subaddress.
+        fn setSubaddressLabel(
+            self: Pin<&mut Wallet>,
+            account_index: u32,
+            address_index: u32,
+            label: &CxxString,
+        ) -> Result<()>;
 
         /**
          * Get a reserve proof that proves the wallet has a certain amount of Monero.
@@ -388,23 +447,23 @@ pub mod ffi {
     }
 }
 
-impl From<monero::Network> for ffi::NetworkType {
-    fn from(network: monero::Network) -> Self {
+impl From<monero_address::Network> for ffi::NetworkType {
+    fn from(network: monero_address::Network) -> Self {
         match network {
-            monero::Network::Mainnet => ffi::NetworkType::Mainnet,
-            monero::Network::Testnet => ffi::NetworkType::Testnet,
-            monero::Network::Stagenet => ffi::NetworkType::Stagenet,
+            monero_address::Network::Mainnet => ffi::NetworkType::Mainnet,
+            monero_address::Network::Testnet => ffi::NetworkType::Testnet,
+            monero_address::Network::Stagenet => ffi::NetworkType::Stagenet,
         }
     }
 }
 
 /// We want do use the `monero-rs` type so we convert as early as possible.
-impl From<ffi::NetworkType> for monero::Network {
+impl From<ffi::NetworkType> for monero_address::Network {
     fn from(network: ffi::NetworkType) -> Self {
         match network {
-            ffi::NetworkType::Mainnet => monero::Network::Mainnet,
-            ffi::NetworkType::Testnet => monero::Network::Testnet,
-            ffi::NetworkType::Stagenet => monero::Network::Stagenet,
+            ffi::NetworkType::Mainnet => monero_address::Network::Mainnet,
+            ffi::NetworkType::Testnet => monero_address::Network::Testnet,
+            ffi::NetworkType::Stagenet => monero_address::Network::Stagenet,
             // We have to include this path due to the way C++ translates the enum.
             // The enum only has these 3 values.
             _ => unreachable!(

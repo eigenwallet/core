@@ -1,6 +1,6 @@
 /// Construct, publish and return the transaction keys of a complex transaction
 /// (sending to multiple addresses, some of which are subaddresses)
-use monero::Amount;
+use monero_oxide_ext::Amount;
 use monero_sys::{Daemon, SyncProgress, WalletHandle};
 
 const STAGENET_REMOTE_NODE: &str = "http://node.sethforprivacy.com:38089";
@@ -11,7 +11,7 @@ const STAGENET_WALLET_RESTORE_HEIGHT: u64 = 1728128;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,transaction_keys=trace,monero_sys=trace",
+            "info,test=debug,monero_harness=debug,transaction_keys=trace,monero_sys=trace",
         )
         .with_test_writer()
         .init();
@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
     let wallet = WalletHandle::open_or_create_from_seed(
         wallet_path,
         STAGENET_WALLET_SEED.to_string(),
-        monero::Network::Stagenet,
+        monero_address::Network::Stagenet,
         STAGENET_WALLET_RESTORE_HEIGHT,
         true,
         daemon,
@@ -62,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
     ];
     tracing::info!(addresses=?addresses, "Got the destination addresses");
 
-    let amount = Amount::from_xmr(0.02)?;
+    let amount = Amount::ONE_XMR * 2 / 100;
 
     let tx_receipt = wallet
         .transfer_multi_destination(&[

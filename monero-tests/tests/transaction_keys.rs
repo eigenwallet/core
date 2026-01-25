@@ -7,8 +7,9 @@ use monero_harness::Cli;
 async fn monero_transfers() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_sys=trace,transfers=trace,monero_cpp=info",
-        ).init();
+            "info,test=debug,monero_harness=debug,monero_sys=trace,transfers=trace,monero_cpp=info",
+        )
+        .init();
 
     let cli = Cli::default();
     let wallets = vec!["alice", "bob", "candice"];
@@ -51,7 +52,10 @@ async fn monero_transfers() -> anyhow::Result<()> {
     alice
         .check_tx_key(
             proof.txid.clone(),
-            *proof.tx_keys.get(&alice.address().await?).unwrap(),
+            *proof
+                .tx_keys
+                .get(&alice.address().await?.to_string())
+                .unwrap(),
         )
         .await?;
 

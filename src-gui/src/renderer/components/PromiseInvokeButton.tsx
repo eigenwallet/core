@@ -17,6 +17,7 @@ import { useAppSelector, useIsContextAvailable } from "store/hooks";
 
 interface PromiseInvokeButtonProps<T> {
   onSuccess?: (data: T) => void | null;
+  onComplete?: () => void | null;
   onInvoke: () => Promise<T>;
   onPendingChange?: (isPending: boolean) => void | null;
   isLoadingOverride?: boolean;
@@ -35,6 +36,7 @@ interface PromiseInvokeButtonProps<T> {
 export default function PromiseInvokeButton<T>({
   disabled = false,
   onSuccess,
+  onComplete,
   onInvoke,
   children,
   startIcon,
@@ -74,6 +76,7 @@ export default function PromiseInvokeButton<T>({
         setIsPending(false);
         onPendingChange?.(false);
       }
+      onComplete?.();
     }
   }
 

@@ -8,8 +8,9 @@ use monero_harness::Cli;
 async fn monero_transfers() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_sys=trace,transfers=trace,monero_cpp=info",
-        ).init();
+            "info,test=debug,monero_harness=debug,monero_sys=trace,transfers=trace,monero_cpp=info",
+        )
+        .init();
 
     let cli = Cli::default();
     let wallets = vec!["alice", "bob"];
@@ -45,12 +46,12 @@ async fn monero_transfers() -> anyhow::Result<()> {
 
     let alice_txkey = tx_receipt
         .tx_keys
-        .get(&alice.address().await?)
+        .get(&alice.address().await?.to_string())
         .context("tx key not found for alice")?;
 
     let bob_txkey = tx_receipt
         .tx_keys
-        .get(&bob.address().await?)
+        .get(&bob.address().await?.to_string())
         .context("tx key not found for bob")?;
 
     tracing::info!("Importing tx keys");

@@ -35,9 +35,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::MoneroBalance => {
             let response = client.monero_balance().await?;
-            let amount = monero::Amount::from_pico(response.balance);
+            let amount = monero_oxide_ext::Amount::from_pico(response.balance);
 
-            println!("Current Monero balance is {:.12} XMR", amount.as_xmr());
+            println!("Current Monero balance is {}", amount);
         }
         Cmd::MoneroAddress => {
             let response = client.monero_address().await?;
@@ -94,7 +94,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 table.add_row(["No swaps found"]);
             } else {
                 for swap in &swaps {
-                    let xmr = monero::Amount::from_pico(swap.xmr_amount);
+                    let xmr = monero:Amount::from_pico(swap.xmr_amount);
                     table.add_row([
                         &swap.swap_id,
                         &swap.start_date,

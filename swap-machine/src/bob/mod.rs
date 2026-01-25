@@ -18,7 +18,7 @@ use swap_core::bitcoin::{
     TxCancel, TxFinalAmnesty, TxFullRefund, TxLock, TxPartialRefund, TxRefundAmnesty, TxRefundBurn,
     Txid, current_epoch,
 };
-use swap_core::compat::IntoDalekNg;
+use swap_core::compat::{IntoDalekNg, IntoMoneroOxide};
 use swap_core::monero;
 use swap_core::monero::{ScalarExt, TransferProofMaybeWithTxKey};
 use swap_serde::bitcoin::address_serde;
@@ -277,7 +277,7 @@ pub struct State0 {
     swap_id: Uuid,
     b: bitcoin::SecretKey,
     s_b: monero::Scalar,
-    S_b_monero: monero::PublicKey,
+    S_b_monero: monero_oxide_ext::PublicKey,
     S_b_bitcoin: bitcoin::PublicKey,
     v_b: monero::PrivateViewKey,
     dleq_proof_s_b: CrossCurveDLEQProof,
@@ -329,9 +329,7 @@ impl State0 {
             s_b,
             v_b,
             S_b_bitcoin: bitcoin::PublicKey::from(S_b_bitcoin),
-            S_b_monero: monero::PublicKey {
-                point: S_b_monero.compress(),
-            },
+            S_b_monero: S_b_monero.compress().into(),
             btc,
             xmr,
             dleq_proof_s_b,
@@ -379,13 +377,7 @@ impl State0 {
     ) -> Result<State1> {
         let valid = CROSS_CURVE_PROOF_SYSTEM.verify(
             &msg.dleq_proof_s_a,
-            (
-                msg.S_a_bitcoin.into(),
-                msg.S_a_monero
-                    .point
-                    .decompress()
-                    .ok_or_else(|| anyhow!("S_a is not a monero curve point"))?,
-            ),
+            (msg.S_a_bitcoin.into(), msg.S_a_monero.decompress_ng()),
         );
 
         if !valid {
@@ -438,7 +430,7 @@ pub struct State1 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
     s_b: monero::Scalar,
-    S_a_monero: monero::PublicKey,
+    S_a_monero: monero_oxide_ext::PublicKey,
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
@@ -574,8 +566,9 @@ impl State1 {
 pub struct State2 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
+    #[serde(with = "swap_serde::monero::scalar")]
     s_b: monero::Scalar,
-    S_a_monero: monero::PublicKey,
+    S_a_monero: monero_oxide_ext::PublicKey,
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
@@ -732,8 +725,9 @@ impl State2 {
 pub struct State3 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
+    #[serde(with = "swap_serde::monero::scalar")]
     s_b: monero::Scalar,
-    S_a_monero: monero::PublicKey,
+    S_a_monero: monero_oxide_ext::PublicKey,
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
@@ -764,10 +758,10 @@ pub struct State3 {
 }
 
 impl State3 {
-    pub fn xmr_view_keys(&self) -> (monero::PublicKey, monero::PrivateViewKey) {
-        let S_b_monero = monero::PublicKey::from_private_key(&monero::PrivateKey::from_scalar(
-            self.s_b.into_dalek_ng(),
-        ));
+    pub fn xmr_view_keys(&self) -> (monero_oxide_ext::PublicKey, monero::PrivateViewKey) {
+        let S_b_monero = monero_oxide_ext::PublicKey::from_private_key(
+            &monero_oxide_ext::PrivateKey::from_scalar(self.s_b),
+        );
         let S = self.S_a_monero + S_b_monero;
 
         (S, self.v)
@@ -913,6 +907,7 @@ impl State3 {
 pub struct State4 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
+    #[serde(with = "swap_serde::monero::scalar")]
     s_b: monero::Scalar,
     S_a_bitcoin: bitcoin::PublicKey,
     v: monero::PrivateViewKey,
@@ -958,8 +953,8 @@ impl State4 {
             let tx_redeem_sig =
                 tx_redeem.extract_signature_by_key(tx_redeem_candidate, self.b.public())?;
             let s_a = bitcoin::recover(self.S_a_bitcoin, tx_redeem_sig, tx_redeem_encsig)?;
-            let s_a = monero::PrivateKey::from_scalar(
-                monero::private_key_from_secp256k1_scalar(s_a.into()).into_dalek_ng(),
+            let s_a = monero_oxide_ext::PrivateKey::from_scalar(
+                monero::private_key_from_secp256k1_scalar(s_a.into()).into_monero_oxide(),
             );
 
             Ok(Some(State5 {
@@ -1077,7 +1072,8 @@ impl State4 {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct State5 {
     #[serde(with = "swap_serde::monero::private_key")]
-    s_a: monero::PrivateKey,
+    s_a: monero_oxide_ext::PrivateKey,
+    #[serde(with = "swap_serde::monero::scalar")]
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,
     xmr: monero::Amount,
@@ -1088,10 +1084,8 @@ pub struct State5 {
 }
 
 impl State5 {
-    pub fn xmr_keys(&self) -> (monero::PrivateKey, monero::PrivateViewKey) {
-        let s_b = monero::PrivateKey {
-            scalar: self.s_b.into_dalek_ng(),
-        };
+    pub fn xmr_keys(&self) -> (monero_oxide_ext::PrivateKey, monero::PrivateViewKey) {
+        let s_b = monero_oxide_ext::PrivateKey { scalar: self.s_b };
         let s = self.s_a + s_b;
 
         (s, self.v)
@@ -1107,6 +1101,7 @@ impl State5 {
 pub struct State6 {
     A: bitcoin::PublicKey,
     b: bitcoin::SecretKey,
+    #[serde(with = "swap_serde::monero::scalar")]
     s_b: monero::Scalar,
     v: monero::PrivateViewKey,
     pub xmr: monero::Amount,
@@ -1371,7 +1366,7 @@ impl State6 {
         lock_transfer_proof: TransferProofMaybeWithTxKey,
     ) -> State5 {
         // TODO: Validate `s_a` here!
-        let s_a = monero::PrivateKey::from_scalar(s_a.into_dalek_ng());
+        let s_a = monero_oxide_ext::PrivateKey::from_scalar(s_a);
 
         State5 {
             s_a,

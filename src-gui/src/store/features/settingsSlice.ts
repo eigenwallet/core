@@ -13,7 +13,7 @@ export const DONATE_TO_DEVELOPMENT_OPTIONS: Exclude<
   false
 >[] = [0, 0.005, 0.012, 0.02];
 
-const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 14 * 24 * 60 * 60 * 1000; // 14 days
+const MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface SettingsState {
   /// This is an ordered list of node urls for each network and blockchain
@@ -46,7 +46,9 @@ export interface SettingsState {
   /// The external Bitcoin refund address
   externalBitcoinRefundAddress: string;
   /// UTC timestamp (in milliseconds) when default nodes were last applied
-  lastAppliedDefaultNodes?: number | null;
+  lastAppliedDefaultNodesV2?: number | null;
+  /// Whether we have already cleared logs after upgrading
+  hasClearedLogsOnUpgrade: boolean;
 }
 
 export enum RedeemPolicy {
@@ -125,7 +127,8 @@ const initialState: SettingsState = {
   bitcoinRefundPolicy: RefundPolicy.Internal,
   externalMoneroRedeemAddress: "",
   externalBitcoinRefundAddress: "",
-  lastAppliedDefaultNodes: null,
+  lastAppliedDefaultNodesV2: null,
+  hasClearedLogsOnUpgrade: false,
 };
 
 const alertsSlice = createSlice({
@@ -205,6 +208,9 @@ const alertsSlice = createSlice({
     setUserHasSeenIntroduction(slice, action: PayloadAction<boolean>) {
       slice.userHasSeenIntroduction = action.payload;
     },
+    setHasClearedLogsOnUpgrade(slice, action: PayloadAction<boolean>) {
+      slice.hasClearedLogsOnUpgrade = action.payload;
+    },
     resetSettings(_) {
       return initialState;
     },
@@ -244,12 +250,11 @@ const alertsSlice = createSlice({
       }>,
     ) {
       const now = Date.now();
-      const twoWeeksInMs = 14 * 24 * 60 * 60 * 1000;
 
-      // Check if we should apply defaults (first time or more than 2 weeks)
+      // Check if we should apply defaults (first time or more than 7 days)
       if (
-        slice.lastAppliedDefaultNodes == null ||
-        now - slice.lastAppliedDefaultNodes >
+        slice.lastAppliedDefaultNodesV2 == null ||
+        now - slice.lastAppliedDefaultNodesV2 >
           MIN_TIME_BETWEEN_DEFAULT_NODES_APPLY
       ) {
         // Remove negative nodes from mainnet
@@ -273,7 +278,7 @@ const alertsSlice = createSlice({
           if (
             !slice.nodes[Network.Mainnet][Blockchain.Bitcoin].includes(node)
           ) {
-            slice.nodes[Network.Mainnet][Blockchain.Bitcoin].push(node);
+            slice.nodes[Network.Mainnet][Blockchain.Bitcoin].unshift(node);
           }
         });
 
@@ -284,12 +289,12 @@ const alertsSlice = createSlice({
           if (
             !slice.nodes[Network.Testnet][Blockchain.Bitcoin].includes(node)
           ) {
-            slice.nodes[Network.Testnet][Blockchain.Bitcoin].push(node);
+            slice.nodes[Network.Testnet][Blockchain.Bitcoin].unshift(node);
           }
         });
 
         // Update the timestamp
-        slice.lastAppliedDefaultNodes = now;
+        slice.lastAppliedDefaultNodesV2 = now;
       }
     },
     /// Validates the donate to development tip setting.
@@ -331,6 +336,7 @@ export const {
   setEnableMoneroTor,
   setUseMoneroRpcPool,
   setUserHasSeenIntroduction,
+  setHasClearedLogsOnUpgrade,
   addRendezvousPoint,
   removeRendezvousPoint,
   setDonateToDevelopment,

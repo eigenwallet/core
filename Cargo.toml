@@ -5,7 +5,7 @@ members = [
   "electrum-pool",
   "libp2p-rendezvous-node",
   "libp2p-tor",
-  "monero-rpc",
+  "monero-oxide-ext",
   "monero-rpc-pool",
   "monero-sys",
   "monero-tests",
@@ -40,6 +40,7 @@ bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
 # monero-oxide
+monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
 monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
 monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
 monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
@@ -72,7 +73,6 @@ bmrng = "0.5.2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 jsonrpsee = { version = "0.25", default-features = false }
 libp2p = { version = "0.53.2" }
-monero = { version = "0.12", features = ["serde_support"] }
 once_cell = "1.19"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
@@ -116,7 +116,6 @@ vergen-git2 = { version = "1", features = ["build"] }
 [patch.crates-io]
 # patch until new release https://github.com/thomaseizinger/rust-jsonrpc-client/pull/51
 jsonrpc_client = { git = "https://github.com/delta1/rust-jsonrpc-client.git", rev = "3b6081697cd616c952acb9c2f02d546357d35506" }
-monero = { git = "https://github.com/comit-network/monero-rs", rev = "818f38b" }
 
 # Force up to date version of crunchy that fixes linux->windows cross compilation
 crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6ba89ccfc72ccb24cc4a4ac6d9c6272" }

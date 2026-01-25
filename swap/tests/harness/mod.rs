@@ -15,7 +15,6 @@ use std::fmt;
 use std::path::PathBuf;
 use swap_env::config::RefundPolicy;
 
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use swap::asb::FixedRate;
@@ -65,7 +64,7 @@ pub async fn setup_test<T, F, C>(
     let cli = Cli::default();
 
     tracing_subscriber::fmt()
-        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,monero_rpc=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug,monero_wallet_ng=trace") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
+        .with_env_filter("info,swap=trace,swap_p2p=trace,monero_harness=debug,bitcoin_harness=info,testcontainers=info,monero_cpp=info,monero_sys=debug,monero_wallet_ng=trace") // add `reqwest::connect::verbose=trace` if you want to logs of the RPC clients
         .with_test_writer()
         .init();
 
@@ -75,7 +74,8 @@ pub async fn setup_test<T, F, C>(
     monero.init_miner().await.unwrap();
 
     let btc_amount = bitcoin::Amount::from_sat(1_000_000);
-    let xmr_amount = monero::Amount::from_monero(btc_amount.to_btc() / FixedRate::RATE).unwrap();
+    let xmr_amount =
+        monero::Amount::parse_monero(&(btc_amount.to_btc() / FixedRate::RATE).to_string()).unwrap();
     let electrs_rpc_port = containers.electrs.get_host_port_ipv4(electrs::RPC_PORT);
 
     let developer_seed = Seed::random().unwrap();
@@ -441,7 +441,7 @@ async fn init_test_wallets(
             starting_balances
                 .xmr_outputs
                 .into_iter()
-                .map(|amount| amount.as_piconero())
+                .map(|amount| amount.as_pico())
                 .collect(),
         )
         .await
@@ -578,7 +578,9 @@ impl BobParams {
         )
     }
 
-    pub async fn get_change_receive_addresses(&self) -> (bitcoin::Address, monero::Address) {
+    pub async fn get_change_receive_addresses(
+        &self,
+    ) -> (bitcoin::Address, monero_address::MoneroAddress) {
         (
             self.bitcoin_wallet.new_address().await.unwrap(),
             self.monero_wallet
@@ -1166,16 +1168,16 @@ impl TestContext {
     fn developer_tip_wallet_received_xmr_balance(&self) -> monero::Amount {
         use rust_decimal::prelude::ToPrimitive;
 
-        let effective_tip_amount = monero::Amount::from_piconero(
+        let effective_tip_amount = monero::Amount::from_pico(
             self.developer_tip
                 .ratio
-                .saturating_mul(self.xmr_amount.as_piconero_decimal())
+                .saturating_mul(Decimal::from(self.xmr_amount.as_pico()))
                 .to_u64()
                 .unwrap(),
         );
 
         // This is defined in `swap/src/protocol/alice/swap.rs` in `build_transfer_destinations`
-        if effective_tip_amount.as_piconero() < 30_000_000 {
+        if effective_tip_amount.as_pico() < 30_000_000 {
             return monero::Amount::ZERO;
         }
 
@@ -1246,7 +1248,7 @@ impl TestContext {
     }
 
     pub async fn empty_alice_monero_wallet(&self) {
-        let burn_address = monero::Address::from_str("49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa").unwrap();
+        let burn_address = monero_address::MoneroAddress::from_str_with_unchecked_network("49LEH26DJGuCyr8xzRAzWPUryzp7bpccC7Hie1DiwyfJEyUKvMFAethRLybDYrFdU1eHaMkKQpUPebY4WT3cSjEvThmpjPa").unwrap();
         let wallet = self.alice_monero_wallet.main_wallet().await;
 
         wallet

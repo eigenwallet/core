@@ -2,7 +2,6 @@ use anyhow::{bail, Context, Result};
 use bitcoin::address::NetworkUnchecked;
 use bitcoin::Address;
 use bitcoin_wallet::{bitcoin_address, Amount};
-use serde::Serialize;
 use std::ffi::OsString;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;

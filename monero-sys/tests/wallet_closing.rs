@@ -5,7 +5,7 @@ const STAGENET_REMOTE_NODE: &str = "http://node.sethforprivacy.com:38089";
 #[tokio::test(flavor = "multi_thread")]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter("info,test=debug,monero_harness=debug,monero_rpc=debug,wallet_closing=trace,monero_sys=trace,monero_cpp=debug")
+        .with_env_filter("info,test=debug,monero_harness=debug,wallet_closing=trace,monero_sys=trace,monero_cpp=debug")
         .with_test_writer()
         .init();
 
@@ -16,7 +16,7 @@ async fn main() {
         let wallet = WalletHandle::open_or_create(
             temp_dir.path().join("test_wallet").display().to_string(),
             daemon.clone(),
-            monero::Network::Stagenet,
+            monero_address::Network::Stagenet,
             true,
         )
         .await
@@ -36,7 +36,7 @@ async fn main() {
         let wallet = WalletHandle::open_or_create(
             temp_dir.path().join("test_wallet").display().to_string(),
             daemon.clone(),
-            monero::Network::Stagenet,
+            monero_address::Network::Stagenet,
             true,
         )
         .await

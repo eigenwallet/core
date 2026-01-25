@@ -8,11 +8,11 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bitcoin = { workspace = true }
 bitcoin-wallet = { path = "../bitcoin-wallet" }
-curve25519-dalek = { workspace = true }
 curve25519-dalek-ng = { workspace = true }
 ecdsa_fun = { workspace = true }
 libp2p = { workspace = true }
-monero = { workspace = true }
+monero-address = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { workspace = true }

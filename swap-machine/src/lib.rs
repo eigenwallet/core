@@ -8,12 +8,11 @@ mod tests {
     use ::bitcoin::hashes::Hash;
     use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
     use bitcoin_wallet::*;
-    use curve25519_dalek::scalar::Scalar;
-    use monero::PrivateKey;
+    use monero_oxide_ext::PrivateKey;
     use rand::rngs::OsRng;
     use swap_core::bitcoin::*;
     use swap_core::compat::IntoDalekNg;
-    use swap_core::monero::TransferProof;
+    use swap_core::monero::{Scalar, TransferProof};
     use swap_env::env::{GetConfig, Regtest};
     use uuid::Uuid;
 
@@ -29,7 +28,7 @@ mod tests {
         let btc_amount = Amount::from_sat(500_000);
         let btc_amnesty_amount = Amount::from_sat(100_000);
         let should_publish_tx_refund = false;
-        let xmr_amount = swap_core::monero::primitives::Amount::from_piconero(10000);
+        let xmr_amount = swap_core::monero::primitives::Amount::from_pico(10000);
 
         let tx_redeem_fee = alice_wallet
             .estimate_fee(TxRedeem::weight(), Some(btc_amount))
@@ -105,7 +104,7 @@ mod tests {
             // We use bogus values here, because they're irrelevant to this test
             TransferProof::new(
                 swap_core::monero::TxHash("foo".into()),
-                PrivateKey::from_scalar(Scalar::random(&mut OsRng).into_dalek_ng()),
+                PrivateKey::from_scalar(Scalar::ONE),
             )
             .into(),
         );
@@ -152,7 +151,7 @@ mod tests {
         let btc_amount = Amount::from_sat(500_000);
         let btc_amnesty_amount = Amount::from_sat(100_000);
         let should_publish_tx_refund = false;
-        let xmr_amount = swap_core::monero::primitives::Amount::from_piconero(10000);
+        let xmr_amount = swap_core::monero::primitives::Amount::from_pico(10000);
 
         let tx_redeem_fee = alice_wallet
             .estimate_fee(TxRedeem::weight(), Some(btc_amount))

@@ -52,7 +52,7 @@ impl AsRef<str> for BidQuoteProtocol {
 }
 
 /// Represents a quote for buying XMR.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[typeshare]
 pub struct BidQuote {
     /// The price at which the maker is willing to buy at.
@@ -89,12 +89,12 @@ impl BidQuote {
 #[error("Received quote of 0")]
 pub struct ZeroQuoteReceived;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[typeshare]
 pub struct ReserveProofWithAddress {
     #[serde(with = "swap_serde::monero::address_serde")]
     #[typeshare(serialized_as = "string")]
-    pub address: monero::Address,
+    pub address: monero_address::MoneroAddress,
     pub proof: String,
     // TOOD: Technically redundant as convention tells us its the peer id but it'd be nice to be able to verify reserve proofs isolatedly
     pub message: String,

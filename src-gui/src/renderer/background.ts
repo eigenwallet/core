@@ -19,6 +19,7 @@ import logger from "utils/logger";
 import { fetchAllConversations, updateAlerts, updateRates } from "./api";
 import {
   checkContextStatus,
+  deleteAllLogs,
   getSwapInfo,
   getSwapTimelock,
   initializeContext,
@@ -34,6 +35,7 @@ import {
 } from "store/features/walletSlice";
 import {
   applyDefaultNodes,
+  setHasClearedLogsOnUpgrade,
   validateDonateToDevelopmentTip,
 } from "store/features/settingsSlice";
 import {
@@ -41,6 +43,7 @@ import {
   NEGATIVE_NODES_MAINNET,
   NEGATIVE_NODES_TESTNET,
 } from "store/defaults";
+import { setSubaddresses } from "store/features/walletSlice";
 
 const TAURI_UNIFIED_EVENT_CHANNEL_NAME = "tauri-unified-event";
 
@@ -103,13 +106,27 @@ export async function setupBackgroundTasks(): Promise<void> {
     !contextStatus.tor_available
   )
     // Warning: If we reload the page while the Context is being initialized, this function will throw an error
-    initializeContext().catch((e) => {
-      logger.error(
-        e,
-        "Failed to initialize context on page load. This might be because we reloaded the page while the context was being initialized",
-      );
-      store.dispatch(contextInitializationFailed(String(e)));
-    });
+    initializeContext()
+      .then(() => {
+        const settings = store.getState().settings;
+        if (settings.hasClearedLogsOnUpgrade !== true) {
+          deleteAllLogs()
+            .then(() => store.dispatch(setHasClearedLogsOnUpgrade(true)))
+            .catch((err) => {
+              logger.error(err, "Failed to clear logs after upgrade");
+            });
+        }
+        else {
+          logger.info("Skipping clearing the logs because we already did it.");
+        }
+      })
+      .catch((e) => {
+        logger.error(
+          e,
+          "Failed to initialize context on page load. This might be because we reloaded the page while the context was being initialized",
+        );
+        store.dispatch(contextInitializationFailed(String(e)));
+      });
 }
 
 // Listen for the unified event
@@ -187,6 +204,9 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
       }
       if (eventData.type === "SyncProgress") {
         store.dispatch(setSyncProgress(eventData.content));
+      }
+      if (eventData.type === "SubaddressesUpdate") {
+        store.dispatch(setSubaddresses(eventData.content.subaddresses));
       }
       break;
 

@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "3.6.1"
+version = "3.6.7"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "XMR/BTC trustless atomic swaps."
@@ -48,7 +48,8 @@ config = { version = "0.14", default-features = false, features = ["toml"] }
 electrum-pool = { path = "../electrum-pool" }
 jsonrpsee = { workspace = true, features = ["server"] }
 moka = { version = "0.12", features = ["sync", "future"] }
-monero = { workspace = true }
+monero-address = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-rpc-pool = { path = "../monero-rpc-pool" }
 monero-seed = { git = "https://github.com/monero-oxide/monero-wallet-util.git", package = "monero-seed" }
 monero-sys = { path = "../monero-sys" }

@@ -45,6 +45,7 @@ export const DEFAULT_NODES: Record<Network, Record<Blockchain, string[]>> = {
   },
   [Network.Mainnet]: {
     [Blockchain.Bitcoin]: [
+      "tcp://electrum.eigenwallet.org:22293",
       "ssl://electrum.blockstream.info:50002",
       "ssl://bitcoin.stackwallet.com:50002",
       "ssl://b.1209k.com:50002",

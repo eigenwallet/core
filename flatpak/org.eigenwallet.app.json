@@ -1,8 +1,8 @@
 {
   "id": "org.eigenwallet.app",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "47",
-  "sdk": "org.gnome.Sdk",
+  "runtime-version": "48",
+  "sdk": "org.gnome.Sdk//48",
   "command": "unstoppableswap-gui-rs.flatpak.sh",
   "finish-args": [
     "--socket=wayland",

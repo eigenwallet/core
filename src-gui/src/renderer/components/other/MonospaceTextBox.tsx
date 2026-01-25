@@ -4,12 +4,14 @@ type Props = {
   children: React.ReactNode;
   light?: boolean;
   actions?: React.ReactNode;
+  truncate?: boolean;
 };
 
 export default function MonospaceTextBox({
   children,
   light = false,
   actions,
+  truncate = false,
 }: Props) {
   return (
     <Box
@@ -28,8 +30,10 @@ export default function MonospaceTextBox({
         component="span"
         variant="overline"
         sx={{
-          wordBreak: "break-word",
-          whiteSpace: "pre-wrap",
+          wordBreak: truncate ? "normal" : "break-word",
+          whiteSpace: truncate ? "nowrap" : "pre-wrap",
+          overflow: truncate ? "hidden" : "visible",
+          textOverflow: truncate ? "ellipsis" : "clip",
           fontFamily: "monospace",
           lineHeight: 1.5,
           flex: 1,

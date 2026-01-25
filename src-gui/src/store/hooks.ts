@@ -27,6 +27,7 @@ import { SettingsState } from "./features/settingsSlice";
 import { NodesSlice } from "./features/nodesSlice";
 import { RatesState } from "./features/ratesSlice";
 import {
+  SubaddressSummary,
   TauriBackgroundProgress,
   TauriBitcoinSyncProgress,
 } from "models/tauriModel";
@@ -206,6 +207,14 @@ export function usePendingApprovals(): PendingApprovalRequest[] {
 export function usePendingLockBitcoinApproval(): PendingLockBitcoinApprovalRequest[] {
   const approvals = usePendingApprovals();
   return approvals.filter((c) => isPendingLockBitcoinApprovalEvent(c));
+}
+
+export function useMoneroMainAddress(): string | null {
+  return useAppSelector((state) => state.wallet.state.mainAddress);
+}
+
+export function useMoneroSubaddresses(): SubaddressSummary[] {
+  return useAppSelector((state) => state.wallet.state.subaddresses);
 }
 
 export function usePendingSendMoneroApproval(): PendingSendMoneroApprovalRequest[] {

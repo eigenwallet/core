@@ -29,7 +29,7 @@ pub static CROSS_CURVE_PROOF_SYSTEM: LazyLock<
 pub struct Message0 {
     pub swap_id: Uuid,
     pub B: bitcoin::PublicKey,
-    pub S_b_monero: monero::PublicKey,
+    pub S_b_monero: monero_oxide_ext::PublicKey,
     pub S_b_bitcoin: bitcoin::PublicKey,
     pub dleq_proof_s_b: CrossCurveDLEQProof,
     pub v_b: monero::PrivateViewKey,
@@ -159,7 +159,7 @@ pub trait Database {
         address: MoneroAddressPool,
     ) -> Result<()>;
     async fn get_monero_address_pool(&self, swap_id: Uuid) -> Result<MoneroAddressPool>;
-    async fn get_monero_addresses(&self) -> Result<Vec<::monero::Address>>;
+    async fn get_monero_addresses(&self) -> Result<Vec<::monero_address::MoneroAddress>>;
     async fn insert_address(&self, peer_id: PeerId, address: Multiaddr) -> Result<()>;
     async fn get_addresses(&self, peer_id: PeerId) -> Result<Vec<Multiaddr>>;
     async fn get_all_peer_addresses(&self) -> Result<Vec<(PeerId, Vec<Multiaddr>)>>;

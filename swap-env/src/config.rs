@@ -74,7 +74,7 @@ pub struct Monero {
     pub daemon_url: Option<Url>,
     pub finality_confirmations: Option<u64>,
     #[serde(with = "swap_serde::monero::network")]
-    pub network: monero::Network,
+    pub network: monero_address::Network,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -225,7 +225,7 @@ pub fn initial_setup(config_path: PathBuf, config: Config) -> Result<()> {
 
 pub fn query_user_for_initial_config_with_network(
     bitcoin_network: bitcoin::Network,
-    monero_network: monero::Network,
+    monero_network: monero_address::Network,
 ) -> Result<Config> {
     let defaults = match bitcoin_network {
         bitcoin::Network::Bitcoin => Mainnet::get_config_file_defaults()?,
@@ -287,11 +287,11 @@ pub fn query_user_for_initial_config_with_network(
 pub fn query_user_for_initial_config(testnet: bool) -> Result<Config> {
     let (bitcoin_network, monero_network) = if testnet {
         let bitcoin_network = bitcoin::Network::Testnet;
-        let monero_network = monero::Network::Stagenet;
+        let monero_network = monero_address::Network::Stagenet;
         (bitcoin_network, monero_network)
     } else {
         let bitcoin_network = bitcoin::Network::Bitcoin;
-        let monero_network = monero::Network::Mainnet;
+        let monero_network = monero_address::Network::Mainnet;
         (bitcoin_network, monero_network)
     };
 

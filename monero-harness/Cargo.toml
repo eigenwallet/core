@@ -7,8 +7,10 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true }
-monero = { workspace = true }
-monero-rpc = { path = "../monero-rpc" }
+monero-address = { workspace = true }
+monero-daemon-rpc = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
+monero-simple-request-rpc = { workspace = true }
 monero-sys = { path = "../monero-sys" }
 rand = { workspace = true }
 reqwest = { workspace = true }

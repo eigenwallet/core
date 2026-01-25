@@ -5,7 +5,7 @@ use testcontainers::Container;
 type TestSetup<'a> = (
     WalletHandle,
     u64,
-    monero::Address,
+    monero_address::MoneroAddress,
     WalletHandle,
     Container<'a, monero_harness::image::Monerod>,
     Vec<Container<'a, monero_harness::image::MoneroWalletRpc>>,
@@ -14,7 +14,7 @@ type TestSetup<'a> = (
 async fn setup(cli: &Cli) -> anyhow::Result<TestSetup<'_>> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_sys=trace,reserve_proof=trace",
+            "info,test=debug,monero_harness=debug,monero_sys=trace,reserve_proof=trace",
         )
         .try_init()
         .ok();
@@ -82,7 +82,7 @@ async fn reserve_proof_specific_amount() -> anyhow::Result<()> {
     let message = "proving specific amount";
 
     // Alice generates a reserve proof for a specific amount (half of balance)
-    let prove_amount = monero::Amount::from_pico(alice_balance / 2);
+    let prove_amount = monero_oxide_ext::Amount::from_pico(alice_balance / 2);
     let proof = alice_wallet
         .get_reserve_proof(0, Some(prove_amount), message)
         .await?;

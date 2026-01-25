@@ -1,4 +1,4 @@
-use monero::Amount;
+use monero_oxide_ext::Amount;
 use monero_sys::{Daemon, SyncProgress, WalletHandle};
 
 const STAGENET_REMOTE_NODE: &str = "http://node.sethforprivacy.com:38089";
@@ -8,9 +8,7 @@ const STAGENET_WALLET_RESTORE_HEIGHT: u64 = 1728128;
 #[tokio::test]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,simple=trace,monero_sys=trace",
-        )
+        .with_env_filter("info,test=debug,monero_harness=debug,simple=trace,monero_sys=trace")
         .with_test_writer()
         .init();
 
@@ -24,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let wallet = WalletHandle::open_or_create_from_seed(
         wallet_path,
         STAGENET_WALLET_SEED.to_string(),
-        monero::Network::Stagenet,
+        monero_address::Network::Stagenet,
         STAGENET_WALLET_RESTORE_HEIGHT,
         true,
         daemon,

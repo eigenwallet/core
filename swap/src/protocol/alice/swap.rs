@@ -186,7 +186,7 @@ where
                         )));
                     };
 
-                    let tx_key = receipt.tx_keys.get(&lock_address).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
+                    let tx_key = receipt.tx_keys.get(&lock_address.to_string()).expect("monero-sys guarantees that the address has a valid tx key or the tx isn't published");
 
                     Ok(Some((
                         monero_wallet_restore_blockheight,
@@ -956,10 +956,10 @@ impl XmrRefundable for Box<State3> {
 /// Otherwise:
 ///     returns one destination: for the lock output
 fn build_transfer_destinations(
-    lock_address: ::monero::Address,
-    lock_amount: ::monero::Amount,
+    lock_address: monero_address::MoneroAddress,
+    lock_amount: monero_oxide_ext::Amount,
     tip: TipConfig,
-) -> anyhow::Result<Vec<(::monero::Address, ::monero::Amount)>> {
+) -> anyhow::Result<Vec<(monero_address::MoneroAddress, monero_oxide_ext::Amount)>> {
     use rust_decimal::prelude::ToPrimitive;
 
     // If the effective tip is less than this amount, we do not include the tip output
@@ -977,7 +977,7 @@ fn build_transfer_destinations(
         .context("Developer tip amount should not overflow")?;
 
     if tip_amount_piconero >= MIN_USEFUL_TIP_AMOUNT_PICONERO {
-        let tip_amount = ::monero::Amount::from_pico(tip_amount_piconero);
+        let tip_amount = monero_oxide_ext::Amount::from_pico(tip_amount_piconero);
 
         Ok(vec![(lock_address, lock_amount), (tip.address, tip_amount)])
     } else {

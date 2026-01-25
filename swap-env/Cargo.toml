@@ -10,7 +10,7 @@ config = { version = "0.14", default-features = false, features = ["toml"] }
 console = { workspace = true }
 dialoguer = { workspace = true }
 libp2p = { workspace = true, features = ["serde"] }
-monero = { workspace = true }
+monero-address = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 swap-fs = { path = "../swap-fs" }

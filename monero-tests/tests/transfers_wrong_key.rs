@@ -5,8 +5,9 @@ use monero_harness::Cli;
 async fn monero_transfers_wrong_key() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_sys=trace,transfers=trace,monero_cpp=info",
-        ).init();
+            "info,test=debug,monero_harness=debug,monero_sys=trace,transfers=trace,monero_cpp=info",
+        )
+        .init();
 
     let cli = Cli::default();
     let wallets = vec!["alice"];
@@ -43,7 +44,7 @@ async fn monero_transfers_wrong_key() {
     monero.generate_blocks().await.unwrap();
 
     // Use a wrong private key (just a simple constant key, not the real transfer key)
-    let wrong_key = monero::PrivateKey::from_slice(&[
+    let wrong_key = monero_oxide_ext::PrivateKey::from_slice(&[
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0,
     ])
@@ -57,7 +58,7 @@ async fn monero_transfers_wrong_key() {
         .unwrap();
 
     // Wrong tx key -> amount is zero.
-    if status.received != monero::Amount::ZERO {
+    if status.received != monero_oxide_ext::Amount::ZERO {
         panic!("could decrypt payment - this is not supposed to happen since we got a bogus key");
     }
 }

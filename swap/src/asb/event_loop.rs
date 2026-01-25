@@ -1122,7 +1122,7 @@ mod service {
 }
 
 mod quote {
-    use crate::monero::Amount;
+    use crate::monero::{Amount, AmountExt};
     use anyhow::{anyhow, Context};
     use rust_decimal::Decimal;
     use std::{sync::Arc, time::Duration};
@@ -1261,7 +1261,7 @@ mod quote {
     ) -> Amount {
         use rust_decimal::prelude::ToPrimitive;
 
-        let unlocked_balance_piconero = unlocked_balance.as_piconero_decimal();
+        let unlocked_balance_piconero = Decimal::from(unlocked_balance.as_pico());
 
         // If a developer tip is configured, we need to account for the fact that
         // to lock X XMR for a swap, we actually need X * (1 + tip_percentage) XMR
@@ -1291,9 +1291,11 @@ mod quote {
         //
         // Note: It is important that we subtract this AFTER accounting for the tip
         // as these other swaps will also require a tip output
-        let total_reserved_piconero = reserved_amounts
-            .fold(Amount::ZERO, |acc, amount| acc + amount)
-            .as_piconero_decimal();
+        let total_reserved_piconero = Decimal::from(
+            reserved_amounts
+                .fold(Amount::ZERO, |acc, amount| acc + amount)
+                .as_pico(),
+        );
 
         // Unlocked balance after accounting for the tip and the reserved amounts
         let unreserved_unlocked_piconero_after_accounting_for_tip =
@@ -1303,7 +1305,7 @@ mod quote {
                 .to_u64()
                 .unwrap_or(0);
 
-        Amount::from_piconero(unreserved_unlocked_piconero_after_accounting_for_tip)
+        Amount::from_pico(unreserved_unlocked_piconero_after_accounting_for_tip)
     }
 
     /// This is how long we maximally wait for the wallet operation
@@ -1381,11 +1383,11 @@ mod tests {
 
     use super::*;
 
-    use crate::monero::Amount;
+    use crate::monero::{Amount, AmountExt};
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_with_no_reserved_amounts() {
-        let balance = Amount::from_monero(10.0).unwrap();
+        let balance = Amount::parse_monero("10.0").unwrap();
         let reserved_amounts = vec![];
 
         let result =
@@ -1396,25 +1398,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_with_reserved_amounts() {
-        let balance = monero::Amount::from_monero(10.0).unwrap();
+        let balance = monero::Amount::parse_monero("10.0").unwrap();
         let reserved_amounts = vec![
-            monero::Amount::from_monero(2.0).unwrap(),
-            monero::Amount::from_monero(3.0).unwrap(),
+            monero::Amount::parse_monero("2.0").unwrap(),
+            monero::Amount::parse_monero("3.0").unwrap(),
         ];
 
         let result =
             unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
-        let expected = monero::Amount::from_monero(5.0).unwrap();
+        let expected = monero::Amount::parse_monero("5.0").unwrap();
         assert_eq!(result, expected);
     }
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_insufficient_balance() {
-        let balance = monero::Amount::from_monero(5.0).unwrap();
+        let balance = monero::Amount::parse_monero("5.0").unwrap();
         let reserved_amounts = vec![
-            monero::Amount::from_monero(3.0).unwrap(),
-            monero::Amount::from_monero(4.0).unwrap(), // Total reserved > balance
+            monero::Amount::parse_monero("3.0").unwrap(),
+            monero::Amount::parse_monero("4.0").unwrap(), // Total reserved > balance
         ];
 
         let result =
@@ -1426,10 +1428,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_exact_match() {
-        let balance = monero::Amount::from_monero(10.0).unwrap();
+        let balance = monero::Amount::parse_monero("10.0").unwrap();
         let reserved_amounts = vec![
-            monero::Amount::from_monero(4.0).unwrap(),
-            monero::Amount::from_monero(6.0).unwrap(), // Exactly equals balance
+            monero::Amount::parse_monero("4.0").unwrap(),
+            monero::Amount::parse_monero("6.0").unwrap(), // Exactly equals balance
         ];
 
         let result =
@@ -1441,7 +1443,7 @@ mod tests {
     #[tokio::test]
     async fn test_unreserved_monero_balance_zero_balance() {
         let balance = monero::Amount::ZERO;
-        let reserved_amounts = vec![monero::Amount::from_monero(1.0).unwrap()];
+        let reserved_amounts = vec![monero::Amount::parse_monero("1.0").unwrap()];
 
         let result =
             unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
@@ -1451,7 +1453,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_empty_reserved_amounts() {
-        let balance = monero::Amount::from_monero(5.0).unwrap();
+        let balance = monero::Amount::parse_monero("5.0").unwrap();
         let reserved_amounts: Vec<MockReservedItem> = vec![];
 
         let result = unreserved_monero_balance(
@@ -1465,13 +1467,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_unreserved_monero_balance_large_amounts() {
-        let balance = monero::Amount::from_piconero(1_000_000_000);
-        let reserved_amounts = vec![monero::Amount::from_piconero(300_000_000)];
+        let balance = monero::Amount::from_pico(1_000_000_000);
+        let reserved_amounts = vec![monero::Amount::from_pico(300_000_000)];
 
         let result =
             unreserved_monero_balance(balance, reserved_amounts.into_iter(), Decimal::ZERO);
 
-        let expected = monero::Amount::from_piconero(700_000_000);
+        let expected = monero::Amount::from_pico(700_000_000);
         assert_eq!(result, expected);
     }
 
@@ -1480,7 +1482,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(
@@ -1506,13 +1508,13 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(50_000);
         let max_buy = bitcoin::Amount::from_sat(300_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items = vec![
             MockReservedItem {
-                reserved: monero::Amount::from_monero(0.2).unwrap(),
+                reserved: monero::Amount::parse_monero("0.2").unwrap(),
             },
             MockReservedItem {
-                reserved: monero::Amount::from_monero(0.3).unwrap(),
+                reserved: monero::Amount::parse_monero("0.3").unwrap(),
             },
         ];
 
@@ -1541,7 +1543,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(600_000); // More than available
         let max_buy = bitcoin::Amount::from_sat(800_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(0.5).unwrap(); // Only 0.005 BTC worth at rate 0.01
+        let balance = monero::Amount::parse_monero("0.5").unwrap(); // Only 0.005 BTC worth at rate 0.01
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(
@@ -1567,7 +1569,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(800_000); // More than available
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(0.6).unwrap(); // 0.006 BTC worth at rate 0.01
+        let balance = monero::Amount::parse_monero("0.6").unwrap(); // 0.006 BTC worth at rate 0.01
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(
@@ -1596,9 +1598,9 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items = vec![MockReservedItem {
-            reserved: monero::Amount::from_monero(1.0).unwrap(), // All balance reserved
+            reserved: monero::Amount::parse_monero("1.0").unwrap(), // All balance reserved
         }];
 
         let result = make_quote(
@@ -1650,7 +1652,7 @@ mod tests {
         let min_buy = bitcoin::Amount::from_sat(100_000);
         let max_buy = bitcoin::Amount::from_sat(500_000);
         let rate = FixedRate::default();
-        let balance = monero::Amount::from_monero(1.0).unwrap();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
         let reserved_items: Vec<MockReservedItem> = vec![];
 
         let result = make_quote(

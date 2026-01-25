@@ -44,11 +44,11 @@ impl Rate {
     }
 
     /// Calculate a sell quote for a given BTC amount.
-    pub fn sell_quote(&self, quote: bitcoin::Amount) -> Result<monero::Amount> {
+    pub fn sell_quote(&self, quote: bitcoin::Amount) -> Result<monero_oxide_ext::Amount> {
         Self::quote(self.ask()?, quote)
     }
 
-    fn quote(rate: bitcoin::Amount, quote: bitcoin::Amount) -> Result<monero::Amount> {
+    fn quote(rate: bitcoin::Amount, quote: bitcoin::Amount) -> Result<monero_oxide_ext::Amount> {
         // quote (btc) = rate * base (xmr)
         // base = quote / rate
 
@@ -64,13 +64,14 @@ impl Rate {
         let base_in_xmr = quote_in_btc
             .checked_div(rate_in_btc)
             .context("Division overflow")?;
-        let base_in_piconero = base_in_xmr * Decimal::from(monero::Amount::ONE_XMR.as_pico());
+        let base_in_piconero =
+            base_in_xmr * Decimal::from(monero_oxide_ext::Amount::ONE_XMR.as_pico());
 
         let base_in_piconero = base_in_piconero
             .to_u64()
             .context("Failed to fit piconero amount into a u64")?;
 
-        Ok(monero::Amount::from_pico(base_in_piconero))
+        Ok(monero_oxide_ext::Amount::from_pico(base_in_piconero))
     }
 }
 
@@ -233,7 +234,7 @@ mod tests {
 
         let xmr_amount = rate.sell_quote(btc_amount).unwrap();
 
-        assert_eq!(xmr_amount, monero::Amount::from_xmr(1000.0).unwrap())
+        assert_eq!(xmr_amount, monero_oxide_ext::Amount::ONE_XMR * 1000)
     }
 
     #[test]

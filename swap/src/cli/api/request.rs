@@ -14,7 +14,7 @@ use crate::protocol::State;
 use crate::{cli, monero};
 use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
-use ::monero::Network;
+use ::monero_address::Network;
 use anyhow::{bail, Context as AnyContext, Result};
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
@@ -27,7 +27,6 @@ use serde_json::json;
 use std::convert::TryInto;
 use std::future::Future;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use swap_core::bitcoin;
@@ -488,7 +487,7 @@ pub struct GetMoneroAddressesArgs;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetMoneroAddressesResponse {
     #[typeshare(serialized_as = "Vec<String>")]
-    pub addresses: Vec<monero::Address>,
+    pub addresses: Vec<monero_oxide_ext::Address>,
 }
 
 impl Request for GetMoneroAddressesArgs {
@@ -497,7 +496,12 @@ impl Request for GetMoneroAddressesArgs {
     async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
         let db = ctx.try_get_db().await?;
         let addresses = db.get_monero_addresses().await?;
-        Ok(GetMoneroAddressesResponse { addresses })
+        Ok(GetMoneroAddressesResponse {
+            addresses: addresses
+                .into_iter()
+                .map(monero_oxide_ext::Address)
+                .collect(),
+        })
     }
 }
 
@@ -531,7 +535,8 @@ pub struct GetMoneroMainAddressArgs;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetMoneroMainAddressResponse {
     #[typeshare(serialized_as = "String")]
-    pub address: monero::Address,
+    #[serde(with = "swap_serde::monero::address_serde")]
+    pub address: monero_address::MoneroAddress,
 }
 
 impl Request for GetMoneroMainAddressArgs {
@@ -542,6 +547,100 @@ impl Request for GetMoneroMainAddressArgs {
         let wallet = wallet_manager.main_wallet().await;
         let address = wallet.main_address().await?;
         Ok(GetMoneroMainAddressResponse { address })
+    }
+}
+
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GetMoneroSubaddressesArgs {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+}
+
+#[typeshare]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GetMoneroSubaddressesResponse {
+    pub subaddresses: Vec<monero_sys::SubaddressSummary>,
+}
+
+impl Request for GetMoneroSubaddressesArgs {
+    type Response = GetMoneroSubaddressesResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        let subaddresses = wallet.subaddress_summaries(self.account_index).await?;
+        Ok(GetMoneroSubaddressesResponse { subaddresses })
+    }
+}
+
+// Create a new subaddress and optionally set its label
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CreateMoneroSubaddressArgs {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+    pub label: String,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateMoneroSubaddressResponse {
+    pub subaddress: monero_sys::SubaddressSummary,
+}
+
+impl Request for CreateMoneroSubaddressArgs {
+    type Response = CreateMoneroSubaddressResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        wallet
+            .create_subaddress(self.account_index, self.label.clone())
+            .await?;
+
+        // Fetch summaries and return the most recent one (highest address_index)
+        let summaries = wallet.subaddress_summaries(self.account_index).await?;
+        let subaddress = summaries
+            .into_iter()
+            .max_by_key(|s| s.address_index)
+            .ok_or_else(|| anyhow::anyhow!("No subaddresses found after creation"))?;
+
+        Ok(CreateMoneroSubaddressResponse { subaddress })
+    }
+}
+
+// Set the label of an existing subaddress
+#[typeshare]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SetMoneroSubaddressLabelArgs {
+    #[typeshare(serialized_as = "number")]
+    pub account_index: u32,
+    #[typeshare(serialized_as = "number")]
+    pub address_index: u32,
+    pub label: String,
+}
+
+#[typeshare]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetMoneroSubaddressLabelResponse {
+    pub success: bool,
+}
+
+impl Request for SetMoneroSubaddressLabelArgs {
+    type Response = SetMoneroSubaddressLabelResponse;
+
+    async fn request(self, ctx: Arc<Context>) -> Result<Self::Response> {
+        let wallet_manager = ctx.try_get_monero_manager().await?;
+        let wallet = wallet_manager.main_wallet().await;
+
+        wallet
+            .update_subaddress_label(self.account_index, self.address_index, self.label.clone())
+            .await?;
+
+        Ok(SetMoneroSubaddressLabelResponse { success: true })
     }
 }
 
@@ -685,8 +784,8 @@ impl Request for GetMoneroBalanceArgs {
         let unlocked_balance = wallet.unlocked_balance().await?;
 
         Ok(GetMoneroBalanceResponse {
-            total_balance: crate::monero::Amount::from_piconero(total_balance.as_pico()),
-            unlocked_balance: crate::monero::Amount::from_piconero(unlocked_balance.as_pico()),
+            total_balance: crate::monero::Amount::from_pico(total_balance.as_pico()),
+            unlocked_balance: crate::monero::Amount::from_pico(unlocked_balance.as_pico()),
         })
     }
 }
@@ -724,7 +823,7 @@ impl Request for SendMoneroArgs {
         let wallet = wallet_manager.main_wallet().await;
 
         // Parse the address
-        let address = monero::Address::from_str(&self.address)
+        let address = monero_address::MoneroAddress::from_str_with_unchecked_network(&self.address)
             .map_err(|e| anyhow::anyhow!("Invalid Monero address: {}", e))?;
 
         let tauri_handle = ctx
@@ -735,11 +834,17 @@ impl Request for SendMoneroArgs {
         // This is a closure that will be called by the monero-sys library to get approval for the transaction
         // It sends an approval request to the frontend and returns true if the user approves the transaction
         let approval_callback: Arc<
-            dyn Fn(String, ::monero::Amount, ::monero::Amount) -> BoxFuture<'static, bool>
+            dyn Fn(
+                    String,
+                    monero_oxide_ext::Amount,
+                    monero_oxide_ext::Amount,
+                ) -> BoxFuture<'static, bool>
                 + Send
                 + Sync,
         > = std::sync::Arc::new(
-            move |_txid: String, amount: ::monero::Amount, fee: ::monero::Amount| {
+            move |_txid: String,
+                  amount: monero_oxide_ext::Amount,
+                  fee: monero_oxide_ext::Amount| {
                 let tauri_handle = tauri_handle.clone();
 
                 Box::pin(async move {
@@ -1361,7 +1466,7 @@ pub async fn export_bitcoin_wallet(context: Arc<Context>) -> Result<serde_json::
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
     let wallet_export = bitcoin_wallet.wallet_export("cli").await?;
-    tracing::info!(descriptor=%wallet_export.to_string(), "Exported bitcoin wallet");
+    tracing::info!("Exported bitcoin wallet");
     Ok(json!({
         "descriptor": wallet_export.to_string(),
     }))
@@ -1382,16 +1487,17 @@ pub async fn monero_recovery(
         let (spend_key, view_key) = state5.xmr_keys();
         let restore_height = state5.monero_wallet_restore_blockheight.height;
 
-        let address = monero::Address::standard(
+        let address = monero_address::MoneroAddress::new(
             config.env_config.monero_network,
-            monero::PublicKey::from_private_key(&spend_key),
-            monero::PublicKey::from(view_key.public()),
+            monero_address::AddressType::Legacy,
+            monero_oxide_ext::PublicKey::from_private_key(&spend_key).decompress(),
+            view_key.public().0.decompress(),
         );
 
         tracing::info!(restore_height=%restore_height, address=%address, spend_key=%spend_key, view_key=%view_key, "Monero recovery information");
 
         Ok(json!({
-            "address": address,
+            "address": address.to_string(),
             "spend_key": spend_key.to_string(),
             "view_key": view_key.to_string(),
             "restore_height": state5.monero_wallet_restore_blockheight.height,
@@ -1616,6 +1722,12 @@ pub struct CheckMoneroNodeResponse {
 #[typeshare]
 #[derive(Deserialize, Serialize)]
 pub struct GetDataDirArgs {
+    pub is_testnet: bool,
+}
+
+#[typeshare]
+#[derive(Deserialize, Serialize)]
+pub struct DeleteAllLogsArgs {
     pub is_testnet: bool,
 }
 

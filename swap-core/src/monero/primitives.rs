@@ -1,19 +1,16 @@
 use crate::bitcoin;
-use anyhow::{bail, Result};
-pub use curve25519_dalek::scalar::Scalar;
-use monero::Address;
+use anyhow::{Result, bail};
+use monero_address::{MoneroAddress, Network};
+pub use monero_oxide_wallet::ed25519::Scalar;
 use rand::{CryptoRng, RngCore};
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
 use std::fmt;
-use std::ops::{Add, Mul, Sub};
-use std::str::FromStr;
+use std::ops::Add;
 use typeshare::typeshare;
 
-use ::monero::network::Network;
-pub use ::monero::{PrivateKey, PublicKey};
+pub use ::monero_oxide_ext::{Amount, PrivateKey, PublicKey};
 
 pub const PICONERO_OFFSET: u64 = 1_000_000_000_000;
 
@@ -29,18 +26,20 @@ impl fmt::Display for BlockHeight {
     }
 }
 
-pub fn private_key_from_secp256k1_scalar(scalar: bitcoin::Scalar) -> Scalar {
+pub fn private_key_from_secp256k1_scalar(
+    scalar: bitcoin::Scalar,
+) -> curve25519_dalek::scalar::Scalar {
     let mut bytes = scalar.to_bytes();
 
     // we must reverse the bytes because a secp256k1 scalar is big endian, whereas a
     // ed25519 scalar is little endian
     bytes.reverse();
 
-    Scalar::from_bytes_mod_order(bytes)
+    curve25519_dalek::scalar::Scalar::from_bytes_mod_order(bytes)
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PrivateViewKey(#[serde(with = "swap_serde::monero::private_key")] PrivateKey);
+pub struct PrivateViewKey(#[serde(with = "swap_serde::monero::private_key")] pub PrivateKey);
 
 impl fmt::Display for PrivateViewKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -52,7 +51,7 @@ impl fmt::Display for PrivateViewKey {
 impl PrivateViewKey {
     pub fn new_random<R: RngCore + CryptoRng>(rng: &mut R) -> Self {
         let scalar = Scalar::random(rng);
-        let private_key = PrivateKey::from_slice(scalar.as_bytes()).expect("bytes of curve25519-dalek Scalar should by decodable to a PrivateKey which uses curve25519-dalek-ng under the hood");
+        let private_key = PrivateKey::from_slice(&PrivateKey { scalar }.as_bytes()).expect("bytes of curve25519-dalek Scalar should by decodable to a PrivateKey which uses curve25519-dalek-ng under the hood");
 
         Self(private_key)
     }
@@ -85,12 +84,6 @@ impl From<PublicViewKey> for PublicKey {
 #[derive(Clone, Copy, Debug)]
 pub struct PublicViewKey(pub PublicKey);
 
-/// Our own monero amount type, which we need because the monero crate
-/// doesn't implement Serialize and Deserialize.
-#[derive(Debug, Copy, Clone, Deserialize, Serialize, PartialEq, Eq, PartialOrd)]
-#[typeshare(serialized_as = "number")]
-pub struct Amount(u64);
-
 // TX Fees on Monero can be found here:
 // - https://www.monero.how/monero-transaction-fees
 // - https://bitinfocharts.com/comparison/monero-transactionfees.html#1y
@@ -102,64 +95,42 @@ pub struct Amount(u64);
 // we need to reserve for the fee when determining our max giveable amount
 // We use a VERY conservative value here to stay on the safe side. We want to avoid not being able
 // to lock as much as we previously estimated.
-pub const CONSERVATIVE_MONERO_FEE: Amount = Amount::from_piconero(3_000_000_000);
+pub const CONSERVATIVE_MONERO_FEE: Amount = Amount::from_pico(3_000_000_000);
 
-impl Amount {
-    pub const ZERO: Self = Self(0);
-    pub const ONE_XMR: Self = Self(PICONERO_OFFSET);
-    /// Create an [Amount] with piconero precision and the given number of
-    /// piconeros.
-    ///
-    /// A piconero (a.k.a atomic unit) is equal to 1e-12 XMR.
-    pub const fn from_piconero(amount: u64) -> Self {
-        Amount(amount)
-    }
-
-    /// Return Monero Amount as Piconero.
-    pub fn as_piconero(&self) -> u64 {
-        self.0
-    }
-
-    /// Return Monero Amount as XMR.
-    pub fn as_xmr(&self) -> f64 {
-        let amount_decimal = Decimal::from(self.0);
-        let offset_decimal = Decimal::from(PICONERO_OFFSET);
-        let result = amount_decimal / offset_decimal;
-
-        // Convert to f64 only at the end, after the division
-        result
-            .to_f64()
-            .expect("Conversion from piconero to XMR should not overflow f64")
-    }
-
+pub trait AmountExt {
+    fn max_conservative_giveable(&self) -> Self;
+    fn min_conservative_balance_to_spend(&self) -> Self;
+    fn max_bitcoin_for_price(&self, ask_price: bitcoin::Amount) -> Option<bitcoin::Amount>;
+}
+impl AmountExt for Amount {
     /// Calculate the conservative max giveable of Monero we can spent given [`self`] is the balance
     /// of a Monero wallet
     /// This is going to be LESS than we can really spent because we assume a high fee
-    pub fn max_conservative_giveable(&self) -> Self {
+    fn max_conservative_giveable(&self) -> Self {
         let pico_minus_fee = self
-            .as_piconero()
-            .saturating_sub(CONSERVATIVE_MONERO_FEE.as_piconero());
+            .as_pico()
+            .saturating_sub(CONSERVATIVE_MONERO_FEE.as_pico());
 
-        Self::from_piconero(pico_minus_fee)
+        Self::from_pico(pico_minus_fee)
     }
 
     /// Calculate the Monero balance needed to send the [`self`] Amount to another address
     /// E.g: Amount(1 XMR).min_conservative_balance_to_spend() with a fee of 0.1 XMR would be 1.1 XMR
     /// This is going to be MORE than we really need because we assume a high fee
-    pub fn min_conservative_balance_to_spend(&self) -> Self {
+    fn min_conservative_balance_to_spend(&self) -> Self {
         let pico_minus_fee = self
-            .as_piconero()
-            .saturating_add(CONSERVATIVE_MONERO_FEE.as_piconero());
+            .as_pico()
+            .saturating_add(CONSERVATIVE_MONERO_FEE.as_pico());
 
-        Self::from_piconero(pico_minus_fee)
+        Self::from_pico(pico_minus_fee)
     }
 
     /// Calculate the maximum amount of Bitcoin that can be bought at a given
     /// asking price for this amount of Monero including the median fee.
-    pub fn max_bitcoin_for_price(&self, ask_price: bitcoin::Amount) -> Option<bitcoin::Amount> {
+    fn max_bitcoin_for_price(&self, ask_price: bitcoin::Amount) -> Option<bitcoin::Amount> {
         let pico_minus_fee = self.max_conservative_giveable();
 
-        if pico_minus_fee.as_piconero() == 0 {
+        if pico_minus_fee.as_pico() == 0 {
             return Some(bitcoin::Amount::ZERO);
         }
 
@@ -168,43 +139,11 @@ impl Amount {
         let pico_per_xmr = Decimal::from(PICONERO_OFFSET);
         let ask_sats_per_pico = ask_sats / pico_per_xmr;
 
-        let pico = Decimal::from(pico_minus_fee.as_piconero());
+        let pico = Decimal::from(pico_minus_fee.as_pico());
         let max_sats = pico.checked_mul(ask_sats_per_pico)?;
         let satoshi = max_sats.to_u64()?;
 
         Some(bitcoin::Amount::from_sat(satoshi))
-    }
-
-    pub fn from_monero(amount: f64) -> Result<Self> {
-        let decimal = Decimal::try_from(amount)?;
-        Self::from_decimal(decimal)
-    }
-
-    pub fn parse_monero(amount: &str) -> Result<Self> {
-        let decimal = Decimal::from_str(amount)?;
-        Self::from_decimal(decimal)
-    }
-
-    pub fn as_piconero_decimal(&self) -> Decimal {
-        Decimal::from(self.as_piconero())
-    }
-
-    fn from_decimal(amount: Decimal) -> Result<Self> {
-        let piconeros_dec =
-            amount.mul(Decimal::from_u64(PICONERO_OFFSET).expect("constant to fit into u64"));
-        let piconeros = piconeros_dec
-            .to_u64()
-            .ok_or_else(|| OverflowError(amount.to_string()))?;
-        Ok(Amount(piconeros))
-    }
-
-    /// Subtract but throw an error on underflow.
-    pub fn checked_sub(self, rhs: Amount) -> Result<Self> {
-        if self.0 < rhs.0 {
-            bail!("checked sub would underflow");
-        }
-
-        Ok(Amount::from_piconero(self.0 - rhs.0))
     }
 }
 
@@ -218,7 +157,8 @@ pub struct LabeledMoneroAddress {
     // If this is None, we will use an address of the internal Monero wallet
     // TODO: This should be string | null but typeshare cannot do that yet
     #[typeshare(serialized_as = "string")]
-    address: Option<monero::Address>,
+    #[serde(with = "swap_serde::monero::address_serde::opt")]
+    address: Option<monero_address::MoneroAddress>,
     #[typeshare(serialized_as = "number")]
     percentage: Decimal,
     label: String,
@@ -237,7 +177,7 @@ impl LabeledMoneroAddress {
     ///
     /// Returns an error if the percentage is not between 0.0 and 1.0 inclusive.
     fn new(
-        address: impl Into<Option<monero::Address>>,
+        address: impl Into<Option<monero_address::MoneroAddress>>,
         percentage: Decimal,
         label: String,
     ) -> Result<Self> {
@@ -256,7 +196,7 @@ impl LabeledMoneroAddress {
     }
 
     pub fn with_address(
-        address: monero::Address,
+        address: monero_address::MoneroAddress,
         percentage: Decimal,
         label: String,
     ) -> Result<Self> {
@@ -268,7 +208,7 @@ impl LabeledMoneroAddress {
     }
 
     /// Returns the Monero address.
-    pub fn address(&self) -> Option<monero::Address> {
+    pub fn address(&self) -> Option<monero_address::MoneroAddress> {
         self.address
     }
 
@@ -305,7 +245,7 @@ impl MoneroAddressPool {
     }
 
     /// Returns a vector of all Monero addresses in the pool.
-    pub fn addresses(&self) -> Vec<Option<monero::Address>> {
+    pub fn addresses(&self) -> Vec<Option<monero_address::MoneroAddress>> {
         self.0.iter().map(|address| address.address()).collect()
     }
 
@@ -339,11 +279,11 @@ impl MoneroAddressPool {
     pub fn assert_network(&self, network: Network) -> Result<()> {
         for address in self.0.iter() {
             if let Some(address) = address.address {
-                if address.network != network {
+                if address.network() != network {
                     bail!(
                         "Address pool contains addresses on the wrong network (address {} is on {:?}, expected {:?})",
                         address,
-                        address.network,
+                        address.network(),
                         network
                     );
                 }
@@ -373,7 +313,10 @@ impl MoneroAddressPool {
     }
 
     /// Returns a vector of addresses with the empty addresses filled with the given primary address
-    pub fn fill_empty_addresses(&self, primary_address: monero::Address) -> Vec<monero::Address> {
+    pub fn fill_empty_addresses(
+        &self,
+        primary_address: monero_address::MoneroAddress,
+    ) -> Vec<monero_address::MoneroAddress> {
         self.0
             .iter()
             .map(|address| address.address().unwrap_or(primary_address))
@@ -381,82 +324,36 @@ impl MoneroAddressPool {
     }
 }
 
-impl From<::monero::Address> for MoneroAddressPool {
-    fn from(address: ::monero::Address) -> Self {
-        Self(vec![LabeledMoneroAddress::new(
-            address,
-            Decimal::from(1),
-            "user address".to_string(),
-        )
-        .expect("Percentage 1 is always valid")])
+impl From<::monero_address::MoneroAddress> for MoneroAddressPool {
+    fn from(address: ::monero_address::MoneroAddress) -> Self {
+        Self(vec![
+            LabeledMoneroAddress::new(address, Decimal::from(1), "user address".to_string())
+                .expect("Percentage 1 is always valid"),
+        ])
     }
 }
 
 /// Transfer a specified amount of money to a specified address.
 pub struct TransferRequest {
-    pub public_spend_key: monero::PublicKey,
+    pub public_spend_key: PublicKey,
     pub public_view_key: super::PublicViewKey,
-    pub amount: monero::Amount,
+    pub amount: ::monero_oxide_ext::Amount,
 }
 
 impl TransferRequest {
-    pub fn address_and_amount(&self, network: Network) -> (Address, monero::Amount) {
+    pub fn address_and_amount(
+        &self,
+        network: Network,
+    ) -> (MoneroAddress, ::monero_oxide_ext::Amount) {
         (
-            Address::standard(network, self.public_spend_key, self.public_view_key.0),
+            MoneroAddress::new(
+                network,
+                monero_address::AddressType::Legacy,
+                self.public_spend_key.decompress(),
+                self.public_view_key.0.decompress(),
+            ),
             self.amount,
         )
-    }
-}
-
-impl Add for Amount {
-    type Output = Amount;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl Sub<Amount> for Amount {
-    type Output = Amount;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl Mul<u64> for Amount {
-    type Output = Amount;
-
-    fn mul(self, rhs: u64) -> Self::Output {
-        Self(self.0 * rhs)
-    }
-}
-
-impl From<Amount> for u64 {
-    fn from(from: Amount) -> u64 {
-        from.0
-    }
-}
-
-impl From<::monero::Amount> for Amount {
-    fn from(from: ::monero::Amount) -> Self {
-        Amount::from_piconero(from.as_pico())
-    }
-}
-
-impl From<Amount> for ::monero::Amount {
-    fn from(from: Amount) -> Self {
-        ::monero::Amount::from_pico(from.as_piconero())
-    }
-}
-
-impl fmt::Display for Amount {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut decimal = Decimal::from(self.0);
-        decimal
-            .set_scale(12)
-            .expect("12 is smaller than max precision of 28");
-        write!(f, "{} XMR", decimal)
     }
 }
 
@@ -543,28 +440,6 @@ pub struct InsufficientFunds {
 #[error("Overflow, cannot convert {0} to u64")]
 pub struct OverflowError(pub String);
 
-pub mod monero_amount {
-    use crate::monero::Amount;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(x: &Amount, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        s.serialize_u64(x.as_piconero())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Amount, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let picos = u64::deserialize(deserializer)?;
-        let amount = Amount::from_piconero(picos);
-
-        Ok(amount)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,7 +448,7 @@ mod tests {
     #[test]
     fn display_monero_min() {
         let min_pics = 1;
-        let amount = Amount::from_piconero(min_pics);
+        let amount = Amount::from_pico(min_pics);
         let monero = amount.to_string();
         assert_eq!("0.000000000001 XMR", monero);
     }
@@ -581,7 +456,7 @@ mod tests {
     #[test]
     fn display_monero_one() {
         let min_pics = 1000000000000;
-        let amount = Amount::from_piconero(min_pics);
+        let amount = Amount::from_pico(min_pics);
         let monero = amount.to_string();
         assert_eq!("1.000000000000 XMR", monero);
     }
@@ -589,7 +464,7 @@ mod tests {
     #[test]
     fn display_monero_max() {
         let max_pics = 18_446_744_073_709_551_615;
-        let amount = Amount::from_piconero(max_pics);
+        let amount = Amount::from_pico(max_pics);
         let monero = amount.to_string();
         assert_eq!("18446744.073709551615 XMR", monero);
     }
@@ -598,7 +473,7 @@ mod tests {
     fn parse_monero_min() {
         let monero_min = "0.000000000001";
         let amount = Amount::parse_monero(monero_min).unwrap();
-        let pics = amount.0;
+        let pics = amount.as_pico();
         assert_eq!(1, pics);
     }
 
@@ -606,7 +481,7 @@ mod tests {
     fn parse_monero() {
         let monero = "123";
         let amount = Amount::parse_monero(monero).unwrap();
-        let pics = amount.0;
+        let pics = amount.as_pico();
         assert_eq!(123000000000000, pics);
     }
 
@@ -614,7 +489,7 @@ mod tests {
     fn parse_monero_max() {
         let monero = "18446744.073709551615";
         let amount = Amount::parse_monero(monero).unwrap();
-        let pics = amount.0;
+        let pics = amount.as_pico();
         assert_eq!(18446744073709551615, pics);
     }
 
@@ -691,13 +566,13 @@ mod tests {
 
     #[test]
     fn max_bitcoin_to_trade_overflow() {
-        let xmr = Amount::from_monero(30.0).unwrap();
+        let xmr = Amount::parse_monero("30.0").unwrap();
         let ask = bitcoin::Amount::from_sat(728_688);
         let btc = xmr.max_bitcoin_for_price(ask).unwrap();
 
         assert_eq!(bitcoin::Amount::from_sat(21_858_453), btc);
 
-        let xmr = Amount::from_piconero(u64::MAX);
+        let xmr = Amount::from_pico(u64::MAX);
         let ask = bitcoin::Amount::from_sat(u64::MAX);
         let btc = xmr.max_bitcoin_for_price(ask);
 
@@ -718,17 +593,14 @@ mod tests {
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
     pub struct MoneroPrivateKey(
-        #[serde(with = "swap_serde::monero::private_key")] ::monero::PrivateKey,
+        #[serde(with = "swap_serde::monero::private_key")] ::monero_oxide_ext::PrivateKey,
     );
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct MoneroAmount(#[serde(with = "swap_serde::monero::amount")] ::monero::Amount);
 
     #[test]
     fn serde_monero_private_key_json() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
-            Scalar::random(&mut OsRng).into_dalek_ng(),
-        ));
+        let key = MoneroPrivateKey(::monero_oxide_ext::PrivateKey::from_scalar(Scalar::random(
+            &mut OsRng,
+        )));
         let encoded = serde_json::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -736,9 +608,9 @@ mod tests {
 
     #[test]
     fn serde_monero_private_key_cbor() {
-        let key = MoneroPrivateKey(monero::PrivateKey::from_scalar(
-            Scalar::random(&mut OsRng).into_dalek_ng(),
-        ));
+        let key = MoneroPrivateKey(::monero_oxide_ext::PrivateKey::from_scalar(Scalar::random(
+            &mut OsRng,
+        )));
         let encoded = serde_cbor::to_vec(&key).unwrap();
         let decoded: MoneroPrivateKey = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(key, decoded);
@@ -746,9 +618,9 @@ mod tests {
 
     #[test]
     fn serde_monero_amount() {
-        let amount = MoneroAmount(::monero::Amount::from_pico(1000));
+        let amount = Amount::from_pico(1000);
         let encoded = serde_cbor::to_vec(&amount).unwrap();
-        let decoded: MoneroAmount = serde_cbor::from_slice(&encoded).unwrap();
+        let decoded: Amount = serde_cbor::from_slice(&encoded).unwrap();
         assert_eq!(amount, decoded);
     }
 
@@ -757,8 +629,8 @@ mod tests {
         // Test with balance larger than fee
         let balance = Amount::parse_monero("1.0").unwrap();
         let giveable = balance.max_conservative_giveable();
-        let expected = balance.as_piconero() - CONSERVATIVE_MONERO_FEE.as_piconero();
-        assert_eq!(giveable.as_piconero(), expected);
+        let expected = balance.as_pico() - CONSERVATIVE_MONERO_FEE.as_pico();
+        assert_eq!(giveable.as_pico(), expected);
     }
 
     #[test]
@@ -772,7 +644,7 @@ mod tests {
     #[test]
     fn max_conservative_giveable_less_than_fee() {
         // Test with balance less than fee (should saturate to 0)
-        let balance = Amount::from_piconero(CONSERVATIVE_MONERO_FEE.as_piconero() / 2);
+        let balance = Amount::from_pico(CONSERVATIVE_MONERO_FEE.as_pico() / 2);
         let giveable = balance.max_conservative_giveable();
         assert_eq!(giveable, Amount::ZERO);
     }
@@ -790,11 +662,11 @@ mod tests {
         // Test with large balance
         let balance = Amount::parse_monero("100.0").unwrap();
         let giveable = balance.max_conservative_giveable();
-        let expected = balance.as_piconero() - CONSERVATIVE_MONERO_FEE.as_piconero();
-        assert_eq!(giveable.as_piconero(), expected);
+        let expected = balance.as_pico() - CONSERVATIVE_MONERO_FEE.as_pico();
+        assert_eq!(giveable.as_pico(), expected);
 
         // Ensure the result makes sense
-        assert!(giveable.as_piconero() > 0);
+        assert!(giveable.as_pico() > 0);
         assert!(giveable < balance);
     }
 
@@ -803,8 +675,8 @@ mod tests {
         // Test with 1 XMR amount to send
         let amount_to_send = Amount::parse_monero("1.0").unwrap();
         let min_balance = amount_to_send.min_conservative_balance_to_spend();
-        let expected = amount_to_send.as_piconero() + CONSERVATIVE_MONERO_FEE.as_piconero();
-        assert_eq!(min_balance.as_piconero(), expected);
+        let expected = amount_to_send.as_pico() + CONSERVATIVE_MONERO_FEE.as_pico();
+        assert_eq!(min_balance.as_pico(), expected);
     }
 
     #[test]
@@ -818,10 +690,10 @@ mod tests {
     #[test]
     fn min_conservative_balance_to_spend_small_amount() {
         // Test with small amount
-        let amount_to_send = Amount::from_piconero(1000);
+        let amount_to_send = Amount::from_pico(1000);
         let min_balance = amount_to_send.min_conservative_balance_to_spend();
-        let expected = 1000 + CONSERVATIVE_MONERO_FEE.as_piconero();
-        assert_eq!(min_balance.as_piconero(), expected);
+        let expected = 1000 + CONSERVATIVE_MONERO_FEE.as_pico();
+        assert_eq!(min_balance.as_pico(), expected);
     }
 
     #[test]
@@ -829,8 +701,8 @@ mod tests {
         // Test with large amount
         let amount_to_send = Amount::parse_monero("50.0").unwrap();
         let min_balance = amount_to_send.min_conservative_balance_to_spend();
-        let expected = amount_to_send.as_piconero() + CONSERVATIVE_MONERO_FEE.as_piconero();
-        assert_eq!(min_balance.as_piconero(), expected);
+        let expected = amount_to_send.as_pico() + CONSERVATIVE_MONERO_FEE.as_pico();
+        assert_eq!(min_balance.as_pico(), expected);
 
         // Ensure the result makes sense
         assert!(min_balance > amount_to_send);
@@ -853,19 +725,19 @@ mod tests {
         assert!(min_balance_needed >= original_balance);
 
         // The difference should be at most the conservative fee
-        let difference = min_balance_needed.as_piconero() - original_balance.as_piconero();
-        assert!(difference <= CONSERVATIVE_MONERO_FEE.as_piconero());
+        let difference = min_balance_needed.as_pico() - original_balance.as_pico();
+        assert!(difference <= CONSERVATIVE_MONERO_FEE.as_pico());
     }
 
     #[test]
     fn conservative_fee_edge_cases() {
         // Test with maximum possible amount
-        let max_amount = Amount::from_piconero(u64::MAX - CONSERVATIVE_MONERO_FEE.as_piconero());
+        let max_amount = Amount::from_pico(u64::MAX - CONSERVATIVE_MONERO_FEE.as_pico());
         let giveable = max_amount.max_conservative_giveable();
-        assert!(giveable.as_piconero() > 0);
+        assert!(giveable.as_pico() > 0);
 
         // Test min balance calculation doesn't overflow
-        let large_amount = Amount::from_piconero(u64::MAX / 2);
+        let large_amount = Amount::from_pico(u64::MAX / 2);
         let min_balance = large_amount.min_conservative_balance_to_spend();
         assert!(min_balance > large_amount);
     }
@@ -874,7 +746,7 @@ mod tests {
     fn labeled_monero_address_percentage_validation() {
         use rust_decimal::Decimal;
 
-        let address = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a".parse::<monero::Address>().unwrap();
+        let address = monero_address::MoneroAddress::from_str_with_unchecked_network("53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a").unwrap();
 
         // Valid percentages should work (0-1 range)
         assert!(LabeledMoneroAddress::new(address, Decimal::ZERO, "test".to_string()).is_ok());

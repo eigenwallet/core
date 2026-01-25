@@ -881,15 +881,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "base58-monero"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "935c90240f9b7749c80746bf88ad9cb346f34b01ee30ad4d566dfdecd6e3cc6a"
-dependencies = [
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "base58ck"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2831,6 +2822,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "directories-next"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "339ee130d97a610ea5a5872d2bbb130fdf68884ff09d3028b81bec8a1ac23bbc"
+dependencies = [
+ "cfg-if",
+ "dirs-sys-next",
+]
+
+[[package]]
 name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2847,8 +2848,19 @@ checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
 dependencies = [
  "libc",
  "option-ext",
- "redox_users",
+ "redox_users 0.5.2",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "dirs-sys-next"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d"
+dependencies = [
+ "libc",
+ "redox_users 0.4.6",
+ "winapi",
 ]
 
 [[package]]
@@ -3430,18 +3442,6 @@ name = "find-msvc-tools"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
-
-[[package]]
-name = "fixed-hash"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfcf0ed7fe52a17a03854ec54a9f76d6d84508d1c0e66bc1793301c73fc8493c"
-dependencies = [
- "byteorder",
- "rand 0.8.5",
- "rustc-hex",
- "static_assertions",
-]
 
 [[package]]
 name = "fixedbitset"
@@ -4321,12 +4321,6 @@ checksum = "fda06d18ac606267c40c04e41b9947729bf8b9efe74bd4e82b61a5f26a510b9f"
 dependencies = [
  "arrayvec",
 ]
-
-[[package]]
-name = "hex-literal"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 
 [[package]]
 name = "hex-literal"
@@ -5245,16 +5239,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
-]
-
-[[package]]
-name = "keccak-hash"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae0386ec98c26dd721aaa3412bf3a817156ff3ee7cb6959503f8d1095f4ccc51"
-dependencies = [
- "primitive-types",
- "tiny-keccak",
 ]
 
 [[package]]
@@ -6276,22 +6260,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monero"
-version = "0.12.0"
-source = "git+https://github.com/comit-network/monero-rs?rev=818f38b#818f38b043e2a9fa38d74fec5310a270f510844e"
-dependencies = [
- "base58-monero",
- "curve25519-dalek-ng",
- "fixed-hash",
- "hex",
- "hex-literal 0.3.4",
- "keccak-hash",
- "serde",
- "serde-big-array",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "monero-address"
 version = "0.1.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
@@ -6406,22 +6374,14 @@ version = "0.2.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
 
 [[package]]
-name = "monero-epee-bin-serde"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f8a3f7f7ef5bb1fd6c953be9187e48df8cc1a0ffc7d94f9fbabd4a23e37321e"
-dependencies = [
- "byteorder",
- "serde",
-]
-
-[[package]]
 name = "monero-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "monero",
- "monero-rpc",
+ "monero-address",
+ "monero-daemon-rpc",
+ "monero-oxide-ext",
+ "monero-simple-request-rpc",
  "monero-sys",
  "rand 0.8.5",
  "reqwest 0.12.25",
@@ -6470,7 +6430,7 @@ version = "0.1.4-alpha"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
 dependencies = [
  "curve25519-dalek",
- "hex-literal 1.1.0",
+ "hex-literal",
  "monero-borromean",
  "monero-bulletproofs",
  "monero-clsag",
@@ -6483,26 +6443,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "monero-oxide-ext"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "curve25519-dalek",
+ "curve25519-dalek-ng",
+ "hex",
+ "monero-address",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
+ "serde",
+ "typeshare",
+]
+
+[[package]]
 name = "monero-primitives"
 version = "0.1.0"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite#1a8662faf352e0b7a7b11e157286c0fdb4a65db4"
 dependencies = [
  "sha3",
-]
-
-[[package]]
-name = "monero-rpc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "data-encoding",
- "jsonrpc_client",
- "monero",
- "monero-epee-bin-serde",
- "reqwest 0.12.25",
- "rust_decimal",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -6520,7 +6479,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.8.1",
  "hyper-util",
- "monero",
+ "monero-address",
  "rand 0.8.5",
  "reqwest 0.11.27",
  "rustls 0.21.12",
@@ -6575,12 +6534,14 @@ dependencies = [
  "diffy",
  "fs_extra",
  "futures",
- "monero",
+ "monero-address",
+ "monero-oxide-ext",
  "num_cpus",
  "quickcheck",
  "quickcheck_macros",
  "serde",
  "sqlx",
+ "swap-serde",
  "tempfile",
  "thiserror 2.0.17",
  "throttle",
@@ -6598,9 +6559,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
- "monero",
+ "monero-address",
  "monero-daemon-rpc",
  "monero-harness",
+ "monero-oxide-ext",
  "monero-simple-request-rpc",
  "monero-sys",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
@@ -6621,18 +6583,17 @@ dependencies = [
  "backoff",
  "curve25519-dalek",
  "hex",
- "monero",
+ "monero-address",
  "monero-daemon-rpc",
+ "monero-oxide-ext",
  "monero-simple-request-rpc",
  "monero-sys",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
  "monero-wallet-ng",
  "swap-core",
  "throttle",
- "time",
  "tokio",
  "tracing",
- "tracing-appender",
  "tracing-subscriber",
  "uuid",
  "zeroize",
@@ -8132,16 +8093,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "primitive-types"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06345ee39fbccfb06ab45f3a1a5798d9dafa04cb8921a76d227040003a234b0e"
-dependencies = [
- "fixed-hash",
- "uint",
-]
-
-[[package]]
 name = "priority-queue"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8706,6 +8657,17 @@ dependencies = [
 
 [[package]]
 name = "redox_users"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
+dependencies = [
+ "getrandom 0.2.16",
+ "libredox",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "redox_users"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
@@ -8779,7 +8741,6 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "arti-client",
- "console 0.16.1",
  "futures",
  "libp2p",
  "libp2p-tor",
@@ -9062,12 +9023,6 @@ name = "rustc-hash"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
-
-[[package]]
-name = "rustc-hex"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e75f6a532d0fd9f7f13144f392b6ad56a32696bfcd9c78f797f16bbb6f072d6"
 
 [[package]]
 name = "rustc_version"
@@ -9628,15 +9583,6 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
-]
-
-[[package]]
-name = "serde-big-array"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd31f59f6fe2b0c055371bb2f16d7f0aa7d8881676c04a55b1596d1a17cd10a4"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -10636,7 +10582,7 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "swap"
-version = "3.6.1"
+version = "3.6.7"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -10659,8 +10605,9 @@ dependencies = [
  "libp2p-tor",
  "mockito",
  "moka",
- "monero",
+ "monero-address",
  "monero-harness",
+ "monero-oxide-ext",
  "monero-rpc-pool",
  "monero-seed",
  "monero-sys",
@@ -10710,13 +10657,14 @@ dependencies = [
 
 [[package]]
 name = "swap-asb"
-version = "3.6.1"
+version = "3.6.7"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
  "bitcoin-wallet",
  "comfy-table",
  "libp2p",
+ "monero-address",
  "monero-rpc-pool",
  "monero-sys",
  "reqwest 0.12.25",
@@ -10740,13 +10688,13 @@ dependencies = [
 
 [[package]]
 name = "swap-controller"
-version = "3.6.1"
+version = "3.6.7"
 dependencies = [
  "anyhow",
  "clap 4.5.53",
  "comfy-table",
  "jsonrpsee",
- "monero",
+ "monero-oxide-ext",
  "rustyline",
  "shell-words",
  "swap-controller-api",
@@ -10776,7 +10724,9 @@ dependencies = [
  "curve25519-dalek-ng",
  "ecdsa_fun",
  "futures",
- "monero",
+ "monero-address",
+ "monero-oxide-ext",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -10816,7 +10766,7 @@ dependencies = [
  "console 0.16.1",
  "dialoguer",
  "libp2p",
- "monero",
+ "monero-address",
  "rust_decimal",
  "serde",
  "swap-fs",
@@ -10836,7 +10786,7 @@ dependencies = [
  "backoff",
  "bitcoin 0.32.8",
  "futures",
- "monero",
+ "monero-oxide-ext",
  "reqwest 0.12.25",
  "rust_decimal",
  "serde",
@@ -10854,7 +10804,7 @@ name = "swap-fs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dirs",
+ "directories-next",
  "tracing",
 ]
 
@@ -10866,11 +10816,11 @@ dependencies = [
  "async-trait",
  "bitcoin 0.32.8",
  "bitcoin-wallet",
- "curve25519-dalek",
  "curve25519-dalek-ng",
  "ecdsa_fun",
  "libp2p",
- "monero",
+ "monero-address",
+ "monero-oxide-ext",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
@@ -10894,7 +10844,7 @@ dependencies = [
  "chrono",
  "compose_spec",
  "dialoguer",
- "monero",
+ "monero-address",
  "serde_yaml",
  "swap-env",
  "toml 0.9.8",
@@ -10907,7 +10857,6 @@ name = "swap-p2p"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arti-client",
  "async-trait",
  "asynchronous-codec 0.7.0",
  "backoff",
@@ -10916,8 +10865,7 @@ dependencies = [
  "bmrng",
  "futures",
  "libp2p",
- "libp2p-tor",
- "monero",
+ "monero-address",
  "rand 0.8.5",
  "rust_decimal",
  "semver",
@@ -10930,9 +10878,7 @@ dependencies = [
  "swap-serde",
  "thiserror 1.0.69",
  "tokio",
- "tor-rtcompat",
  "tracing",
- "tracing-subscriber",
  "typeshare",
  "unsigned-varint 0.8.0",
  "uuid",
@@ -10956,7 +10902,9 @@ dependencies = [
  "bitcoin 0.32.8",
  "data-encoding",
  "libp2p",
- "monero",
+ "monero-address",
+ "monero-oxide-ext",
+ "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -11741,15 +11689,6 @@ checksum = "30cfb0125f12d9c277f35663a0a33f8c30190f4e4574868a330595412d34ebf3"
 dependencies = [
  "num-conv",
  "time-core",
-]
-
-[[package]]
-name = "tiny-keccak"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
-dependencies = [
- "crunchy",
 ]
 
 [[package]]
@@ -13469,7 +13408,7 @@ dependencies = [
 
 [[package]]
 name = "unstoppableswap-gui-rs"
-version = "3.6.1"
+version = "3.6.7"
 dependencies = [
  "dfx-swiss-sdk",
  "rustls 0.23.35",

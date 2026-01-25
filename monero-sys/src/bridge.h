@@ -4,6 +4,7 @@
 
 #include "../monero/src/wallet/api/wallet2_api.h"
 #include "../monero/src/wallet/api/wallet_manager.h"
+#include "../monero/src/wallet/api/wallet.h"
 
 
 /**
@@ -80,6 +81,19 @@ namespace Monero
     inline void startRefresh(Wallet &wallet)
     {
         wallet.startRefresh();
+    }
+
+    inline size_t numSubaddresses(const Wallet &wallet, uint32_t account_index)
+    {
+        return wallet.numSubaddresses(account_index);
+    }
+
+    inline std::unique_ptr<std::string> getSubaddressLabel(const Wallet &wallet,
+                                                           uint32_t account_index,
+                                                           uint32_t address_index)
+    {
+        auto label = wallet.getSubaddressLabel(account_index, address_index);
+        return std::make_unique<std::string>(label);
     }
 
     /**
@@ -311,9 +325,102 @@ namespace Monero
         return static_cast<uint64_t>(tx_info.timestamp());
     }
 
-    
+    inline uint32_t transactionInfoSubaddrAccount(const TransactionInfo &tx_info)
+    {
+        return tx_info.subaddrAccount();
+    }
 
+    inline std::unique_ptr<std::vector<uint32_t>> transactionInfoSubaddrIndices(const TransactionInfo &tx_info)
+    {
+        auto indices_set = tx_info.subaddrIndex();
+        auto vec = std::make_unique<std::vector<uint32_t>>();
+        vec->reserve(indices_set.size());
+        for (auto const &idx : indices_set) {
+            vec->push_back(idx);
+        }
+        return vec;
+    }
 
+    // Method-style overloads so Rust can call via `wallet.pinned().transactionInfoSubaddr*(&tx_info)`
+    inline uint32_t transactionInfoSubaddrAccount(Wallet & /*wallet*/, const TransactionInfo &tx_info)
+    {
+        return transactionInfoSubaddrAccount(tx_info);
+    }
+
+    inline std::unique_ptr<std::vector<uint32_t>> transactionInfoSubaddrIndices(Wallet & /*wallet*/, const TransactionInfo &tx_info)
+    {
+        return transactionInfoSubaddrIndices(tx_info);
+    }
+
+    /**
+     * Get subaddress indices for a given account with balance.
+     * strict: If true, only includes confirmed and unlocked balance.
+     *         If false, pending and unconfirmed transactions are also included.
+     */
+    inline std::unique_ptr<std::vector<uint32_t>> walletBalancePerSubaddrIndices(Wallet &wallet, uint32_t account_index, bool strict)
+    {
+        auto *impl = dynamic_cast<WalletImpl*>(&wallet);
+        auto indices = std::make_unique<std::vector<uint32_t>>();
+        if (!impl) return indices;
+
+        auto map = impl->balancePerSubaddress(account_index, strict);
+        indices->reserve(map.size());
+        for (const auto &p : map) indices->push_back(p.first);
+        return indices;
+    }
+
+    /*
+     * Get balance amounts received by subaddresses by a given account.
+     * strict: If true, only includes confirmed and unlocked balance.
+     *          If false, pending and unconfirmed transactions are also included.
+     */
+    inline std::unique_ptr<std::vector<uint64_t>> walletBalancePerSubaddrAmounts(Wallet &wallet, uint32_t account_index, bool strict)
+    {
+        auto *impl = dynamic_cast<WalletImpl*>(&wallet);
+        auto amounts = std::make_unique<std::vector<uint64_t>>();
+        if (!impl) return amounts;
+
+        auto map = impl->balancePerSubaddress(account_index, strict);
+        amounts->reserve(map.size());
+        for (const auto &p : map) amounts->push_back(p.second);
+        return amounts;
+    }
+
+    inline std::unique_ptr<std::vector<uint32_t>> walletUnlockedBalancePerSubaddrIndices(Wallet &wallet, uint32_t account_index, bool strict)
+    {
+        auto *impl = dynamic_cast<WalletImpl*>(&wallet);
+        auto indices = std::make_unique<std::vector<uint32_t>>();
+        if (!impl) return indices;
+
+        auto map = impl->unlockedBalancePerSubaddress(account_index, strict);
+        indices->reserve(map.size());
+        for (const auto &p : map) indices->push_back(p.first);
+        return indices;
+    }
+
+    inline std::unique_ptr<std::vector<uint64_t>> walletUnlockedBalancePerSubaddrAmounts(Wallet &wallet, uint32_t account_index, bool strict)
+    {
+        auto *impl = dynamic_cast<WalletImpl*>(&wallet);
+        auto amounts = std::make_unique<std::vector<uint64_t>>();
+        if (!impl) return amounts;
+
+        auto map = impl->unlockedBalancePerSubaddress(account_index, strict);
+        amounts->reserve(map.size());
+        for (const auto &p : map) amounts->push_back(p.second);
+        return amounts;
+    }
+
+    inline void addSubaddress(Wallet &wallet, uint32_t account_index, const std::string &label)
+    {
+        auto *sub = wallet.subaddress();
+        sub->addRow(account_index, label);
+    }
+
+    inline void setSubaddressLabel(Wallet &wallet, uint32_t account_index, uint32_t address_index, const std::string &label)
+    {
+        auto *sub = wallet.subaddress();
+        sub->setLabel(account_index, address_index, label);
+    }
 
     // bridge.h
 #pragma once

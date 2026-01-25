@@ -1,4 +1,4 @@
-use super::request::BalanceResponse;
+use super::request::{BalanceResponse, GetMoneroSubaddressesResponse};
 use crate::cli::api::request::{
     GetMoneroBalanceResponse, GetMoneroHistoryResponse, GetMoneroSyncProgressResponse,
 };
@@ -72,6 +72,7 @@ pub enum MoneroWalletUpdate {
     BalanceChange(GetMoneroBalanceResponse),
     SyncProgress(GetMoneroSyncProgressResponse),
     HistoryUpdate(GetMoneroHistoryResponse),
+    SubaddressesUpdate(GetMoneroSubaddressesResponse),
 }
 
 #[typeshare]
@@ -512,11 +513,15 @@ impl Into<monero_wallet::TauriHandle> for TauriHandle {
 }
 
 impl monero_wallet::MoneroTauriHandle for MoneroTauriHandle {
-    fn balance_change(&self, total_balance: monero::Amount, unlocked_balance: monero::Amount) {
+    fn balance_change(
+        &self,
+        total_balance: monero_oxide_ext::Amount,
+        unlocked_balance: monero_oxide_ext::Amount,
+    ) {
         self.0.emit_unified_event(TauriEvent::MoneroWalletUpdate(
             MoneroWalletUpdate::BalanceChange(GetMoneroBalanceResponse {
-                total_balance,
-                unlocked_balance,
+                total_balance: total_balance.into(),
+                unlocked_balance: unlocked_balance.into(),
             }),
         ))
     }

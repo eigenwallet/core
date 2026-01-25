@@ -1,5 +1,5 @@
-use monero::Amount;
 use monero_harness::{Monero, MoneroWalletRpc};
+use monero_oxide_ext::Amount;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use tokio::time::sleep;
@@ -9,7 +9,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 async fn fund_transfer_and_check_tx_key() {
     let _guard = tracing_subscriber::fmt()
         .with_env_filter(
-            "info,test=debug,monero_harness=debug,monero_rpc=debug,monero_sys=trace,wallet=trace,monero_cpp=trace",
+            "info,test=debug,monero_harness=debug,monero_sys=trace,wallet=trace,monero_cpp=trace",
         )
         .set_default();
 

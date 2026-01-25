@@ -75,6 +75,11 @@ const EMBEDDED_PATCHES: &[EmbeddedPatch] = &[
         "Adds txKeys() to PendingTransaction in wallet2_api.h",
         "patches/eigenwallet_0003_pending_transaction_tx_keys.patch"
     ),
+    embedded_patch!(
+        "eigenwallet_0004_wallet_impl_balance_per_subaddress.patch",
+        "Adds balancePerSubaddress() and unlockedBalancePerSubaddress() to wallet::WalletImpl in api/wallet.h",
+        "patches/eigenwallet_0004_wallet_impl_balance_per_subaddress.patch"
+    ),
 ];
 
 /// Find the workspace target directory from OUT_DIR
@@ -411,6 +416,7 @@ fn main() {
         .include("src") // Include the bridge.h file
         .include("monero/src") // Includes the monero headers
         .include("monero/external/easylogging++") // Includes the easylogging++ headers
+        .include("monero/external")
         .include("monero/contrib/epee/include") // Includes the epee headers for net/http_client.h
         .include(
             contrib_depends_dir

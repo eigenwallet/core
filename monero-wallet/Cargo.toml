@@ -9,11 +9,11 @@ anyhow = { workspace = true }
 backoff = { workspace = true }
 
 # Other stuff
-monero = { workspace = true }
+monero-address = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
 monero-sys = { path = "../monero-sys" }
 swap-core = { path = "../swap-core" }
 throttle = { path = "../throttle" }
-time = "0.3"
 uuid = { workspace = true }
 
 # Tokio
@@ -21,7 +21,6 @@ tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "
 
 # Tracing
 tracing = { workspace = true }
-tracing-appender = "0.2"
 tracing-subscriber = { workspace = true }
 
 # monero-oxide

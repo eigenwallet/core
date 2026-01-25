@@ -24,6 +24,7 @@ import {
   CheckElectrumNodeResponse,
   GetMoneroAddressesResponse,
   GetDataDirArgs,
+  DeleteAllLogsArgs,
   ResolveApprovalArgs,
   ResolveApprovalResponse,
   RedactArgs,
@@ -32,6 +33,13 @@ import {
   LabeledMoneroAddress,
   GetMoneroHistoryResponse,
   GetMoneroMainAddressResponse,
+  SubaddressSummary,
+  GetMoneroSubaddressesArgs,
+  GetMoneroSubaddressesResponse,
+  CreateMoneroSubaddressArgs,
+  CreateMoneroSubaddressResponse,
+  SetMoneroSubaddressLabelArgs,
+  SetMoneroSubaddressLabelResponse,
   GetMoneroBalanceResponse,
   SendMoneroArgs,
   SendMoneroResponse,
@@ -65,6 +73,7 @@ import {
   setSyncProgress,
   setHistory,
   setRestoreHeight,
+  setSubaddresses,
 } from "store/features/walletSlice";
 import { store } from "./store/storeRenderer";
 import { MoneroRecoveryResponse } from "models/rpcModel";
@@ -529,6 +538,48 @@ export async function getMoneroMainAddress(): Promise<GetMoneroMainAddressRespon
   );
 }
 
+export async function getMoneroSubAddresses(
+  accountIndex: number = 0,
+): Promise<SubaddressSummary[]> {
+  const resp = await invoke<
+    GetMoneroSubaddressesArgs,
+    GetMoneroSubaddressesResponse
+  >("get_monero_subaddresses", {
+    account_index: accountIndex,
+  });
+  return resp.subaddresses;
+}
+
+export async function createMoneroSubaddress(
+  label: string,
+  accountIndex: number = 0,
+): Promise<SubaddressSummary> {
+  const resp = await invoke<
+    CreateMoneroSubaddressArgs,
+    CreateMoneroSubaddressResponse
+  >("create_monero_subaddress", {
+    account_index: accountIndex,
+    label,
+  });
+  return resp.subaddress;
+}
+
+export async function setMoneroSubaddressLabel(
+  accountIndex: number,
+  addressIndex: number,
+  label: string,
+): Promise<boolean> {
+  const resp = await invoke<
+    SetMoneroSubaddressLabelArgs,
+    SetMoneroSubaddressLabelResponse
+  >("set_monero_subaddress_label", {
+    account_index: accountIndex,
+    address_index: addressIndex,
+    label,
+  });
+  return resp.success;
+}
+
 export async function getMoneroBalance(): Promise<GetMoneroBalanceResponse> {
   return await invokeNoArgs<GetMoneroBalanceResponse>("get_monero_balance");
 }
@@ -574,6 +625,9 @@ export async function initializeMoneroWallet() {
       getRestoreHeight().then((response) => {
         store.dispatch(setRestoreHeight(response));
       }),
+      getMoneroSubAddresses().then((subaddresses) => {
+        store.dispatch(setSubaddresses(subaddresses));
+      }),
     ]);
   } catch (err) {
     console.error("Failed to fetch Monero wallet data:", err);
@@ -606,6 +660,13 @@ export async function sendMoneroTransaction(
 export async function getDataDir(): Promise<string> {
   const testnet = isTestnet();
   return await invoke<GetDataDirArgs, string>("get_data_dir", {
+    is_testnet: testnet,
+  });
+}
+
+export async function deleteAllLogs(): Promise<void> {
+  const testnet = isTestnet();
+  await invoke<DeleteAllLogsArgs, void>("delete_all_logs", {
     is_testnet: testnet,
   });
 }
@@ -706,4 +767,9 @@ export async function getCurrentMoneroNodeConfig(): Promise<MoneroNodeConfig> {
         };
 
   return moneroNodeConfig;
+}
+
+export async function updateMoneroSubaddresses() {
+  const subaddresses = await getMoneroSubAddresses();
+  store.dispatch(setSubaddresses(subaddresses));
 }

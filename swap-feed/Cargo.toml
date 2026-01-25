@@ -13,7 +13,7 @@ anyhow = { workspace = true }
 backoff = { workspace = true }
 bitcoin = { workspace = true }
 futures = { workspace = true }
-monero = { workspace = true }
+monero-oxide-ext = { path = "../monero-oxide-ext" }
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
