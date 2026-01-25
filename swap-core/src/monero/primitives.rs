@@ -443,7 +443,6 @@ pub struct OverflowError(pub String);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compat::IntoDalekNg;
 
     #[test]
     fn display_monero_min() {

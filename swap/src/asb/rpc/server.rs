@@ -199,7 +199,7 @@ impl AsbApiServer for RpcImpl {
                 state: current_alice.to_string(),
                 btc_lock_txid: state3.tx_lock.txid().to_string(),
                 btc_amount: state3.btc,
-                xmr_amount: state3.xmr.as_piconero(),
+                xmr_amount: state3.xmr.as_pico(),
                 exchange_rate,
                 peer_id: peer_id.to_string(),
                 completed: is_complete(&current_alice),

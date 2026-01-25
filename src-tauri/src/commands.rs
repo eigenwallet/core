@@ -80,7 +80,8 @@ macro_rules! generate_command_handlers {
             get_context_status,
             get_monero_subaddresses,
             create_monero_subaddress,
-            set_monero_subaddress_label
+            set_monero_subaddress_label,
+            refresh_p2p
         ]
     };
 }

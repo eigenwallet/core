@@ -40,12 +40,12 @@ bdk_wallet = "2.0.0"
 bitcoin = { version = "0.32", features = ["rand", "serde"] }
 
 # monero-oxide
-monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
-monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet", branch = "rpc-rewrite" }
-monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git", branch = "rpc-rewrite" }
+monero-address = { git = "https://github.com/kayabaNerve/monero-oxide.git"  }
+monero-daemon-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git"  }
+monero-interface = { git = "https://github.com/kayabaNerve/monero-oxide.git"  }
+monero-oxide = { git = "https://github.com/kayabaNerve/monero-oxide.git"  }
+monero-oxide-wallet = { git = "https://github.com/kayabaNerve/monero-oxide.git", package = "monero-wallet"  }
+monero-simple-request-rpc = { git = "https://github.com/kayabaNerve/monero-oxide.git"  }
 
 # Cryptography
 curve25519-dalek = { version = "4", package = "curve25519-dalek", features = ["rand_core", "serde"] }
@@ -101,6 +101,7 @@ tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_r
 tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+libp2p-tor = { path = "./libp2p-tor" }
 
 # Terminal Utilities
 console = "0.16"

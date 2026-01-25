@@ -3,6 +3,7 @@ name = "monero-tests"
 version = "0.1.0"
 edition = "2024"
 
+
 [dev-dependencies]
 monero-address = { workspace = true }
 monero-daemon-rpc = { workspace = true }
@@ -22,5 +23,7 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
 
-[lints]
-workspace = true
+# Each test counts as a seperate crate, and would individually get
+# warnigns for "unused" dependencies. This silences them
+[lints.rust]
+unused_crate_dependencies = "allow"

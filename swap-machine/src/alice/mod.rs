@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::common::{CROSS_CURVE_PROOF_SYSTEM, Message0, Message1, Message2, Message3, Message4};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sigma_fun::ext::dl_secp256k1_ed25519_eq::CrossCurveDLEQProof;
@@ -13,9 +13,9 @@ use swap_core::bitcoin::{
     TxRefundAmnesty, TxRefundBurn, Txid, current_epoch,
 };
 use swap_core::compat::{IntoDalek, IntoDalekNg, IntoMoneroOxide};
-use swap_core::monero;
 use swap_core::monero::ScalarExt;
 use swap_core::monero::primitives::{AmountExt, BlockHeight, TransferProof, TransferRequest};
+use swap_core::monero::{self, Scalar};
 use swap_env::env::Config;
 use uuid::Uuid;
 
@@ -850,16 +850,14 @@ impl State3 {
         &self,
         signed_partial_refund_tx: Arc<bitcoin::Transaction>,
     ) -> Result<monero::PrivateKey> {
-        Ok(monero::PrivateKey::from_scalar(
-            self.tx_partial_refund()?
-                .extract_monero_private_key(
-                    signed_partial_refund_tx,
-                    self.s_a,
-                    self.a.clone(),
-                    self.S_b_bitcoin,
-                )?
-                .into_dalek_ng(),
-        ))
+        Ok(monero::PrivateKey::from_scalar(Scalar::from(
+            self.tx_partial_refund()?.extract_monero_private_key(
+                signed_partial_refund_tx,
+                self.s_a.into(),
+                self.a.clone(),
+                self.S_b_bitcoin,
+            )?,
+        )))
     }
 
     pub async fn check_for_tx_cancel(

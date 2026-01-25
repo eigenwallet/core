@@ -11,7 +11,6 @@ mod tests {
     use monero_oxide_ext::PrivateKey;
     use rand::rngs::OsRng;
     use swap_core::bitcoin::*;
-    use swap_core::compat::IntoDalekNg;
     use swap_core::monero::{Scalar, TransferProof};
     use swap_env::env::{GetConfig, Regtest};
     use uuid::Uuid;

@@ -94,13 +94,14 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 table.add_row(["No swaps found"]);
             } else {
                 for swap in &swaps {
-                    let xmr = monero:Amount::from_pico(swap.xmr_amount);
+                    let xmr = monero_oxide_ext::Amount::from_pico(swap.xmr_amount);
                     table.add_row([
                         &swap.swap_id,
                         &swap.start_date,
                         &swap.state,
                         &swap.btc_lock_txid,
                         &swap.btc_amount.to_string(),
+                        // Floating point may introduce very small inaccuracies here
                         &format!("{:.12} XMR", xmr.as_xmr()),
                         &swap.exchange_rate.to_string(),
                         &swap.peer_id,

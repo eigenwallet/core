@@ -1,22 +1,20 @@
+#![allow(unused_crate_dependencies)]
+
 use anyhow::Result;
-use arti_client::{config::TorClientConfigBuilder, TorClient};
+use arti_client::{TorClient, config::TorClientConfigBuilder};
 use futures::StreamExt;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::Boxed;
 use libp2p::core::upgrade::Version;
-use libp2p::multiaddr::Protocol;
-use libp2p::swarm::dial_opts::DialOpts;
 use libp2p::swarm::NetworkBehaviour;
+use libp2p::{PeerId, SwarmBuilder, Transport, identity, yamux};
 use libp2p::{dns, tcp};
-use libp2p::{identify, noise, ping, request_response};
-use libp2p::{identity, yamux, Multiaddr, PeerId, SwarmBuilder, Transport};
+use libp2p::{identify, noise, ping};
 use libp2p_tor::{AddressConversion, TorTransport};
-use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_p2p::libp2p_ext::MultiAddrExt;
-use swap_p2p::protocols::quote::BidQuote;
-use swap_p2p::protocols::{quote, quotes_cached, rendezvous};
+use swap_p2p::protocols::{quotes_cached, rendezvous};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 const USE_TOR: bool = true;
@@ -130,7 +128,7 @@ async fn main() -> Result<()> {
         match event {
             libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
                 BehaviourEvent::Rendezvous(event) => match event {
-                    rendezvous::discovery::Event::DiscoveredPeer { peer_id } => {}
+                    rendezvous::discovery::Event::DiscoveredPeer { .. } => {}
                 },
                 BehaviourEvent::Quote(quotes_cached::Event::CachedQuotes { quotes }) => {
                     println!("================");
@@ -150,7 +148,7 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             },
-            libp2p::swarm::SwarmEvent::ConnectionEstablished { peer_id, .. } => {}
+            libp2p::swarm::SwarmEvent::ConnectionEstablished { .. } => {}
             _ => {}
         }
     }

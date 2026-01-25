@@ -2,7 +2,6 @@ pub mod harness;
 
 use std::time::Duration;
 
-use harness::alice_run_until::{is_btc_refund_burn_confirmed, is_xmr_lock_transaction_sent};
 use harness::FastAmnestyConfig;
 use rust_decimal::Decimal;
 use swap::asb::FixedRate;
@@ -12,7 +11,7 @@ use swap_controller_api::AsbApiClient;
 use swap_env::config::RefundPolicy;
 use swap_machine::bob::BobState;
 
-use crate::harness::alice_run_until::{is_btc_partially_refunded, is_xmr_refunded};
+use crate::harness::alice_run_until::is_xmr_refunded;
 use crate::harness::bob_run_until;
 
 /// Bob locks Btc and Alice locks Xmr. Alice does not act so Bob does a partial
@@ -48,7 +47,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
 
             // Wait for bob to partially refund - stop here such that he doesn't publish amnesty
             // TODO: fix regtest blocktimes instead
-            let bob_state = bob_state.await??;
+            let _bob_state = bob_state.await??;
 
             let alice_state = alice_swap.await??;
             assert!(matches!(alice_state, AliceState::XmrRefunded { .. }));
