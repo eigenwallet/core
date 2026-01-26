@@ -1,4 +1,6 @@
-use crate::bitcoin::partial_refund::TxPartialRefund;
+#![allow(non_snake_case)]
+
+use crate::bitcoin::withhold::TxWithhold;
 use crate::bitcoin::{self, Address, Amount, PublicKey, Transaction};
 use ::bitcoin::sighash::SighashCache;
 use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
@@ -9,49 +11,55 @@ use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
 use std::collections::HashMap;
 
-use super::timelocks::RemainingRefundTimelock;
-
+/// TxFinalAmnesty spends the burn output of TxRefundBurn and sends it to
+/// Bob's refund address. This allows Alice to voluntarily refund Bob even
+/// after she has "burnt" the amnesty output.
+///
+/// This transaction is presigned by Bob during swap setup, but Alice keeps
+/// her signature private until she decides to cooperate (e.g., if Bob contacts
+/// her to request the refund).
 #[derive(Debug, Clone)]
-pub struct TxRefundAmnesty {
+pub struct TxMercy {
     inner: Transaction,
     digest: Sighash,
-    amensty_output_descriptor: Descriptor<::bitcoin::PublicKey>,
+    burn_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,
 }
 
-impl TxRefundAmnesty {
+impl TxMercy {
     pub fn new(
-        tx_refund: &TxPartialRefund,
+        tx_refund_burn: &TxWithhold,
         refund_address: &Address,
         spending_fee: Amount,
-        remaining_refund_timelock: RemainingRefundTimelock,
-    ) -> Result<Self> {
-        let tx_refund_amnesty = tx_refund
-            .build_amnesty_spend_transaction(
-                refund_address,
-                spending_fee,
-                remaining_refund_timelock,
-            )
-            .context("Couldn't build tx refund amnesty")?;
+    ) -> Self {
+        // TODO: Handle case where fee >= burn amount more gracefully
+        assert!(
+            tx_refund_burn.amount() > spending_fee,
+            "TxFinalAmnesty fee ({}) must be less than burn amount ({})",
+            spending_fee,
+            tx_refund_burn.amount()
+        );
 
-        let digest = SighashCache::new(&tx_refund_amnesty)
+        let tx_final_amnesty = tx_refund_burn.build_spend_transaction(refund_address, spending_fee);
+
+        let digest = SighashCache::new(&tx_final_amnesty)
             .p2wsh_signature_hash(
-                0, // Only one input: amnesty box from tx_refund
-                &tx_refund
-                    .amnesty_output_descriptor
+                0, // Only one input: burn output from tx_refund_burn
+                &tx_refund_burn
+                    .burn_output_descriptor
                     .script_code()
                     .expect("scriptcode"),
-                tx_refund.amnesty_amount(),
+                tx_refund_burn.amount(),
                 EcdsaSighashType::All,
             )
             .expect("sighash");
 
-        Ok(Self {
-            inner: tx_refund_amnesty,
+        Self {
+            inner: tx_final_amnesty,
             digest,
-            amensty_output_descriptor: tx_refund.amnesty_output_descriptor.clone(),
+            burn_output_descriptor: tx_refund_burn.burn_output_descriptor.clone(),
             watch_script: refund_address.script_pubkey(),
-        })
+        }
     }
 
     pub fn txid(&self) -> Txid {
@@ -64,15 +72,14 @@ impl TxRefundAmnesty {
 
     pub fn complete_as_alice(
         &self,
-        s_a: bitcoin::SecretKey,
+        a: bitcoin::SecretKey,
         B: bitcoin::PublicKey,
         sig_b: Signature,
     ) -> Result<Transaction> {
-        let digest = self.digest();
-        let sig_a = s_a.sign(digest);
+        let sig_a = a.sign(self.digest());
 
         self.clone()
-            .add_signatures((s_a.public(), sig_a), (B, sig_b))
+            .add_signatures((a.public(), sig_a), (B, sig_b))
             .context("Couldn't add signatures to transaction")
     }
 
@@ -115,19 +122,20 @@ impl TxRefundAmnesty {
             satisfier
         };
 
-        let mut tx_refund = self.inner;
-        self.amensty_output_descriptor
-            .satisfy(&mut tx_refund.input[0], satisfier)?;
+        let mut tx = self.inner;
+        self.burn_output_descriptor
+            .satisfy(&mut tx.input[0], satisfier)?;
 
-        Ok(tx_refund)
+        Ok(tx)
     }
 
+    // TODO: calculate actual weight
     pub fn weight() -> Weight {
         Weight::from_wu(548)
     }
 }
 
-impl Watchable for TxRefundAmnesty {
+impl Watchable for TxMercy {
     fn id(&self) -> Txid {
         self.txid()
     }

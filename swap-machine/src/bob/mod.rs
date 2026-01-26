@@ -15,8 +15,8 @@ use std::fmt;
 use std::sync::Arc;
 use swap_core::bitcoin::{
     self, CancelTimelock, ExpiredTimelocks, PunishTimelock, RemainingRefundTimelock, Transaction,
-    TxCancel, TxFinalAmnesty, TxFullRefund, TxLock, TxPartialRefund, TxRefundAmnesty, TxRefundBurn,
-    Txid, current_epoch,
+    TxCancel, TxFullRefund, TxLock, TxMercy, TxPartialRefund, TxReclaim, TxWithhold, Txid,
+    current_epoch,
 };
 use swap_core::compat::{IntoDalekNg, IntoMoneroOxide};
 use swap_core::monero;
@@ -512,7 +512,7 @@ impl State1 {
                     &tx_partial_refund_encsig,
                 )?;
 
-                let tx_refund_amnesty = TxRefundAmnesty::new(
+                let tx_refund_amnesty = TxReclaim::new(
                     &tx_partial_refund,
                     &self.refund_address,
                     self.tx_refund_amnesty_fee
@@ -645,7 +645,7 @@ impl State2 {
                         .context("missing tx_partial_refund_fee")?,
                 )
                 .context("Couldn't construct TxPartialRefund")?;
-                let tx_refund_amnesty = TxRefundAmnesty::new(
+                let tx_refund_amnesty = TxReclaim::new(
                     &tx_partial_refund,
                     &self.refund_address,
                     self.tx_refund_amnesty_fee
@@ -655,7 +655,7 @@ impl State2 {
                 )?;
                 let tx_refund_amnesty_sig = self.b.sign(tx_refund_amnesty.digest());
 
-                let tx_refund_burn = TxRefundBurn::new(
+                let tx_refund_burn = TxWithhold::new(
                     &tx_partial_refund,
                     self.A,
                     self.b.public(),
@@ -664,7 +664,7 @@ impl State2 {
                 )?;
                 let tx_refund_burn_sig = self.b.sign(tx_refund_burn.digest());
 
-                let tx_final_amnesty = TxFinalAmnesty::new(
+                let tx_final_amnesty = TxMercy::new(
                     &tx_refund_burn,
                     &self.refund_address,
                     self.tx_final_amnesty_fee
@@ -1317,10 +1317,10 @@ impl State6 {
         Ok(signed_tx_amnesty)
     }
 
-    pub fn construct_tx_amnesty(&self) -> Result<bitcoin::TxRefundAmnesty> {
+    pub fn construct_tx_amnesty(&self) -> Result<bitcoin::TxReclaim> {
         let tx_partial_refund = self.construct_tx_partial_refund()?;
 
-        bitcoin::TxRefundAmnesty::new(
+        bitcoin::TxReclaim::new(
             &tx_partial_refund,
             &self.refund_address,
             self.tx_refund_amnesty_fee.context(
@@ -1332,9 +1332,9 @@ impl State6 {
         )
     }
 
-    pub fn construct_tx_refund_burn(&self) -> Result<bitcoin::TxRefundBurn> {
+    pub fn construct_tx_refund_burn(&self) -> Result<bitcoin::TxWithhold> {
         let tx_partial_refund = self.construct_tx_partial_refund()?;
-        bitcoin::TxRefundBurn::new(
+        bitcoin::TxWithhold::new(
             &tx_partial_refund,
             self.A,
             self.b.public(),
@@ -1343,9 +1343,9 @@ impl State6 {
         )
     }
 
-    pub fn construct_tx_final_amnesty(&self) -> Result<bitcoin::TxFinalAmnesty> {
+    pub fn construct_tx_final_amnesty(&self) -> Result<bitcoin::TxMercy> {
         let tx_refund_burn = self.construct_tx_refund_burn()?;
-        Ok(bitcoin::TxFinalAmnesty::new(
+        Ok(bitcoin::TxMercy::new(
             &tx_refund_burn,
             &self.refund_address,
             self.tx_final_amnesty_fee.context(

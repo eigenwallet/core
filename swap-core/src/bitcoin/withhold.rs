@@ -21,7 +21,7 @@ use std::collections::HashMap;
 /// Unlike TxRefundAmnesty, this transaction has no timelock - Alice can publish
 /// it immediately after TxPartialRefund is confirmed.
 #[derive(Debug, Clone)]
-pub struct TxRefundBurn {
+pub struct TxWithhold {
     inner: Transaction,
     digest: Sighash,
     amnesty_output_descriptor: Descriptor<::bitcoin::PublicKey>,
@@ -29,7 +29,7 @@ pub struct TxRefundBurn {
     watch_script: ScriptBuf,
 }
 
-impl TxRefundBurn {
+impl TxWithhold {
     pub fn new(
         tx_partial_refund: &TxPartialRefund,
         A: PublicKey,
@@ -195,7 +195,7 @@ impl TxRefundBurn {
     }
 }
 
-impl Watchable for TxRefundBurn {
+impl Watchable for TxWithhold {
     fn id(&self) -> Txid {
         self.txid()
     }

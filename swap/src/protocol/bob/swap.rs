@@ -17,7 +17,7 @@ use anyhow::{Context as AnyContext, Result, anyhow};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{
-    ExpiredTimelocks, TxCancel, TxFinalAmnesty, TxFullRefund, TxPartialRefund, TxRefundAmnesty,
+    ExpiredTimelocks, TxCancel, TxMercy, TxFullRefund, TxPartialRefund, TxReclaim,
 };
 use swap_core::monero::BlockHeight;
 use swap_env::env;
@@ -130,10 +130,10 @@ async fn next_state(
                 .estimate_fee(TxPartialRefund::weight(), Some(btc_amount))
                 .await?;
             let tx_refund_amnesty_fee = bitcoin_wallet
-                .estimate_fee(TxRefundAmnesty::weight(), Some(btc_amount))
+                .estimate_fee(TxReclaim::weight(), Some(btc_amount))
                 .await?;
             let tx_final_amnesty_fee = bitcoin_wallet
-                .estimate_fee(TxFinalAmnesty::weight(), Some(btc_amount))
+                .estimate_fee(TxMercy::weight(), Some(btc_amount))
                 .await?;
 
             // Emit an event to tauri that we are negotiating with the maker to lock the Bitcoin

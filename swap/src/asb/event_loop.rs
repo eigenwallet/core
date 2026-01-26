@@ -71,8 +71,7 @@ where
     /// Stores where to send burn-on-refund instructions to
     /// The corresponding receiver is stored in the EventLoopHandle
     /// Uses watch channel to allow multiple updates before consumption
-    recv_burn_on_refund_instruction:
-        HashMap<Uuid, tokio::sync::watch::Sender<Option<bool>>>,
+    recv_burn_on_refund_instruction: HashMap<Uuid, tokio::sync::watch::Sender<Option<bool>>>,
 
     /// Once we receive an [`EncryptedSignature`] from Bob, we forward it to the EventLoopHandle.
     /// Once the EventLoopHandle acknowledges the receipt of the [`EncryptedSignature`], we need to confirm this to Bob.
@@ -786,8 +785,7 @@ pub struct EventLoopHandle {
     peer: PeerId,
     recv_encrypted_signature:
         tokio::sync::Mutex<Option<bmrng::RequestReceiver<bitcoin::EncryptedSignature, ()>>>,
-    recv_burn_on_refund_instruction:
-        tokio::sync::Mutex<tokio::sync::watch::Receiver<Option<bool>>>,
+    recv_burn_on_refund_instruction: tokio::sync::Mutex<tokio::sync::watch::Receiver<Option<bool>>>,
     #[allow(clippy::type_complexity)]
     transfer_proof_sender: tokio::sync::Mutex<
         Option<
@@ -1000,7 +998,7 @@ async fn capture_wallet_snapshot(
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
     let refund_burn_fee = bitcoin_wallet
-        .estimate_fee(bitcoin::TxRefundBurn::weight(), Some(transfer_amount))
+        .estimate_fee(bitcoin::TxWithhold::weight(), Some(transfer_amount))
         .await?;
 
     Ok(WalletSnapshot::new(
