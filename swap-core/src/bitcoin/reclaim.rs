@@ -27,11 +27,7 @@ impl TxReclaim {
         remaining_refund_timelock: RemainingRefundTimelock,
     ) -> Result<Self> {
         let tx_refund_amnesty = tx_refund
-            .build_amnesty_spend_transaction(
-                refund_address,
-                spending_fee,
-                remaining_refund_timelock,
-            )
+            .build_reclaim_transaction(refund_address, spending_fee, remaining_refund_timelock)
             .context("Couldn't build tx refund amnesty")?;
 
         let digest = SighashCache::new(&tx_refund_amnesty)
@@ -41,7 +37,7 @@ impl TxReclaim {
                     .amnesty_output_descriptor
                     .script_code()
                     .expect("scriptcode"),
-                tx_refund.amnesty_amount(),
+                tx_refund.anti_spam_deposit(),
                 EcdsaSighashType::All,
             )
             .expect("sighash");

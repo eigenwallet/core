@@ -124,20 +124,20 @@ pub struct RefundPolicy {
     /// Takers will only receive this percentage of their Bitcoin back by default.
     /// Maker can still issue "amnesty" to refund the rest.
     /// This protects the maker against griefing attacks.
-    #[serde(default = "default_taker_refund_ratio")]
-    pub taker_refund_ratio: Decimal,
+    #[serde(default = "default_anti_spam_deposit_ratio")]
+    pub anti_spam_deposit_ratio: Decimal,
     /// If true, Alice will publish TxRefundBurn after refunding her XMR,
     /// denying Bob access to the amnesty output. Alice can later grant
     /// final amnesty to return the funds to Bob.
-    #[serde(default)]
-    pub burn_on_refund: bool,
+    #[serde(default = "default_always_withhold_deposit")]
+    pub always_withhold_deposit: bool,
 }
 
 impl Default for RefundPolicy {
     fn default() -> Self {
         Self {
-            taker_refund_ratio: default_taker_refund_ratio(),
-            burn_on_refund: false,
+            anti_spam_deposit_ratio: default_anti_spam_deposit_ratio(),
+            always_withhold_deposit: false,
         }
     }
 }
@@ -158,8 +158,12 @@ fn default_developer_tip() -> Decimal {
     Decimal::ZERO
 }
 
-fn default_taker_refund_ratio() -> Decimal {
-    Decimal::ONE
+fn default_anti_spam_deposit_ratio() -> Decimal {
+    Decimal::ZERO
+}
+
+fn default_always_withhold_deposit() -> bool {
+    false
 }
 
 impl Config {

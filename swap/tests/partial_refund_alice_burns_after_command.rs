@@ -20,8 +20,8 @@ async fn given_partial_refund_alice_burns_after_command() {
     // Use 95% refund ratio - Bob gets 95% immediately, 5% locked in amnesty
     // Alice does NOT burn by default - burn_on_refund is false
     let refund_policy = Some(RefundPolicy {
-        taker_refund_ratio: Decimal::new(95, 2), // 0.95 = 95%
-        burn_on_refund: false,                   // Do not burn by default
+        anti_spam_deposit_ratio: Decimal::new(95, 2), // 0.95 = 95%
+        always_withhold_deposit: false,               // Do not burn by default
     });
 
     harness::setup_test(

@@ -23,8 +23,8 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
     // Use 95% refund ratio - Bob gets 95% immediately, 5% locked in amnesty
     // Alice burns the amnesty, then grants final amnesty
     let refund_policy = Some(RefundPolicy {
-        taker_refund_ratio: Decimal::new(95, 2), // 0.95 = 95%
-        burn_on_refund: true,
+        anti_spam_deposit_ratio: Decimal::new(95, 2), // 0.95 = 95%
+        always_withhold_deposit: true,
     });
 
     harness::setup_test(

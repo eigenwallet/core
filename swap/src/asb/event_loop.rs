@@ -944,16 +944,14 @@ fn apply_bitcoin_amnesty_policy(
     swap_amount: bitcoin::Amount,
     refund_policy: &RefundPolicy,
 ) -> Result<(bitcoin::Amount, bool)> {
-    let should_burn_on_refund = refund_policy.burn_on_refund;
+    let should_always_withhold = refund_policy.always_withhold_deposit;
 
-    // When ratio is 1.0, no amnesty - use full refund path
-    if refund_policy.taker_refund_ratio == Decimal::ONE {
-        return Ok((bitcoin::Amount::ZERO, should_burn_on_refund));
+    // When ratio is 0.0, no amnesty - use full refund path for fewer fees
+    if refund_policy.anti_spam_deposit_ratio == Decimal::ZERO {
+        return Ok((bitcoin::Amount::ZERO, should_always_withhold));
     }
 
-    let btc_amnesty_ratio = Decimal::ONE
-        .checked_sub(refund_policy.taker_refund_ratio)
-        .context("can't have refund ration > 1")?;
+    let btc_amnesty_ratio = refund_policy.anti_spam_deposit_ratio;
 
     let amount_sats = swap_amount.to_sat();
     let amount_decimal =
@@ -969,7 +967,7 @@ fn apply_bitcoin_amnesty_policy(
 
     Ok((
         bitcoin::Amount::from_sat(btc_amnesty_sats),
-        should_burn_on_refund,
+        should_always_withhold,
     ))
 }
 

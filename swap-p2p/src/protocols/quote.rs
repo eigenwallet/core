@@ -24,19 +24,20 @@ pub enum RefundPolicyWire {
     /// Taker receives a partial refund; the remainder goes to an amnesty output
     /// that the maker may or may not release later.
     PartialRefund {
-        /// Ratio (0.0-1.0) of Bitcoin the taker receives immediately.
+        /// Ratio (0.0-1.0) of Bitcoin that goes into the anti-spam deposit
+        /// and may be withheld by the maker.
         #[typeshare(serialized_as = "number")]
-        taker_refund_ratio: Decimal,
+        anti_spam_deposit_ratio: Decimal,
     },
 }
 
 impl From<RefundPolicy> for RefundPolicyWire {
     fn from(policy: RefundPolicy) -> Self {
-        if policy.taker_refund_ratio == Decimal::ONE {
+        if policy.anti_spam_deposit_ratio == Decimal::ONE {
             RefundPolicyWire::FullRefund
         } else {
             RefundPolicyWire::PartialRefund {
-                taker_refund_ratio: policy.taker_refund_ratio,
+                anti_spam_deposit_ratio: policy.anti_spam_deposit_ratio,
             }
         }
     }

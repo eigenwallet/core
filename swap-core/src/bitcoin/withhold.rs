@@ -39,16 +39,16 @@ impl TxWithhold {
         // TODO: Handle case where fee >= amnesty_amount more gracefully
         // For now, assert to catch this during development
         assert!(
-            tx_partial_refund.amnesty_amount() > spending_fee,
+            tx_partial_refund.anti_spam_deposit() > spending_fee,
             "TxRefundBurn fee ({}) must be less than amnesty amount ({})",
             spending_fee,
-            tx_partial_refund.amnesty_amount()
+            tx_partial_refund.anti_spam_deposit()
         );
 
         let burn_output_descriptor = build_shared_output_descriptor(A.0, B.0)?;
 
         let tx_refund_burn =
-            tx_partial_refund.build_burn_spend_transaction(&burn_output_descriptor, spending_fee);
+            tx_partial_refund.build_withhold_transaction(&burn_output_descriptor, spending_fee);
 
         let digest = SighashCache::new(&tx_refund_burn)
             .p2wsh_signature_hash(
@@ -57,7 +57,7 @@ impl TxWithhold {
                     .amnesty_output_descriptor
                     .script_code()
                     .expect("scriptcode"),
-                tx_partial_refund.amnesty_amount(),
+                tx_partial_refund.anti_spam_deposit(),
                 EcdsaSighashType::All,
             )
             .expect("sighash");

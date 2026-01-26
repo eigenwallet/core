@@ -76,15 +76,15 @@ impl TxPartialRefund {
         self.digest
     }
 
-    pub fn amnesty_amount(&self) -> Amount {
+    pub fn anti_spam_deposit(&self) -> Amount {
         self.inner.output[1].value
     }
 
-    pub fn amnesty_outpoint(&self) -> ::bitcoin::OutPoint {
+    pub fn ani_spam_deposit_outpoint(&self) -> ::bitcoin::OutPoint {
         ::bitcoin::OutPoint::new(self.txid(), 1)
     }
 
-    pub fn build_amnesty_spend_transaction(
+    pub fn build_reclaim_transaction(
         &self,
         refund_address: &Address,
         spending_fee: Amount,
@@ -96,7 +96,7 @@ impl TxPartialRefund {
         };
 
         let tx_in = TxIn {
-            previous_output: self.amnesty_outpoint(),
+            previous_output: self.ani_spam_deposit_outpoint(),
             script_sig: Default::default(),
             sequence: Sequence(remaining_refund_timelock.0),
             witness: Default::default(),
@@ -104,7 +104,7 @@ impl TxPartialRefund {
 
         let tx_out = TxOut {
             value: self
-                .amnesty_amount()
+                .anti_spam_deposit()
                 .checked_sub(spending_fee)
                 .context("btc amnesty amount is less than spending fee")?,
             script_pubkey: refund_address.script_pubkey(),
@@ -121,7 +121,7 @@ impl TxPartialRefund {
     /// Build a transaction that spends the amnesty output to a new 2-of-2 multisig (burn output).
     /// This is used by TxRefundBurn to "burn" the amnesty by moving it to another multisig.
     /// Unlike `build_amnesty_spend_transaction`, this has no timelock.
-    pub fn build_burn_spend_transaction(
+    pub fn build_withhold_transaction(
         &self,
         burn_output_descriptor: &Descriptor<::bitcoin::PublicKey>,
         spending_fee: Amount,
@@ -133,21 +133,21 @@ impl TxPartialRefund {
 
         // TODO: Handle case where fee >= amnesty_amount more gracefully
         assert!(
-            self.amnesty_amount() > spending_fee,
+            self.anti_spam_deposit() > spending_fee,
             "Burn spend fee ({}) must be less than amnesty amount ({})",
             spending_fee,
-            self.amnesty_amount()
+            self.anti_spam_deposit()
         );
 
         let tx_in = TxIn {
-            previous_output: self.amnesty_outpoint(),
+            previous_output: self.ani_spam_deposit_outpoint(),
             script_sig: Default::default(),
             sequence: Sequence(0xFFFF_FFFF), // No timelock
             witness: Default::default(),
         };
 
         let tx_out = TxOut {
-            value: self.amnesty_amount() - spending_fee,
+            value: self.anti_spam_deposit() - spending_fee,
             script_pubkey: burn_output_descriptor.script_pubkey(),
         };
 
