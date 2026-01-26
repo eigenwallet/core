@@ -7,16 +7,22 @@ AI is currently _not fit_ to make autonomous changes to this codebase.
 Therefore, any change that is not piloted by a human who understands the issue better than the AI is bound to have problems.
 
 This project is maintained by volunteers who spent their real, personal time reviewing issues and pull requests (PRs).
-Do not abuse it
+Do not abuse it.
 
 ## TL;DR
 
+| | |
+|---|---|
 |AI as tool|✓|
 |AI as autopilot|✗|
 
+| | |
+|---|---|
 |Restraining AI, refactor code and prevent slop|✓|
 |Let AI run wild|✗|
 
+| | |
+|---|---|
 |Verify tests pass, compile app and test UI before submitting PR|✓|
 |Trust AI to produce valid and correct changes|✗|
 
@@ -52,7 +58,7 @@ Do not abuse it
 - How did you solve it?
 - Why did you choose this approach?
 
-Do not feel bad if you feel that you're language is imperfect. We would much rather read a real text with slight imperfections that more AI slop.
+Do not feel bad if you feel that you're language is imperfect. We would much rather read a real text with slight imperfections than more AI slop.
 
 ---
 
@@ -64,7 +70,7 @@ We will close PRs and potentially block contributors that exhibit characteristic
 - bloated code
 - untested changes
 - Drive-by PRs that don't solve an existing issue
-- Shallow, overconfident "security vulnerabilieties"
+- Shallow, overconfident "security vulnerabilities"
 
 ---
 
