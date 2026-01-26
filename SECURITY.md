@@ -10,6 +10,8 @@ To help us understand the nature and scope of the potential issue, please provid
 
 We ask that you do not disclose the issue to others until we've had a chance to address it.
 
+Please encrypt any reports using one of our GPG keys ([link](https://github.com/eigenwallet/core/tree/master/utils/gpg_keys)).
+
 ### Our Commitment
 
 Upon receiving a vulnerability report, we commit to:
@@ -18,3 +20,5 @@ Upon receiving a vulnerability report, we commit to:
  - Providing an estimated timeline for addressing the vulnerability.
  - Keeping you informed about the progress of addressing the vulnerability.
  - Publicly acknowledging your contribution, if you wish, once the vulnerability has been resolved.
+
+ 
