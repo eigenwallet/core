@@ -135,7 +135,10 @@ listen<TauriEvent>(TAURI_UNIFIED_EVENT_CHANNEL_NAME, (event) => {
 
   switch (channelName) {
     case "SwapProgress":
-      store.dispatch(swapProgressEventReceived(eventData));
+      // Skip when mocking is enabled (DEV only) - mock dispatches bypass this listener
+      if (!store.getState().swap._mockOnlyDisableTauriCallsOnSwapProgress) {
+        store.dispatch(swapProgressEventReceived(eventData));
+      }
       break;
 
     case "CliLog":

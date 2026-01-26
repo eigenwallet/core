@@ -7,7 +7,6 @@ use swap_machine::bob::BobState;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Bob {
     Started {
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_amount: bitcoin::Amount,
         #[serde(with = "swap_serde::bitcoin::address_serde")]
         change_address: bitcoin::Address,
@@ -54,6 +53,14 @@ pub enum Bob {
     BtcCancelled(bob::State6),
     BtcRefundPublished(bob::State6),
     BtcEarlyRefundPublished(bob::State6),
+    BtcPartialRefundPublished(bob::State6),
+    BtcPartiallyRefunded(bob::State6),
+    WaitingForReclaimTimelockExpiration(bob::State6),
+    ReclaimTimelockExpired(bob::State6),
+    BtcReclaimPublished(bob::State6),
+    BtcWithholdPublished(bob::State6),
+    BtcWithheld(bob::State6),
+    BtcMercyPublished(bob::State6),
     Done(BobEndState),
 }
 
@@ -63,6 +70,8 @@ pub enum BobEndState {
     XmrRedeemed { tx_lock_id: bitcoin::Txid },
     BtcRefunded(Box<bob::State6>),
     BtcEarlyRefunded(Box<bob::State6>),
+    BtcReclaimConfirmed(Box<bob::State6>),
+    BtcMercyConfirmed(Box<bob::State6>),
 }
 
 impl From<BobState> for Bob {
@@ -126,6 +135,7 @@ impl From<BobState> for Bob {
             BobState::BtcCancelled(state6) => Bob::BtcCancelled(state6),
             BobState::BtcRefundPublished(state6) => Bob::BtcRefundPublished(state6),
             BobState::BtcEarlyRefundPublished(state6) => Bob::BtcEarlyRefundPublished(state6),
+            BobState::BtcPartialRefundPublished(state6) => Bob::BtcPartialRefundPublished(state6),
             BobState::BtcPunished { state, tx_lock_id } => Bob::BtcPunished { state, tx_lock_id },
             BobState::BtcRefunded(state6) => Bob::Done(BobEndState::BtcRefunded(Box::new(state6))),
             BobState::XmrRedeemed { tx_lock_id } => {
@@ -133,6 +143,21 @@ impl From<BobState> for Bob {
             }
             BobState::BtcEarlyRefunded(state6) => {
                 Bob::Done(BobEndState::BtcEarlyRefunded(Box::new(state6)))
+            }
+            BobState::BtcPartiallyRefunded(state6) => Bob::BtcPartiallyRefunded(state6),
+            BobState::BtcReclaimPublished(state6) => Bob::BtcReclaimPublished(state6),
+            BobState::BtcReclaimConfirmed(state6) => {
+                Bob::Done(BobEndState::BtcReclaimConfirmed(Box::new(state6)))
+            }
+            BobState::WaitingForReclaimTimelockExpiration(state6) => {
+                Bob::WaitingForReclaimTimelockExpiration(state6)
+            }
+            BobState::ReclaimTimelockExpired(state6) => Bob::ReclaimTimelockExpired(state6),
+            BobState::BtcWithholdPublished(state6) => Bob::BtcWithholdPublished(state6),
+            BobState::BtcWithheld(state6) => Bob::BtcWithheld(state6),
+            BobState::BtcMercyPublished(state6) => Bob::BtcMercyPublished(state6),
+            BobState::BtcMercyConfirmed(state6) => {
+                Bob::Done(BobEndState::BtcMercyConfirmed(Box::new(state6)))
             }
             BobState::SafelyAborted => Bob::Done(BobEndState::SafelyAborted),
         }
@@ -199,13 +224,25 @@ impl From<Bob> for BobState {
             Bob::CancelTimelockExpired(state6) => BobState::CancelTimelockExpired(state6),
             Bob::BtcCancelled(state6) => BobState::BtcCancelled(state6),
             Bob::BtcRefundPublished(state6) => BobState::BtcRefundPublished(state6),
+            Bob::BtcPartialRefundPublished(state6) => BobState::BtcPartialRefundPublished(state6),
+            Bob::BtcPartiallyRefunded(state6) => BobState::BtcPartiallyRefunded(state6),
+            Bob::BtcReclaimPublished(state6) => BobState::BtcReclaimPublished(state6),
             Bob::BtcEarlyRefundPublished(state6) => BobState::BtcEarlyRefundPublished(state6),
             Bob::BtcPunished { state, tx_lock_id } => BobState::BtcPunished { state, tx_lock_id },
+            Bob::WaitingForReclaimTimelockExpiration(state6) => {
+                BobState::WaitingForReclaimTimelockExpiration(state6)
+            }
+            Bob::ReclaimTimelockExpired(state6) => BobState::ReclaimTimelockExpired(state6),
+            Bob::BtcWithholdPublished(state6) => BobState::BtcWithholdPublished(state6),
+            Bob::BtcWithheld(state6) => BobState::BtcWithheld(state6),
+            Bob::BtcMercyPublished(state6) => BobState::BtcMercyPublished(state6),
             Bob::Done(end_state) => match end_state {
                 BobEndState::SafelyAborted => BobState::SafelyAborted,
                 BobEndState::XmrRedeemed { tx_lock_id } => BobState::XmrRedeemed { tx_lock_id },
                 BobEndState::BtcRefunded(state6) => BobState::BtcRefunded(*state6),
                 BobEndState::BtcEarlyRefunded(state6) => BobState::BtcEarlyRefunded(*state6),
+                BobEndState::BtcReclaimConfirmed(state6) => BobState::BtcReclaimConfirmed(*state6),
+                BobEndState::BtcMercyConfirmed(state6) => BobState::BtcMercyConfirmed(*state6),
             },
         }
     }
@@ -230,10 +267,22 @@ impl fmt::Display for Bob {
             Bob::BtcCancelled(_) => f.write_str("Bitcoin refundable"),
             Bob::BtcRefundPublished { .. } => f.write_str("Bitcoin refund published"),
             Bob::BtcEarlyRefundPublished { .. } => f.write_str("Bitcoin early refund published"),
+            Bob::BtcPartialRefundPublished { .. } => {
+                f.write_str("Bitcoin partially refund published")
+            }
             Bob::BtcRedeemed(_) => f.write_str("Monero redeemable"),
             Bob::Done(end_state) => write!(f, "Done: {}", end_state),
             Bob::EncSigSent { .. } => f.write_str("Encrypted signature sent"),
             Bob::BtcPunished { .. } => f.write_str("Bitcoin punished"),
+            Bob::BtcPartiallyRefunded { .. } => f.write_str("Bitcoin partially refunded"),
+            Bob::BtcReclaimPublished { .. } => f.write_str("Bitcoin amnesty published"),
+            Bob::WaitingForReclaimTimelockExpiration { .. } => {
+                f.write_str("Waiting for remaining refund timelock to expire")
+            }
+            Bob::ReclaimTimelockExpired { .. } => f.write_str("Remaining refund timelock expired"),
+            Bob::BtcWithholdPublished { .. } => f.write_str("Bitcoin refund burn published"),
+            Bob::BtcWithheld { .. } => f.write_str("Bitcoin refund burnt"),
+            Bob::BtcMercyPublished { .. } => f.write_str("Bitcoin final amnesty published"),
         }
     }
 }
