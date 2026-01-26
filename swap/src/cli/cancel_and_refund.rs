@@ -74,20 +74,20 @@ pub async fn cancel(
         BobState::BtcEarlyRefundPublished(state6) => state6,
         BobState::BtcPartialRefundPublished(state6) => state6,
         BobState::BtcPartiallyRefunded(state6) => state6,
-        BobState::BtcAmnestyConfirmed(state6) => state6,
-        BobState::BtcAmnestyPublished(state6) => state6,
-        BobState::WaitingForRemainingRefundTimelockExpiration(state6) => state6,
-        BobState::RemainingRefundTimelockExpired(state6) => state6,
-        BobState::BtcRefundBurnPublished(state6) => state6,
-        BobState::BtcFinalAmnestyPublished(state6) => state6,
+        BobState::BtcReclaimConfirmed(state6) => state6,
+        BobState::BtcReclaimPublished(state6) => state6,
+        BobState::WaitingForReclaimTimelockExpiration(state6) => state6,
+        BobState::ReclaimTimelockExpired(state6) => state6,
+        BobState::BtcWithholdPublished(state6) => state6,
+        BobState::BtcMercyPublished(state6) => state6,
 
         BobState::Started { .. }
         | BobState::BtcRedeemed(_)
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
         | BobState::BtcEarlyRefunded { .. }
-        | BobState::BtcRefundBurnt { .. }
-        | BobState::BtcFinalAmnestyConfirmed { .. }
+        | BobState::BtcWithheld { .. }
+        | BobState::BtcMercyConfirmed { .. }
         | BobState::SafelyAborted => bail!(
             "Cannot cancel swap {} because it is in state {} which is not cancellable.",
             swap_id,
@@ -212,20 +212,20 @@ pub async fn refund(
         BobState::BtcEarlyRefundPublished(state6) => state6,
         BobState::BtcPartialRefundPublished(state6) => state6,
         BobState::BtcPartiallyRefunded(state6) => state6,
-        BobState::BtcAmnestyPublished(state6) => state6,
-        BobState::BtcAmnestyConfirmed(state6) => state6,
-        BobState::WaitingForRemainingRefundTimelockExpiration(state6) => state6,
-        BobState::RemainingRefundTimelockExpired(state6) => state6,
-        BobState::BtcRefundBurnPublished(state6) => state6,
-        BobState::BtcFinalAmnestyPublished(state6) => state6,
+        BobState::BtcReclaimPublished(state6) => state6,
+        BobState::BtcReclaimConfirmed(state6) => state6,
+        BobState::WaitingForReclaimTimelockExpiration(state6) => state6,
+        BobState::ReclaimTimelockExpired(state6) => state6,
+        BobState::BtcWithholdPublished(state6) => state6,
+        BobState::BtcMercyPublished(state6) => state6,
         BobState::Started { .. }
         | BobState::SwapSetupCompleted(_)
         | BobState::BtcRedeemed(_)
         | BobState::BtcEarlyRefunded { .. }
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
-        | BobState::BtcRefundBurnt { .. }
-        | BobState::BtcFinalAmnestyConfirmed { .. }
+        | BobState::BtcWithheld { .. }
+        | BobState::BtcMercyConfirmed { .. }
         | BobState::SafelyAborted => bail!(
             "Cannot refund swap {} because it is in state {} which is not refundable.",
             swap_id,
@@ -308,7 +308,9 @@ pub async fn refund(
                 }
                 Ok(ExpiredTimelocks::RemainingRefund) => {
                     // TODO: Try to publish TxRefundAmnesty here instead of just reporting the state
-                    bail!(bitcoin_publication_err.context("Amnesty timelock has expired. TxRefundAmnesty can be published."));
+                    bail!(bitcoin_publication_err.context(
+                        "Amnesty timelock has expired. TxRefundAmnesty can be published."
+                    ));
                 }
                 Err(e) => {
                     bail!(bitcoin_publication_err

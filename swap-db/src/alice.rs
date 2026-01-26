@@ -89,6 +89,9 @@ pub enum Alice {
         #[serde(with = "swap_serde::monero::private_key")]
         spend_key: monero::PrivateKey,
     },
+    BtcWithholdPublished {
+        state3: alice::State3,
+    },
     Done(AliceEndState),
 }
 
@@ -107,19 +110,16 @@ pub enum AliceEndState {
         state3: alice::State3,
         transfer_proof: TransferProof,
     },
-    BtcRefundBurnPublished {
+    BtcWithheld {
         state3: alice::State3,
     },
-    BtcRefundBurnConfirmed {
+    BtcMercyGranted {
         state3: alice::State3,
     },
-    BtcFinalAmnestyGranted {
+    BtcMercyPublished {
         state3: alice::State3,
     },
-    BtcRefundFinalAmnestyPublished {
-        state3: alice::State3,
-    },
-    BtcRefundFinalAmnestyConfirmed {
+    BtcMercyConfirmed {
         state3: alice::State3,
     },
 }
@@ -127,15 +127,11 @@ pub enum AliceEndState {
 impl From<AliceState> for Alice {
     fn from(alice_state: AliceState) -> Self {
         match alice_state {
-            AliceState::Started { state3 } => Alice::Started {
-                state3: *state3,
-            },
-            AliceState::BtcLockTransactionSeen { state3 } => Alice::BtcLockTransactionSeen {
-                state3: *state3,
-            },
-            AliceState::BtcLocked { state3 } => Alice::BtcLocked {
-                state3: *state3,
-            },
+            AliceState::Started { state3 } => Alice::Started { state3: *state3 },
+            AliceState::BtcLockTransactionSeen { state3 } => {
+                Alice::BtcLockTransactionSeen { state3: *state3 }
+            }
+            AliceState::BtcLocked { state3 } => Alice::BtcLocked { state3: *state3 },
             AliceState::XmrLockTransactionSent {
                 monero_wallet_restore_blockheight,
                 transfer_proof,
@@ -224,12 +220,12 @@ impl From<AliceState> for Alice {
                 state3: *state3,
                 spend_key,
             },
-            AliceState::BtcEarlyRefundable { state3 } => Alice::BtcEarlyRefundable {
-                state3: *state3,
-            },
-            AliceState::BtcEarlyRefunded(state3) => Alice::Done(AliceEndState::BtcEarlyRefunded {
-                state3: *state3,
-            }),
+            AliceState::BtcEarlyRefundable { state3 } => {
+                Alice::BtcEarlyRefundable { state3: *state3 }
+            }
+            AliceState::BtcEarlyRefunded(state3) => {
+                Alice::Done(AliceEndState::BtcEarlyRefunded { state3: *state3 })
+            }
             AliceState::BtcPunishable {
                 monero_wallet_restore_blockheight,
                 transfer_proof,
@@ -243,29 +239,19 @@ impl From<AliceState> for Alice {
                 state3: state3.map(|s| s.as_ref().clone()),
             }),
             AliceState::BtcRefundBurnPublished { state3 } => {
-                Alice::Done(AliceEndState::BtcRefundBurnPublished {
-                    state3: *state3,
-                })
+                Alice::BtcWithholdPublished { state3: *state3 }
             }
             AliceState::BtcRefundBurnConfirmed { state3 } => {
-                Alice::Done(AliceEndState::BtcRefundBurnConfirmed {
-                    state3: *state3,
-                })
+                Alice::Done(AliceEndState::BtcWithheld { state3: *state3 })
             }
             AliceState::BtcFinalAmnestyGranted { state3 } => {
-                Alice::Done(AliceEndState::BtcFinalAmnestyGranted {
-                    state3: *state3,
-                })
+                Alice::Done(AliceEndState::BtcMercyGranted { state3: *state3 })
             }
             AliceState::BtcRefundFinalAmnestyPublished { state3 } => {
-                Alice::Done(AliceEndState::BtcRefundFinalAmnestyPublished {
-                    state3: *state3,
-                })
+                Alice::Done(AliceEndState::BtcMercyPublished { state3: *state3 })
             }
             AliceState::BtcRefundFinalAmnestyConfirmed { state3 } => {
-                Alice::Done(AliceEndState::BtcRefundFinalAmnestyConfirmed {
-                    state3: *state3,
-                })
+                Alice::Done(AliceEndState::BtcMercyConfirmed { state3: *state3 })
             }
             AliceState::WaitingForCancelTimelockExpiration {
                 monero_wallet_restore_blockheight,
@@ -426,6 +412,9 @@ impl From<Alice> for AliceState {
                 spend_key,
                 state3: Box::new(state3),
             },
+            Alice::BtcWithholdPublished { state3 } => AliceState::BtcRefundBurnPublished {
+                state3: Box::new(state3),
+            },
             Alice::Done(end_state) => match end_state {
                 AliceEndState::SafelyAborted => AliceState::SafelyAborted,
                 AliceEndState::BtcRedeemed => AliceState::BtcRedeemed,
@@ -442,27 +431,18 @@ impl From<Alice> for AliceState {
                 AliceEndState::BtcEarlyRefunded { state3 } => {
                     AliceState::BtcEarlyRefunded(Box::new(state3))
                 }
-                AliceEndState::BtcRefundBurnPublished { state3 } => {
-                    AliceState::BtcRefundBurnPublished {
-                        state3: Box::new(state3),
-                    }
-                }
-                AliceEndState::BtcRefundBurnConfirmed { state3 } => {
-                    AliceState::BtcRefundBurnConfirmed {
-                        state3: Box::new(state3),
-                    }
-                }
-                AliceEndState::BtcFinalAmnestyGranted { state3 } => {
-                    AliceState::BtcFinalAmnestyGranted {
-                        state3: Box::new(state3),
-                    }
-                }
-                AliceEndState::BtcRefundFinalAmnestyPublished { state3 } => {
+                AliceEndState::BtcWithheld { state3 } => AliceState::BtcRefundBurnConfirmed {
+                    state3: Box::new(state3),
+                },
+                AliceEndState::BtcMercyGranted { state3 } => AliceState::BtcFinalAmnestyGranted {
+                    state3: Box::new(state3),
+                },
+                AliceEndState::BtcMercyPublished { state3 } => {
                     AliceState::BtcRefundFinalAmnestyPublished {
                         state3: Box::new(state3),
                     }
                 }
-                AliceEndState::BtcRefundFinalAmnestyConfirmed { state3 } => {
+                AliceEndState::BtcMercyConfirmed { state3 } => {
                     AliceState::BtcRefundFinalAmnestyConfirmed {
                         state3: Box::new(state3),
                     }
@@ -499,6 +479,9 @@ impl fmt::Display for Alice {
             Alice::BtcPartiallyRefunded { .. } => f.write_str("Monero refundable"),
             Alice::BtcEarlyRefundable { .. } => f.write_str("Bitcoin early refundable"),
             Alice::XmrRefundable { .. } => f.write_str("Bitcoin early refundable"),
+            Alice::BtcWithholdPublished { .. } => {
+                f.write_str("Bitcoin withhold transaction published")
+            }
             Alice::Done(end_state) => write!(f, "Done: {}", end_state),
         }
     }

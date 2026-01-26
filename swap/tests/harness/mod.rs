@@ -1034,7 +1034,7 @@ impl TestContext {
         self.bob_bitcoin_wallet.sync().await.unwrap();
 
         let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_fee) = match state {
-            BobState::BtcAmnestyConfirmed(state6) => (
+            BobState::BtcReclaimConfirmed(state6) => (
                 state6.tx_lock_id(),
                 state6.tx_cancel_fee,
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
@@ -1063,7 +1063,7 @@ impl TestContext {
         self.bob_bitcoin_wallet.sync().await.unwrap();
 
         let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
-            BobState::BtcRefundBurnt(state6) => (
+            BobState::BtcWithheld(state6) => (
                 state6.tx_lock_id(),
                 state6.tx_cancel_fee,
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
@@ -1092,7 +1092,7 @@ impl TestContext {
         self.bob_bitcoin_wallet.sync().await.unwrap();
 
         let (lock_tx_id, cancel_fee, partial_refund_fee, final_amnesty_fee) = match state {
-            BobState::BtcFinalAmnestyConfirmed(state6) => (
+            BobState::BtcMercyConfirmed(state6) => (
                 state6.tx_lock_id(),
                 state6.tx_cancel_fee,
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
@@ -1476,26 +1476,23 @@ pub mod bob_run_until {
     }
 
     pub fn is_waiting_for_remaining_refund_timelock(state: &BobState) -> bool {
-        matches!(
-            state,
-            BobState::WaitingForRemainingRefundTimelockExpiration(..)
-        )
+        matches!(state, BobState::WaitingForReclaimTimelockExpiration(..))
     }
 
     pub fn is_remaining_refund_timelock_expired(state: &BobState) -> bool {
-        matches!(state, BobState::RemainingRefundTimelockExpired(..))
+        matches!(state, BobState::ReclaimTimelockExpired(..))
     }
 
     pub fn is_btc_amnesty_confirmed(state: &BobState) -> bool {
-        matches!(state, BobState::BtcAmnestyConfirmed(..))
+        matches!(state, BobState::BtcReclaimConfirmed(..))
     }
 
     pub fn is_btc_refund_burnt(state: &BobState) -> bool {
-        matches!(state, BobState::BtcRefundBurnt(..))
+        matches!(state, BobState::BtcWithheld(..))
     }
 
     pub fn is_btc_final_amnesty_confirmed(state: &BobState) -> bool {
-        matches!(state, BobState::BtcFinalAmnestyConfirmed(..))
+        matches!(state, BobState::BtcMercyConfirmed(..))
     }
 }
 

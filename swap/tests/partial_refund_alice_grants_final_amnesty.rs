@@ -75,7 +75,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
             ));
 
             let bob_state = bob_state.await??;
-            assert!(matches!(bob_state, BobState::BtcRefundBurnt(..)));
+            assert!(matches!(bob_state, BobState::BtcWithheld(..)));
 
             // Simulate alice's controller sending the final amnesty command via `controller` cli
             ctx.restart_alice().await;
@@ -87,7 +87,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
             let (bob_swap, _) = ctx
                 .stop_and_resume_bob_from_db(bob_app_handle, swap_id)
                 .await;
-            assert!(matches!(bob_swap.state, BobState::BtcRefundBurnt(..)));
+            assert!(matches!(bob_swap.state, BobState::BtcWithheld(..)));
 
             let alice_state = alice_swap.await??;
             // Only start bob again after alice published the tx. otherwise bob immediately
@@ -104,7 +104,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
                 "Actual state: {alice_state}"
             );
             assert!(
-                matches!(bob_state, bob::BobState::BtcFinalAmnestyConfirmed(..)),
+                matches!(bob_state, bob::BobState::BtcMercyConfirmed(..)),
                 "Actual state: {bob_state}"
             );
 

@@ -51,7 +51,7 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
 //
 // The same is true for the BtcRefundBurnt. 
 pub fn is_run_at_most_once(state: &BobState) -> bool {
-    matches!(state, BobState::BtcPunished { .. } | BobState::BtcRefundBurnt(..))
+    matches!(state, BobState::BtcPunished { .. } | BobState::BtcWithheld(..))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1066,7 +1066,7 @@ async fn next_state(
 
             // Transition to waiting state where we race remaining_refund_timelock
             // against Alice potentially publishing TxRefundBurn
-            BobState::WaitingForRemainingRefundTimelockExpiration(state)
+            BobState::WaitingForReclaimTimelockExpiration(state)
         }
         BobState::BtcRefunded(state) => {
             event_emitter.emit_swap_progress_event(
@@ -1078,7 +1078,7 @@ async fn next_state(
 
             BobState::BtcRefunded(state)
         }
-        BobState::BtcAmnestyPublished(state) => {
+        BobState::BtcReclaimPublished(state) => {
             // Here we just wait for the amnesty transaction to be confirmed
             let tx_amnesty = state.construct_tx_amnesty().context("Couldn't construct Bitcoin amnesty transaction")?;
 
@@ -1109,7 +1109,7 @@ async fn next_state(
                     },
                 );
 
-                Ok(BobState::BtcAmnestyConfirmed(state.clone()))
+                Ok(BobState::BtcReclaimConfirmed(state.clone()))
             }, None, None)
             .await
             .context("Failed to wait for Bitcoin amnesty transaction to be confirmed")?
@@ -1252,15 +1252,15 @@ async fn next_state(
             });
             BobState::BtcEarlyRefunded(state)
         },
-        BobState::BtcAmnestyConfirmed(state) => {
+        BobState::BtcReclaimConfirmed(state) => {
             event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcAmnestyReceived {
                 btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
                 btc_lock_amount: state.tx_lock.lock_amount(),
                 btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
             });
-            BobState::BtcAmnestyConfirmed(state)
+            BobState::BtcReclaimConfirmed(state)
         },
-        BobState::WaitingForRemainingRefundTimelockExpiration(state) => {
+        BobState::WaitingForReclaimTimelockExpiration(state) => {
             // Race between:
             // - Remaining refund timelock expiring (so we can publish TxRefundAmnesty)
             // - Alice publishing TxRefundBurn (burns the amnesty output)
@@ -1309,16 +1309,16 @@ async fn next_state(
                 result =  timelock_expired_future => {
                     result?;
                     tracing::info!("Remaining refund timelock expired, can now publish TxRefundAmnesty");
-                    BobState::RemainingRefundTimelockExpired(state)
+                    BobState::ReclaimTimelockExpired(state)
                 }
                 // Watch for Alice publishing TxRefundBurn
                 _ = tx_refund_burn_status.wait_until_seen() => {
                     tracing::info!("Alice published TxRefundBurn, amnesty output is being burnt");
-                    BobState::BtcRefundBurnPublished(state)
+                    BobState::BtcWithholdPublished(state)
                 }
             }
         }
-        BobState::RemainingRefundTimelockExpired(state) => {
+        BobState::ReclaimTimelockExpired(state) => {
             // TODO: We should retry this and the check
             // First check if TxRefundBurn was seen (we may have missed it while offline)
             let tx_refund_burn = state.construct_tx_refund_burn()?;
@@ -1326,7 +1326,7 @@ async fn next_state(
 
             if tx_refund_burn_status.has_been_seen() {
                 tracing::info!("TxRefundBurn was already published, transitioning to BtcRefundBurnPublished");
-                return Ok(BobState::BtcRefundBurnPublished(state));
+                return Ok(BobState::BtcWithholdPublished(state));
             }
 
             // TxRefundBurn not published, we can publish TxRefundAmnesty
@@ -1336,9 +1336,9 @@ async fn next_state(
             bitcoin_wallet.ensure_broadcasted(transaction, "amnesty")
                 .await
                 .context("Couldn't ensure broadcast of Bitcoin amnesty transaction")?;
-            BobState::BtcAmnestyPublished(state)
+            BobState::BtcReclaimPublished(state)
         }
-        BobState::BtcRefundBurnPublished(state) => {
+        BobState::BtcWithholdPublished(state) => {
             // Wait for TxRefundBurn confirmation
             let tx_refund_burn = state.construct_tx_refund_burn()?;
             event_emitter.emit_swap_progress_event(
@@ -1353,9 +1353,9 @@ async fn next_state(
 
             subscription.wait_until_final().await?;
             tracing::info!("TxRefundBurn confirmed, amnesty output is burnt");
-            BobState::BtcRefundBurnt(state)
+            BobState::BtcWithheld(state)
         }
-        BobState::BtcRefundBurnt(state) => {
+        BobState::BtcWithheld(state) => {
             // Watch for Alice publishing TxFinalAmnesty
             // Alice may grant final amnesty after burning our refund
             // However, we don't expect Alice to publish the tx at once, if at all.
@@ -1376,12 +1376,12 @@ async fn next_state(
             let final_amnesty_status = bitcoin_wallet.status_of_script(&tx_final_amnesty).await.context("Failed to check TxFinalAmnesty status")?;
 
             if final_amnesty_status.has_been_seen() {
-                BobState::BtcFinalAmnestyPublished(state)
+                BobState::BtcMercyPublished(state)
             } else {
-                BobState::BtcRefundBurnt(state)
+                BobState::BtcWithheld(state)
             }
         }
-        BobState::BtcFinalAmnestyPublished(state) => {
+        BobState::BtcMercyPublished(state) => {
             // Wait for TxFinalAmnesty confirmation
             let tx_final_amnesty = state.construct_tx_final_amnesty()?;
             event_emitter.emit_swap_progress_event(
@@ -1396,9 +1396,9 @@ async fn next_state(
 
             subscription.wait_until_final().await?;
             tracing::info!("TxFinalAmnesty confirmed, received burnt funds back");
-            BobState::BtcFinalAmnestyConfirmed(state)
+            BobState::BtcMercyConfirmed(state)
         }
-        BobState::BtcFinalAmnestyConfirmed(state) => {
+        BobState::BtcMercyConfirmed(state) => {
             // Terminal state - we received the burnt funds back
             let tx_final_amnesty = state.construct_tx_final_amnesty()?;
             event_emitter.emit_swap_progress_event(
@@ -1409,7 +1409,7 @@ async fn next_state(
                     btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
-            BobState::BtcFinalAmnestyConfirmed(state)
+            BobState::BtcMercyConfirmed(state)
         }
         BobState::SafelyAborted => BobState::SafelyAborted,
         BobState::XmrRedeemed { tx_lock_id } => {
