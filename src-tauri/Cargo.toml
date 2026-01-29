@@ -13,6 +13,9 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 tauri-build = { version = "2.*", features = ["config-json5"] }
 
 [dependencies]
+inventory = "0.3"
+monero-wallet = { path = "../monero-wallet" }
+bitcoin-wallet = { path = "../bitcoin-wallet" }
 swap = { path = "../swap", features = [ "tauri" ] }
 swap-p2p = { path = "../swap-p2p" }
 dfx-swiss-sdk = { workspace = true }
@@ -32,6 +35,9 @@ tauri-plugin-opener = "2.*"
 tauri-plugin-process = "2.*"
 tauri-plugin-store = "2.*"
 tauri-plugin-updater = "2.*"
+
+tauri-specta = { version = "2.0.0-rc.21", features = ["javascript", "typescript"] }
+specta = { version = "2.0.0-rc.22" }
 
 # Tokio
 tokio = { workspace = true }

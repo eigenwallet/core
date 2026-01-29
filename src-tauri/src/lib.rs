@@ -77,6 +77,21 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(debug_assertions)]
+    {
+//        let specta_builder = tauri_specta::ts::builder()
+//            .commands(tauri_specta::collect_commands![
+//                specta_test::hello_specta
+//            ]);
+//
+//        specta_builder
+//            .export(
+//                specta::ts::Typescript::default(),
+//                "../src-gui/src/models/bindings.ts",
+//            )
+//            .expect("Failed to export typescript bindings");
+    }
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(desktop)]

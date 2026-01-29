@@ -2983,3 +2983,28 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
         unimplemented!("stub method called erroneously")
     }
 }
+
+// =================================================================
+//  RPC WRAPPERS (Standalone functions)
+// =================================================================
+use rpc_handler_macro::rpc_handler;
+
+#[rpc_handler]
+pub async fn bitcoin_get_balance(wallet: &Wallet<Connection, StaticFeeRate>) -> Result<Amount> {
+    wallet.balance().await
+}
+
+#[rpc_handler]
+pub async fn bitcoin_get_new_address(wallet: &Wallet<Connection, StaticFeeRate>) -> Result<Address> {
+    wallet.new_address().await
+}
+
+#[rpc_handler]
+pub async fn bitcoin_send_to_address(
+    wallet: &Wallet<Connection, StaticFeeRate>,
+    address: Address,
+    amount: Amount,
+    spending_fee: Amount,
+) -> Result<Psbt> {
+    wallet.send_to_address(address, amount, spending_fee, None).await
+}

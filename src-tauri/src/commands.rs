@@ -31,6 +31,8 @@ use zip::{write::SimpleFileOptions, ZipWriter};
 
 use crate::{commands::util::ToStringResult, State};
 
+pub mod specta_test;
+
 /// This macro returns the list of all command handlers
 /// You can call this and insert the output into [`tauri::app::Builder::invoke_handler`]
 ///
@@ -80,7 +82,8 @@ macro_rules! generate_command_handlers {
             get_context_status,
             get_monero_subaddresses,
             create_monero_subaddress,
-            set_monero_subaddress_label
+            set_monero_subaddress_label,
+            specta_test::hello_specta
         ]
     };
 }

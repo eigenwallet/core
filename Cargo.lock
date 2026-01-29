@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "Inflector"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1161,15 +1167,18 @@ dependencies = [
  "derive_builder",
  "electrum-pool",
  "futures",
+ "inventory",
  "moka",
  "proptest",
  "reqwest 0.12.25",
+ "rpc-handler-macro",
  "rust_decimal",
  "serde",
  "serde_json",
  "swap-env",
  "swap-proptest",
  "swap-serde",
+ "tauri",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -4487,6 +4496,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-range"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21dec9db110f5f872ed9699c3ecf50cf16f423502706ba5c72462e28d3157573"
+
+[[package]]
 name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6583,6 +6598,7 @@ dependencies = [
  "backoff",
  "curve25519-dalek",
  "hex",
+ "inventory",
  "monero-address",
  "monero-daemon-rpc",
  "monero-oxide-ext",
@@ -6590,7 +6606,9 @@ dependencies = [
  "monero-sys",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git?branch=rpc-rewrite)",
  "monero-wallet-ng",
+ "rpc-handler-macro",
  "swap-core",
+ "tauri",
  "throttle",
  "tokio",
  "tracing",
@@ -8949,6 +8967,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 
 [[package]]
+name = "rpc-handler-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "rsa"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10141,6 +10168,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "specta"
+version = "2.0.0-rc.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab7f01e9310a820edd31c80fde3cae445295adde21a3f9416517d7d65015b971"
+dependencies = [
+ "paste",
+ "specta-macros",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "specta-jsdoc"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c80a3da00adc2aff522a6bbc2f766870ae2d3381a5c937b94c30e4fd9e82109"
+dependencies = [
+ "specta",
+ "specta-serde",
+ "specta-typescript",
+]
+
+[[package]]
+name = "specta-macros"
+version = "2.0.0-rc.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0074b9e30ed84c6924eb63ad8d2fe71cdc82628525d84b1fcb1f2fd40676517"
+dependencies = [
+ "Inflector",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
+name = "specta-serde"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77216504061374659e7245eac53d30c7b3e5fe64b88da97c753e7184b0781e63"
+dependencies = [
+ "specta",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "specta-typescript"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3220a0c365e51e248ac98eab5a6a32f544ff6f961906f09d3ee10903a4f52b2d"
+dependencies = [
+ "specta",
+ "specta-serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11143,6 +11225,7 @@ dependencies = [
  "gtk",
  "heck 0.5.0",
  "http 1.4.0",
+ "http-range",
  "jni",
  "libc",
  "log",
@@ -11161,6 +11244,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "serialize-to-javascript",
+ "specta",
  "swift-rs",
  "tauri-build",
  "tauri-macros",
@@ -11472,6 +11556,22 @@ dependencies = [
  "webview2-com",
  "windows 0.61.3",
  "wry",
+]
+
+[[package]]
+name = "tauri-specta"
+version = "2.0.0-rc.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b23c0132dd3cf6064e5cd919b82b3f47780e9280e7b5910babfe139829b76655"
+dependencies = [
+ "heck 0.5.0",
+ "serde",
+ "serde_json",
+ "specta",
+ "specta-jsdoc",
+ "specta-typescript",
+ "tauri",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -13405,10 +13505,14 @@ dependencies = [
 name = "unstoppableswap-gui-rs"
 version = "3.6.7"
 dependencies = [
+ "bitcoin-wallet",
  "dfx-swiss-sdk",
+ "inventory",
+ "monero-wallet 0.1.0",
  "rustls 0.23.35",
  "serde",
  "serde_json",
+ "specta",
  "swap",
  "swap-p2p",
  "tauri",
@@ -13421,6 +13525,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tauri-plugin-updater",
+ "tauri-specta",
  "tokio",
  "tokio-util",
  "tracing",
