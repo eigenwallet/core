@@ -1,3 +1,4 @@
+pub mod rpc;
 mod core;
 mod wallet;
 
@@ -68,4 +69,34 @@ pub trait BitcoinWallet: Send + Sync {
     fn finality_confirmations(&self) -> u32;
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_rpc_inventory_registration() {
+        // This brings the inventory and struct into scope
+        use crate::rpc::RpcHandler;
+        
+        println!("\n\n------------- RPC REGISTRY PROOF -------------");
+        println!("Scanning inventory for tagged functions...");
+        
+        let mut count = 0;
+        for handler in inventory::iter::<RpcHandler> {
+            println!("FOUND HANDLER:");
+            println!("  Function Name: {}", handler.name);
+            println!("  Arguments:     {}", handler.args);
+            println!("  Return Type:   {}", handler.return_type);
+            println!("----------------------------------------------");
+            count += 1;
+        }
+        
+        println!("Total handlers found: {}", count);
+        println!("----------------------------------------------\n\n");
+        
+        // Assert that we actually found the ones we added
+        assert!(count > 0, "No RPC handlers were registered! The macro failed silently.");
+    }
 }

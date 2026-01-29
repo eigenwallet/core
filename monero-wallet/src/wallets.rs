@@ -458,3 +458,24 @@ fn swap_wallet_path(swap_id: Uuid, wallet_dir: &PathBuf, spendable: bool) -> Pat
 
     wallet_dir.join(name)
 }
+
+// =================================================================
+//  RPC WRAPPERS
+// =================================================================
+use rpc_handler_macro::rpc_handler;
+
+#[rpc_handler]
+pub async fn monero_get_height(wallets: &Wallets) -> Result<u64> {
+    wallets.direct_rpc_block_height().await
+}
+
+#[rpc_handler]
+pub async fn monero_verify_transfer(
+    wallets: &Wallets,
+    tx_hash: TxHash,
+    public_spend_key: monero_oxide_ext::PublicKey,
+    private_view_key: PrivateViewKey,
+    expected_amount: Amount,
+) -> Result<bool> {
+    wallets.verify_transfer(&tx_hash, public_spend_key, private_view_key, expected_amount).await
+}

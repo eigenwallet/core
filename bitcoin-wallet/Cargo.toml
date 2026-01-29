@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+inventory = "0.3"
+tauri = { version = "2.0", features = ["protocol-asset"] }
+rpc-handler-macro = { path = "../rpc-handler-macro" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 backoff = { workspace = true }

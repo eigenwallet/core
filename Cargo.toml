@@ -10,7 +10,7 @@ members = [
   "monero-sys",
   "monero-tests",
   "monero-wallet",
-  "monero-wallet-ng",
+  "monero-wallet-ng", "rpc-handler-macro",
   "src-tauri",
   "swap",
   "swap-asb",
