@@ -120,7 +120,8 @@ pub trait AsbApi {
     #[method(name = "registration_status")]
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
     #[method(name = "set_burn_on_refund")]
-    async fn set_burn_on_refund(&self, swap_id: Uuid, burn: bool) -> Result<(), ErrorObjectOwned>;
-    #[method(name = "grant_final_amnesty")]
-    async fn grant_final_amnesty(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned>;
+    async fn set_withhold_deposit(&self, swap_id: Uuid, burn: bool)
+        -> Result<(), ErrorObjectOwned>;
+    #[method(name = "grant_mercy")]
+    async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned>;
 }

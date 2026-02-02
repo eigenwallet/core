@@ -12,8 +12,8 @@ pub async fn grant_final_amnesty(
     let state = db.get_state(swap_id).await?.try_into()?;
 
     match state {
-        AliceState::BtcRefundBurnConfirmed { state3 } => {
-            let new_state = AliceState::BtcFinalAmnestyGranted { state3 };
+        AliceState::BtcWithholdConfirmed { state3 } => {
+            let new_state = AliceState::BtcMercyGranted { state3 };
 
             db.insert_latest_state(swap_id, new_state.clone().into())
                 .await?;

@@ -92,6 +92,12 @@ pub enum Alice {
     BtcWithholdPublished {
         state3: alice::State3,
     },
+    BtcMercyGranted {
+        state3: alice::State3,
+    },
+    BtcMercyPublished {
+        state3: alice::State3,
+    },
     Done(AliceEndState),
 }
 
@@ -111,12 +117,6 @@ pub enum AliceEndState {
         transfer_proof: TransferProof,
     },
     BtcWithheld {
-        state3: alice::State3,
-    },
-    BtcMercyGranted {
-        state3: alice::State3,
-    },
-    BtcMercyPublished {
         state3: alice::State3,
     },
     BtcMercyConfirmed {
@@ -238,19 +238,17 @@ impl From<AliceState> for Alice {
             AliceState::XmrRefunded { state3 } => Alice::Done(AliceEndState::XmrRefunded {
                 state3: state3.map(|s| s.as_ref().clone()),
             }),
-            AliceState::BtcRefundBurnPublished { state3 } => {
+            AliceState::BtcWithholdPublished { state3 } => {
                 Alice::BtcWithholdPublished { state3: *state3 }
             }
-            AliceState::BtcRefundBurnConfirmed { state3 } => {
+            AliceState::BtcWithholdConfirmed { state3 } => {
                 Alice::Done(AliceEndState::BtcWithheld { state3: *state3 })
             }
-            AliceState::BtcFinalAmnestyGranted { state3 } => {
-                Alice::Done(AliceEndState::BtcMercyGranted { state3: *state3 })
+            AliceState::BtcMercyGranted { state3 } => Alice::BtcMercyGranted { state3: *state3 },
+            AliceState::BtcMercyPublished { state3 } => {
+                Alice::BtcMercyPublished { state3: *state3 }
             }
-            AliceState::BtcRefundFinalAmnestyPublished { state3 } => {
-                Alice::Done(AliceEndState::BtcMercyPublished { state3: *state3 })
-            }
-            AliceState::BtcRefundFinalAmnestyConfirmed { state3 } => {
+            AliceState::BtcMercyConfirmed { state3 } => {
                 Alice::Done(AliceEndState::BtcMercyConfirmed { state3: *state3 })
             }
             AliceState::WaitingForCancelTimelockExpiration {
@@ -412,7 +410,13 @@ impl From<Alice> for AliceState {
                 spend_key,
                 state3: Box::new(state3),
             },
-            Alice::BtcWithholdPublished { state3 } => AliceState::BtcRefundBurnPublished {
+            Alice::BtcWithholdPublished { state3 } => AliceState::BtcWithholdPublished {
+                state3: Box::new(state3),
+            },
+            Alice::BtcMercyGranted { state3 } => AliceState::BtcMercyGranted {
+                state3: Box::new(state3),
+            },
+            Alice::BtcMercyPublished { state3 } => AliceState::BtcMercyPublished {
                 state3: Box::new(state3),
             },
             Alice::Done(end_state) => match end_state {
@@ -431,22 +435,12 @@ impl From<Alice> for AliceState {
                 AliceEndState::BtcEarlyRefunded { state3 } => {
                     AliceState::BtcEarlyRefunded(Box::new(state3))
                 }
-                AliceEndState::BtcWithheld { state3 } => AliceState::BtcRefundBurnConfirmed {
+                AliceEndState::BtcWithheld { state3 } => AliceState::BtcWithholdConfirmed {
                     state3: Box::new(state3),
                 },
-                AliceEndState::BtcMercyGranted { state3 } => AliceState::BtcFinalAmnestyGranted {
+                AliceEndState::BtcMercyConfirmed { state3 } => AliceState::BtcMercyConfirmed {
                     state3: Box::new(state3),
                 },
-                AliceEndState::BtcMercyPublished { state3 } => {
-                    AliceState::BtcRefundFinalAmnestyPublished {
-                        state3: Box::new(state3),
-                    }
-                }
-                AliceEndState::BtcMercyConfirmed { state3 } => {
-                    AliceState::BtcRefundFinalAmnestyConfirmed {
-                        state3: Box::new(state3),
-                    }
-                }
             },
         }
     }
@@ -482,6 +476,8 @@ impl fmt::Display for Alice {
             Alice::BtcWithholdPublished { .. } => {
                 f.write_str("Bitcoin withhold transaction published")
             }
+            Alice::BtcMercyGranted { .. } => f.write_str("Bitcoin mercy initiated"),
+            Alice::BtcMercyPublished { .. } => f.write_str("Bitcoin mercy published"),
             Alice::Done(end_state) => write!(f, "Done: {}", end_state),
         }
     }

@@ -61,11 +61,11 @@ pub async fn refund(
         AliceState::BtcRedeemTransactionPublished { .. }
         | AliceState::BtcRedeemed
         | AliceState::XmrRefunded { .. }
-        | AliceState::BtcRefundBurnPublished { .. }
-        | AliceState::BtcRefundBurnConfirmed { .. }
-        | AliceState::BtcFinalAmnestyGranted { .. }
-        | AliceState::BtcRefundFinalAmnestyPublished { .. }
-        | AliceState::BtcRefundFinalAmnestyConfirmed { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }

@@ -71,7 +71,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
             let alice_state = alice_swap.await??;
             assert!(matches!(
                 alice_state,
-                AliceState::BtcRefundBurnConfirmed { .. }
+                AliceState::BtcWithholdConfirmed { .. }
             ));
 
             let bob_state = bob_state.await??;
@@ -79,7 +79,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
 
             // Simulate alice's controller sending the final amnesty command via `controller` cli
             ctx.restart_alice().await;
-            ctx.alice_rpc_client.grant_final_amnesty(swap_id).await?;
+            ctx.alice_rpc_client.grant_mercy(swap_id).await?;
 
             let alice_swap = ctx.alice_next_swap().await;
             let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
@@ -99,7 +99,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
             assert!(
                 matches!(
                     alice_state,
-                    AliceState::BtcRefundFinalAmnestyConfirmed { .. }
+                    AliceState::BtcMercyConfirmed { .. }
                 ),
                 "Actual state: {alice_state}"
             );

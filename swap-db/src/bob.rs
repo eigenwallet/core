@@ -275,14 +275,14 @@ impl fmt::Display for Bob {
             Bob::EncSigSent { .. } => f.write_str("Encrypted signature sent"),
             Bob::BtcPunished { .. } => f.write_str("Bitcoin punished"),
             Bob::BtcPartiallyRefunded { .. } => f.write_str("Bitcoin partially refunded"),
-            Bob::BtcReclaimPublished { .. } => f.write_str("Bitcoin amnesty published"),
+            Bob::BtcReclaimPublished { .. } => f.write_str("Bitcoin reclaim transaction published"),
             Bob::WaitingForReclaimTimelockExpiration { .. } => {
-                f.write_str("Waiting for remaining refund timelock to expire")
+                f.write_str("Waiting for reclaim timelock to expire")
             }
-            Bob::ReclaimTimelockExpired { .. } => f.write_str("Remaining refund timelock expired"),
-            Bob::BtcWithholdPublished { .. } => f.write_str("Bitcoin refund burn published"),
-            Bob::BtcWithheld { .. } => f.write_str("Bitcoin refund burnt"),
-            Bob::BtcMercyPublished { .. } => f.write_str("Bitcoin final amnesty published"),
+            Bob::ReclaimTimelockExpired { .. } => f.write_str("Reclaim timelock expired"),
+            Bob::BtcWithholdPublished { .. } => f.write_str("Bitcoin withhold published"),
+            Bob::BtcWithheld { .. } => f.write_str("Bitcoin withheld"),
+            Bob::BtcMercyPublished { .. } => f.write_str("Bitcoin mercy published"),
         }
     }
 }

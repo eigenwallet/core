@@ -1085,7 +1085,7 @@ mod service {
         ///
         /// This can be called multiple times to update the decision before
         /// the swap state machine polls for it.
-        pub async fn set_burn_on_refund(&self, swap_id: Uuid, burn: bool) -> anyhow::Result<()> {
+        pub async fn set_withhold_deposit(&self, swap_id: Uuid, burn: bool) -> anyhow::Result<()> {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::SetBurnOnRefund {
@@ -1102,7 +1102,7 @@ mod service {
         ///
         /// This transitions the swap to BtcFinalAmnestyGranted and resumes
         /// the swap state machine to publish the final amnesty transaction.
-        pub async fn grant_final_amnesty(&self, swap_id: Uuid) -> anyhow::Result<()> {
+        pub async fn grant_mercy(&self, swap_id: Uuid) -> anyhow::Result<()> {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GrantFinalAmnesty {

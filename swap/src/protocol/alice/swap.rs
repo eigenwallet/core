@@ -802,9 +802,9 @@ where
                 .await
                 .context("Couldn't publish TxRefundBurn")?;
 
-            AliceState::BtcRefundBurnPublished { state3 }
+            AliceState::BtcWithholdPublished { state3 }
         }
-        AliceState::BtcRefundBurnPublished { state3 } => {
+        AliceState::BtcWithholdPublished { state3 } => {
             let tx_refund_burn = state3
                 .tx_refund_burn()
                 .context("Can't construct TxRefundBurn even though we published it")?;
@@ -816,13 +816,13 @@ where
                 .await
                 .context("Failed to wait for TxRefundBurn to be confirmed")?;
 
-            AliceState::BtcRefundBurnConfirmed { state3 }
+            AliceState::BtcWithholdConfirmed { state3 }
         }
-        AliceState::BtcRefundBurnConfirmed { state3 } => {
+        AliceState::BtcWithholdConfirmed { state3 } => {
             // Nothing to do here. Final amnesty is triggered manually.
-            AliceState::BtcRefundBurnConfirmed { state3 }
+            AliceState::BtcWithholdConfirmed { state3 }
         }
-        AliceState::BtcFinalAmnestyGranted { state3 } => {
+        AliceState::BtcMercyGranted { state3 } => {
             // Operator has decided to grant final amnesty to Bob
             let signed_tx = state3
                 .signed_final_amnesty_transaction()
@@ -835,9 +835,9 @@ where
 
             tracing::info!("TxFinalAmnesty published successfully");
 
-            AliceState::BtcRefundFinalAmnestyPublished { state3 }
+            AliceState::BtcMercyPublished { state3 }
         }
-        AliceState::BtcRefundFinalAmnestyPublished { state3 } => {
+        AliceState::BtcMercyPublished { state3 } => {
             // Wait for TxFinalAmnesty to be confirmed
             let tx_final_amnesty = state3
                 .tx_final_amnesty()
@@ -852,11 +852,9 @@ where
                 .await
                 .context("Failed to wait for TxFinalAmnesty to be confirmed")?;
 
-            AliceState::BtcRefundFinalAmnestyConfirmed { state3 }
+            AliceState::BtcMercyConfirmed { state3 }
         }
-        AliceState::BtcRefundFinalAmnestyConfirmed { state3 } => {
-            AliceState::BtcRefundFinalAmnestyConfirmed { state3 }
-        }
+        AliceState::BtcMercyConfirmed { state3 } => AliceState::BtcMercyConfirmed { state3 },
         AliceState::BtcRedeemed => AliceState::BtcRedeemed,
         AliceState::BtcPunished {
             state3,

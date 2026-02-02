@@ -245,18 +245,22 @@ impl AsbApiServer for RpcImpl {
         Ok(RegistrationStatusResponse { registrations })
     }
 
-    async fn set_burn_on_refund(&self, swap_id: Uuid, burn: bool) -> Result<(), ErrorObjectOwned> {
+    async fn set_withhold_deposit(
+        &self,
+        swap_id: Uuid,
+        burn: bool,
+    ) -> Result<(), ErrorObjectOwned> {
         self.event_loop_service
-            .set_burn_on_refund(swap_id, burn)
+            .set_withhold_deposit(swap_id, burn)
             .await
             .into_json_rpc_result()?;
 
         Ok(())
     }
 
-    async fn grant_final_amnesty(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned> {
+    async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned> {
         self.event_loop_service
-            .grant_final_amnesty(swap_id)
+            .grant_mercy(swap_id)
             .await
             .into_json_rpc_result()?;
 

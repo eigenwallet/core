@@ -93,11 +93,11 @@ pub async fn redeem(
         | AliceState::BtcPunishable { .. }
         | AliceState::BtcRedeemed
         | AliceState::XmrRefunded { .. }
-        | AliceState::BtcRefundBurnPublished { .. }
-        | AliceState::BtcRefundBurnConfirmed { .. }
-        | AliceState::BtcFinalAmnestyGranted { .. }
-        | AliceState::BtcRefundFinalAmnestyPublished { .. }
-        | AliceState::BtcRefundFinalAmnestyConfirmed { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::XmrRefundable { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)

@@ -39,15 +39,15 @@ pub enum Cmd {
     /// Show rendezvous registration status
     RegistrationStatus,
     /// Set whether to burn Bitcoin on refund for a swap
-    SetBurnOnRefund {
+    SetWithholdDeposit {
         /// The swap ID
         swap_id: Uuid,
         /// Whether to burn the Bitcoin (true or false)
         #[arg(action = clap::ArgAction::Set)]
-        burn: bool,
+        withhold: bool,
     },
-    /// Grant final amnesty for a swap in BtcRefundBurnConfirmed state
-    GrantFinalAmnesty {
+    /// Grant mercy (release the anti-spam deposit) for a swap in BtcWithheld state
+    GrantMercy {
         /// The swap ID
         swap_id: Uuid,
     },

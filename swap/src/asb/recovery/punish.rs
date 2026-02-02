@@ -43,11 +43,11 @@ pub async fn punish(
         | AliceState::BtcLocked { .. }
         | AliceState::BtcRedeemed { .. }
         | AliceState::XmrRefunded { .. }
-        | AliceState::BtcRefundBurnPublished { .. }
-        | AliceState::BtcRefundBurnConfirmed { .. }
-        | AliceState::BtcFinalAmnestyGranted { .. }
-        | AliceState::BtcRefundFinalAmnestyPublished { .. }
-        | AliceState::BtcRefundFinalAmnestyConfirmed { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::BtcPunished { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)

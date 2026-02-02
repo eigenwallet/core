@@ -90,21 +90,21 @@ pub enum AliceState {
     XmrRefunded {
         state3: Option<Box<State3>>,
     },
-    BtcRefundBurnPublished {
+    BtcWithholdPublished {
         state3: Box<State3>,
     },
-    BtcRefundBurnConfirmed {
+    BtcWithholdConfirmed {
         state3: Box<State3>,
     },
     /// Operator has decided to grant final amnesty to Bob.
     /// This state will publish TxFinalAmnesty and transition to BtcRefundFinalAmnestyPublished.
-    BtcFinalAmnestyGranted {
+    BtcMercyGranted {
         state3: Box<State3>,
     },
-    BtcRefundFinalAmnestyPublished {
+    BtcMercyPublished {
         state3: Box<State3>,
     },
-    BtcRefundFinalAmnestyConfirmed {
+    BtcMercyConfirmed {
         state3: Box<State3>,
     },
     WaitingForCancelTimelockExpiration {
@@ -140,8 +140,8 @@ pub fn is_complete(state: &AliceState) -> bool {
         | AliceState::BtcPunished { .. }
         | AliceState::SafelyAborted
         | AliceState::BtcEarlyRefunded(_)
-        | AliceState::BtcRefundBurnConfirmed { .. }
-        | AliceState::BtcRefundFinalAmnestyConfirmed { .. } => true,
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyConfirmed { .. } => true,
         _ => false,
     }
 }
@@ -170,14 +170,14 @@ impl fmt::Display for AliceState {
             AliceState::SafelyAborted => write!(f, "safely aborted"),
             AliceState::BtcPunishable { .. } => write!(f, "btc is punishable"),
             AliceState::XmrRefunded { .. } => write!(f, "xmr is refunded"),
-            AliceState::BtcRefundBurnPublished { .. } => write!(f, "btc refund burn published"),
-            AliceState::BtcRefundBurnConfirmed { .. } => write!(f, "btc refund burn confirmed"),
-            AliceState::BtcFinalAmnestyGranted { .. } => write!(f, "btc final amnesty granted"),
-            AliceState::BtcRefundFinalAmnestyPublished { .. } => {
-                write!(f, "btc final amnesty published")
+            AliceState::BtcWithholdPublished { .. } => write!(f, "btc withhold published"),
+            AliceState::BtcWithholdConfirmed { .. } => write!(f, "btc withheld"),
+            AliceState::BtcMercyGranted { .. } => write!(f, "btc mercy granted"),
+            AliceState::BtcMercyPublished { .. } => {
+                write!(f, "btc mercy published")
             }
-            AliceState::BtcRefundFinalAmnestyConfirmed { .. } => {
-                write!(f, "btc final amnesty confirmed")
+            AliceState::BtcMercyConfirmed { .. } => {
+                write!(f, "btc mercy confirmed")
             }
             AliceState::WaitingForCancelTimelockExpiration { .. } => {
                 write!(f, "waiting for cancel timelock expiration")

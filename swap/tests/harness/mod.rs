@@ -855,7 +855,7 @@ impl TestContext {
     }
 
     pub async fn assert_alice_refund_burn_confirmed(&mut self, state: AliceState) {
-        assert!(matches!(state, AliceState::BtcRefundBurnConfirmed { .. }));
+        assert!(matches!(state, AliceState::BtcWithholdConfirmed { .. }));
 
         // Same as refunded - Alice still has her XMR back
         assert_eventual_balance(
@@ -878,7 +878,7 @@ impl TestContext {
     pub async fn assert_alice_final_amnesty_confirmed(&mut self, state: AliceState) {
         assert!(matches!(
             state,
-            AliceState::BtcRefundFinalAmnestyConfirmed { .. }
+            AliceState::BtcMercyConfirmed { .. }
         ));
 
         // Same as refunded - Alice still has her XMR back
@@ -1444,11 +1444,11 @@ pub mod alice_run_until {
     }
 
     pub fn is_btc_refund_burn_confirmed(state: &AliceState) -> bool {
-        matches!(state, AliceState::BtcRefundBurnConfirmed { .. })
+        matches!(state, AliceState::BtcWithholdConfirmed { .. })
     }
 
     pub fn is_btc_final_amnesty_confirmed(state: &AliceState) -> bool {
-        matches!(state, AliceState::BtcRefundFinalAmnestyConfirmed { .. })
+        matches!(state, AliceState::BtcMercyConfirmed { .. })
     }
 }
 
