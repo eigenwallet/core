@@ -123,6 +123,8 @@ crunchy = { git = "https://github.com/eira-fransham/crunchy", rev = "ba7b86cea6b
 
 [workspace.lints]
 rust.unused_crate_dependencies = "warn"
+# prevents accidental infinite recursion when implementing a trait method by calling a method with the same name
+rust.unconditional_recusion = "deny" 
 
 [profile.release]
 codegen-units = 1

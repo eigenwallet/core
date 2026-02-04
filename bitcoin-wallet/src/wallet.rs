@@ -2237,7 +2237,7 @@ impl EstimateFeeRate for Client {
     }
 
     async fn min_relay_fee(&self) -> Result<FeeRate> {
-        self.min_relay_fee().await
+        Client::min_relay_fee(self).await
     }
 }
 

@@ -481,10 +481,13 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
     for TauriBackgroundProgressHandle<TauriBitcoinFullScanProgress>
 {
     fn update(&self, consumed: u64, total: u64) {
-        self.update(TauriBitcoinFullScanProgress::Known {
-            current_index: consumed,
-            assumed_total: total,
-        });
+        TauriBackgroundProgressHandle::update(
+            self,
+            TauriBitcoinFullScanProgress::Known {
+                current_index: consumed,
+                assumed_total: total,
+            },
+        );
     }
 
     fn finish(&self) {
@@ -496,7 +499,10 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
     for TauriBackgroundProgressHandle<TauriBitcoinSyncProgress>
 {
     fn update(&self, consumed: u64, total: u64) {
-        self.update(TauriBitcoinSyncProgress::Known { consumed, total });
+        TauriBackgroundProgressHandle::update(
+            self,
+            TauriBitcoinSyncProgress::Known { consumed, total },
+        );
     }
 
     fn finish(&self) {

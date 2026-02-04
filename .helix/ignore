@@ -1,2 +1,4 @@
 src-tauri/gen/
+monero-sys/monero/
+monero-sys/monero-depends/
 

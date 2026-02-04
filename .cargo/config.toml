@@ -10,6 +10,9 @@ linker = "arm-linux-gnueabihf-gcc"
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "link-arg=/STACK:8388608"]
 
+[target.'cfg(macos)']
+rustflags = ["-C", "link-arg=-Wl,stack_size,41943040"]
+
 # For the GNU/MinGW tool-chain
 [target.'cfg(all(windows, target_env = "gnu"))']
 linker = "x86_64-w64-mingw32-g++" # Use g++ driver so -lstdc++ gets pulled in automatically
