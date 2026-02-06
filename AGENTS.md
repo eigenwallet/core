@@ -1,3 +1,4 @@
+ - Read CONTRIBUTING.md and the code style guidelines!
  - When asked about libp2p, check if a rust-libp2p folder exists which contains the cloned rust libp2p codebase. Read through to figure out what the best response it. If its a question about best practice when implementing protocols read @rust-libp2p/protocols/ specificially.
  - Never do `cargo clean`. Building `monero-sys` takes ages, and cleaning the build cache will cause a full rebuilt (horrible).
    `cargo clean` has never fixed a build problem.
