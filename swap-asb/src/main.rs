@@ -38,7 +38,8 @@ use swap::protocol::alice::{run, AliceState, TipConfig};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap_env::config::{
-    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
+    initial_setup, query_user_for_initial_config, read_config, validate_config, Config,
+    ConfigNotInitialized,
 };
 use swap_feed;
 use swap_machine::alice::is_complete;
@@ -140,19 +141,7 @@ pub async fn main() -> Result<()> {
     // Initialize tracing
     initialize_tracing(json, &config, trace)?;
 
-    // Check for conflicting env / config values
-    if config.monero.network != env_config.monero_network {
-        bail!(format!(
-            "Expected monero network in config file to be {:?} but was {:?}",
-            env_config.monero_network, config.monero.network
-        ));
-    }
-    if config.bitcoin.network != env_config.bitcoin_network {
-        bail!(format!(
-            "Expected bitcoin network in config file to be {:?} but was {:?}",
-            env_config.bitcoin_network, config.bitcoin.network
-        ));
-    }
+    validate_config(&config, env_config)?;
 
     let seed = Seed::from_file_or_generate(&config.data.dir)
         .await

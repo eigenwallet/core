@@ -214,6 +214,40 @@ pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotIniti
     Ok(Ok(file))
 }
 
+/// Maximum allowed anti-spam deposit ratio. Values above this are implausible
+/// and likely indicate a misconfiguration (e.g. deposit exceeding fees).
+const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
+
+pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
+    if config.monero.network != env_config.monero_network {
+        bail!(
+            "Expected monero network in config file to be {:?} but was {:?}",
+            env_config.monero_network,
+            config.monero.network
+        );
+    }
+    if config.bitcoin.network != env_config.bitcoin_network {
+        bail!(
+            "Expected bitcoin network in config file to be {:?} but was {:?}",
+            env_config.bitcoin_network,
+            config.bitcoin.network
+        );
+    }
+
+    let ratio = config.maker.refund_policy.anti_spam_deposit_ratio;
+    if ratio < Decimal::ZERO || ratio > Decimal::ONE {
+        bail!("anti_spam_deposit_ratio must be between 0 and 1, got {ratio}");
+    }
+    if ratio > MAX_ANTI_SPAM_DEPOSIT_RATIO {
+        bail!(
+            "anti_spam_deposit_ratio of {ratio} exceeds maximum of {MAX_ANTI_SPAM_DEPOSIT_RATIO}. \
+             Such a high deposit ratio is implausible and likely a misconfiguration."
+        );
+    }
+
+    Ok(())
+}
+
 pub fn initial_setup(config_path: PathBuf, config: Config) -> Result<()> {
     let toml = toml::to_string(&config)?;
 
