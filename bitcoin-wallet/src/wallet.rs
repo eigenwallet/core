@@ -1773,11 +1773,15 @@ impl Client {
 
         // Collect all successful history entries from all servers.
         let mut all_history_items: Vec<GetHistoryRes> = Vec::new();
+        let mut any_success = false;
         let mut first_error = None;
 
         for result in results {
             match result {
-                Ok(history) => all_history_items.extend(history),
+                Ok(history) => {
+                    any_success = true;
+                    all_history_items.extend(history);
+                }
                 Err(e) => {
                     if first_error.is_none() {
                         first_error = Some(e);
@@ -1786,12 +1790,10 @@ impl Client {
             }
         }
 
-        // If we got no history items at all, and there was an error, propagate it.
-        // Otherwise, it's valid for a script to have no history.
-        if all_history_items.is_empty() {
-            if let Some(err) = first_error {
-                return Err(err.into());
-            }
+        // If any of the calls succeeded, that is fine. Only if none
+        // succeeded we return the error.
+        if !any_success && let Some(err) = first_error {
+            return Err(err.into());
         }
 
         // Use a map to find the best (highest confirmation) entry for each transaction.

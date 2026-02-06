@@ -1796,13 +1796,20 @@ impl CheckElectrumNodeArgs {
             return Ok(CheckElectrumNodeResponse { available: false });
         };
 
-        // Check if the node is available
-        let res =
-            bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60)).await;
+        // Check if the node is available by performing a lightweight RPC call.
+        // This forces a real connection and TLS handshake (for ssl:// URLs).
+        let mut client =
+            match bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60))
+                .await
+            {
+                Ok(client) => client,
+                Err(_) => return Ok(CheckElectrumNodeResponse { available: false }),
+            };
 
-        Ok(CheckElectrumNodeResponse {
-            available: res.is_ok(),
-        })
+        // Force a rpc call for blockchain height.
+        let available = client.update_state(true).await.is_ok();
+
+        Ok(CheckElectrumNodeResponse { available })
     }
 }
 
