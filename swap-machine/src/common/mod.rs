@@ -2,7 +2,8 @@ use crate::alice::AliceState;
 use crate::alice::is_complete as alice_is_complete;
 use crate::bob::BobState;
 use crate::bob::is_complete as bob_is_complete;
-use anyhow::Result;
+use anyhow::{Result, bail};
+use rust_decimal::prelude::FromPrimitive;
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
@@ -89,6 +90,53 @@ pub struct Message4 {
     pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
     pub tx_refund_burn_sig: Option<bitcoin::Signature>,
     pub tx_final_amnesty_sig: Option<bitcoin::Signature>,
+}
+
+/// Validates that the amnesty amount is within sane bounds.
+///
+/// - If amnesty is zero, this is a full-refund swap and no checks are needed.
+/// - Otherwise, the amnesty must cover all transaction fees that could be spent
+///   from it (TxPartialRefund, TxReclaim, TxWithhold, TxMercy).
+/// - The amnesty ratio (amnesty / lock amount) must not exceed
+///   [`swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO`].
+pub fn sanity_check_amnesty_amount(
+    lock_amount: bitcoin::Amount,
+    amnesty_amount: bitcoin::Amount,
+    tx_partial_refund_fee: bitcoin::Amount,
+    tx_reclaim_fee: bitcoin::Amount,
+    tx_withhold_fee: bitcoin::Amount,
+    tx_mercy_fee: bitcoin::Amount,
+) -> Result<()> {
+    if amnesty_amount == bitcoin::Amount::ZERO {
+        return Ok(());
+    }
+
+    let min_amnesty =
+        tx_partial_refund_fee + tx_reclaim_fee + tx_withhold_fee + tx_mercy_fee;
+    if amnesty_amount < min_amnesty {
+        bail!(
+            "Amnesty amount ({amnesty_amount}) is less than the combined fees \
+             for TxPartialRefund ({tx_partial_refund_fee}), TxReclaim ({tx_reclaim_fee}), \
+             TxWithhold ({tx_withhold_fee}), and TxMercy ({tx_mercy_fee}). \
+             The deposit would be consumed by fees.",
+        );
+    }
+
+    let amnesty_sats = rust_decimal::Decimal::from_u64(amnesty_amount.to_sat())
+        .expect("amnesty sats to fit in Decimal");
+    let lock_sats = rust_decimal::Decimal::from_u64(lock_amount.to_sat())
+        .expect("lock sats to fit in Decimal");
+    let ratio = amnesty_sats / lock_sats;
+
+    if ratio > swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO {
+        bail!(
+            "Amnesty ratio ({ratio}) exceeds maximum allowed ratio of {}. \
+             The requested deposit is unreasonably high.",
+            swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO,
+        );
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -198,4 +246,59 @@ pub trait Database {
         swap_id: Uuid,
     ) -> Result<Option<monero::TransferProof>>;
     async fn has_swap(&self, swap_id: Uuid) -> Result<bool>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin_wallet::{MIN_ABSOLUTE_TX_FEE, MIN_ABSOLUTE_TX_FEE_SATS};
+
+    /// 1 BTC lock amount.
+    const LOCK: bitcoin::Amount = bitcoin::Amount::from_sat(100_000_000);
+    const FEE: bitcoin::Amount = MIN_ABSOLUTE_TX_FEE;
+    /// Sum of all 4 fees (the lower bound).
+    const FEE_FLOOR: u64 = MIN_ABSOLUTE_TX_FEE_SATS * 4;
+    /// 20% of LOCK (the upper bound).
+    const RATIO_CEILING: u64 = 20_000_000;
+
+    #[test]
+    fn zero_amnesty_always_passes() {
+        sanity_check_amnesty_amount(LOCK, bitcoin::Amount::ZERO, FEE, FEE, FEE, FEE)
+            .expect("zero amnesty should always pass");
+    }
+
+    #[test]
+    fn reject_amnesty_below_fee_floor() {
+        let amnesty = bitcoin::Amount::from_sat(FEE_FLOOR - 1);
+        sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
+            .expect_err("amnesty below fee floor should be rejected");
+    }
+
+    #[test]
+    fn pass_amnesty_at_fee_floor() {
+        let amnesty = bitcoin::Amount::from_sat(FEE_FLOOR);
+        sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
+            .expect("amnesty exactly at fee floor should pass");
+    }
+
+    #[test]
+    fn pass_medium_amnesty() {
+        let amnesty = bitcoin::Amount::from_sat(10_000_000);
+        sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
+            .expect("10% amnesty should pass");
+    }
+
+    #[test]
+    fn pass_amnesty_at_ratio_ceiling() {
+        let amnesty = bitcoin::Amount::from_sat(RATIO_CEILING);
+        sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
+            .expect("amnesty exactly at 20% ratio should pass");
+    }
+
+    #[test]
+    fn reject_amnesty_above_ratio_ceiling() {
+        let amnesty = bitcoin::Amount::from_sat(RATIO_CEILING + 1);
+        sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
+            .expect_err("amnesty above 20% ratio should be rejected");
+    }
 }

@@ -82,7 +82,8 @@ pub trait BitcoinWalletSeed {
 const TWENTY_PERCENT: Decimal = Decimal::from_parts(20, 0, 0, false, 2);
 pub const MAX_RELATIVE_TX_FEE: Decimal = TWENTY_PERCENT;
 pub const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
-pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
+pub const MIN_ABSOLUTE_TX_FEE_SATS: u64 = 1000;
+pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(MIN_ABSOLUTE_TX_FEE_SATS);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 
 /// This is our wrapper around a bdk wallet and a corresponding

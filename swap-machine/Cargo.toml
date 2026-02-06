@@ -14,6 +14,7 @@ libp2p = { workspace = true }
 monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 rand = { workspace = true }
+rust_decimal = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }

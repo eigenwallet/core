@@ -216,7 +216,7 @@ pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotIniti
 
 /// Maximum allowed anti-spam deposit ratio. Values above this are implausible
 /// and likely indicate a misconfiguration (e.g. deposit exceeding fees).
-const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
+pub const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
 
 pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
     if config.monero.network != env_config.monero_network {

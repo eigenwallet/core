@@ -274,27 +274,18 @@ impl State0 {
         let amnesty_amount = self
             .btc_amnesty_amount
             .context("btc_amnesty_amount missing for new swap")?;
+        let tx_refund_burn_fee = self
+            .tx_refund_burn_fee
+            .context("tx_refund_burn_fee missing for new swap")?;
 
-        if amnesty_amount > bitcoin::Amount::ZERO {
-            let tx_refund_burn_fee = self
-                .tx_refund_burn_fee
-                .context("tx_refund_burn_fee missing for new swap")?;
-
-            let min_amnesty = msg.tx_partial_refund_fee
-                + msg.tx_refund_amnesty_fee
-                + tx_refund_burn_fee
-                + msg.tx_final_amnesty_fee;
-            if amnesty_amount < min_amnesty {
-                bail!(
-                    "Amnesty amount ({amnesty_amount}) is less than the combined fees \
-                     for TxPartialRefund ({}), TxReclaim ({}), TxWithhold ({tx_refund_burn_fee}), \
-                     and TxMercy ({}). The deposit would be consumed by fees.",
-                    msg.tx_partial_refund_fee,
-                    msg.tx_refund_amnesty_fee,
-                    msg.tx_final_amnesty_fee,
-                );
-            }
-        }
+        crate::common::sanity_check_amnesty_amount(
+            self.btc,
+            amnesty_amount,
+            msg.tx_partial_refund_fee,
+            msg.tx_refund_amnesty_fee,
+            tx_refund_burn_fee,
+            msg.tx_final_amnesty_fee,
+        )?;
 
         let v = self.v_a + msg.v_b;
 

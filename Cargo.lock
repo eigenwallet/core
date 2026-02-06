@@ -10751,6 +10751,7 @@ dependencies = [
  "monero-oxide-ext",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
+ "rust_decimal",
  "serde",
  "sha2",
  "sigma_fun",

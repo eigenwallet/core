@@ -386,7 +386,7 @@ impl State0 {
             bail!("Alice's dleq proof doesn't verify")
         }
 
-        if msg.amnesty_amount > bitcoin::Amount::ZERO {
+        {
             let tx_partial_refund_fee = self
                 .tx_partial_refund_fee
                 .context("tx_partial_refund_fee missing for new swap")?;
@@ -397,20 +397,14 @@ impl State0 {
                 .tx_final_amnesty_fee
                 .context("tx_final_amnesty_fee missing for new swap")?;
 
-            let min_amnesty = tx_partial_refund_fee
-                + tx_refund_amnesty_fee
-                + msg.tx_refund_burn_fee
-                + tx_final_amnesty_fee;
-            if msg.amnesty_amount < min_amnesty {
-                bail!(
-                    "Amnesty amount ({}) is less than the combined fees \
-                     for TxPartialRefund ({tx_partial_refund_fee}), TxReclaim ({tx_refund_amnesty_fee}), \
-                     TxWithhold ({}), and TxMercy ({tx_final_amnesty_fee}). \
-                     The deposit would be consumed by fees.",
-                    msg.amnesty_amount,
-                    msg.tx_refund_burn_fee,
-                );
-            }
+            crate::common::sanity_check_amnesty_amount(
+                self.btc,
+                msg.amnesty_amount,
+                tx_partial_refund_fee,
+                tx_refund_amnesty_fee,
+                msg.tx_refund_burn_fee,
+                tx_final_amnesty_fee,
+            )?;
         }
 
         let tx_lock = swap_core::bitcoin::TxLock::new(
