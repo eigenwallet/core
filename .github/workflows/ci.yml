@@ -87,14 +87,14 @@ jobs:
           - target: x86_64-pc-windows-gnu
             os: ubuntu-22.04
 
-    runs-on: ${{ matrix.host }}
+    runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.host }}
+          host: ${{ matrix.os }}
           target: ${{ matrix.target }}
 
       - name: Build binary
@@ -117,21 +117,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-15]
-    runs-on: ${{ matrix.host }}
+    runs-on: ${{ matrix.os }}
     if: github.event_name == 'push' || !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v4
       - name: Setup build environment (cli tools, dependencies)
         uses: ./.github/actions/setup-build-environment
         with:
-          host: ${{ matrix.host }}
+          host: ${{ matrix.os }}
 
       - name: Run monero-harness tests
-        if: matrix.host == 'ubuntu-22.04'
+        if: matrix.os == 'ubuntu-22.04'
         run: cargo test --package monero-harness --all-features
 
-      - name: Run library tests for swap
-        run: cargo test --package swap --lib
+      - name: Run library tests
+        run: cargo test  --lib
 
   docker_tests:
     strategy:
