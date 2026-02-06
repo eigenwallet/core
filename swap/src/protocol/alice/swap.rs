@@ -997,28 +997,91 @@ pub(crate) fn has_already_processed_enc_sig(state: &AliceState) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::build_transfer_destinations;
+    use crate::protocol::alice::TipConfig;
+    use rust_decimal::Decimal;
+
+    const TEST_ADDRESS_STR: &str = "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a";
+
+    fn test_address() -> monero_address::MoneroAddress {
+        monero_address::MoneroAddress::from_str_with_unchecked_network(TEST_ADDRESS_STR).unwrap()
+    }
+
     #[test]
     fn test_build_transfer_destinations_without_tip() {
-        todo!("implement once unit tests compile again")
+        let lock_amount = monero_oxide_ext::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip = TipConfig {
+            ratio: Decimal::ZERO,
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, lock_amount);
     }
 
     #[test]
     fn test_build_transfer_destinations_with_tip() {
-        todo!("implement once unit tests compile again")
+        let lock_amount = monero_oxide_ext::Amount::from_pico(10_000_000_000_000); // 10 XMR
+        let tip = TipConfig {
+            ratio: Decimal::new(1, 2), // 0.01 = 1%
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 10 XMR * 0.01 = 0.1 XMR = 100_000_000_000 pico >> 30_000_000 threshold
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, lock_amount);
+        assert_eq!(result[1].1, monero_oxide_ext::Amount::from_pico(100_000_000_000));
     }
 
     #[test]
     fn test_build_transfer_destinations_with_small_tip() {
-        todo!("implement once unit tests compile again")
+        // ratio * amount < 30_000_000 piconero threshold
+        let lock_amount = monero_oxide_ext::Amount::from_pico(2_000_000_000); // 0.002 XMR
+        let tip = TipConfig {
+            ratio: Decimal::new(1, 2), // 0.01
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 0.002 XMR * 0.01 = 20_000_000 piconero < 30_000_000 threshold
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, lock_amount);
     }
 
     #[test]
     fn test_build_transfer_destinations_with_zero_tip() {
-        todo!("implement once unit tests compile again")
+        // Nonzero ratio but tiny lock amount → effective tip rounds to near-zero
+        let lock_amount = monero_oxide_ext::Amount::from_pico(100);
+        let tip = TipConfig {
+            ratio: Decimal::new(1, 1), // 0.1 = 10%
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 100 * 0.1 = 10 piconero << 30_000_000 threshold
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, lock_amount);
     }
 
     #[test]
     fn test_build_transfer_destinations_with_fractional_tip() {
-        todo!("implement once unit tests compile again")
+        let lock_amount = monero_oxide_ext::Amount::from_pico(1_000_000_000_000); // 1 XMR
+        let tip = TipConfig {
+            ratio: Decimal::new(5, 3), // 0.005 = 0.5%
+            address: test_address(),
+        };
+
+        let result = build_transfer_destinations(test_address(), lock_amount, tip).unwrap();
+
+        // Tip = 1 XMR * 0.005 = 0.005 XMR = 5_000_000_000 pico >> 30_000_000 threshold
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, lock_amount);
+        assert_eq!(result[1].1, monero_oxide_ext::Amount::from_pico(5_000_000_000));
     }
 }

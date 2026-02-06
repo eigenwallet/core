@@ -3,9 +3,9 @@ use crate::alice::is_complete as alice_is_complete;
 use crate::bob::BobState;
 use crate::bob::is_complete as bob_is_complete;
 use anyhow::{Result, bail};
-use rust_decimal::prelude::FromPrimitive;
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
+use rust_decimal::prelude::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sigma_fun::HashTranscript;
@@ -111,8 +111,7 @@ pub fn sanity_check_amnesty_amount(
         return Ok(());
     }
 
-    let min_amnesty =
-        tx_partial_refund_fee + tx_reclaim_fee + tx_withhold_fee + tx_mercy_fee;
+    let min_amnesty = tx_partial_refund_fee + tx_reclaim_fee + tx_withhold_fee + tx_mercy_fee;
     if amnesty_amount < min_amnesty {
         bail!(
             "Amnesty amount ({amnesty_amount}) is less than the combined fees \
@@ -124,8 +123,8 @@ pub fn sanity_check_amnesty_amount(
 
     let amnesty_sats = rust_decimal::Decimal::from_u64(amnesty_amount.to_sat())
         .expect("amnesty sats to fit in Decimal");
-    let lock_sats = rust_decimal::Decimal::from_u64(lock_amount.to_sat())
-        .expect("lock sats to fit in Decimal");
+    let lock_sats =
+        rust_decimal::Decimal::from_u64(lock_amount.to_sat()).expect("lock sats to fit in Decimal");
     let ratio = amnesty_sats / lock_sats;
 
     if ratio > swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO {

@@ -1671,7 +1671,36 @@ mod tests {
 
     #[tokio::test]
     async fn test_make_quote_with_developer_tip() {
-        todo!("implement once unit tests compile again")
+        let min_buy = bitcoin::Amount::from_sat(100_000);
+        let max_buy = bitcoin::Amount::from_sat(5_000_000); // High enough to be balance-limited
+        let rate = FixedRate::default();
+        let balance = monero::Amount::parse_monero("1.0").unwrap();
+        let reserved_items: Vec<MockReservedItem> = vec![];
+        let developer_tip = Decimal::new(5, 2); // 0.05 = 5%
+
+        let result = make_quote(
+            min_buy,
+            max_buy,
+            rate.clone(),
+            || async { Ok(balance) },
+            || async { Ok(reserved_items) },
+            || async { Err(anyhow::anyhow!("no reserve proof")) },
+            developer_tip,
+            RefundPolicyWire::FullRefund,
+        )
+        .await
+        .unwrap();
+
+        // Compute expected max: effective balance is reduced by the tip multiplier
+        let unreserved = unreserved_monero_balance(balance, std::iter::empty(), developer_tip);
+        let expected_max = unreserved
+            .max_bitcoin_for_price(rate.value().ask().unwrap())
+            .unwrap();
+
+        assert_eq!(result.min_quantity, min_buy);
+        assert_eq!(result.max_quantity, expected_max);
+        // The tip should have reduced max_quantity below max_buy
+        assert!(result.max_quantity < max_buy);
     }
 
     // Mock struct for testing
