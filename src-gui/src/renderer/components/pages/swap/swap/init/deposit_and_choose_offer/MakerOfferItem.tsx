@@ -16,7 +16,7 @@ function getRefundPercentage(policy: RefundPolicyWire): number {
   if (policy.type === "FullRefund") {
     return 100;
   }
-  return policy.content.taker_refund_ratio * 100;
+  return policy.content.anti_spam_deposit_ratio * 100;
 }
 
 export default function MakerOfferItem({
@@ -192,10 +192,10 @@ export default function MakerOfferItem({
 }
 
 function EarnestDepositChip(quote: BidQuote) {
-  const full_refund: boolean = quote.refund_policy.type === "FullRefund" ? true : quote.refund_policy.content.taker_refund_ratio === 1;
+  const full_refund: boolean = quote.refund_policy.type === "FullRefund" ? true : quote.refund_policy.content.anti_spam_deposit_ratio === 0;
   // Rounded to 0.001 precision
   const earnest_deposit_ratio = Math.round(
-    (quote.refund_policy.type === "FullRefund" ? 0 : 1 - quote.refund_policy.content?.taker_refund_ratio)
+    (quote.refund_policy.type === "FullRefund" ? 0 : quote.refund_policy.content?.anti_spam_deposit_ratio)
     * 1000
   ) / 1000;
   const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `If the swap is refunded, the maker may choose to freeze ${earnest_deposit_ratio * 100}% of your refund. This is allows them to protect themselves against griefing.`;

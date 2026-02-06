@@ -259,7 +259,7 @@ where
                             };
 
                             // TODO: propagate error to the swap_setup routine instead of swallowing it
-                            let (btc_amnesty_amount, should_publish_tx_refund_burn )= match apply_bitcoin_amnesty_policy(btc, &self.refund_policy) {
+                            let (btc_amnesty_amount, should_publish_tx_refund_burn )= match apply_anti_spam_policy(btc, &self.refund_policy) {
                                 Ok(amount) => amount,
                                 Err(error) => {
                                     tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
@@ -937,10 +937,10 @@ impl EventLoopHandle {
 }
 
 /// For a new swap of `swap_amount`, this function calculates how much
-/// Bitcoin should go into the amnesty-lock incase of a refund.
-/// Returns ZERO when taker_refund_ratio is 1.0 (100%), indicating full refund.
-/// Also returns whether or not to burn the the amnesty output if the taker refunds.
-fn apply_bitcoin_amnesty_policy(
+/// Bitcoin should go into the anti spam deposit incase of a refund.
+/// Returns ZERO when anti_spam_deposit_ratio is 0, indicating immediate and full refund.
+/// Also returns whether or not to always withhold the the anti spam deposit output if the taker refunds.
+fn apply_anti_spam_policy(
     swap_amount: bitcoin::Amount,
     refund_policy: &RefundPolicy,
 ) -> Result<(bitcoin::Amount, bool)> {
@@ -951,14 +951,14 @@ fn apply_bitcoin_amnesty_policy(
         return Ok((bitcoin::Amount::ZERO, should_always_withhold));
     }
 
-    let btc_amnesty_ratio = refund_policy.anti_spam_deposit_ratio;
+    let btc_anti_spam_deposit_ratio = refund_policy.anti_spam_deposit_ratio;
 
     let amount_sats = swap_amount.to_sat();
     let amount_decimal =
         Decimal::from_u64(amount_sats).context("Decimal overflowed by Bitcoin sats")?;
 
     let btc_amnesty_decimal = amount_decimal
-        .checked_mul(btc_amnesty_ratio)
+        .checked_mul(btc_anti_spam_deposit_ratio)
         .context("Decimal overflow when computing amnesty amount in sats")?
         .floor();
     let btc_amnesty_sats = btc_amnesty_decimal

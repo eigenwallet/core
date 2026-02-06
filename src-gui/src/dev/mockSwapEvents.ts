@@ -61,7 +61,7 @@ const MOCK_QUOTE_PARTIAL_REFUND: BidQuote = {
   price: 0.0068,
   min_quantity: 5_000_000,
   max_quantity: 200_000_000,
-  refund_policy: { type: "PartialRefund", content: { taker_refund_ratio: 0.98 } },
+  refund_policy: { type: "PartialRefund", content: { anti_spam_deposit_ratio: 0.02 } },
 };
 
 const MOCK_QUOTE_WITH_ADDRESS_PARTIAL: QuoteWithAddress = {

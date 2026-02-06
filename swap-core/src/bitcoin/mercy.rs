@@ -129,7 +129,6 @@ impl TxMercy {
         Ok(tx)
     }
 
-    // TODO: calculate actual weight
     pub fn weight() -> Weight {
         Weight::from_wu(548)
     }

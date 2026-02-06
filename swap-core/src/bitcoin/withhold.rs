@@ -189,9 +189,8 @@ impl TxWithhold {
         }
     }
 
-    // TODO: calculate actual weight
     pub fn weight() -> Weight {
-        Weight::from_wu(548)
+        Weight::from_wu(596)
     }
 }
 
