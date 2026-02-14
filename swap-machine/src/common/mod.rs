@@ -38,9 +38,9 @@ pub struct Message0 {
     pub refund_address: bitcoin::Address,
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_partial_refund_fee: bitcoin::Amount,
-    pub tx_refund_amnesty_fee: bitcoin::Amount,
+    pub tx_reclaim_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
-    pub tx_final_amnesty_fee: bitcoin::Amount,
+    pub tx_mercy_fee: bitcoin::Amount,
 }
 
 #[allow(non_snake_case)]
@@ -60,7 +60,7 @@ pub struct Message1 {
     /// The amount of Bitcoin that Bob not get refunded unless Alice decides so.
     /// Introduced in [#675](https://github.com/eigenwallet/core/pull/675) to combat spam.
     pub amnesty_amount: bitcoin::Amount,
-    pub tx_refund_burn_fee: bitcoin::Amount,
+    pub tx_withhold_fee: bitcoin::Amount,
 }
 
 #[allow(non_snake_case)]
@@ -78,7 +78,7 @@ pub struct Message3 {
     // and tx refund amnesty.
     pub tx_full_refund_encsig: Option<bitcoin::EncryptedSignature>,
     pub tx_partial_refund_encsig: Option<bitcoin::EncryptedSignature>,
-    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
+    pub tx_reclaim_sig: Option<bitcoin::Signature>,
 }
 
 #[allow(non_snake_case)]
@@ -87,9 +87,9 @@ pub struct Message4 {
     pub tx_punish_sig: bitcoin::Signature,
     pub tx_cancel_sig: bitcoin::Signature,
     pub tx_early_refund_sig: bitcoin::Signature,
-    pub tx_refund_amnesty_sig: Option<bitcoin::Signature>,
-    pub tx_refund_burn_sig: Option<bitcoin::Signature>,
-    pub tx_final_amnesty_sig: Option<bitcoin::Signature>,
+    pub tx_reclaim_sig: Option<bitcoin::Signature>,
+    pub tx_withhold_sig: Option<bitcoin::Signature>,
+    pub tx_mercy_sig: Option<bitcoin::Signature>,
 }
 
 /// Validates that a proposed transaction fee is between

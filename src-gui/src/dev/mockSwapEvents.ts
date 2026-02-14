@@ -24,9 +24,9 @@ const MOCK_BTC_PARTIAL_REFUND_TXID =
   "f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3";
 const MOCK_BTC_AMNESTY_TXID =
   "a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4";
-const MOCK_BTC_REFUND_BURN_TXID =
+const MOCK_BTC_WITHHOLD_TXID =
   "b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5";
-const MOCK_BTC_FINAL_AMNESTY_TXID =
+const MOCK_BTC_MERCY_TXID =
   "c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
 
 // Mock timelock blocks for earnest deposit
@@ -236,17 +236,17 @@ const partialRefundWithBurn: TauriSwapProgressEvent[] = [
     },
   })),
   {
-    type: "BtcRefundBurnPublished",
+    type: "BtcWithholdPublished",
     content: {
-      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_withhold_txid: MOCK_BTC_WITHHOLD_TXID,
       btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
   {
-    type: "BtcRefundBurnt",
+    type: "BtcWithheld",
     content: {
-      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_withhold_txid: MOCK_BTC_WITHHOLD_TXID,
       btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
@@ -254,7 +254,7 @@ const partialRefundWithBurn: TauriSwapProgressEvent[] = [
   { type: "Released" },
 ];
 
-const partialRefundWithBurnAndFinalAmnesty: TauriSwapProgressEvent[] = [
+const partialRefundWithWithholdAndMercy: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
@@ -287,33 +287,33 @@ const partialRefundWithBurnAndFinalAmnesty: TauriSwapProgressEvent[] = [
     },
   })),
   {
-    type: "BtcRefundBurnPublished",
+    type: "BtcWithholdPublished",
     content: {
-      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_withhold_txid: MOCK_BTC_WITHHOLD_TXID,
       btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
   {
-    type: "BtcRefundBurnt",
+    type: "BtcWithheld",
     content: {
-      btc_refund_burn_txid: MOCK_BTC_REFUND_BURN_TXID,
+      btc_withhold_txid: MOCK_BTC_WITHHOLD_TXID,
       btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
   {
-    type: "BtcFinalAmnestyPublished",
+    type: "BtcMercyPublished",
     content: {
-      btc_final_amnesty_txid: MOCK_BTC_FINAL_AMNESTY_TXID,
+      btc_mercy_txid: MOCK_BTC_MERCY_TXID,
       btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
   },
   {
-    type: "BtcFinalAmnestyConfirmed",
+    type: "BtcMercyConfirmed",
     content: {
-      btc_final_amnesty_txid: MOCK_BTC_FINAL_AMNESTY_TXID,
+      btc_mercy_txid: MOCK_BTC_MERCY_TXID,
       btc_lock_amount: MOCK_BTC_LOCK_AMOUNT,
       btc_amnesty_amount: MOCK_BTC_AMNESTY_AMOUNT,
     },
@@ -328,7 +328,7 @@ export const scenarios: Record<string, TauriSwapProgressEvent[]> = {
   earlyRefund,
   partialRefundWithAmnesty,
   partialRefundWithBurn,
-  partialRefundWithBurnAndFinalAmnesty,
+  partialRefundWithWithholdAndMercy,
 };
 
 export type MockScenario = keyof typeof scenarios;
@@ -360,7 +360,7 @@ const MOCK_LOCK_BITCOIN_DETAILS_FULL: LockBitcoinDetails = {
 const PARTIAL_REFUND_SCENARIOS: MockScenario[] = [
   "partialRefundWithAmnesty",
   "partialRefundWithBurn",
-  "partialRefundWithBurnAndFinalAmnesty",
+  "partialRefundWithWithholdAndMercy",
 ];
 
 export function isPartialRefundScenario(scenario: MockScenario): boolean {

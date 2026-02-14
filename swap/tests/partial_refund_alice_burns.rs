@@ -13,13 +13,13 @@ use swap::protocol::{alice, bob};
 use swap_env::config::RefundPolicy;
 
 /// Bob locks Btc and Alice locks Xmr. Alice does not act so Bob does a partial
-/// refund. Alice then burns the refund, denying Bob access to the amnesty.
+/// refund. Alice then withholds the deposit, denying Bob access to the amnesty.
 #[tokio::test]
 async fn given_partial_refund_alice_burns_the_amnesty() {
-    // Use 95% refund ratio - Bob gets 95% immediately, 5% locked in amnesty
-    // Alice burns the amnesty
+    // Use 5% anti-spam deposit ratio - Bob gets 95% immediately, 5% locked in amnesty
+    // Alice withholds the deposit
     let refund_policy = Some(RefundPolicy {
-        anti_spam_deposit_ratio: Decimal::new(95, 2), // 0.95 = 95%
+        anti_spam_deposit_ratio: Decimal::new(5, 2), // 0.05 = 5%
         always_withhold_deposit: true,
     });
 
@@ -53,14 +53,14 @@ async fn given_partial_refund_alice_burns_the_amnesty() {
             let bob_state = bob_swap.await??;
             assert!(matches!(bob_state, BobState::BtcPartiallyRefunded { .. }));
 
-            // Restart Alice so she can refund her XMR and burn Bob's amnesty
-            // Alice needs to publish burn BEFORE Bob's remaining refund timelock expires
+            // Restart Alice so she can refund her XMR and withhold Bob's deposit
+            // Alice needs to publish withhold BEFORE Bob's remaining refund timelock expires
             ctx.restart_alice().await;
             let alice_swap = ctx.alice_next_swap().await;
             let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
 
-            // Bob continues - he's watching for TxRefundBurn while waiting for timelock
-            // Alice's burn should get published before Bob's timelock expires
+            // Bob continues - he's watching for TxWithhold while waiting for timelock
+            // Alice's withhold should get published before Bob's timelock expires
             let (bob_swap, _) = ctx
                 .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
                 .await;
@@ -71,13 +71,13 @@ async fn given_partial_refund_alice_burns_the_amnesty() {
             tokio::time::sleep(Duration::from_secs(15)).await;
             ctx.monero.generate_blocks().await?;
 
-            // Bob should end up in BtcRefundBurnt because Alice's burn beat his amnesty
+            // Bob should end up in BtcWithheld because Alice's withhold beat his amnesty
             let bob_state = bob_swap.await??;
-            ctx.assert_bob_refund_burnt(bob_state).await;
+            ctx.assert_bob_withheld(bob_state).await;
 
-            // Alice should be in refund burn confirmed state
+            // Alice should be in withhold confirmed state
             let alice_state = alice_swap.await??;
-            ctx.assert_alice_refund_burn_confirmed(alice_state).await;
+            ctx.assert_alice_withhold_confirmed(alice_state).await;
 
             Ok(())
         },

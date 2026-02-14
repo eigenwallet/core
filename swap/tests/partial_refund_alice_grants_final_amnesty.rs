@@ -15,15 +15,15 @@ use crate::harness::alice_run_until::is_xmr_refunded;
 use crate::harness::bob_run_until;
 
 /// Bob locks Btc and Alice locks Xmr. Alice does not act so Bob does a partial
-/// refund. Alice burns the refund, then later grants final amnesty to Bob.
+/// refund. Alice withholds the deposit, then later grants mercy to Bob.
 /// NOTE: This test cannot pass yet because we haven't implemented the manual
-/// trigger for final amnesty. BtcRefundBurnConfirmed is currently terminal.
+/// trigger for mercy. BtcWithholdConfirmed is currently terminal.
 #[tokio::test]
-async fn given_partial_refund_alice_grants_final_amnesty() {
-    // Use 95% refund ratio - Bob gets 95% immediately, 5% locked in amnesty
-    // Alice burns the amnesty, then grants final amnesty
+async fn given_partial_refund_alice_grants_mercy() {
+    // Use 5% anti-spam deposit ratio - Bob gets 95% immediately, 5% locked in amnesty
+    // Alice withholds the deposit, then grants mercy
     let refund_policy = Some(RefundPolicy {
-        anti_spam_deposit_ratio: Decimal::new(95, 2), // 0.95 = 95%
+        anti_spam_deposit_ratio: Decimal::new(5, 2), // 0.05 = 5%
         always_withhold_deposit: true,
     });
 
@@ -54,19 +54,19 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
 
             ctx.monero.generate_blocks().await?;
 
-            // Restart alice and wait for bob to be burnt.
+            // Restart alice and wait for bob to be withheld.
             ctx.restart_alice().await;
             let alice_swap = ctx.alice_next_swap().await;
             let swap_id = alice_swap.swap_id;
             let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
 
-            // Give alice time to publish TxRefundBurn before restarting bob
+            // Give alice time to publish TxWithhold before restarting bob
             tokio::time::sleep(Duration::from_secs(20)).await;
 
             let (bob_swap, bob_app_handle) = ctx
                 .stop_and_resume_bob_from_db(bob_app_handle, swap_id)
                 .await;
-            let bob_state = tokio::spawn(bob::run(bob_swap)); // Bob should stop automatically after BtcRefundBurnt
+            let bob_state = tokio::spawn(bob::run(bob_swap)); // Bob should stop automatically after BtcWithheld
 
             let alice_state = alice_swap.await??;
             assert!(matches!(
@@ -77,7 +77,7 @@ async fn given_partial_refund_alice_grants_final_amnesty() {
             let bob_state = bob_state.await??;
             assert!(matches!(bob_state, BobState::BtcWithheld(..)));
 
-            // Simulate alice's controller sending the final amnesty command via `controller` cli
+            // Simulate alice's controller sending the mercy command via `controller` cli
             ctx.restart_alice().await;
             ctx.alice_rpc_client.grant_mercy(swap_id).await?;
 

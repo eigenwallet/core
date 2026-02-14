@@ -55,7 +55,7 @@ pub struct WalletSnapshot {
 
     redeem_fee: bitcoin::Amount,
     punish_fee: bitcoin::Amount,
-    refund_burn_fee: bitcoin::Amount,
+    withhold_fee: bitcoin::Amount,
 }
 
 impl WalletSnapshot {
@@ -65,7 +65,7 @@ impl WalletSnapshot {
         punish_address: bitcoin::Address,
         redeem_fee: bitcoin::Amount,
         punish_fee: bitcoin::Amount,
-        refund_burn_fee: bitcoin::Amount,
+        withhold_fee: bitcoin::Amount,
     ) -> Self {
         Self {
             unlocked_balance,
@@ -74,7 +74,7 @@ impl WalletSnapshot {
             punish_address,
             redeem_fee,
             punish_fee,
-            refund_burn_fee,
+            withhold_fee,
         }
     }
 }
@@ -544,7 +544,7 @@ async fn run_swap_setup(
         wallet_snapshot.punish_address,
         wallet_snapshot.redeem_fee,
         wallet_snapshot.punish_fee,
-        wallet_snapshot.refund_burn_fee,
+        wallet_snapshot.withhold_fee,
         should_burn_on_refund,
         &mut rand::thread_rng(),
     );

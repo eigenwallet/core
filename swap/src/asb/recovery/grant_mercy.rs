@@ -5,7 +5,7 @@ use std::convert::TryInto;
 use std::sync::Arc;
 use uuid::Uuid;
 
-pub async fn grant_final_amnesty(
+pub async fn grant_mercy(
     swap_id: Uuid,
     db: Arc<dyn Database + Send + Sync>,
 ) -> Result<AliceState> {
@@ -21,7 +21,7 @@ pub async fn grant_final_amnesty(
             Ok(new_state)
         }
         _ => bail!(
-            "Cannot grant final amnesty for swap {} because it is in state {} which is not BtcRefundBurnConfirmed",
+            "Cannot grant mercy for swap {} because it is in state {} which is not BtcWithholdConfirmed",
             swap_id,
             state
         ),

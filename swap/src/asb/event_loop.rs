@@ -259,7 +259,7 @@ where
                             };
 
                             // TODO: propagate error to the swap_setup routine instead of swallowing it
-                            let (btc_amnesty_amount, should_publish_tx_refund_burn )= match apply_anti_spam_policy(btc, &self.refund_policy) {
+                            let (btc_amnesty_amount, should_publish_tx_withhold )= match apply_anti_spam_policy(btc, &self.refund_policy) {
                                 Ok(amount) => amount,
                                 Err(error) => {
                                     tracing::error!("Swap request will be ignored because we were unable to create wallet snapshot for swap: {:#}", error);
@@ -276,7 +276,7 @@ where
                             };
 
                             // Ignore result, we should never hit this because the receiver will alive as long as the connection is.
-                            let _ = responder.respond((wallet_snapshot, btc_amnesty_amount, should_publish_tx_refund_burn));
+                            let _ = responder.respond((wallet_snapshot, btc_amnesty_amount, should_publish_tx_withhold));
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
                             if let Err(error) = self.handle_execution_setup_done(peer_id, swap_id, state3).await {
@@ -569,8 +569,8 @@ where
                             };
                             let _ = respond_to.send(result);
                         }
-                        EventLoopRequest::GrantFinalAmnesty { swap_id, respond_to } => {
-                            let result = self.handle_grant_final_amnesty(swap_id).await;
+                        EventLoopRequest::GrantMercy { swap_id, respond_to } => {
+                            let result = self.handle_grant_mercy(swap_id).await;
                             let _ = respond_to.send(result);
                         }
                     }
@@ -730,25 +730,25 @@ where
         }
     }
 
-    /// Handle a request to grant final amnesty for a swap.
+    /// Handle a request to grant mercy for a swap.
     ///
     /// This checks that the swap is not currently running, transitions the
-    /// state to BtcFinalAmnestyGranted, and resumes the swap.
-    async fn handle_grant_final_amnesty(&mut self, swap_id: Uuid) -> Result<()> {
-        use crate::asb::grant_final_amnesty;
+    /// state to BtcMercyGranted, and resumes the swap.
+    async fn handle_grant_mercy(&mut self, swap_id: Uuid) -> Result<()> {
+        use crate::asb::grant_mercy;
 
         // Check if swap is currently running
         if self.recv_encrypted_signature.contains_key(&swap_id)
             || self.recv_burn_on_refund_instruction.contains_key(&swap_id)
         {
             return Err(anyhow!(
-                "Cannot grant final amnesty while swap {} is still running",
+                "Cannot grant mercy while swap {} is still running",
                 swap_id
             ));
         }
 
-        // Use the grant_final_amnesty function to transition the state
-        let new_state = grant_final_amnesty(swap_id, self.db.clone()).await?;
+        // Use the grant_mercy function to transition the state
+        let new_state = grant_mercy(swap_id, self.db.clone()).await?;
 
         // Get peer ID for this swap
         let peer_id = self.db.get_peer_id(swap_id).await?;
@@ -772,7 +772,7 @@ where
             .await
             .context("Failed to send swap to be resumed")?;
 
-        tracing::info!(%swap_id, "Granted final amnesty and resumed swap");
+        tracing::info!(%swap_id, "Granted mercy and resumed swap");
 
         Ok(())
     }
@@ -995,7 +995,7 @@ async fn capture_wallet_snapshot(
     let punish_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxPunish::weight(), Some(transfer_amount))
         .await?;
-    let refund_burn_fee = bitcoin_wallet
+    let withhold_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxWithhold::weight(), Some(transfer_amount))
         .await?;
 
@@ -1005,7 +1005,7 @@ async fn capture_wallet_snapshot(
         punish_address,
         redeem_fee,
         punish_fee,
-        refund_burn_fee,
+        withhold_fee,
     ))
 }
 
@@ -1031,7 +1031,7 @@ mod service {
             burn: bool,
             respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
         },
-        GrantFinalAmnesty {
+        GrantMercy {
             swap_id: Uuid,
             respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
         },
@@ -1098,14 +1098,14 @@ mod service {
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
         }
 
-        /// Grant final amnesty for a swap in BtcRefundBurnConfirmed state
+        /// Grant mercy for a swap in BtcWithholdConfirmed state
         ///
-        /// This transitions the swap to BtcFinalAmnestyGranted and resumes
-        /// the swap state machine to publish the final amnesty transaction.
+        /// This transitions the swap to BtcMercyGranted and resumes
+        /// the swap state machine to publish the mercy transaction.
         pub async fn grant_mercy(&self, swap_id: Uuid) -> anyhow::Result<()> {
             let (tx, rx) = oneshot::channel();
             self.sender
-                .send(EventLoopRequest::GrantFinalAmnesty {
+                .send(EventLoopRequest::GrantMercy {
                     swap_id,
                     respond_to: tx,
                 })

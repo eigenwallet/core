@@ -126,7 +126,7 @@ pub struct RefundPolicy {
     /// This protects the maker against griefing attacks.
     #[serde(default = "default_anti_spam_deposit_ratio")]
     pub anti_spam_deposit_ratio: Decimal,
-    /// If true, Alice will publish TxRefundBurn after refunding her XMR,
+    /// If true, Alice will publish TxWithhold after refunding her XMR,
     /// denying Bob access to the amnesty output. Alice can later grant
     /// final amnesty to return the funds to Bob.
     #[serde(default = "default_always_withhold_deposit")]

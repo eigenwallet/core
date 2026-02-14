@@ -13,12 +13,12 @@ use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
 use std::collections::HashMap;
 
-/// TxRefundBurn spends the amnesty output of TxPartialRefund and sends it to
+/// TxWithhold spends the amnesty output of TxPartialRefund and sends it to
 /// a new 2-of-2 multisig. This allows Alice to "burn" the amnesty (prevent Bob
-/// from claiming it via TxRefundAmnesty) while still allowing a later refund
-/// via TxFinalAmnesty if Alice cooperates.
+/// from claiming it via TxReclaim) while still allowing a later refund
+/// via TxMercy if Alice cooperates.
 ///
-/// Unlike TxRefundAmnesty, this transaction has no timelock - Alice can publish
+/// Unlike TxReclaim, this transaction has no timelock - Alice can publish
 /// it immediately after TxPartialRefund is confirmed.
 #[derive(Debug, Clone)]
 pub struct TxWithhold {
@@ -40,17 +40,17 @@ impl TxWithhold {
         // For now, assert to catch this during development
         assert!(
             tx_partial_refund.anti_spam_deposit() > spending_fee,
-            "TxRefundBurn fee ({}) must be less than amnesty amount ({})",
+            "TxWithhold fee ({}) must be less than amnesty amount ({})",
             spending_fee,
             tx_partial_refund.anti_spam_deposit()
         );
 
         let burn_output_descriptor = build_shared_output_descriptor(A.0, B.0)?;
 
-        let tx_refund_burn =
+        let tx_withhold =
             tx_partial_refund.build_withhold_transaction(&burn_output_descriptor, spending_fee);
 
-        let digest = SighashCache::new(&tx_refund_burn)
+        let digest = SighashCache::new(&tx_withhold)
             .p2wsh_signature_hash(
                 0, // Only one input: amnesty output from tx_partial_refund
                 &tx_partial_refund
@@ -65,7 +65,7 @@ impl TxWithhold {
         let watch_script = burn_output_descriptor.script_pubkey();
 
         Ok(Self {
-            inner: tx_refund_burn,
+            inner: tx_withhold,
             digest,
             amnesty_output_descriptor: tx_partial_refund.amnesty_output_descriptor.clone(),
             burn_output_descriptor,
@@ -149,7 +149,7 @@ impl TxWithhold {
     }
 
     /// Build a transaction that spends the burn output to a destination address.
-    /// Used by TxFinalAmnesty to send the funds back to Bob's refund address.
+    /// Used by TxMercy to send the funds back to Bob's refund address.
     pub fn build_spend_transaction(
         &self,
         destination: &Address,
@@ -164,7 +164,7 @@ impl TxWithhold {
         // For now, assert to catch this during development
         assert!(
             self.amount() > spending_fee,
-            "TxFinalAmnesty fee ({}) must be less than burn amount ({})",
+            "TxMercy fee ({}) must be less than burn amount ({})",
             spending_fee,
             self.amount()
         );

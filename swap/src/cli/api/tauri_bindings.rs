@@ -1159,37 +1159,37 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "number")]
         btc_amnesty_amount: bitcoin::Amount,
     },
-    // TxRefundBurn has been published (waiting for confirmation)
-    BtcRefundBurnPublished {
+    // TxWithhold has been published (waiting for confirmation)
+    BtcWithholdPublished {
         #[typeshare(serialized_as = "string")]
-        btc_refund_burn_txid: Txid,
+        btc_withhold_txid: Txid,
         #[typeshare(serialized_as = "number")]
         btc_lock_amount: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
         btc_amnesty_amount: bitcoin::Amount,
     },
-    // TxRefundBurn has been confirmed - amnesty output is burnt
-    BtcRefundBurnt {
+    // TxWithhold has been confirmed - amnesty output is withheld
+    BtcWithheld {
         #[typeshare(serialized_as = "string")]
-        btc_refund_burn_txid: Txid,
+        btc_withhold_txid: Txid,
         #[typeshare(serialized_as = "number")]
         btc_lock_amount: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
         btc_amnesty_amount: bitcoin::Amount,
     },
-    // Alice published TxFinalAmnesty
-    BtcFinalAmnestyPublished {
+    // Alice published TxMercy
+    BtcMercyPublished {
         #[typeshare(serialized_as = "string")]
-        btc_final_amnesty_txid: Txid,
+        btc_mercy_txid: Txid,
         #[typeshare(serialized_as = "number")]
         btc_lock_amount: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
         btc_amnesty_amount: bitcoin::Amount,
     },
-    // TxFinalAmnesty has been confirmed - user received burnt funds back
-    BtcFinalAmnestyConfirmed {
+    // TxMercy has been confirmed - user received withheld funds back
+    BtcMercyConfirmed {
         #[typeshare(serialized_as = "string")]
-        btc_final_amnesty_txid: Txid,
+        btc_mercy_txid: Txid,
         #[typeshare(serialized_as = "number")]
         btc_lock_amount: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]

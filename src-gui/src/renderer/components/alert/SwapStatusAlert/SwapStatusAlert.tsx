@@ -204,29 +204,29 @@ function RemainingRefundTimelockExpiredAlert() {
 }
 
 /**
- * Sub-component for alerts when the maker has burnt the amnesty output.
+ * Sub-component for alerts when the maker has withheld the amnesty output.
  */
-function BtcRefundBurnPublishedAlert() {
+function BtcWithholdPublishedAlert() {
   return (
     <MessageList
       messages={[
-        "The remaining Bitcoin was burnt by the maker",
-        "Waiting for the maker to grant final amnesty",
-        "Keep the app running or resume the swap to receive the final amnesty",
+        "The remaining Bitcoin was withheld by the maker",
+        "Waiting for the maker to grant mercy",
+        "Keep the app running or resume the swap to receive the mercy",
       ]}
     />
   );
 }
 
 /**
- * Sub-component for alerts when the maker has published the final amnesty transaction.
+ * Sub-component for alerts when the maker has published the mercy transaction.
  */
-function BtcFinalAmnestyPublishedAlert() {
+function BtcMercyPublishedAlert() {
   return (
     <MessageList
       messages={[
-        "The maker granted final amnesty",
-        "Waiting for the final amnesty transaction to be confirmed",
+        "The maker granted mercy",
+        "Waiting for the mercy transaction to be confirmed",
       ]}
     />
   );
@@ -317,11 +317,11 @@ export function StateAlert({
       }
       return null;
 
-    case BobStateName.BtcRefundBurnPublished:
-      return <BtcRefundBurnPublishedAlert />;
+    case BobStateName.BtcWithholdPublished:
+      return <BtcWithholdPublishedAlert />;
 
-    case BobStateName.BtcFinalAmnestyPublished:
-      return <BtcFinalAmnestyPublishedAlert />;
+    case BobStateName.BtcMercyPublished:
+      return <BtcMercyPublishedAlert />;
 
     case BobStateName.BtcAmnestyPublished:
       // Amnesty tx published, waiting for confirmation - no specific alert needed

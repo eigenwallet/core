@@ -22,8 +22,8 @@ export default function ProcessExitedPage({
       prevState.type === "BtcRefunded" ||
       prevState.type === "BtcPunished" ||
       prevState.type === "CooperativeRedeemRejected" ||
-      prevState.type === "BtcRefundBurnt" ||
-      prevState.type === "BtcFinalAmnestyConfirmed" ||
+      prevState.type === "BtcWithheld" ||
+      prevState.type === "BtcMercyConfirmed" ||
       prevState.type === "BtcAmnestyReceived")
   ) {
     return (

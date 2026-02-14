@@ -58,10 +58,10 @@ export enum BobStateName {
   BtcPartiallyRefunded = "btc is partially refunded",
   BtcAmnestyPublished = "btc amnesty is published",
   BtcAmnestyReceived = "btc amnesty is confirmed",
-  BtcRefundBurnPublished = "btc refund burn is published",
-  BtcRefundBurnt = "btc refund is burnt",
-  BtcFinalAmnestyPublished = "btc final amnesty is published",
-  BtcFinalAmnestyConfirmed = "btc final amnesty is confirmed",
+  BtcWithholdPublished = "btc withhold is published",
+  BtcWithheld = "btc is withheld",
+  BtcMercyPublished = "btc mercy is published",
+  BtcMercyConfirmed = "btc mercy is confirmed",
   XmrRedeemed = "xmr is redeemed",
   BtcPunished = "btc is punished",
   SafelyAborted = "safely aborted",
@@ -107,14 +107,14 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Bitcoin partially refunded";
     case BobStateName.BtcAmnestyReceived:
       return "Bitcoin amnesty was received";
-    case BobStateName.BtcRefundBurnPublished:
-      return "Bitcoin refund burn published";
-    case BobStateName.BtcRefundBurnt:
-      return "Bitcoin refund is burnt";
-    case BobStateName.BtcFinalAmnestyPublished:
-      return "Bitcoin final amnesty published";
-    case BobStateName.BtcFinalAmnestyConfirmed:
-      return "Bitcoin final amnesty received";
+    case BobStateName.BtcWithholdPublished:
+      return "Bitcoin withhold published";
+    case BobStateName.BtcWithheld:
+      return "Bitcoin withheld";
+    case BobStateName.BtcMercyPublished:
+      return "Bitcoin mercy published";
+    case BobStateName.BtcMercyConfirmed:
+      return "Bitcoin mercy received";
     case BobStateName.XmrRedeemed:
       return "Monero redeemed";
     case BobStateName.BtcPunished:
@@ -178,8 +178,8 @@ export type BobStateNameRunningSwap = Exclude<
   | BobStateName.BtcAmnestyReceived
   | BobStateName.BtcRefunded
   | BobStateName.BtcEarlyRefunded
-  | BobStateName.BtcRefundBurnt
-  | BobStateName.BtcFinalAmnestyConfirmed
+  | BobStateName.BtcWithheld
+  | BobStateName.BtcMercyConfirmed
   | BobStateName.BtcPunished
   | BobStateName.SafelyAborted
   | BobStateName.XmrRedeemed
@@ -198,8 +198,8 @@ export function isBobStateNameRunningSwap(
     BobStateName.BtcRefunded,
     BobStateName.BtcEarlyRefunded,
     BobStateName.BtcAmnestyReceived,
-    BobStateName.BtcRefundBurnt,
-    BobStateName.BtcFinalAmnestyConfirmed,
+    BobStateName.BtcWithheld,
+    BobStateName.BtcMercyConfirmed,
     BobStateName.BtcPunished,
     BobStateName.SafelyAborted,
     BobStateName.XmrRedeemed,

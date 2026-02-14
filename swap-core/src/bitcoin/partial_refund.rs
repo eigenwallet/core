@@ -119,7 +119,7 @@ impl TxPartialRefund {
     }
 
     /// Build a transaction that spends the amnesty output to a new 2-of-2 multisig (burn output).
-    /// This is used by TxRefundBurn to "burn" the amnesty by moving it to another multisig.
+    /// This is used by TxWithhold to "burn" the amnesty by moving it to another multisig.
     /// Unlike `build_amnesty_spend_transaction`, this has no timelock.
     pub fn build_withhold_transaction(
         &self,

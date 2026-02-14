@@ -14,10 +14,10 @@ import {
   WaitingForEarnestDepositTimelockExpirationPage,
   BitcoinAmnestyPublished,
   BitcoinAmnestyReceived,
-  BitcoinRefundBurnPublished,
-  BitcoinRefundBurnt,
-  BitcoinFinalAmnestyPublished,
-  BitcoinFinalAmnestyConfirmed,
+  BitcoinWithholdPublished,
+  BitcoinWithheld,
+  BitcoinMercyPublished,
+  BitcoinMercyConfirmed,
 } from "./done/BitcoinPartialRefundPage";
 import XmrRedeemInMempoolPage from "./done/XmrRedeemInMempoolPage";
 import ProcessExitedPage from "./exited/ProcessExitedPage";
@@ -164,25 +164,25 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       }
       break;
 
-    //// 4 different types of refund burn / final amnesty states
-    case "BtcRefundBurnPublished":
-      if (state.curr.type === "BtcRefundBurnPublished") {
-        return <BitcoinRefundBurnPublished {...state.curr.content} />;
+    //// 4 different types of withhold / mercy states
+    case "BtcWithholdPublished":
+      if (state.curr.type === "BtcWithholdPublished") {
+        return <BitcoinWithholdPublished {...state.curr.content} />;
       }
       break;
-    case "BtcRefundBurnt":
-      if (state.curr.type === "BtcRefundBurnt") {
-        return <BitcoinRefundBurnt {...state.curr.content} />;
+    case "BtcWithheld":
+      if (state.curr.type === "BtcWithheld") {
+        return <BitcoinWithheld {...state.curr.content} />;
       }
       break;
-    case "BtcFinalAmnestyPublished":
-      if (state.curr.type === "BtcFinalAmnestyPublished") {
-        return <BitcoinFinalAmnestyPublished {...state.curr.content} />;
+    case "BtcMercyPublished":
+      if (state.curr.type === "BtcMercyPublished") {
+        return <BitcoinMercyPublished {...state.curr.content} />;
       }
       break;
-    case "BtcFinalAmnestyConfirmed":
-      if (state.curr.type === "BtcFinalAmnestyConfirmed") {
-        return <BitcoinFinalAmnestyConfirmed {...state.curr.content} />;
+    case "BtcMercyConfirmed":
+      if (state.curr.type === "BtcMercyConfirmed") {
+        return <BitcoinMercyConfirmed {...state.curr.content} />;
       }
       break;
 

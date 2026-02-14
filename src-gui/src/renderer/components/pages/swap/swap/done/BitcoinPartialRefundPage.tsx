@@ -7,9 +7,9 @@
  * 1. BtcPartialRefundPublished - TxPartialRefund is published
  * 2. BtcPartiallyRefunded - TxPartialRefund is confirmed
  * 3. Either:
- *    a. BtcAmnestyPublished -> BtcAmnestyReceived (Bob claims amnesty via TxRefundAmnesty)
- *    b. BtcRefundBurnPublished -> BtcRefundBurnt (Alice burns amnesty via TxRefundBurn)
- *       -> optionally BtcFinalAmnestyPublished -> BtcFinalAmnestyConfirmed (Alice grants final amnesty)
+ *    a. BtcAmnestyPublished -> BtcAmnestyReceived (Bob claims amnesty via TxReclaim)
+ *    b. BtcWithholdPublished -> BtcWithheld (Alice withholds amnesty via TxWithhold)
+ *       -> optionally BtcMercyPublished -> BtcMercyConfirmed (Alice grants mercy)
  */
 
 import { Alert, Box, Button, DialogContentText, Typography } from "@mui/material";
@@ -186,18 +186,18 @@ function AmnestyPage({
   );
 }
 
-// Refund Burn pages - The maker actively withheld the remaining Bitcoin (bad outcome)
+// Withhold pages - The maker actively withheld the remaining Bitcoin (bad outcome)
 // Note: By default, the user would have received the remaining Bitcoin after a timelock.
-// If we're in this state, it means the maker actively published TxBurn to revoke it.
+// If we're in this state, it means the maker actively published TxWithhold to revoke it.
 
-export function BitcoinRefundBurnPublished({
-  btc_refund_burn_txid,
+export function BitcoinWithholdPublished({
+  btc_withhold_txid,
   btc_lock_amount,
   btc_amnesty_amount,
-}: TauriSwapProgressEventContent<"BtcRefundBurnPublished">) {
+}: TauriSwapProgressEventContent<"BtcWithholdPublished">) {
   return (
-    <RefundBurnPage
-      txid={btc_refund_burn_txid}
+    <WithholdPage
+      txid={btc_withhold_txid}
       confirmed={false}
       btcLockAmount={btc_lock_amount}
       btcAmnestyAmount={btc_amnesty_amount}
@@ -205,14 +205,14 @@ export function BitcoinRefundBurnPublished({
   );
 }
 
-export function BitcoinRefundBurnt({
-  btc_refund_burn_txid,
+export function BitcoinWithheld({
+  btc_withhold_txid,
   btc_lock_amount,
   btc_amnesty_amount,
-}: TauriSwapProgressEventContent<"BtcRefundBurnt">) {
+}: TauriSwapProgressEventContent<"BtcWithheld">) {
   return (
-    <RefundBurnPage
-      txid={btc_refund_burn_txid}
+    <WithholdPage
+      txid={btc_withhold_txid}
       confirmed={true}
       btcLockAmount={btc_lock_amount}
       btcAmnestyAmount={btc_amnesty_amount}
@@ -220,7 +220,7 @@ export function BitcoinRefundBurnt({
   );
 }
 
-function RefundBurnPage({
+function WithholdPage({
   txid,
   confirmed,
   btcLockAmount,
@@ -293,21 +293,21 @@ function RefundBurnPage({
   );
 }
 
-// Final Amnesty pages - The maker granted final amnesty after the user appealed
+// Mercy pages - The maker granted mercy after the user appealed
 
-export function BitcoinFinalAmnestyPublished({
-  btc_final_amnesty_txid,
-}: TauriSwapProgressEventContent<"BtcFinalAmnestyPublished">) {
-  return <FinalAmnestyPage txid={btc_final_amnesty_txid} confirmed={false} />;
+export function BitcoinMercyPublished({
+  btc_mercy_txid,
+}: TauriSwapProgressEventContent<"BtcMercyPublished">) {
+  return <MercyPage txid={btc_mercy_txid} confirmed={false} />;
 }
 
-export function BitcoinFinalAmnestyConfirmed({
-  btc_final_amnesty_txid,
-}: TauriSwapProgressEventContent<"BtcFinalAmnestyConfirmed">) {
-  return <FinalAmnestyPage txid={btc_final_amnesty_txid} confirmed={true} />;
+export function BitcoinMercyConfirmed({
+  btc_mercy_txid,
+}: TauriSwapProgressEventContent<"BtcMercyConfirmed">) {
+  return <MercyPage txid={btc_mercy_txid} confirmed={true} />;
 }
 
-function FinalAmnestyPage({
+function MercyPage({
   txid,
   confirmed,
 }: {

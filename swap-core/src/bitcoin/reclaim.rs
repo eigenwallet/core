@@ -26,11 +26,11 @@ impl TxReclaim {
         spending_fee: Amount,
         remaining_refund_timelock: RemainingRefundTimelock,
     ) -> Result<Self> {
-        let tx_refund_amnesty = tx_refund
+        let tx_reclaim = tx_refund
             .build_reclaim_transaction(refund_address, spending_fee, remaining_refund_timelock)
-            .context("Couldn't build tx refund amnesty")?;
+            .context("Couldn't build tx reclaim")?;
 
-        let digest = SighashCache::new(&tx_refund_amnesty)
+        let digest = SighashCache::new(&tx_reclaim)
             .p2wsh_signature_hash(
                 0, // Only one input: amnesty box from tx_refund
                 &tx_refund
@@ -43,7 +43,7 @@ impl TxReclaim {
             .expect("sighash");
 
         Ok(Self {
-            inner: tx_refund_amnesty,
+            inner: tx_reclaim,
             digest,
             amensty_output_descriptor: tx_refund.amnesty_output_descriptor.clone(),
             watch_script: refund_address.script_pubkey(),

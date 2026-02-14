@@ -79,19 +79,19 @@ pub enum BobState {
     BtcEarlyRefunded(State6),
     BtcPartiallyRefunded(State6),
     /// Waiting for RemainingRefundTimelock to expire after partial refund confirmed.
-    /// During this time, Alice may publish TxRefundBurn.
+    /// During this time, Alice may publish TxWithhold.
     WaitingForReclaimTimelockExpiration(State6),
-    /// RemainingRefundTimelock has expired, we can now publish TxRefundAmnesty.
+    /// RemainingRefundTimelock has expired, we can now publish TxReclaim.
     ReclaimTimelockExpired(State6),
-    /// Alice published TxRefundBurn before we could publish TxRefundAmnesty.
+    /// Alice published TxWithhold before we could publish TxReclaim.
     BtcWithholdPublished(State6),
-    /// TxRefundBurn has been confirmed. The amnesty output is now burnt.
+    /// TxWithhold has been confirmed. The amnesty output is now burnt.
     BtcWithheld(State6),
     BtcReclaimPublished(State6),
     BtcReclaimConfirmed(State6),
-    /// Alice published TxFinalAmnesty (using our presigned signature) to refund us.
+    /// Alice published TxMercy (using our presigned signature) to refund us.
     BtcMercyPublished(State6),
-    /// TxFinalAmnesty has been confirmed. We received the burnt funds back.
+    /// TxMercy has been confirmed. We received the burnt funds back.
     BtcMercyConfirmed(State6),
     XmrRedeemed {
         tx_lock_id: bitcoin::Txid,
@@ -121,7 +121,7 @@ pub enum RefundSignatures {
     /// Includes the amnesty signature which is always provided in new swaps.
     Partial {
         tx_partial_refund_encsig: bitcoin::EncryptedSignature,
-        tx_refund_amnesty_sig: bitcoin::Signature,
+        tx_reclaim_sig: bitcoin::Signature,
     },
     /// Alice has signed both the partial and full refund transactions.
     /// Includes the amnesty signature which is always provided in new swaps.
@@ -130,7 +130,7 @@ pub enum RefundSignatures {
         // Serde rename keeps + untagged + flatten keeps this backwards compatible with old swaps in the database.
         #[serde(rename = "tx_refund_encsig")]
         tx_full_refund_encsig: bitcoin::EncryptedSignature,
-        tx_refund_amnesty_sig: bitcoin::Signature,
+        tx_reclaim_sig: bitcoin::Signature,
     },
     /// Alice has only signed the full refund transaction.
     /// This is only used to maintain backwards compatibility for older swaps
@@ -191,13 +191,13 @@ impl fmt::Display for BobState {
             BobState::ReclaimTimelockExpired { .. } => {
                 write!(f, "remaining refund timelock expired")
             }
-            BobState::BtcWithholdPublished { .. } => write!(f, "btc refund burn is published"),
-            BobState::BtcWithheld { .. } => write!(f, "btc refund is burnt"),
+            BobState::BtcWithholdPublished { .. } => write!(f, "btc withhold is published"),
+            BobState::BtcWithheld { .. } => write!(f, "btc is withheld"),
             BobState::BtcMercyPublished { .. } => {
-                write!(f, "btc final amnesty is published")
+                write!(f, "btc mercy is published")
             }
             BobState::BtcMercyConfirmed { .. } => {
-                write!(f, "btc final amnesty is confirmed")
+                write!(f, "btc mercy is confirmed")
             }
             BobState::SafelyAborted => write!(f, "safely aborted"),
         }
@@ -291,8 +291,8 @@ pub struct State0 {
     refund_address: bitcoin::Address,
     min_monero_confirmations: u64,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
-    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
-    tx_final_amnesty_fee: Option<bitcoin::Amount>,
+    tx_reclaim_fee: Option<bitcoin::Amount>,
+    tx_mercy_fee: Option<bitcoin::Amount>,
     tx_refund_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
     tx_lock_fee: bitcoin::Amount,
@@ -311,8 +311,8 @@ impl State0 {
         refund_address: bitcoin::Address,
         min_monero_confirmations: u64,
         tx_partial_refund_fee: bitcoin::Amount,
-        tx_refund_amnesty_fee: bitcoin::Amount,
-        tx_final_amnesty_fee: bitcoin::Amount,
+        tx_reclaim_fee: bitcoin::Amount,
+        tx_mercy_fee: bitcoin::Amount,
         tx_refund_fee: bitcoin::Amount,
         tx_cancel_fee: bitcoin::Amount,
         tx_lock_fee: bitcoin::Amount,
@@ -341,8 +341,8 @@ impl State0 {
             refund_address,
             min_monero_confirmations,
             tx_partial_refund_fee: Some(tx_partial_refund_fee),
-            tx_refund_amnesty_fee: Some(tx_refund_amnesty_fee),
-            tx_final_amnesty_fee: Some(tx_final_amnesty_fee),
+            tx_reclaim_fee: Some(tx_reclaim_fee),
+            tx_mercy_fee: Some(tx_mercy_fee),
             tx_refund_fee,
             tx_cancel_fee,
             tx_lock_fee,
@@ -362,12 +362,12 @@ impl State0 {
             tx_partial_refund_fee: self
                 .tx_partial_refund_fee
                 .context("tx_partial_refund_fee missing but required to setup swap")?,
-            tx_refund_amnesty_fee: self
-                .tx_refund_amnesty_fee
-                .context("tx_refund_amnesty_fee missing but required to setup swap")?,
-            tx_final_amnesty_fee: self
-                .tx_final_amnesty_fee
-                .context("tx_final_amnesty_fee missing but required to setup swap")?,
+            tx_reclaim_fee: self
+                .tx_reclaim_fee
+                .context("tx_reclaim_fee missing but required to setup swap")?,
+            tx_mercy_fee: self
+                .tx_mercy_fee
+                .context("tx_mercy_fee missing but required to setup swap")?,
             tx_cancel_fee: self.tx_cancel_fee,
         })
     }
@@ -390,20 +390,20 @@ impl State0 {
             let tx_partial_refund_fee = self
                 .tx_partial_refund_fee
                 .context("tx_partial_refund_fee missing for new swap")?;
-            let tx_refund_amnesty_fee = self
-                .tx_refund_amnesty_fee
-                .context("tx_refund_amnesty_fee missing for new swap")?;
-            let tx_final_amnesty_fee = self
-                .tx_final_amnesty_fee
-                .context("tx_final_amnesty_fee missing for new swap")?;
+            let tx_reclaim_fee = self
+                .tx_reclaim_fee
+                .context("tx_reclaim_fee missing for new swap")?;
+            let tx_mercy_fee = self
+                .tx_mercy_fee
+                .context("tx_mercy_fee missing for new swap")?;
 
             crate::common::sanity_check_amnesty_amount(
                 self.btc,
                 msg.amnesty_amount,
                 tx_partial_refund_fee,
-                tx_refund_amnesty_fee,
-                msg.tx_refund_burn_fee,
-                tx_final_amnesty_fee,
+                tx_reclaim_fee,
+                msg.tx_withhold_fee,
+                tx_mercy_fee,
             )?;
         }
 
@@ -438,9 +438,9 @@ impl State0 {
             tx_redeem_fee: msg.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
-            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
-            tx_refund_burn_fee: Some(msg.tx_refund_burn_fee),
-            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
+            tx_reclaim_fee: self.tx_reclaim_fee,
+            tx_withhold_fee: Some(msg.tx_withhold_fee),
+            tx_mercy_fee: self.tx_mercy_fee,
             tx_punish_fee: msg.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
@@ -467,9 +467,9 @@ pub struct State1 {
     tx_lock: bitcoin::TxLock,
     min_monero_confirmations: u64,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
-    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
-    tx_refund_burn_fee: Option<bitcoin::Amount>,
-    tx_final_amnesty_fee: Option<bitcoin::Amount>,
+    tx_reclaim_fee: Option<bitcoin::Amount>,
+    tx_withhold_fee: Option<bitcoin::Amount>,
+    tx_mercy_fee: Option<bitcoin::Amount>,
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_punish_fee: bitcoin::Amount,
@@ -496,7 +496,7 @@ impl State1 {
         let refund_signatures = match (
             msg.tx_full_refund_encsig,
             msg.tx_partial_refund_encsig,
-            msg.tx_refund_amnesty_sig,
+            msg.tx_reclaim_sig,
         ) {
             // We got the encrypted signature for the full refund - awesome
             (Some(tx_full_refund_encsig), _, _) => {
@@ -515,7 +515,7 @@ impl State1 {
                 }
             }
             // We got the encrypted signatures for the partial refund path.
-            (None, Some(tx_partial_refund_encsig), Some(tx_refund_amnesty_sig)) => {
+            (None, Some(tx_partial_refund_encsig), Some(tx_reclaim_sig)) => {
                 let tx_partial_refund = TxPartialRefund::new(
                     &tx_cancel,
                     &self.refund_address,
@@ -533,19 +533,19 @@ impl State1 {
                     &tx_partial_refund_encsig,
                 )?;
 
-                let tx_refund_amnesty = TxReclaim::new(
+                let tx_reclaim = TxReclaim::new(
                     &tx_partial_refund,
                     &self.refund_address,
-                    self.tx_refund_amnesty_fee
-                        .context("missing tx_refund_amnesty_fee")?,
+                    self.tx_reclaim_fee
+                        .context("missing tx_reclaim_fee")?,
                     self.remaining_refund_timelock
                         .context("missing remaining_refund_timelock")?,
                 )?;
-                bitcoin::verify_sig(&self.A, &tx_refund_amnesty.digest(), &tx_refund_amnesty_sig)?;
+                bitcoin::verify_sig(&self.A, &tx_reclaim.digest(), &tx_reclaim_sig)?;
 
                 RefundSignatures::Partial {
                     tx_partial_refund_encsig,
-                    tx_refund_amnesty_sig,
+                    tx_reclaim_sig,
                 }
             }
             (_, _, _) => anyhow::bail!(
@@ -575,9 +575,9 @@ impl State1 {
             tx_redeem_fee: self.tx_redeem_fee,
             tx_refund_fee: self.tx_refund_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
-            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
-            tx_refund_burn_fee: self.tx_refund_burn_fee,
-            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
+            tx_reclaim_fee: self.tx_reclaim_fee,
+            tx_withhold_fee: self.tx_withhold_fee,
+            tx_mercy_fee: self.tx_mercy_fee,
             tx_punish_fee: self.tx_punish_fee,
             tx_cancel_fee: self.tx_cancel_fee,
         })
@@ -617,9 +617,9 @@ pub struct State2 {
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
-    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
-    tx_refund_burn_fee: Option<bitcoin::Amount>,
-    tx_final_amnesty_fee: Option<bitcoin::Amount>,
+    tx_reclaim_fee: Option<bitcoin::Amount>,
+    tx_withhold_fee: Option<bitcoin::Amount>,
+    tx_mercy_fee: Option<bitcoin::Amount>,
 }
 
 impl State2 {
@@ -648,10 +648,10 @@ impl State2 {
 
         let tx_early_refund_sig = self.b.sign(tx_early_refund.digest());
 
-        // We can only construct a valid TxRefundAmnesty/TxRefundBurn/TxFinalAmnesty when the amnesty amount
+        // We can only construct a valid TxReclaim/TxWithhold/TxMercy when the amnesty amount
         // is greater than zero. Thus we only send our signatures for them if that is the case.
         // Alice accepts this because she sent us her signature for TxFullRefund already anyway.
-        let (tx_refund_amnesty_sig, tx_refund_burn_sig, tx_final_amnesty_sig) =
+        let (tx_reclaim_sig, tx_withhold_sig, tx_mercy_sig) =
             if self.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO) == bitcoin::Amount::ZERO {
                 (None, None, None)
             } else {
@@ -666,37 +666,37 @@ impl State2 {
                         .context("missing tx_partial_refund_fee")?,
                 )
                 .context("Couldn't construct TxPartialRefund")?;
-                let tx_refund_amnesty = TxReclaim::new(
+                let tx_reclaim = TxReclaim::new(
                     &tx_partial_refund,
                     &self.refund_address,
-                    self.tx_refund_amnesty_fee
-                        .context("Missing tx_refund_amnesty_fee")?,
+                    self.tx_reclaim_fee
+                        .context("Missing tx_reclaim_fee")?,
                     self.remaining_refund_timelock
                         .context("missing remaining_refund_timelock")?,
                 )?;
-                let tx_refund_amnesty_sig = self.b.sign(tx_refund_amnesty.digest());
+                let tx_reclaim_sig = self.b.sign(tx_reclaim.digest());
 
-                let tx_refund_burn = TxWithhold::new(
+                let tx_withhold = TxWithhold::new(
                     &tx_partial_refund,
                     self.A,
                     self.b.public(),
-                    self.tx_refund_burn_fee
-                        .context("Missing tx_refund_burn_fee")?,
+                    self.tx_withhold_fee
+                        .context("Missing tx_withhold_fee")?,
                 )?;
-                let tx_refund_burn_sig = self.b.sign(tx_refund_burn.digest());
+                let tx_withhold_sig = self.b.sign(tx_withhold.digest());
 
-                let tx_final_amnesty = TxMercy::new(
-                    &tx_refund_burn,
+                let tx_mercy = TxMercy::new(
+                    &tx_withhold,
                     &self.refund_address,
-                    self.tx_final_amnesty_fee
-                        .context("Missing tx_final_amnesty_fee")?,
+                    self.tx_mercy_fee
+                        .context("Missing tx_mercy_fee")?,
                 );
-                let tx_final_amnesty_sig = self.b.sign(tx_final_amnesty.digest());
+                let tx_mercy_sig = self.b.sign(tx_mercy.digest());
 
                 (
-                    Some(tx_refund_amnesty_sig),
-                    Some(tx_refund_burn_sig),
-                    Some(tx_final_amnesty_sig),
+                    Some(tx_reclaim_sig),
+                    Some(tx_withhold_sig),
+                    Some(tx_mercy_sig),
                 )
             };
 
@@ -704,9 +704,9 @@ impl State2 {
             tx_punish_sig,
             tx_cancel_sig,
             tx_early_refund_sig,
-            tx_refund_amnesty_sig,
-            tx_refund_burn_sig,
-            tx_final_amnesty_sig,
+            tx_reclaim_sig,
+            tx_withhold_sig,
+            tx_mercy_sig,
         })
     }
 
@@ -733,9 +733,9 @@ impl State2 {
                 tx_redeem_fee: self.tx_redeem_fee,
                 tx_refund_fee: self.tx_refund_fee,
                 tx_partial_refund_fee: self.tx_partial_refund_fee,
-                tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
-                tx_refund_burn_fee: self.tx_refund_burn_fee,
-                tx_final_amnesty_fee: self.tx_final_amnesty_fee,
+                tx_reclaim_fee: self.tx_reclaim_fee,
+                tx_withhold_fee: self.tx_withhold_fee,
+                tx_mercy_fee: self.tx_mercy_fee,
                 tx_cancel_fee: self.tx_cancel_fee,
             },
             self.tx_lock,
@@ -774,9 +774,9 @@ pub struct State3 {
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
-    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
-    tx_refund_burn_fee: Option<bitcoin::Amount>,
-    tx_final_amnesty_fee: Option<bitcoin::Amount>,
+    tx_reclaim_fee: Option<bitcoin::Amount>,
+    tx_withhold_fee: Option<bitcoin::Amount>,
+    tx_mercy_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -821,9 +821,9 @@ impl State3 {
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
-            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
-            tx_refund_burn_fee: self.tx_refund_burn_fee,
-            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
+            tx_reclaim_fee: self.tx_reclaim_fee,
+            tx_withhold_fee: self.tx_withhold_fee,
+            tx_mercy_fee: self.tx_mercy_fee,
         }
     }
 
@@ -844,9 +844,9 @@ impl State3 {
             tx_refund_fee: self.tx_refund_fee,
             tx_cancel_fee: self.tx_cancel_fee,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
-            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
-            tx_refund_burn_fee: self.tx_refund_burn_fee,
-            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
+            tx_reclaim_fee: self.tx_reclaim_fee,
+            tx_withhold_fee: self.tx_withhold_fee,
+            tx_mercy_fee: self.tx_mercy_fee,
             xmr: self.xmr,
             btc_amnesty_amount: self.btc_amnesty_amount,
         }
@@ -955,9 +955,9 @@ pub struct State4 {
     tx_redeem_fee: bitcoin::Amount,
     tx_refund_fee: bitcoin::Amount,
     tx_partial_refund_fee: Option<bitcoin::Amount>,
-    tx_refund_amnesty_fee: Option<bitcoin::Amount>,
-    tx_refund_burn_fee: Option<bitcoin::Amount>,
-    tx_final_amnesty_fee: Option<bitcoin::Amount>,
+    tx_reclaim_fee: Option<bitcoin::Amount>,
+    tx_withhold_fee: Option<bitcoin::Amount>,
+    tx_mercy_fee: Option<bitcoin::Amount>,
     tx_cancel_fee: bitcoin::Amount,
 }
 
@@ -1081,9 +1081,9 @@ impl State4 {
             xmr: self.xmr,
             btc_amnesty_amount: self.btc_amnesty_amount,
             tx_partial_refund_fee: self.tx_partial_refund_fee,
-            tx_refund_amnesty_fee: self.tx_refund_amnesty_fee,
-            tx_refund_burn_fee: self.tx_refund_burn_fee,
-            tx_final_amnesty_fee: self.tx_final_amnesty_fee,
+            tx_reclaim_fee: self.tx_reclaim_fee,
+            tx_withhold_fee: self.tx_withhold_fee,
+            tx_mercy_fee: self.tx_mercy_fee,
         }
     }
 
@@ -1146,9 +1146,9 @@ pub struct State6 {
     pub tx_refund_fee: bitcoin::Amount,
     pub tx_cancel_fee: bitcoin::Amount,
     pub tx_partial_refund_fee: Option<bitcoin::Amount>,
-    pub tx_refund_amnesty_fee: Option<bitcoin::Amount>,
-    pub tx_refund_burn_fee: Option<bitcoin::Amount>,
-    pub tx_final_amnesty_fee: Option<bitcoin::Amount>,
+    pub tx_reclaim_fee: Option<bitcoin::Amount>,
+    pub tx_withhold_fee: Option<bitcoin::Amount>,
+    pub tx_mercy_fee: Option<bitcoin::Amount>,
 }
 
 impl State6 {
@@ -1327,7 +1327,7 @@ impl State6 {
     pub fn signed_amnesty_transaction(&self) -> Result<Transaction> {
         let tx_amnesty = self.construct_tx_amnesty()?;
 
-        let sig_a = self.refund_signatures.tx_refund_amnesty_sig().context(
+        let sig_a = self.refund_signatures.tx_reclaim_sig().context(
             "Can't sign amnesty transaction because Alice's amnesty signature is missing",
         )?;
         let sig_b = self.b.sign(tx_amnesty.digest());
@@ -1344,33 +1344,33 @@ impl State6 {
         bitcoin::TxReclaim::new(
             &tx_partial_refund,
             &self.refund_address,
-            self.tx_refund_amnesty_fee.context(
-                "Can't construct TxRefundAmnesty because tx_refund_amnesty_fee is missing",
+            self.tx_reclaim_fee.context(
+                "Can't construct TxReclaim because tx_reclaim_fee is missing",
             )?,
             self.remaining_refund_timelock.context(
-                "Can't construct TxRefundAmnesty because remaining_refund_timelock is missing",
+                "Can't construct TxReclaim because remaining_refund_timelock is missing",
             )?,
         )
     }
 
-    pub fn construct_tx_refund_burn(&self) -> Result<bitcoin::TxWithhold> {
+    pub fn construct_tx_withhold(&self) -> Result<bitcoin::TxWithhold> {
         let tx_partial_refund = self.construct_tx_partial_refund()?;
         bitcoin::TxWithhold::new(
             &tx_partial_refund,
             self.A,
             self.b.public(),
-            self.tx_refund_burn_fee
-                .context("Can't construct TxRefundBurn because tx_refund_burn_fee is missing")?,
+            self.tx_withhold_fee
+                .context("Can't construct TxWithhold because tx_withhold_fee is missing")?,
         )
     }
 
-    pub fn construct_tx_final_amnesty(&self) -> Result<bitcoin::TxMercy> {
-        let tx_refund_burn = self.construct_tx_refund_burn()?;
+    pub fn construct_tx_mercy(&self) -> Result<bitcoin::TxMercy> {
+        let tx_withhold = self.construct_tx_withhold()?;
         Ok(bitcoin::TxMercy::new(
-            &tx_refund_burn,
+            &tx_withhold,
             &self.refund_address,
-            self.tx_final_amnesty_fee.context(
-                "Can't construct TxFinalAmnesty because tx_final_amnesty_fee is missing",
+            self.tx_mercy_fee.context(
+                "Can't construct TxMercy because tx_mercy_fee is missing",
             )?,
         ))
     }
@@ -1422,18 +1422,18 @@ impl RefundSignatures {
     pub fn from_possibly_full_refund_sig(
         partial_refund_encsig: bitcoin::EncryptedSignature,
         full_refund_encsig: Option<bitcoin::EncryptedSignature>,
-        refund_amnesty_sig: bitcoin::Signature,
+        reclaim_sig: bitcoin::Signature,
     ) -> Self {
         if let Some(full_refund_encsig) = full_refund_encsig {
             Self::Full {
                 tx_partial_refund_encsig: partial_refund_encsig,
                 tx_full_refund_encsig: full_refund_encsig,
-                tx_refund_amnesty_sig: refund_amnesty_sig,
+                tx_reclaim_sig: reclaim_sig,
             }
         } else {
             Self::Partial {
                 tx_partial_refund_encsig: partial_refund_encsig,
-                tx_refund_amnesty_sig: refund_amnesty_sig,
+                tx_reclaim_sig: reclaim_sig,
             }
         }
     }
@@ -1467,16 +1467,16 @@ impl RefundSignatures {
 
     /// Returns Alice's signature for the amnesty transaction.
     /// Only available for new swaps (Partial/Full variants), not Legacy swaps.
-    pub fn tx_refund_amnesty_sig(&self) -> Option<bitcoin::Signature> {
+    pub fn tx_reclaim_sig(&self) -> Option<bitcoin::Signature> {
         match self {
             RefundSignatures::Partial {
-                tx_refund_amnesty_sig,
+                tx_reclaim_sig,
                 ..
-            } => Some(tx_refund_amnesty_sig.clone()),
+            } => Some(tx_reclaim_sig.clone()),
             RefundSignatures::Full {
-                tx_refund_amnesty_sig,
+                tx_reclaim_sig,
                 ..
-            } => Some(tx_refund_amnesty_sig.clone()),
+            } => Some(tx_reclaim_sig.clone()),
             RefundSignatures::Legacy { .. } => None,
         }
     }

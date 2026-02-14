@@ -134,16 +134,16 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     case "BtcAmnestyReceived":
       return [PathType.RECOVERY_PATH, 3, false, RecoveryScenario.PARTIAL_REFUND];
 
-    case "BtcRefundBurnPublished":
+    case "BtcWithholdPublished":
       return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.PARTIAL_REFUND];
 
-    case "BtcRefundBurnt":
+    case "BtcWithheld":
       return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.PARTIAL_REFUND];
 
-    case "BtcFinalAmnestyPublished":
+    case "BtcMercyPublished":
       return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
 
-    case "BtcFinalAmnestyConfirmed":
+    case "BtcMercyConfirmed":
       return [PathType.RECOVERY_PATH, 3, false, RecoveryScenario.PARTIAL_REFUND];
 
     // Recovery Path States - Cooperative Redeem (after punishment)

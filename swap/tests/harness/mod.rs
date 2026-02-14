@@ -854,7 +854,7 @@ impl TestContext {
         .unwrap();
     }
 
-    pub async fn assert_alice_refund_burn_confirmed(&mut self, state: AliceState) {
+    pub async fn assert_alice_withhold_confirmed(&mut self, state: AliceState) {
         assert!(matches!(state, AliceState::BtcWithholdConfirmed { .. }));
 
         // Same as refunded - Alice still has her XMR back
@@ -875,7 +875,7 @@ impl TestContext {
         .unwrap();
     }
 
-    pub async fn assert_alice_final_amnesty_confirmed(&mut self, state: AliceState) {
+    pub async fn assert_alice_mercy_confirmed(&mut self, state: AliceState) {
         assert!(matches!(
             state,
             AliceState::BtcMercyConfirmed { .. }
@@ -1038,7 +1038,7 @@ impl TestContext {
                 state6.tx_lock_id(),
                 state6.tx_cancel_fee,
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
-                state6.tx_refund_amnesty_fee.expect("amnesty fee"),
+                state6.tx_reclaim_fee.expect("amnesty fee"),
             ),
             _ => panic!("Bob is not in btc amnesty confirmed state: {:?}", state),
         };
@@ -1059,7 +1059,7 @@ impl TestContext {
         assert_eq!(btc_balance_after_swap, expected_balance);
     }
 
-    pub async fn assert_bob_refund_burnt(&self, state: BobState) {
+    pub async fn assert_bob_withheld(&self, state: BobState) {
         self.bob_bitcoin_wallet.sync().await.unwrap();
 
         let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
@@ -1069,7 +1069,7 @@ impl TestContext {
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
                 state6.btc_amnesty_amount.expect("amnesty amount"),
             ),
-            _ => panic!("Bob is not in btc refund burnt state: {:?}", state),
+            _ => panic!("Bob is not in btc withheld state: {:?}", state),
         };
         let lock_tx_bitcoin_fee = self
             .bob_bitcoin_wallet
@@ -1078,7 +1078,7 @@ impl TestContext {
             .unwrap();
 
         let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
-        // Bob lost the amnesty amount (it was burnt)
+        // Bob lost the amnesty amount (it was withheld)
         let expected_balance = self.bob_starting_balances.btc
             - lock_tx_bitcoin_fee
             - cancel_fee
@@ -1088,18 +1088,18 @@ impl TestContext {
         assert_eq!(btc_balance_after_swap, expected_balance);
     }
 
-    pub async fn assert_bob_final_amnesty_received(&self, state: BobState) {
+    pub async fn assert_bob_mercy_received(&self, state: BobState) {
         self.bob_bitcoin_wallet.sync().await.unwrap();
 
-        let (lock_tx_id, cancel_fee, partial_refund_fee, final_amnesty_fee) = match state {
+        let (lock_tx_id, cancel_fee, partial_refund_fee, mercy_fee) = match state {
             BobState::BtcMercyConfirmed(state6) => (
                 state6.tx_lock_id(),
                 state6.tx_cancel_fee,
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
-                state6.tx_final_amnesty_fee.expect("final amnesty fee"),
+                state6.tx_mercy_fee.expect("mercy fee"),
             ),
             _ => panic!(
-                "Bob is not in btc final amnesty confirmed state: {:?}",
+                "Bob is not in btc mercy confirmed state: {:?}",
                 state
             ),
         };
@@ -1110,12 +1110,12 @@ impl TestContext {
             .unwrap();
 
         let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
-        // Bob gets full amount back via final amnesty
+        // Bob gets full amount back via mercy
         let expected_balance = self.bob_starting_balances.btc
             - lock_tx_bitcoin_fee
             - cancel_fee
             - partial_refund_fee
-            - final_amnesty_fee;
+            - mercy_fee;
 
         assert_eq!(btc_balance_after_swap, expected_balance);
     }
@@ -1443,11 +1443,11 @@ pub mod alice_run_until {
         matches!(state, AliceState::XmrRefunded { .. })
     }
 
-    pub fn is_btc_refund_burn_confirmed(state: &AliceState) -> bool {
+    pub fn is_btc_withhold_confirmed(state: &AliceState) -> bool {
         matches!(state, AliceState::BtcWithholdConfirmed { .. })
     }
 
-    pub fn is_btc_final_amnesty_confirmed(state: &AliceState) -> bool {
+    pub fn is_btc_mercy_confirmed(state: &AliceState) -> bool {
         matches!(state, AliceState::BtcMercyConfirmed { .. })
     }
 }
@@ -1487,11 +1487,11 @@ pub mod bob_run_until {
         matches!(state, BobState::BtcReclaimConfirmed(..))
     }
 
-    pub fn is_btc_refund_burnt(state: &BobState) -> bool {
+    pub fn is_btc_withheld(state: &BobState) -> bool {
         matches!(state, BobState::BtcWithheld(..))
     }
 
-    pub fn is_btc_final_amnesty_confirmed(state: &BobState) -> bool {
+    pub fn is_btc_mercy_confirmed(state: &BobState) -> bool {
         matches!(state, BobState::BtcMercyConfirmed(..))
     }
 }

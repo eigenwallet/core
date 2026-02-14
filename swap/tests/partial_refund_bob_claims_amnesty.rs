@@ -12,10 +12,10 @@ use swap_env::config::RefundPolicy;
 /// refund, waits for the remaining refund timelock, and then claims the amnesty.
 #[tokio::test]
 async fn given_partial_refund_bob_claims_amnesty_after_timelock() {
-    // Use 95% refund ratio - Bob gets 95% immediately, 5% locked in amnesty
-    // Alice does NOT burn - Bob can claim amnesty after timelock
+    // Use 5% anti-spam deposit ratio - Bob gets 95% immediately, 5% locked in amnesty
+    // Alice does NOT withhold - Bob can claim amnesty after timelock
     let refund_policy = Some(RefundPolicy {
-        anti_spam_deposit_ratio: Decimal::new(95, 2), // 0.95 = 95%
+        anti_spam_deposit_ratio: Decimal::new(5, 2), // 0.05 = 5%
         always_withhold_deposit: false,
     });
 

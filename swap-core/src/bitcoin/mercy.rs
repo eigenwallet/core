@@ -11,7 +11,7 @@ use bitcoin_wallet::primitives::Watchable;
 use ecdsa_fun::Signature;
 use std::collections::HashMap;
 
-/// TxFinalAmnesty spends the burn output of TxRefundBurn and sends it to
+/// TxMercy spends the burn output of TxWithhold and sends it to
 /// Bob's refund address. This allows Alice to voluntarily refund Bob even
 /// after she has "burnt" the amnesty output.
 ///
@@ -28,36 +28,36 @@ pub struct TxMercy {
 
 impl TxMercy {
     pub fn new(
-        tx_refund_burn: &TxWithhold,
+        tx_withhold: &TxWithhold,
         refund_address: &Address,
         spending_fee: Amount,
     ) -> Self {
         // TODO: Handle case where fee >= burn amount more gracefully
         assert!(
-            tx_refund_burn.amount() > spending_fee,
-            "TxFinalAmnesty fee ({}) must be less than burn amount ({})",
+            tx_withhold.amount() > spending_fee,
+            "TxMercy fee ({}) must be less than burn amount ({})",
             spending_fee,
-            tx_refund_burn.amount()
+            tx_withhold.amount()
         );
 
-        let tx_final_amnesty = tx_refund_burn.build_spend_transaction(refund_address, spending_fee);
+        let tx_mercy = tx_withhold.build_spend_transaction(refund_address, spending_fee);
 
-        let digest = SighashCache::new(&tx_final_amnesty)
+        let digest = SighashCache::new(&tx_mercy)
             .p2wsh_signature_hash(
-                0, // Only one input: burn output from tx_refund_burn
-                &tx_refund_burn
+                0, // Only one input: burn output from tx_withhold
+                &tx_withhold
                     .burn_output_descriptor
                     .script_code()
                     .expect("scriptcode"),
-                tx_refund_burn.amount(),
+                tx_withhold.amount(),
                 EcdsaSighashType::All,
             )
             .expect("sighash");
 
         Self {
-            inner: tx_final_amnesty,
+            inner: tx_mercy,
             digest,
-            burn_output_descriptor: tx_refund_burn.burn_output_descriptor.clone(),
+            burn_output_descriptor: tx_withhold.burn_output_descriptor.clone(),
             watch_script: refund_address.script_pubkey(),
         }
     }

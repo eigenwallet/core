@@ -160,7 +160,7 @@ pub async fn cancel(
                     ));
                 }
                 Ok(ExpiredTimelocks::RemainingRefund) => {
-                    bail!(err.context("Cannot cancel swap because we are in the partial refund phase. TxRefundAmnesty can be published."));
+                    bail!(err.context("Cannot cancel swap because we are in the partial refund phase. TxReclaim can be published."));
                 }
                 Err(timelock_err) => {
                     bail!(err
@@ -307,9 +307,9 @@ pub async fn refund(
                     );
                 }
                 Ok(ExpiredTimelocks::RemainingRefund) => {
-                    // TODO: Try to publish TxRefundAmnesty here instead of just reporting the state
+                    // TODO: Try to publish TxReclaim here instead of just reporting the state
                     bail!(bitcoin_publication_err.context(
-                        "Amnesty timelock has expired. TxRefundAmnesty can be published."
+                        "Amnesty timelock has expired. TxReclaim can be published."
                     ));
                 }
                 Err(e) => {
