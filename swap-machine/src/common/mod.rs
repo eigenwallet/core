@@ -92,6 +92,29 @@ pub struct Message4 {
     pub tx_final_amnesty_sig: Option<bitcoin::Signature>,
 }
 
+/// Validates that a proposed transaction fee is between
+/// [`bitcoin_wallet::MIN_ABSOLUTE_TX_FEE`] and 3× the `conservative_estimated_fee`.
+pub fn sanity_check_transaction_fee(
+    fee: bitcoin::Amount,
+    conservative_estimated_fee: bitcoin::Amount,
+) -> Result<()> {
+    if fee < bitcoin_wallet::MIN_ABSOLUTE_TX_FEE {
+        bail!(
+            "Fee ({fee}) is below the minimum relay fee ({})",
+            bitcoin_wallet::MIN_ABSOLUTE_TX_FEE,
+        );
+    }
+
+    let ceiling = conservative_estimated_fee.to_sat().saturating_mul(3);
+    if fee.to_sat() > ceiling {
+        bail!(
+            "Fee ({fee}) exceeds 3x the conservative estimate ({conservative_estimated_fee})",
+        );
+    }
+
+    Ok(())
+}
+
 /// Validates that the amnesty amount is within sane bounds.
 ///
 /// - If amnesty is zero, this is a full-refund swap and no checks are needed.

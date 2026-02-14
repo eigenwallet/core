@@ -10510,7 +10510,7 @@ checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "swap"
-version = "3.6.7"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -10585,7 +10585,7 @@ dependencies = [
 
 [[package]]
 name = "swap-asb"
-version = "3.6.7"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
@@ -10616,7 +10616,7 @@ dependencies = [
 
 [[package]]
 name = "swap-controller"
-version = "3.6.7"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "clap 4.5.54",
@@ -10632,7 +10632,7 @@ dependencies = [
 
 [[package]]
 name = "swap-controller-api"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "bitcoin 0.32.8",
  "jsonrpsee",
@@ -10642,7 +10642,7 @@ dependencies = [
 
 [[package]]
 name = "swap-core"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "bdk_wallet",
@@ -10674,7 +10674,7 @@ dependencies = [
 
 [[package]]
 name = "swap-db"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "bitcoin 0.32.8",
  "serde",
@@ -10686,7 +10686,7 @@ dependencies = [
 
 [[package]]
 name = "swap-env"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
@@ -10708,7 +10708,7 @@ dependencies = [
 
 [[package]]
 name = "swap-feed"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "backoff",
@@ -10729,7 +10729,7 @@ dependencies = [
 
 [[package]]
 name = "swap-fs"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "directories-next",
@@ -10738,7 +10738,7 @@ dependencies = [
 
 [[package]]
 name = "swap-machine"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10766,7 +10766,7 @@ dependencies = [
 
 [[package]]
 name = "swap-orchestrator"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
@@ -10783,7 +10783,7 @@ dependencies = [
 
 [[package]]
 name = "swap-p2p"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "arti-client",
@@ -10820,7 +10820,7 @@ dependencies = [
 
 [[package]]
 name = "swap-proptest"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "bitcoin 0.32.8",
  "ecdsa_fun",
@@ -10829,7 +10829,7 @@ dependencies = [
 
 [[package]]
 name = "swap-serde"
-version = "0.1.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.8",
