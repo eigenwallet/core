@@ -198,8 +198,10 @@ function EarnestDepositChip(quote: BidQuote) {
     (quote.refund_policy.type === "FullRefund" ? 0 : quote.refund_policy.content?.anti_spam_deposit_ratio)
     * 1000
   ) / 1000;
-  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `If the swap is refunded, the maker may choose to freeze ${earnest_deposit_ratio * 100}% of your refund. This is allows them to protect themselves against griefing.`;
-  const text = full_refund ? "No earnest deposit" : `${earnest_deposit_ratio * 100}% earnest deposit`;
+  const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
+
+  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. The maker may withhold the remaining ${earnest_deposit_ratio * 100}% to protect themselves against griefing.`;
+  const text = full_refund ? "Zero anti-spam deposit" : `${earnest_deposit_ratio * 100}% deposit`;
 
   return <Tooltip
     title={tooltip_text}
@@ -208,7 +210,7 @@ function EarnestDepositChip(quote: BidQuote) {
     <Chip
       label={text}
       size="small"
-      color={quote.refund_policy.type === "FullRefund" ? "success" : "warning"} />
+      color={full_refund ? "success" : "warning"} />
   </Tooltip>;
 }
 
