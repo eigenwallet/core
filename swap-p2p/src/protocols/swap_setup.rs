@@ -53,6 +53,20 @@ pub enum SpotPriceResponse {
     Error(SpotPriceError),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, thiserror::Error)]
+pub enum SwapSetupError {
+    #[error("Anti-spam deposit ({amount}) doesn't cover fees (minimum: {minimum_to_cover_fees})")]
+    AntiSpamDepositTooSmall {
+        amount: bitcoin::Amount,
+        minimum_to_cover_fees: bitcoin::Amount,
+    },
+    #[error("Anti-spam deposit ratio ({ratio}) exceeds maximum accepted ({max_accepted_ratio})")]
+    AntiSpamDepositRatioTooHigh {
+        ratio: rust_decimal::Decimal,
+        max_accepted_ratio: rust_decimal::Decimal,
+    },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SpotPriceError {
     NoSwapsAccepted,
@@ -82,7 +96,7 @@ fn codec() -> unsigned_varint::codec::UviBytes<Bytes> {
     codec
 }
 
-pub async fn read_cbor_message<T>(stream: &mut Stream) -> Result<T>
+pub async fn read_cbor_message<T>(stream: &mut Stream) -> Result<Result<T, SwapSetupError>>
 where
     T: DeserializeOwned,
 {
@@ -94,8 +108,8 @@ where
         .context("Failed to read length-prefixed message from stream")??;
 
     let mut de = serde_cbor::Deserializer::from_slice(&bytes);
-    let message =
-        T::deserialize(&mut de).context("Failed to deserialize bytes into message using CBOR")?;
+    let message = Result::<T, SwapSetupError>::deserialize(&mut de)
+        .context("Failed to deserialize bytes into message using CBOR")?;
 
     Ok(message)
 }
@@ -104,8 +118,24 @@ pub async fn write_cbor_message<T>(stream: &mut Stream, message: T) -> Result<()
 where
     T: Serialize,
 {
-    let bytes =
-        serde_cbor::to_vec(&message).context("Failed to serialize message as bytes using CBOR")?;
+    let wrapped = Ok::<_, SwapSetupError>(message);
+    let bytes = serde_cbor::to_vec(&wrapped)
+        .context("Failed to serialize message as bytes using CBOR")?;
+
+    let mut frame = Framed::new(stream, codec());
+
+    frame
+        .send(Bytes::from(bytes))
+        .await
+        .context("Failed to write bytes as length-prefixed message")?;
+
+    Ok(())
+}
+
+pub async fn write_cbor_error(stream: &mut Stream, error: SwapSetupError) -> Result<()> {
+    let wrapped = Err::<(), _>(error);
+    let bytes = serde_cbor::to_vec(&wrapped)
+        .context("Failed to serialize error as bytes using CBOR")?;
 
     let mut frame = Framed::new(stream, codec());
 

@@ -548,14 +548,11 @@ async fn run_swap_setup(
     .await
     .context("Failed to send spot price request to Alice")?;
 
-    // Here we read the spot price response from Alice
-    // The outer ? checks if Alice responded with an error (SpotPriceError)
     let xmr = Result::from(
-        // The inner ? is for the read_cbor_message function
-        // It will return an error if the deserialization fails
         read_cbor_message::<SpotPriceResponse>(&mut substream)
             .await
-            .context("Failed to read spot price response from Alice")?,
+            .context("Failed to read spot price response from Alice")?
+            .context("Peer sent an error instead of spot price response")?,
     )?;
 
     tracing::trace!(
@@ -598,7 +595,8 @@ async fn run_swap_setup(
     .context("Failed to send state0 message to Alice")?;
     let message1 = read_cbor_message::<Message1>(&mut substream)
         .await
-        .context("Failed to read message1 from Alice")?;
+        .context("Failed to read message1 from Alice")?
+        .context("Peer sent an error instead of message1")?;
     let state1 = state0
         .receive(bitcoin_wallet.as_ref(), message1)
         .await
@@ -614,7 +612,8 @@ async fn run_swap_setup(
         .context("Failed to send state1 message")?;
     let message3 = read_cbor_message::<Message3>(&mut substream)
         .await
-        .context("Failed to read message3 from Alice")?;
+        .context("Failed to read message3 from Alice")?
+        .context("Peer sent an error instead of message3")?;
     let state2 = state1
         .receive(message3)
         .context("Failed to receive state2")?;

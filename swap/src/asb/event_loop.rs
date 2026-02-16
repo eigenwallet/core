@@ -12,7 +12,7 @@ use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
@@ -961,14 +961,25 @@ fn apply_anti_spam_policy(
         .checked_mul(btc_anti_spam_deposit_ratio)
         .context("Decimal overflow when computing amnesty amount in sats")?
         .floor();
-    let btc_amnesty_sats = btc_amnesty_decimal
+    let btc_amnesty_sats: u64 = btc_amnesty_decimal
         .try_into()
         .context("Couldn't convert Decimal to u64")?;
 
-    Ok((
-        bitcoin::Amount::from_sat(btc_amnesty_sats),
-        should_always_withhold,
-    ))
+    let btc_amnesty_amount = bitcoin::Amount::from_sat(btc_amnesty_sats);
+
+    let minimum_to_cover_fees = bitcoin::Amount::from_sat(
+        bitcoin_wallet::MIN_ABSOLUTE_TX_FEE_SATS
+            * swap_machine::common::NUM_WITHHOLD_PATH_TXS
+            + 1,
+    );
+    if btc_amnesty_amount < minimum_to_cover_fees {
+        bail!(
+            "Anti-spam deposit ({btc_amnesty_amount}) doesn't cover fees \
+             (minimum: {minimum_to_cover_fees}). Increase the swap amount or the deposit ratio.",
+        );
+    }
+
+    Ok((btc_amnesty_amount, should_always_withhold))
 }
 
 async fn capture_wallet_snapshot(

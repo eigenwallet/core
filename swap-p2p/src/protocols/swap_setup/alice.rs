@@ -455,7 +455,8 @@ async fn run_swap_setup(
 ) -> Result<(Uuid, State3)> {
     let request = swap_setup::read_cbor_message::<SpotPriceRequest>(&mut substream)
         .await
-        .context("Failed to read spot price request")?;
+        .context("Failed to read spot price request")?
+        .context("Peer sent an error instead of spot price request")?;
 
     let (wallet_snapshot, btc_amnesty_amount, should_burn_on_refund) = sender
         .send_receive(request.btc)
@@ -551,7 +552,8 @@ async fn run_swap_setup(
 
     let message0 = swap_setup::read_cbor_message::<Message0>(&mut substream)
         .await
-        .context("Failed to read message0")?;
+        .context("Failed to read message0")?
+        .context("Peer sent an error instead of message0")?;
     let (swap_id, state1) = state0
         .receive(message0)
         .context("Failed to transition state0 -> state1 using message0")?;
@@ -567,7 +569,8 @@ async fn run_swap_setup(
 
     let message2 = swap_setup::read_cbor_message::<Message2>(&mut substream)
         .await
-        .context("Failed to read message2")?;
+        .context("Failed to read message2")?
+        .context("Peer sent an error instead of message2")?;
     let state2 = state1
         .receive(message2)
         .context("Failed to transition state1 -> state2 using message2")?;
@@ -581,7 +584,8 @@ async fn run_swap_setup(
 
     let message4 = swap_setup::read_cbor_message::<Message4>(&mut substream)
         .await
-        .context("Failed to read message4")?;
+        .context("Failed to read message4")?
+        .context("Peer sent an error instead of message4")?;
     let state3 = state2
         .receive(message4)
         .context("Failed to transition state2 -> state3 using message4")?;

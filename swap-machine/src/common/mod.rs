@@ -107,19 +107,34 @@ pub fn sanity_check_transaction_fee(
 
     let ceiling = conservative_estimated_fee.to_sat().saturating_mul(3);
     if fee.to_sat() > ceiling {
-        bail!(
-            "Fee ({fee}) exceeds 3x the conservative estimate ({conservative_estimated_fee})",
-        );
+        bail!("Fee ({fee}) exceeds 3x the conservative estimate ({conservative_estimated_fee})",);
     }
 
     Ok(())
+}
+
+/// Number of transactions in the withhold path (TxPartialRefund + TxWithhold + TxMercy).
+pub const NUM_WITHHOLD_PATH_TXS: u64 = 3;
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum SanityCheckError {
+    #[error("Anti-spam deposit ({amount}) doesn't cover fees (minimum: {minimum_to_cover_fees})")]
+    AntiSpamDepositTooSmall {
+        amount: bitcoin::Amount,
+        minimum_to_cover_fees: bitcoin::Amount,
+    },
+    #[error("Anti-spam deposit ratio ({ratio}) exceeds maximum accepted ({max_accepted_ratio})")]
+    AntiSpamDepositRatioTooHigh {
+        ratio: rust_decimal::Decimal,
+        max_accepted_ratio: rust_decimal::Decimal,
+    },
 }
 
 /// Validates that the amnesty amount is within sane bounds.
 ///
 /// - If amnesty is zero, this is a full-refund swap and no checks are needed.
 /// - Otherwise, the amnesty must cover all transaction fees that could be spent
-///   from it (TxPartialRefund, TxReclaim, TxWithhold, TxMercy).
+///   from it (TxPartialRefund + TxReclaim, or TxPartialRefund + TxWithhold + TxMercy).
 /// - The amnesty ratio (amnesty / lock amount) must not exceed
 ///   [`swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO`].
 pub fn sanity_check_amnesty_amount(
@@ -129,19 +144,25 @@ pub fn sanity_check_amnesty_amount(
     tx_reclaim_fee: bitcoin::Amount,
     tx_withhold_fee: bitcoin::Amount,
     tx_mercy_fee: bitcoin::Amount,
-) -> Result<()> {
+) -> std::result::Result<(), SanityCheckError> {
     if amnesty_amount == bitcoin::Amount::ZERO {
         return Ok(());
     }
 
-    let min_amnesty = tx_partial_refund_fee + tx_reclaim_fee + tx_withhold_fee + tx_mercy_fee;
-    if amnesty_amount < min_amnesty {
-        bail!(
-            "Amnesty amount ({amnesty_amount}) is less than the combined fees \
-             for TxPartialRefund ({tx_partial_refund_fee}), TxReclaim ({tx_reclaim_fee}), \
-             TxWithhold ({tx_withhold_fee}), and TxMercy ({tx_mercy_fee}). \
-             The deposit would be consumed by fees.",
-        );
+    let reclaim_path = tx_partial_refund_fee + tx_reclaim_fee;
+    if amnesty_amount <= reclaim_path {
+        return Err(SanityCheckError::AntiSpamDepositTooSmall {
+            amount: amnesty_amount,
+            minimum_to_cover_fees: reclaim_path,
+        });
+    }
+
+    let withhold_path = tx_partial_refund_fee + tx_withhold_fee + tx_mercy_fee;
+    if amnesty_amount <= withhold_path {
+        return Err(SanityCheckError::AntiSpamDepositTooSmall {
+            amount: amnesty_amount,
+            minimum_to_cover_fees: withhold_path,
+        });
     }
 
     let amnesty_sats = rust_decimal::Decimal::from_u64(amnesty_amount.to_sat())
@@ -151,11 +172,10 @@ pub fn sanity_check_amnesty_amount(
     let ratio = amnesty_sats / lock_sats;
 
     if ratio > swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO {
-        bail!(
-            "Amnesty ratio ({ratio}) exceeds maximum allowed ratio of {}. \
-             The requested deposit is unreasonably high.",
-            swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO,
-        );
+        return Err(SanityCheckError::AntiSpamDepositRatioTooHigh {
+            ratio,
+            max_accepted_ratio: swap_env::config::MAX_ANTI_SPAM_DEPOSIT_RATIO,
+        });
     }
 
     Ok(())
@@ -278,8 +298,8 @@ mod tests {
     /// 1 BTC lock amount.
     const LOCK: bitcoin::Amount = bitcoin::Amount::from_sat(100_000_000);
     const FEE: bitcoin::Amount = MIN_ABSOLUTE_TX_FEE;
-    /// Sum of all 4 fees (the lower bound).
-    const FEE_FLOOR: u64 = MIN_ABSOLUTE_TX_FEE_SATS * 4;
+    /// Withhold path: TxPartialRefund + TxWithhold + TxMercy (the binding constraint when all fees are equal).
+    const WITHHOLD_PATH: u64 = MIN_ABSOLUTE_TX_FEE_SATS * NUM_WITHHOLD_PATH_TXS;
     /// 20% of LOCK (the upper bound).
     const RATIO_CEILING: u64 = 20_000_000;
 
@@ -290,17 +310,24 @@ mod tests {
     }
 
     #[test]
-    fn reject_amnesty_below_fee_floor() {
-        let amnesty = bitcoin::Amount::from_sat(FEE_FLOOR - 1);
+    fn reject_amnesty_below_withhold_path() {
+        let amnesty = bitcoin::Amount::from_sat(WITHHOLD_PATH - 1);
         sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
-            .expect_err("amnesty below fee floor should be rejected");
+            .expect_err("amnesty below withhold path fees should be rejected");
     }
 
     #[test]
-    fn pass_amnesty_at_fee_floor() {
-        let amnesty = bitcoin::Amount::from_sat(FEE_FLOOR);
+    fn reject_amnesty_equal_to_withhold_path() {
+        let amnesty = bitcoin::Amount::from_sat(WITHHOLD_PATH);
         sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
-            .expect("amnesty exactly at fee floor should pass");
+            .expect_err("amnesty equal to withhold path fees should be rejected");
+    }
+
+    #[test]
+    fn pass_amnesty_above_withhold_path() {
+        let amnesty = bitcoin::Amount::from_sat(WITHHOLD_PATH + 1);
+        sanity_check_amnesty_amount(LOCK, amnesty, FEE, FEE, FEE, FEE)
+            .expect("amnesty above withhold path fees should pass");
     }
 
     #[test]
