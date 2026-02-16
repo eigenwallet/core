@@ -425,7 +425,9 @@ fn main() {
                 .to_string(),
         )
         .include(output_directory)
-        .flag("-fPIC"); // Position independent code
+        .flag("-fPIC") // Position independent code
+        .flag("-Wno-unused-parameter") // Suppress warnings from upstream Monero C++ headers
+        .flag("-Wno-reorder-ctor"); // Suppress harmless ctor init order warning from wallet2.h
 
     build.compile("monero-sys");
 }
