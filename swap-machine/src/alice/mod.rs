@@ -271,22 +271,6 @@ impl State0 {
             bail!("Bob's dleq proof doesn't verify")
         }
 
-        let amnesty_amount = self
-            .btc_amnesty_amount
-            .context("btc_amnesty_amount missing for new swap")?;
-        let tx_withhold_fee = self
-            .tx_withhold_fee
-            .context("tx_withhold_fee missing for new swap")?;
-
-        crate::common::sanity_check_amnesty_amount(
-            self.btc,
-            amnesty_amount,
-            msg.tx_partial_refund_fee,
-            msg.tx_reclaim_fee,
-            tx_withhold_fee,
-            msg.tx_mercy_fee,
-        )?;
-
         let v = self.v_a + msg.v_b;
 
         Ok((

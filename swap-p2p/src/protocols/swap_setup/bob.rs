@@ -25,7 +25,7 @@ use swap_machine::bob::{State0, State2};
 use swap_machine::common::{Message1, Message3};
 use uuid::Uuid;
 
-use super::{SpotPriceRequest, read_cbor_message, write_cbor_message};
+use super::{SpotPriceRequest, read_cbor_message, write_cbor_error, write_cbor_message};
 
 // TODO: This should use redial::Behaviour to keep connections alive for peers with queued requests
 // TODO: Do not use swap_id as key inside the ConnectionHandler, use another key
@@ -597,6 +597,19 @@ async fn run_swap_setup(
         .await
         .context("Failed to read message1 from Alice")?
         .context("Peer sent an error instead of message1")?;
+
+    if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
+        new_swap_request.btc,
+        message1.amnesty_amount,
+        new_swap_request.tx_partial_refund_fee,
+        new_swap_request.tx_reclaim_fee,
+        message1.tx_withhold_fee,
+        new_swap_request.tx_mercy_fee,
+    ) {
+        let _ = write_cbor_error(&mut substream, sanity_err.clone().into()).await;
+        return Err(sanity_err).context("Amnesty sanity check failed");
+    }
+
     let state1 = state0
         .receive(bitcoin_wallet.as_ref(), message1)
         .await

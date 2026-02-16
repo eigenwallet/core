@@ -389,27 +389,6 @@ impl State0 {
             bail!("Alice's dleq proof doesn't verify")
         }
 
-        {
-            let tx_partial_refund_fee = self
-                .tx_partial_refund_fee
-                .context("tx_partial_refund_fee missing for new swap")?;
-            let tx_reclaim_fee = self
-                .tx_reclaim_fee
-                .context("tx_reclaim_fee missing for new swap")?;
-            let tx_mercy_fee = self
-                .tx_mercy_fee
-                .context("tx_mercy_fee missing for new swap")?;
-
-            crate::common::sanity_check_amnesty_amount(
-                self.btc,
-                msg.amnesty_amount,
-                tx_partial_refund_fee,
-                tx_reclaim_fee,
-                msg.tx_withhold_fee,
-                tx_mercy_fee,
-            )?;
-        }
-
         let tx_lock = swap_core::bitcoin::TxLock::new(
             wallet,
             self.btc,

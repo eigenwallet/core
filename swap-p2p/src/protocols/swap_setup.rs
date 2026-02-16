@@ -67,6 +67,27 @@ pub enum SwapSetupError {
     },
 }
 
+impl From<swap_machine::common::SanityCheckError> for SwapSetupError {
+    fn from(err: swap_machine::common::SanityCheckError) -> Self {
+        match err {
+            swap_machine::common::SanityCheckError::AntiSpamDepositTooSmall {
+                amount,
+                minimum_to_cover_fees,
+            } => SwapSetupError::AntiSpamDepositTooSmall {
+                amount,
+                minimum_to_cover_fees,
+            },
+            swap_machine::common::SanityCheckError::AntiSpamDepositRatioTooHigh {
+                ratio,
+                max_accepted_ratio,
+            } => SwapSetupError::AntiSpamDepositRatioTooHigh {
+                ratio,
+                max_accepted_ratio,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SpotPriceError {
     NoSwapsAccepted,
