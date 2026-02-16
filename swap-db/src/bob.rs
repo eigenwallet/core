@@ -50,6 +50,7 @@ pub enum Bob {
         monero_wallet_restore_blockheight: BlockHeight,
     },
     CancelTimelockExpired(bob::State6),
+    BtcCancelPublished(bob::State6),
     BtcCancelled(bob::State6),
     BtcRefundPublished(bob::State6),
     BtcEarlyRefundPublished(bob::State6),
@@ -132,6 +133,7 @@ impl From<BobState> for Bob {
                 monero_wallet_restore_blockheight,
             },
             BobState::CancelTimelockExpired(state6) => Bob::CancelTimelockExpired(state6),
+            BobState::BtcCancelPublished(state6) => Bob::BtcCancelPublished(state6),
             BobState::BtcCancelled(state6) => Bob::BtcCancelled(state6),
             BobState::BtcRefundPublished(state6) => Bob::BtcRefundPublished(state6),
             BobState::BtcEarlyRefundPublished(state6) => Bob::BtcEarlyRefundPublished(state6),
@@ -222,6 +224,7 @@ impl From<Bob> for BobState {
                 monero_wallet_restore_blockheight,
             },
             Bob::CancelTimelockExpired(state6) => BobState::CancelTimelockExpired(state6),
+            Bob::BtcCancelPublished(state6) => BobState::BtcCancelPublished(state6),
             Bob::BtcCancelled(state6) => BobState::BtcCancelled(state6),
             Bob::BtcRefundPublished(state6) => BobState::BtcRefundPublished(state6),
             Bob::BtcPartialRefundPublished(state6) => BobState::BtcPartialRefundPublished(state6),
@@ -264,6 +267,7 @@ impl fmt::Display for Bob {
                 f.write_str("Waiting for cancel timelock expiration")
             }
             Bob::CancelTimelockExpired(_) => f.write_str("Cancel timelock is expired"),
+            Bob::BtcCancelPublished(_) => f.write_str("Bitcoin cancel published"),
             Bob::BtcCancelled(_) => f.write_str("Bitcoin refundable"),
             Bob::BtcRefundPublished { .. } => f.write_str("Bitcoin refund published"),
             Bob::BtcEarlyRefundPublished { .. } => f.write_str("Bitcoin early refund published"),

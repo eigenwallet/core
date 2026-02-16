@@ -69,6 +69,7 @@ pub async fn cancel(
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
         BobState::BtcRefunded(state6) => state6,
+        BobState::BtcCancelPublished(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefundPublished(state6) => state6,
         BobState::BtcEarlyRefundPublished(state6) => state6,
@@ -105,7 +106,7 @@ pub async fn cancel(
     // Attempt to just publish the cancel transaction
     match state6.submit_tx_cancel(bitcoin_wallet.as_ref()).await {
         Ok((txid, _)) => {
-            let state = BobState::BtcCancelled(state6);
+            let state = BobState::BtcCancelPublished(state6);
             db.insert_latest_state(swap_id, state.clone().into())
                 .await?;
             Ok((txid, state))
@@ -117,7 +118,7 @@ pub async fn cancel(
         Err(err) => {
             // Check if Alice has already published the cancel transaction while we were absent
             if let Some(tx) = state6.check_for_tx_cancel(bitcoin_wallet.as_ref()).await? {
-                let state = BobState::BtcCancelled(state6);
+                let state = BobState::BtcCancelPublished(state6);
                 db.insert_latest_state(swap_id, state.clone().into())
                     .await?;
                 tracing::info!("Alice has already cancelled the swap");
@@ -206,6 +207,7 @@ pub async fn refund(
             monero_wallet_restore_blockheight,
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
+        BobState::BtcCancelPublished(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefunded(state6) => state6,
         BobState::BtcRefundPublished(state6) => state6,

@@ -71,6 +71,7 @@ pub enum BobState {
         monero_wallet_restore_blockheight: BlockHeight,
     },
     CancelTimelockExpired(State6),
+    BtcCancelPublished(State6),
     BtcCancelled(State6),
     BtcRefundPublished(State6),
     BtcEarlyRefundPublished(State6),
@@ -172,6 +173,7 @@ impl fmt::Display for BobState {
                 write!(f, "waiting for cancel timelock expiration")
             }
             BobState::CancelTimelockExpired(..) => write!(f, "cancel timelock is expired"),
+            BobState::BtcCancelPublished(..) => write!(f, "btc cancel is published"),
             BobState::BtcCancelled(..) => write!(f, "btc is cancelled"),
             BobState::BtcRefundPublished { .. } => write!(f, "btc refund is published"),
             BobState::BtcEarlyRefundPublished { .. } => write!(f, "btc early refund is published"),
@@ -237,6 +239,7 @@ impl BobState {
                 Some(state.expired_timelock(bitcoin_wallet.as_ref()).await?)
             }
             BobState::CancelTimelockExpired(state)
+            | BobState::BtcCancelPublished(state)
             | BobState::BtcCancelled(state)
             | BobState::BtcRefundPublished(state)
             | BobState::BtcEarlyRefundPublished(state)

@@ -51,12 +51,12 @@ async fn given_alice_and_bob_manually_refund_after_funds_locked_both_refund() {
         // Bob manually cancels
         bob_join_handle.abort();
         let (_, state) = cli::cancel(bob_swap.id, bob_swap.bitcoin_wallet, bob_swap.db).await?;
-        assert!(matches!(state, BobState::BtcCancelled { .. }));
+        assert!(matches!(state, BobState::BtcCancelPublished { .. }));
 
         let (bob_swap, bob_join_handle) = ctx
             .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
             .await;
-        assert!(matches!(bob_swap.state, BobState::BtcCancelled { .. }));
+        assert!(matches!(bob_swap.state, BobState::BtcCancelPublished { .. }));
 
         // Bob manually refunds
         bob_join_handle.abort();

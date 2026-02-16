@@ -77,13 +77,13 @@ async fn alice_manually_punishes_after_bob_dead_and_bob_cancels() {
         bob_join_handle.abort();
 
         let (_, state) = cli::cancel(bob_swap_id, bob_swap.bitcoin_wallet, bob_swap.db).await?;
-        // Bob should be in BtcCancelled state now.
-        assert!(matches!(state, BobState::BtcCancelled { .. }));
+        // Bob should be in BtcCancelPublished state now.
+        assert!(matches!(state, BobState::BtcCancelPublished { .. }));
 
         let (bob_swap, _) = ctx
             .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
             .await;
-        assert!(matches!(bob_swap.state, BobState::BtcCancelled { .. }));
+        assert!(matches!(bob_swap.state, BobState::BtcCancelPublished { .. }));
         // Alice punished Bob, so he should be in the BtcPunished state.
         let error = cli::refund(bob_swap_id, bob_swap.bitcoin_wallet, bob_swap.db)
             .await

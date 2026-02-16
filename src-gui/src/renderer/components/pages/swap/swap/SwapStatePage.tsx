@@ -114,6 +114,8 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       break;
     case "CancelTimelockExpired":
       return <CancelTimelockExpiredPage />;
+    case "BtcCancelPublished":
+      return <BitcoinCancelledPage />;
     case "BtcCancelled":
       return <BitcoinCancelledPage />;
 

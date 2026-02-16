@@ -823,13 +823,13 @@ async fn next_state(
 
                     // Then we check if tx_cancel is present on the chain
                     if state6.check_for_tx_cancel(&*bitcoin_wallet).await.context("Failed to check for existence of tx_cancel before cancelling").map_err(backoff::Error::transient)?.is_some() {
-                        return Ok(BobState::BtcCancelled(state6.clone()));
+                        return Ok(BobState::BtcCancelPublished(state6.clone()));
                     }
 
                     // If none of the above are present, we publish tx_cancel
                     state6.submit_tx_cancel(&*bitcoin_wallet).await.context("Failed to submit tx_cancel after ensuring both tx_early_refund and tx_cancel are not present").map_err(backoff::Error::transient)?;
 
-                    Ok(BobState::BtcCancelled(state6))
+                    Ok(BobState::BtcCancelPublished(state6))
                     }
                 },
                 None,
@@ -838,8 +838,64 @@ async fn next_state(
             .await
             .expect("we never stop retrying to check for tx_redeem, tx_early_refund and tx_cancel then publishing tx_cancel if necessary")
         }
+        BobState::BtcCancelPublished(state) => {
+            let btc_cancel_txid = state.construct_tx_cancel()?.txid();
+            let tx_early_refund = state.construct_tx_early_refund();
+            let tx_early_refund_txid = tx_early_refund.txid();
+            let btc_finality_confirmations = env_config.bitcoin_finality_confirmations;
+
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcCancelPublished {
+                    btc_cancel_txid,
+                    btc_cancel_confirmations: 0,
+                    btc_cancel_target_confirmations: btc_finality_confirmations,
+                },
+            );
+
+            let tx_cancel_for_sub = state.construct_tx_cancel()?;
+            let (tx_cancel_sub, tx_early_refund_sub): (
+                bitcoin_wallet::Subscription,
+                bitcoin_wallet::Subscription,
+            ) = tokio::join!(
+                bitcoin_wallet.subscribe_to(Box::new(tx_cancel_for_sub)),
+                bitcoin_wallet.subscribe_to(Box::new(tx_early_refund)),
+            );
+
+            let tx_cancel_confirmed = tx_cancel_sub.wait_until(|status| {
+                let bitcoin_wallet::primitives::ScriptStatus::Confirmed(confirmed) = status else {
+                    return false;
+                };
+                event_emitter.emit_swap_progress_event(
+                    swap_id,
+                    TauriSwapProgressEvent::BtcCancelPublished {
+                        btc_cancel_txid,
+                        btc_cancel_confirmations: confirmed.confirmations(),
+                        btc_cancel_target_confirmations: btc_finality_confirmations,
+                    },
+                );
+                confirmed.meets_target(btc_finality_confirmations)
+            });
+
+            // TxCancel and TxEarlyRefund spend the same UTXO (TxLock output).
+            // We wait for whichever confirms first.
+            select! {
+                _ = tx_cancel_confirmed => {
+                    event_emitter.emit_swap_progress_event(
+                        swap_id,
+                        TauriSwapProgressEvent::BtcCancelled { btc_cancel_txid },
+                    );
+
+                    BobState::BtcCancelled(state)
+                },
+                _ = tx_early_refund_sub.wait_until_final() => {
+                    tracing::info!(%tx_early_refund_txid, "Alice refunded us our Bitcoin early while waiting for TxCancel confirmation");
+
+                    BobState::BtcEarlyRefunded(state)
+                },
+            }
+        }
         BobState::BtcCancelled(state) => {
-            // TODO: We should differentiate between BtcCancelPublished and BtcCancelled (confirmed)
             let btc_cancel_txid = state.construct_tx_cancel()?.txid();
 
             event_emitter.emit_swap_progress_event(

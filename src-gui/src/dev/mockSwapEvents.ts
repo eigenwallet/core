@@ -139,6 +139,7 @@ const cooperativeRedeemRejected: TauriSwapProgressEvent[] = [
   { type: "CooperativeRedeemRejected", content: { reason: "Peer offline" } },
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
+  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   { type: "BtcRefundPublished", content: { btc_refund_txid: MOCK_BTC_REFUND_TXID } },
   { type: "BtcRefunded", content: { btc_refund_txid: MOCK_BTC_REFUND_TXID } },
@@ -156,6 +157,7 @@ const partialRefundWithAmnesty: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
+  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
@@ -207,6 +209,7 @@ const partialRefundWithBurn: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
+  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
@@ -258,6 +261,7 @@ const partialRefundWithWithholdAndMercy: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
+  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",

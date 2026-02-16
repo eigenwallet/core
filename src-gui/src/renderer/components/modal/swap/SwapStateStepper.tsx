@@ -108,6 +108,7 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     case "CancelTimelockExpired":
       return [PathType.RECOVERY_PATH, 0, isReleased, RecoveryScenario.GENERIC];
 
+    case "BtcCancelPublished":
     case "BtcCancelled":
       return [PathType.RECOVERY_PATH, 1, isReleased, RecoveryScenario.GENERIC];
 

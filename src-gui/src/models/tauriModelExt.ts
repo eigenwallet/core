@@ -49,6 +49,7 @@ export enum BobStateName {
   EncSigSent = "encrypted signature is sent",
   BtcRedeemed = "btc is redeemed",
   CancelTimelockExpired = "cancel timelock is expired",
+  BtcCancelPublished = "btc cancel is published",
   BtcCancelled = "btc is cancelled",
   BtcRefundPublished = "btc refund is published",
   BtcPartialRefundPublished = "btc partial refund is published",
@@ -89,6 +90,8 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Bitcoin redeemed";
     case BobStateName.CancelTimelockExpired:
       return "Cancel timelock expired";
+    case BobStateName.BtcCancelPublished:
+      return "Bitcoin cancel published";
     case BobStateName.BtcCancelled:
       return "Bitcoin cancelled";
     case BobStateName.BtcRefundPublished:
@@ -213,6 +216,7 @@ export type BobStateNamePossiblyCancellableSwap =
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
+  | BobStateName.BtcCancelPublished
   | BobStateName.BtcRefundPublished
   | BobStateName.BtcEarlyRefundPublished;
 
@@ -239,6 +243,7 @@ export function isBobStateNamePossiblyCancellableSwap(
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,
+    BobStateName.BtcCancelPublished,
     BobStateName.BtcRefundPublished,
     BobStateName.BtcEarlyRefundPublished,
   ].includes(state);
@@ -251,6 +256,7 @@ export type BobStateNamePossiblyRefundableSwap =
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
+  | BobStateName.BtcCancelPublished
   | BobStateName.BtcCancelled
   | BobStateName.BtcRefundPublished
   | BobStateName.BtcEarlyRefundPublished;
@@ -276,6 +282,7 @@ export function isBobStateNamePossiblyRefundableSwap(
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,
+    BobStateName.BtcCancelPublished,
     BobStateName.BtcCancelled,
     BobStateName.BtcRefundPublished,
     BobStateName.BtcEarlyRefundPublished,

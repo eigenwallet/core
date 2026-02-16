@@ -1082,6 +1082,14 @@ pub enum TauriSwapProgressEvent {
     },
     WaitingForCancelTimelockExpiration, // TODO: Add current confirmations and target confirmations here?
     CancelTimelockExpired,
+    BtcCancelPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_cancel_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_cancel_confirmations: u32,
+        #[typeshare(serialized_as = "number")]
+        btc_cancel_target_confirmations: u32,
+    },
     BtcCancelled {
         #[typeshare(serialized_as = "string")]
         btc_cancel_txid: Txid,
