@@ -45,7 +45,7 @@ export default function SwapMakerTable() {
               <Td>{maker.peerId}</Td>
               <Td>{satsToBtc(maker.minSwapAmount)} BTC</Td>
               <Td>{satsToBtc(maker.maxSwapAmount)} BTC</Td>
-              <Td>{satsToBtc(maker.price)} XMR/BTC</Td>
+              <Td>{satsToBtc(1 / maker.price)} XMR/BTC</Td>
             </Tr>
           ))}
         </tbody>
