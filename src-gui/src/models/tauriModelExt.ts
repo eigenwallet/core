@@ -63,6 +63,8 @@ export enum BobStateName {
   BtcWithheld = "btc is withheld",
   BtcMercyPublished = "btc mercy is published",
   BtcMercyConfirmed = "btc mercy is confirmed",
+  WaitingForReclaimTimelockExpiration = "waiting for remaining refund timelock to expire",
+  ReclaimTimelockExpired = "remaining refund timelock expired",
   XmrRedeemed = "xmr is redeemed",
   BtcPunished = "btc is punished",
   SafelyAborted = "safely aborted",
@@ -118,6 +120,10 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Bitcoin mercy published";
     case BobStateName.BtcMercyConfirmed:
       return "Bitcoin mercy received";
+    case BobStateName.WaitingForReclaimTimelockExpiration:
+      return "Waiting for amnesty timelock";
+    case BobStateName.ReclaimTimelockExpired:
+      return "Amnesty timelock expired";
     case BobStateName.XmrRedeemed:
       return "Monero redeemed";
     case BobStateName.BtcPunished:

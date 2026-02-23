@@ -1353,7 +1353,7 @@ async fn next_state(
                         btc_lock_amount: state.tx_lock.lock_amount(),
                         btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                         target_blocks: remaining_refund_timelock.into(),
-                        blocks_until_expiry: status.confirmations(),
+                        blocks_until_expiry: status.blocks_left_until(remaining_refund_timelock),
                     },
                 );
 

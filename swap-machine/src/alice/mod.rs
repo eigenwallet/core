@@ -468,7 +468,8 @@ impl State2 {
             self.B,
             self.btc_amnesty_amount
                 .context("Missing btc_amnesty_amount for new swap that should have it")?,
-            self.tx_refund_fee,
+            self.tx_partial_refund_fee
+                .context("Missing tx_partial_refund_fee for new swap")?,
         )?;
         // Alice encsigns the partial refund transaction(bitcoin) digest with Bob's monero
         // pubkey(S_b). The partial refund transaction spends the output of

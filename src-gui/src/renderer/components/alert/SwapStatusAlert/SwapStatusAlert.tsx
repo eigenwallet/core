@@ -328,6 +328,10 @@ export function StateAlert({
       // Amnesty tx published, waiting for confirmation - no specific alert needed
       return null;
 
+    case BobStateName.WaitingForReclaimTimelockExpiration:
+    case BobStateName.ReclaimTimelockExpired:
+      return null;
+
     // If the Bitcoin lock transaction has not been published yet
     // there is no need to display an alert
     case BobStateName.BtcLockReadyToPublish:

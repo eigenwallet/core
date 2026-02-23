@@ -968,18 +968,13 @@ fn apply_anti_spam_policy(
     let btc_amnesty_amount = bitcoin::Amount::from_sat(btc_amnesty_sats);
 
     let minimum_to_cover_fees = bitcoin::Amount::from_sat(
-        bitcoin_wallet::MIN_ABSOLUTE_TX_FEE_SATS
-            * swap_machine::common::NUM_WITHHOLD_PATH_TXS
-            + 1,
+        bitcoin_wallet::MIN_ABSOLUTE_TX_FEE_SATS * swap_machine::common::NUM_WITHHOLD_PATH_TXS + 1,
     );
-    if btc_amnesty_amount < minimum_to_cover_fees {
-        bail!(
-            "Anti-spam deposit ({btc_amnesty_amount}) doesn't cover fees \
-             (minimum: {minimum_to_cover_fees}). Increase the swap amount or the deposit ratio.",
-        );
-    }
 
-    Ok((btc_amnesty_amount, should_always_withhold))
+    Ok((
+        btc_amnesty_amount.max(minimum_to_cover_fees),
+        should_always_withhold,
+    ))
 }
 
 async fn capture_wallet_snapshot(

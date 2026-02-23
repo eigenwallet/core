@@ -563,7 +563,11 @@ async fn run_swap_setup(
         wallet_snapshot.withhold_fee,
         message0.tx_mercy_fee,
     ) {
-        let _ = swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await;
+        if let Err(err) =
+            swap_setup::write_cbor_error(&mut substream, sanity_err.clone().into()).await
+        {
+            tracing::error!(error=%err, "Couldn't send error message to Bob after encountering it, closing connection");
+        };
         return Err(sanity_err).context("Amnesty sanity check failed");
     }
 
