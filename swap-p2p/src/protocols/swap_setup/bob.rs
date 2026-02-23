@@ -387,9 +387,12 @@ impl ConnectionHandler for Handler {
                     let result =
                         run_swap_setup(&mut substream, info, env_config, bitcoin_wallet).await;
 
-                    result.map_err(|err: anyhow::Error| {
-                        tracing::error!(?err, "Error occurred during swap setup protocol");
-                        Error::Protocol(format!("{:?}", err))
+                    result.map_err(|err| match err {
+                        SetupError::Rejected(reason) => Error::SwapRejected(reason),
+                        SetupError::Transient(e) => {
+                            tracing::error!(?e, "Error occurred during swap setup protocol");
+                            Error::Protocol(format!("{:?}", e))
+                        }
                     })
                 });
 
@@ -527,13 +530,33 @@ impl ConnectionHandler for Handler {
     }
 }
 
+/// Distinguishes permanent rejections from transient errors during swap setup.
+enum SetupError {
+    /// The peer (or our own sanity check) explicitly rejected the swap.
+    Rejected(String),
+    /// A transient error (network, serialization, etc.) that may succeed on retry.
+    Transient(anyhow::Error),
+}
+
+impl From<anyhow::Error> for SetupError {
+    fn from(err: anyhow::Error) -> Self {
+        SetupError::Transient(err)
+    }
+}
+
+impl From<Error> for SetupError {
+    fn from(err: Error) -> Self {
+        SetupError::Transient(err.into())
+    }
+}
+
 // TODO: This is protocol and should be moved to another crate (probably swap-machine, swap-core or swap)
 async fn run_swap_setup(
     mut substream: &mut libp2p::swarm::Stream,
     new_swap_request: NewSwap,
     env_config: env::Config,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
-) -> Result<State2> {
+) -> Result<State2, SetupError> {
     // Here we request the spot price from Alice
     write_cbor_message(
         &mut substream,
@@ -593,10 +616,13 @@ async fn run_swap_setup(
     )
     .await
     .context("Failed to send state0 message to Alice")?;
-    let message1 = read_cbor_message::<Message1>(&mut substream)
+    let message1 = match read_cbor_message::<Message1>(&mut substream)
         .await
         .context("Failed to read message1 from Alice")?
-        .context("Peer sent an error instead of message1")?;
+    {
+        Ok(msg) => msg,
+        Err(setup_err) => return Err(SetupError::Rejected(setup_err.to_string())),
+    };
 
     if let Err(sanity_err) = swap_machine::common::sanity_check_amnesty_amount(
         new_swap_request.btc,
@@ -607,7 +633,7 @@ async fn run_swap_setup(
         new_swap_request.tx_mercy_fee,
     ) {
         let _ = write_cbor_error(&mut substream, sanity_err.clone().into()).await;
-        return Err(sanity_err).context("Amnesty sanity check failed");
+        return Err(SetupError::Rejected(sanity_err.to_string()));
     }
 
     let state1 = state0
@@ -623,10 +649,13 @@ async fn run_swap_setup(
     write_cbor_message(&mut substream, state1.next_message())
         .await
         .context("Failed to send state1 message")?;
-    let message3 = read_cbor_message::<Message3>(&mut substream)
+    let message3 = match read_cbor_message::<Message3>(&mut substream)
         .await
         .context("Failed to read message3 from Alice")?
-        .context("Peer sent an error instead of message3")?;
+    {
+        Ok(msg) => msg,
+        Err(setup_err) => return Err(SetupError::Rejected(setup_err.to_string())),
+    };
     let state2 = state1
         .receive(message3)
         .context("Failed to receive state2")?;
@@ -705,6 +734,11 @@ pub enum Error {
     /// but where we have some context about the error
     #[error("Something went wrong during the swap setup protocol: {0}")]
     Protocol(String),
+
+    /// The peer explicitly rejected the swap setup (e.g. anti-spam deposit too small).
+    /// This is a permanent error that should not be retried.
+    #[error("Swap rejected: {0}")]
+    SwapRejected(String),
 
     /// To be used for errors that cannot be explained on the CLI side (e.g.
     /// rate update problems on the seller side)
