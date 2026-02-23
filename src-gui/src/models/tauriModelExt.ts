@@ -49,11 +49,22 @@ export enum BobStateName {
   EncSigSent = "encrypted signature is sent",
   BtcRedeemed = "btc is redeemed",
   CancelTimelockExpired = "cancel timelock is expired",
+  BtcCancelPublished = "btc cancel is published",
   BtcCancelled = "btc is cancelled",
   BtcRefundPublished = "btc refund is published",
+  BtcPartialRefundPublished = "btc partial refund is published",
   BtcEarlyRefundPublished = "btc early refund is published",
   BtcRefunded = "btc is refunded",
   BtcEarlyRefunded = "btc is early refunded",
+  BtcPartiallyRefunded = "btc is partially refunded",
+  BtcAmnestyPublished = "btc amnesty is published",
+  BtcAmnestyReceived = "btc amnesty is confirmed",
+  BtcWithholdPublished = "btc withhold is published",
+  BtcWithheld = "btc is withheld",
+  BtcMercyPublished = "btc mercy is published",
+  BtcMercyConfirmed = "btc mercy is confirmed",
+  WaitingForReclaimTimelockExpiration = "waiting for remaining refund timelock to expire",
+  ReclaimTimelockExpired = "remaining refund timelock expired",
   XmrRedeemed = "xmr is redeemed",
   BtcPunished = "btc is punished",
   SafelyAborted = "safely aborted",
@@ -81,16 +92,38 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
       return "Bitcoin redeemed";
     case BobStateName.CancelTimelockExpired:
       return "Cancel timelock expired";
+    case BobStateName.BtcCancelPublished:
+      return "Bitcoin cancel published";
     case BobStateName.BtcCancelled:
       return "Bitcoin cancelled";
     case BobStateName.BtcRefundPublished:
       return "Bitcoin refund published";
     case BobStateName.BtcEarlyRefundPublished:
       return "Bitcoin early refund published";
+    case BobStateName.BtcPartialRefundPublished:
+      return "Bitcoin partial refund published";
+    case BobStateName.BtcAmnestyPublished:
+      return "Bitcoin amnesty was granted";
     case BobStateName.BtcRefunded:
       return "Bitcoin refunded";
     case BobStateName.BtcEarlyRefunded:
       return "Bitcoin early refunded";
+    case BobStateName.BtcPartiallyRefunded:
+      return "Bitcoin partially refunded";
+    case BobStateName.BtcAmnestyReceived:
+      return "Bitcoin amnesty was received";
+    case BobStateName.BtcWithholdPublished:
+      return "Bitcoin withhold published";
+    case BobStateName.BtcWithheld:
+      return "Bitcoin withheld";
+    case BobStateName.BtcMercyPublished:
+      return "Bitcoin mercy published";
+    case BobStateName.BtcMercyConfirmed:
+      return "Bitcoin mercy received";
+    case BobStateName.WaitingForReclaimTimelockExpiration:
+      return "Waiting for amnesty timelock";
+    case BobStateName.ReclaimTimelockExpired:
+      return "Amnesty timelock expired";
     case BobStateName.XmrRedeemed:
       return "Monero redeemed";
     case BobStateName.BtcPunished:
@@ -110,6 +143,14 @@ export type GetSwapInfoResponseExt = GetSwapInfoResponse & {
 export type TimelockNone = Extract<ExpiredTimelocks, { type: "None" }>;
 export type TimelockCancel = Extract<ExpiredTimelocks, { type: "Cancel" }>;
 export type TimelockPunish = Extract<ExpiredTimelocks, { type: "Punish" }>;
+export type TimelockWaitingForRemainingRefund = Extract<
+  ExpiredTimelocks,
+  { type: "WaitingForRemainingRefund" }
+>;
+export type TimelockRemainingRefund = Extract<
+  ExpiredTimelocks,
+  { type: "RemainingRefund" }
+>;
 
 // This function returns the absolute block number of the timelock relative to the block the tx_lock was included in
 export function getAbsoluteBlock(
@@ -126,6 +167,13 @@ export function getAbsoluteBlock(
   if (timelock.type === "Punish") {
     return cancelTimelock + punishTimelock;
   }
+  // These states are for the partial refund path - we're past cancel/punish timelocks
+  if (timelock.type === "WaitingForRemainingRefund") {
+    return cancelTimelock + punishTimelock;
+  }
+  if (timelock.type === "RemainingRefund") {
+    return cancelTimelock + punishTimelock;
+  }
 
   // We match all cases
   return exhaustiveGuard(timelock);
@@ -136,7 +184,11 @@ export type BobStateNameRunningSwap = Exclude<
   | BobStateName.Started
   | BobStateName.SwapSetupCompleted
   | BobStateName.BtcRefunded
+  | BobStateName.BtcAmnestyReceived
+  | BobStateName.BtcRefunded
   | BobStateName.BtcEarlyRefunded
+  | BobStateName.BtcWithheld
+  | BobStateName.BtcMercyConfirmed
   | BobStateName.BtcPunished
   | BobStateName.SafelyAborted
   | BobStateName.XmrRedeemed
@@ -154,6 +206,9 @@ export function isBobStateNameRunningSwap(
     BobStateName.SwapSetupCompleted,
     BobStateName.BtcRefunded,
     BobStateName.BtcEarlyRefunded,
+    BobStateName.BtcAmnestyReceived,
+    BobStateName.BtcWithheld,
+    BobStateName.BtcMercyConfirmed,
     BobStateName.BtcPunished,
     BobStateName.SafelyAborted,
     BobStateName.XmrRedeemed,
@@ -167,6 +222,7 @@ export type BobStateNamePossiblyCancellableSwap =
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
+  | BobStateName.BtcCancelPublished
   | BobStateName.BtcRefundPublished
   | BobStateName.BtcEarlyRefundPublished;
 
@@ -193,6 +249,7 @@ export function isBobStateNamePossiblyCancellableSwap(
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,
+    BobStateName.BtcCancelPublished,
     BobStateName.BtcRefundPublished,
     BobStateName.BtcEarlyRefundPublished,
   ].includes(state);
@@ -205,6 +262,7 @@ export type BobStateNamePossiblyRefundableSwap =
   | BobStateName.XmrLocked
   | BobStateName.EncSigSent
   | BobStateName.CancelTimelockExpired
+  | BobStateName.BtcCancelPublished
   | BobStateName.BtcCancelled
   | BobStateName.BtcRefundPublished
   | BobStateName.BtcEarlyRefundPublished;
@@ -230,6 +288,7 @@ export function isBobStateNamePossiblyRefundableSwap(
     BobStateName.XmrLocked,
     BobStateName.EncSigSent,
     BobStateName.CancelTimelockExpired,
+    BobStateName.BtcCancelPublished,
     BobStateName.BtcCancelled,
     BobStateName.BtcRefundPublished,
     BobStateName.BtcEarlyRefundPublished,

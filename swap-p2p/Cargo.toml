@@ -1,6 +1,6 @@
 [package]
 name = "swap-p2p"
-version = "0.1.0"
+version = "4.0.0"
 edition = "2024"
 
 [dependencies]
@@ -16,6 +16,7 @@ swap-serde = { path = "../swap-serde" }
 async-trait = { workspace = true, optional = true }
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify"] }
 
+
 # Serialization
 asynchronous-codec = "0.7.0"
 serde = { workspace = true }
@@ -27,6 +28,7 @@ unsigned-varint = { version = "0.8.0", features = ["codec", "asynchronous_codec"
 bitcoin = { workspace = true }
 monero-address = { workspace = true }
 rand = { workspace = true }
+rust_decimal = { workspace = true }
 
 # Utils
 anyhow = { workspace = true }
@@ -55,6 +57,12 @@ test-support = ["libp2p/noise", "libp2p/tcp", "libp2p/yamux", "libp2p/tokio", "l
 [dev-dependencies]
 async-trait = { workspace = true }
 libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify", "noise", "tcp", "yamux", "tokio", "dns"] }
+
+# Networking (for the example)
+libp2p-tor = { workspace = true  }
+tor-rtcompat = { workspace = true  }
+arti-client = {workspace = true  }
+tracing-subscriber = { workspace = true  }
 
 [lints]
 workspace = true

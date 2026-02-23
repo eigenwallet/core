@@ -26,7 +26,7 @@ use structopt::clap::ErrorKind;
 mod command;
 use command::{parse_args, Arguments, Command};
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
+use swap::asb::{cancel, grant_mercy, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
@@ -38,7 +38,8 @@ use swap::protocol::alice::{run, AliceState, TipConfig};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap_env::config::{
-    initial_setup, query_user_for_initial_config, read_config, Config, ConfigNotInitialized,
+    initial_setup, query_user_for_initial_config, read_config, validate_config, Config,
+    ConfigNotInitialized,
 };
 use swap_feed;
 use swap_machine::alice::is_complete;
@@ -140,19 +141,7 @@ pub async fn main() -> Result<()> {
     // Initialize tracing
     initialize_tracing(json, &config, trace)?;
 
-    // Check for conflicting env / config values
-    if config.monero.network != env_config.monero_network {
-        bail!(format!(
-            "Expected monero network in config file to be {:?} but was {:?}",
-            env_config.monero_network, config.monero.network
-        ));
-    }
-    if config.bitcoin.network != env_config.bitcoin_network {
-        bail!(format!(
-            "Expected bitcoin network in config file to be {:?} but was {:?}",
-            env_config.bitcoin_network, config.bitcoin.network
-        ));
-    }
+    validate_config(&config, env_config)?;
 
     let seed = Seed::from_file_or_generate(&config.data.dir)
         .await
@@ -316,6 +305,7 @@ pub async fn main() -> Result<()> {
                 config.maker.max_buy_btc,
                 config.maker.external_bitcoin_redeem_address,
                 tip_config,
+                config.maker.refund_policy,
             )
             .unwrap();
 
@@ -483,6 +473,13 @@ pub async fn main() -> Result<()> {
 
             tracing::info!("Swap safely aborted");
         }
+        Command::GrantMercy { swap_id } => {
+            let db = open_db(db_file, AccessMode::ReadWrite, None).await?;
+
+            grant_mercy(swap_id, db).await?;
+
+            tracing::info!("Mercy granted for swap {}", swap_id);
+        }
         Command::Redeem {
             swap_id,
             do_not_await_finality,
@@ -544,7 +541,8 @@ pub async fn main() -> Result<()> {
                 .next()
                 .context("Couldn't find state Started for this swap")?;
 
-            let secret_spend_key = match state3.watch_for_btc_tx_refund(&bitcoin_wallet).await {
+            let secret_spend_key = match state3.watch_for_btc_tx_full_refund(&bitcoin_wallet).await
+            {
                 Ok(secret) => secret,
                 Err(error) => {
                     tracing::error!(

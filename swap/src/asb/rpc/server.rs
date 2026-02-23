@@ -14,6 +14,7 @@ use swap_controller_api::{
     RendezvousRegistrationStatus, Swap,
 };
 use tokio_util::task::AbortOnDropHandle;
+use uuid::Uuid;
 
 pub struct RpcServer {
     handle: ServerHandle,
@@ -154,24 +155,58 @@ impl AsbApiServer for RpcImpl {
     }
 
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned> {
-        let swaps = self.db.all().await.into_json_rpc_result()?;
+        use crate::protocol::alice::{is_complete, AliceState};
+        use crate::protocol::State;
 
-        let swaps = swaps
-            .into_iter()
-            .map(|(swap_id, state)| {
-                let state_str = match state {
-                    crate::protocol::State::Alice(state) => format!("{state}"),
-                    crate::protocol::State::Bob(state) => format!("{state}"),
-                };
+        let swaps = self
+            .db
+            .all()
+            .await
+            .context("Error fetching all swap's from database")
+            .into_json_rpc_result()?;
+        let mut results = Vec::with_capacity(swaps.len());
 
-                Swap {
-                    id: swap_id.to_string(),
-                    state: state_str,
-                }
-            })
-            .collect();
+        for (swap_id, _) in swaps {
+            let (current, starting) = self
+                .db
+                .get_current_and_starting_state(swap_id)
+                .await
+                .context("Error fetching current and first state from database")
+                .into_json_rpc_result()?;
 
-        Ok(swaps)
+            let (State::Alice(current_alice), State::Alice(AliceState::Started { state3 })) =
+                (current, starting)
+            else {
+                continue; // Skip non-Alice swaps
+            };
+
+            let start_date = self
+                .db
+                .get_swap_start_date(swap_id)
+                .await
+                .into_json_rpc_result()?;
+            let peer_id = self.db.get_peer_id(swap_id).await.into_json_rpc_result()?;
+
+            // Exchange rate: BTC per XMR (amount of BTC needed to buy 1 XMR)
+            let rate_btc_per_xmr = state3.btc.to_btc() / state3.xmr.as_xmr();
+            let exchange_rate = bitcoin::Amount::from_btc(rate_btc_per_xmr)
+                .context("exchange rate should be valid")
+                .into_json_rpc_result()?;
+
+            results.push(Swap {
+                swap_id: swap_id.to_string(),
+                start_date,
+                state: current_alice.to_string(),
+                btc_lock_txid: state3.tx_lock.txid().to_string(),
+                btc_amount: state3.btc,
+                xmr_amount: state3.xmr.as_pico(),
+                exchange_rate,
+                peer_id: peer_id.to_string(),
+                completed: is_complete(&current_alice),
+            });
+        }
+
+        Ok(results)
     }
 
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned> {
@@ -208,6 +243,28 @@ impl AsbApiServer for RpcImpl {
             .collect();
 
         Ok(RegistrationStatusResponse { registrations })
+    }
+
+    async fn set_withhold_deposit(
+        &self,
+        swap_id: Uuid,
+        burn: bool,
+    ) -> Result<(), ErrorObjectOwned> {
+        self.event_loop_service
+            .set_withhold_deposit(swap_id, burn)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
+    }
+
+    async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned> {
+        self.event_loop_service
+            .grant_mercy(swap_id)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(())
     }
 }
 

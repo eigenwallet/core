@@ -1,3 +1,5 @@
+#![allow(unused_crate_dependencies)]
+
 use swap_orchestrator::compose::{
     IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
     OrchestratorNetworks, OrchestratorPorts,

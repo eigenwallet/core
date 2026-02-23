@@ -42,7 +42,7 @@ async fn monero_transfers() -> anyhow::Result<()> {
         "Expect one tx key for each non-change output"
     );
 
-    monero.generate_block().await?;
+    monero.generate_blocks().await?;
 
     let alice_txkey = tx_receipt
         .tx_keys

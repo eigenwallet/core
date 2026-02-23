@@ -8,6 +8,17 @@ import {
   BitcoinEarlyRefundPublishedPage,
   BitcoinRefundPublishedPage,
 } from "./done/BitcoinRefundedPage";
+import {
+  BitcoinPartialRefundPublished,
+  BitcoinPartiallyRefunded,
+  WaitingForEarnestDepositTimelockExpirationPage,
+  BitcoinAmnestyPublished,
+  BitcoinAmnestyReceived,
+  BitcoinWithholdPublished,
+  BitcoinWithheld,
+  BitcoinMercyPublished,
+  BitcoinMercyConfirmed,
+} from "./done/BitcoinPartialRefundPage";
 import XmrRedeemInMempoolPage from "./done/XmrRedeemInMempoolPage";
 import ProcessExitedPage from "./exited/ProcessExitedPage";
 import BitcoinCancelledPage from "./in_progress/BitcoinCancelledPage";
@@ -103,10 +114,12 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       break;
     case "CancelTimelockExpired":
       return <CancelTimelockExpiredPage />;
+    case "BtcCancelPublished":
+      return <BitcoinCancelledPage />;
     case "BtcCancelled":
       return <BitcoinCancelledPage />;
 
-    //// 4 different types of Bitcoin refund states we can be in
+    //// 8 different types of Bitcoin refund states we can be in
     case "BtcRefundPublished": // tx_refund has been published but has not been confirmed yet
       if (state.curr.type === "BtcRefundPublished") {
         return <BitcoinRefundPublishedPage {...state.curr.content} />;
@@ -125,6 +138,53 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
     case "BtcEarlyRefunded": // tx_early_refund has been confirmed
       if (state.curr.type === "BtcEarlyRefunded") {
         return <BitcoinEarlyRefundedPage {...state.curr.content} />;
+      }
+      break;
+    case "BtcPartialRefundPublished":
+      if (state.curr.type === "BtcPartialRefundPublished") {
+        return <BitcoinPartialRefundPublished {...state.curr.content} />;
+      }
+      break;
+    case "BtcPartiallyRefunded":
+      if (state.curr.type === "BtcPartiallyRefunded") {
+        return <BitcoinPartiallyRefunded {...state.curr.content} />;
+      }
+      break;
+    case "WaitingForEarnestDepositTimelockExpiration":
+      if (state.curr.type === "WaitingForEarnestDepositTimelockExpiration") {
+        return <WaitingForEarnestDepositTimelockExpirationPage {...state.curr.content} />;
+      }
+      break;
+    case "BtcAmnestyPublished":
+      if (state.curr.type === "BtcAmnestyPublished") {
+        return <BitcoinAmnestyPublished {...state.curr.content} />;
+      }
+      break;
+    case "BtcAmnestyReceived":
+      if (state.curr.type === "BtcAmnestyReceived") {
+        return <BitcoinAmnestyReceived {...state.curr.content} />;
+      }
+      break;
+
+    //// 4 different types of withhold / mercy states
+    case "BtcWithholdPublished":
+      if (state.curr.type === "BtcWithholdPublished") {
+        return <BitcoinWithholdPublished {...state.curr.content} />;
+      }
+      break;
+    case "BtcWithheld":
+      if (state.curr.type === "BtcWithheld") {
+        return <BitcoinWithheld {...state.curr.content} />;
+      }
+      break;
+    case "BtcMercyPublished":
+      if (state.curr.type === "BtcMercyPublished") {
+        return <BitcoinMercyPublished {...state.curr.content} />;
+      }
+      break;
+    case "BtcMercyConfirmed":
+      if (state.curr.type === "BtcMercyConfirmed") {
+        return <BitcoinMercyConfirmed {...state.curr.content} />;
       }
       break;
 

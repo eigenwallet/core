@@ -6,6 +6,7 @@ use bitcoin::Txid;
 use bitcoin_wallet::BitcoinWallet;
 use std::sync::Arc;
 use swap_core::bitcoin::ExpiredTimelocks;
+use swap_machine::bob::RefundType;
 use uuid::Uuid;
 
 pub async fn cancel_and_refund(
@@ -68,14 +69,26 @@ pub async fn cancel(
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
         BobState::BtcRefunded(state6) => state6,
+        BobState::BtcCancelPublished(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefundPublished(state6) => state6,
         BobState::BtcEarlyRefundPublished(state6) => state6,
+        BobState::BtcPartialRefundPublished(state6) => state6,
+        BobState::BtcPartiallyRefunded(state6) => state6,
+        BobState::BtcReclaimConfirmed(state6) => state6,
+        BobState::BtcReclaimPublished(state6) => state6,
+        BobState::WaitingForReclaimTimelockExpiration(state6) => state6,
+        BobState::ReclaimTimelockExpired(state6) => state6,
+        BobState::BtcWithholdPublished(state6) => state6,
+        BobState::BtcMercyPublished(state6) => state6,
+
         BobState::Started { .. }
         | BobState::BtcRedeemed(_)
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
         | BobState::BtcEarlyRefunded { .. }
+        | BobState::BtcWithheld { .. }
+        | BobState::BtcMercyConfirmed { .. }
         | BobState::SafelyAborted => bail!(
             "Cannot cancel swap {} because it is in state {} which is not cancellable.",
             swap_id,
@@ -93,7 +106,7 @@ pub async fn cancel(
     // Attempt to just publish the cancel transaction
     match state6.submit_tx_cancel(bitcoin_wallet.as_ref()).await {
         Ok((txid, _)) => {
-            let state = BobState::BtcCancelled(state6);
+            let state = BobState::BtcCancelPublished(state6);
             db.insert_latest_state(swap_id, state.clone().into())
                 .await?;
             Ok((txid, state))
@@ -105,7 +118,7 @@ pub async fn cancel(
         Err(err) => {
             // Check if Alice has already published the cancel transaction while we were absent
             if let Some(tx) = state6.check_for_tx_cancel(bitcoin_wallet.as_ref()).await? {
-                let state = BobState::BtcCancelled(state6);
+                let state = BobState::BtcCancelPublished(state6);
                 db.insert_latest_state(swap_id, state.clone().into())
                     .await?;
                 tracing::info!("Alice has already cancelled the swap");
@@ -138,6 +151,17 @@ pub async fn cancel(
                 }
                 Ok(ExpiredTimelocks::Cancel { .. }) => {
                     bail!(err.context("Failed to cancel swap even though cancel timelock has expired. This is unexpected."));
+                }
+                Ok(ExpiredTimelocks::WaitingForRemainingRefund { blocks_left }) => {
+                    bail!(err.context(
+                        format!(
+                            "Cannot cancel swap because partial refund is already in progress. Waiting {} blocks for amnesty timelock.",
+                            blocks_left
+                        )
+                    ));
+                }
+                Ok(ExpiredTimelocks::RemainingRefund) => {
+                    bail!(err.context("Cannot cancel swap because we are in the partial refund phase. TxReclaim can be published."));
                 }
                 Err(timelock_err) => {
                     bail!(err
@@ -183,16 +207,27 @@ pub async fn refund(
             monero_wallet_restore_blockheight,
         } => state.cancel(monero_wallet_restore_blockheight),
         BobState::CancelTimelockExpired(state6) => state6,
+        BobState::BtcCancelPublished(state6) => state6,
         BobState::BtcCancelled(state6) => state6,
         BobState::BtcRefunded(state6) => state6,
         BobState::BtcRefundPublished(state6) => state6,
         BobState::BtcEarlyRefundPublished(state6) => state6,
+        BobState::BtcPartialRefundPublished(state6) => state6,
+        BobState::BtcPartiallyRefunded(state6) => state6,
+        BobState::BtcReclaimPublished(state6) => state6,
+        BobState::BtcReclaimConfirmed(state6) => state6,
+        BobState::WaitingForReclaimTimelockExpiration(state6) => state6,
+        BobState::ReclaimTimelockExpired(state6) => state6,
+        BobState::BtcWithholdPublished(state6) => state6,
+        BobState::BtcMercyPublished(state6) => state6,
         BobState::Started { .. }
         | BobState::SwapSetupCompleted(_)
         | BobState::BtcRedeemed(_)
         | BobState::BtcEarlyRefunded { .. }
         | BobState::XmrRedeemed { .. }
         | BobState::BtcPunished { .. }
+        | BobState::BtcWithheld { .. }
+        | BobState::BtcMercyConfirmed { .. }
         | BobState::SafelyAborted => bail!(
             "Cannot refund swap {} because it is in state {} which is not refundable.",
             swap_id,
@@ -202,14 +237,39 @@ pub async fn refund(
 
     tracing::info!(%swap_id, "Attempting to manually refund swap");
 
+    let (refund_tx, refund_type) = state6.construct_best_bitcoin_refund_tx().await?;
+
+    tracing::info!("Attempting to publish Bitcoin refund transaction. Refund type: {refund_type}");
+
     // Attempt to just publish the refund transaction
-    match state6.publish_refund_btc(bitcoin_wallet.as_ref()).await {
-        Ok(_) => {
-            let state = BobState::BtcRefunded(state6);
-            db.insert_latest_state(swap_id, state.clone().into())
+    match bitcoin_wallet
+        .ensure_broadcasted(refund_tx, &refund_type.to_string())
+        .await
+    {
+        Ok((_txid, subscription)) => {
+            // First save the "published" state
+            let published_state = match &refund_type {
+                RefundType::Full => BobState::BtcRefundPublished(state6.clone()),
+                RefundType::Partial { .. } => BobState::BtcPartialRefundPublished(state6.clone()),
+            };
+
+            db.insert_latest_state(swap_id, published_state.into())
                 .await?;
 
-            Ok(state)
+            // Wait for the transaction to be confirmed
+            tracing::info!("Waiting for refund transaction to be confirmed...");
+            subscription.wait_until_final().await?;
+
+            // Now save and return the confirmed state
+            let confirmed_state = match refund_type {
+                RefundType::Full => BobState::BtcRefunded(state6),
+                RefundType::Partial { .. } => BobState::BtcPartiallyRefunded(state6),
+            };
+
+            db.insert_latest_state(swap_id, confirmed_state.clone().into())
+                .await?;
+
+            Ok(confirmed_state)
         }
 
         // If we fail to submit the refund transaction it can have one of two reasons:
@@ -239,6 +299,20 @@ pub async fn refund(
                 }
                 Ok(ExpiredTimelocks::Cancel { .. }) => {
                     bail!(bitcoin_publication_err.context("Failed to refund swap even though cancel timelock has expired. This is unexpected."));
+                }
+                Ok(ExpiredTimelocks::WaitingForRemainingRefund { blocks_left }) => {
+                    bail!(
+                        bitcoin_publication_err.context(format!(
+                            "Cannot refund swap yet. Partial refund was published but waiting {} blocks for amnesty timelock to expire.",
+                            blocks_left
+                        ))
+                    );
+                }
+                Ok(ExpiredTimelocks::RemainingRefund) => {
+                    // TODO: Try to publish TxReclaim here instead of just reporting the state
+                    bail!(bitcoin_publication_err.context(
+                        "Amnesty timelock has expired. TxReclaim can be published."
+                    ));
                 }
                 Err(e) => {
                     bail!(bitcoin_publication_err

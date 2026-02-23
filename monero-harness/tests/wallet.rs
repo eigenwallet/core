@@ -53,7 +53,7 @@ async fn fund_transfer_and_check_tx_key() {
         .await
         .unwrap();
 
-    monero.generate_block().await.unwrap();
+    monero.generate_blocks().await.unwrap();
 
     tracing::info!("Waiting for Bob to catch up");
 
@@ -69,7 +69,7 @@ async fn fund_transfer_and_check_tx_key() {
         .await
         .unwrap();
 
-    monero.generate_block().await.unwrap();
+    monero.generate_blocks().await.unwrap();
 
     wait_for_wallet_to_catch_up(bob_wallet, 0).await;
 
@@ -86,7 +86,7 @@ async fn fund_transfer_and_check_tx_key() {
         .await
         .unwrap();
 
-    monero.generate_block().await.unwrap();
+    monero.generate_blocks().await.unwrap();
 
     wait_for_wallet_to_catch_up(alice_wallet, 0).await;
 

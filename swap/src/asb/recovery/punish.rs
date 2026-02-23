@@ -34,13 +34,20 @@ pub async fn punish(
         // The state machine is in a state where punish is theoretically impossible but we try and punish anyway as this is what the user wants
         | AliceState::BtcRedeemTransactionPublished { state3, transfer_proof, .. }
         | AliceState::BtcRefunded { state3, transfer_proof,.. } => { (state3, transfer_proof) }
+        | AliceState::BtcPartiallyRefunded { state3, transfer_proof,.. } => { (state3, transfer_proof) }
+        | AliceState::XmrRefundable { state3, transfer_proof,.. } => { (state3, transfer_proof) }
 
         // Alice already in final state or at the start of the swap so we can't punish
         | AliceState::Started { .. }
         | AliceState::BtcLockTransactionSeen { .. }
         | AliceState::BtcLocked { .. }
         | AliceState::BtcRedeemed { .. }
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::BtcPunished { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)

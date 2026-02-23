@@ -1,3 +1,4 @@
+use crate::config::RefundPolicy;
 use crate::env::{Mainnet, Testnet};
 use anyhow::{Context, Result};
 use libp2p::Multiaddr;
@@ -118,6 +119,7 @@ pub struct Defaults {
     pub bitcoin_confirmation_target: u16,
     pub use_mempool_space_fee_estimation: bool,
     pub developer_tip: Decimal,
+    pub refund_policy: RefundPolicy,
 }
 
 impl GetDefaults for Mainnet {
@@ -135,6 +137,7 @@ impl GetDefaults for Mainnet {
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
+            refund_policy: RefundPolicy::default(),
         };
 
         Ok(defaults)
@@ -156,6 +159,7 @@ impl GetDefaults for Testnet {
             bitcoin_confirmation_target: 1,
             use_mempool_space_fee_estimation: true,
             developer_tip: Decimal::ZERO,
+            refund_policy: RefundPolicy::default(),
         };
 
         Ok(defaults)

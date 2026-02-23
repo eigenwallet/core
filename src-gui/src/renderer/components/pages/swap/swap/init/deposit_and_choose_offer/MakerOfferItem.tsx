@@ -1,6 +1,6 @@
 import { Box, Chip, Divider, Paper, Tooltip, Typography } from "@mui/material";
 import Jdenticon from "renderer/components/other/Jdenticon";
-import { QuoteWithAddress } from "models/tauriModel";
+import { BidQuote, QuoteWithAddress, RefundPolicyWire } from "models/tauriModel";
 import {
   MoneroSatsExchangeRate,
   MoneroSatsMarkup,
@@ -10,6 +10,14 @@ import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
+import { RefundPolicy } from "store/features/settingsSlice";
+
+function getRefundPercentage(policy: RefundPolicyWire): number {
+  if (policy.type === "FullRefund") {
+    return 100;
+  }
+  return policy.content.anti_spam_deposit_ratio * 100;
+}
 
 export default function MakerOfferItem({
   quoteWithAddress,
@@ -130,6 +138,7 @@ export default function MakerOfferItem({
             size="small"
           />
         </Tooltip>
+        {EarnestDepositChip(quote)}
         {isMakerVersionOutdated(version) ? (
           <Tooltip title="Outdated software — may cause issues" arrow>
             <Chip
@@ -181,3 +190,27 @@ export default function MakerOfferItem({
     </Paper>
   );
 }
+
+function EarnestDepositChip(quote: BidQuote) {
+  const full_refund: boolean = quote.refund_policy.type === "FullRefund" ? true : quote.refund_policy.content.anti_spam_deposit_ratio === 0;
+  // Rounded to 0.001 precision
+  const earnest_deposit_ratio = Math.round(
+    (quote.refund_policy.type === "FullRefund" ? 0 : quote.refund_policy.content?.anti_spam_deposit_ratio)
+    * 1000
+  ) / 1000;
+  const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
+
+  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. The maker may withhold the remaining ${earnest_deposit_ratio * 100}% to protect themselves against griefing.`;
+  const text = full_refund ? "Zero anti-spam deposit" : `${earnest_deposit_ratio * 100}% deposit`;
+
+  return <Tooltip
+    title={tooltip_text}
+    arrow
+  >
+    <Chip
+      label={text}
+      size="small"
+      color={full_refund ? "success" : "warning"} />
+  </Tooltip>;
+}
+

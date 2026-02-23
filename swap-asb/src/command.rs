@@ -177,6 +177,14 @@ where
             env_config: env_config(testnet),
             cmd: Command::SafelyAbort { swap_id },
         },
+        RawCommand::ManualRecovery(ManualRecovery::GrantMercy { swap_id }) => Arguments {
+            testnet,
+            json,
+            trace,
+            config_path: config_path(config, testnet)?,
+            env_config: env_config(testnet),
+            cmd: Command::GrantMercy { swap_id },
+        },
     };
 
     Ok(arguments)
@@ -247,6 +255,9 @@ pub enum Command {
         swap_id: Uuid,
     },
     SafelyAbort {
+        swap_id: Uuid,
+    },
+    GrantMercy {
         swap_id: Uuid,
     },
     ExportBitcoinWallet,
@@ -405,6 +416,16 @@ pub enum ManualRecovery {
     },
     #[structopt(about = "Safely Abort requires the swap to be in a state prior to locking XMR.")]
     SafelyAbort {
+        #[structopt(
+            long = "swap-id",
+            help = "The swap id can be retrieved using the history subcommand"
+        )]
+        swap_id: Uuid,
+    },
+    #[structopt(
+        about = "Grant mercy to a swap in BtcWithholdConfirmed state, allowing the taker to claim the remaining funds."
+    )]
+    GrantMercy {
         #[structopt(
             long = "swap-id",
             help = "The swap id can be retrieved using the history subcommand"

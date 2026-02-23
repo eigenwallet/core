@@ -144,7 +144,7 @@ fn main() {
         .display()
         .to_string();
     config.define("CMAKE_TOOLCHAIN_FILE", toolchain_file.clone());
-    println!("cargo:warning=Using toolchain file: {toolchain_file}");
+    println!("cargo:debug=Using toolchain file: {toolchain_file}");
 
     let depends_lib_dir = contrib_depends_dir.join(format!("{target}/lib"));
 
@@ -425,7 +425,9 @@ fn main() {
                 .to_string(),
         )
         .include(output_directory)
-        .flag("-fPIC"); // Position independent code
+        .flag("-fPIC") // Position independent code
+        .flag("-Wno-unused-parameter") // Suppress warnings from upstream Monero C++ headers
+        .flag("-Wno-reorder-ctor"); // Suppress harmless ctor init order warning from wallet2.h
 
     build.compile("monero-sys");
 }
@@ -443,7 +445,7 @@ fn compile_dependencies(
         "aarch64-apple-ios-sim" => "aarch64-apple-iossimulator".to_string(),
         _ => target,
     };
-    println!("cargo:warning=Building for target: {target}");
+    println!("cargo:debug=Building for target: {target}");
 
     match target.as_str() {
         "x86_64-apple-darwin"
@@ -459,7 +461,7 @@ fn compile_dependencies(
         _ => panic!("target unsupported: {target}"),
     }
 
-    println!("cargo:warning=Running make HOST={target} in contrib/depends",);
+    println!("cargo:debug=Running make HOST={target} in contrib/depends",);
 
     // Copy monero-depends to out_dir/depends in order to build the dependencies there
     match fs_extra::copy_items(
@@ -554,7 +556,7 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
 
     for embedded in EMBEDDED_PATCHES {
         println!(
-            "cargo:warning=Processing embedded patch: {} ({})",
+            "cargo:debug=Processing embedded patch: {} ({})",
             embedded.name, embedded.description
         );
 
@@ -567,14 +569,14 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!(
-            "cargo:warning=Found {} file(s) in patch {}",
+            "cargo:debug=Found {} file(s) in patch {}",
             file_patches.len(),
             embedded.name
         );
 
         // Apply each file patch individually
         for (file_path, patch_content) in file_patches {
-            println!("cargo:warning=Applying patch to file: {file_path}");
+            println!("cargo:debug=Applying patch to file: {file_path}");
 
             // Parse the individual file patch
             let patch = diffy::Patch::from_str(&patch_content)
@@ -591,7 +593,7 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
 
             // Check if patch is already applied by trying to reverse it
             if diffy::apply(&current, &patch.reverse()).is_ok() {
-                println!("cargo:warning=Patch for {file_path} already applied – skipping",);
+                println!("cargo:debug=Patch for {file_path} already applied – skipping",);
                 continue;
             }
 
@@ -601,11 +603,11 @@ fn apply_patches() -> Result<(), Box<dyn std::error::Error>> {
             fs::write(&target_path, patched)
                 .map_err(|e| format!("Failed to write {file_path}: {e}"))?;
 
-            println!("cargo:warning=Successfully applied patch to: {file_path}");
+            println!("cargo:debug=Successfully applied patch to: {file_path}");
         }
 
         println!(
-            "cargo:warning=Successfully applied all file patches for: {} ({})",
+            "cargo:debug=Successfully applied all file patches for: {} ({})",
             embedded.name, embedded.description
         );
     }

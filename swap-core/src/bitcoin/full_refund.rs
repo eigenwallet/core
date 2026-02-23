@@ -18,15 +18,23 @@ use std::sync::Arc;
 
 use super::extract_ecdsa_sig;
 
+/// A transaction that refunds 100% of the locked Bitcoin.
+/// Previously to the partial refund protocol change, this was the only type of refund transaction.
+/// 
+/// Now there also is the partial refund transaction, which refunds only a portion of the locked Bitcoin.
+/// For more information, see [#675](https://github.com/eigenwallet/core/pull/675).
+/// 
+/// The main reason this struct is still here is to 1) keep backwards compatibility in the database
+/// and 2) avoid having to pay fees for 2 Bitcoin transactions when we want to get a full refund anyway.
 #[derive(Debug, Clone)]
-pub struct TxRefund {
+pub struct TxFullRefund {
     inner: Transaction,
     digest: Sighash,
     cancel_output_descriptor: Descriptor<::bitcoin::PublicKey>,
     watch_script: ScriptBuf,
 }
 
-impl TxRefund {
+impl TxFullRefund {
     pub fn new(tx_cancel: &TxCancel, refund_address: &Address, spending_fee: Amount) -> Self {
         let tx_refund = tx_cancel.build_spend_transaction(refund_address, None, spending_fee);
 
@@ -158,7 +166,7 @@ impl TxRefund {
     }
 }
 
-impl Watchable for TxRefund {
+impl Watchable for TxFullRefund {
     fn id(&self) -> Txid {
         self.txid()
     }

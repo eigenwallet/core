@@ -51,6 +51,8 @@ pub async fn refund(
         // Refund possible due to cancel transaction already being published
         | AliceState::BtcCancelled { transfer_proof, state3, .. }
         | AliceState::BtcRefunded { transfer_proof, state3, .. }
+        | AliceState::BtcPartiallyRefunded { transfer_proof, state3, .. }
+        | AliceState::XmrRefundable { transfer_proof, state3, .. }
         | AliceState::BtcPunishable { transfer_proof, state3, .. } => {
             (transfer_proof, state3)
         }
@@ -58,7 +60,12 @@ pub async fn refund(
         // Alice already in final state
         AliceState::BtcRedeemTransactionPublished { .. }
         | AliceState::BtcRedeemed
-        | AliceState::XmrRefunded
+        | AliceState::XmrRefunded { .. }
+        | AliceState::BtcWithholdPublished { .. }
+        | AliceState::BtcWithholdConfirmed { .. }
+        | AliceState::BtcMercyGranted { .. }
+        | AliceState::BtcMercyPublished { .. }
+        | AliceState::BtcMercyConfirmed { .. }
         | AliceState::BtcEarlyRefundable { .. }
         | AliceState::BtcEarlyRefunded(_)
         | AliceState::BtcPunished { .. }
@@ -71,7 +78,7 @@ pub async fn refund(
         state3.fetch_tx_refund(bitcoin_wallet.as_ref()).await?
     {
         tracing::debug!(%swap_id, "Bitcoin refund transaction found, extracting key to refund Monero");
-        state3.extract_monero_private_key(published_refund_tx)?
+        state3.extract_monero_private_key_from_refund(published_refund_tx)?
     } else {
         let bob_peer_id = db.get_peer_id(swap_id).await?;
         bail!(Error::RefundTransactionNotPublishedYet(bob_peer_id),);
@@ -95,7 +102,9 @@ pub async fn refund(
     )
     .await?;
 
-    let state = AliceState::XmrRefunded;
+    let state = AliceState::XmrRefunded {
+        state3: Some(state3),
+    };
     db.insert_latest_state(swap_id, state.clone().into())
         .await?;
 

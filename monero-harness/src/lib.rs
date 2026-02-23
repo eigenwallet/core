@@ -300,7 +300,8 @@ impl<'c> Monero {
         Ok(())
     }
 
-    pub async fn generate_block(&self) -> Result<()> {
+    /// Generates 15 blocks
+    pub async fn generate_blocks(&self) -> Result<()> {
         let miner_wallet = self.wallet("miner")?;
         let miner_address = miner_wallet.address().await?.to_string();
         self.monerod().generate_blocks(15, &miner_address).await?;

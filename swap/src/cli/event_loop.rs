@@ -710,7 +710,14 @@ impl EventLoopHandle {
                 }
                 // These are errors thrown by the swap_setup/bob behaviour
                 Ok(Err(err)) => {
-                    Err(backoff::Error::transient(err.context("A network error occurred while setting up the swap")))
+                    use swap_p2p::protocols::swap_setup::bob::Error as SetupError;
+                    if err.downcast_ref::<SetupError>()
+                        .is_some_and(|e| matches!(e, SetupError::SwapRejected(_)))
+                    {
+                        Err(backoff::Error::permanent(err))
+                    } else {
+                        Err(backoff::Error::transient(err.context("A network error occurred while setting up the swap")))
+                    }
                 }
                 // This will happen if we don't establish a connection to Alice within the timeout of the MPSC channel
                 // The protocol does not dial Alice it self

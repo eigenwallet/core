@@ -139,7 +139,7 @@ impl Request for MoneroRecoveryArgs {
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WithdrawBtcArgs {
     #[typeshare(serialized_as = "number")]
-    #[serde(default, with = "::bitcoin::amount::serde::as_sat::opt")]
+    #[serde(default)]
     pub amount: Option<bitcoin::Amount>,
     #[typeshare(serialized_as = "string")]
     #[serde(with = "swap_serde::bitcoin::address_serde")]
@@ -150,7 +150,6 @@ pub struct WithdrawBtcArgs {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WithdrawBtcResponse {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub amount: bitcoin::Amount,
     pub txid: String,
 }
@@ -184,18 +183,14 @@ pub struct GetSwapInfoResponse {
     #[typeshare(serialized_as = "number")]
     pub xmr_amount: monero::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_amount: bitcoin::Amount,
     #[typeshare(serialized_as = "string")]
     pub tx_lock_id: Txid,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_cancel_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_refund_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub tx_lock_fee: bitcoin::Amount,
     pub btc_refund_address: String,
     pub cancel_timelock: CancelTimelock,
@@ -246,7 +241,6 @@ pub struct BalanceArgs {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BalanceResponse {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub balance: bitcoin::Amount,
 }
 
@@ -1802,13 +1796,20 @@ impl CheckElectrumNodeArgs {
             return Ok(CheckElectrumNodeResponse { available: false });
         };
 
-        // Check if the node is available
-        let res =
-            bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60)).await;
+        // Check if the node is available by performing a lightweight RPC call.
+        // This forces a real connection and TLS handshake (for ssl:// URLs).
+        let mut client =
+            match bitcoin_wallet::Client::new(&[url.as_str().to_string()], Duration::from_secs(60))
+                .await
+            {
+                Ok(client) => client,
+                Err(_) => return Ok(CheckElectrumNodeResponse { available: false }),
+            };
 
-        Ok(CheckElectrumNodeResponse {
-            available: res.is_ok(),
-        })
+        // Force a rpc call for blockchain height.
+        let available = client.update_state(true).await.is_ok();
+
+        Ok(CheckElectrumNodeResponse { available })
     }
 }
 
