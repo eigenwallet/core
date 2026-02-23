@@ -555,24 +555,22 @@ impl Wallet {
 
         let progress_handle = tauri_handle.as_ref().map(|th| th.start_full_scan());
 
-        let callback = progress_handle.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
-            ph.update(consumed,total);
-        })).chain(InnerSyncCallback::new(move |consumed, total| {
-            tracing::debug!(
-                "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
-                consumed,
-                total
-            );
-        }).throttle_callback(10.0)).to_full_scan_callback(Self::SCAN_STOP_GAP, 100);
+        let wallet = Arc::new(wallet);
+        let ph = progress_handle.clone();
+        let full_scan_response = client.inner.call_async("full_scan_wallet", move |electrum_client| {
+            let callback = ph.clone().and_then(|ph| InnerSyncCallback::new(move |consumed, total| {
+                ph.update(consumed, total);
+            })).chain(InnerSyncCallback::new(move |consumed, total| {
+                tracing::debug!(
+                    "Full scanning Bitcoin wallet, currently at index {}. We will scan around {} in total.",
+                    consumed,
+                    total
+                );
+            }).throttle_callback(10.0)).to_full_scan_callback(Self::SCAN_STOP_GAP, 100);
 
-        let full_scan = wallet.start_full_scan().inspect(callback);
-
-        let full_scan_response = client.inner.get_any_client().await?.full_scan(
-            full_scan,
-            Self::SCAN_STOP_GAP as usize,
-            Self::SCAN_BATCH_SIZE as usize,
-            true,
-        )?;
+            let full_scan = wallet.start_full_scan().inspect(callback);
+            electrum_client.full_scan(full_scan, Self::SCAN_STOP_GAP as usize, Self::SCAN_BATCH_SIZE as usize, true)
+        }).await?;
 
         // Only create the persister once we have the full scan result
         let mut persister = persister_constructor()?;
