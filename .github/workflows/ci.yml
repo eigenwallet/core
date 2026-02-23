@@ -188,6 +188,10 @@ jobs:
             test_name: partial_refund_alice_burns
           - package: swap
             test_name: partial_refund_alice_grants_final_amnesty
+          - package: swap
+            test_name: swap_rejected_deposit_too_small
+          - package: swap
+            test_name: partial_refund_bob_restart_detects_withhold
           - package: monero-tests
             test_name: reserve_proof
           - package: monero-tests
