@@ -28,3 +28,10 @@ swap-serde = { path = "../swap-serde" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+bitcoin-harness = { git = "https://github.com/eigenwallet/bitcoin-harness-rs", branch = "master" }
+rand = { workspace = true }
+testcontainers = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
