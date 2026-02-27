@@ -45,7 +45,7 @@ import {
   RefundPolicy,
 } from "store/features/settingsSlice";
 import { Blockchain, Network } from "store/types";
-import { useAppDispatch, useNodes, useSettings } from "store/hooks";
+import { useAppDispatch, useAppSelector, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
 import HelpIcon from "@mui/icons-material/HelpOutline";
 import { ReactNode, useState } from "react";
@@ -709,19 +709,27 @@ export function TorSettings() {
   const torEnabled = useSettings((settings) => settings.enableTor);
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
     dispatch(setTorEnabled(event.target.checked));
-  const status = (state: boolean) => (state === true ? "enabled" : "disabled");
+  const torForced = useAppSelector((s) => s.rpc.state.torForcedExcuse);
 
   return (
     <TableRow>
       <TableCell>
         <SettingLabel
           label="Use Tor"
-          tooltip="Route network traffic through Tor to hide your IP address from the maker."
+          tooltip={
+            "Route network traffic through Tor to hide your IP address from the maker. " +
+            torForced
+          }
         />
       </TableCell>
 
       <TableCell>
-        <Switch checked={torEnabled} onChange={handleChange} color="primary" />
+        <Switch
+          disabled={!!torForced}
+          checked={torEnabled || !!torForced}
+          onChange={handleChange}
+          color="primary"
+        />
       </TableCell>
     </TableRow>
   );
@@ -740,7 +748,9 @@ function MoneroTorSettings() {
     dispatch(setEnableMoneroTor(event.target.checked));
 
   // Hide this setting if Tor is disabled entirely
-  if (!torEnabled) {
+  // Hide this setting if it's superseded by the global Tor connection
+  const torForced = useAppSelector((s) => s.rpc.state.torForcedExcuse);
+  if (!torEnabled || torForced) {
     return null;
   }
 

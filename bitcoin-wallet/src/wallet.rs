@@ -19,10 +19,11 @@ use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Address, Amount, Transaction, Txid};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
-use electrum_pool::ElectrumBalancer;
+use electrum_pool::{ElectrumBalancer, ElectrumBalancerConfig};
 use moka;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -1610,7 +1611,16 @@ where
 impl Client {
     /// Create a new client with multiple electrum servers for load balancing.
     pub async fn new(electrum_rpc_urls: &[String], sync_interval: Duration) -> Result<Self> {
-        let balancer = ElectrumBalancer::new(electrum_rpc_urls.to_vec()).await?;
+        let balancer = ElectrumBalancer::new_with_config(
+            electrum_rpc_urls.to_vec(),
+            ElectrumBalancerConfig {
+                socks5: swap_tor::TOR_ENVIRONMENT
+                    .and_then(|ste| ste.electrum_proxy())
+                    .map(Cow::from),
+                ..Default::default()
+            },
+        )
+        .await?;
 
         Ok(Self {
             inner: Arc::new(balancer),
@@ -2580,8 +2590,11 @@ mod mempool_client {
                 _ => bail!("mempool.space fee estimation unsupported for network"),
             };
 
-            let client = reqwest::Client::builder()
-                .timeout(HTTP_TIMEOUT)
+            let mut client = reqwest::Client::builder().timeout(HTTP_TIMEOUT);
+            if let Some(proxy) = swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.reqwest_proxy()) {
+                client = client.proxy(reqwest::Proxy::all(proxy)?);
+            }
+            let client = client
                 .build()
                 .context("Failed to build mempool.space HTTP client")?;
 

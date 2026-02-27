@@ -438,9 +438,10 @@ impl MoneroWallet {
 
         // Use Mainnet network type – regtest daemon accepts mainnet prefixes
         // and this avoids address-parsing errors when calling daemon RPCs.
-        let wallet = WalletHandle::open_or_create(
+        let wallet = WalletHandle::open_or_create::<String>(
             wallet_path.display().to_string(),
             daemon,
+            None,
             monero_address::Network::Mainnet,
             background_sync,
         )
@@ -467,7 +468,11 @@ impl MoneroWallet {
     }
 
     /// Get address at a given account and subaddress index.
-    pub async fn address_at(&self, account_index: u32, address_index: u32) -> Result<MoneroAddress> {
+    pub async fn address_at(
+        &self,
+        account_index: u32,
+        address_index: u32,
+    ) -> Result<MoneroAddress> {
         Ok(self.wallet.address(account_index, address_index).await?)
     }
 

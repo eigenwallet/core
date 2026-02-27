@@ -23,6 +23,7 @@ rust_decimal = { version = "1", features = ["serde-float"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 swap-env = { path = "../swap-env" }
+swap-tor = { path = "../swap-tor" }
 swap-proptest = { path = "../swap-proptest" }
 swap-serde = { path = "../swap-serde" }
 thiserror = { workspace = true }

@@ -35,6 +35,7 @@ tracing-subscriber = { workspace = true }
 # Async runtime
 crossbeam = "0.8.4"
 tokio = { workspace = true, features = ["full"] }
+tokio-socks = "0.5"
 
 # Serialization
 chrono = { version = "0.4", features = ["serde"] }
@@ -63,6 +64,7 @@ tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
 # Monero/Project specific
 monero-address = { workspace = true }
 swap-serde = { path = "../swap-serde" }
+swap-tor = { path = "../swap-tor" }
 
 # Optional dependencies (for features)
 cuprate-epee-encoding = { git = "https://github.com/Cuprate/cuprate.git", optional = true }

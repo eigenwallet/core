@@ -66,6 +66,7 @@ impl Wallets {
         let main_wallet = Wallet::open_or_create(
             wallet_dir.join(&main_wallet_name).display().to_string(),
             daemon.clone(),
+            swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.wallet2_proxy()),
             network,
             true,
         )
@@ -245,6 +246,7 @@ impl Wallets {
             // We don't sync the swap wallet, just import the transaction
             false,
             daemon,
+            swap_tor::TOR_ENVIRONMENT.and_then(|ste| ste.wallet2_proxy()),
         )
         .await
         .context(format!(

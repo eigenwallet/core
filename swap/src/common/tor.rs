@@ -1,20 +1,104 @@
-use std::sync::Arc;
-use std::{path::Path, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use crate::cli::api::tauri_bindings::{
     TauriBackgroundProgress, TauriEmitter, TauriHandle, TorBootstrapStatus,
 };
 use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
 use futures::StreamExt;
+use libp2p::core::transport::{OptionalTransport, OrTransport};
+use libp2p::Transport;
+use libp2p_tor::{AddressConversion, TorTransport};
+use swap_tor::*;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-static TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
-static TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Creates an unbootstrapped Tor client or connects to well-known Tor daemon, depending on configuration.
+///
+/// 1. if on a system with special Tor requirements (Whonix, Tails): call the daemon appropriately
+/// 2. if the caller requests (user enables) `tor`: prepare an Arti client
+/// 3. `None`
+pub async fn create_tor_client(data_dir: &Path, tor: bool) -> Result<TorBackend, Error> {
+    Ok(if let Some(ste) = *TOR_ENVIRONMENT {
+        tracing::info!("On {ste:?}, not starting Tor");
+        ste.backend()
+    } else if tor {
+        TorBackend::Arti(Arc::new(create_arti_tor_client(data_dir).await?))
+    } else {
+        TorBackend::None
+    })
+}
 
-/// Creates an unbootstrapped Tor client
-pub async fn create_tor_client(
-    data_dir: &Path,
-) -> Result<Arc<TorClient<TokioRustlsRuntime>>, Error> {
+#[allow(async_fn_in_trait)]
+pub trait TorBackendSwap {
+    async fn bootstrap(&self, tauri_handle: Option<TauriHandle>) -> anyhow::Result<()>;
+    fn clone_for_monero_rpc(&self, enable_monero_tor: bool) -> TorBackend;
+    fn into_transport(
+        self,
+        arti_address_conversion: AddressConversion,
+        arti_transport_hook: impl FnOnce(&mut TorTransport),
+    ) -> std::io::Result<IntoTransportT>;
+}
+type IntoTransportT = OrTransport<
+    OrTransport<OptionalTransport<TorTransport>, OptionalTransport<Socks5Transport>>,
+    TcpTransport,
+>;
+impl TorBackendSwap for TorBackend {
+    async fn bootstrap(&self, tauri_handle: Option<TauriHandle>) -> anyhow::Result<()> {
+        match self {
+            TorBackend::Arti(arti) => bootstrap_arti_tor_client(arti, tauri_handle).await?,
+            TorBackend::Socks(addr) => {
+                addr.connect().await?; // validate the remote is actually listening
+            }
+            TorBackend::None => {}
+        }
+        Ok(())
+    }
+
+    /// Obey `enable_monero_tor` if it's meaningful on the current system.
+    fn clone_for_monero_rpc(&self, enable_monero_tor: bool) -> TorBackend {
+        match self {
+            TorBackend::Arti(..) if enable_monero_tor => self.clone(),
+            TorBackend::Arti(..) => TorBackend::None,
+            TorBackend::Socks(..) | TorBackend::None => self.clone(),
+        }
+    }
+
+    fn into_transport(
+        self,
+        arti_address_conversion: AddressConversion,
+        arti_transport_hook: impl FnOnce(&mut TorTransport),
+    ) -> std::io::Result<IntoTransportT> {
+        fn plain_transport() -> std::io::Result<TcpTransport> {
+            let tcp = libp2p::tcp::tokio::Transport::new(libp2p::tcp::Config::new().nodelay(true));
+            libp2p::dns::tokio::Transport::system(tcp)
+        }
+        let tcp_with_dns = plain_transport()?;
+
+        let tor = match self {
+            TorBackend::Arti(tor_client) => {
+                let mut tor_transport =
+                    TorTransport::from_client(tor_client, arti_address_conversion);
+                arti_transport_hook(&mut tor_transport);
+                OrTransport::new(
+                    OptionalTransport::some(tor_transport),
+                    OptionalTransport::none(),
+                )
+            }
+            TorBackend::Socks(universal_config) => OrTransport::new(
+                OptionalTransport::none(),
+                OptionalTransport::some(universal_config.transport()),
+            ),
+            TorBackend::None => {
+                OrTransport::new(OptionalTransport::none(), OptionalTransport::none())
+            }
+        };
+        Ok(tor.or_transport(tcp_with_dns))
+    }
+}
+
+const TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const TOR_RESOLVE_TIMEOUT: Duration = Duration::from_secs(20);
+
+async fn create_arti_tor_client(data_dir: &Path) -> Result<TorClient<TokioRustlsRuntime>, Error> {
     // We store the Tor state in the data directory
     let data_dir = data_dir.join("tor");
     let state_dir = data_dir.join("state");
@@ -48,17 +132,15 @@ pub async fn create_tor_client(
 
     tracing::debug!("Creating unbootstrapped Tor client");
 
-    let tor_client = TorClient::with_runtime(runtime)
+    TorClient::with_runtime(runtime)
         .config(config)
         .create_unbootstrapped_async()
-        .await?;
-
-    Ok(Arc::new(tor_client))
+        .await
 }
 
 /// Bootstraps an existing Tor client
-pub async fn bootstrap_tor_client(
-    tor_client: Arc<TorClient<TokioRustlsRuntime>>,
+async fn bootstrap_arti_tor_client(
+    tor_client: &TorClient<TokioRustlsRuntime>,
     tauri_handle: Option<TauriHandle>,
 ) -> Result<(), Error> {
     let mut bootstrap_events = tor_client.bootstrap_events();
