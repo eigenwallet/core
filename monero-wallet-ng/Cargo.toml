@@ -10,6 +10,7 @@ backoff = { workspace = true }
 thiserror = { workspace = true }
 
 # Cryptography
+chacha20 = "0.9"
 curve25519-dalek = { workspace = true }
 zeroize = { workspace = true }
 
