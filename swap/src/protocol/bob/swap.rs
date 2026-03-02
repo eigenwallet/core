@@ -912,65 +912,58 @@ async fn next_state(
                     let bitcoin_wallet = bitcoin_wallet_for_retry.clone();
                     let state = state_for_retry.clone();
                     async move {
-                    match state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)? {
-                        ExpiredTimelocks::None { .. } => {
-                            Err(backoff::Error::Permanent(anyhow::anyhow!(
-                                "Internal error: canceled state reached before cancel timelock was expired"
-                            )))
-                        }
-                        ExpiredTimelocks::Cancel { .. } => {
-                            // Publish the best Bitcoin refund transaction we can sign:
-                            //  - either full refund, if alice sent use that signature (prioritized)
-                            //  - or just partial refund.
-                            tracing::debug!("Attempting to refund Bitcoin");
+                        match state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)? {
+                            ExpiredTimelocks::None { .. } => {
+                                Err(backoff::Error::Permanent(anyhow::anyhow!(
+                                    "Internal error: canceled state reached before cancel timelock was expired"
+                                )))
+                            }
+                            ExpiredTimelocks::Cancel { .. } => {
+                                // Publish the best Bitcoin refund transaction we can sign:
+                                //  - either full refund, if alice sent use that signature (prioritized)
+                                //  - or just partial refund.
+                                tracing::debug!("Attempting to refund Bitcoin");
                             
-                            if state.refund_signatures.has_full_refund_encsig() {
-                                let full_refund_tx = state.signed_full_refund_transaction().context("Couldn't construct full refund Bitcoin transaction")?;
-                                tracing::debug!("Have full refund signature, attempting full refund");
-                                bitcoin_wallet.ensure_broadcasted(full_refund_tx, "full refund")
-                                    .await
-                                    .context("Couldn't ensure broadcast of Bitcoin full refund transaction")
-                                    .map_err(backoff::Error::transient)?;
+                                if state.refund_signatures.has_full_refund_encsig() {
+                                    let full_refund_tx = state.signed_full_refund_transaction().context("Couldn't construct full refund Bitcoin transaction")?;
+                                    tracing::debug!("Have full refund signature, attempting full refund");
+                                    bitcoin_wallet.ensure_broadcasted(full_refund_tx, "full refund")
+                                        .await
+                                        .context("Couldn't ensure broadcast of Bitcoin full refund transaction")
+                                        .map_err(backoff::Error::transient)?;
 
-                                Ok(BobState::BtcRefundPublished(state.clone()))
-                            } else if state.refund_signatures.has_partial_refund_encsig() {
-                                let partial_refund_tx = state.signed_partial_refund_transaction().context("Couldn't construct partial refund Bitcoin transaction")?;
-                                tracing::debug!("Don't have full refund signature, attempting partial refund");
-                                bitcoin_wallet.ensure_broadcasted(partial_refund_tx, "partial refund")
-                                    .await
-                                    .context("Couldn't ensure broadcast of Bitcoin partial refund transaction")
-                                    .map_err(backoff::Error::transient)?;
+                                    Ok(BobState::BtcRefundPublished(state.clone()))
+                                } else if state.refund_signatures.has_partial_refund_encsig() {
+                                    let partial_refund_tx = state.signed_partial_refund_transaction().context("Couldn't construct partial refund Bitcoin transaction")?;
+                                    tracing::debug!("Don't have full refund signature, attempting partial refund");
+                                    bitcoin_wallet.ensure_broadcasted(partial_refund_tx, "partial refund")
+                                        .await
+                                        .context("Couldn't ensure broadcast of Bitcoin partial refund transaction")
+                                        .map_err(backoff::Error::transient)?;
                                 
-                                Ok(BobState::BtcPartialRefundPublished(state.clone()))
-                            } else {
-                                Err(backoff::Error::permanent(anyhow!("Unreachable - We have neither partial nor full refund signatures")))
+                                    Ok(BobState::BtcPartialRefundPublished(state.clone()))
+                                } else {
+                                    unreachable!("We must have either partial of full refund signatures")
+                                }
+                            }
+                            ExpiredTimelocks::Punish => {
+                                let tx_lock_id = state.tx_lock_id();
+
+                                Ok(BobState::BtcPunished {
+                                    tx_lock_id,
+                                    state,
+                                })
+                            }
+                            ExpiredTimelocks::WaitingForRemainingRefund { blocks_left } => {
+                                Ok(BobState::WaitingForReclaimTimelockExpiration(state))
+                            }
+                            ExpiredTimelocks::RemainingRefund => {
+                                // TxPartialRefund was published and timelock expired
+                                // We transition to BtcPartiallyRefunded and handle the reclaim from there
+                                tracing::info!("Bitcoin was partially refunded and the remainig refund timelock expired");
+                                Ok(BobState::BtcPartiallyRefunded(state))
                             }
                         }
-                        ExpiredTimelocks::Punish => {
-                            let tx_lock_id = state.tx_lock_id();
-
-                            Ok(BobState::BtcPunished {
-                                tx_lock_id,
-                                state,
-                            })
-                        }
-                        ExpiredTimelocks::WaitingForRemainingRefund { blocks_left } => {
-                            // TxPartialRefund has been published, waiting for remaining_refund_timelock
-                            // This is unusual from BtcCancelled state - means we published partial refund but crashed
-                            // Retry until timelock expires
-                            tracing::debug!("Partial refund published, waiting {} blocks for amnesty timelock", blocks_left);
-                            Err(backoff::Error::transient(anyhow::anyhow!(
-                                "Waiting for remaining refund timelock to expire. Blocks left: {}",
-                                blocks_left
-                            )))
-                        }
-                        ExpiredTimelocks::RemainingRefund => {
-                            // TxPartialRefund was published and timelock expired - publish TxReclaim
-                            // Transition to BtcPartiallyRefunded which handles reclaim publication
-                            tracing::info!("Remaining refund timelock expired, can publish amnesty transaction");
-                            Ok(BobState::BtcPartiallyRefunded(state))
-                        }
-                    }
                     }
                 },
                 None,
@@ -1319,7 +1312,7 @@ async fn next_state(
         BobState::WaitingForReclaimTimelockExpiration(state) => {
             // Race between:
             // - Remaining refund timelock expiring (so we can publish TxReclaim)
-            // - Alice publishing TxWithhold (burns the amnesty output)
+            // - Alice publishing TxWithhold
             let tx_partial_refund = state.construct_tx_partial_refund()?;
             let tx_withhold = state.construct_tx_withhold()?;
 
