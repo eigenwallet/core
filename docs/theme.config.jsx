@@ -18,4 +18,10 @@ export default {
   ),
   primaryHue: 38,
   primarySaturation: 100,
+  feedback: {
+    content: null,
+  },
+  editLink: {
+    component: null,
+  },
 };
