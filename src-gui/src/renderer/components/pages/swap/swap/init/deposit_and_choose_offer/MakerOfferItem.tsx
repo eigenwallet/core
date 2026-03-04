@@ -204,7 +204,7 @@ function EarnestDepositChip(quote: BidQuote) {
   ) / 1000;
   const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
 
-  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. The maker may withhold the remaining ${earnest_deposit_ratio * 100}% to protect themselves against griefing.`;
+  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. During refunds maker may withhold the remaining ${earnest_deposit_ratio * 100}% to protect themselves against griefing. Does not apply to successful swaps`;
   const text = `${guaranteed_refund_percentage}% refund guaranteed`;
 
   // TODO: use colors better to distinguish between low deposits (1%) and high ones (20%)
@@ -225,7 +225,7 @@ function ReputationChip(peer_id: string) {
   if (!allSwaps) { return <></> }
   const swapsWithThisPeer = Object.values(allSwaps).filter(swap => swap.seller.peer_id == peer_id)
 
-  const successfullSwaps = swapsWithThisPeer.filter(swap => swap.state_name === BobStateName.XmrRedeemed).length
+  const successfulSwaps = swapsWithThisPeer.filter(swap => swap.state_name === BobStateName.XmrRedeemed).length
   // TODO: don't hardcode this check (was swap refunded/punished?) here, put into tauriModelExt or other place
   const refundedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcRefunded, BobStateName.BtcEarlyRefunded, BobStateName.BtcMercyConfirmed].includes(swap.state_name)).length
   const failedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcPunished, BobStateName.BtcWithheld].includes(swap.state_name)).length
@@ -238,7 +238,7 @@ function ReputationChip(peer_id: string) {
       size="small"
       label={
         <Box display="flex" style={{ gap: "0.5rem" }}>
-          <Box color="success.main">{successfullSwaps} success</Box>
+          <Box color="success.main">{successfulSwaps} success</Box>
           <Divider orientation="vertical" flexItem />
           <Box color="warning.main">{refundedSwaps} refund</Box>
           <Divider orientation="vertical" flexItem />

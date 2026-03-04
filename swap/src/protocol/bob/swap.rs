@@ -31,7 +31,7 @@ const PRE_BTC_LOCK_APPROVAL_TIMEOUT_SECS: u64 = 60 * 3;
 /// This is necessary because sometimes our acknowledgement might not reach Alice.
 pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
     // This match statement MUST match all states which Bob can enter after receiving the transfer proof.
-    // We do not match any of the cancel / refund states because in those, the swap cannot be successfull anymore.
+    // We do not match any of the cancel / refund states because in those, the swap cannot be successful anymore.
     matches!(
         state,
         |BobState::XmrLockTransactionSeen { .. }| BobState::XmrLocked(..)
