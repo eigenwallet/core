@@ -12,22 +12,22 @@ Here are the steps to set up the wallets using Electrum and Monero GUI.
 
 Download Electrum from the official [site](https://electrum.org/#download) and then start the wallet in testnet mode.
 
-import { Tabs, Tab } from 'nextra/components'
+import { Tabs } from 'nextra/components'
 
 <Tabs items={['Linux', 'macOS', 'Windows']}>
-  <Tab>
+  <Tabs.Tab>
     ```bash
     ./electrum --testnet
     ```
-  </Tab>
-  <Tab>
+  </Tabs.Tab>
+  <Tabs.Tab>
     ```bash
     open -n /Applications/Electrum.app --args --testnet
     ```
-  </Tab>
-  <Tab>
+  </Tabs.Tab>
+  <Tabs.Tab>
     Open the `Electrum Testnet` program from your start menu.
-  </Tab>
+  </Tabs.Tab>
 </Tabs>
 
 To get some free Testnet coins visit a faucet like [this](https://testnet-faucet.mempool.co) one.
@@ -44,16 +44,16 @@ View the [Installation Instructions](../getting_started/install_instructions) if
 Then start the GUI in testnet mode.
 
 <Tabs items={['Linux', 'macOS']}>
-  <Tab>
+  <Tabs.Tab>
     ```bash
     ./UnstoppableSwap_*_amd64.AppImage --testnet
     ```
-  </Tab>
-  <Tab>
+  </Tabs.Tab>
+  <Tabs.Tab>
     ```bash
     open -n /Applications/UnstoppableSwap.app --args --testnet
     ```
-  </Tab>
+  </Tabs.Tab>
 </Tabs>
 
 From here on you can follow the [Complete your first swap](../usage/first_swap) guide.

@@ -1,5 +1,6 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import { Table, Td, Th, Tr } from "nextra/components";
 
 export default function SwapMakerTable() {
   function satsToBtc(sats) {
@@ -26,30 +27,30 @@ export default function SwapMakerTable() {
         overflowX: "scroll",
       }}
     >
-      <Table>
+      <table>
         <thead>
-          <Tr>
-            <Th>Network</Th>
-            <Th>Multiaddress</Th>
-            <Th>Peer ID</Th>
-            <Th>Minimum Amount</Th>
-            <Th>Maximum Amount</Th>
-            <Th>Exchange Rate</Th>
-          </Tr>
+          <tr>
+            <th>Network</th>
+            <th>Multiaddress</th>
+            <th>Peer ID</th>
+            <th>Minimum Amount</th>
+            <th>Maximum Amount</th>
+            <th>Exchange Rate</th>
+          </tr>
         </thead>
         <tbody>
           {makers.map((maker) => (
-            <Tr key={maker.peerId}>
-              <Td>{maker.testnet ? "Testnet" : "Mainnet"}</Td>
-              <Td>{maker.multiAddr}</Td>
-              <Td>{maker.peerId}</Td>
-              <Td>{satsToBtc(maker.minSwapAmount)} BTC</Td>
-              <Td>{satsToBtc(maker.maxSwapAmount)} BTC</Td>
-              <Td>{satsToBtc(maker.price)} XMR/BTC</Td>
-            </Tr>
+            <tr key={maker.peerId}>
+              <td>{maker.testnet ? "Testnet" : "Mainnet"}</td>
+              <td>{maker.multiAddr}</td>
+              <td>{maker.peerId}</td>
+              <td>{satsToBtc(maker.minSwapAmount)} BTC</td>
+              <td>{satsToBtc(maker.maxSwapAmount)} BTC</td>
+              <td>{satsToBtc(maker.price)} XMR/BTC</td>
+            </tr>
           ))}
         </tbody>
-      </Table>
+      </table>
     </div>
   );
 }

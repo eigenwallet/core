@@ -9,22 +9,22 @@ Unless you know what you're doing, you probably want to use the precompiled bina
 
 Precompiled binaries of the _GUI_ are available for most platforms. Simply download the appropriate binary for your system and follow the instructions.
 
-<Tabs items={['Windows', 'macOS (Silicon)', 'macOS (Intel)', 'Linux (x86_64)', 'Linux (arm64)', 'Flatpak']}>
+<Tabs items={['Windows', 'macOS (Silicon)', 'macOS (Intel)', 'Linux (x86_64)', 'Linux (arm64)', 'Flatpak', 'Arch']}>
   <Tabs.Tab>
     1. Download the latest release from our [download page](https://eigenwallet.org/download/)
-    2. Open the downloaded `.exe` installer
+    2. Open the downloaded `eigenwallet_<version>.exe` installer
     3. Follow the installation wizard
     4. Open the `eigenwallet` application from your Start menu
   </Tabs.Tab>
   <Tabs.Tab>
     1. Download the latest release from our [download page](https://eigenwallet.org/download/)
-    2. Open the downloaded `.dmg` file
+    2. Open the downloaded `eigenwallet_<version>.dmg` file
     3. Drag the `eigenwallet` icon to your Applications folder
     4. Open the `eigenwallet` application from your Applications folder
   </Tabs.Tab>
   <Tabs.Tab>
     1. Download the latest release from our [download page](https://eigenwallet.org/download/)
-    2. Open the downloaded `.dmg` file
+    2. Open the downloaded `eigenwallet_<version>.dmg` file
     3. Drag the `eigenwallet` icon to your Applications folder
     4. Open the `eigenwallet` application from your Applications folder
   </Tabs.Tab>
@@ -55,7 +55,7 @@ Precompiled binaries of the _GUI_ are available for most platforms. Simply downl
     </Callout>
   </Tabs.Tab>
   <Tabs.Tab>
-    For Linux systems with Flatpak support (version 1.0 or newer), you can install eigenwallet directly from our Flatpak repository:
+    For **x86-64** Linux systems with Flatpak support (version 1.0 or newer), you can install eigenwallet directly from our Flatpak repository:
 
     ```bash filename="install.sh" copy
     # Add eigenwallet repo
@@ -79,7 +79,25 @@ Precompiled binaries of the _GUI_ are available for most platforms. Simply downl
     ```
     
   </Tabs.Tab>
+
+  <Tabs.Tab>
+    <Callout type="info">
+      The AUR package is **community maintained**.
+      We cannot take responsibility for it being up to date, working or secure.
+      Check the build script yourself.
+    </Callout>
+
+    For Arch based systems you can install the **community maintained** `eigenwallet-bin` AUR package:
+
+    ```bash filename="install.sh" copy
+    yay -S eigenwallet-bin
+    ```
+
+  </Tabs.Tab>
 </Tabs>
+
+Incase the website malfunctions you can also find the binaries on our latest [Github release](https://github.com/eigenwallet/core/releases/latest).
+Search for the `eigenwallet_<version>_<platform>.<extension>` file that fits to your system.
 
 ## Building from source
 

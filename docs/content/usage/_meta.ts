@@ -1,0 +1,5 @@
+export default {
+  first_swap: "Complete your first swap",
+  market_maker_discovery: "Maker discovery",
+  refund_punish: "Cancel, Refund and Punish explained",
+};
