@@ -16,6 +16,6 @@ export default {
       <link rel="manifest" href="/manifest.webmanifest" />
     </>
   ),
-  primaryHue: 14.3,
-  primarySaturation: 90.68,
+  primaryHue: 38,
+  primarySaturation: 100,
 };
