@@ -1,16 +1,17 @@
-import Image from "next/image";
-
 export default function Logo() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-      <Image
-        src="/favicon.svg"
-        alt="eigenwallet"
-        width={32}
-        height={32}
-        style={{ borderRadius: "20%" }}
-      />
-      <span>eigenwallet</span>
-    </div>
+    <div
+      style={{
+        height: "2rem",
+        aspectRatio: "90.38 / 40.33",
+        backgroundColor: "currentColor",
+        maskImage: "url(/favicon.svg)",
+        maskSize: "contain",
+        maskRepeat: "no-repeat",
+        WebkitMaskImage: "url(/favicon.svg)",
+        WebkitMaskSize: "contain",
+        WebkitMaskRepeat: "no-repeat",
+      }}
+    />
   );
 }
