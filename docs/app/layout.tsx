@@ -24,7 +24,7 @@ export default async function RootLayout({
 }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
-      <Head />
+      <Head color={{ hue: 38, saturation: 100 }} />
       <body>
         <Layout
           pageMap={await getPageMap()}
