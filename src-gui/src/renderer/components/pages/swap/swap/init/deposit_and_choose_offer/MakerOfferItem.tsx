@@ -11,6 +11,8 @@ import { resolveApproval } from "renderer/rpc";
 import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
 import { RefundPolicy } from "store/features/settingsSlice";
+import { useAppSelector } from "store/hooks";
+import { BobStateName } from "models/tauriModelExt";
 
 function getRefundPercentage(policy: RefundPolicyWire): number {
   if (policy.type === "FullRefund") {
@@ -28,6 +30,7 @@ export default function MakerOfferItem({
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
   const isOutOfLiquidity = quote.max_quantity == 0;
+
 
   return (
     <Paper
@@ -139,6 +142,7 @@ export default function MakerOfferItem({
           />
         </Tooltip>
         {EarnestDepositChip(quote)}
+        {ReputationChip(peer_id)}
         {isMakerVersionOutdated(version) ? (
           <Tooltip title="Outdated software — may cause issues" arrow>
             <Chip
@@ -201,7 +205,9 @@ function EarnestDepositChip(quote: BidQuote) {
   const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
 
   const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. The maker may withhold the remaining ${earnest_deposit_ratio * 100}% to protect themselves against griefing.`;
-  const text = full_refund ? "Zero anti-spam deposit" : `${earnest_deposit_ratio * 100}% deposit`;
+  const text = `${guaranteed_refund_percentage}% refund guaranteed`;
+
+  // TODO: use colors better to distinguish between low deposits (1%) and high ones (20%)
 
   return <Tooltip
     title={tooltip_text}
@@ -214,3 +220,31 @@ function EarnestDepositChip(quote: BidQuote) {
   </Tooltip>;
 }
 
+function ReputationChip(peer_id: string) {
+  const allSwaps = useAppSelector(state => state.rpc.state.swapInfos)
+  if (!allSwaps) { return <></> }
+  const swapsWithThisPeer = Object.values(allSwaps).filter(swap => swap.seller.peer_id == peer_id)
+
+  const successfullSwaps = swapsWithThisPeer.filter(swap => swap.state_name === BobStateName.XmrRedeemed).length
+  // TODO: don't hardcode this check (was swap refunded/punished?) here, put into tauriModelExt or other place
+  const refundedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcRefunded, BobStateName.BtcEarlyRefunded, BobStateName.BtcMercyConfirmed].includes(swap.state_name)).length
+  const failedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcPunished, BobStateName.BtcWithheld].includes(swap.state_name)).length
+
+  return <Tooltip
+    title={"How many swaps you made with this maker and how they turned out. \"Fail\" means you have been punished or you refunded and the maker withheld the anti-spam deposit."}
+    arrow
+  >
+    <Chip
+      size="small"
+      label={
+        <Box display="flex" style={{ gap: "0.5rem" }}>
+          <Box color="success.main">{successfullSwaps} success</Box>
+          <Divider orientation="vertical" flexItem />
+          <Box color="warning.main">{refundedSwaps} refund</Box>
+          <Divider orientation="vertical" flexItem />
+          <Box color="error.main">{failedSwaps} fail</Box>
+        </Box>
+      }
+    />
+  </Tooltip>
+}
