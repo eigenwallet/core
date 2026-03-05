@@ -3,7 +3,7 @@ use crate::monero;
 use crate::protocol::alice::swap::XmrRefundable;
 use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::PeerId;
 use std::convert::TryInto;
@@ -30,7 +30,7 @@ pub async fn refund(
     swap_id: Uuid,
     bitcoin_wallet: Arc<dyn BitcoinWallet>,
     monero_wallet: Arc<monero::Wallets>,
-    db: Arc<dyn Database>,
+    db: Arc<dyn Database + Send + Sync>,
 ) -> Result<AliceState> {
     let state = db.get_state(swap_id).await?.try_into()?;
 
@@ -74,11 +74,9 @@ pub async fn refund(
 
     tracing::info!(%swap_id, "Trying to manually refund swap");
 
-    let spend_key = if let Some(published_refund_tx) =
-        state3.fetch_tx_refund(bitcoin_wallet.as_ref()).await?
-    {
+    let spend_key = if let Some(spend_key) = state3.refund_btc(bitcoin_wallet.as_ref()).await? {
         tracing::debug!(%swap_id, "Bitcoin refund transaction found, extracting key to refund Monero");
-        state3.extract_monero_private_key_from_refund(published_refund_tx)?
+        spend_key
     } else {
         let bob_peer_id = db.get_peer_id(swap_id).await?;
         bail!(Error::RefundTransactionNotPublishedYet(bob_peer_id),);
@@ -102,11 +100,46 @@ pub async fn refund(
     )
     .await?;
 
-    let state = AliceState::XmrRefunded {
-        state3: Some(state3),
+    let mut state = AliceState::XmrRefunded {
+        state3: Some(state3.clone()),
     };
+
     db.insert_latest_state(swap_id, state.clone().into())
         .await?;
+
+    if state3.should_publish_tx_withhold.unwrap_or(false) {
+        let timelocks = state3.expired_timelocks(bitcoin_wallet.as_ref()).await?;
+
+        if matches!(timelocks, swap_core::bitcoin::ExpiredTimelocks::RemainingRefund) {
+            tracing::warn!(%swap_id, "Remaining refund timelock already expired, Bob may have already reclaimed. Attempting TxWithhold anyway");
+        }
+
+        tracing::info!(%swap_id, "Publishing TxWithhold to withhold anti-spam deposit");
+
+        let signed_tx = state3
+            .signed_withhold_transaction()
+            .context("Failed to construct signed TxWithhold")?;
+
+        let (_txid, subscription) = bitcoin_wallet
+            .ensure_broadcasted(signed_tx, "withhold")
+            .await
+            .context("Failed to broadcast TxWithhold")?;
+
+        state = AliceState::BtcWithholdPublished {
+            state3: state3.clone(),
+        };
+        db.insert_latest_state(swap_id, state.clone().into())
+            .await?;
+
+        subscription
+            .wait_until_final()
+            .await
+            .context("Failed to wait for TxWithhold confirmation")?;
+
+        state = AliceState::BtcWithholdConfirmed { state3 };
+        db.insert_latest_state(swap_id, state.clone().into())
+            .await?;
+    }
 
     Ok(state)
 }
