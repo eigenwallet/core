@@ -30,6 +30,7 @@ export default async function RootLayout({
           pageMap={await getPageMap()}
           editLink={null}
           feedback={{ content: null }}
+          sidebar={{ defaultMenuCollapseLevel: 1 }}
           navbar={
             <Navbar
               logo={<Logo />}

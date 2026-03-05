@@ -1,32 +1,48 @@
-import { Tabs, Callout } from 'nextra/components'
+import { Tabs, Callout, Steps } from 'nextra/components'
 
 # Installation
 
-To install the app you can either download ready-to-use binaries or build it from source.
-Unless you know what you're doing, you probably want to use the precompiled binaries.
+## Download
 
-## Precompiled binaries
-
-Precompiled binaries of the _GUI_ are available for most platforms. Simply download the appropriate binary for your system and follow the instructions.
+Ready-to-use binaries of the app are available for all desktop platforms. 
+Choose your platform and follow the instructions.
 
 <Tabs items={['Windows', 'macOS (Silicon)', 'macOS (Intel)', 'Linux (x86_64)', 'Linux (arm64)', 'Flatpak', 'Arch']}>
   <Tabs.Tab>
-    1. Download the latest release from our [download page](https://eigenwallet.org/download/)
-    2. Open the downloaded `eigenwallet_<version>.exe` installer
-    3. Follow the installation wizard
-    4. Open the `eigenwallet` application from your Start menu
+    <Steps>
+    ### Download
+    Download the latest release from our [download page](https://eigenwallet.org/download/)
+    ### Install
+    Open the downloaded `eigenwallet_<version>.exe` installer
+    ### Setup
+    Follow the installation wizard
+    ### Launch
+    Open the `eigenwallet` application from your Start menu
+    </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
-    1. Download the latest release from our [download page](https://eigenwallet.org/download/)
-    2. Open the downloaded `eigenwallet_<version>.dmg` file
-    3. Drag the `eigenwallet` icon to your Applications folder
-    4. Open the `eigenwallet` application from your Applications folder
+    <Steps>
+    ### Download
+    Download the latest release from our [download page](https://eigenwallet.org/download/)
+    ### Open
+    Open the downloaded `eigenwallet_<version>.dmg` file
+    ### Install
+    Drag the `eigenwallet` icon to your Applications folder
+    ### Launch
+    Open the `eigenwallet` application from your Applications folder
+    </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
-    1. Download the latest release from our [download page](https://eigenwallet.org/download/)
-    2. Open the downloaded `eigenwallet_<version>.dmg` file
-    3. Drag the `eigenwallet` icon to your Applications folder
-    4. Open the `eigenwallet` application from your Applications folder
+    <Steps>
+    ### Download
+    Download the latest release from our [download page](https://eigenwallet.org/download/)
+    ### Open
+    Open the downloaded `eigenwallet_<version>.dmg` file
+    ### Install
+    Drag the `eigenwallet` icon to your Applications folder
+    ### Launch
+    Open the `eigenwallet` application from your Applications folder
+    </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
     <Callout type="info">
@@ -57,6 +73,9 @@ Precompiled binaries of the _GUI_ are available for most platforms. Simply downl
   <Tabs.Tab>
     For **x86-64** Linux systems with Flatpak support (version 1.0 or newer), you can install eigenwallet directly from our Flatpak repository:
 
+    <Steps>
+    ### Install
+
     ```bash filename="install.sh" copy
     # Add eigenwallet repo
     flatpak remote-add --if-not-exists eigenwallet https://eigenwallet.github.io/core/eigenwallet.flatpakrepo
@@ -66,18 +85,18 @@ Precompiled binaries of the _GUI_ are available for most platforms. Simply downl
     flatpak install eigenwallet org.eigenwallet.app
     ```
 
-    ## Run
+    ### Run
 
     ```bash filename="run.sh" copy
     flatpak run org.eigenwallet.app
     ```
 
-    ## Update
+    ### Update
 
     ```bash filename="update.sh" copy
     flatpak update org.eigenwallet.app
     ```
-    
+    </Steps>
   </Tabs.Tab>
 
   <Tabs.Tab>
@@ -96,26 +115,14 @@ Precompiled binaries of the _GUI_ are available for most platforms. Simply downl
   </Tabs.Tab>
 </Tabs>
 
-Incase the website malfunctions you can also find the binaries on our latest [Github release](https://github.com/eigenwallet/core/releases/latest).
+
+-------
+
+Sometimes the website does not display the latest release.
+In that case you can also find the binaries on our latest [Github release](https://github.com/eigenwallet/core/releases/latest).
 Search for the `eigenwallet_<version>_<platform>.<extension>` file that fits to your system.
 
 ## Building from source
 
-If you want to build the application from source you'll need to have the following tools installed:
-
-- `cargo` ([installation](https://www.rust-lang.org/tools/install)) and `cargo tauri` ([installation](https://v2.tauri.app/reference/cli/) and [prerequisites](https://v2.tauri.app/start/prerequisites/))
-- `node` ([installation](https://nodejs.org/en/download/)) and `yarn` (version 1.22, not 4.x)
-- `dprint` (`cargo install dprint@0.50.0`)
-- `typeshare` (`cargo install typeshare-cli`)
-
-After that you only need to clone the repository and run the following commands:
-
-```bash
-git clone https://github.com/eigenwallet/core.git
-cd core/src-tauri
-cargo tauri build # may take a while
-```
-
-This will create the `core/target/release/bundle` folder which contains the executable in a platform specific folder.
-By default this will compile the binary the platform you are currently on.
-You can configure this using options for the `cargo tauri build` command ([docs](https://v2.tauri.app/reference/cli/#build)).
+You can build `eigenwallet` from source.
+Read the [Contributing](/contributing/building_from_source) guide for instructions.

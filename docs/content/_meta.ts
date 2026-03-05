@@ -4,6 +4,7 @@ export default {
   usage: "Usage",
   advanced: "Advanced",
   becoming_a_maker: "Becoming a Maker",
+  contributing: "Contributing",
   send_feedback: "Support / Feedback",
   donate: "Donate",
 };
