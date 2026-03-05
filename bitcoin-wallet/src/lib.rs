@@ -93,7 +93,7 @@ pub async fn withdraw(
 
     let signed_tx = wallet.sign_and_finalize(unsigned_tx).await?;
     let (txid, _subscription) = wallet
-        .ensure_broadcasted(signed_tx, "withdraw")
+        .broadcast(signed_tx, "withdraw")
         .await?;
 
     Ok((txid, amount))
