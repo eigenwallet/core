@@ -2,38 +2,46 @@
 
 mod cancel;
 mod early_refund;
+mod full_refund;
 mod lock;
+mod mercy;
+mod partial_refund;
 mod punish;
+mod reclaim;
 mod redeem;
-mod refund;
 mod timelocks;
+mod withhold;
 
 pub use crate::bitcoin::cancel::TxCancel;
 pub use crate::bitcoin::early_refund::TxEarlyRefund;
+pub use crate::bitcoin::full_refund::TxFullRefund;
 pub use crate::bitcoin::lock::TxLock;
+pub use crate::bitcoin::mercy::TxMercy;
+pub use crate::bitcoin::partial_refund::TxPartialRefund;
 pub use crate::bitcoin::punish::TxPunish;
+pub use crate::bitcoin::reclaim::TxReclaim;
 pub use crate::bitcoin::redeem::TxRedeem;
-pub use crate::bitcoin::refund::TxRefund;
 pub use crate::bitcoin::timelocks::{BlockHeight, ExpiredTimelocks};
-pub use crate::bitcoin::timelocks::{CancelTimelock, PunishTimelock};
+pub use crate::bitcoin::timelocks::{CancelTimelock, PunishTimelock, RemainingRefundTimelock};
+pub use crate::bitcoin::withhold::TxWithhold;
 pub use ::bitcoin::amount::Amount;
 pub use ::bitcoin::psbt::Psbt as PartiallySignedTransaction;
 pub use ::bitcoin::{Address, AddressType, Network, Transaction, Txid};
+pub use bitcoin_wallet::ScriptStatus;
+pub use ecdsa_fun::Signature;
 pub use ecdsa_fun::adaptor::EncryptedSignature;
 pub use ecdsa_fun::fun::Scalar;
-pub use ecdsa_fun::Signature;
 
 use ::bitcoin::hashes::Hash;
 use ::bitcoin::secp256k1::ecdsa;
 use ::bitcoin::sighash::SegwitV0Sighash as Sighash;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::descriptor::Wsh;
 use bdk_wallet::miniscript::{Descriptor, Segwitv0};
-use bitcoin_wallet::primitives::ScriptStatus;
+use ecdsa_fun::ECDSA;
 use ecdsa_fun::adaptor::{Adaptor, HashTranscript};
 use ecdsa_fun::fun::Point;
 use ecdsa_fun::nonce::Deterministic;
-use ecdsa_fun::ECDSA;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -242,11 +250,28 @@ pub fn recover(S: PublicKey, sig: Signature, encsig: EncryptedSignature) -> Resu
 pub fn current_epoch(
     cancel_timelock: CancelTimelock,
     punish_timelock: PunishTimelock,
+    remaining_refund_timelock: Option<RemainingRefundTimelock>,
     tx_lock_status: ScriptStatus,
     tx_cancel_status: ScriptStatus,
+    tx_partial_refund_status: Option<ScriptStatus>,
 ) -> ExpiredTimelocks {
     if tx_cancel_status.is_confirmed_with(punish_timelock) {
         return ExpiredTimelocks::Punish;
+    }
+
+    // Check if TxPartialRefund is confirmed and handle remaining refund timelock
+    // For old swaps, these will be None and we skip the partial refund checks
+    if let (Some(remaining_refund_timelock), Some(tx_partial_refund_status)) =
+        (remaining_refund_timelock, tx_partial_refund_status)
+    {
+        if tx_partial_refund_status.is_confirmed_with(remaining_refund_timelock) {
+            return ExpiredTimelocks::RemainingRefund;
+        }
+        if tx_partial_refund_status.is_confirmed() {
+            return ExpiredTimelocks::WaitingForRemainingRefund {
+                blocks_left: tx_partial_refund_status.blocks_left_until(remaining_refund_timelock),
+            };
+        }
     }
 
     if tx_lock_status.is_confirmed_with(cancel_timelock) {
@@ -557,8 +582,8 @@ mod tests {
     /// subscriptions to the transaction are on index `0` when broadcasting the
     /// transaction.
     #[tokio::test]
-    async fn given_amounts_with_change_outputs_when_signing_tx_then_output_index_0_is_ensured_for_script(
-    ) {
+    async fn given_amounts_with_change_outputs_when_signing_tx_then_output_index_0_is_ensured_for_script()
+     {
         // This value is somewhat arbitrary but the indexation problem usually occurred
         // on the first or second value (i.e. 547, 548) We keep the test
         // iterations relatively low because these tests are expensive.
@@ -700,9 +725,9 @@ TRACE bitcoin_wallet::wallet: Bitcoin transaction status changed txid=0000000000
 
     mod cached_fee_estimator_tests {
         use super::*;
-        use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
-        use tokio::time::{sleep, Duration};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use tokio::time::{Duration, sleep};
 
         /// Mock fee estimator that tracks how many times methods are called
         #[derive(Clone)]

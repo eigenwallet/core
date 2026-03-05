@@ -13,6 +13,7 @@ use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::fmt;
 use std::path::PathBuf;
+use swap_env::config::RefundPolicy;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -49,6 +50,7 @@ use uuid::Uuid;
 pub async fn setup_test<T, F, C>(
     _config: C,
     developer_tip_ratio: Option<(Decimal, bool)>,
+    refund_policy: Option<RefundPolicy>,
     testfn: T,
 ) where
     T: Fn(TestContext) -> F,
@@ -150,7 +152,13 @@ pub async fn setup_test<T, F, C>(
         .parse()
         .expect("failed to parse Alice's address");
 
-    let (alice_handle, alice_swap_handle) = start_alice(
+    let alice_rpc_port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+
+    let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
         &alice_seed,
         alice_db_path.clone(),
         alice_listen_address.clone(),
@@ -158,8 +166,14 @@ pub async fn setup_test<T, F, C>(
         alice_bitcoin_wallet.clone(),
         alice_monero_wallet.clone(),
         developer_tip.clone(),
+        refund_policy.clone().unwrap_or_default(),
+        alice_rpc_port,
     )
     .await;
+
+    let alice_rpc_client = jsonrpsee::http_client::HttpClientBuilder::default()
+        .build(format!("http://127.0.0.1:{}", alice_rpc_port))
+        .expect("Failed to create RPC client");
 
     let bob_seed = Seed::random().unwrap();
     let bob_starting_balances = StartingBalances::new(btc_amount * 10, monero::Amount::ZERO, None);
@@ -196,6 +210,9 @@ pub async fn setup_test<T, F, C>(
         alice_seed,
         alice_db_path,
         alice_listen_address,
+        alice_rpc_port,
+        alice_rpc_server_handle,
+        alice_rpc_client,
         alice_starting_balances,
         alice_bitcoin_wallet,
         alice_monero_wallet,
@@ -207,7 +224,9 @@ pub async fn setup_test<T, F, C>(
         bob_monero_wallet,
         developer_tip_monero_wallet,
         developer_tip,
+        refund_policy: refund_policy.unwrap_or_default(),
         monerod_container_id: containers._monerod_container.id().to_string(),
+        monero,
     };
 
     testfn(test).await.unwrap()
@@ -298,7 +317,13 @@ async fn start_alice(
     bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
     monero_wallet: Arc<monero::Wallets>,
     developer_tip: TipConfig,
-) -> (AliceApplicationHandle, Receiver<alice::Swap>) {
+    refund_policy: RefundPolicy,
+    rpc_port: u16,
+) -> (
+    AliceApplicationHandle,
+    Receiver<alice::Swap>,
+    tokio_util::task::AbortOnDropHandle<()>,
+) {
     if let Some(parent_dir) = db_path.parent() {
         ensure_directory_exists(parent_dir).unwrap();
     }
@@ -332,24 +357,41 @@ async fn start_alice(
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
 
-    let (event_loop, swap_handle, _service) = asb::EventLoop::new(
+    let (event_loop, swap_handle, service) = asb::EventLoop::new(
         swarm,
         env_config,
-        bitcoin_wallet,
-        monero_wallet,
-        db,
+        bitcoin_wallet.clone(),
+        monero_wallet.clone(),
+        db.clone(),
         FixedRate::default(),
         min_buy,
         max_buy,
         None,
         developer_tip,
+        refund_policy,
     )
     .unwrap();
+
+    let rpc_server_handle = asb::rpc::RpcServer::start(
+        "127.0.0.1".to_string(),
+        rpc_port,
+        bitcoin_wallet,
+        monero_wallet,
+        service,
+        db,
+    )
+    .await
+    .expect("Failed to start RPC server")
+    .spawn();
 
     let peer_id = event_loop.peer_id();
     let handle = tokio::spawn(event_loop.run());
 
-    (AliceApplicationHandle { handle, peer_id }, swap_handle)
+    (
+        AliceApplicationHandle { handle, peer_id },
+        swap_handle,
+        rpc_server_handle,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -424,6 +466,7 @@ async fn init_test_wallets(
         .finality_confirmations(1_u32)
         .target_block(1_u32)
         .sync_interval(Duration::from_secs(3)) // high sync interval to speed up tests
+        .use_mempool_space_fee_estimation(false)
         .build()
         .await
         .expect("could not init btc wallet");
@@ -645,7 +688,7 @@ impl BobParams {
     }
 }
 
-pub struct BobApplicationHandle(JoinHandle<()>);
+pub struct BobApplicationHandle(pub JoinHandle<()>);
 
 impl BobApplicationHandle {
     pub fn abort(&self) {
@@ -670,10 +713,15 @@ pub struct TestContext {
     btc_amount: bitcoin::Amount,
     xmr_amount: monero::Amount,
     developer_tip: TipConfig,
+    refund_policy: RefundPolicy,
 
     alice_seed: Seed,
     alice_db_path: PathBuf,
     alice_listen_address: Multiaddr,
+    alice_rpc_port: u16,
+    #[allow(dead_code)]
+    alice_rpc_server_handle: tokio_util::task::AbortOnDropHandle<()>,
+    pub alice_rpc_client: jsonrpsee::http_client::HttpClient,
 
     alice_starting_balances: StartingBalances,
     alice_bitcoin_wallet: Arc<bitcoin_wallet::Wallet>,
@@ -690,6 +738,10 @@ pub struct TestContext {
 
     // Store the container ID as String instead of reference
     monerod_container_id: String,
+
+    // Handle for the Monero deamon. This allows us to skip waiting times by generating
+    // blocks instantly
+    pub monero: Monero,
 }
 
 impl TestContext {
@@ -706,8 +758,12 @@ impl TestContext {
 
     pub async fn restart_alice(&mut self) {
         self.alice_handle.abort();
+        // Abort the old RPC server to release the port before starting a new one
+        self.alice_rpc_server_handle.abort();
+        // Small delay to ensure port is released
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let (alice_handle, alice_swap_handle) = start_alice(
+        let (alice_handle, alice_swap_handle, alice_rpc_server_handle) = start_alice(
             &self.alice_seed,
             self.alice_db_path.clone(),
             self.alice_listen_address.clone(),
@@ -715,11 +771,14 @@ impl TestContext {
             self.alice_bitcoin_wallet.clone(),
             self.alice_monero_wallet.clone(),
             self.developer_tip.clone(),
+            self.refund_policy.clone(),
+            self.alice_rpc_port,
         )
         .await;
 
         self.alice_handle = alice_handle;
         self.alice_swap_handle = alice_swap_handle;
+        self.alice_rpc_server_handle = alice_rpc_server_handle;
     }
 
     pub async fn alice_next_swap(&mut self) -> alice::Swap {
@@ -775,7 +834,7 @@ impl TestContext {
     }
 
     pub async fn assert_alice_refunded(&mut self, state: AliceState) {
-        assert!(matches!(state, AliceState::XmrRefunded));
+        assert!(matches!(state, AliceState::XmrRefunded { .. }));
 
         assert_eventual_balance(
             self.alice_bitcoin_wallet.as_ref(),
@@ -786,6 +845,51 @@ impl TestContext {
         .unwrap();
 
         // Alice pays fees - comparison does not take exact lock fee into account
+        assert_eventual_balance(
+            &*self.alice_monero_wallet.main_wallet().await,
+            Ordering::Greater,
+            self.alice_refunded_xmr_balance(),
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn assert_alice_withhold_confirmed(&mut self, state: AliceState) {
+        assert!(matches!(state, AliceState::BtcWithholdConfirmed { .. }));
+
+        // Same as refunded - Alice still has her XMR back
+        assert_eventual_balance(
+            self.alice_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.alice_refunded_btc_balance(),
+        )
+        .await
+        .unwrap();
+
+        assert_eventual_balance(
+            &*self.alice_monero_wallet.main_wallet().await,
+            Ordering::Greater,
+            self.alice_refunded_xmr_balance(),
+        )
+        .await
+        .unwrap();
+    }
+
+    pub async fn assert_alice_mercy_confirmed(&mut self, state: AliceState) {
+        assert!(matches!(
+            state,
+            AliceState::BtcMercyConfirmed { .. }
+        ));
+
+        // Same as refunded - Alice still has her XMR back
+        assert_eventual_balance(
+            self.alice_bitcoin_wallet.as_ref(),
+            Ordering::Equal,
+            self.alice_refunded_btc_balance(),
+        )
+        .await
+        .unwrap();
+
         assert_eventual_balance(
             &*self.alice_monero_wallet.main_wallet().await,
             Ordering::Greater,
@@ -896,6 +1000,124 @@ impl TestContext {
         )
         .await
         .unwrap();
+    }
+
+    pub async fn assert_bob_partially_refunded(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
+            BobState::BtcPartiallyRefunded(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.btc_amnesty_amount.expect("amnesty amount"),
+            ),
+            _ => panic!("Bob is not in btc partially refunded state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_amount;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_amnesty_received(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_fee) = match state {
+            BobState::BtcReclaimConfirmed(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.tx_reclaim_fee.expect("amnesty fee"),
+            ),
+            _ => panic!("Bob is not in btc amnesty confirmed state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob gets full amount back minus all the fees
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_fee;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_withheld(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, amnesty_amount) = match state {
+            BobState::BtcWithheld(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.btc_amnesty_amount.expect("amnesty amount"),
+            ),
+            _ => panic!("Bob is not in btc withheld state: {:?}", state),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob lost the amnesty amount (it was withheld)
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - amnesty_amount;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
+    }
+
+    pub async fn assert_bob_mercy_received(&self, state: BobState) {
+        self.bob_bitcoin_wallet.sync().await.unwrap();
+
+        let (lock_tx_id, cancel_fee, partial_refund_fee, mercy_fee) = match state {
+            BobState::BtcMercyConfirmed(state6) => (
+                state6.tx_lock_id(),
+                state6.tx_cancel_fee,
+                state6.tx_partial_refund_fee.expect("partial refund fee"),
+                state6.tx_mercy_fee.expect("mercy fee"),
+            ),
+            _ => panic!(
+                "Bob is not in btc mercy confirmed state: {:?}",
+                state
+            ),
+        };
+        let lock_tx_bitcoin_fee = self
+            .bob_bitcoin_wallet
+            .transaction_fee(lock_tx_id)
+            .await
+            .unwrap();
+
+        let btc_balance_after_swap = self.bob_bitcoin_wallet.balance().await.unwrap();
+        // Bob gets full amount back via mercy
+        let expected_balance = self.bob_starting_balances.btc
+            - lock_tx_bitcoin_fee
+            - cancel_fee
+            - partial_refund_fee
+            - mercy_fee;
+
+        assert_eq!(btc_balance_after_swap, expected_balance);
     }
 
     fn alice_redeemed_xmr_balance(&self) -> monero::Amount {
@@ -1212,6 +1434,22 @@ pub mod alice_run_until {
     pub fn is_btc_redeemed(state: &AliceState) -> bool {
         matches!(state, AliceState::BtcRedeemed { .. })
     }
+
+    pub fn is_btc_partially_refunded(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcPartiallyRefunded { .. })
+    }
+
+    pub fn is_xmr_refunded(state: &AliceState) -> bool {
+        matches!(state, AliceState::XmrRefunded { .. })
+    }
+
+    pub fn is_btc_withhold_confirmed(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcWithholdConfirmed { .. })
+    }
+
+    pub fn is_btc_mercy_confirmed(state: &AliceState) -> bool {
+        matches!(state, AliceState::BtcMercyConfirmed { .. })
+    }
 }
 
 pub mod bob_run_until {
@@ -1231,6 +1469,30 @@ pub mod bob_run_until {
 
     pub fn is_encsig_sent(state: &BobState) -> bool {
         matches!(state, BobState::EncSigSent(..))
+    }
+
+    pub fn is_btc_partially_refunded(state: &BobState) -> bool {
+        matches!(state, BobState::BtcPartiallyRefunded(..))
+    }
+
+    pub fn is_waiting_for_remaining_refund_timelock(state: &BobState) -> bool {
+        matches!(state, BobState::WaitingForReclaimTimelockExpiration(..))
+    }
+
+    pub fn is_remaining_refund_timelock_expired(state: &BobState) -> bool {
+        matches!(state, BobState::ReclaimTimelockExpired(..))
+    }
+
+    pub fn is_btc_amnesty_confirmed(state: &BobState) -> bool {
+        matches!(state, BobState::BtcReclaimConfirmed(..))
+    }
+
+    pub fn is_btc_withheld(state: &BobState) -> bool {
+        matches!(state, BobState::BtcWithheld(..))
+    }
+
+    pub fn is_btc_mercy_confirmed(state: &BobState) -> bool {
+        matches!(state, BobState::BtcMercyConfirmed(..))
     }
 }
 
@@ -1263,6 +1525,38 @@ impl GetConfig for FastPunishConfig {
         Config {
             bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
             bitcoin_punish_timelock: PunishTimelock::new(10).into(),
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+pub struct FastAmnestyConfig;
+
+impl GetConfig for FastAmnestyConfig {
+    fn get_config() -> Config {
+        Config {
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            bitcoin_remaining_refund_timelock: 3,
+            ..env::Regtest::get_config()
+        }
+    }
+}
+
+/// Config with a longer remaining refund timelock for burn tests.
+/// Alice needs time to refund XMR (which waits for 10 Monero confirmations)
+/// before publishing the burn transaction.
+pub struct SlowAmnestyConfig;
+
+impl GetConfig for SlowAmnestyConfig {
+    fn get_config() -> Config {
+        Config {
+            bitcoin_cancel_timelock: CancelTimelock::new(10).into(),
+            // Much longer timelock to give Alice time to:
+            // 1. Wait for 10 Monero confirmations on the lock tx
+            // 2. Sweep the XMR to her wallet
+            // 3. Then publish the burn transaction
+            // In regtest, each BTC block is ~5s, so 100 blocks is ~8 minutes
+            bitcoin_remaining_refund_timelock: 100,
             ..env::Regtest::get_config()
         }
     }

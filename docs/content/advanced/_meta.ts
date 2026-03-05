@@ -1,0 +1,3 @@
+export default {
+  swap_on_testnet: "How to swap on Testnet",
+};

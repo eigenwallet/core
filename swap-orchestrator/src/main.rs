@@ -3,9 +3,11 @@ mod containers;
 mod images;
 mod prompt;
 
+use swap_orchestrator as _;
+
 use crate::compose::{
-    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks, ASB_DATA_DIR, DOCKER_COMPOSE_FILE,
+    ASB_DATA_DIR, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage,
+    OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
 };
 use std::path::PathBuf;
 use swap_env::config::{
@@ -193,6 +195,7 @@ fn main() {
                 price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
                 price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
                 external_bitcoin_redeem_address: None,
+                refund_policy: defaults.refund_policy,
                 developer_tip,
             },
         };

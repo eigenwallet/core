@@ -1,0 +1,128 @@
+import { Tabs, Callout, Steps } from 'nextra/components'
+
+# Installation
+
+## Download
+
+Ready-to-use binaries of the app are available for all desktop platforms. 
+Choose your platform and follow the instructions.
+
+<Tabs items={['Windows', 'macOS (Silicon)', 'macOS (Intel)', 'Linux (x86_64)', 'Linux (arm64)', 'Flatpak', 'Arch']}>
+  <Tabs.Tab>
+    <Steps>
+    ### Download
+    Download the latest release from our [download page](https://eigenwallet.org/download/)
+    ### Install
+    Open the downloaded `eigenwallet_<version>.exe` installer
+    ### Setup
+    Follow the installation wizard
+    ### Launch
+    Open the `eigenwallet` application from your Start menu
+    </Steps>
+  </Tabs.Tab>
+  <Tabs.Tab>
+    <Steps>
+    ### Download
+    Download the latest release from our [download page](https://eigenwallet.org/download/)
+    ### Open
+    Open the downloaded `eigenwallet_<version>.dmg` file
+    ### Install
+    Drag the `eigenwallet` icon to your Applications folder
+    ### Launch
+    Open the `eigenwallet` application from your Applications folder
+    </Steps>
+  </Tabs.Tab>
+  <Tabs.Tab>
+    <Steps>
+    ### Download
+    Download the latest release from our [download page](https://eigenwallet.org/download/)
+    ### Open
+    Open the downloaded `eigenwallet_<version>.dmg` file
+    ### Install
+    Drag the `eigenwallet` icon to your Applications folder
+    ### Launch
+    Open the `eigenwallet` application from your Applications folder
+    </Steps>
+  </Tabs.Tab>
+  <Tabs.Tab>
+    <Callout type="info">
+      The AppImage might not work on less new distributions (older than Ubuntu 24) due to an upstream bug. Try the Flatpak instead.
+    </Callout>
+
+    For newer Linux distributions, you can download the AppImage and run it directly. It includes all dependencies.
+    Simply download the latest release from our [download page](https://eigenwallet.org/download/) and execute it.
+
+    Alternatively you can download it from your terminal:
+
+    ```bash filename="install.sh" copy
+    # Find the latest AppImage file
+    EIGENWALLET_APPIMAGE=$(curl -s https://api.github.com/repos/eigenwallet/core/releases/latest | grep -o 'https://[^"]*\.AppImage' | head -1 | xargs basename)
+    # Download the lastest file
+    wget https://github.com/eigenwallet/core/releases/latest/download/$EIGENWALLET_APPIMAGE
+    # Make it executable
+    chmod +x $EIGENWALLET_APPIMAGE
+    # Start eigenwallet
+    ./$EIGENWALLET_APPIMAGE
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    <Callout type="error">
+      Due to limitations with our CI pipeline, we currently can't provide precompiled binaries for arm64 linux systems.
+    </Callout>
+  </Tabs.Tab>
+  <Tabs.Tab>
+    For **x86-64** Linux systems with Flatpak support (version 1.0 or newer), you can install eigenwallet directly from our Flatpak repository:
+
+    <Steps>
+    ### Install
+
+    ```bash filename="install.sh" copy
+    # Add eigenwallet repo
+    flatpak remote-add --if-not-exists eigenwallet https://eigenwallet.github.io/core/eigenwallet.flatpakrepo
+    # Add dependencies
+    flatpak install flathub org.gnome.Platform//47
+    # Install eigenwallet
+    flatpak install eigenwallet org.eigenwallet.app
+    ```
+
+    ### Run
+
+    ```bash filename="run.sh" copy
+    flatpak run org.eigenwallet.app
+    ```
+
+    ### Update
+
+    ```bash filename="update.sh" copy
+    flatpak update org.eigenwallet.app
+    ```
+    </Steps>
+  </Tabs.Tab>
+
+  <Tabs.Tab>
+    <Callout type="info">
+      The AUR package is **community maintained**.
+      We cannot take responsibility for it being up to date, working or secure.
+      Check the build script yourself.
+    </Callout>
+
+    For Arch based systems you can install the **community maintained** `eigenwallet-bin` AUR package:
+
+    ```bash filename="install.sh" copy
+    yay -S eigenwallet-bin
+    ```
+
+  </Tabs.Tab>
+</Tabs>
+
+
+-------
+
+Sometimes the website does not display the latest release.
+In that case you can also find the binaries on our latest [Github release](https://github.com/eigenwallet/core/releases/latest).
+Search for the `eigenwallet_<version>_<platform>.<extension>` file that fits to your system.
+
+## Building from source
+
+You can build `eigenwallet` from source.
+Read the [Contributing](/contributing/building_from_source) guide for instructions.

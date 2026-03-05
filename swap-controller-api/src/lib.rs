@@ -1,6 +1,7 @@
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObjectOwned;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BitcoinBalanceResponse {
@@ -64,16 +65,34 @@ pub struct RegistrationStatusResponse {
     pub registrations: Vec<RegistrationStatusItem>,
 }
 
+// TODO: we should not need both this and asb::SwapDetails
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Swap {
-    pub id: String,
+    pub swap_id: String,
+    pub start_date: String,
     pub state: String,
+    pub btc_lock_txid: String,
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub btc_amount: bitcoin::Amount,
+    /// Monero amount in piconero
+    pub xmr_amount: u64,
+    /// Exchange rate: BTC per XMR (amount of BTC needed to buy 1 XMR)
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub exchange_rate: bitcoin::Amount,
+    pub peer_id: String,
+    pub completed: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MoneroSeedResponse {
     pub seed: String,
     pub restore_height: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SetBurnOnRefundRequest {
+    pub swap_id: String,
+    pub burn: bool,
 }
 
 #[rpc(client, server)]
@@ -100,4 +119,9 @@ pub trait AsbApi {
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
     #[method(name = "registration_status")]
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
+    #[method(name = "set_burn_on_refund")]
+    async fn set_withhold_deposit(&self, swap_id: Uuid, burn: bool)
+        -> Result<(), ErrorObjectOwned>;
+    #[method(name = "grant_mercy")]
+    async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned>;
 }

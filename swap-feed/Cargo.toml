@@ -1,6 +1,6 @@
 [package]
 name = "swap-feed"
-version = "0.1.0"
+version = "4.0.0"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2021"
 description = "Price feed functionality for XMR/BTC atomic swaps"

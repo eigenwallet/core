@@ -21,7 +21,10 @@ export default function ProcessExitedPage({
     (prevState.type === "XmrRedeemInMempool" ||
       prevState.type === "BtcRefunded" ||
       prevState.type === "BtcPunished" ||
-      prevState.type === "CooperativeRedeemRejected")
+      prevState.type === "CooperativeRedeemRejected" ||
+      prevState.type === "BtcWithheld" ||
+      prevState.type === "BtcMercyConfirmed" ||
+      prevState.type === "BtcAmnestyReceived")
   ) {
     return (
       <SwapStatePage

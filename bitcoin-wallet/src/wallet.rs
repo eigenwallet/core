@@ -13,8 +13,6 @@ use bdk_wallet::template::{Bip84, DescriptorTemplate};
 use bdk_wallet::KeychainKind;
 use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
-#[allow(deprecated)]
-use bitcoin::bip32::ExtendedPrivKey;
 use bitcoin::bip32::Xpriv;
 use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Address, Amount, Transaction, Txid};
 use bitcoin::{Psbt, ScriptBuf, Weight};
@@ -68,7 +66,7 @@ pub trait BitcoinTauriBackgroundTask: Send + Sync {
 }
 
 pub trait BitcoinWalletSeed {
-    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<ExtendedPrivKey>;
+    fn derive_extended_private_key(&self, network: bitcoin::Network) -> Result<Xpriv>;
 
     /// Same as `derive_extended_private_key`, but using the legacy BDK API.
     ///
@@ -84,7 +82,8 @@ pub trait BitcoinWalletSeed {
 const TWENTY_PERCENT: Decimal = Decimal::from_parts(20, 0, 0, false, 2);
 pub const MAX_RELATIVE_TX_FEE: Decimal = TWENTY_PERCENT;
 pub const MAX_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(100_000);
-pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(1000);
+pub const MIN_ABSOLUTE_TX_FEE_SATS: u64 = 1000;
+pub const MIN_ABSOLUTE_TX_FEE: Amount = Amount::from_sat(MIN_ABSOLUTE_TX_FEE_SATS);
 pub const DUST_AMOUNT: Amount = Amount::from_sat(546);
 
 /// This is our wrapper around a bdk wallet and a corresponding
@@ -758,6 +757,25 @@ impl Wallet {
         }
 
         Ok((txid, subscription))
+    }
+
+    /// Broadcast a transaction, but only if it's not already in the mempool/blockchain.
+    /// Return txid and a subcription to it's status in either case.
+    pub async fn ensure_broadcasted(
+        &self,
+        tx: Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        let txid = tx.compute_txid();
+
+        let status = self.status_of_script(&tx).await?;
+
+        if matches!(status, ScriptStatus::InMempool | ScriptStatus::Confirmed(_)) {
+            let subscription = self.subscribe_to(Box::new(tx)).await;
+            return Ok((txid, subscription));
+        }
+
+        self.broadcast(tx, kind).await
     }
 
     pub async fn get_raw_transaction(&self, txid: Txid) -> Result<Option<Arc<Transaction>>> {
@@ -1756,11 +1774,15 @@ impl Client {
 
         // Collect all successful history entries from all servers.
         let mut all_history_items: Vec<GetHistoryRes> = Vec::new();
+        let mut any_success = false;
         let mut first_error = None;
 
         for result in results {
             match result {
-                Ok(history) => all_history_items.extend(history),
+                Ok(history) => {
+                    any_success = true;
+                    all_history_items.extend(history);
+                }
                 Err(e) => {
                     if first_error.is_none() {
                         first_error = Some(e);
@@ -1769,12 +1791,10 @@ impl Client {
             }
         }
 
-        // If we got no history items at all, and there was an error, propagate it.
-        // Otherwise, it's valid for a script to have no history.
-        if all_history_items.is_empty() {
-            if let Some(err) = first_error {
-                return Err(err.into());
-            }
+        // If any of the calls succeeded, that is fine. Only if none
+        // succeeded we return the error.
+        if !any_success && let Some(err) = first_error {
+            return Err(err.into());
         }
 
         // Use a map to find the best (highest confirmation) entry for each transaction.
@@ -2122,12 +2142,12 @@ impl BitcoinWallet for Wallet {
         Wallet::sign_and_finalize(self, psbt).await
     }
 
-    async fn broadcast(
+    async fn ensure_broadcasted(
         &self,
-        transaction: bitcoin::Transaction,
+        tx: bitcoin::Transaction,
         kind: &str,
     ) -> Result<(Txid, Subscription)> {
-        Wallet::broadcast(self, transaction, kind).await
+        Wallet::ensure_broadcasted(self, tx, kind).await
     }
 
     async fn sync(&self) -> Result<()> {
@@ -2220,7 +2240,7 @@ impl EstimateFeeRate for Client {
     }
 
     async fn min_relay_fee(&self) -> Result<FeeRate> {
-        self.min_relay_fee().await
+        Client::min_relay_fee(self).await
     }
 }
 
@@ -2893,6 +2913,14 @@ impl TestWalletBuilder {
 #[async_trait::async_trait]
 #[allow(unused)]
 impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
+    async fn ensure_broadcasted(
+        &self,
+        tx: bitcoin::Transaction,
+        kind: &str,
+    ) -> Result<(Txid, Subscription)> {
+        unimplemented!("stub method called erroneously")
+    }
+
     async fn balance(&self) -> Result<Amount> {
         unimplemented!("stub method called erroneously")
     }
@@ -2929,14 +2957,6 @@ impl BitcoinWallet for Wallet<Connection, StaticFeeRate> {
     }
 
     async fn sign_and_finalize(&self, psbt: Psbt) -> Result<bitcoin::Transaction> {
-        unimplemented!("stub method called erroneously")
-    }
-
-    async fn broadcast(
-        &self,
-        transaction: bitcoin::Transaction,
-        kind: &str,
-    ) -> Result<(Txid, Subscription)> {
         unimplemented!("stub method called erroneously")
     }
 

@@ -12,7 +12,7 @@ use swap::protocol::{alice, bob};
 /// even when Alice goes offline and doesn't send the transfer proof.
 #[tokio::test]
 async fn given_alice_goes_offline_after_xmr_locked_bob_detects_xmr_via_view_key() {
-    harness::setup_test(SlowCancelConfig, None, |mut ctx| async move {
+    harness::setup_test(SlowCancelConfig, None, None, |mut ctx| async move {
         // Bob runs until he detects the Monero as having been locked
         let (bob_swap, bob_join_handle) = ctx.bob_swap().await;
         let bob_swap_id = bob_swap.id;
