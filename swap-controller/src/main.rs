@@ -103,21 +103,6 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 }
             }
         }
-        Cmd::SetWithholdDeposit {
-            swap_id,
-            withhold: burn,
-        } => {
-            client.set_withhold_deposit(swap_id, burn).await?;
-            if burn {
-                println!("Withholding deposit should the taker refund for swap {swap_id}");
-            } else {
-                println!("Not withholding deposit should the taker refund for swap {swap_id}");
-            }
-        }
-        Cmd::GrantMercy { swap_id } => {
-            client.grant_mercy(swap_id).await?;
-            println!("Mercy granted for swap {swap_id}");
-        }
         Cmd::WithdrawBtc { address, amount } => {
             let response = client
                 .withdraw_btc(address, amount.map(|a| a.to_sat()))

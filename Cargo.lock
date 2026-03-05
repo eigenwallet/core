@@ -10691,6 +10691,7 @@ name = "swap-controller"
 version = "3.6.7"
 dependencies = [
  "anyhow",
+ "bitcoin 0.32.8",
  "clap 4.5.53",
  "jsonrpsee",
  "monero-oxide-ext",

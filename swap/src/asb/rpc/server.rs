@@ -14,7 +14,6 @@ use swap_controller_api::{
     RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
 };
 use tokio_util::task::AbortOnDropHandle;
-use uuid::Uuid;
 
 pub struct RpcServer {
     handle: ServerHandle,
@@ -209,28 +208,6 @@ impl AsbApiServer for RpcImpl {
             .collect();
 
         Ok(RegistrationStatusResponse { registrations })
-    }
-
-    async fn set_withhold_deposit(
-        &self,
-        swap_id: Uuid,
-        burn: bool,
-    ) -> Result<(), ErrorObjectOwned> {
-        self.event_loop_service
-            .set_withhold_deposit(swap_id, burn)
-            .await
-            .into_json_rpc_result()?;
-
-        Ok(())
-    }
-
-    async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned> {
-        self.event_loop_service
-            .grant_mercy(swap_id)
-            .await
-            .into_json_rpc_result()?;
-
-        Ok(())
     }
 
     async fn withdraw_btc(
