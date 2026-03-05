@@ -37,4 +37,13 @@ pub enum Cmd {
     GetSwaps,
     /// Show rendezvous registration status
     RegistrationStatus,
+    /// Withdraw BTC from the internal Bitcoin wallet
+    WithdrawBtc {
+        /// The destination Bitcoin address
+        address: String,
+        /// Amount to withdraw, e.g. "0.1 BTC" or "10000 sat" (omit to sweep entire balance)
+        amount: Option<bitcoin::Amount>,
+    },
+    /// Refresh the internal Bitcoin wallet by syncing with the blockchain
+    RefreshBitcoinWallet,
 }

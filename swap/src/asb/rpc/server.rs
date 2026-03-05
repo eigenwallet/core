@@ -11,7 +11,7 @@ use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
     PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap,
+    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
 };
 use tokio_util::task::AbortOnDropHandle;
 
@@ -208,6 +208,31 @@ impl AsbApiServer for RpcImpl {
             .collect();
 
         Ok(RegistrationStatusResponse { registrations })
+    }
+
+    async fn withdraw_btc(
+        &self,
+        address: String,
+        amount: Option<u64>,
+    ) -> Result<WithdrawBtcResponse, ErrorObjectOwned> {
+        let network = self.bitcoin_wallet.network();
+        let address = bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
+            .into_json_rpc_result()?;
+        let amount = amount.map(bitcoin::Amount::from_sat);
+
+        let (txid, amount) = bitcoin_wallet::withdraw(self.bitcoin_wallet.as_ref(), address, amount)
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(WithdrawBtcResponse {
+            amount,
+            txid: txid.to_string(),
+        })
+    }
+
+    async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned> {
+        self.bitcoin_wallet.sync().await.into_json_rpc_result()?;
+        Ok(())
     }
 }
 

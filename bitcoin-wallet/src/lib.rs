@@ -69,3 +69,32 @@ pub trait BitcoinWallet: Send + Sync {
 
     async fn wallet_export(&self, role: &str) -> Result<FullyNodedExport>;
 }
+
+/// Withdraw BTC to the given address. If `amount` is `None`, sweeps the entire balance.
+pub async fn withdraw(
+    wallet: &dyn BitcoinWallet,
+    address: Address,
+    amount: Option<Amount>,
+) -> Result<(Txid, Amount)> {
+    let (unsigned_tx, amount) = if let Some(amount) = amount {
+        let tx = wallet
+            .send_to_address_dynamic_fee(address, amount, None)
+            .await?;
+        (tx, amount)
+    } else {
+        let (max_giveable, spending_fee) = wallet
+            .max_giveable(address.script_pubkey().len())
+            .await?;
+        let tx = wallet
+            .send_to_address(address, max_giveable, spending_fee, None)
+            .await?;
+        (tx, max_giveable)
+    };
+
+    let signed_tx = wallet.sign_and_finalize(unsigned_tx).await?;
+    let (txid, _subscription) = wallet
+        .broadcast(signed_tx, "withdraw")
+        .await?;
+
+    Ok((txid, amount))
+}

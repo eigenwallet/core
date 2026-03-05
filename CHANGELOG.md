@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB + CONTROLLER: Add `withdraw-btc` and `refresh-bitcoin-wallet` JSON-RPC commands. `withdraw-btc` allows withdrawing BTC from the internal Bitcoin wallet to a specified address. The amount parameter on the wire protocol is in satoshis (`Option<u64>`, `null` to sweep the entire balance). The `asb-controller` accepts human-friendly amounts (e.g. `0.1 BTC`, `10000 sat`). `refresh-bitcoin-wallet` syncs the internal Bitcoin wallet with the blockchain.
+
 ## [3.6.7] - 2026-01-22
 
 ## [3.6.6] - 2026-01-21

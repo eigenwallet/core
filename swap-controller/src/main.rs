@@ -103,6 +103,16 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 }
             }
         }
+        Cmd::WithdrawBtc { address, amount } => {
+            let response = client
+                .withdraw_btc(address, amount.map(|a| a.to_sat()))
+                .await?;
+            println!("Withdrew {} in transaction {}", response.amount, response.txid);
+        }
+        Cmd::RefreshBitcoinWallet => {
+            client.refresh_bitcoin_wallet().await?;
+            println!("Bitcoin wallet refreshed");
+        }
     }
     Ok(())
 }

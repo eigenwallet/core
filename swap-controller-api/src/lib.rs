@@ -71,6 +71,13 @@ pub struct Swap {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WithdrawBtcResponse {
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub amount: bitcoin::Amount,
+    pub txid: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MoneroSeedResponse {
     pub seed: String,
     pub restore_height: u64,
@@ -100,4 +107,12 @@ pub trait AsbApi {
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned>;
     #[method(name = "registration_status")]
     async fn registration_status(&self) -> Result<RegistrationStatusResponse, ErrorObjectOwned>;
+    #[method(name = "withdraw_btc")]
+    async fn withdraw_btc(
+        &self,
+        address: String,
+        amount: Option<u64>,
+    ) -> Result<WithdrawBtcResponse, ErrorObjectOwned>;
+    #[method(name = "refresh_bitcoin_wallet")]
+    async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned>;
 }

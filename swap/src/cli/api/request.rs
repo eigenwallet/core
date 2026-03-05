@@ -1402,36 +1402,8 @@ pub async fn withdraw_btc(
     let WithdrawBtcArgs { address, amount } = withdraw_btc;
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
-    let (withdraw_tx_unsigned, amount) = match amount {
-        Some(amount) => {
-            let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address_dynamic_fee(address, amount, None)
-                .await?;
-
-            (withdraw_tx_unsigned, amount)
-        }
-        None => {
-            let (max_giveable, spending_fee) = bitcoin_wallet
-                .max_giveable(address.script_pubkey().len())
-                .await?;
-
-            let withdraw_tx_unsigned = bitcoin_wallet
-                .send_to_address(address, max_giveable, spending_fee, None)
-                .await?;
-
-            (withdraw_tx_unsigned, max_giveable)
-        }
-    };
-
-    let withdraw_tx = bitcoin_wallet
-        .sign_and_finalize(withdraw_tx_unsigned)
-        .await?;
-
-    bitcoin_wallet
-        .broadcast(withdraw_tx.clone(), "withdraw")
-        .await?;
-
-    let txid = withdraw_tx.compute_txid();
+    let (txid, amount) =
+        bitcoin_wallet::withdraw(bitcoin_wallet.as_ref(), address, amount).await?;
 
     Ok(WithdrawBtcResponse {
         txid: txid.to_string(),
