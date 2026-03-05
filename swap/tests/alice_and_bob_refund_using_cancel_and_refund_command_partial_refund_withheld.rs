@@ -10,7 +10,7 @@ use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
 use swap::protocol::bob::BobState;
 use swap::protocol::{alice, bob};
-use swap::cli;
+use swap::{asb, cli};
 use swap_env::config::RefundPolicy;
 
 /// Bob locks BTC, Alice locks XMR but stops cooperating.
@@ -64,10 +64,17 @@ async fn given_partial_refund_alice_withholds_deposit_while_bob_reclaims_via_cli
             cli::cancel_and_refund(bob_swap.id, bob_swap.bitcoin_wallet.clone(), bob_swap.db.clone()).await?;
         assert!(matches!(bob_state, BobState::BtcPartiallyRefunded { .. }));
 
-        // Restart Alice so she can refund XMR and publish TxWithhold
+        // Restart Alice so she can refund XMR and publish TxWithhold via manual command
         ctx.restart_alice().await;
         let alice_swap = ctx.alice_next_swap().await;
-        let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
+
+        // Spawn Alice's manual refund (runs in background: refunds XMR, publishes TxWithhold)
+        let alice_refund = tokio::spawn(asb::refund(
+            alice_swap.swap_id,
+            alice_swap.bitcoin_wallet,
+            alice_swap.monero_wallet,
+            alice_swap.db,
+        ));
 
         // Generate Monero blocks so Alice's XMR refund confirms in time
         tokio::time::sleep(Duration::from_secs(15)).await;
@@ -81,7 +88,7 @@ async fn given_partial_refund_alice_withholds_deposit_while_bob_reclaims_via_cli
         ctx.assert_bob_withheld(bob_state).await;
 
         // Alice should be in withhold confirmed state
-        let alice_state = alice_swap.await??;
+        let alice_state = alice_refund.await??;
         ctx.assert_alice_withhold_confirmed(alice_state).await;
 
         Ok(())

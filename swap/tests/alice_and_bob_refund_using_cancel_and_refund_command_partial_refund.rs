@@ -62,23 +62,22 @@ async fn given_partial_refund_bob_manually_reclaims_deposit_via_cli() {
             cli::cancel_and_refund(bob_swap.id, bob_swap.bitcoin_wallet.clone(), bob_swap.db.clone()).await?;
         assert!(matches!(bob_state, BobState::BtcPartiallyRefunded { .. }));
 
-        // Bob calls refund again to reclaim the anti-spam deposit
-        let bob_state =
-            cli::refund(bob_swap.id, bob_swap.bitcoin_wallet, bob_swap.db).await?;
-
-        ctx.assert_bob_amnesty_received(bob_state).await;
-
-        // Manually refund Alice's XMR
+        // Restart Alice so she can refund XMR via manual command
         ctx.restart_alice().await;
         let alice_swap = ctx.alice_next_swap().await;
-        let alice_state = asb::refund(
-            alice_swap.swap_id,
-            alice_swap.bitcoin_wallet,
-            alice_swap.monero_wallet,
-            alice_swap.db,
-        )
-        .await?;
 
+        // Run Bob's reclaim and Alice's manual refund in parallel
+        let (bob_state, alice_state) = tokio::try_join!(
+            cli::refund(bob_swap.id, bob_swap.bitcoin_wallet, bob_swap.db),
+            asb::refund(
+                alice_swap.swap_id,
+                alice_swap.bitcoin_wallet,
+                alice_swap.monero_wallet,
+                alice_swap.db,
+            ),
+        )?;
+
+        ctx.assert_bob_amnesty_received(bob_state).await;
         ctx.assert_alice_refunded(alice_state).await;
 
         Ok(())
