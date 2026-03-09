@@ -189,7 +189,21 @@ export default function SwapSetupInflightPage({
                 color="text.secondary"
                 sx={{ display: "block", mt: 0.5 }}
               >
-                └ Usually returned; maker may lock for abuse
+                └ Never witheld for successful swaps
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.5 }}
+              >
+                └ Almost always returned in case of a refund
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.5 }}
+              >
+                └ Maker may freeze as an anti-spam measure in rare circumstances
               </Typography>
             </Box>
           </Box>
