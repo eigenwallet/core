@@ -93,10 +93,6 @@ function PartialRefundPage({
   const guaranteedPercent = Math.round(((btcLockAmount - btcAmnestyAmount) / btcLockAmount) * 100);
   const atRiskPercent = Math.round((btcAmnestyAmount / btcLockAmount) * 100);
 
-  const mainMessage = confirmed
-    ? `Refunded the first ${guaranteedPercent}% of your Bitcoin. The maker has a short time window to withhold the earnest deposit of ${atRiskPercent}%. Unless they do that we will claim it shortly.`
-    : `Refunding the first ${guaranteedPercent}% of your Bitcoin. The maker has a short time window to withhold the earnest deposit of ${atRiskPercent}%. Unless they do that we will claim it shortly.`;
-
   const additionalContent = swap ? (
     <>
       {!confirmed && "Waiting for transaction to be confirmed..."}
@@ -107,7 +103,6 @@ function PartialRefundPage({
 
   return (
     <>
-      <DialogContentText sx={{ mb: 2 }}>{mainMessage}</DialogContentText>
       <Alert severity="info" sx={{ mb: 2 }}>
         <Typography variant="body2">
           <strong>Patience:</strong> We are first refunding the guaranteed <strong>{guaranteedPercent}%</strong> of the Bitcoin refund.
