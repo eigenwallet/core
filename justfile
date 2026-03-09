@@ -30,7 +30,7 @@ test-ffi-address:
 
 # Start the Tauri app
 tauri:
-	cd src-tauri && RUST_MIN_STACK=41943040 RUST_BACKTRACE=1 cargo tauri dev --no-watch -- -vv -- --testnet
+	cd src-tauri && RUST_BACKTRACE=1 cargo tauri dev --no-watch -- -vv -- --testnet
 
 tauri-mainnet:
 	cd src-tauri && RUST_BACKTRACE=1 cargo tauri dev --no-watch -- -vv
