@@ -8,8 +8,8 @@ import {
 } from "renderer/components/other/Units";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
-import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
+import { isMakerVersionOld, isMakerVersionTooOld } from "utils/multiAddrUtils";
 import { RefundPolicy } from "store/features/settingsSlice";
 import { useAppSelector } from "store/hooks";
 import { BobStateName } from "models/tauriModelExt";
@@ -30,6 +30,7 @@ export default function MakerOfferItem({
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
   const isOutOfLiquidity = quote.max_quantity == 0;
+  const isTooOld = isMakerVersionTooOld(version);
 
 
   return (
@@ -143,27 +144,10 @@ export default function MakerOfferItem({
         </Tooltip>
         {EarnestDepositChip(quote)}
         {ReputationChip(peer_id)}
-        {isMakerVersionOutdated(version) ? (
-          <Tooltip title="Outdated software — may cause issues" arrow>
-            <Chip
-              color="warning"
-              label={
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                  <WarningIcon sx={{ fontSize: "1rem" }} />
-                  <Typography variant="body2">v{version}</Typography>
-                </Box>
-              }
-              size="small"
-            />
-          </Tooltip>
-        ) : (
-          <Tooltip title="Up to date" arrow>
-            <Chip label={`v${version}`} size="small" />
-          </Tooltip>
-        )}
+        <VersionChip version={version} />
       </Box>
 
-      {isOutOfLiquidity && (
+      {(isOutOfLiquidity || isTooOld) && (
         <Box
           sx={{
             position: "absolute",
@@ -174,7 +158,7 @@ export default function MakerOfferItem({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backdropFilter: "blur(1px)",
+            backdropFilter: "blur(2px)",
             borderRadius: 2,
             pointerEvents: "auto",
           }}
@@ -185,9 +169,10 @@ export default function MakerOfferItem({
               fontWeight: "bold",
               color: "text.secondary",
               textAlign: "center",
+              textShadow: (theme) => `0 0 8px ${theme.palette.background.paper}`,
             }}
           >
-            Maker has no available funds
+            {isTooOld ? "Maker version incompatible (too old)" : "Maker has no available funds"}
           </Typography>
         </Box>
       )}
@@ -204,7 +189,7 @@ function EarnestDepositChip(quote: BidQuote) {
   ) / 1000;
   const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
 
-  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. During refunds maker may withhold the remaining ${earnest_deposit_ratio * 100}% to protect themselves against griefing. Does not apply to successful swaps`;
+  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. During refunds maker may withhold the remaining ${earnest_deposit_ratio * 100}% to deter spamming. Does not apply to successful swaps`;
   const text = `${guaranteed_refund_percentage}% refund guaranteed`;
 
   // TODO: use colors better to distinguish between low deposits (1%) and high ones (20%)
@@ -247,4 +232,46 @@ function ReputationChip(peer_id: string) {
       }
     />
   </Tooltip>
+}
+
+function VersionChip({ version }: { version: string }) {
+  if (isMakerVersionTooOld(version)) {
+    return (
+      <Tooltip title="Incompatible software — will not work" arrow>
+        <Chip
+          color="error"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <WarningIcon sx={{ fontSize: "1rem" }} />
+              <Typography variant="body2">v{version}</Typography>
+            </Box>
+          }
+          size="small"
+        />
+      </Tooltip>
+    );
+  }
+
+  if (isMakerVersionOld(version)) {
+    return (
+      <Tooltip title="Outdated software — may cause issues" arrow>
+        <Chip
+          color="warning"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <WarningIcon sx={{ fontSize: "1rem" }} />
+              <Typography variant="body2">v{version}</Typography>
+            </Box>
+          }
+          size="small"
+        />
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip title="Up to date" arrow>
+      <Chip label={`v${version}`} size="small" />
+    </Tooltip>
+  );
 }

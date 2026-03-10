@@ -3,7 +3,7 @@ import {
   SortableQuoteWithAddress,
 } from "models/tauriModelExt";
 import { QuoteWithAddress } from "models/tauriModel";
-import { isMakerVersionOutdated } from "./multiAddrUtils";
+import { isMakerVersionOld, isMakerVersionTooOld } from "./multiAddrUtils";
 import _ from "lodash";
 
 export function sortApprovalsAndKnownQuotes(
@@ -17,9 +17,9 @@ export function sortApprovalsAndKnownQuotes(
         approval:
           approval.request_status.state === "Pending"
             ? {
-                request_id: approval.request_id,
-                expiration_ts: approval.request_status.content.expiration_ts,
-              }
+              request_id: approval.request_id,
+              expiration_ts: approval.request_status.content.expiration_ts,
+            }
             : null,
       };
     });
@@ -40,8 +40,9 @@ export function sortApprovalsAndKnownQuotes(
           (m) => (m.quote_with_address.version ? 0 : 1),
           // Prefer makers with a minimum quantity > 0
           (m) => ((m.quote_with_address.quote.min_quantity ?? 0) > 0 ? 0 : 1),
-          // Prefer makers that are not outdated
-          (m) => (isMakerVersionOutdated(m.quote_with_address.version) ? 1 : 0),
+          // Prefer makers that are not incompatible
+          (m) => (isMakerVersionTooOld(m.quote_with_address.version) ? 2 :
+                  isMakerVersionOld(m.quote_with_address.version) ? 1 : 0),
           // Prefer approvals over actual quotes
           (m) => (m.approval ? 0 : 1),
           // Prefer makers with a lower price

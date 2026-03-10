@@ -68,11 +68,11 @@ const MOCK_QUOTE_WITH_ADDRESS_PARTIAL: QuoteWithAddress = {
   multiaddr: "/ip4/192.168.1.50/tcp/9940",
   peer_id: "12D3KooWEyoppNCUzN3sX7atGxPHvqgZvUNQmKzz1mQvNfFhuqP9",
   quote: MOCK_QUOTE_PARTIAL_REFUND,
-  version: "3.6.1",
+  version: "4.0.0",
 };
 
 const MOCK_RECEIVE_POOL: MoneroAddressPool = [
-  { address: MOCK_XMR_ADDRESS, percentage: 100, label: "Main" },
+  { address: MOCK_XMR_ADDRESS, percentage: 1.0, label: "Main" },
 ];
 
 const XMR_TARGET_CONFIRMATIONS = 10;
