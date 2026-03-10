@@ -10,37 +10,38 @@ Choose your platform and follow the instructions.
 <Tabs items={['Windows', 'macOS (Silicon)', 'macOS (Intel)', 'Linux (x86_64)', 'Linux (arm64)', 'Flatpak', 'Arch']}>
   <Tabs.Tab>
     <Steps>
-    ### Download
+    {/* Use <h3> instead of ### to keep step titles out of the page's table of contents */}
+    <h3>Download</h3>
     Download the latest release from our [download page](https://eigenwallet.org/download/)
-    ### Install
+    <h3>Install</h3>
     Open the downloaded `eigenwallet_<version>.exe` installer
-    ### Setup
+    <h3>Setup</h3>
     Follow the installation wizard
-    ### Launch
+    <h3>Launch</h3>
     Open the `eigenwallet` application from your Start menu
     </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
     <Steps>
-    ### Download
+    <h3>Download</h3>
     Download the latest release from our [download page](https://eigenwallet.org/download/)
-    ### Open
+    <h3>Open</h3>
     Open the downloaded `eigenwallet_<version>.dmg` file
-    ### Install
+    <h3>Install</h3>
     Drag the `eigenwallet` icon to your Applications folder
-    ### Launch
+    <h3>Launch</h3>
     Open the `eigenwallet` application from your Applications folder
     </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
     <Steps>
-    ### Download
+    <h3>Download</h3>
     Download the latest release from our [download page](https://eigenwallet.org/download/)
-    ### Open
+    <h3>Open</h3>
     Open the downloaded `eigenwallet_<version>.dmg` file
-    ### Install
+    <h3>Install</h3>
     Drag the `eigenwallet` icon to your Applications folder
-    ### Launch
+    <h3>Launch</h3>
     Open the `eigenwallet` application from your Applications folder
     </Steps>
   </Tabs.Tab>
@@ -75,7 +76,7 @@ nfo">
     For **x86-64** Linux systems with Flatpak support (version 1.0 or newer), you can install eigenwallet directly from our Flatpak repository:
 
     <Steps>
-    ### Install
+    <h3>Install</h3>
 
     ```bash filename="install.sh" copy
     # Add eigenwallet repo
@@ -86,13 +87,13 @@ nfo">
     flatpak install eigenwallet org.eigenwallet.app
     ```
 
-    ### Run
+    <h3>Run</h3>
 
     ```bash filename="run.sh" copy
     flatpak run org.eigenwallet.app
     ```
 
-    ### Update
+    <h3>Update</h3>
 
     ```bash filename="update.sh" copy
     flatpak update org.eigenwallet.app
@@ -122,6 +123,55 @@ nfo">
 Sometimes the website does not display the latest release.
 In that case you can also find the binaries on our latest [Github release](https://github.com/eigenwallet/core/releases/latest).
 Search for the `eigenwallet_<version>_<platform>.<extension>` file that fits to your system.
+
+-------
+
+
+## Verifying Release Binaries
+
+Each release includes `.asc` signature files alongside the binaries.
+
+<Steps>
+
+  ### Import the signing key
+
+  ```bash copy
+  # Download the key from GitHub
+  wget https://raw.githubusercontent.com/eigenwallet/core/master/utils/gpg_keys/binarybaron_and_einliterflasche.asc
+  # Import it
+  gpg --import binarybaron_and_einliterflasche.asc
+  ```
+
+  ### Download the signature
+ 
+
+  You can find the signature of each binary by appending `.asc` to the download path of the binary.
+  In this example we verify the `.dmg` of version `3.1.3`, but the same process works for newer versions.
+  Replace the binary version with the lastest one.
+
+  You can also download the signatures to our latest releases from our [download page](https://eigenwallet.org/download/).
+
+  ```bash copy
+  # Download both the binary and its signature
+  wget https://github.com/eigenwallet/core/releases/download/3.1.3/eigenwallet_3.1.3_aarch64.dmg
+  wget https://github.com/eigenwallet/core/releases/download/3.1.3/eigenwallet_3.1.3_aarch64.dmg.asc
+  ```
+
+  ### Verify
+
+  ```bash copy
+  # Verify the signature
+  gpg --verify eigenwallet_3.1.3_aarch64.dmg.asc eigenwallet_3.1.3_aarch64.dmg
+  ```
+
+  Successful verification shows something like this:
+
+  ```
+  gpg: Signature made Sat Oct 11 20:26:07 2025 CEST
+  gpg:                using RSA key 0518460FEBEC1DA14A155A7B44AE6F0B166AAD5A
+  gpg: Good signature from "binarybaron-flatpak <binarybaron@protonmail.com>" [ultimate]
+  ```
+</Steps>
 
 ## Building from source
 

@@ -1,4 +1,3 @@
 export default {
   install_instructions: "Installation",
-  verify_tauri_signature: "Verify Signatures",
 };
