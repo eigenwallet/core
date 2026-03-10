@@ -10,38 +10,38 @@ Choose your platform and follow the instructions.
 <Tabs items={['Windows', 'macOS (Silicon)', 'macOS (Intel)', 'Linux (x86_64)', 'Linux (arm64)', 'Flatpak', 'Arch']}>
   <Tabs.Tab>
     <Steps>
-    {/* Use <h3> instead of ### to keep step titles out of the page's table of contents */}
-    <h3>Download</h3>
+    {/* Use {<h3>} instead of ### to keep step titles out of the page's table of contents */}
+    {<h3>Download</h3>}
     Download the latest release from our [download page](https://eigenwallet.org/download/)
-    <h3>Install</h3>
+    {<h3>Install</h3>}
     Open the downloaded `eigenwallet_<version>.exe` installer
-    <h3>Setup</h3>
+    {<h3>Setup</h3>}
     Follow the installation wizard
-    <h3>Launch</h3>
+    {<h3>Launch</h3>}
     Open the `eigenwallet` application from your Start menu
     </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
     <Steps>
-    <h3>Download</h3>
+    {<h3>Download</h3>}
     Download the latest release from our [download page](https://eigenwallet.org/download/)
-    <h3>Open</h3>
+    {<h3>Open</h3>}
     Open the downloaded `eigenwallet_<version>.dmg` file
-    <h3>Install</h3>
+    {<h3>Install</h3>}
     Drag the `eigenwallet` icon to your Applications folder
-    <h3>Launch</h3>
+    {<h3>Launch</h3>}
     Open the `eigenwallet` application from your Applications folder
     </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
     <Steps>
-    <h3>Download</h3>
+    {<h3>Download</h3>}
     Download the latest release from our [download page](https://eigenwallet.org/download/)
-    <h3>Open</h3>
+    {<h3>Open</h3>}
     Open the downloaded `eigenwallet_<version>.dmg` file
-    <h3>Install</h3>
+    {<h3>Install</h3>}
     Drag the `eigenwallet` icon to your Applications folder
-    <h3>Launch</h3>
+    {<h3>Launch</h3>}
     Open the `eigenwallet` application from your Applications folder
     </Steps>
   </Tabs.Tab>
@@ -76,7 +76,7 @@ nfo">
     For **x86-64** Linux systems with Flatpak support (version 1.0 or newer), you can install eigenwallet directly from our Flatpak repository:
 
     <Steps>
-    <h3>Install</h3>
+    {<h3>Install</h3>}
 
     ```bash filename="install.sh" copy
     # Add eigenwallet repo
@@ -87,13 +87,13 @@ nfo">
     flatpak install eigenwallet org.eigenwallet.app
     ```
 
-    <h3>Run</h3>
+    {<h3>Run</h3>}
 
     ```bash filename="run.sh" copy
     flatpak run org.eigenwallet.app
     ```
 
-    <h3>Update</h3>
+    {<h3>Update</h3>}
 
     ```bash filename="update.sh" copy
     flatpak update org.eigenwallet.app
