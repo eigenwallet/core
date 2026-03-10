@@ -1,4 +1,4 @@
-import { Tabs, Callout, Steps } from 'nextra/components'
+import { Tabs, Callout, Steps, Cards } from 'nextra/components'
 
 # Installation
 
@@ -45,6 +45,7 @@ Choose your platform and follow the instructions.
     </Steps>
   </Tabs.Tab>
   <Tabs.Tab>
+nfo">
     <Callout type="info">
       The AppImage might not work on less new distributions (older than Ubuntu 24) due to an upstream bug. Try the Flatpak instead.
     </Callout>
@@ -67,7 +68,7 @@ Choose your platform and follow the instructions.
   </Tabs.Tab>
   <Tabs.Tab>
     <Callout type="error">
-      Due to limitations with our CI pipeline, we currently can't provide precompiled binaries for arm64 linux systems.
+      We currently can't provide precompiled binaries for arm64 linux systems.
     </Callout>
   </Tabs.Tab>
   <Tabs.Tab>
@@ -100,7 +101,7 @@ Choose your platform and follow the instructions.
   </Tabs.Tab>
 
   <Tabs.Tab>
-    <Callout type="info">
+    <Callout type="important">
       The AUR package is **community maintained**.
       We cannot take responsibility for it being up to date, working or secure.
       Check the build script yourself.
@@ -124,5 +125,8 @@ Search for the `eigenwallet_<version>_<platform>.<extension>` file that fits to 
 
 ## Building from source
 
-You can build `eigenwallet` from source.
-Read the [Contributing](/contributing/building_from_source) guide for instructions.
+<Cards num={1}>
+  <Cards.Card arrow title="Guide: Building from Source" href="/contributing/building_from_source">
+  </Cards.Card>
+</Cards>
+
