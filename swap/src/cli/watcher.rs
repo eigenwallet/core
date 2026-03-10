@@ -107,9 +107,17 @@ impl Watcher {
             self.cached_timelocks.insert(swap_id, new_timelock_status);
 
             // If the swap has to be refunded, do it in the background
-            if matches!(new_timelock_status, Some(ExpiredTimelocks::Cancel { .. }) | Some(ExpiredTimelocks::RemainingRefund)) {
+            if matches!(
+                new_timelock_status,
+                Some(ExpiredTimelocks::Cancel { .. }) | Some(ExpiredTimelocks::RemainingRefund)
+            ) {
                 // If the swap is already refunded, we can skip the refund
-                if matches!(state, BobState::BtcRefunded(_)) {
+                if matches!(
+                    state,
+                    BobState::BtcRefunded(_)
+                        | BobState::BtcWithheld(_)
+                        | BobState::BtcMercyConfirmed(_)
+                ) {
                     continue;
                 }
 
