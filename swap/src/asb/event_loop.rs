@@ -737,9 +737,8 @@ where
     async fn handle_grant_mercy(&mut self, swap_id: Uuid) -> Result<()> {
         use crate::asb::grant_mercy;
 
-        // Check if swap is currently running
-        if self.recv_encrypted_signature.contains_key(&swap_id)
-            || self.recv_burn_on_refund_instruction.contains_key(&swap_id)
+        // Make sure swap isn't already running.
+        if self.is_swap_running(swap_id)
         {
             return Err(anyhow!(
                 "Cannot grant mercy while swap {} is still running",
@@ -775,6 +774,27 @@ where
         tracing::info!(%swap_id, "Granted mercy and resumed swap");
 
         Ok(())
+    }
+
+    /// Check whether we are currently executing a specific swap.
+    fn is_swap_running(&self, swap_id: Uuid) -> bool {
+
+        // Check whether the channels between event loop and event loop handle
+        // are still intact.
+        // Yes -> swap is running
+        // No -> swap is not running (channels were dropped with event loop handle)
+
+        // We are eager to assume a swap is running. It can do more harm to run two instances than to not run a swap.
+        // We assume the swap is running if either of the channels is still open.
+        if let Some(channel) = self.recv_encrypted_signature.get(&swap_id) && !channel.is_closed() {
+            return true
+        }
+
+        if let Some(channel) = self.recv_burn_on_refund_instruction.get(&swap_id) && !channel.is_closed() {
+            return true
+        }
+
+        return false
     }
 }
 
