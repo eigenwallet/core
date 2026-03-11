@@ -6,6 +6,7 @@ import {
   DialogActions,
   DialogContentText,
   Link,
+  Alert,
 } from "@mui/material";
 import { Key as KeyIcon } from "@mui/icons-material";
 import { useState } from "react";
@@ -17,6 +18,7 @@ import {
   isContextWithBitcoinWallet,
   hasDescriptorProperty,
 } from "models/tauriModelExt";
+import { PrivateKeyScamAlert } from "renderer/components/other/PrivateKeyWarning";
 
 const WALLET_DESCRIPTOR_DOCS_URL =
   "https://github.com/eigenwallet/core/blob/master/dev-docs/asb/README.md#exporting-the-bitcoin-wallet-descriptor";
@@ -72,16 +74,12 @@ function WalletDescriptorModal({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Bitcoin Wallet Descriptor</DialogTitle>
+      <DialogTitle>Bitcoin Private Key</DialogTitle>
       <DialogContent>
         <DialogContentText>
-          The Bitcoin wallet is derived from your Monero wallet. Opening the
+          The Bitcoin wallet is derived from the Monero seed. Opening the
           same Monero wallet in another Eigenwallet will yield the same Bitcoin
           wallet.
-          <br />
-          <br />
-          It contains your private key. Anyone who has it can spend your funds.
-          It should thus be stored securely.
           <br />
           <br />
           It can be imported into other Bitcoin wallets or services that support
@@ -89,7 +87,10 @@ function WalletDescriptorModal({
           descriptor, see our{" "}
           <Link href={WALLET_DESCRIPTOR_DOCS_URL} target="_blank">
             documentation
-          </Link>
+          </Link>.
+          <br />
+          <br />
+          <PrivateKeyScamAlert />
         </DialogContentText>
         <ActionableMonospaceTextBox
           content={stringifiedDescriptor}
@@ -106,3 +107,4 @@ function WalletDescriptorModal({
     </Dialog>
   );
 }
+
