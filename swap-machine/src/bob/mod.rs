@@ -518,8 +518,7 @@ impl State1 {
                 let tx_reclaim = TxReclaim::new(
                     &tx_partial_refund,
                     &self.refund_address,
-                    self.tx_reclaim_fee
-                        .context("missing tx_reclaim_fee")?,
+                    self.tx_reclaim_fee.context("missing tx_reclaim_fee")?,
                     self.remaining_refund_timelock
                         .context("missing remaining_refund_timelock")?,
                 )?;
@@ -651,8 +650,7 @@ impl State2 {
                 let tx_reclaim = TxReclaim::new(
                     &tx_partial_refund,
                     &self.refund_address,
-                    self.tx_reclaim_fee
-                        .context("Missing tx_reclaim_fee")?,
+                    self.tx_reclaim_fee.context("Missing tx_reclaim_fee")?,
                     self.remaining_refund_timelock
                         .context("missing remaining_refund_timelock")?,
                 )?;
@@ -662,16 +660,14 @@ impl State2 {
                     &tx_partial_refund,
                     self.A,
                     self.b.public(),
-                    self.tx_withhold_fee
-                        .context("Missing tx_withhold_fee")?,
+                    self.tx_withhold_fee.context("Missing tx_withhold_fee")?,
                 )?;
                 let tx_withhold_sig = self.b.sign(tx_withhold.digest());
 
                 let tx_mercy = TxMercy::new(
                     &tx_withhold,
                     &self.refund_address,
-                    self.tx_mercy_fee
-                        .context("Missing tx_mercy_fee")?,
+                    self.tx_mercy_fee.context("Missing tx_mercy_fee")?,
                 );
                 let tx_mercy_sig = self.b.sign(tx_mercy.digest());
 
@@ -1211,7 +1207,7 @@ impl State6 {
     /// Construct the best refund transaction based on the refund signatures Alice has sent us.
     /// This is either `TxFullRefund` or `TxPartialRefund`.
     /// Returns the fully constructed and signed transaction along with the refund type.
-    pub async fn construct_best_bitcoin_refund_tx(&self) -> Result<(Transaction, RefundType)> {
+    pub fn construct_best_bitcoin_refund_tx(&self) -> Result<(Transaction, RefundType)> {
         if self.refund_signatures.tx_full_refund_encsig().is_some() {
             tracing::debug!("Have the full refund signature, constructing full Bitcoin refund");
             let tx_full_refund = self
@@ -1326,9 +1322,8 @@ impl State6 {
         bitcoin::TxReclaim::new(
             &tx_partial_refund,
             &self.refund_address,
-            self.tx_reclaim_fee.context(
-                "Can't construct TxReclaim because tx_reclaim_fee is missing",
-            )?,
+            self.tx_reclaim_fee
+                .context("Can't construct TxReclaim because tx_reclaim_fee is missing")?,
             self.remaining_refund_timelock.context(
                 "Can't construct TxReclaim because remaining_refund_timelock is missing",
             )?,
@@ -1351,9 +1346,8 @@ impl State6 {
         Ok(bitcoin::TxMercy::new(
             &tx_withhold,
             &self.refund_address,
-            self.tx_mercy_fee.context(
-                "Can't construct TxMercy because tx_mercy_fee is missing",
-            )?,
+            self.tx_mercy_fee
+                .context("Can't construct TxMercy because tx_mercy_fee is missing")?,
         ))
     }
 
@@ -1451,14 +1445,8 @@ impl RefundSignatures {
     /// Only available for new swaps (Partial/Full variants), not Legacy swaps.
     pub fn tx_reclaim_sig(&self) -> Option<bitcoin::Signature> {
         match self {
-            RefundSignatures::Partial {
-                tx_reclaim_sig,
-                ..
-            } => Some(tx_reclaim_sig.clone()),
-            RefundSignatures::Full {
-                tx_reclaim_sig,
-                ..
-            } => Some(tx_reclaim_sig.clone()),
+            RefundSignatures::Partial { tx_reclaim_sig, .. } => Some(tx_reclaim_sig.clone()),
+            RefundSignatures::Full { tx_reclaim_sig, .. } => Some(tx_reclaim_sig.clone()),
             RefundSignatures::Legacy { .. } => None,
         }
     }

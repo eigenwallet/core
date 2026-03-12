@@ -1,7 +1,7 @@
 use crate::monero::BlockHeight;
-use crate::protocol::bob::BobState;
 use crate::protocol::Database;
-use anyhow::{bail, Context, Result};
+use crate::protocol::bob::BobState;
+use anyhow::{Context, Result, bail};
 use bitcoin::Txid;
 use bitcoin_wallet::BitcoinWallet;
 use std::sync::Arc;
@@ -164,9 +164,10 @@ pub async fn cancel(
                     bail!(err.context("Cannot cancel swap because we are in the partial refund phase. TxReclaim can be published."));
                 }
                 Err(timelock_err) => {
-                    bail!(err
-                        .context(timelock_err)
-                        .context("Failed to cancel swap and could not check timelock status"));
+                    bail!(
+                        err.context(timelock_err)
+                            .context("Failed to cancel swap and could not check timelock status")
+                    );
                 }
             }
         }
@@ -256,19 +257,23 @@ pub async fn refund(
                 tx_lock_id: state6.tx_lock_id(),
             };
             db.insert_latest_state(swap_id, state.into()).await?;
-            bail!("Cannot refund swap because we have already been punished. Resume the swap to attempt cooperative redeem.");
+            bail!(
+                "Cannot refund swap because we have already been punished. Resume the swap to attempt cooperative redeem."
+            );
         }
         ExpiredTimelocks::WaitingForRemainingRefund { .. } | ExpiredTimelocks::RemainingRefund => {
             // This means we already published TxPartialRefund, so we try to reclaim the
             // deposit
-            tracing::info!("TxPartialRefund was already published, attempting to reclaim the remaining Bitcoin (anti-spam deposit)");
+            tracing::info!(
+                "TxPartialRefund was already published, attempting to reclaim the remaining Bitcoin (anti-spam deposit)"
+            );
             return reclaim(swap_id, state6, bitcoin_wallet, db)
                 .await
                 .context("Couldn't reclaim anti-spam deposit");
         }
     }
 
-    let (refund_tx, refund_type) = state6.construct_best_bitcoin_refund_tx().await?;
+    let (refund_tx, refund_type) = state6.construct_best_bitcoin_refund_tx()?;
 
     tracing::info!("Best possible refund available: {refund_type}");
     tracing::info!("Attempting to publish Bitcoin refund transaction");
@@ -319,7 +324,9 @@ async fn reclaim(
     let tx_partial_refund = state6.construct_tx_partial_refund()?;
     let tx_withhold = state6.construct_tx_withhold()?;
 
-    let partial_refund_sub = bitcoin_wallet.subscribe_to(Box::new(tx_partial_refund)).await;
+    let partial_refund_sub = bitcoin_wallet
+        .subscribe_to(Box::new(tx_partial_refund))
+        .await;
     let withhold_sub = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
 
     let state6_for_withhold = state6.clone();
@@ -333,17 +340,32 @@ async fn reclaim(
 
         tracing::info!("Remaining refund timelock expired, publishing TxReclaim");
 
-        let tx_reclaim = state6.signed_amnesty_transaction().context("Couldn't construct signed TxReclaim")?;
-        let (_txid, sub) = bitcoin_wallet.ensure_broadcasted(tx_reclaim, "reclaim").await.context("Couldn't broadcast TxReclaim")?;
-        db_for_reclaim.insert_latest_state(swap_id, BobState::BtcReclaimPublished(state6.clone()).into()).await?;
+        let tx_reclaim = state6
+            .signed_amnesty_transaction()
+            .context("Couldn't construct signed TxReclaim")?;
+        let (_txid, sub) = bitcoin_wallet
+            .ensure_broadcasted(tx_reclaim, "reclaim")
+            .await
+            .context("Couldn't broadcast TxReclaim")?;
+        db_for_reclaim
+            .insert_latest_state(
+                swap_id,
+                BobState::BtcReclaimPublished(state6.clone()).into(),
+            )
+            .await?;
 
-        sub.wait_until_final().await.context("Failed waiting for TxReclaim confirmation")?;
+        sub.wait_until_final()
+            .await
+            .context("Failed waiting for TxReclaim confirmation")?;
         tracing::info!("TxReclaim confirmed, anti-spam deposit reclaimed");
         anyhow::Ok(BobState::BtcReclaimConfirmed(state6))
     };
 
     let withhold_future = async {
-        withhold_sub.wait_until_final().await.context("Failed waiting for TxWithhold confirmation")?;
+        withhold_sub
+            .wait_until_final()
+            .await
+            .context("Failed waiting for TxWithhold confirmation")?;
         tracing::info!("Alice confirmed TxWithhold, anti-spam deposit is burnt");
         anyhow::Ok(BobState::BtcWithheld(state6_for_withhold))
     };
@@ -353,6 +375,7 @@ async fn reclaim(
         result = withhold_future => result?,
     };
 
-    db.insert_latest_state(swap_id, state.clone().into()).await?;
+    db.insert_latest_state(swap_id, state.clone().into())
+        .await?;
     Ok(state)
 }

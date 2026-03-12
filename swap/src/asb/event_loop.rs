@@ -675,7 +675,8 @@ where
                             reason: CooperativeXmrRedeemRejectReason::UnknownSwap,
                         },
                     )
-                    .context("Couldn't rejet cooperative redeem request")?;
+                    .map_err(|_| anyhow!("Couldn't reject cooperative redeem request"))?;
+                bail!("swap not found")
             }
         };
 
@@ -698,7 +699,8 @@ where
                         reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
                     },
                 )
-                .context("Failed to reject cooperative XMR redeem request")?;
+                .map_err(|_| anyhow!("Failed to reject cooperative XMR redeem request"))?;
+            bail!("malicious request (wrong peer)")
         }
 
         // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
@@ -724,7 +726,10 @@ where
                         reason: CooperativeXmrRedeemRejectReason::SwapInvalidState,
                     },
                 )
-                .context("Failed to send rejection for cooperative Monero redeem request")?;
+                .map_err(|_| {
+                    anyhow!("Failed to send rejection for cooperative Monero redeem request")
+                })?;
+            bail!("swap in invalid state")
         };
 
         self.swarm
@@ -738,9 +743,11 @@ where
                     lock_transfer_proof: transfer_proof,
                 },
             )
-            .context("Failed to respond to cooperative XMR redeem request")?;
+            .map_err(|_| anyhow!("Failed to respond to cooperative XMR redeem request"))?;
 
         tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
+
+        Ok(())
     }
 
     /// Create a new [`EventLoopHandle`] that is scoped for communication with
