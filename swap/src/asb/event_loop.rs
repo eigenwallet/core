@@ -1,6 +1,6 @@
 use self::quote::{
-    make_quote, reserve_proof_with_timeout, unlocked_monero_balance_with_timeout, QuoteCacheKey,
-    QUOTE_CACHE_TTL,
+    QUOTE_CACHE_TTL, QuoteCacheKey, make_quote, reserve_proof_with_timeout,
+    unlocked_monero_balance_with_timeout,
 };
 use crate::asb::{Behaviour, OutEvent};
 use crate::monero;
@@ -12,7 +12,7 @@ use crate::network::transfer_proof;
 use crate::protocol::alice::swap::has_already_processed_enc_sig;
 use crate::protocol::alice::{AliceState, State3, Swap, TipConfig};
 use crate::protocol::{Database, State};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bitcoin_wallet::BitcoinWallet;
 use futures::future;
 use futures::future::{BoxFuture, FutureExt};
@@ -21,8 +21,8 @@ use libp2p::request_response::{OutboundFailure, OutboundRequestId, ResponseChann
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
 use moka::future::Cache;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
@@ -33,6 +33,7 @@ use swap_core::bitcoin;
 use swap_env::config::RefundPolicy;
 use swap_env::env;
 use swap_feed::LatestRate;
+use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -390,62 +391,8 @@ where
                             }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemRequested { swap_id, channel, peer }) => {
-                            let swap_peer = self.db.get_peer_id(swap_id).await;
-                            let swap_state = self.db.get_state(swap_id).await;
-
-                            // If we do not find the swap in the database, or we do not have a peer-id for it, reject
-                            let (swap_peer, swap_state) = match (swap_peer, swap_state) {
-                                (Ok(peer), Ok(state)) => (peer, state),
-                                _ => {
-                                    tracing::warn!(
-                                        swap_id = %swap_id,
-                                        received_from = %peer,
-                                        reason = "swap not found",
-                                        "Rejecting cooperative XMR redeem request"
-                                    );
-                                    if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::UnknownSwap }).is_err() {
-                                        tracing::error!(swap_id = %swap_id, "Failed to reject cooperative XMR redeem request");
-                                    }
-                                    continue;
-                                }
-                            };
-
-                            // If the peer is not the one associated with the swap, reject
-                            if swap_peer != peer {
-                                tracing::warn!(
-                                    swap_id = %swap_id,
-                                    received_from = %peer,
-                                    expected_from = %swap_peer,
-                                    reason = "unexpected peer",
-                                    "Rejecting cooperative XMR redeem request"
-                                );
-                                if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::MaliciousRequest }).is_err() {
-                                    tracing::error!(swap_id = %swap_id, "Failed to reject cooperative XMR redeem request");
-                                }
-                                continue;
-                            }
-
-                            // If we are in either of these states, the punish timelock has expired
-                            // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
-                            // Therefore it is safe to reveal s_a to let him redeem the Monero
-                            let State::Alice (AliceState::BtcPunished { state3, transfer_proof, .. } | AliceState::BtcPunishable { state3, transfer_proof, .. }) = swap_state else {
-                                tracing::warn!(
-                                    swap_id = %swap_id,
-                                    reason = "swap is in invalid state",
-                                    "Rejecting cooperative Monero redeem request"
-                                );
-                                if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Rejected { swap_id, reason: CooperativeXmrRedeemRejectReason::SwapInvalidState }).is_err() {
-                                    tracing::error!(swap_id = %swap_id, "Failed to send rejection for cooperative Monero redeem request");
-                                }
-                                continue;
-                            };
-
-                            if self.swarm.behaviour_mut().cooperative_xmr_redeem.send_response(channel, Fullfilled { swap_id, s_a: state3.s_a, lock_transfer_proof: transfer_proof }).is_err() {
-                                tracing::error!(peer = %peer, "Failed to respond to cooperative XMR redeem request");
-                                continue;
-                            }
-
-                            tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
+                            self.handle_cooperative_redeem_request(swap_id, channel, peer).await
+                                .inspect_err(|err| tracing::error!(error=?err, "Could not process cooperative redeem request, ignoring"));
                         }
                         SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::Registered { peer_id })) => {
                             tracing::trace!("Successfully registered with rendezvous node: {}", peer_id);
@@ -699,6 +646,103 @@ where
         Ok(())
     }
 
+    async fn handle_cooperative_redeem_request(
+        &mut self,
+        swap_id: Uuid,
+        channel: ResponseChannel<cooperative_xmr_redeem_after_punish::Response>,
+        peer: PeerId,
+    ) -> Result<()> {
+        let swap_peer = self.db.get_peer_id(swap_id).await;
+        let swap_state = self.db.get_state(swap_id).await;
+
+        // If we do not find the swap in the database, or we do not have a peer-id for it, reject
+        let (swap_peer, swap_state) = match (swap_peer, swap_state) {
+            (Ok(peer), Ok(state)) => (peer, state),
+            _ => {
+                tracing::warn!(
+                    swap_id = %swap_id,
+                    received_from = %peer,
+                    reason = "swap not found",
+                    "Rejecting cooperative XMR redeem request"
+                );
+                self.swarm
+                    .behaviour_mut()
+                    .cooperative_xmr_redeem
+                    .send_response(
+                        channel,
+                        Rejected {
+                            swap_id,
+                            reason: CooperativeXmrRedeemRejectReason::UnknownSwap,
+                        },
+                    )
+                    .context("Couldn't rejet cooperative redeem request")?;
+            }
+        };
+
+        // If the peer is not the one associated with the swap, reject
+        if swap_peer != peer {
+            tracing::warn!(
+                swap_id = %swap_id,
+                received_from = %peer,
+                expected_from = %swap_peer,
+                reason = "unexpected peer",
+                "Rejecting cooperative XMR redeem request"
+            );
+            self.swarm
+                .behaviour_mut()
+                .cooperative_xmr_redeem
+                .send_response(
+                    channel,
+                    Rejected {
+                        swap_id,
+                        reason: CooperativeXmrRedeemRejectReason::MaliciousRequest,
+                    },
+                )
+                .context("Failed to reject cooperative XMR redeem request")?;
+        }
+
+        // Bob cannot refund the Bitcoin anymore. We can publish tx_punish to redeem the Bitcoin.
+        // Therefore it is safe to reveal s_a to let him redeem the Monero
+        let State::Alice(AliceState::BtcPunished {
+            state3,
+            transfer_proof,
+            ..
+        }) = swap_state
+        else {
+            tracing::warn!(
+                swap_id = %swap_id,
+                reason = "swap is in invalid state",
+                "Rejecting cooperative Monero redeem request"
+            );
+            self.swarm
+                .behaviour_mut()
+                .cooperative_xmr_redeem
+                .send_response(
+                    channel,
+                    Rejected {
+                        swap_id,
+                        reason: CooperativeXmrRedeemRejectReason::SwapInvalidState,
+                    },
+                )
+                .context("Failed to send rejection for cooperative Monero redeem request")?;
+        };
+
+        self.swarm
+            .behaviour_mut()
+            .cooperative_xmr_redeem
+            .send_response(
+                channel,
+                Fullfilled {
+                    swap_id,
+                    s_a: state3.s_a,
+                    lock_transfer_proof: transfer_proof,
+                },
+            )
+            .context("Failed to respond to cooperative XMR redeem request")?;
+
+        tracing::info!(swap_id = %swap_id, peer = %peer, "Fullfilled cooperative XMR redeem request");
+    }
+
     /// Create a new [`EventLoopHandle`] that is scoped for communication with
     /// the given peer.
     fn new_handle(&mut self, peer: PeerId, swap_id: Uuid) -> EventLoopHandle {
@@ -738,8 +782,7 @@ where
         use crate::asb::grant_mercy;
 
         // Make sure swap isn't already running.
-        if self.is_swap_running(swap_id)
-        {
+        if self.is_swap_running(swap_id) {
             return Err(anyhow!(
                 "Cannot grant mercy while swap {} is still running",
                 swap_id
@@ -778,7 +821,6 @@ where
 
     /// Check whether we are currently executing a specific swap.
     fn is_swap_running(&self, swap_id: Uuid) -> bool {
-
         // Check whether the channels between event loop and event loop handle
         // are still intact.
         // Yes -> swap is running
@@ -786,15 +828,19 @@ where
 
         // We are eager to assume a swap is running. It can do more harm to run two instances than to not run a swap.
         // We assume the swap is running if either of the channels is still open.
-        if let Some(channel) = self.recv_encrypted_signature.get(&swap_id) && !channel.is_closed() {
-            return true
+        if let Some(channel) = self.recv_encrypted_signature.get(&swap_id)
+            && !channel.is_closed()
+        {
+            return true;
         }
 
-        if let Some(channel) = self.recv_burn_on_refund_instruction.get(&swap_id) && !channel.is_closed() {
-            return true
+        if let Some(channel) = self.recv_burn_on_refund_instruction.get(&swap_id)
+            && !channel.is_closed()
+        {
+            return true;
         }
 
-        return false
+        return false;
     }
 }
 
@@ -1144,7 +1190,7 @@ mod service {
 
 mod quote {
     use crate::monero::{Amount, AmountExt};
-    use anyhow::{anyhow, Context};
+    use anyhow::{Context, anyhow};
     use rust_decimal::Decimal;
     use std::{sync::Arc, time::Duration};
     use swap_feed::LatestRate;
@@ -1238,7 +1284,8 @@ mod quote {
         if min_buy > max_bitcoin_for_monero {
             tracing::trace!(
                 "Your Monero balance is too low to initiate a swap, as your minimum swap amount is {}. You could at most swap {}",
-                min_buy, max_bitcoin_for_monero
+                min_buy,
+                max_bitcoin_for_monero
             );
 
             return Ok(Arc::new(BidQuote {
@@ -1253,7 +1300,8 @@ mod quote {
         if max_buy > max_bitcoin_for_monero {
             tracing::trace!(
                 "Your Monero balance is too low to initiate a swap with the maximum swap amount {} that you have specified in your config. You can at most swap {}",
-                max_buy, max_bitcoin_for_monero
+                max_buy,
+                max_bitcoin_for_monero
             );
 
             return Ok(Arc::new(BidQuote {
@@ -1662,10 +1710,12 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to get unlocked Monero balance"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to get unlocked Monero balance")
+        );
     }
 
     #[tokio::test]
