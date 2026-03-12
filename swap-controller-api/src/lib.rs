@@ -84,6 +84,13 @@ pub struct Swap {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WithdrawBtcResponse {
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub amount: bitcoin::Amount,
+    pub txid: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MoneroSeedResponse {
     pub seed: String,
     pub restore_height: u64,
@@ -124,4 +131,12 @@ pub trait AsbApi {
         -> Result<(), ErrorObjectOwned>;
     #[method(name = "grant_mercy")]
     async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned>;
+    #[method(name = "withdraw_btc")]
+    async fn withdraw_btc(
+        &self,
+        address: String,
+        amount: Option<u64>,
+    ) -> Result<WithdrawBtcResponse, ErrorObjectOwned>;
+    #[method(name = "refresh_bitcoin_wallet")]
+    async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned>;
 }

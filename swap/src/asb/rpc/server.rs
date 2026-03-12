@@ -4,14 +4,14 @@ use crate::protocol::Database;
 use anyhow::{Context, Result};
 use bitcoin_wallet::BitcoinWallet;
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
-use jsonrpsee::types::error::ErrorCode;
 use jsonrpsee::types::ErrorObjectOwned;
+use jsonrpsee::types::error::ErrorCode;
 use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
     PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap,
+    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
 };
 use tokio_util::task::AbortOnDropHandle;
 use uuid::Uuid;
@@ -155,8 +155,8 @@ impl AsbApiServer for RpcImpl {
     }
 
     async fn get_swaps(&self) -> Result<Vec<Swap>, ErrorObjectOwned> {
-        use crate::protocol::alice::{is_complete, AliceState};
         use crate::protocol::State;
+        use crate::protocol::alice::{AliceState, is_complete};
 
         let swaps = self
             .db
@@ -263,7 +263,33 @@ impl AsbApiServer for RpcImpl {
             .grant_mercy(swap_id)
             .await
             .into_json_rpc_result()?;
+        Ok(())
+    }
 
+    async fn withdraw_btc(
+        &self,
+        address: String,
+        amount: Option<u64>,
+    ) -> Result<WithdrawBtcResponse, ErrorObjectOwned> {
+        let network = self.bitcoin_wallet.network();
+        let address =
+            bitcoin_wallet::bitcoin_address::parse_and_validate_network(&address, network)
+                .into_json_rpc_result()?;
+        let amount = amount.map(bitcoin::Amount::from_sat);
+
+        let (txid, amount) =
+            bitcoin_wallet::withdraw(self.bitcoin_wallet.as_ref(), address, amount)
+                .await
+                .into_json_rpc_result()?;
+
+        Ok(WithdrawBtcResponse {
+            amount,
+            txid: txid.to_string(),
+        })
+    }
+
+    async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned> {
+        self.bitcoin_wallet.sync().await.into_json_rpc_result()?;
         Ok(())
     }
 }

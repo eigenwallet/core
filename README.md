@@ -21,6 +21,8 @@ Join our [Matrix room](https://matrix.to/#/#unstoppableswap-core:matrix.org) to 
 
 ## Contributing
 
+**Important**: Before contributing, understand and follow our [**AI policy**](AI_POLICY.md).
+
 We have a `justfile` containing a lot of useful commands.
 Run `just help` to see all the available commands.
 

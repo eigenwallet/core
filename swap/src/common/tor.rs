@@ -4,7 +4,7 @@ use std::{path::Path, time::Duration};
 use crate::cli::api::tauri_bindings::{
     TauriBackgroundProgress, TauriEmitter, TauriHandle, TorBootstrapStatus,
 };
-use arti_client::{config::TorClientConfigBuilder, status::BootstrapStatus, Error, TorClient};
+use arti_client::{Error, TorClient, config::TorClientConfigBuilder, status::BootstrapStatus};
 use futures::StreamExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -19,6 +19,13 @@ pub async fn create_tor_client(
     let data_dir = data_dir.join("tor");
     let state_dir = data_dir.join("state");
     let cache_dir = data_dir.join("cache");
+
+    // Workaround for when the machine is running in a managed work-environment.
+    // Arti will otherwise fail if the home directory is writable by another group.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("ARTI_FS_DISABLE_PERMISSION_CHECKS", "1")
+    };
 
     // Workaround for https://gitlab.torproject.org/tpo/core/arti/-/issues/2224
     // We delete guards.json (if it exists) on startup to prevent an issue where arti will not find any guards to connect to

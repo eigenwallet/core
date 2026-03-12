@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-03-05
+
+- ASB + CONTROLLER: Add `withdraw-btc` and `refresh-bitcoin-wallet` JSON-RPC commands. `withdraw-btc` allows withdrawing BTC from the internal Bitcoin wallet to a specified address. The amount parameter on the wire protocol is in satoshis (`Option<u64>`, `null` to sweep the entire balance). The `asb-controller` accepts human-friendly amounts (e.g. `0.1 BTC`, `10000 sat`). `refresh-bitcoin-wallet` syncs the internal Bitcoin wallet with the blockchain.
+
 ## [3.6.7] - 2026-01-22
 
 ## [3.6.6] - 2026-01-21
@@ -820,7 +824,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/3.6.7...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/3.7.0...HEAD
+[3.7.0]: https://github.com/eigenwallet/core/compare/3.6.7...3.7.0
 [3.6.7]: https://github.com/eigenwallet/core/compare/3.6.6...3.6.7
 [3.6.6]: https://github.com/eigenwallet/core/compare/3.6.4...3.6.6
 [3.6.4]: https://github.com/eigenwallet/core/compare/3.6.3...3.6.4
