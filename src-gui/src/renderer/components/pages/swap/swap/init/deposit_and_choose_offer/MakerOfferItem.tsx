@@ -14,6 +14,8 @@ import { RefundPolicy } from "store/features/settingsSlice";
 import { useAppSelector } from "store/hooks";
 import { BobStateName } from "models/tauriModelExt";
 
+const FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO = 0.1;
+
 function getRefundPercentage(policy: RefundPolicyWire): number {
   if (policy.type === "FullRefund") {
     return 100;
@@ -188,11 +190,14 @@ function EarnestDepositChip(quote: BidQuote) {
     * 1000
   ) / 1000;
   const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
+  const normalized_warning_intensity = Math.min(
+    earnest_deposit_ratio / FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO,
+    1,
+  );
+  const warning_intensity = Math.sqrt(normalized_warning_intensity);
 
   const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. During refunds maker may withhold the remaining ${earnest_deposit_ratio * 100}% to deter spamming. Does not apply to successful swaps`;
   const text = `${guaranteed_refund_percentage}% refund guaranteed`;
-
-  // TODO: use colors better to distinguish between low deposits (1%) and high ones (20%)
 
   return <Tooltip
     title={tooltip_text}
@@ -201,7 +206,18 @@ function EarnestDepositChip(quote: BidQuote) {
     <Chip
       label={text}
       size="small"
-      color={full_refund ? "success" : "warning"} />
+      variant="outlined"
+      sx={(theme) => {
+        const successMain = (theme.vars || theme).palette.success.main;
+        const warningMain = (theme.vars || theme).palette.warning.main;
+        const chipColor = `color-mix(in srgb, ${successMain} ${(1 - warning_intensity) * 100}%, ${warningMain} ${warning_intensity * 100}%)`;
+
+        return {
+          backgroundColor: `color-mix(in srgb, ${chipColor} ${12 + warning_intensity * 14}%, ${theme.palette.background.paper})`,
+          borderColor: `color-mix(in srgb, ${chipColor} ${35 + warning_intensity * 20}%, ${theme.palette.divider})`,
+          color: chipColor,
+        };
+      }} />
   </Tooltip>;
 }
 
