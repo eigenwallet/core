@@ -231,23 +231,24 @@ function ReputationChip(peer_id: string) {
   const refundedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcRefunded, BobStateName.BtcEarlyRefunded, BobStateName.BtcMercyConfirmed].includes(swap.state_name)).length
   const failedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcPunished, BobStateName.BtcWithheld].includes(swap.state_name)).length
 
-  return <Tooltip
-    title={"How many swaps you made with this maker and how they turned out. \"Fail\" means you have been punished or you refunded and the maker withheld the anti-spam deposit."}
-    arrow
-  >
-    <Chip
-      size="small"
-      label={
-        <Box display="flex" style={{ gap: "0.5rem" }}>
-          <Box color="success.main">{successfulSwaps} success</Box>
-          <Divider orientation="vertical" flexItem />
-          <Box color="warning.main">{refundedSwaps} refund</Box>
-          <Divider orientation="vertical" flexItem />
-          <Box color="error.main">{failedSwaps} fail</Box>
-        </Box>
-      }
-    />
-  </Tooltip>
+  return <Chip
+    size="small"
+    label={
+      <Box display="flex" style={{ gap: "0.5rem" }}>
+        <Tooltip title={`You've made ${successfulSwaps} successful swaps with this maker.`}>
+          <Box color="success.main">{successfulSwaps} successes</Box>
+        </Tooltip>
+        <Divider orientation="vertical" flexItem />
+        <Tooltip title={`${refundedSwaps} of your swaps with this maker needed to be refunded.`}>
+          <Box color="warning.main">{refundedSwaps} refunds</Box>
+        </Tooltip>
+        <Divider orientation="vertical" flexItem />
+        <Tooltip title={`The maker has acted uncooperatively in ${failedSwaps} swaps.`}>
+          <Box color="error.main">{failedSwaps} bad</Box>
+        </Tooltip>
+      </Box>
+    }
+  />
 }
 
 function VersionChip({ version }: { version: string }) {
