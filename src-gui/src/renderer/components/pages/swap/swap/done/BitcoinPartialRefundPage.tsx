@@ -63,9 +63,9 @@ export function WaitingForEarnestDepositTimelockExpirationPage({
   return (
     <>
       <DialogContentText>
-        Waiting to claim the earnest deposit ({atRiskPercent}% of your Bitcoin).
-        The timelock of {target_blocks} Bitcoin blocks needs to expire first.
+        Waiting for the timelock on the anti-spam deposit ({atRiskPercent}% of your Bitcoin) to expire.
         The maker can choose to withhold it during this time.
+        After the timelock expires, we will refund the remaining Bitcoin.
       </DialogContentText>
       <BitcoinTransactionInfoBox
         title="Waiting for timelock to expire"
@@ -105,9 +105,9 @@ function PartialRefundPage({
     <>
       <Alert severity="info" sx={{ mb: 2 }}>
         <Typography variant="body2">
-          <strong>Patience:</strong> We are first refunding the guaranteed <strong>{guaranteedPercent}%</strong> of the Bitcoin refund.
-          It is <strong>not guaranteed</strong> that we can claim the earnest deposit, which makes up the remaining <strong>{atRiskPercent}%</strong>.
-          The maker has a short timeframe to withhold the deposit, after that we can claim it.
+          <strong>Patience:</strong> We are refunding the guaranteed <strong>{guaranteedPercent}%</strong> of the Bitcoin refund.
+          It is <strong>not guaranteed</strong> that we can refund the anti-spam deposit, which makes up the remaining <strong>{atRiskPercent}%</strong>.
+          The maker has a short timeframe to withhold the deposit, after that we can refund it.
         </Typography>
       </Alert>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -151,7 +151,7 @@ function AmnestyPage({
 
   const mainMessage = confirmed
     ? "All your Bitcoin have been refunded. The swap is complete."
-    : "The remaining Bitcoin (earnest deposit) are being released to you. Waiting for confirmation.";
+    : "The remaining Bitcoin (anti-spam deposit) are being released to you. Waiting for confirmation.";
 
   const additionalContent = swap ? (
     <>
@@ -228,33 +228,32 @@ function WithholdPage({
 }) {
   const atRiskPercent = Math.round((btcAmnestyAmount / btcLockAmount) * 100);
 
-  const mainMessage = "The market maker is withholding the earnest deposit."
+  const mainMessage = "The market maker is withholding the anti-spam deposit."
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <DialogContentText>{mainMessage}</DialogContentText>
       <Alert severity="error">
         <Typography variant="body2">
-          <strong>Earnest deposit withheld:</strong> The market maker has choosen to withhold the remaining <strong>{atRiskPercent}%</strong> of your Bitcoin refund.
-
+          <strong>Anti-spam deposit withheld:</strong> The maker has choosen to withhold the anti-spam deposit, which makes up the remaining <strong>{atRiskPercent}%</strong> of your Bitcoin refund.
         </Typography>
       </Alert>
       <Alert severity="info">
         <Typography variant="body2" gutterBottom>
           <strong>Why did this happen?</strong> Aborting a swap incurs significant costs on makers.
-          To prevent spam attacks, makers can choose to require an "earnest deposit",
-          which they can withhold if the swap is aborted.
+          To prevent spam attacks, some makers require an "anti-spam deposit",
+          which they can choose to withhold if the swap is aborted.
         </Typography>
         <Typography variant="body2">
           Makers do not have access to the withheld deposit.
-          The maker you are swapping with has exercised their option to withhold, because they think you are spamming them.
+          The maker you are swapping with has exercised their option to withhold because they think you are spamming them.
         </Typography>
       </Alert>
       <Alert severity="info">
         <Typography variant="body2">
           <strong>You can contact the maker:</strong> If you think this was a mistake, you can contact the maker through our official
           community channels.
-          The maker can still release the deposit.
+          The maker can still release the anti-spam deposit.
         </Typography>
         <br />
         <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
