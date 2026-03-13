@@ -12,6 +12,7 @@ import {
   GetMoneroSeedResponse,
   GetRestoreHeightResponse,
 } from "models/tauriModel";
+import { PrivateKeyScamAlert } from "renderer/components/other/PrivateKeyWarning";
 
 interface SeedPhraseModalProps {
   onClose: () => void;
@@ -30,6 +31,8 @@ export default function SeedPhraseModal({
     <Dialog open={true} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Wallet Seed Phrase</DialogTitle>
       <DialogContent>
+        <PrivateKeyScamAlert />
+
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <ActionableMonospaceTextBox
             content={seed[0].seed}

@@ -1,6 +1,6 @@
 [package]
 name = "swap-machine"
-version = "0.1.0"
+version = "4.0.0"
 edition = "2024"
 
 [dependencies]
@@ -14,14 +14,21 @@ libp2p = { workspace = true }
 monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 rand = { workspace = true }
+rust_decimal = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
-sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
+sigma_fun = { workspace = true, default-features = false, features = [
+    "ed25519",
+    "serde",
+    "secp256k1",
+    "alloc",
+] }
 swap-core = { path = "../swap-core" }
 swap-env = { path = "../swap-env" }
 swap-serde = { path = "../swap-serde" }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]

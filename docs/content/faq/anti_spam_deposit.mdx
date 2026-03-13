@@ -1,0 +1,50 @@
+# FAQ: anti-spam deposit
+
+### Do I get less Monero for my Bitcoin when the swap has an anti-spam deposit?
+
+No. If the swap succeeds, the anti-spam deposit mechanism does not come into play at all.
+The mechanism only activates for refunded swaps.
+
+### Does the anti-spam deposit require additional Bitcoin?
+
+No. The deposit is a small part of the Bitcoin that -- if required -- may be split off in the event of a refund.
+
+### Do makers typically withhold the anti-spam deposit?
+
+No. This would reflect badly on their reputation.
+Makers are incentivized to withhold the deposit only when absolutely necessary to
+protect themselves.
+
+### Does the anti-spam deposit go to the maker?
+
+No. The anti-spam deposit is stored in a shared lock. The maker cannot access the deposit, only return it to you.
+
+### How is the anti-spam deposit calculated?
+
+The anti-spam deposit amount is defined as a certain percentage of the swap size.
+
+**Example**: You want to swap 0.5 BTC, the maker requires a 5% anti-spam deposit.
+In the refund case, 5% of that 0.5 BTC will become the anti-spam deposit.
+The deposit amount will be `0.05 * 0.5 = 0.025` BTC.
+
+### What happens with the deposit if the swap refunds?
+
+The anti-spam deposit does not immediately get refunded.
+You will have to wait for 30min (3 blocks) to reclaim it.
+During these 30min the maker can exercise his option to withhold the deposit indefinitely.
+
+### My anti-spam deposit was withheld. Is it gone for good?
+
+No. You can still contact the maker via our official community channels and ask them to release the funds.
+
+_matrix and discord link here_
+
+### Why do makers require an anti-spam deposit?
+
+Offering guaranteed free refunds opens the makers up to spamming attacks.
+Anti-spam deposits allow them to deter this without hurting honest swappers.
+
+### Do all makers require an anti-spam deposit?
+
+The protocol still allows makers to offer "deposit-free" swaps.
+Check the eigenwallet app for an up-to-date list of the current offers.

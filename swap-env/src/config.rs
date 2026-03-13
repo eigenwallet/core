@@ -1,10 +1,10 @@
 use crate::defaults::{
-    GetDefaults, BITFINEX_PRICE_TICKER_WS_URL, KRAKEN_PRICE_TICKER_WS_URL,
+    BITFINEX_PRICE_TICKER_WS_URL, GetDefaults, KRAKEN_PRICE_TICKER_WS_URL,
     KUCOIN_PRICE_TICKER_REST_URL,
 };
 use crate::env::{Mainnet, Testnet};
 use crate::prompt;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use config::ConfigError;
 use libp2p::core::Multiaddr;
 use rust_decimal::Decimal;
@@ -101,23 +101,45 @@ pub struct Maker {
     #[serde(with = "::bitcoin::amount::serde::as_btc")]
     pub max_buy_btc: bitcoin::Amount,
     pub ask_spread: Decimal,
+    /// What refund conditions to give to takers.
+    #[serde(default)]
+    pub refund_policy: RefundPolicy,
     #[serde(default = "default_price_ticker_ws_url_kraken")]
     pub price_ticker_ws_url_kraken: Url,
     #[serde(default = "default_price_ticker_ws_url_bitfinex")]
     pub price_ticker_ws_url_bitfinex: Url,
     #[serde(default = "default_price_ticker_rest_url_kucoin")]
     pub price_ticker_rest_url_kucoin: Url,
+    /// If specified, Bitcoin received from successful swaps will be sent to this address.
     #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
     /// Percentage (between 0.0 and 1.0) of the swap amount
-    // that will be donated to the project as part of the Monero lock transaction
+    /// that will be donated to the devepment fund as part of the Monero lock transaction.
     #[serde(default = "default_developer_tip")]
     pub developer_tip: Decimal,
 }
 
-fn default_developer_tip() -> Decimal {
-    // By default, we do not tip
-    Decimal::ZERO
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct RefundPolicy {
+    /// Takers will only receive this percentage of their Bitcoin back by default.
+    /// Maker can still issue "amnesty" to refund the rest.
+    /// This protects the maker against griefing attacks.
+    #[serde(default = "default_anti_spam_deposit_ratio")]
+    pub anti_spam_deposit_ratio: Decimal,
+    /// If true, Alice will publish TxWithhold after refunding her XMR,
+    /// denying Bob access to the amnesty output. Alice can later grant
+    /// final amnesty to return the funds to Bob.
+    #[serde(default = "default_always_withhold_deposit")]
+    pub always_withhold_deposit: bool,
+}
+
+impl Default for RefundPolicy {
+    fn default() -> Self {
+        Self {
+            anti_spam_deposit_ratio: default_anti_spam_deposit_ratio(),
+            always_withhold_deposit: false,
+        }
+    }
 }
 
 fn default_price_ticker_ws_url_kraken() -> Url {
@@ -130,6 +152,18 @@ fn default_price_ticker_ws_url_bitfinex() -> Url {
 
 fn default_price_ticker_rest_url_kucoin() -> Url {
     Url::parse(KUCOIN_PRICE_TICKER_REST_URL).expect("default kucoin rest url to be valid")
+}
+
+fn default_developer_tip() -> Decimal {
+    Decimal::ZERO
+}
+
+fn default_anti_spam_deposit_ratio() -> Decimal {
+    Decimal::ZERO
+}
+
+fn default_always_withhold_deposit() -> bool {
+    false
 }
 
 impl Config {
@@ -178,6 +212,40 @@ pub fn read_config(config_path: PathBuf) -> Result<Result<Config, ConfigNotIniti
         .with_context(|| format!("Failed to read config file at {}", config_path.display()))?;
 
     Ok(Ok(file))
+}
+
+/// Maximum allowed anti-spam deposit ratio. Values above this are implausible
+/// and likely indicate a misconfiguration (e.g. deposit exceeding fees).
+pub const MAX_ANTI_SPAM_DEPOSIT_RATIO: Decimal = Decimal::from_parts(2, 0, 0, false, 1); // 0.2
+
+pub fn validate_config(config: &Config, env_config: crate::env::Config) -> Result<()> {
+    if config.monero.network != env_config.monero_network {
+        bail!(
+            "Expected monero network in config file to be {:?} but was {:?}",
+            env_config.monero_network,
+            config.monero.network
+        );
+    }
+    if config.bitcoin.network != env_config.bitcoin_network {
+        bail!(
+            "Expected bitcoin network in config file to be {:?} but was {:?}",
+            env_config.bitcoin_network,
+            config.bitcoin.network
+        );
+    }
+
+    let ratio = config.maker.refund_policy.anti_spam_deposit_ratio;
+    if ratio < Decimal::ZERO || ratio > Decimal::ONE {
+        bail!("anti_spam_deposit_ratio must be between 0 and 1, got {ratio}");
+    }
+    if ratio > MAX_ANTI_SPAM_DEPOSIT_RATIO {
+        bail!(
+            "anti_spam_deposit_ratio of {ratio} exceeds maximum of {MAX_ANTI_SPAM_DEPOSIT_RATIO}. \
+             Such a high deposit ratio is implausible and likely a misconfiguration."
+        );
+    }
+
+    Ok(())
 }
 
 pub fn initial_setup(config_path: PathBuf, config: Config) -> Result<()> {
@@ -249,6 +317,7 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
             external_bitcoin_redeem_address: None,
             developer_tip,
+            refund_policy: defaults.refund_policy,
         },
     })
 }

@@ -12,8 +12,7 @@ export default function Slide02_ChooseAMaker(props: IntroSlideProps) {
       imagePath={imagePath}
     >
       <Typography variant="subtitle1">
-        To initiate a swap, provide a Monero address and optionally a Bitcoin
-        refund address.
+        To initiate a swap, you need to have some Bitcoin in your wallet.
       </Typography>
     </SlideTemplate>
   );
