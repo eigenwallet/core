@@ -102,7 +102,7 @@ function BitcoinLockedNoTimelockExpiredStateAlert({
           />
           , it will be refunded
         </>,
-        "For that, you need to have the app open sometime within the refund period",
+        "For that, you need to have the app open at any point during the refund period",
         <>
           After that, cooperation from the other party would be required to
           recover the funds
@@ -177,10 +177,10 @@ function WaitingForRemainingRefundTimelockAlert({
         <>
           Waiting{" "}
           <HumanizedBitcoinBlockDuration blocks={blocksLeft} displayBlocks />{" "}
-          for the amnesty timelock to expire
+          for the timelock on the anti-spam timelock to expire
         </>,
-        "The maker can burn the remaining Bitcoin before the timelock expires",
-        "If the maker doesn't burn it, you can claim the remaining Bitcoin once the timelock expires",
+        "The maker can withhold the Bitcoin anti-spam deposit before the timelock expires",
+        "We will refund the Bitcoin anti-spam deposit once the timelock expires",
         "Keep the app running or resume the swap once the timelock expires",
       ]}
     />
@@ -196,7 +196,7 @@ function RemainingRefundTimelockExpiredAlert() {
     <MessageList
       messages={[
         "Your Bitcoin was partially refunded",
-        "The amnesty timelock has expired",
+        "The anti-spam deposit timelock has expired",
         "Resume the swap to claim the remaining Bitcoin",
       ]}
     />
@@ -210,9 +210,9 @@ function BtcWithholdPublishedAlert() {
   return (
     <MessageList
       messages={[
-        "The remaining Bitcoin was withheld by the maker",
+        "The Bitcoin was partially refunded, but the anti-spam deposit was withheld by the maker",
         "Waiting for the maker to grant mercy",
-        "Keep the app running or resume the swap to receive the mercy",
+        "Resume the swap for instructions on how to proceed",
       ]}
     />
   );
@@ -225,7 +225,8 @@ function BtcMercyPublishedAlert() {
   return (
     <MessageList
       messages={[
-        "The maker granted mercy",
+        "The maker released the Bitcoin anti-spam deposit they previously withheld",
+        "This will refund the remaining Bitcoin",
         "Waiting for the mercy transaction to be confirmed",
       ]}
     />

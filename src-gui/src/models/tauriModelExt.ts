@@ -111,19 +111,19 @@ export function bobStateNameToHumanReadable(stateName: BobStateName): string {
     case BobStateName.BtcPartiallyRefunded:
       return "Bitcoin partially refunded";
     case BobStateName.BtcAmnestyReceived:
-      return "Bitcoin amnesty was received";
+      return "Bitcoin fully refunded";
     case BobStateName.BtcWithholdPublished:
-      return "Bitcoin withhold published";
+      return "Bitcoin partially refunded; deposit is being withheld";
     case BobStateName.BtcWithheld:
-      return "Bitcoin withheld";
+      return "Bitcoin partially refunded; deposit withheld";
     case BobStateName.BtcMercyPublished:
-      return "Bitcoin mercy published";
+      return "Bitcoin partially refunded; deposit is being released";
     case BobStateName.BtcMercyConfirmed:
-      return "Bitcoin mercy received";
+      return "Bitcoin fully refunded";
     case BobStateName.WaitingForReclaimTimelockExpiration:
-      return "Waiting for amnesty timelock";
+      return "Waiting for deposit timelock";
     case BobStateName.ReclaimTimelockExpired:
-      return "Amnesty timelock expired";
+      return "Deposit timelock expired";
     case BobStateName.XmrRedeemed:
       return "Monero redeemed";
     case BobStateName.BtcPunished:
