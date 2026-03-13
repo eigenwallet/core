@@ -43,33 +43,105 @@ const MOCK_XMR_ADDRESS =
 
 export const MOCK_SWAP_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
-const MOCK_QUOTE: BidQuote = {
-  price: 0.007,
-  min_quantity: 10_000_000,
-  max_quantity: 100_000_000,
-  refund_policy: { type: "FullRefund" },
-};
+const MOCK_KNOWN_QUOTES: QuoteWithAddress[] = [
+  {
+    multiaddr: "/ip4/127.0.0.1/tcp/9939",
+    peer_id: "12D3KooWCdMKjesXMJz1SiZ7HgotrxuqhQJbP5sgBm2BwP1cqThi",
+    quote: {
+      price: 0.0066,
+      min_quantity: 10_000_000,
+      max_quantity: 100_000_000,
+      refund_policy: { type: "FullRefund" },
+    },
+    version: "4.0.0",
+  },
+  {
+    multiaddr: "/ip4/192.168.1.50/tcp/9940",
+    peer_id: "12D3KooWEyoppNCUzN3sX7atGxPHvqgZvUNQmKzz1mQvNfFhuqP9",
+    quote: {
+      price: 0.00662,
+      min_quantity: 5_000_000,
+      max_quantity: 200_000_000,
+      refund_policy: {
+        type: "PartialRefund",
+        content: { anti_spam_deposit_ratio: 0.005 },
+      },
+    },
+    version: "4.0.0",
+  },
+  {
+    multiaddr: "/ip4/192.168.1.51/tcp/9941",
+    peer_id: "12D3KooWQ1XmPttg1Ut5xD3mcJRoWQYEQ8C1BcvqtrdrDam6DCyn",
+    quote: {
+      price: 0.00664,
+      min_quantity: 5_000_000,
+      max_quantity: 200_000_000,
+      refund_policy: {
+        type: "PartialRefund",
+        content: { anti_spam_deposit_ratio: 0.01 },
+      },
+    },
+    version: "4.0.0",
+  },
+  {
+    multiaddr: "/ip4/192.168.1.52/tcp/9942",
+    peer_id: "12D3KooWKJPkR34byJ9Y5mN9wQ3hEG8mSN2yT8eC2cQFqL3x1V9u",
+    quote: {
+      price: 0.00666,
+      min_quantity: 5_000_000,
+      max_quantity: 200_000_000,
+      refund_policy: {
+        type: "PartialRefund",
+        content: { anti_spam_deposit_ratio: 0.02 },
+      },
+    },
+    version: "4.0.0",
+  },
+  {
+    multiaddr: "/ip4/192.168.1.53/tcp/9943",
+    peer_id: "12D3KooWJ1PiH4H9ceR85S8JQk8MtS5o1vBM2wFp1k3Wf4t8bX4p",
+    quote: {
+      price: 0.0067,
+      min_quantity: 5_000_000,
+      max_quantity: 200_000_000,
+      refund_policy: {
+        type: "PartialRefund",
+        content: { anti_spam_deposit_ratio: 0.05 },
+      },
+    },
+    version: "4.0.0",
+  },
+  {
+    multiaddr: "/ip4/192.168.1.54/tcp/9944",
+    peer_id: "12D3KooWH1TY76YnLwQe3F6uq5WnPaW9DdK7RzWQ6xQG9Sm4F1no",
+    quote: {
+      price: 0.00674,
+      min_quantity: 5_000_000,
+      max_quantity: 200_000_000,
+      refund_policy: {
+        type: "PartialRefund",
+        content: { anti_spam_deposit_ratio: 0.1 },
+      },
+    },
+    version: "4.0.0",
+  },
+  {
+    multiaddr: "/ip4/192.168.1.55/tcp/9945",
+    peer_id: "12D3KooWGW4QmZsfgz6R6eQ5PVbSYcT7B8WcV1P4DnK5LmN2Rt7y",
+    quote: {
+      price: 0.0068,
+      min_quantity: 5_000_000,
+      max_quantity: 200_000_000,
+      refund_policy: {
+        type: "PartialRefund",
+        content: { anti_spam_deposit_ratio: 0.2 },
+      },
+    },
+    version: "4.0.0",
+  },
+];
 
-const MOCK_QUOTE_WITH_ADDRESS: QuoteWithAddress = {
-  multiaddr: "/ip4/127.0.0.1/tcp/9939",
-  peer_id: "12D3KooWCdMKjesXMJz1SiZ7HgotrxuqhQJbP5sgBm2BwP1cqThi",
-  quote: MOCK_QUOTE,
-  version: "3.6.1",
-};
-
-const MOCK_QUOTE_PARTIAL_REFUND: BidQuote = {
-  price: 0.0068,
-  min_quantity: 5_000_000,
-  max_quantity: 200_000_000,
-  refund_policy: { type: "PartialRefund", content: { anti_spam_deposit_ratio: 0.02 } },
-};
-
-const MOCK_QUOTE_WITH_ADDRESS_PARTIAL: QuoteWithAddress = {
-  multiaddr: "/ip4/192.168.1.50/tcp/9940",
-  peer_id: "12D3KooWEyoppNCUzN3sX7atGxPHvqgZvUNQmKzz1mQvNfFhuqP9",
-  quote: MOCK_QUOTE_PARTIAL_REFUND,
-  version: "4.0.0",
-};
+const MOCK_QUOTE: BidQuote = MOCK_KNOWN_QUOTES[0].quote;
 
 const MOCK_RECEIVE_POOL: MoneroAddressPool = [
   { address: MOCK_XMR_ADDRESS, percentage: 1.0, label: "Main" },
@@ -86,7 +158,7 @@ const baseScenario: TauriSwapProgressEvent[] = [
       deposit_address: MOCK_BTC_DEPOSIT_ADDRESS,
       max_giveable: 0,
       min_bitcoin_lock_tx_fee: 1000,
-      known_quotes: [MOCK_QUOTE_WITH_ADDRESS, MOCK_QUOTE_WITH_ADDRESS_PARTIAL],
+      known_quotes: MOCK_KNOWN_QUOTES,
     },
   },
   { type: "SwapSetupInflight", content: { btc_lock_amount: 50_000_000 } },
