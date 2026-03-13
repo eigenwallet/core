@@ -207,20 +207,20 @@ const RECOVERY_STEP_LABELS: Record<
   Array<{ label: string; duration: string }>
 > = {
   [RecoveryScenario.GENERIC]: [
-    { label: "Cancelling swap", duration: "~1min" },
+    { label: "Cancelling swap", duration: "~10min" },
     { label: "Attempting recovery", duration: "" },
   ],
   [RecoveryScenario.FULL_REFUND]: [
-    { label: "Cancelling swap", duration: "~1min" },
+    { label: "Cancelling swap", duration: "~10min" },
     { label: "Bitcoin refunded", duration: "~5min" },
   ],
   [RecoveryScenario.PARTIAL_REFUND]: [
-    { label: "Cancelling swap", duration: "~1min" },
+    { label: "Cancelling swap", duration: "~10min" },
     { label: "Partial refund", duration: "~2min" },
     { label: "Reclaiming deposit", duration: "~30min" },
   ],
   [RecoveryScenario.COOPERATIVE_REDEEM]: [
-    { label: "Cancelling swap", duration: "~1min" },
+    { label: "Cancelling swap", duration: "~10min" },
     { label: "We have been punished", duration: "" },
     { label: "Attempting cooperative recovery", duration: "~2min" },
   ],
