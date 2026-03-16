@@ -345,11 +345,11 @@ export function StateAlert({
 
 // How many blocks need to be left for the timelock to be considered unusual
 // A bit arbitrary but we don't want to alarm the user
-// 72 is the default cancel timelock in blocks
+// 24 is the default cancel timelock in blocks (~4 hours)
 // 4 blocks are around 40 minutes
 // If the swap has taken longer than 40 minutes, we consider it unusual
 // See: swap-env/src/env.rs
-const UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD = 72 - 4;
+const UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD = 24 - 4;
 
 /**
  * Main component for displaying the swap status alert.

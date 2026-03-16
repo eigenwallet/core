@@ -38,7 +38,7 @@ We will skip over the specific transactions for now and focus on the big picture
 
 ```mermaid
 graph TD
-    A["Swap starts"] --> B{{"Swap completes within 12h?"}}
+    A["Swap starts"] --> B{{"Swap completes within 4h?"}}
 
     B -- "Yes" --> F["Swap was successful\n_(Happy path)_"]
 
@@ -69,7 +69,7 @@ We will go through the process bit by bit and explain what happens.
 
 ## Cancel
 
-_Situation: A swap was started, but was not completed within 12h._
+_Situation: A swap was started, but was not completed within 4h._
 
 If a swap cannot be completed, then both parties will want their money back.
 The first step towards this is to "cancel" the swap.
@@ -78,13 +78,13 @@ This transaction was constructed during the swap setup, both parties can publish
 After the cancel transaction is published, the swap cannot complete normally anymore.
 
 The cancel transaction can only be published after a timelock.
-This "cancel timelock" is currently set to 72 Bitcoin confirmations, or ~12 hours.
+This "cancel timelock" is currently set to 24 Bitcoin confirmations, or ~4 hours.
 The cancel transaction does not return the Bitcoin to your wallet.
 This will be handled in the next step.
 
 ## Refund
 
-_Situation: A swap was started, but was not completed within 12h. The maker subsequently cancelled the swap by publishing the cancel transaction._
+_Situation: A swap was started, but was not completed within 4h. The maker subsequently cancelled the swap by publishing the cancel transaction._
 
 As soon as the swap is cancelled, the taker can refund their Bitcoin. 
 This is done by publishing another Bitcoin transaction, called the "refund" transaction.
@@ -108,7 +108,7 @@ The refund window of 144 Bitcoin blocks (~24h) starts with the confirmation of t
 </Callout>
 
 <Callout type="important">
-  The refund window is 24h long and starts 12h after the swap was started.
+  The refund window is 24h long and starts 4h after the swap was started.
 </Callout>
 
 #### Anti-spam deposit
@@ -129,7 +129,7 @@ Read more on the dedicated pages.
 
 ## Punish
 
-_Situation: A swap was started, but was not completed within 12h. The maker subsequently cancelled the swap. But even after another 24h the taker still hasn't refunded._
+_Situation: A swap was started, but was not completed within 4h. The maker subsequently cancelled the swap. But even after another 24h the taker still hasn't refunded._
 
 The maker should not lose money due to a taker's fault.
 But if the taker does not refund their Bitcoin, the maker cannot refund their Monero.

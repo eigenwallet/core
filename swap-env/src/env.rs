@@ -60,7 +60,7 @@ impl GetConfig for Mainnet {
             // will be confirmed within at most 6 blocks
             bitcoin_blocks_till_confirmed_upper_bound_assumption: 6,
             bitcoin_avg_block_time: 10.std_minutes(),
-            bitcoin_cancel_timelock: 72,
+            bitcoin_cancel_timelock: 24,
             bitcoin_punish_timelock: 144,
             bitcoin_remaining_refund_timelock: 2,
             bitcoin_network: bitcoin::Network::Bitcoin,
