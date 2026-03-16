@@ -779,7 +779,7 @@ where
             // Only publish TxWithhold for swaps which have an anti-spam deposit.
             let Some(mut state3) = state3 else {
                 tracing::info!(
-                    "Running a pre-partial refund swap, there is no amnesty output to burn"
+                    "Running a pre-partial refund swap, there is no anti-spam deposit to withhold"
                 );
                 return Ok(AliceState::XmrRefunded { state3: None });
             };
@@ -797,62 +797,115 @@ where
                 });
             }
 
-            let signed_tx = state3.signed_withhold_transaction().context("Can't withhold the anti-spam deposit after Bob refunded because we couldn't construct the transaction")?;
+            retry("Publish TxWithhold", || {
+                let state3 = state3.clone();
+                let bitcoin_wallet = bitcoin_wallet.clone();
 
-            bitcoin_wallet
-                .ensure_broadcasted(signed_tx, "withhold")
-                .await
-                .context("Couldn't publish TxWithhold")?;
+                async move {
+                    let signed_tx = state3.signed_withhold_transaction()
+                        .context("Can't withhold the anti-spam deposit after Bob refunded because we couldn't construct the transaction")
+                        .map_err(backoff::Error::transient)?;
 
-            AliceState::BtcWithholdPublished { state3 }
+                    bitcoin_wallet
+                        .ensure_broadcasted(signed_tx, "withhold")
+                        .await
+                        .context("Couldn't publish TxWithhold")
+                        .map_err(backoff::Error::transient)?;
+
+                    Ok(AliceState::BtcWithholdPublished { state3 })
+                }
+            }, None, None).await?
         }
         AliceState::BtcWithholdPublished { state3 } => {
-            let tx_withhold = state3
-                .tx_withhold()
-                .context("Can't construct TxWithhold even though we published it")?;
+            retry(
+                "Wait for TxWithhold confirmation",
+                || {
+                    let state3 = state3.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
 
-            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
+                    async move {
+                        let tx_withhold = state3
+                            .tx_withhold()
+                            .context("Can't construct TxWithhold even though we published it")
+                            .map_err(backoff::Error::transient)?;
 
-            subscription
-                .wait_until_final()
-                .await
-                .context("Failed to wait for TxWithhold to be confirmed")?;
+                        let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
 
-            AliceState::BtcWithholdConfirmed { state3 }
+                        subscription
+                            .wait_until_final()
+                            .await
+                            .context("Failed to wait for TxWithhold to be confirmed")
+                            .map_err(backoff::Error::transient)?;
+
+                        Ok(AliceState::BtcWithholdConfirmed { state3 })
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
         }
         AliceState::BtcWithholdConfirmed { state3 } => {
             // Nothing to do here. Mercy is triggered manually.
             AliceState::BtcWithholdConfirmed { state3 }
         }
         AliceState::BtcMercyGranted { state3 } => {
-            // Operator has decided to grant mercy to Bob
-            let signed_tx = state3
-                .signed_mercy_transaction()
-                .context("Failed to construct signed TxMercy")?;
+            retry(
+                "Publish TxMercy",
+                || {
+                    let state3 = state3.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
 
-            bitcoin_wallet
-                .ensure_broadcasted(signed_tx, "mercy")
-                .await
-                .context("Failed to publish TxMercy")?;
+                    async move {
+                        let signed_tx = state3
+                            .signed_mercy_transaction()
+                            .context("Failed to construct signed TxMercy")
+                            .map_err(backoff::Error::transient)?;
 
-            tracing::info!("TxMercy published successfully");
+                        bitcoin_wallet
+                            .ensure_broadcasted(signed_tx, "mercy")
+                            .await
+                            .context("Failed to publish TxMercy")
+                            .map_err(backoff::Error::transient)?;
 
-            AliceState::BtcMercyPublished { state3 }
+                        tracing::info!("TxMercy published successfully");
+
+                        Ok(AliceState::BtcMercyPublished { state3 })
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
         }
         AliceState::BtcMercyPublished { state3 } => {
-            // Wait for TxMercy to be confirmed
-            let tx_mercy = state3
-                .tx_mercy()
-                .context("Couldn't construct TxMercy even though we have published it")?;
+            retry(
+                "Wait for TxMercy confirmation",
+                || {
+                    let state3 = state3.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
 
-            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
+                    async move {
+                        let tx_mercy = state3
+                            .tx_mercy()
+                            .context("Couldn't construct TxMercy even though we have published it")
+                            .map_err(backoff::Error::transient)?;
 
-            subscription
-                .wait_until_final()
-                .await
-                .context("Failed to wait for TxMercy to be confirmed")?;
+                        let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
 
-            AliceState::BtcMercyConfirmed { state3 }
+                        subscription
+                            .wait_until_final()
+                            .await
+                            .context("Failed to wait for TxMercy to be confirmed")
+                            .map_err(backoff::Error::transient)?;
+
+                        Ok(AliceState::BtcMercyConfirmed { state3 })
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
         }
         AliceState::BtcMercyConfirmed { state3 } => AliceState::BtcMercyConfirmed { state3 },
         AliceState::BtcRedeemed => AliceState::BtcRedeemed,

@@ -1297,7 +1297,6 @@ async fn next_state(
             // - Remaining refund timelock expiring (so we can publish TxReclaim)
             // - Alice publishing TxWithhold
             let tx_partial_refund = state.construct_tx_partial_refund()?;
-            let tx_withhold = state.construct_tx_withhold()?;
 
             let remaining_refund_timelock = state.remaining_refund_timelock.context(
                 "Can't wait for remaining refund timelock because remaining_refund_timelock is missing",
@@ -1314,41 +1313,53 @@ async fn next_state(
                 },
             );
 
-            let (tx_partial_refund_status, tx_withhold_status) = tokio::join!(
-                bitcoin_wallet.subscribe_to(Box::new(tx_partial_refund.clone())),
-                bitcoin_wallet.subscribe_to(Box::new(tx_withhold)),
-            );
+            retry("Wait for reclaim timelock expiration", || {
+                let state = state.clone();
+                let bitcoin_wallet = bitcoin_wallet.clone();
+                let event_emitter = event_emitter.clone();
+                let tx_partial_refund = tx_partial_refund.clone();
 
-            // Emit a tauri event everytime the TxPartialRefund status changes so we can
-            // show an estimate when we will be able to claim the remaining bitcoin
-            let timelock_expired_future = tx_partial_refund_status.wait_until(|status| {
-                event_emitter.emit_swap_progress_event(
-                    swap_id,
-                    TauriSwapProgressEvent::WaitingForEarnestDepositTimelockExpiration {
-                        btc_partial_refund_txid: tx_partial_refund.txid(),
-                        btc_lock_amount: state.tx_lock.lock_amount(),
-                        btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
-                        target_blocks: remaining_refund_timelock.into(),
-                        blocks_until_expiry: status.blocks_left_until(remaining_refund_timelock),
-                    },
-                );
+                async move {
+                    let tx_withhold = state.construct_tx_withhold()
+                        .map_err(backoff::Error::transient)?;
 
-                status.is_confirmed_with(remaining_refund_timelock.0)
-            });
+                    let (tx_partial_refund_status, tx_withhold_status) = tokio::join!(
+                        bitcoin_wallet.subscribe_to(Box::new(tx_partial_refund.clone())),
+                        bitcoin_wallet.subscribe_to(Box::new(tx_withhold)),
+                    );
 
-            select! {
-                // Wait for remaining_refund_timelock confirmations on tx_partial_refund
-                result =  timelock_expired_future => {
-                    result?;
-                    tracing::info!("Remaining refund timelock expired, can now publish TxReclaim");
-                    BobState::ReclaimTimelockExpired(state)
+                    // Emit a tauri event everytime the TxPartialRefund status changes so we can
+                    // show an estimate when we will be able to claim the remaining bitcoin
+                    let timelock_expired_future = tx_partial_refund_status.wait_until(|status| {
+                        event_emitter.emit_swap_progress_event(
+                            swap_id,
+                            TauriSwapProgressEvent::WaitingForEarnestDepositTimelockExpiration {
+                                btc_partial_refund_txid: tx_partial_refund.txid(),
+                                btc_lock_amount: state.tx_lock.lock_amount(),
+                                btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
+                                target_blocks: remaining_refund_timelock.into(),
+                                blocks_until_expiry: status.blocks_left_until(remaining_refund_timelock),
+                            },
+                        );
+
+                        status.is_confirmed_with(remaining_refund_timelock.0)
+                    });
+
+                    select! {
+                        // Wait for remaining_refund_timelock confirmations on tx_partial_refund
+                        result = timelock_expired_future => {
+                            result.map_err(backoff::Error::transient)?;
+                            tracing::info!("Remaining refund timelock expired, can now publish TxReclaim");
+                            Ok(BobState::ReclaimTimelockExpired(state))
+                        }
+                        // Watch for Alice publishing TxWithhold
+                        _ = tx_withhold_status.wait_until_seen() => {
+                            tracing::info!("Alice published TxWithhold, amnesty output is being burnt");
+                            Ok(BobState::BtcWithholdPublished(state))
+                        }
+                    }
                 }
-                // Watch for Alice publishing TxWithhold
-                _ = tx_withhold_status.wait_until_seen() => {
-                    tracing::info!("Alice published TxWithhold, amnesty output is being burnt");
-                    BobState::BtcWithholdPublished(state)
-                }
-            }
+            }, None, None).await?
         }
         BobState::ReclaimTimelockExpired(state) => {
             retry("Reclaim anti-spam deposit", || {
@@ -1447,11 +1458,24 @@ async fn next_state(
                     btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
-            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
 
-            subscription.wait_until_final().await?;
-            tracing::info!("TxMercy confirmed, received withheld funds back");
-            BobState::BtcMercyConfirmed(state)
+            retry("Wait for TxMercy confirmation", || {
+                let state = state.clone();
+                let bitcoin_wallet = bitcoin_wallet.clone();
+
+                async move {
+                    let tx_mercy = state.construct_tx_mercy()
+                        .map_err(backoff::Error::transient)?;
+                    let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
+
+                    subscription.wait_until_final().await
+                        .context("Failed to wait for TxMercy confirmation")
+                        .map_err(backoff::Error::transient)?;
+
+                    tracing::info!("TxMercy confirmed, received withheld funds back");
+                    Ok(BobState::BtcMercyConfirmed(state))
+                }
+            }, None, None).await?
         }
         BobState::BtcMercyConfirmed(state) => {
             // Terminal state - we received the withheld funds back
