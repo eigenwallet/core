@@ -923,7 +923,7 @@ async fn next_state(
                             ExpiredTimelocks::Cancel { .. } | ExpiredTimelocks::Punish  => {
                                 tracing::debug!("Attempting to refund Bitcoin");
                                 let (tx_refund, refund_type) = state.construct_best_bitcoin_refund_tx().context("Couldn't construct best Bitcoin refund transaction").map_err(backoff::Error::transient)?;
-                                
+
                                 // If the refund tx is denied due to double spend it means the Btc has been punished
                                 match bitcoin_wallet.ensure_broadcasted(tx_refund, &refund_type.to_string()).await {
                                     Ok(_) => (),
@@ -933,7 +933,7 @@ async fn next_state(
                                             => return Ok(BobState::BtcPunished { tx_lock_id: state.tx_lock_id(), state }),
                                     Err(error) => return Err(backoff::Error::transient(error.context("Couldn't publish best refund transaction")))
                                 }
-                               
+
                                 let next_state = match refund_type {
                                     RefundType::Full => BobState::BtcRefundPublished(state),
                                     RefundType::Partial { .. } => BobState::BtcPartialRefundPublished(state)
@@ -944,7 +944,7 @@ async fn next_state(
                             ExpiredTimelocks::WaitingForRemainingRefund { .. } =>
                                 Ok(BobState::WaitingForReclaimTimelockExpiration(state)),
                             // Weird edge case: PartialRefund has been published without our knowledge
-                            ExpiredTimelocks::RemainingRefund => 
+                            ExpiredTimelocks::RemainingRefund =>
                                 Ok(BobState::BtcPartiallyRefunded(state)),
                         }
                     }
