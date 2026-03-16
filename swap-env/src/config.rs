@@ -120,6 +120,7 @@ pub struct Maker {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RefundPolicy {
     /// Takers will only receive this percentage of their Bitcoin back by default.
     /// Maker can still issue "amnesty" to refund the rest.
@@ -129,7 +130,7 @@ pub struct RefundPolicy {
     /// If true, Alice will publish TxWithhold after refunding her XMR,
     /// denying Bob access to the amnesty output. Alice can later grant
     /// final amnesty to return the funds to Bob.
-    #[serde(default = "default_always_withhold_deposit")]
+    #[serde(skip)]
     pub always_withhold_deposit: bool,
 }
 
@@ -162,9 +163,6 @@ fn default_anti_spam_deposit_ratio() -> Decimal {
     Decimal::ZERO
 }
 
-fn default_always_withhold_deposit() -> bool {
-    false
-}
 
 impl Config {
     pub fn read<D>(config_file: D) -> Result<Self, ConfigError>
