@@ -1,8 +1,8 @@
 pub mod harness;
 
+use harness::FastPunishConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_locked;
-use harness::FastPunishConfig;
 use swap::asb;
 use swap::asb::FixedRate;
 use swap::cli;
@@ -90,7 +90,7 @@ async fn alice_manually_punishes_after_bob_dead_and_bob_cancels() {
             .unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Cannot refund swap because we have already been punished"
+            "Cannot refund swap because we have already been punished. Resume the swap to attempt cooperative redeem."
         );
         Ok(())
     })
