@@ -8,7 +8,7 @@ pub mod primitives;
 
 pub use crate::primitives::{ScriptStatus, Subscription, Watchable};
 use anyhow::Result;
-use bdk_wallet::{export::FullyNodedExport, Balance};
+use bdk_wallet::{Balance, export::FullyNodedExport};
 pub use bitcoin::{Address, Amount, Network, Psbt, Txid, Weight};
 
 #[async_trait::async_trait]
@@ -41,7 +41,7 @@ pub trait BitcoinWallet: Send + Sync {
 
     async fn sign_and_finalize(&self, psbt: bitcoin::psbt::Psbt) -> Result<bitcoin::Transaction>;
 
-    async fn broadcast(
+    async fn ensure_broadcasted(
         &self,
         transaction: bitcoin::Transaction,
         kind: &str,
@@ -61,7 +61,7 @@ pub trait BitcoinWallet: Send + Sync {
     async fn max_giveable(&self, locking_script_size: usize) -> Result<(Amount, Amount)>;
 
     async fn estimate_fee(&self, weight: Weight, transfer_amount: Option<Amount>)
-        -> Result<Amount>;
+    -> Result<Amount>;
 
     fn network(&self) -> Network;
 
@@ -82,9 +82,8 @@ pub async fn withdraw(
             .await?;
         (tx, amount)
     } else {
-        let (max_giveable, spending_fee) = wallet
-            .max_giveable(address.script_pubkey().len())
-            .await?;
+        let (max_giveable, spending_fee) =
+            wallet.max_giveable(address.script_pubkey().len()).await?;
         let tx = wallet
             .send_to_address(address, max_giveable, spending_fee, None)
             .await?;
@@ -92,9 +91,7 @@ pub async fn withdraw(
     };
 
     let signed_tx = wallet.sign_and_finalize(unsigned_tx).await?;
-    let (txid, _subscription) = wallet
-        .broadcast(signed_tx, "withdraw")
-        .await?;
+    let (txid, _subscription) = wallet.ensure_broadcasted(signed_tx, "withdraw").await?;
 
     Ok((txid, amount))
 }

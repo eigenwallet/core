@@ -88,16 +88,19 @@ pub struct ContextStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LockBitcoinDetails {
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_lock_amount: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_network_fee: bitcoin::Amount,
     #[typeshare(serialized_as = "number")]
     pub xmr_receive_amount: monero::Amount,
     pub monero_receive_pool: MoneroAddressPool,
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
+    /// The amount of Bitcoin the taker will only be able to refund with cooperation from the maker
+    #[typeshare(serialized_as = "number")]
+    pub btc_amnesty_amount: bitcoin::Amount,
+    /// Whether we can guarantee we'll get the full refund
+    pub has_full_refund_signature: bool,
 }
 
 #[typeshare]
@@ -106,7 +109,6 @@ pub struct SelectMakerDetails {
     #[typeshare(serialized_as = "string")]
     pub swap_id: Uuid,
     #[typeshare(serialized_as = "number")]
-    #[serde(with = "::bitcoin::amount::serde::as_sat")]
     pub btc_amount_to_swap: bitcoin::Amount,
     pub maker: QuoteWithAddress,
 }
@@ -479,10 +481,13 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
     for TauriBackgroundProgressHandle<TauriBitcoinFullScanProgress>
 {
     fn update(&self, consumed: u64, total: u64) {
-        self.update(TauriBitcoinFullScanProgress::Known {
-            current_index: consumed,
-            assumed_total: total,
-        });
+        TauriBackgroundProgressHandle::update(
+            self,
+            TauriBitcoinFullScanProgress::Known {
+                current_index: consumed,
+                assumed_total: total,
+            },
+        );
     }
 
     fn finish(&self) {
@@ -494,7 +499,10 @@ impl bitcoin_wallet::BitcoinTauriBackgroundTask
     for TauriBackgroundProgressHandle<TauriBitcoinSyncProgress>
 {
     fn update(&self, consumed: u64, total: u64) {
-        self.update(TauriBitcoinSyncProgress::Known { consumed, total });
+        TauriBackgroundProgressHandle::update(
+            self,
+            TauriBitcoinSyncProgress::Known { consumed, total },
+        );
     }
 
     fn finish(&self) {
@@ -1026,16 +1034,13 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         deposit_address: bitcoin::Address,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         max_giveable: bitcoin::Amount,
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         min_bitcoin_lock_tx_fee: bitcoin::Amount,
         known_quotes: Vec<QuoteWithAddress>,
     },
     SwapSetupInflight {
         #[typeshare(serialized_as = "number")]
-        #[serde(with = "::bitcoin::amount::serde::as_sat")]
         btc_lock_amount: bitcoin::Amount,
     },
     RetrievingMoneroBlockheight,
@@ -1077,6 +1082,14 @@ pub enum TauriSwapProgressEvent {
     },
     WaitingForCancelTimelockExpiration, // TODO: Add current confirmations and target confirmations here?
     CancelTimelockExpired,
+    BtcCancelPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_cancel_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_cancel_confirmations: u32,
+        #[typeshare(serialized_as = "number")]
+        btc_cancel_target_confirmations: u32,
+    },
     BtcCancelled {
         #[typeshare(serialized_as = "string")]
         btc_cancel_txid: Txid,
@@ -1093,6 +1106,24 @@ pub enum TauriSwapProgressEvent {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
     },
+    BtcPartialRefundPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // BtcAmnesty was published but not yet confirmed.
+    // Requires BtcPartialRefund to be published first.
+    BtcAmnestyPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
     // tx_early_refund has been confirmed
     BtcEarlyRefunded {
         #[typeshare(serialized_as = "string")]
@@ -1102,6 +1133,75 @@ pub enum TauriSwapProgressEvent {
     BtcRefunded {
         #[typeshare(serialized_as = "string")]
         btc_refund_txid: Txid,
+    },
+    // We got partially refunded. Might still be able to get amnesty.
+    BtcPartiallyRefunded {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    /// Waiting for the earnest deposit timelock to expire after partial refund confirmed.
+    WaitingForEarnestDepositTimelockExpiration {
+        #[typeshare(serialized_as = "string")]
+        btc_partial_refund_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+        /// Total blocks required for timelock (target)
+        #[typeshare(serialized_as = "number")]
+        target_blocks: u32,
+        /// Blocks remaining until expiry
+        #[typeshare(serialized_as = "number")]
+        blocks_until_expiry: u32,
+    },
+    // BtcAmnesty was confirmed.
+    BtcAmnestyReceived {
+        #[typeshare(serialized_as = "string")]
+        btc_amnesty_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // TxWithhold has been published (waiting for confirmation)
+    BtcWithholdPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_withhold_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // TxWithhold has been confirmed - amnesty output is withheld
+    BtcWithheld {
+        #[typeshare(serialized_as = "string")]
+        btc_withhold_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // Alice published TxMercy
+    BtcMercyPublished {
+        #[typeshare(serialized_as = "string")]
+        btc_mercy_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
+    },
+    // TxMercy has been confirmed - user received withheld funds back
+    BtcMercyConfirmed {
+        #[typeshare(serialized_as = "string")]
+        btc_mercy_txid: Txid,
+        #[typeshare(serialized_as = "number")]
+        btc_lock_amount: bitcoin::Amount,
+        #[typeshare(serialized_as = "number")]
+        btc_amnesty_amount: bitcoin::Amount,
     },
     BtcPunished,
     AttemptingCooperativeRedeem,

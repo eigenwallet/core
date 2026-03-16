@@ -21,7 +21,7 @@ export default function CircularProgressWithSubtitle({
       }}
     >
       <CircularProgress size={50} />
-      <Typography variant="subtitle2" sx={{ paddingTop: 1 }}>
+      <Typography variant="subtitle2" sx={{ paddingTop: 1, textAlign: "center" }}>
         {description}
       </Typography>
     </Box>

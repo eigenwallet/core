@@ -1,6 +1,6 @@
 import { Box, Chip, Divider, Paper, Tooltip, Typography } from "@mui/material";
 import Jdenticon from "renderer/components/other/Jdenticon";
-import { QuoteWithAddress } from "models/tauriModel";
+import { BidQuote, QuoteWithAddress, RefundPolicyWire } from "models/tauriModel";
 import {
   MoneroSatsExchangeRate,
   MoneroSatsMarkup,
@@ -8,8 +8,20 @@ import {
 } from "renderer/components/other/Units";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { resolveApproval } from "renderer/rpc";
-import { isMakerVersionOutdated } from "utils/multiAddrUtils";
 import WarningIcon from "@mui/icons-material/Warning";
+import { isMakerVersionOld, isMakerVersionTooOld } from "utils/multiAddrUtils";
+import { RefundPolicy } from "store/features/settingsSlice";
+import { useAppSelector } from "store/hooks";
+import { BobStateName } from "models/tauriModelExt";
+
+const FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO = 0.1;
+
+function getRefundPercentage(policy: RefundPolicyWire): number {
+  if (policy.type === "FullRefund") {
+    return 100;
+  }
+  return policy.content.anti_spam_deposit_ratio * 100;
+}
 
 export default function MakerOfferItem({
   quoteWithAddress,
@@ -20,6 +32,8 @@ export default function MakerOfferItem({
 }) {
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
   const isOutOfLiquidity = quote.max_quantity == 0;
+  const isTooOld = isMakerVersionTooOld(version);
+
 
   return (
     <Paper
@@ -130,27 +144,12 @@ export default function MakerOfferItem({
             size="small"
           />
         </Tooltip>
-        {isMakerVersionOutdated(version) ? (
-          <Tooltip title="Outdated software — may cause issues" arrow>
-            <Chip
-              color="warning"
-              label={
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                  <WarningIcon sx={{ fontSize: "1rem" }} />
-                  <Typography variant="body2">v{version}</Typography>
-                </Box>
-              }
-              size="small"
-            />
-          </Tooltip>
-        ) : (
-          <Tooltip title="Up to date" arrow>
-            <Chip label={`v${version}`} size="small" />
-          </Tooltip>
-        )}
+        {AntiSpamDepositChip(quote)}
+        {ReputationChip(peer_id)}
+        <VersionChip version={version} />
       </Box>
 
-      {isOutOfLiquidity && (
+      {(isOutOfLiquidity || isTooOld) && (
         <Box
           sx={{
             position: "absolute",
@@ -161,7 +160,7 @@ export default function MakerOfferItem({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backdropFilter: "blur(1px)",
+            backdropFilter: "blur(2px)",
             borderRadius: 2,
             pointerEvents: "auto",
           }}
@@ -172,12 +171,129 @@ export default function MakerOfferItem({
               fontWeight: "bold",
               color: "text.secondary",
               textAlign: "center",
+              textShadow: (theme) => `0 0 8px ${theme.palette.background.paper}`,
             }}
           >
-            Maker has no available funds
+            {isTooOld ? "Maker version incompatible (too old)" : "Maker has no available funds"}
           </Typography>
         </Box>
       )}
     </Paper>
+  );
+}
+
+function AntiSpamDepositChip(quote: BidQuote) {
+  const full_refund: boolean = quote.refund_policy.type === "FullRefund" ? true : quote.refund_policy.content.anti_spam_deposit_ratio === 0;
+  // Rounded to 0.001 precision
+  const earnest_deposit_ratio = Math.round(
+    (quote.refund_policy.type === "FullRefund" ? 0 : quote.refund_policy.content?.anti_spam_deposit_ratio)
+    * 1000
+  ) / 1000;
+  const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
+  const normalized_warning_intensity = Math.min(
+    earnest_deposit_ratio / FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO,
+    1,
+  );
+  const warning_intensity = Math.sqrt(normalized_warning_intensity);
+
+  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. During refunds maker may withhold the remaining ${earnest_deposit_ratio * 100}% to deter spamming. Does not apply to successful swaps`;
+  const text = `${guaranteed_refund_percentage}% refund guaranteed`;
+
+  return <Tooltip
+    title={tooltip_text}
+    arrow
+  >
+    <Chip
+      label={text}
+      size="small"
+      variant="outlined"
+      clickable
+      component="a"
+      href="https://docs.eigenwallet.org/advanced/anti_spam_deposit"
+      target="_blank"
+      rel="noopener noreferrer"
+      sx={(theme) => {
+        const successMain = (theme.vars || theme).palette.success.main;
+        const warningMain = (theme.vars || theme).palette.warning.main;
+        const chipColor = `color-mix(in srgb, ${successMain} ${(1 - warning_intensity) * 100}%, ${warningMain} ${warning_intensity * 100}%)`;
+
+        return {
+          backgroundColor: `color-mix(in srgb, ${chipColor} ${12 + warning_intensity * 14}%, ${theme.palette.background.paper})`,
+          borderColor: `color-mix(in srgb, ${chipColor} ${35 + warning_intensity * 20}%, ${theme.palette.divider})`,
+          color: chipColor,
+        };
+      }} />
+  </Tooltip>;
+}
+
+function ReputationChip(peer_id: string) {
+  const allSwaps = useAppSelector(state => state.rpc.state.swapInfos)
+  if (!allSwaps) { return <></> }
+  const swapsWithThisPeer = Object.values(allSwaps).filter(swap => swap.seller.peer_id == peer_id)
+
+  const successfulSwaps = swapsWithThisPeer.filter(swap => swap.state_name === BobStateName.XmrRedeemed).length
+  // TODO: don't hardcode this check (was swap refunded/punished?) here, put into tauriModelExt or other place
+  const refundedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcRefunded, BobStateName.BtcEarlyRefunded, BobStateName.BtcMercyConfirmed].includes(swap.state_name)).length
+  const failedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcPunished, BobStateName.BtcWithheld].includes(swap.state_name)).length
+
+  return <Chip
+    size="small"
+    label={
+      <Box display="flex" style={{ gap: "0.5rem" }}>
+        <Tooltip title={`You've made ${successfulSwaps} successful swaps with this maker.`}>
+          <Box color="success.main">{successfulSwaps} successes</Box>
+        </Tooltip>
+        <Divider orientation="vertical" flexItem />
+        <Tooltip title={`${refundedSwaps} of your swaps with this maker needed to be refunded.`}>
+          <Box color="warning.main">{refundedSwaps} refunds</Box>
+        </Tooltip>
+        <Divider orientation="vertical" flexItem />
+        <Tooltip title={`The maker has acted uncooperatively in ${failedSwaps} swaps. This means withholding the anti-spam deposit or punishing you.`}>
+          <Box color="error.main">{failedSwaps} bad</Box>
+        </Tooltip>
+      </Box>
+    }
+  />
+}
+
+function VersionChip({ version }: { version: string }) {
+  if (isMakerVersionTooOld(version)) {
+    return (
+      <Tooltip title="Incompatible software — will not work" arrow>
+        <Chip
+          color="error"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <WarningIcon sx={{ fontSize: "1rem" }} />
+              <Typography variant="body2">v{version}</Typography>
+            </Box>
+          }
+          size="small"
+        />
+      </Tooltip>
+    );
+  }
+
+  if (isMakerVersionOld(version)) {
+    return (
+      <Tooltip title="Outdated software — may cause issues" arrow>
+        <Chip
+          color="warning"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <WarningIcon sx={{ fontSize: "1rem" }} />
+              <Typography variant="body2">v{version}</Typography>
+            </Box>
+          }
+          size="small"
+        />
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip title="Up to date" arrow>
+      <Chip label={`v${version}`} size="small" />
+    </Tooltip>
   );
 }

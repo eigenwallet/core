@@ -1,0 +1,89 @@
+import { Callout } from 'nextra/components'
+
+# FAQ: anti-spam deposit
+
+<details>
+<summary>Do I get less Monero for my Bitcoin when the swap has an anti-spam deposit?</summary>
+
+No. If the swap succeeds, the anti-spam deposit mechanism does not come into play at all.
+The mechanism only activates for refunded swaps.
+
+</details>
+
+<details>
+<summary>Does the anti-spam deposit require additional Bitcoin?</summary>
+
+No. The deposit is a small part of the Bitcoin that -- if required -- may be split off in the event of a refund.
+
+</details>
+
+<details>
+<summary>Do makers typically withhold the anti-spam deposit?</summary>
+
+No. This would reflect badly on their reputation.
+Makers are incentivized to withhold the deposit only when absolutely necessary to
+protect themselves.
+
+</details>
+
+<details>
+<summary>Does the anti-spam deposit go to the maker?</summary>
+
+No. The anti-spam deposit is stored in a shared lock. The maker cannot access the deposit, only return it to you.
+
+</details>
+
+<details>
+<summary>How is the anti-spam deposit calculated?</summary>
+
+The anti-spam deposit amount is defined as a certain percentage of the swap size.
+
+**Example**: You want to swap 0.5 BTC, the maker requires a 5% anti-spam deposit.
+In the refund case, 5% of that 0.5 BTC will become the anti-spam deposit.
+The deposit amount will be `0.05 * 0.5 = 0.025` BTC.
+
+</details>
+
+<details>
+<summary>What happens with the deposit if the swap refunds?</summary>
+
+The anti-spam deposit does not immediately get refunded.
+You will have to wait for 30min (3 blocks) to reclaim it.
+During these 30min the maker can exercise their option to withhold the deposit.
+
+</details>
+
+<details>
+<summary>My deposit was withheld. What now?</summary>
+
+The maker can still release the deposit.
+You can contact the maker via our official community channels and ask them to release the funds.
+
+The maker only needs to know the swap id.
+The app will display both the swap id and the peer id of the maker.
+
+<Callout type="important">
+  There are scammers posing as support. Ignore private chat requests. The devs will never ask you to join a seperate "support server" or to reveal your seedphrase or private key.
+</Callout>
+
+- [Discord](https://eigenwallet.org/discord)
+- [Matrix](https://eigenwallet.org/matrix)
+
+
+</details>
+
+<details>
+<summary>Why do makers require an anti-spam deposit?</summary>
+
+Offering guaranteed free refunds opens the makers up to spamming attacks.
+Anti-spam deposits allow them to deter this without hurting honest swappers.
+
+</details>
+
+<details>
+<summary>Do all makers require an anti-spam deposit?</summary>
+
+The protocol still allows makers to offer "deposit-free" swaps.
+Check the eigenwallet app for an up-to-date list of the current offers.
+
+</details>
