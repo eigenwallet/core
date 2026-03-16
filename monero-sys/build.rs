@@ -90,11 +90,15 @@ fn find_workspace_target_dir() -> std::path::PathBuf {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR to be set");
     let out_path = Path::new(&out_dir);
 
-    // Walk up from OUT_DIR to find "target" directory
+    // Walk up from OUT_DIR to find the target directory, then always resolve to the
+    // canonical "target/" so native deps are shared across all cargo target directories
+    // (e.g., target-check used by IDE/rust-analyzer).
     for ancestor in out_path.ancestors() {
-        // allow target dir and also target-check dir (latter one is for lsp to not interfere with cli build commands)
         if ancestor.ends_with("target") || ancestor.ends_with("target-check") {
-            return ancestor.to_path_buf();
+            return ancestor
+                .parent()
+                .expect("target dir to have a parent")
+                .join("target");
         }
     }
 
