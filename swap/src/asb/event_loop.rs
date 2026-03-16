@@ -391,7 +391,7 @@ where
                             }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::CooperativeXmrRedeemRequested { swap_id, channel, peer }) => {
-                            self.handle_cooperative_redeem_request(swap_id, channel, peer).await
+                            let _ = self.handle_cooperative_redeem_request(swap_id, channel, peer).await
                                 .inspect_err(|err| tracing::error!(error=?err, "Could not process cooperative redeem request, ignoring"));
                         }
                         SwarmEvent::Behaviour(OutEvent::Rendezvous(swap_p2p::protocols::rendezvous::register::Event::Registered { peer_id })) => {

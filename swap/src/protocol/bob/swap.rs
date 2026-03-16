@@ -13,7 +13,7 @@ use crate::protocol::bob::common::{
 };
 use crate::protocol::bob::*;
 use crate::protocol::{bob, Database};
-use anyhow::{Context as AnyContext, Result, anyhow};
+use anyhow::{Context as AnyContext, Result};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{
@@ -941,7 +941,7 @@ async fn next_state(
 
                                 Ok(next_state)
                             }
-                            ExpiredTimelocks::WaitingForRemainingRefund { blocks_left } =>
+                            ExpiredTimelocks::WaitingForRemainingRefund { .. } =>
                                 Ok(BobState::WaitingForReclaimTimelockExpiration(state)),
                             // Weird edge case: PartialRefund has been published without our knowledge
                             ExpiredTimelocks::RemainingRefund => 
@@ -1351,24 +1351,34 @@ async fn next_state(
             }
         }
         BobState::ReclaimTimelockExpired(state) => {
-            // TODO: We should retry this and the check
-            // First check if TxWithhold was seen (we may have missed it while offline)
-            let tx_withhold = state.construct_tx_withhold()?;
-            let tx_withhold_status = bitcoin_wallet.status_of_script(&tx_withhold).await?;
+            retry("Reclaim anti-spam deposit", || {
+                let state = state.clone();
+                let bitcoin_wallet = bitcoin_wallet.clone();
 
-            if tx_withhold_status.has_been_seen() {
-                tracing::info!("TxWithhold was already published, transitioning to BtcWithholdPublished");
-                return Ok(BobState::BtcWithholdPublished(state));
-            }
+                async move {
+                    // First check if TxWithhold was seen (we may have missed it while offline)
+                    let tx_withhold = state.construct_tx_withhold()
+                        .map_err(backoff::Error::transient)?;
+                    let tx_withhold_status = bitcoin_wallet.status_of_script(&tx_withhold).await.map_err(backoff::Error::transient)?;
 
-            // TxWithhold not published, we can publish TxReclaim
-            // Alice always sends the amnesty signature in swap setup
-            let transaction = state.signed_amnesty_transaction()
-                .context("Couldn't construct Bitcoin amnesty transaction")?;
-            bitcoin_wallet.ensure_broadcasted(transaction, "amnesty")
-                .await
-                .context("Couldn't ensure broadcast of Bitcoin amnesty transaction")?;
-            BobState::BtcReclaimPublished(state)
+                    if tx_withhold_status.has_been_seen() {
+                        tracing::info!("TxWithhold was already published, transitioning to BtcWithholdPublished");
+                        return Ok(BobState::BtcWithholdPublished(state));
+                    }
+
+                    // TxWithhold not published, we can publish TxReclaim
+                    // Alice always sends the amnesty signature in swap setup
+                    let transaction = state.signed_amnesty_transaction()
+                        .context("Couldn't construct Bitcoin amnesty transaction")
+                        .map_err(backoff::Error::transient)?;
+                    bitcoin_wallet.ensure_broadcasted(transaction, "amnesty")
+                        .await
+                        .context("Couldn't ensure broadcast of Bitcoin amnesty transaction")
+                        .map_err(backoff::Error::transient)?;
+
+                    Ok(BobState::BtcReclaimPublished(state))
+                }
+            }, None, None).await?
         }
         BobState::BtcWithholdPublished(state) => {
             // Wait for TxWithhold confirmation
