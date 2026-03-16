@@ -29,7 +29,7 @@ const FiatPricePreferenceSlide = ({
       imagePath={imagePath}
     >
       <Typography variant="subtitle1" color="textSecondary">
-        Do you want to show fiat prices?
+        Do you want to us to show the current exchange rates for Bitcoin and Monero?
       </Typography>
       <CardSelectionGroup
         value={showFiat ? "show" : "hide"}
@@ -43,16 +43,24 @@ const FiatPricePreferenceSlide = ({
             paragraph
             style={{ marginBottom: 4 }}
           >
-            We connect to CoinGecko to provide realtime currency prices.
+            Recommended
           </Typography>
         </CardSelectionOption>
         <CardSelectionOption value="hide">
           <Typography>Don't show fiat prices</Typography>
+          <Typography
+            variant="caption"
+            color="textSecondary"
+            paragraph
+            style={{ marginBottom: 4 }}
+          >
+            We won't be able to warn you about bad exchange rates.
+          </Typography>
         </CardSelectionOption>
       </CardSelectionGroup>
       <Box style={{ marginTop: "0.5rem" }}>
         <Typography variant="caption" color="textSecondary">
-          You can change your preference later in the settings
+          You can always change your preference in the settings.
         </Typography>
       </Box>
     </SlideTemplate>

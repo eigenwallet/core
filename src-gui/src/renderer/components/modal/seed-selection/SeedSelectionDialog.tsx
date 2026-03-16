@@ -20,7 +20,7 @@ import {
   CardContent,
 } from "@mui/material";
 import NewPasswordInput from "renderer/components/other/NewPasswordInput";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePendingSeedSelectionApproval } from "store/hooks";
 import { resolveApproval, checkSeed } from "renderer/rpc";
 import { SeedChoice } from "models/tauriModel";
@@ -74,7 +74,7 @@ export default function SeedSelectionDialog() {
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
   const [blockheightInput, setBlockheightInput] = useState<string>("");
-  const [isSeedValid, setIsSeedValid] = useState<boolean>(false);
+  const [asyncSeedValidation, setAsyncSeedValidation] = useState<boolean>(false);
   const [password, setPassword] = useState<string>("");
   const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
   const [walletPath, setWalletPath] = useState<string>("");
@@ -87,26 +87,29 @@ export default function SeedSelectionDialog() {
       ? approval.request.content.recent_wallets
       : [];
 
-  useEffect(() => {
-    if (selectedOption === "FromSeed" && customSeed.trim()) {
-      checkSeed(customSeed.trim())
-        .then((valid) => {
-          setIsSeedValid(valid);
-        })
-        .catch(() => {
-          setIsSeedValid(false);
-        });
-    } else {
-      setIsSeedValid(false);
-    }
-  }, [customSeed, selectedOption]);
+  // Only run async validation when in "FromSeed" mode with content
+  const needsSeedValidation = selectedOption === "FromSeed" && customSeed.trim();
 
-  // Auto-select the first recent wallet if available
   useEffect(() => {
-    if (recentWallets.length > 0) {
+    if (!needsSeedValidation) return;
+
+    checkSeed(customSeed.trim())
+      .then(setAsyncSeedValidation)
+      .catch(() => setAsyncSeedValidation(false));
+  }, [customSeed, needsSeedValidation]);
+
+  // isSeedValid is derived: only true if we need validation AND async check passed
+  const isSeedValid = needsSeedValidation && asyncSeedValidation;
+
+  // Auto-select the first recent wallet if available (one-time initialization)
+  const hasInitializedRef = useRef(false);
+  useEffect(() => {
+    if (recentWallets.length > 0 && !hasInitializedRef.current) {
+      hasInitializedRef.current = true;
       setSelectedOption("FromWalletPath");
       setWalletPath(recentWallets[0]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only init once when wallets available
   }, [recentWallets.length]);
 
   const selectWalletFile = async () => {

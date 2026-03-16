@@ -13,7 +13,8 @@ export default function Slide05_KeepAnEyeOnYourSwaps(props: IntroSlideProps) {
       imagePath={imagePath}
     >
       <Typography>
-        Monitor active swaps to ensure everything proceeds smoothly.
+        Sometimes a swap needs to be refunded.
+        Just have the app open at any point during the refund period.
       </Typography>
       <Typography>
         <ExternalLink href="https://docs.unstoppableswap.net/usage/first_swap">

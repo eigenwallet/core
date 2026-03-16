@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Protocol: Reduce cancel timelock to 24 blocks (4 hours).
+  Swaps can now be refunded after 4 hours, instead of the previous 12 hours.
+  This also means the refund window ends after `4 + 24 = 28` hours instead of the previous `12 + 24 = 36` hours.
+  The punish timelock, which determines the length of the refund window, remains at 72 blocks (24 hours).
+
+- Protocol: Add possibility for maker to require an "anti-spam deposit".
+  The deposit is a part of the Bitcoin refund which the maker may withhold during a 30 minute timeframe.
+  The deposit can still be released after the fact, by granting mercy.
+  Both parties will refuse an anti-spam deposit that makes up more than 20% of the swap's Bitcoin.
+
+- GUI: Add a reputation chip for each offer showing the number of successful, refunded and bad swaps.
+  Bad swaps are swaps during which the maker has behaved in a way that hurt the taker, like: punishing the taker or withholding the anti-spam deposit.
+  This can be remedied by cooperative redeem / granting mercy respectively.
+
+- GUI: Add a chip for each offer showing the guaranteed refund percentage and the required anti-spam deposit percentage.
+  Colorcoded on a gradient with 100% refund being green and 90% being yellow.
+
+- ASB + CONTROLLER: Add `set-withhold-deposit <swap-id> <true / false>` and `grant-mercy <swap-id>` commands.
+  `set-withhold-deposit` must be called before the maker reaches `XmrRefunded` to be effective.
+  `TxWithhold` will be published after the asb refunded the Monero.
+  `grant-mercy` can only be called once the maker has entered `BtcWithheld`.
+
+- ASB: New config option `maker.refund_policy.anti_spam_deposit_ratio`.
+  It sets the ratio of the Bitcoin lock that will go into the deposit in case of a refund.
+  Set it to `0.02` for an anti-spam deposit of 2%.
+  Set it to `0.00` to offer full refunds (0% anti-spam deposit).
+  Defaults to `0.00`.
+  ```toml
+  [maker.refund_policy]
+  anti_spam_deposit_ratio = 0.02
+  ```
+
 ## [3.7.0] - 2026-03-05
 
 - ASB + CONTROLLER: Add `withdraw-btc` and `refresh-bitcoin-wallet` JSON-RPC commands. `withdraw-btc` allows withdrawing BTC from the internal Bitcoin wallet to a specified address. The amount parameter on the wire protocol is in satoshis (`Option<u64>`, `null` to sweep the entire balance). The `asb-controller` accepts human-friendly amounts (e.g. `0.1 BTC`, `10000 sat`). `refresh-bitcoin-wallet` syncs the internal Bitcoin wallet with the blockchain.

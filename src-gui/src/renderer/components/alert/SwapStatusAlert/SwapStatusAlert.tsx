@@ -102,7 +102,7 @@ function BitcoinLockedNoTimelockExpiredStateAlert({
           />
           , it will be refunded
         </>,
-        "For that, you need to have the app open sometime within the refund period",
+        "For that, you need to have the app open at any point during the refund period",
         <>
           After that, cooperation from the other party would be required to
           recover the funds
@@ -162,6 +162,78 @@ function PunishTimelockExpiredAlert() {
 }
 
 /**
+ * Sub-component for alerts when waiting for remaining refund timelock.
+ * This occurs after a partial refund was confirmed but we're waiting for the amnesty timelock.
+ */
+function WaitingForRemainingRefundTimelockAlert({
+  blocksLeft,
+}: {
+  blocksLeft: number;
+}) {
+  return (
+    <MessageList
+      messages={[
+        "Your Bitcoin was partially refunded",
+        <>
+          Waiting{" "}
+          <HumanizedBitcoinBlockDuration blocks={blocksLeft} displayBlocks />{" "}
+          for the timelock on the anti-spam timelock to expire
+        </>,
+        "The maker can withhold the Bitcoin anti-spam deposit before the timelock expires",
+        "We will refund the Bitcoin anti-spam deposit once the timelock expires",
+        "Keep the app running or resume the swap once the timelock expires",
+      ]}
+    />
+  );
+}
+
+/**
+ * Sub-component for alerts when remaining refund timelock has expired.
+ * The amnesty transaction can now be published.
+ */
+function RemainingRefundTimelockExpiredAlert() {
+  return (
+    <MessageList
+      messages={[
+        "Your Bitcoin was partially refunded",
+        "The anti-spam deposit timelock has expired",
+        "Resume the swap to claim the remaining Bitcoin",
+      ]}
+    />
+  );
+}
+
+/**
+ * Sub-component for alerts when the maker has withheld the amnesty output.
+ */
+function BtcWithholdPublishedAlert() {
+  return (
+    <MessageList
+      messages={[
+        "The Bitcoin was partially refunded, but the anti-spam deposit was withheld by the maker",
+        "Waiting for the maker to grant mercy",
+        "Resume the swap for instructions on how to proceed",
+      ]}
+    />
+  );
+}
+
+/**
+ * Sub-component for alerts when the maker has published the mercy transaction.
+ */
+function BtcMercyPublishedAlert() {
+  return (
+    <MessageList
+      messages={[
+        "The maker released the Bitcoin anti-spam deposit they previously withheld",
+        "This will refund the remaining Bitcoin",
+        "Waiting for the mercy transaction to be confirmed",
+      ]}
+    />
+  );
+}
+
+/**
  * Main component for displaying the appropriate swap alert status text.
  * @param swap - The swap information.
  * @returns JSX.Element | null
@@ -175,6 +247,10 @@ export function StateAlert({
   timelock: ExpiredTimelocks | null;
   isRunning: boolean;
 }) {
+  if (swap == null) {
+    return null;
+  }
+
   switch (swap.state_name) {
     // This is the state where the swap is safe because the other party has redeemed the Bitcoin
     // It cannot be punished anymore
@@ -189,9 +265,14 @@ export function StateAlert({
     case BobStateName.XmrLocked:
     case BobStateName.EncSigSent:
     case BobStateName.CancelTimelockExpired:
+    // Even if the refund transactions have been published, it cannot be
+    // guaranteed that they will be confirmed in time
+    // falls through
+    case BobStateName.BtcCancelPublished:
     case BobStateName.BtcCancelled:
-    case BobStateName.BtcRefundPublished: // Even if the transactions have been published, it cannot be
-    case BobStateName.BtcEarlyRefundPublished: // guaranteed that they will be confirmed in time
+    case BobStateName.BtcRefundPublished:
+    case BobStateName.BtcPartialRefundPublished:
+    case BobStateName.BtcEarlyRefundPublished:
       if (timelock != null) {
         switch (timelock.type) {
           case "None":
@@ -209,16 +290,54 @@ export function StateAlert({
             );
           case "Punish":
             return <PunishTimelockExpiredAlert />;
+          // These two timelock types only exist once the partial refund tx has been confirmed
+          // They shouldn't occur for these states, so return null
+          case "WaitingForRemainingRefund":
+          case "RemainingRefund":
+            return null;
           default:
             exhaustiveGuard(timelock);
         }
       }
       return <PunishTimelockExpiredAlert />;
 
+    case BobStateName.BtcPartiallyRefunded:
+      // Reuse existing timelock alerts for the amnesty waiting period
+      if (timelock != null) {
+        switch (timelock.type) {
+          case "WaitingForRemainingRefund":
+            return (
+              <WaitingForRemainingRefundTimelockAlert
+                blocksLeft={timelock.content.blocks_left}
+              />
+            );
+          case "RemainingRefund":
+            return <RemainingRefundTimelockExpiredAlert />;
+          default:
+            return null;
+        }
+      }
+      return null;
+
+    case BobStateName.BtcWithholdPublished:
+      return <BtcWithholdPublishedAlert />;
+
+    case BobStateName.BtcMercyPublished:
+      return <BtcMercyPublishedAlert />;
+
+    case BobStateName.BtcAmnestyPublished:
+      // Amnesty tx published, waiting for confirmation - no specific alert needed
+      return null;
+
+    case BobStateName.WaitingForReclaimTimelockExpiration:
+    case BobStateName.ReclaimTimelockExpired:
+      return null;
+
     // If the Bitcoin lock transaction has not been published yet
     // there is no need to display an alert
     case BobStateName.BtcLockReadyToPublish:
       return null;
+
     default:
       exhaustiveGuard(swap.state_name);
   }
@@ -226,11 +345,11 @@ export function StateAlert({
 
 // How many blocks need to be left for the timelock to be considered unusual
 // A bit arbitrary but we don't want to alarm the user
-// 72 is the default cancel timelock in blocks
+// 24 is the default cancel timelock in blocks (~4 hours)
 // 4 blocks are around 40 minutes
 // If the swap has taken longer than 40 minutes, we consider it unusual
 // See: swap-env/src/env.rs
-const UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD = 72 - 4;
+const UNUSUAL_AMOUNT_OF_TIME_HAS_PASSED_THRESHOLD = 24 - 4;
 
 /**
  * Main component for displaying the swap status alert.
@@ -270,7 +389,7 @@ export default function SwapStatusAlert({
 
   return (
     <Alert
-      key={swap.swap_id}
+      key={swapId}
       severity="warning"
       variant="filled"
       classes={{ message: "alert-message-flex-grow" }}
@@ -291,8 +410,9 @@ export default function SwapStatusAlert({
           <>
             Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
           </>
-        )}
-      </AlertTitle>
+        )
+        }
+      </AlertTitle >
       <Box
         sx={{
           display: "flex",
@@ -303,6 +423,6 @@ export default function SwapStatusAlert({
         <StateAlert swap={swap} timelock={timelock} isRunning={isRunning} />
         {timelock && <TimelockTimeline swap={swap} timelock={timelock} />}
       </Box>
-    </Alert>
+    </Alert >
   );
 }

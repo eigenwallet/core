@@ -7,13 +7,12 @@ export default function Slide01_GettingStarted(props: IntroSlideProps) {
   return (
     <SlideTemplate title="Getting Started" {...props} imagePath={imagePath}>
       <Typography variant="subtitle1">
-        To start swapping, you'll need:
-      </Typography>
-      <Typography>
-        <ul>
-          <li>A Bitcoin wallet with funds to swap</li>
-          <li>A Monero wallet to receive your Monero</li>
-        </ul>
+        eigenwallet can not only be used to store Bitcoin and Monero funds.
+        <br />
+        It can also be used to trade your Bitcoin for Monero.
+        <br />
+        <br />
+        All you need is some Bitcoin.
       </Typography>
     </SlideTemplate>
   );

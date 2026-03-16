@@ -1,0 +1,129 @@
+import { Steps, Table, Callout, Cards } from 'nextra/components'
+
+# How to make your first swap
+
+In this guide, we'll walk you through the process of making your first atomic swap using eigenwallet.
+The process is quite intuitive and happens fully automatically.
+Nevertheless, there are some nuances to be aware of, so we'll cover everything you need to know to get started.
+
+## Prerequisites
+
+To complete an atomic swap, you'll need to have the following:
+
+1. eigenwallet installed on your computer ([installation instructions](../getting_started/install_instructions)).
+2. Some Bitcoin funds which will be swapped for Monero. Usually at least `0.0003` BTC (around $30).
+
+## Performing the swap
+
+<Steps>
+
+### Check out the offers
+
+On the 'Swap' page, click on the 'Click to view offers' button.
+
+You can see a list of offers and your current Bitcoin balance.
+Each offer is from a different "market maker".
+The offers differ in terms of:
+
+ - minimum and maximum swap amount
+ - exchange rate / markup
+ - anti-spam deposit
+
+A maker charging a 3% markup means their exchange rate (BTC/XMR) is 3% above the exchange rate on centralized exchanges.
+This is the fee the maker charges for their service.
+A lower markup is better. It means you'll get more Monero for your Bitcoin.
+
+An _anti-spam deposit_ of 2% means you are guaranteed a 98% refund.
+On the rare occasion that the maker thinks you are spamming them, they may withhold it.
+Usually they do not, and you get a full refund.
+
+<Cards num={1}>
+  <Cards.Card arrow title="FAQ: anti-spam deposit" href="/faq/anti_spam_deposit">
+  </Cards.Card>
+</Cards>
+
+<Callout>
+  Hover over Bitcoin amounts to see the value in USD.
+</Callout>
+
+<Callout type="info">
+If you can't see the USD amounts or the markup, go to the settings and enable 'Query fiat prices'.
+You can also change the fiat currency.
+</Callout>
+
+![image](/first_swap_offers.png)
+
+### Deposit your Bitcoin
+
+_You can skip this step if you already have some Bitcoin in eigenwallet._
+
+Send the Bitcoin funds you want to swap to eigenwallet's internal Bitcoin wallet.
+The wallet is self-custody: noone but you has the seedphrase.
+
+The deposit address is displayed at the top of the page.
+Alternatively, click the button to the right in order to display a QR code.
+
+<Callout>
+  The exchange rate is usually better for higher amounts, starting from around `0.003` BTC or $300. 
+</Callout>
+
+<Callout type="info">
+  The app will swap all available Bitcoin, so only deposit as much as you want to swap.
+</Callout>
+
+### Choose an offer
+
+Now that you have enough Bitcoin you can select from the available offers.
+Click 'Select' on the offer that best suits your needs.
+
+<Callout type="info">
+  Grayed out offers require more Bitcoin than you currently have deposited. You need to deposit more Bitcoin in order to select them.
+</Callout>
+
+### Confirm the swap
+
+You now have a few minutes to confirm the swap.
+You can see the final conditions of the swap:
+
+ - Bitcoin amount you'll send
+ - Monero amount you'll receive
+ - the final exchange rate
+ - Bitcoin network fees (Monero's are negligible)
+ - anti-spam lock ratio
+
+![image](/first_swap_confirmation.png)
+
+### Waiting for the swap to complete
+
+After sending the Bitcoin, you'll need to wait a moment for the Bitcoin to be locked.
+After the lock transaction has been confirmed, the other party will lock the Monero funds.
+In most cases, it will take around 10 minutes for the Bitcoin lock transaction to be confirmed and 2 minutes later the Monero lock transaction will be confirmed.
+
+
+![image](/first_swap_4.png)
+
+The swap will go through four stages:
+
+1. **Locking the Bitcoin**:
+Your Bitcoin is locked in a 2-of-2 multisig address.
+
+2. **Maker locks the Monero**:
+The other party locks their Monero as well.
+
+3. **Maker redeems _Bitcoin_**:
+The other party redeems the Bitcoin.
+
+4. **Redeeming the Monero**:
+You redeem the Monero using a key that was revealed in step 3.
+
+<Table>
+  <tbody>
+    <Table.Tr>
+      <Table.Td>![imgage](/first_swap_5.png)</Table.Td>
+      <Table.Td>![image](/first_swap_6.png)</Table.Td>
+      <Table.Td>![image](/first_swap_7.png)</Table.Td>
+    </Table.Tr>
+  </tbody>
+</Table>
+
+</Steps>
