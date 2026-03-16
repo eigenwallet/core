@@ -2,7 +2,7 @@
 name = "swap-feed"
 version = "4.0.0"
 authors = ["The COMIT guys <hello@comit.network>"]
-edition = "2021"
+edition = "2024"
 description = "Price feed functionality for XMR/BTC atomic swaps"
 
 [lib]

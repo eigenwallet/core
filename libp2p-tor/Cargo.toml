@@ -2,7 +2,7 @@
 name = "libp2p-tor"
 version = "0.5.0"
 authors = ["umgefahren <hannes@umgefahren.xyz>"]
-edition = "2021"
+edition = "2024"
 license = "MIT"
 repository = "https://github.com/umgefahren/libp2p-tor"
 resolver = "2"

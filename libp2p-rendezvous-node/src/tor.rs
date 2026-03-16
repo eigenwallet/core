@@ -15,7 +15,8 @@ pub async fn create_tor_client(data_dir: &Path) -> Result<Arc<TorClient<TokioRus
 
     // Workaround for when the machine is running in a managed work-environment.
     // Arti will otherwise fail if the home directory is writable by another group.
-    std::env::set_var("ARTI_FS_DISABLE_PERMISSION_CHECKS", "1");
+    // SAFETY: Called early in startup before any threads are spawned.
+    unsafe { std::env::set_var("ARTI_FS_DISABLE_PERMISSION_CHECKS", "1") };
 
     // Workaround for https://gitlab.torproject.org/tpo/core/arti/-/issues/2224
     // We delete guards.json (if it exists) on startup to prevent an issue where arti will not find any guards to connect to

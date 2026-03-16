@@ -2,7 +2,7 @@
 name = "tracing-ext"
 version = "0.1.0"
 authors = ["The COMIT guys <hello@comit.network>"]
-edition = "2021"
+edition = "2024"
 description = "Additional test utils for tracing"
 
 [dependencies]
