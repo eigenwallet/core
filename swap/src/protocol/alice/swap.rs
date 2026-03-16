@@ -9,7 +9,7 @@ use crate::monero;
 use crate::monero::TransferProof;
 use crate::protocol::alice::{AliceState, Swap, TipConfig};
 use ::bitcoin::consensus::encode::serialize_hex;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use rust_decimal::Decimal;
 use swap_core::bitcoin::ExpiredTimelocks;
@@ -450,7 +450,10 @@ where
                 // If we cannot sign the transaction there must be something wrong
                 // We just wait for the cancel timelock to expire and then refund
                 Err(error) => {
-                    tracing::error!("Failed to construct redeem transaction: {:#}, we will wait for the cancel timelock expiration to refund", error);
+                    tracing::error!(
+                        "Failed to construct redeem transaction: {:#}, we will wait for the cancel timelock expiration to refund",
+                        error
+                    );
 
                     return Ok(AliceState::WaitingForCancelTimelockExpiration {
                         monero_wallet_restore_blockheight,
@@ -541,7 +544,10 @@ where
             match subscription.wait_until_final().await {
                 Ok(_) => AliceState::BtcRedeemed,
                 Err(e) => {
-                    bail!("The Bitcoin redeem transaction was seen in mempool, but waiting for finality timed out with {}. Manual investigation might be needed to ensure that the transaction was included.", e)
+                    bail!(
+                        "The Bitcoin redeem transaction was seen in mempool, but waiting for finality timed out with {}. Manual investigation might be needed to ensure that the transaction was included.",
+                        e
+                    )
                 }
             }
         }
@@ -699,17 +705,12 @@ where
             spend_key,
             state3,
             monero_wallet_restore_blockheight,
-        } => {
-            // Bob has the pre-signed TxReclaim from swap setup and can
-            // publish it himself after the remaining refund timelock expires.
-            // TODO: implement system for publishing TxWithhold at this point
-            AliceState::XmrRefundable {
-                monero_wallet_restore_blockheight,
-                transfer_proof,
-                spend_key,
-                state3,
-            }
-        }
+        } => AliceState::XmrRefundable {
+            monero_wallet_restore_blockheight,
+            transfer_proof,
+            spend_key,
+            state3,
+        },
         AliceState::XmrRefundable {
             monero_wallet_restore_blockheight: _,
             transfer_proof,
@@ -775,7 +776,7 @@ where
             .expect("We should never run out of retries while publishing the punish transaction")
         }
         AliceState::XmrRefunded { state3 } => {
-            // Only publish TxWithhold
+            // Only publish TxWithhold for swaps which have an anti-spam deposit.
             let Some(mut state3) = state3 else {
                 tracing::info!(
                     "Running a pre-partial refund swap, there is no amnesty output to burn"
@@ -783,19 +784,20 @@ where
                 return Ok(AliceState::XmrRefunded { state3: None });
             };
 
-            // Fetch the burn decision, if it was made via the controller
+            // Fetch the burn decision again, incase it was udpated via the controller
             if let Some(burn_decision) = event_loop_handle.get_burn_on_refund_instruction().await {
                 state3.should_publish_tx_withhold = Some(burn_decision);
             }
 
+            // Skip publishing TxWithhold unless we were specifically instructed
             if !state3.should_publish_tx_withhold.unwrap_or(false) {
-                tracing::info!("Not instructed to partially burn the takers refund. Finishing");
+                tracing::info!("Not instructed to withhold the anti-spam deposit. Finishing");
                 return Ok(AliceState::XmrRefunded {
                     state3: Some(state3),
                 });
             }
 
-            let signed_tx = state3.signed_withhold_transaction().context("Can't withhold the amnesty output after Bob refunded because we couldn't construct the transaction")?;
+            let signed_tx = state3.signed_withhold_transaction().context("Can't withhold the anti-spam deposit after Bob refunded because we couldn't construct the transaction")?;
 
             bitcoin_wallet
                 .ensure_broadcasted(signed_tx, "withhold")
@@ -843,9 +845,7 @@ where
                 .tx_mercy()
                 .context("Couldn't construct TxMercy even though we have published it")?;
 
-            let subscription = bitcoin_wallet
-                .subscribe_to(Box::new(tx_mercy))
-                .await;
+            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
 
             subscription
                 .wait_until_final()
@@ -1034,7 +1034,10 @@ mod tests {
         // Tip = 10 XMR * 0.01 = 0.1 XMR = 100_000_000_000 pico >> 30_000_000 threshold
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].1, lock_amount);
-        assert_eq!(result[1].1, monero_oxide_ext::Amount::from_pico(100_000_000_000));
+        assert_eq!(
+            result[1].1,
+            monero_oxide_ext::Amount::from_pico(100_000_000_000)
+        );
     }
 
     #[test]
@@ -1082,6 +1085,9 @@ mod tests {
         // Tip = 1 XMR * 0.005 = 0.005 XMR = 5_000_000_000 pico >> 30_000_000 threshold
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].1, lock_amount);
-        assert_eq!(result[1].1, monero_oxide_ext::Amount::from_pico(5_000_000_000));
+        assert_eq!(
+            result[1].1,
+            monero_oxide_ext::Amount::from_pico(5_000_000_000)
+        );
     }
 }
