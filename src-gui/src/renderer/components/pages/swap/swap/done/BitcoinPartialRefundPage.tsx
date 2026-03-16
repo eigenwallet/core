@@ -12,13 +12,15 @@
  *       -> optionally BtcMercyPublished -> BtcMercyConfirmed (Alice grants mercy)
  */
 
-import { Alert, Box, Button, DialogContentText, Typography } from "@mui/material";
+import { Alert, Box, Button, DialogContentText, Link, Typography } from "@mui/material";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
-import { useActiveSwapInfo } from "store/hooks";
+import { useActiveSwapInfo, useAppSelector } from "store/hooks";
 import FeedbackInfoBox from "renderer/components/pages/help/FeedbackInfoBox";
 import BitcoinTransactionInfoBox from "renderer/components/pages/swap/swap/components/BitcoinTransactionInfoBox";
 import DiscordIcon from "renderer/components/icons/DiscordIcon";
 import MatrixIcon from "renderer/components/icons/MatrixIcon";
+import { Book } from "@mui/icons-material";
+import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 
 export function BitcoinPartialRefundPublished({
   btc_partial_refund_txid,
@@ -103,16 +105,16 @@ function PartialRefundPage({
 
   return (
     <>
-      <Alert severity="info" sx={{ mb: 2 }}>
-        <Typography variant="body2">
-          <strong>Patience:</strong> We are refunding the guaranteed <strong>{guaranteedPercent}%</strong> of the Bitcoin refund.
-          It is <strong>not guaranteed</strong> that we can refund the anti-spam deposit, which makes up the remaining <strong>{atRiskPercent}%</strong>.
-          The maker has a short timeframe to withhold the deposit, after that we can refund it.
-        </Typography>
-      </Alert>
+      <DialogContentText>
+        We are first taking the guaranteed <strong>{guaranteedPercent}%</strong> Bitcoin refund.
+        After a short timelock we will be able to reclaim the anti-spam deposit (the remaining {atRiskPercent}%).
+        The maker may in rare circumstances withhold the deposit.
+        <br />
+        <Link href={"https://docs.eigenwallet.org/advanced/anti_spam_deposit"} target="_blank">Read more</Link>
+      </DialogContentText>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <BitcoinTransactionInfoBox
-          title="Partial Refund Transaction"
+          title={`Partial Refund Transaction (${guaranteedPercent}% of the Bitcoin)`}
           txId={txid}
           loading={!confirmed}
           additionalContent={additionalContent}
@@ -215,6 +217,32 @@ export function BitcoinWithheld({
   );
 }
 
+function ContactIdentifierBox({
+  label,
+  helperText,
+  value,
+}: {
+  label: string;
+  helperText: string;
+  value: string;
+}) {
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        {label}
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        {helperText}
+      </Typography>
+      <ActionableMonospaceTextBox
+        content={value}
+        displayCopyIcon={true}
+        enableQrCode={false}
+      />
+    </Box>
+  );
+}
+
 function WithholdPage({
   txid,
   confirmed,
@@ -226,37 +254,40 @@ function WithholdPage({
   btcLockAmount: number;
   btcAmnestyAmount: number;
 }) {
+  const swapInfo = useActiveSwapInfo();
+  const isMock = useAppSelector((s) => s.swap._mockOnlyDisableTauriCallsOnSwapProgress);
+  const swapId = swapInfo?.swap_id ?? (isMock ? "a1b2c3d4-e5f6-7890-abcd-ef1234567890" : null);
+  const peerId = swapInfo?.seller.peer_id ?? (isMock ? "12D3KooWF1rGmFnqJhNrHhEMPVbMM3eRnuf3XPG3JcvedAMdSHkj" : null);
   const atRiskPercent = Math.round((btcAmnestyAmount / btcLockAmount) * 100);
-
-  const mainMessage = "The market maker is withholding the anti-spam deposit."
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <DialogContentText>{mainMessage}</DialogContentText>
-      <Alert severity="error">
-        <Typography variant="body2">
-          <strong>Anti-spam deposit withheld:</strong> The maker has choosen to withhold the anti-spam deposit, which makes up the remaining <strong>{atRiskPercent}%</strong> of your Bitcoin refund.
-        </Typography>
-      </Alert>
-      <Alert severity="info">
-        <Typography variant="body2" gutterBottom>
-          <strong>Why did this happen?</strong> Aborting a swap incurs significant costs on makers.
-          To prevent spam attacks, some makers require an "anti-spam deposit",
-          which they can choose to withhold if the swap is aborted.
-        </Typography>
-        <Typography variant="body2">
-          Makers do not have access to the withheld deposit.
-          The maker you are swapping with has exercised their option to withhold because they think you are spamming them.
-        </Typography>
-      </Alert>
-      <Alert severity="info">
-        <Typography variant="body2">
-          <strong>You can contact the maker:</strong> If you think this was a mistake, you can contact the maker through our official
-          community channels.
-          The maker can still release the anti-spam deposit.
-        </Typography>
-        <br />
+      <DialogContentText>
+        <p>
+          The maker is withholding the anti-spam deposit (remaining {atRiskPercent}% of the Bitcoin)
+          because they think you are spamming them.
+        </p>
+        <p>
+          They can still release the deposit if you convince them otherwise.
+          Share the swap ID below when you contact them.
+          The maker Peer ID helps confirm you are speaking to the correct market maker.
+        </p>
+        <p>
+          You can reach out to them on our community servers.
+        </p>
+        <p>
+          <i>Beware scammers.
+            Never reveal your private key or seedphrase to anyone.</i>
+        </p>
         <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Book />}
+            href="https://docs.eigenwallet.org/advanced/anti_spam_deposit"
+            target="_blank"
+          >
+            Docs + FAQ
+          </Button>
           <Button
             variant="outlined"
             startIcon={<MatrixIcon />}
@@ -274,7 +305,7 @@ function WithholdPage({
             Discord
           </Button>
         </Box>
-      </Alert>
+      </DialogContentText>
       <BitcoinTransactionInfoBox
         title="Withhold Transaction"
         txId={txid}
@@ -283,6 +314,24 @@ function WithholdPage({
           !confirmed ? "Waiting for transaction to be confirmed..." : null
         }
       />
+      {(swapId != null || peerId != null) && (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {swapId != null && (
+            <ContactIdentifierBox
+              label="Swap ID"
+              helperText="So the maker can find your swap."
+              value={swapId}
+            />
+          )}
+          {peerId != null && (
+            <ContactIdentifierBox
+              label="Maker Peer ID"
+              helperText="The maker you are swapping with."
+              value={peerId}
+            />
+          )}
+        </Box>
+      )}
     </Box >
   );
 }

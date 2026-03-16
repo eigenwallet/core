@@ -5,7 +5,7 @@ import {
   TauriSwapProgressEventContent,
 } from "models/tauriModelExt";
 import { SatsAmount, PiconeroAmount } from "renderer/components/other/Units";
-import { Box, Typography, Paper, Divider, Theme } from "@mui/material";
+import { Box, Typography, Paper, Divider, Theme, Link } from "@mui/material";
 import { useActiveSwapId, usePendingLockBitcoinApproval, useAppSelector } from "store/hooks";
 import { getMarkup, satsToBtc, piconerosToXmr } from "utils/conversionUtils";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
@@ -205,6 +205,13 @@ export default function SwapSetupInflightPage({
               >
                 └ Maker may freeze as an anti-spam measure in rare circumstances
               </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 0.5 }}
+              >
+                └ <Link href={"https://docs.eigenwallet.org/advanced/anti_spam_deposit"} target="_blank">Read more</Link>
+              </Typography>
             </Box>
           </Box>
         ) : (
@@ -221,8 +228,9 @@ export default function SwapSetupInflightPage({
               Full refund if swap fails (guaranteed)
             </Typography>
           </Box>
-        )}
-      </Paper>
+        )
+        }
+      </Paper >
 
       <Box
         sx={{
@@ -269,7 +277,7 @@ export default function SwapSetupInflightPage({
           {`Offer expires in ${timeLeft}s`}
         </Typography>
       </Box>
-    </Box>
+    </Box >
   );
 }
 
