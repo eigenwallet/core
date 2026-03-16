@@ -144,7 +144,7 @@ export default function MakerOfferItem({
             size="small"
           />
         </Tooltip>
-        {EarnestDepositChip(quote)}
+        {AntiSpamDepositChip(quote)}
         {ReputationChip(peer_id)}
         <VersionChip version={version} />
       </Box>
@@ -182,7 +182,7 @@ export default function MakerOfferItem({
   );
 }
 
-function EarnestDepositChip(quote: BidQuote) {
+function AntiSpamDepositChip(quote: BidQuote) {
   const full_refund: boolean = quote.refund_policy.type === "FullRefund" ? true : quote.refund_policy.content.anti_spam_deposit_ratio === 0;
   // Rounded to 0.001 precision
   const earnest_deposit_ratio = Math.round(
@@ -207,6 +207,11 @@ function EarnestDepositChip(quote: BidQuote) {
       label={text}
       size="small"
       variant="outlined"
+      clickable
+      component="a"
+      href="https://docs.eigenwallet.org/advanced/anti_spam_deposit"
+      target="_blank"
+      rel="noopener noreferrer"
       sx={(theme) => {
         const successMain = (theme.vars || theme).palette.success.main;
         const warningMain = (theme.vars || theme).palette.warning.main;
