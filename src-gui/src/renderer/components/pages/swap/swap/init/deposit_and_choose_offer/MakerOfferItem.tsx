@@ -248,7 +248,7 @@ function ReputationChip(peer_id: string) {
           <Box color="warning.main">{refundedSwaps} refunds</Box>
         </Tooltip>
         <Divider orientation="vertical" flexItem />
-        <Tooltip title={`The maker has acted uncooperatively in ${failedSwaps} swaps.`}>
+        <Tooltip title={`The maker has acted uncooperatively in ${failedSwaps} swaps. This means withholding the anti-spam deposit or punishing you.`}>
           <Box color="error.main">{failedSwaps} bad</Box>
         </Tooltip>
       </Box>
