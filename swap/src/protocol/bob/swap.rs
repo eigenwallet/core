@@ -1371,7 +1371,7 @@ async fn next_state(
                     let transaction = state.signed_amnesty_transaction()
                         .context("Couldn't construct Bitcoin amnesty transaction")
                         .map_err(backoff::Error::transient)?;
-                    bitcoin_wallet.ensure_broadcasted(transaction, "amnesty")
+                    bitcoin_wallet.ensure_broadcasted(transaction, "reclaim")
                         .await
                         .context("Couldn't ensure broadcast of Bitcoin amnesty transaction")
                         .map_err(backoff::Error::transient)?;
@@ -1391,11 +1391,24 @@ async fn next_state(
                     btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
                 },
             );
-            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
 
-            subscription.wait_until_final().await?;
-            tracing::info!("TxWithhold confirmed, amnesty output is burnt");
-            BobState::BtcWithheld(state)
+            retry("Wait for TxWithhold confirmation", || {
+                let state = state.clone();
+                let bitcoin_wallet = bitcoin_wallet.clone();
+
+                async move {
+                    let tx_withhold = state.construct_tx_withhold()
+                        .map_err(backoff::Error::transient)?;
+                    let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
+
+                    subscription.wait_until_final().await
+                        .context("Failed to wait for TxWithhold confirmation")
+                        .map_err(backoff::Error::transient)?;
+
+                    tracing::info!("TxWithhold confirmed, amnesty output is burnt");
+                    Ok(BobState::BtcWithheld(state))
+                }
+            }, None, None).await?
         }
         BobState::BtcWithheld(state) => {
             // Watch for Alice publishing TxMercy
