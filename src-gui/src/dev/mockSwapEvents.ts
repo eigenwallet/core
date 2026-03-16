@@ -1,6 +1,8 @@
 import {
   ApprovalRequest,
   BidQuote,
+  ExpiredTimelocks,
+  GetSwapInfoResponse,
   LockBitcoinDetails,
   MoneroAddressPool,
   QuoteWithAddress,
@@ -441,6 +443,59 @@ const PARTIAL_REFUND_SCENARIOS: MockScenario[] = [
 
 export function isPartialRefundScenario(scenario: MockScenario): boolean {
   return PARTIAL_REFUND_SCENARIOS.includes(scenario);
+}
+
+// --- Mock SwapStatusAlert data (3 zones) ---
+
+const MOCK_ALERT_SWAP_IDS = [
+  "mock-alert-0000-0000-0000-000000000001",
+  "mock-alert-0000-0000-0000-000000000002",
+  "mock-alert-0000-0000-0000-000000000003",
+] as const;
+
+const MOCK_SELLER = {
+  peer_id: "12D3KooWCdMKjesXMJz1SiZ7HgotrxuqhQJbP5sgBm2BwP1cqThi",
+  addresses: ["/ip4/127.0.0.1/tcp/9939"],
+};
+
+function makeMockSwapInfo(swapId: string, stateName: string): GetSwapInfoResponse {
+  return {
+    swap_id: swapId,
+    seller: MOCK_SELLER,
+    completed: false,
+    start_date: "2026-01-01 12:00:00.000000 +00:00:00",
+    state_name: stateName,
+    xmr_amount: 7.5,
+    btc_amount: 0.05,
+    tx_lock_id: MOCK_BTC_LOCK_TXID,
+    tx_cancel_fee: 1000,
+    tx_refund_fee: 1000,
+    tx_lock_fee: 1000,
+    btc_refund_address: MOCK_BTC_DEPOSIT_ADDRESS,
+    cancel_timelock: 24,
+    punish_timelock: 144,
+    monero_receive_pool: [{ address: MOCK_XMR_ADDRESS, percentage: 100, label: "Main" }],
+  };
+}
+
+const MOCK_ALERT_TIMELOCKS: [string, ExpiredTimelocks][] = [
+  [MOCK_ALERT_SWAP_IDS[0], { type: "None", content: { blocks_left: 20 } }],
+  [MOCK_ALERT_SWAP_IDS[1], { type: "Cancel", content: { blocks_left: 100 } }],
+  [MOCK_ALERT_SWAP_IDS[2], { type: "Punish" }],
+];
+
+export function getMockAlertData(): {
+  swapInfos: GetSwapInfoResponse[];
+  timelocks: [string, ExpiredTimelocks][];
+} {
+  return {
+    swapInfos: MOCK_ALERT_SWAP_IDS.map((id) => makeMockSwapInfo(id, "btc is locked")),
+    timelocks: MOCK_ALERT_TIMELOCKS,
+  };
+}
+
+export function getMockAlertCleanupData(): GetSwapInfoResponse[] {
+  return MOCK_ALERT_SWAP_IDS.map((id) => makeMockSwapInfo(id, "safely aborted"));
 }
 
 export function getMockLockBitcoinApproval(scenario: MockScenario | null): ApprovalRequest {

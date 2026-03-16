@@ -11,9 +11,9 @@ import {
 } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { scenarios, MockScenario, MOCK_SWAP_ID, getMockLockBitcoinApproval } from "dev/mockSwapEvents";
+import { scenarios, MockScenario, MOCK_SWAP_ID, getMockLockBitcoinApproval, getMockAlertData, getMockAlertCleanupData } from "dev/mockSwapEvents";
 import { useAppDispatch } from "store/hooks";
-import { approvalEventReceived } from "store/features/rpcSlice";
+import { approvalEventReceived, rpcSetSwapInfo, timelockChangeEventReceived } from "store/features/rpcSlice";
 import {
   swapProgressEventReceived,
   swapReset,
@@ -49,11 +49,17 @@ export default function MockSwapControls() {
       setIndex(0);
       dispatch(setMockOnlyDisableTauriCallsOnSwapProgress(true));
       dispatchMockState(firstScenario, 0);
+      // Inject mock SwapStatusAlert data (3 timelock zones)
+      const { swapInfos, timelocks } = getMockAlertData();
+      for (const info of swapInfos) dispatch(rpcSetSwapInfo(info));
+      for (const [swap_id, timelock] of timelocks) dispatch(timelockChangeEventReceived({ swap_id, timelock }));
     } else {
       setScenario(null);
       setIndex(0);
       dispatch(setMockOnlyDisableTauriCallsOnSwapProgress(false));
       dispatch(swapReset());
+      // Clean up mock alerts (mark as SafelyAborted so SwapStatusAlert hides them)
+      for (const info of getMockAlertCleanupData()) dispatch(rpcSetSwapInfo(info));
     }
   };
 
