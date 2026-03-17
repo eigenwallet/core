@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Fix bug where old swaps would not deserialize if they we refunded.
+
 ## [4.0.0] - 2026-03-16
 
 - Protocol: Reduce cancel timelock to 24 blocks (4 hours).
