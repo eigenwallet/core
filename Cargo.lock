@@ -10806,6 +10806,7 @@ version = "4.0.0"
 dependencies = [
  "bitcoin 0.32.8",
  "serde",
+ "serde_json",
  "strum 0.26.3",
  "swap-core",
  "swap-machine",

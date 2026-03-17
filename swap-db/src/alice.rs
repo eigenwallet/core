@@ -98,7 +98,7 @@ pub enum Alice {
     BtcMercyPublished {
         state3: alice::State3,
     },
-    Done(AliceEndState),
+    Done(#[serde(deserialize_with = "deserialize_end_state_compat")] AliceEndState),
 }
 
 #[derive(Clone, strum::Display, Debug, Deserialize, Serialize, PartialEq)]
@@ -122,6 +122,33 @@ pub enum AliceEndState {
     BtcMercyConfirmed {
         state3: alice::State3,
     },
+}
+
+/// Deserializes `AliceEndState` with backwards compatibility for pre-4.0.0 databases
+/// where `XmrRefunded` was a unit variant (`"XmrRefunded"`) instead of a struct variant
+/// (`{"XmrRefunded": {"state3": ...}}`).
+fn deserialize_end_state_compat<'de, D>(deserializer: D) -> Result<AliceEndState, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Compat {
+        Current(AliceEndState),
+        LegacyXmrRefunded(LegacyXmrRefunded),
+    }
+
+    #[derive(Deserialize)]
+    enum LegacyXmrRefunded {
+        XmrRefunded,
+    }
+
+    match Compat::deserialize(deserializer)? {
+        Compat::Current(state) => Ok(state),
+        Compat::LegacyXmrRefunded(LegacyXmrRefunded::XmrRefunded) => {
+            Ok(AliceEndState::XmrRefunded { state3: None })
+        }
+    }
 }
 
 impl From<AliceState> for Alice {
@@ -480,5 +507,34 @@ impl fmt::Display for Alice {
             Alice::BtcMercyPublished { .. } => f.write_str("Bitcoin mercy published"),
             Alice::Done(end_state) => write!(f, "Done: {}", end_state),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_xmr_refunded_unit_variant_deserializes() {
+        // Pre-4.0.0: XmrRefunded was a unit variant in AliceEndState
+        let old_json = r#"{"Done":"XmrRefunded"}"#;
+        let alice: Alice = serde_json::from_str(old_json).expect("legacy XmrRefunded should deserialize");
+
+        let Alice::Done(AliceEndState::XmrRefunded { state3 }) = alice else {
+            panic!("expected Alice::Done(XmrRefunded), got: {alice:?}");
+        };
+        assert_eq!(state3, None);
+    }
+
+    #[test]
+    fn current_xmr_refunded_struct_variant_deserializes() {
+        // 4.0.0+: XmrRefunded is a struct variant with optional state3
+        let new_json = r#"{"Done":{"XmrRefunded":{"state3":null}}}"#;
+        let alice: Alice = serde_json::from_str(new_json).expect("current XmrRefunded should deserialize");
+
+        let Alice::Done(AliceEndState::XmrRefunded { state3 }) = alice else {
+            panic!("expected Alice::Done(XmrRefunded), got: {alice:?}");
+        };
+        assert_eq!(state3, None);
     }
 }
