@@ -593,8 +593,7 @@ impl State2 {
         let tx_reclaim = TxReclaim::new(
             &tx_partial_refund,
             &self.refund_address,
-            self.tx_reclaim_fee
-                .context("missing tx_reclaim_fee")?,
+            self.tx_reclaim_fee.context("missing tx_reclaim_fee")?,
             self.remaining_refund_timelock
                 .context("missing remaining_refund_timelock")?,
         )?;
@@ -612,8 +611,7 @@ impl State2 {
             &tx_partial_refund,
             self.a.public(),
             self.B,
-            self.tx_withhold_fee
-                .context("missing tx_withhold_fee")?,
+            self.tx_withhold_fee.context("missing tx_withhold_fee")?,
         )?;
 
         // Check if the provided signature by Bob is valid for the transaction
@@ -628,8 +626,7 @@ impl State2 {
         let tx_mercy = TxMercy::new(
             &tx_withhold,
             &self.refund_address,
-            self.tx_mercy_fee
-                .context("missing tx_mercy_fee")?,
+            self.tx_mercy_fee.context("missing tx_mercy_fee")?,
         );
 
         // Check if the provided signature by Bob is valid for the transaction
@@ -903,8 +900,7 @@ impl State3 {
         let tx_amnesty = TxReclaim::new(
             &tx_partial_refund,
             &self.refund_address,
-            self.tx_reclaim_fee
-                .context("Missing tx_reclaim_fee")?,
+            self.tx_reclaim_fee.context("Missing tx_reclaim_fee")?,
             self.remaining_refund_timelock
                 .context("Missing remaining_refund_timelock")?,
         )?;
@@ -929,8 +925,7 @@ impl State3 {
             &self.tx_partial_refund()?,
             self.a.public(),
             self.B,
-            self.tx_withhold_fee
-                .context("Missing tx_withhold_fee")?,
+            self.tx_withhold_fee.context("Missing tx_withhold_fee")?,
         )
     }
 
@@ -952,8 +947,7 @@ impl State3 {
         Ok(TxMercy::new(
             &self.tx_withhold()?,
             &self.refund_address,
-            self.tx_mercy_fee
-                .context("Missing tx_mercy_fee")?,
+            self.tx_mercy_fee.context("Missing tx_mercy_fee")?,
         ))
     }
 
@@ -1037,9 +1031,15 @@ impl State3 {
         let refund_tx = bitcoin_wallet
             .get_raw_transaction(self.tx_refund().txid())
             .await?;
-        let partial_refund_tx = bitcoin_wallet
-            .get_raw_transaction(self.tx_partial_refund()?.txid())
-            .await?;
+        // We can't rely on swaps having the deposit amount set, so we need
+        // to make sure we dont' fail immediately because of it
+        let partial_refund_tx = if self.btc_amnesty_amount.is_some() {
+            bitcoin_wallet
+                .get_raw_transaction(self.tx_partial_refund()?.txid())
+                .await?
+        } else {
+            None
+        };
 
         match (refund_tx, partial_refund_tx) {
             (Some(refund_tx), _) => {
