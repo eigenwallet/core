@@ -5,10 +5,13 @@ FROM node:18-slim AS base
 FROM base AS deps
 WORKDIR /app
 
-# Copy the lockfiles and package.json from docs directory
+# Copy package manifest and lockfiles from docs directory
+# Also copy Yarn config to ensure node_modules linker (not PnP)
 COPY docs/package.json docs/yarn.lock* docs/package-lock.json* docs/pnpm-lock.yaml* ./
+COPY docs/.yarnrc.yml ./
+COPY docs/.yarn/ ./.yarn/
 RUN \
-  if [ -f yarn.lock ]; then corepack enable && yarn install --immutable; \
+  if [ -f yarn.lock ]; then corepack enable && yarn config set nodeLinker node-modules && yarn install --immutable; \
   elif [ -f package-lock.json ]; then npm ci; \
   elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
   else echo "Lockfile not found." && exit 1; \
