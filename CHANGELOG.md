@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Attempt fix of `get-swaps` not showing swaps.
+- ASB: Fix `btc_amnesty_amount missing` bug which prevented swaps from before 4.0.0 from running.
+
 ## [4.0.2] - 2026-03-18
 
 ## [4.0.1] - 2026-03-17

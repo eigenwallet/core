@@ -5,11 +5,11 @@ use crate::monero::LabeledMoneroAddress;
 use crate::monero::MoneroAddressPool;
 use crate::monero::TransferProof;
 use crate::protocol::{Database, State};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use sqlx::sqlite::{Sqlite, SqliteConnectOptions};
 use sqlx::{ConnectOptions, Pool, SqlitePool};
 use std::path::Path;
@@ -405,6 +405,7 @@ impl Database for SqliteDatabase {
            SELECT state
            FROM swap_states
            WHERE swap_id = ?
+           ORDER BY id ASC
         "#,
             swap_id
         )
@@ -500,7 +501,7 @@ mod tests {
     use crate::protocol::alice::AliceState;
     use crate::protocol::bob::BobState;
     use std::fs::File;
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     #[tokio::test]
     async fn test_insert_and_load_state() {
@@ -562,9 +563,15 @@ mod tests {
         let swap_id = Uuid::new_v4();
 
         // Create multiple labeled addresses with valid percentages that sum to 1
-        let address1 = monero_address::MoneroAddress::from_str_with_unchecked_network("53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a")?; // Stagenet address
-        let address2 = monero_address::MoneroAddress::from_str_with_unchecked_network("44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa")?; // Mainnet address
-        let address3 = monero_address::MoneroAddress::from_str_with_unchecked_network("53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a")?; // Same as address1 for simplicity
+        let address1 = monero_address::MoneroAddress::from_str_with_unchecked_network(
+            "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a",
+        )?; // Stagenet address
+        let address2 = monero_address::MoneroAddress::from_str_with_unchecked_network(
+            "44Ato7HveWidJYUAVw5QffEcEtSH1DwzSP3FPPkHxNAS4LX9CqgucphTisH978FLHE34YNEx7FcbBfQLQUU8m3NUC4VqsRa",
+        )?; // Mainnet address
+        let address3 = monero_address::MoneroAddress::from_str_with_unchecked_network(
+            "53gEuGZUhP9JMEBZoGaFNzhwEgiG7hwQdMCqFxiyiTeFPmkbt1mAoNybEUvYBKHcnrSgxnVWgZsTvRBaHBNXPa8tHiCU51a",
+        )?; // Same as address1 for simplicity
 
         let labeled_addresses = vec![
             LabeledMoneroAddress::with_address(address1, Decimal::new(5, 1), "Primary".to_string())
