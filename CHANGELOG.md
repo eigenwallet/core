@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Log time needed to compute quote / wallet snapshot
+
 ## [4.0.3] - 2026-03-18
 
 - ASB: Attempt fix of `get-swaps` not showing swaps.
