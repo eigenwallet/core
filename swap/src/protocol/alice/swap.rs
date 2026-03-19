@@ -680,6 +680,8 @@ where
                     let mut updated_state3 = (*state3).clone();
                     updated_state3.should_publish_tx_withhold = Some(burn);
 
+                    tracing::info!(withhold=%burn, "Received withhold decision");
+
                     AliceState::BtcCancelled {
                         monero_wallet_restore_blockheight,
                         transfer_proof,
