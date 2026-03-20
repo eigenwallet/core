@@ -1,6 +1,6 @@
 [package]
 name = "swap"
-version = "4.0.3"
+version = "4.0.4"
 authors = ["The COMIT guys <hello@comit.network>"]
 edition = "2024"
 description = "XMR/BTC trustless atomic swaps."
@@ -23,8 +23,8 @@ monero-wallet = { path = "../monero-wallet" }
 
 # Tor
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service", "hs-pow-full"] }
-tor-rtcompat = { workspace = true, features = ["tokio"] }
 tor-hsservice = { workspace = true }
+tor-rtcompat = { workspace = true, features = ["tokio"] }
 
 # LibP2P
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
