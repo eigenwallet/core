@@ -10698,6 +10698,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-util",
+ "tor-hsservice",
  "tor-rtcompat",
  "tracing",
  "tracing-appender",

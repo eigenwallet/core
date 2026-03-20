@@ -20,6 +20,7 @@ pub mod transport {
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
     use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
     use libp2p_tor::AddressConversion;
+    use tor_hsservice::config::TokenBucketConfig;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
     use super::*;
@@ -42,6 +43,11 @@ pub mod transport {
         register_hidden_service: bool,
         num_intro_points: u8,
     ) -> Result<OnionTransportWithAddresses> {
+        // Streams are multiplexed via yamux, we don't need more than one.
+        const MAX_STREAMS_PER_CIRCUIT: u32 = 2;
+        // Default value
+        const POW_QUEUE_DEPTH: usize = 8192;
+
         let (maybe_tor_transport, onion_addresses) = if let Some(tor_client) = maybe_tor_client {
             let mut tor_transport =
                 libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
@@ -54,6 +60,9 @@ pub mod transport {
                             .expect("Static nickname to be valid"),
                     )
                     .num_intro_points(num_intro_points)
+                    // DOS mitigations
+                    .max_concurrent_streams_per_circuit(MAX_STREAMS_PER_CIRCUIT)
+                    .pow_rend_queue_depth(POW_QUEUE_DEPTH)
                     .enable_pow(true)
                     .build()
                     .expect("We specified a valid nickname");

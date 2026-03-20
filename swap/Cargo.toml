@@ -24,6 +24,7 @@ monero-wallet = { path = "../monero-wallet" }
 # Tor
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service"] }
 tor-rtcompat = { workspace = true, features = ["tokio"] }
+tor-hsservice = { workspace = true }
 
 # LibP2P
 libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
