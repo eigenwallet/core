@@ -17,8 +17,8 @@ use swap_feed::LatestRate;
 pub mod transport {
     use std::sync::Arc;
 
-    use arti_client::{config::onion_service::OnionServiceConfigBuilder, TorClient};
-    use libp2p::{core::transport::OptionalTransport, dns, identity, tcp, Transport};
+    use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
+    use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
     use libp2p_tor::AddressConversion;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -54,6 +54,7 @@ pub mod transport {
                             .expect("Static nickname to be valid"),
                     )
                     .num_intro_points(num_intro_points)
+                    .enable_pow(true)
                     .build()
                     .expect("We specified a valid nickname");
 

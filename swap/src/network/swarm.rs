@@ -5,7 +5,7 @@ use crate::{asb, cli};
 use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{identity, Multiaddr, Swarm};
+use libp2p::{Multiaddr, Swarm, identity};
 use libp2p::{PeerId, SwarmBuilder};
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -15,8 +15,8 @@ use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-// We keep connections open for 15 minutes
-const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 15);
+// We keep connections open for 2 minutes
+const IDLE_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60 * 2);
 
 #[allow(clippy::too_many_arguments)]
 pub fn asb<LR>(
