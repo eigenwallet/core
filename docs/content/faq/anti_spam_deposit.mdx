@@ -45,6 +45,21 @@ The deposit amount will be `0.05 * 0.5 = 0.025` BTC.
 </details>
 
 <details>
+<summary>What does it mean to "spam" a maker?</summary>
+
+If you swap large parts of the maker's reserve only to refund swap the maker might consider this spam.
+Especially if this happens repeatedly.
+
+Example: Swapping 0.7 BTC with a maker whose max offer is 0.8 BTC, refunding it and then doing again is probably going to be considered spam.
+
+Refunding a swap incurs costs on the maker: they have to pay transaction fees (direct cost) and also locked a part of their Monero for multiple hours only to not make a swap (opportunity cost).
+They feel spammed when the cost is particularly high.
+
+How and why exactly each maker makes the decision to withhold is up to them.
+
+</details>
+
+<details>
 <summary>What happens with the deposit if the swap refunds?</summary>
 
 The anti-spam deposit does not immediately get refunded.
