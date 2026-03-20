@@ -264,6 +264,9 @@ name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "arti-client"
@@ -2957,6 +2960,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "dynasm"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d36219658beb39702975c707dee7895943ca281ca46eebbc5ea395171b9c182b"
+dependencies = [
+ "bitflags 2.11.0",
+ "byteorder",
+ "lazy_static",
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "dynasmrt"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bc32ed2a02b82bc43a7631dd624e8c5731a8377e40a468da28e62fc2e028952"
+dependencies = [
+ "byteorder",
+ "dynasm",
+ "fnv",
+ "memmap2",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3249,6 +3279,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "equix"
+version = "0.5.1"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_1_8_0#2a5db5823e2a5eb413d8ad433a4d3aba902bac07"
+dependencies = [
+ "arrayvec",
+ "hashx",
+ "num-traits",
+ "thiserror 2.0.18",
+ "visibility",
+]
+
+[[package]]
 name = "erased-serde"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3420,6 +3462,12 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "fixed-capacity-vec"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b31a14f5ee08ed1a40e1252b35af18bed062e3f39b69aab34decde36bc43e40"
 
 [[package]]
 name = "fixedbitset"
@@ -4256,6 +4304,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
 dependencies = [
  "hashbrown 0.14.5",
+]
+
+[[package]]
+name = "hashx"
+version = "0.6.1"
+source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_1_8_0#2a5db5823e2a5eb413d8ad433a4d3aba902bac07"
+dependencies = [
+ "arrayvec",
+ "blake2",
+ "dynasmrt",
+ "fixed-capacity-vec",
+ "hex",
+ "rand_core 0.9.5",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -12470,11 +12532,14 @@ name = "tor-hscrypto"
 version = "0.37.0"
 source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_1_8_0#2a5db5823e2a5eb413d8ad433a4d3aba902bac07"
 dependencies = [
+ "arrayvec",
+ "blake2",
  "cipher",
  "data-encoding",
  "derive-deftly",
  "derive_more 2.1.1",
  "digest 0.10.7",
+ "equix",
  "hex",
  "humantime",
  "itertools 0.14.0",
@@ -12502,6 +12567,7 @@ version = "0.37.0"
 source = "git+https://github.com/eigenwallet/arti?branch=downgraded_rusqlite_arti_1_8_0#2a5db5823e2a5eb413d8ad433a4d3aba902bac07"
 dependencies = [
  "amplify",
+ "arrayvec",
  "async-trait",
  "base64ct",
  "cfg-if",
@@ -12510,6 +12576,7 @@ dependencies = [
  "derive_more 2.1.1",
  "digest 0.10.7",
  "educe",
+ "equix",
  "fs-mistrust",
  "futures",
  "growable-bloom-filter",
@@ -12517,6 +12584,7 @@ dependencies = [
  "humantime",
  "itertools 0.14.0",
  "k12",
+ "num-traits",
  "once_cell",
  "oneshot-fused-workaround",
  "postage",
@@ -12532,6 +12600,7 @@ dependencies = [
  "tor-basic-utils",
  "tor-bytes",
  "tor-cell",
+ "tor-checkable",
  "tor-circmgr",
  "tor-config",
  "tor-config-path",
