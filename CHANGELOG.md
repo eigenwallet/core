@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- ASB: Tweak some networking configurations
+- ASB: Tweak some networking configurations to make DOS harder.
 
 ## [4.0.3] - 2026-03-18
 
