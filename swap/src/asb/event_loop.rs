@@ -28,7 +28,7 @@ use std::convert::TryInto;
 use std::fmt::Debug;
 use std::io::Write;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use swap_core::bitcoin;
 use swap_env::config::RefundPolicy;
 use swap_env::env;
@@ -1056,6 +1056,8 @@ async fn capture_wallet_snapshot(
     external_redeem_address: &Option<bitcoin::Address>,
     transfer_amount: bitcoin::Amount,
 ) -> Result<WalletSnapshot> {
+    let start_time = Instant::now();
+
     let unlocked_balance = monero_wallet.main_wallet().await.unlocked_balance().await?;
     let total_balance = monero_wallet.main_wallet().await.total_balance().await?;
 
@@ -1077,6 +1079,10 @@ async fn capture_wallet_snapshot(
     let withhold_fee = bitcoin_wallet
         .estimate_fee(bitcoin::TxWithhold::weight(), Some(transfer_amount))
         .await?;
+
+    let end_time = Instant::now();
+
+    tracing::debug!(duration_ms=%end_time.duration_since(start_time).as_millis(), "Finished capturing wallet snapshot");
 
     Ok(WalletSnapshot::new(
         unlocked_balance.into(),
@@ -1199,7 +1205,10 @@ mod quote {
     use crate::monero::{Amount, AmountExt};
     use anyhow::{Context, anyhow};
     use rust_decimal::Decimal;
-    use std::{sync::Arc, time::Duration};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
     use swap_feed::LatestRate;
     use tokio::time::timeout;
 
@@ -1240,6 +1249,8 @@ mod quote {
         P: FnOnce() -> Fut3,
         Fut3: futures::Future<Output = Result<ReserveProofWithAddress, anyhow::Error>>,
     {
+        let start_time = Instant::now();
+
         let ask_price = latest_rate
             .latest_rate()
             .map_err(|e| Arc::new(anyhow!(e).context("Failed to get latest rate")))?
@@ -1286,7 +1297,8 @@ mod quote {
                 ))
             })?;
 
-        tracing::trace!(%ask_price, %unreserved_xmr_balance, %max_bitcoin_for_monero, "Computed quote");
+        let end_time = Instant::now();
+        tracing::info!(%ask_price, %unreserved_xmr_balance, %max_bitcoin_for_monero, duration_ms=%end_time.duration_since(start_time).as_millis(), "Computed quote");
 
         if min_buy > max_bitcoin_for_monero {
             tracing::trace!(

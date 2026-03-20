@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n           SELECT state\n           FROM swap_states\n           WHERE swap_id = ?\n           ORDER BY id desc\n           LIMIT 1;\n\n        ",
+  "query": "\n           SELECT state\n           FROM swap_states\n           WHERE swap_id = ?\n           ORDER BY id ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "88f761a4f7a0429cad1df0b1bebb1c0a27b2a45656549b23076d7542cfa21ecf"
+  "hash": "ad44e2e0bae766c1b524a857c7defb220a7f5403da62a07e131cb5c399f0bf2e"
 }

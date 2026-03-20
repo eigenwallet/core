@@ -96,10 +96,13 @@ impl Wallets {
                 .call(move |wallet| {
                     wallet.add_listener(Box::new(tauri_wallet_listener));
                 })
-                .await?;
+                .await
+                .context("Failed to install tauri wallet listener")?;
         }
 
-        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string()).await?;
+        let rpc_client = SimpleRequestTransport::new(daemon.to_url_string())
+            .await
+            .context("Failed to initialize rpc client")?;
         let daemon = Arc::new(RwLock::new((daemon, rpc_client)));
 
         let wallets = Self {

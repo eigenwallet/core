@@ -163,7 +163,6 @@ fn default_anti_spam_deposit_ratio() -> Decimal {
     Decimal::ZERO
 }
 
-
 impl Config {
     pub fn read<D>(config_file: D) -> Result<Self, ConfigError>
     where
