@@ -14,7 +14,7 @@ swap-serde = { path = "../swap-serde" }
 
 # Networking
 async-trait = { workspace = true, optional = true }
-libp2p = { workspace = true, features = ["serde", "request-response", "rendezvous", "cbor", "json", "ping", "identify"] }
+libp2p = { workspace = true, features = ["serde", "request-response", "noise", "rendezvous", "cbor", "json", "ping", "identify"] }
 
 
 # Serialization

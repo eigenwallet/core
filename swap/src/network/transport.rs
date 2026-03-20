@@ -6,6 +6,7 @@ use libp2p::core::upgrade::Version;
 use libp2p::noise;
 use libp2p::{PeerId, Transport, identity, yamux};
 use std::time::Duration;
+use swap_p2p::protocols::pow_noise;
 
 const AUTH_AND_MULTIPLEX_TIMEOUT: Duration = Duration::from_secs(15);
 // We have 5 protcols, not more than 2 of which should be active at the same time.
@@ -25,13 +26,14 @@ where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let auth_upgrade = noise::Config::new(identity)?;
+    let pow_and_auth_upgrade = pow_noise::Config::new(auth_upgrade, 123);
     let mut multiplex_upgrade = yamux::Config::default();
 
     multiplex_upgrade.set_max_num_streams(MAX_NUM_STREAMS);
 
     let transport = transport
         .upgrade(Version::V1)
-        .authenticate(auth_upgrade)
+        .authenticate(pow_and_auth_upgrade)
         .multiplex(multiplex_upgrade)
         .timeout(AUTH_AND_MULTIPLEX_TIMEOUT)
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))

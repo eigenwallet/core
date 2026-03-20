@@ -5,12 +5,13 @@ use libp2p::core::upgrade::Version;
 use libp2p::identity::{self};
 use libp2p::tcp;
 use libp2p::yamux;
-use libp2p::{core::muxing::StreamMuxerBox, SwarmBuilder};
-use libp2p::{dns, noise, Multiaddr, PeerId, Swarm, Transport};
+use libp2p::{Multiaddr, PeerId, Swarm, Transport, dns, noise};
+use libp2p::{SwarmBuilder, core::muxing::StreamMuxerBox};
 use libp2p_tor::{AddressConversion, TorTransport};
 use std::fmt;
 use std::path::Path;
 use swap_p2p::libp2p_ext::MultiAddrVecExt;
+use swap_p2p::protocols::pow_noise;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 
 use crate::behaviour::Behaviour;
@@ -178,10 +179,11 @@ where
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let noise_config = noise::Config::new(identity).unwrap();
+    let pow_noise_config = pow_noise::Config::new(noise_config, 10);
 
     let transport = transport
         .upgrade(Version::V1)
-        .authenticate(noise_config)
+        .authenticate(pow_noise_config)
         .multiplex(yamux::Config::default())
         .timeout(defaults::MULTIPLEX_TIMEOUT)
         .map(|(peer, muxer), _| (peer, StreamMuxerBox::new(muxer)))
