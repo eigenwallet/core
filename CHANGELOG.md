@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Try to fix an issue where the response from the Monero daemon would be too large to parse when fetching the status of a transaction ([#885](https://github.com/eigenwallet/core/issues/885)).
+
 ## [4.0.4] - 2026-03-20
 
 - ASB: Tweak some networking configurations to make DOS harder.
