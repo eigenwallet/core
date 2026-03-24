@@ -76,8 +76,8 @@ impl<T: HttpTransport> ProvidesTransactionStatus for MoneroDaemon<T> {
             let response = self
                 .rpc_call(
                     "get_transactions",
-                    Some(format!(r#"{{ "txs_hashes": ["{}"] }}"#, tx_hash_hex)),
-                    4096,
+                    Some(format!(r#"{{ "txs_hashes": ["{}"], "prune": true }}"#, tx_hash_hex)),
+                    500_000,
                 )
                 .await?;
 
