@@ -95,21 +95,9 @@ where
     /// Drained once the computation resolves.
     pending_quote_channels: Vec<(ResponseChannel<BidQuote>, PeerId)>,
 
-    /// Futures waiting for `send_wallet_snapshot.recv()` to resolve.
-    /// Each future yields the BTC amount and the responder to send the wallet snapshot back.
-    #[allow(clippy::type_complexity)]
-    inflight_wallet_snapshot_requests: FuturesUnordered<
-        BoxFuture<
-            'static,
-            Result<(
-                bitcoin::Amount,
-                bmrng::Responder<(WalletSnapshot, bitcoin::Amount, bool)>,
-            )>,
-        >,
-    >,
-
-    /// In-flight `capture_wallet_snapshot` computations.
-    /// Each future yields the BTC amount, responder, and the computed wallet snapshot.
+    /// In-flight wallet snapshot computations for swap setup.
+    /// Each future waits for the swap setup handler to request a wallet snapshot,
+    /// then computes it concurrently.
     #[allow(clippy::type_complexity)]
     inflight_wallet_snapshots: FuturesUnordered<
         BoxFuture<
@@ -215,7 +203,6 @@ where
             inflight_encrypted_signatures: Default::default(),
             inflight_quote_computation: Default::default(),
             pending_quote_channels: Default::default(),
-            inflight_wallet_snapshot_requests: Default::default(),
             inflight_wallet_snapshots: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
@@ -243,8 +230,6 @@ where
         self.inflight_encrypted_signatures
             .push(future::pending().boxed());
         self.inflight_quote_computation
-            .push(future::pending().boxed());
-        self.inflight_wallet_snapshot_requests
             .push(future::pending().boxed());
         self.inflight_wallet_snapshots
             .push(future::pending().boxed());
@@ -297,8 +282,19 @@ where
                 swarm_event = self.swarm.select_next_some() => {
                     match swarm_event {
                         SwarmEvent::Behaviour(OutEvent::SwapSetupInitiated { mut send_wallet_snapshot }) => {
-                            self.inflight_wallet_snapshot_requests.push(async move {
-                                send_wallet_snapshot.recv().await.map_err(Into::into)
+                            let bitcoin_wallet = self.bitcoin_wallet.clone();
+                            let monero_wallet = self.monero_wallet.clone();
+                            let external_redeem_address = self.external_redeem_address.clone();
+
+                            self.inflight_wallet_snapshots.push(async move {
+                                // Wait for the swap setup handler to request the wallet snapshot
+                                let (btc, responder) = send_wallet_snapshot.recv().await?;
+
+                                // Compute the wallet snapshot
+                                let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc).await?;
+
+                                // This is used further down to then actually respond to the swap setup handler
+                                Ok((btc, responder, wallet_snapshot))
                             }.boxed());
                         }
                         SwarmEvent::Behaviour(OutEvent::SwapSetupCompleted{peer_id, swap_id, state3}) => {
@@ -525,28 +521,9 @@ where
 
                 // Swap setup routine:
                 // 1. We receive a `SwapSetupInitiated` event with a `send_wallet_snapshot` receiver
-                // 2. We push a future to `inflight_wallet_snapshot_requests` that resolves when the swap setup handler knows the BTC amount
-                //    and requests the wallet snapshot and amnesty amount to continue with the swap setup
-                // 3. We push a future to `inflight_wallet_snapshots` that resolves when the wallet snapshot is computed
-                // 4. We wait for the wallet snapshot future to resolve, compute the amnesty amount, and respond to the swap setup handler
-                Some(result) = self.inflight_wallet_snapshot_requests.next() => {
-                    let (btc, responder) = match result {
-                        Ok((btc, responder)) => (btc, responder),
-                        Err(error) => {
-                            tracing::error!("Swap request will be ignored because of a failure when requesting information for the wallet snapshot: {:#}", error);
-                            continue;
-                        }
-                    };
-
-                    let bitcoin_wallet = self.bitcoin_wallet.clone();
-                    let monero_wallet = self.monero_wallet.clone();
-                    let external_redeem_address = self.external_redeem_address.clone();
-
-                    self.inflight_wallet_snapshots.push(async move {
-                        let wallet_snapshot = capture_wallet_snapshot(bitcoin_wallet, &monero_wallet, &external_redeem_address, btc).await?;
-                        Ok((btc, responder, wallet_snapshot))
-                    }.boxed());
-                },
+                // 2. We push a future to `inflight_wallet_snapshots` that waits for the swap setup handler to
+                //    request the wallet snapshot (with the BTC amount), then computes it
+                // 3. Once the future resolves, we compute the amnesty amount and respond to the swap setup handler
                 Some(result) = self.inflight_wallet_snapshots.next() => {
                     let (btc, responder, wallet_snapshot) = match result {
                         Ok((btc, responder, wallet_snapshot)) => (btc, responder, wallet_snapshot),
