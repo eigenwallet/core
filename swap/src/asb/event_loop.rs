@@ -303,10 +303,13 @@ where
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
                             self.pending_quote_channels.push((channel, peer));
 
-                            // Only start a computation if one isn't already in-flight
-                            // If the length is 1, only the keep-alive future is in the queue
-                            // meaning we are not already computing a quote
-                            if self.pending_quote_channels.len() == 1 {
+                            // If no computation is in flight, we start one
+                            // (If the length is one, only the keep-alive future is in the queue)
+                            if self.inflight_quote_computation.len() == 1 {
+                                // This should be the first request,
+                                // so the pending queue should also have exactly one request
+                                debug_assert!(self.pending_quote_channels.len() == 1);
+
                                 self.inflight_quote_computation.push(
                                     self.make_quote_or_use_cached(
                                         self.min_buy,
@@ -501,6 +504,9 @@ where
                         // We don't log it here to avoid spamming on each request
                         Err(_) => BidQuote::ZERO,
                     };
+
+                    tracing::trace!(?quote, num_requests = self.pending_quote_channels.len(), "Responding with quote to requests");
+
                     for (channel, peer) in self.pending_quote_channels.drain(..) {
                         if self.swarm.behaviour_mut().quote.send_response(channel, quote.clone()).is_err() {
                             tracing::debug!(%peer, "Failed to respond with quote");
