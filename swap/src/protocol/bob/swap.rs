@@ -919,7 +919,8 @@ async fn next_state(
                     let bitcoin_wallet = bitcoin_wallet_for_retry.clone();
                     let state = state_for_retry.clone();
                     async move {
-                        match state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)? {
+                        let expired_timelocks = state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)?;
+                        match expired_timelocks {
                             ExpiredTimelocks::None { .. } => {
                                 Err(backoff::Error::Permanent(anyhow::anyhow!(
                                     "Internal error: canceled state reached before cancel timelock was expired"
@@ -934,10 +935,7 @@ async fn next_state(
                                 // If the refund tx is denied due to double spend it means the Btc has been punished
                                 match bitcoin_wallet.ensure_broadcasted(tx_refund, &refund_type.to_string()).await {
                                     Ok(_) => (),
-                                    Err(error) if bitcoin_wallet::parse_rpc_error_code(&error).is_ok_and(|error_code|
-                                        error_code == i64::from(bitcoin_wallet::RpcErrorCode::RpcVerifyRejected)
-                                        || error_code == i64::from(bitcoin_wallet::RpcErrorCode::RpcVerifyError))
-                                            => return Ok(BobState::BtcPunished { tx_lock_id: state.tx_lock_id(), state }),
+                                    Err(error) if expired_timelocks == ExpiredTimelocks::Punish => return Ok(BobState::BtcPunished { tx_lock_id: state.tx_lock_id(), state }),
                                     Err(error) => return Err(backoff::Error::transient(error.context("Couldn't publish best refund transaction")))
                                 }
 
