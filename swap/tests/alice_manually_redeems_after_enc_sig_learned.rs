@@ -1,7 +1,7 @@
 pub mod harness;
 
-use harness::alice_run_until::is_encsig_learned;
 use harness::SlowCancelConfig;
+use harness::alice_run_until::is_encsig_learned;
 use swap::asb;
 use swap::asb::{Finality, FixedRate};
 use swap::protocol::alice::AliceState;

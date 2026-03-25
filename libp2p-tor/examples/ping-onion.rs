@@ -44,13 +44,14 @@
 //! and begin pinging each other over Tor.
 
 use futures::StreamExt;
-use libp2p::core::upgrade::Version;
 use libp2p::Transport;
+use libp2p::core::upgrade::Version;
 use libp2p::{
+    Multiaddr, PeerId, SwarmBuilder,
     core::muxing::StreamMuxerBox,
     identity, noise,
     swarm::{NetworkBehaviour, SwarmEvent},
-    yamux, Multiaddr, PeerId, SwarmBuilder,
+    yamux,
 };
 use libp2p_tor::{AddressConversion, TorTransport};
 use std::error::Error;

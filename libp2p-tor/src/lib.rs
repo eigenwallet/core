@@ -54,8 +54,8 @@
 use arti_client::{TorClient, TorClientBuilder};
 use futures::future::BoxFuture;
 use libp2p::{
-    core::transport::{ListenerId, TransportEvent},
     Multiaddr, Transport, TransportError,
+    core::transport::{ListenerId, TransportEvent},
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -74,8 +74,8 @@ use std::str::FromStr;
 use tor_cell::relaycell::msg::{Connected, End, EndReason};
 #[cfg(feature = "listen-onion-service")]
 use tor_hsservice::{
-    handle_rend_requests, status::OnionServiceStatus, HsId, OnionServiceConfig,
-    RunningOnionService, StreamRequest,
+    HsId, OnionServiceConfig, RunningOnionService, StreamRequest, handle_rend_requests,
+    status::OnionServiceStatus,
 };
 #[cfg(feature = "listen-onion-service")]
 use tor_proto::client::stream::IncomingStreamRequest;

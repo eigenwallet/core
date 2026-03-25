@@ -9,7 +9,6 @@ import { isTestnet } from "store/config";
 const VERSION_FLOOR_SOFT = "4.0.0"; // First version with partial refund path - completely incompatible
 const VERSION_FLOOR_HARD = "4.0.0";
 
-
 export function isMakerOnCorrectNetwork(
   provider: ExtendedMakerStatus,
 ): boolean {

@@ -22,7 +22,7 @@
 //! Also provides standalone JSON RPC clients for monerod and monero-wallet-rpc.
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 pub use testcontainers::clients::Cli;
 use testcontainers::{Container, RunnableImage};
 use tokio::time;
@@ -32,7 +32,7 @@ use monero_daemon_rpc::MoneroDaemon;
 use monero_oxide_ext::Amount;
 use monero_simple_request_rpc::SimpleRequestTransport;
 use monero_sys::SubaddressSummary;
-use monero_sys::{no_listener, Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle};
+use monero_sys::{Daemon, SyncProgress, TxReceipt, TxStatus, WalletHandle, no_listener};
 use std::collections::HashMap;
 
 use crate::image::{MONEROD_DAEMON_CONTAINER_NAME, MONEROD_DEFAULT_NETWORK, RPC_PORT};
@@ -468,7 +468,11 @@ impl MoneroWallet {
     }
 
     /// Get address at a given account and subaddress index.
-    pub async fn address_at(&self, account_index: u32, address_index: u32) -> Result<MoneroAddress> {
+    pub async fn address_at(
+        &self,
+        account_index: u32,
+        address_index: u32,
+    ) -> Result<MoneroAddress> {
         Ok(self.wallet.address(account_index, address_index).await?)
     }
 

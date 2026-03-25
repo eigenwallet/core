@@ -518,7 +518,8 @@ mod tests {
     fn legacy_xmr_refunded_unit_variant_deserializes() {
         // Pre-4.0.0: XmrRefunded was a unit variant in AliceEndState
         let old_json = r#"{"Done":"XmrRefunded"}"#;
-        let alice: Alice = serde_json::from_str(old_json).expect("legacy XmrRefunded should deserialize");
+        let alice: Alice =
+            serde_json::from_str(old_json).expect("legacy XmrRefunded should deserialize");
 
         let Alice::Done(AliceEndState::XmrRefunded { state3 }) = alice else {
             panic!("expected Alice::Done(XmrRefunded), got: {alice:?}");
@@ -530,7 +531,8 @@ mod tests {
     fn current_xmr_refunded_struct_variant_deserializes() {
         // 4.0.0+: XmrRefunded is a struct variant with optional state3
         let new_json = r#"{"Done":{"XmrRefunded":{"state3":null}}}"#;
-        let alice: Alice = serde_json::from_str(new_json).expect("current XmrRefunded should deserialize");
+        let alice: Alice =
+            serde_json::from_str(new_json).expect("current XmrRefunded should deserialize");
 
         let Alice::Done(AliceEndState::XmrRefunded { state3 }) = alice else {
             panic!("expected Alice::Done(XmrRefunded), got: {alice:?}");

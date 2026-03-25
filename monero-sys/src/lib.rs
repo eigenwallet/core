@@ -16,7 +16,7 @@ pub mod database;
 pub use bridge::wallet_listener;
 pub use bridge::{TraceListener, WalletEventListener, WalletListenerBox};
 pub use database::{Database, RecentWallet};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 use std::{
     any::Any, cmp::Ordering, collections::HashMap, fmt::Display, future::Future, ops::Deref,
@@ -24,13 +24,13 @@ use std::{
 };
 use throttle::Throttle;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use backoff::{future::retry_notify, retry_notify as blocking_retry_notify};
-use cxx::{let_cxx_string, CxxString, CxxVector, UniquePtr};
+use cxx::{CxxString, CxxVector, UniquePtr, let_cxx_string};
 use monero_oxide_ext::Amount;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     oneshot,
 };
 use url::Url;
@@ -1217,7 +1217,9 @@ impl Wallet {
 
             if call.sender.send(result).is_err() {
                 // Err() contains only the Box<dyn Any> value, so we don't care about the specific value
-                tracing::error!("Failed to send result back to caller, because the channel was closed. Dropping the result.");
+                tracing::error!(
+                    "Failed to send result back to caller, because the channel was closed. Dropping the result."
+                );
             }
         }
 
@@ -2885,7 +2887,9 @@ impl FfiWallet {
         if proof.is_empty() {
             self.check_error()
                 .context("Failed to construct reserve proof")?;
-            anyhow::bail!("Failed to construct reserve proof because wallet2 returned an empty string but no error was returned");
+            anyhow::bail!(
+                "Failed to construct reserve proof because wallet2 returned an empty string but no error was returned"
+            );
         }
 
         Ok(proof)
@@ -3610,7 +3614,7 @@ mod tests {
         // First two amounts should respect percentages exactly
         assert_eq!(amounts[0].as_pico(), 500); // 50% of 1000
         assert_eq!(amounts[1].as_pico(), 300); // 30% of 1000
-                                               // Last amount gets remainder: 1000 - 500 - 300 = 200
+        // Last amount gets remainder: 1000 - 500 - 300 = 200
         assert_eq!(amounts[2].as_pico(), 200);
     }
 
@@ -3629,7 +3633,7 @@ mod tests {
 
         // First amount should respect percentage exactly
         assert_eq!(amounts[0].as_pico(), 999); // 99.9% of 1000 (floored)
-                                               // Last amount gets remainder: 1000 - 999 = 1
+        // Last amount gets remainder: 1000 - 999 = 1
         assert_eq!(amounts[1].as_pico(), 1);
     }
 

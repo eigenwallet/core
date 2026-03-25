@@ -1,6 +1,6 @@
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
+use crate::protocol::alice::AliceState;
+use anyhow::{Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use std::convert::TryInto;
 use std::sync::Arc;

@@ -78,7 +78,10 @@ impl<K: Hash + Eq + Clone + Send + 'static, V: 'static> FuturesHashSet<K, V> {
                     let did_remove_handle = self.handles.remove(&k).is_some();
 
                     // TODO: Make this a production assert
-                    debug_assert!(did_remove_handle, "A future returned Ok but the key is not in handles. This should never happen.");
+                    debug_assert!(
+                        did_remove_handle,
+                        "A future returned Ok but the key is not in handles. This should never happen."
+                    );
 
                     // Still return the value to avoid panicking
                     return Poll::Ready(Some((k, v)));

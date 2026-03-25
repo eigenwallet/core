@@ -18,7 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 use arti_client::{DangerouslyIntoTorAddr, IntoTorAddr, TorAddr};
-use libp2p::{core::multiaddr::Protocol, multiaddr::Onion3Addr, Multiaddr};
+use libp2p::{Multiaddr, core::multiaddr::Protocol, multiaddr::Onion3Addr};
 use std::net::SocketAddr;
 
 /// "Dangerously" extract a Tor address from the provided [`Multiaddr`].

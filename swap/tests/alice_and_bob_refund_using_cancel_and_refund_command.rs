@@ -1,8 +1,8 @@
 pub mod harness;
 
+use harness::FastCancelConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_locked;
-use harness::FastCancelConfig;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
 use swap::protocol::bob::BobState;
@@ -56,7 +56,10 @@ async fn given_alice_and_bob_manually_refund_after_funds_locked_both_refund() {
         let (bob_swap, bob_join_handle) = ctx
             .stop_and_resume_bob_from_db(bob_join_handle, bob_swap_id)
             .await;
-        assert!(matches!(bob_swap.state, BobState::BtcCancelPublished { .. }));
+        assert!(matches!(
+            bob_swap.state,
+            BobState::BtcCancelPublished { .. }
+        ));
 
         // Bob manually refunds
         bob_join_handle.abort();

@@ -389,12 +389,14 @@ fn main() {
     // Link unbound statically
     println!("cargo:rustc-link-lib=static=unbound");
     println!("cargo:rustc-link-lib=static=expat"); // Expat is required by unbound
-                                                   // println!("cargo:rustc-link-lib=static=nghttp2");
-                                                   // println!("cargo:rustc-link-lib=static=event");
-                                                   // Android
+    // println!("cargo:rustc-link-lib=static=nghttp2");
+    // println!("cargo:rustc-link-lib=static=event");
+    // Android
     #[cfg(target_os = "android")]
     {
-        println!("cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/");
+        println!(
+            "cargo:rustc-link-search=/home/me/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/"
+        );
         // println!("cargo:rustc-link-lib=static=c++_static");
     }
 

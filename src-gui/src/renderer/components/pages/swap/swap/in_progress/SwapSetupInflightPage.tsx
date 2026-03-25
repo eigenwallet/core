@@ -6,7 +6,11 @@ import {
 } from "models/tauriModelExt";
 import { SatsAmount, PiconeroAmount } from "renderer/components/other/Units";
 import { Box, Typography, Paper, Divider, Theme, Link } from "@mui/material";
-import { useActiveSwapId, usePendingLockBitcoinApproval, useAppSelector } from "store/hooks";
+import {
+  useActiveSwapId,
+  usePendingLockBitcoinApproval,
+  useAppSelector,
+} from "store/hooks";
 import { getMarkup, satsToBtc, piconerosToXmr } from "utils/conversionUtils";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import CircularProgressWithSubtitle from "../components/CircularProgressWithSubtitle";
@@ -78,15 +82,22 @@ export default function SwapSetupInflightPage({
     );
   }
 
-  const { btc_network_fee, monero_receive_pool, xmr_receive_amount, btc_amnesty_amount } =
-    request.request.content;
+  const {
+    btc_network_fee,
+    monero_receive_pool,
+    xmr_receive_amount,
+    btc_amnesty_amount,
+  } = request.request.content;
 
   // Calculate markup compared to market rate
-  const makerRate = satsToBtc(btc_lock_amount) / piconerosToXmr(Number(xmr_receive_amount));
-  const markupPercent = xmrBtcRate != null ? getMarkup(makerRate, xmrBtcRate) : null;
+  const makerRate =
+    satsToBtc(btc_lock_amount) / piconerosToXmr(Number(xmr_receive_amount));
+  const markupPercent =
+    xmrBtcRate != null ? getMarkup(makerRate, xmrBtcRate) : null;
 
   // Calculate refund percentages
-  const guaranteedRefundPercent = ((btc_lock_amount - btc_amnesty_amount) / btc_lock_amount) * 100;
+  const guaranteedRefundPercent =
+    ((btc_lock_amount - btc_amnesty_amount) / btc_lock_amount) * 100;
   const depositPercent = (btc_amnesty_amount / btc_lock_amount) * 100;
   const hasDeposit = btc_amnesty_amount > 0;
 
@@ -152,7 +163,8 @@ export default function SwapSetupInflightPage({
         {markupPercent != null && (
           <>
             <Typography variant="body2">
-              Rate: {Math.abs(markupPercent).toFixed(1)}% {markupPercent >= 0 ? "above" : "below"} market
+              Rate: {Math.abs(markupPercent).toFixed(1)}%{" "}
+              {markupPercent >= 0 ? "above" : "below"} market
             </Typography>
             <Divider sx={{ my: 1.5 }} />
           </>
@@ -168,7 +180,10 @@ export default function SwapSetupInflightPage({
                 borderColor: "success.main",
               }}
             >
-              <Typography variant="body2" sx={{ fontWeight: 500, color: "success.main" }}>
+              <Typography
+                variant="body2"
+                sx={{ fontWeight: 500, color: "success.main" }}
+              >
                 {guaranteedRefundPercent.toFixed(0)}% guaranteed refund
               </Typography>
             </Box>
@@ -181,7 +196,10 @@ export default function SwapSetupInflightPage({
                 borderColor: "info.main",
               }}
             >
-              <Typography variant="body2" sx={{ fontWeight: 500, color: "info.main" }}>
+              <Typography
+                variant="body2"
+                sx={{ fontWeight: 500, color: "info.main" }}
+              >
                 {depositPercent.toFixed(0)}% anti-spam deposit
               </Typography>
               <Typography
@@ -210,7 +228,15 @@ export default function SwapSetupInflightPage({
                 color="text.secondary"
                 sx={{ display: "block", mt: 0.5 }}
               >
-                └ <Link href={"https://docs.eigenwallet.org/advanced/anti_spam_deposit"} target="_blank">Read more</Link>
+                └{" "}
+                <Link
+                  href={
+                    "https://docs.eigenwallet.org/advanced/anti_spam_deposit"
+                  }
+                  target="_blank"
+                >
+                  Read more
+                </Link>
               </Typography>
             </Box>
           </Box>
@@ -224,13 +250,15 @@ export default function SwapSetupInflightPage({
               borderColor: "success.main",
             }}
           >
-            <Typography variant="body2" sx={{ fontWeight: 500, color: "success.main" }}>
+            <Typography
+              variant="body2"
+              sx={{ fontWeight: 500, color: "success.main" }}
+            >
               Full refund if swap fails (guaranteed)
             </Typography>
           </Box>
-        )
-        }
-      </Paper >
+        )}
+      </Paper>
 
       <Box
         sx={{
@@ -277,7 +305,7 @@ export default function SwapSetupInflightPage({
           {`Offer expires in ${timeLeft}s`}
         </Typography>
       </Box>
-    </Box >
+    </Box>
   );
 }
 
@@ -361,8 +389,8 @@ function BitcoinMainBox({
         Network fee: <SatsAmount amount={btc_network_fee} />
       </Box>
     </Box>
-  )
-};
+  );
+}
 
 interface PoolBreakdownProps {
   monero_receive_pool: Array<{

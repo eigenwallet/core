@@ -107,7 +107,9 @@ pub mod asb {
                 // Mainnet is the default for the asb
                 (monero_address::Network::Mainnet, bitcoin::Network::Bitcoin) => Flag(None),
                 // Testnet requires the --testnet flag
-                (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => flag!("--testnet"),
+                (monero_address::Network::Stagenet, bitcoin::Network::Testnet) => {
+                    flag!("--testnet")
+                }
                 _ => panic!(
                     "Only either Mainnet Bitcoin & Mainnet Monero or Testnet Bitcoin & Stagenet Monero are supported"
                 ),

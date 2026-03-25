@@ -97,10 +97,7 @@ async fn given_partial_refund_alice_grants_mercy() {
             let bob_state = bob_state.await??;
 
             assert!(
-                matches!(
-                    alice_state,
-                    AliceState::BtcMercyConfirmed { .. }
-                ),
+                matches!(alice_state, AliceState::BtcMercyConfirmed { .. }),
                 "Actual state: {alice_state}"
             );
             assert!(

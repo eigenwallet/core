@@ -1,26 +1,26 @@
 use crate::primitives::{Confirmed, EstimateFeeRate, ScriptStatus, Subscription, Watchable};
-use crate::{bitcoin_address, parse_rpc_error_code, BitcoinWallet, BlockHeight, RpcErrorCode};
-use anyhow::{anyhow, bail, Context, Result};
-use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
+use crate::{BitcoinWallet, BlockHeight, RpcErrorCode, bitcoin_address, parse_rpc_error_code};
+use anyhow::{Context, Result, anyhow, bail};
 use bdk_chain::CheckPoint;
+use bdk_chain::spk_client::{SyncRequest, SyncRequestBuilder};
 use bdk_electrum::electrum_client::{ElectrumApi, GetHistoryRes};
 
+use bdk_wallet::KeychainKind;
+use bdk_wallet::WalletPersister;
 use bdk_wallet::bitcoin::FeeRate;
 use bdk_wallet::bitcoin::Network;
 use bdk_wallet::export::FullyNodedExport;
 use bdk_wallet::rusqlite::Connection;
 use bdk_wallet::template::{Bip84, DescriptorTemplate};
-use bdk_wallet::KeychainKind;
-use bdk_wallet::WalletPersister;
 use bdk_wallet::{Balance, PersistedWallet};
 use bitcoin::bip32::Xpriv;
-use bitcoin::{psbt::Psbt as PartiallySignedTransaction, Address, Amount, Transaction, Txid};
+use bitcoin::{Address, Amount, Transaction, Txid, psbt::Psbt as PartiallySignedTransaction};
 use bitcoin::{Psbt, ScriptBuf, Weight};
 use derive_builder::Builder;
 use electrum_pool::ElectrumBalancer;
 use moka;
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -31,9 +31,9 @@ use std::sync::Mutex as SyncMutex;
 use std::time::Duration;
 use std::time::Instant;
 use sync_ext::{CumulativeProgressHandle, InnerSyncCallback, SyncCallbackExt};
-use tokio::sync::watch;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::{debug_span, Instrument};
+use tokio::sync::watch;
+use tracing::{Instrument, debug_span};
 
 pub type TauriHandle = Option<Arc<dyn BitcoinTauriHandle>>;
 pub trait BitcoinTauriHandle: Send + Sync {
@@ -2568,7 +2568,7 @@ mod mempool_client {
     static BASE_URL: &str = "https://mempool.space";
 
     use super::EstimateFeeRate;
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result, bail};
     use bitcoin::{FeeRate, Network};
     use serde::Deserialize;
     use std::time::Duration;
@@ -2656,11 +2656,11 @@ pub mod pre_1_0_0_bdk {
     use std::path::Path;
     use std::sync::Arc;
 
-    use anyhow::{anyhow, Result};
-    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
-    use bdk::bitcoin::Network;
-    use bdk::sled::Tree;
+    use anyhow::{Result, anyhow};
     use bdk::KeychainKind;
+    use bdk::bitcoin::Network;
+    use bdk::bitcoin::util::bip32::ExtendedPrivKey;
+    use bdk::sled::Tree;
     use tokio::sync::Mutex as TokioMutex;
 
     use super::IntoArcMutex;

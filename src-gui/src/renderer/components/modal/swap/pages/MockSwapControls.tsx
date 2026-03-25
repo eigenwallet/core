@@ -11,9 +11,20 @@ import {
 } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { scenarios, MockScenario, MOCK_SWAP_ID, getMockLockBitcoinApproval, getMockAlertData, getMockAlertCleanupData } from "dev/mockSwapEvents";
+import {
+  scenarios,
+  MockScenario,
+  MOCK_SWAP_ID,
+  getMockLockBitcoinApproval,
+  getMockAlertData,
+  getMockAlertCleanupData,
+} from "dev/mockSwapEvents";
 import { useAppDispatch } from "store/hooks";
-import { approvalEventReceived, rpcSetSwapInfo, timelockChangeEventReceived } from "store/features/rpcSlice";
+import {
+  approvalEventReceived,
+  rpcSetSwapInfo,
+  timelockChangeEventReceived,
+} from "store/features/rpcSlice";
 import {
   swapProgressEventReceived,
   swapReset,
@@ -28,7 +39,10 @@ export default function MockSwapControls() {
   const enabled = scenario !== null;
   const total = scenario ? scenarios[scenario].length : 0;
 
-  const dispatchMockState = (mockScenario: MockScenario, eventIndex: number) => {
+  const dispatchMockState = (
+    mockScenario: MockScenario,
+    eventIndex: number,
+  ) => {
     const event = scenarios[mockScenario][eventIndex];
     dispatch(
       swapProgressEventReceived({
@@ -52,14 +66,16 @@ export default function MockSwapControls() {
       // Inject mock SwapStatusAlert data (3 timelock zones)
       const { swapInfos, timelocks } = getMockAlertData();
       for (const info of swapInfos) dispatch(rpcSetSwapInfo(info));
-      for (const [swap_id, timelock] of timelocks) dispatch(timelockChangeEventReceived({ swap_id, timelock }));
+      for (const [swap_id, timelock] of timelocks)
+        dispatch(timelockChangeEventReceived({ swap_id, timelock }));
     } else {
       setScenario(null);
       setIndex(0);
       dispatch(setMockOnlyDisableTauriCallsOnSwapProgress(false));
       dispatch(swapReset());
       // Clean up mock alerts (mark as SafelyAborted so SwapStatusAlert hides them)
-      for (const info of getMockAlertCleanupData()) dispatch(rpcSetSwapInfo(info));
+      for (const info of getMockAlertCleanupData())
+        dispatch(rpcSetSwapInfo(info));
     }
   };
 
@@ -87,7 +103,9 @@ export default function MockSwapControls() {
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "action.hover" }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+      <Box
+        sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}
+      >
         <Switch
           size="small"
           checked={enabled}
@@ -114,10 +132,17 @@ export default function MockSwapControls() {
             <IconButton size="small" onClick={prev} disabled={index === 0}>
               <ChevronLeftIcon fontSize="small" />
             </IconButton>
-            <Typography variant="body2" sx={{ minWidth: 40, textAlign: "center" }}>
+            <Typography
+              variant="body2"
+              sx={{ minWidth: 40, textAlign: "center" }}
+            >
               {index + 1}/{total}
             </Typography>
-            <IconButton size="small" onClick={next} disabled={index === total - 1}>
+            <IconButton
+              size="small"
+              onClick={next}
+              disabled={index === total - 1}
+            >
               <ChevronRightIcon fontSize="small" />
             </IconButton>
             <Typography
@@ -136,7 +161,11 @@ export default function MockSwapControls() {
             </Typography>
           </>
         )}
-        <Button size="small" variant="outlined" onClick={handleMockConfirmation}>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={handleMockConfirmation}
+        >
           Mock Confirmation
         </Button>
       </Box>

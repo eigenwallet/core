@@ -27,11 +27,7 @@ pub struct TxMercy {
 }
 
 impl TxMercy {
-    pub fn new(
-        tx_withhold: &TxWithhold,
-        refund_address: &Address,
-        spending_fee: Amount,
-    ) -> Self {
+    pub fn new(tx_withhold: &TxWithhold, refund_address: &Address, spending_fee: Amount) -> Self {
         // TODO: Handle case where fee >= burn amount more gracefully
         assert!(
             tx_withhold.amount() > spending_fee,

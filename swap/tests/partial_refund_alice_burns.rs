@@ -2,9 +2,9 @@ pub mod harness;
 
 use std::time::Duration;
 
+use harness::SlowAmnestyConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_partially_refunded;
-use harness::SlowAmnestyConfig;
 use rust_decimal::Decimal;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;

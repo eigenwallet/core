@@ -140,8 +140,8 @@ where
     T: Serialize,
 {
     let wrapped = Ok::<_, SwapSetupError>(message);
-    let bytes = serde_cbor::to_vec(&wrapped)
-        .context("Failed to serialize message as bytes using CBOR")?;
+    let bytes =
+        serde_cbor::to_vec(&wrapped).context("Failed to serialize message as bytes using CBOR")?;
 
     let mut frame = Framed::new(stream, codec());
 
@@ -155,8 +155,8 @@ where
 
 pub async fn write_cbor_error(stream: &mut Stream, error: SwapSetupError) -> Result<()> {
     let wrapped = Err::<(), _>(error);
-    let bytes = serde_cbor::to_vec(&wrapped)
-        .context("Failed to serialize error as bytes using CBOR")?;
+    let bytes =
+        serde_cbor::to_vec(&wrapped).context("Failed to serialize error as bytes using CBOR")?;
 
     let mut frame = Framed::new(stream, codec());
 

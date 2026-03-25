@@ -172,8 +172,18 @@ pub mod wire {
         type Error = Error;
 
         fn try_from(value: TradingEvent) -> Result<Self, Error> {
-            let [_bid, _bid_size, ask, _ask_size, _daily_change, _daily_change_relative, _last_price, _volume, _high, _low] =
-                value.1;
+            let [
+                _bid,
+                _bid_size,
+                ask,
+                _ask_size,
+                _daily_change,
+                _daily_change_relative,
+                _last_price,
+                _volume,
+                _high,
+                _low,
+            ] = value.1;
 
             let ask = bitcoin::Amount::from_btc(ask)?;
 

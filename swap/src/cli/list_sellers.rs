@@ -2,7 +2,7 @@ use crate::network::quote::BidQuote;
 use libp2p::{Multiaddr, PeerId};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::{DisplayFromStr, serde_as};
 use typeshare::typeshare;
 
 // TODO: Move these types into swap-p2p?

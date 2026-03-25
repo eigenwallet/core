@@ -14,16 +14,11 @@ libp2p = { workspace = true }
 monero-address = { workspace = true }
 monero-oxide-ext = { path = "../monero-oxide-ext" }
 rand = { workspace = true }
-rust_decimal = { workspace = true }
 rand_chacha = { workspace = true }
+rust_decimal = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
-sigma_fun = { workspace = true, default-features = false, features = [
-    "ed25519",
-    "serde",
-    "secp256k1",
-    "alloc",
-] }
+sigma_fun = { workspace = true, default-features = false, features = ["ed25519", "serde", "secp256k1", "alloc"] }
 swap-core = { path = "../swap-core" }
 swap-env = { path = "../swap-env" }
 swap-serde = { path = "../swap-serde" }

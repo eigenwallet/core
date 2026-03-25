@@ -1,4 +1,5 @@
 use libp2p::{
+    Multiaddr, PeerId, StreamProtocol,
     core::Endpoint,
     identify,
     request_response::{self, OutboundFailure},
@@ -6,11 +7,10 @@ use libp2p::{
         ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandlerInEvent,
         THandlerOutEvent, ToSwarm,
     },
-    Multiaddr, PeerId, StreamProtocol,
 };
 
 use crate::{
-    behaviour_util::{extract_semver_from_agent_str, BackoffTracker, ConnectionTracker, Trigger},
+    behaviour_util::{BackoffTracker, ConnectionTracker, Trigger, extract_semver_from_agent_str},
     futures_util::FuturesHashSet,
     patches,
     protocols::{
@@ -388,7 +388,7 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::{new_swarm, SwarmExt};
+    use crate::test::{SwarmExt, new_swarm};
     use futures::StreamExt;
     use libp2p::swarm::{Swarm, SwarmEvent};
     use tokio::task::JoinHandle;

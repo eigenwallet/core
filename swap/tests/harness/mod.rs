@@ -1,13 +1,13 @@
 mod bitcoind;
 mod electrs;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use bitcoin_harness::{BitcoindRpcApi, Client};
 use futures::Future;
-use libp2p::core::Multiaddr;
 use libp2p::PeerId;
-use monero_harness::{image, Monero};
+use libp2p::core::Multiaddr;
+use monero_harness::{Monero, image};
 use monero_sys::Daemon;
 use rust_decimal::Decimal;
 use std::cmp::Ordering;
@@ -20,13 +20,13 @@ use std::time::Duration;
 use swap::asb::FixedRate;
 use swap::cli::api;
 use swap::database::{AccessMode, SqliteDatabase};
-use swap::monero::wallet::no_listener;
 use swap::monero::Wallets;
+use swap::monero::wallet::no_listener;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
 use swap::protocol::alice::{AliceState, Swap, TipConfig};
 use swap::protocol::bob::BobState;
-use swap::protocol::{alice, bob, Database};
+use swap::protocol::{Database, alice, bob};
 use swap::seed::Seed;
 use swap::{asb, cli, monero};
 use swap_core::bitcoin::{CancelTimelock, PunishTimelock};
@@ -876,10 +876,7 @@ impl TestContext {
     }
 
     pub async fn assert_alice_mercy_confirmed(&mut self, state: AliceState) {
-        assert!(matches!(
-            state,
-            AliceState::BtcMercyConfirmed { .. }
-        ));
+        assert!(matches!(state, AliceState::BtcMercyConfirmed { .. }));
 
         // Same as refunded - Alice still has her XMR back
         assert_eventual_balance(
@@ -1098,10 +1095,7 @@ impl TestContext {
                 state6.tx_partial_refund_fee.expect("partial refund fee"),
                 state6.tx_mercy_fee.expect("mercy fee"),
             ),
-            _ => panic!(
-                "Bob is not in btc mercy confirmed state: {:?}",
-                state
-            ),
+            _ => panic!("Bob is not in btc mercy confirmed state: {:?}", state),
         };
         let lock_tx_bitcoin_fee = self
             .bob_bitcoin_wallet
@@ -1347,7 +1341,7 @@ impl Wallet for bitcoin_wallet::Wallet {
 
 fn random_prefix() -> String {
     use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use std::iter;
     const LEN: usize = 8;
     let mut rng = thread_rng();

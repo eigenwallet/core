@@ -15,7 +15,7 @@ pub enum network {
 pub mod private_key {
     use monero_oxide_ext::PrivateKey;
     use serde::de::Visitor;
-    use serde::{de, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer, de};
     use std::fmt;
 
     fn trunc_at_32(s: &[u8]) -> &[u8] {
@@ -109,7 +109,7 @@ pub mod optional_private_key {
 }
 
 pub mod address {
-    use anyhow::{bail, Context, Result};
+    use anyhow::{Context, Result, bail};
 
     #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq)]
     #[error(

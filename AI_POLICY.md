@@ -1,9 +1,9 @@
 # AI Usage Policy: Smart Coding over Vibe Coding
 
-We do not forbid the use of generative AI tools in this project. 
+We do not forbid the use of generative AI tools in this project.
 
-However, we do not tolerate **Vibe Coding** (flying blind). 
-AI is currently _not fit_ to make autonomous changes to this codebase. 
+However, we do not tolerate **Vibe Coding** (flying blind).
+AI is currently _not fit_ to make autonomous changes to this codebase.
 Therefore, any change that is not piloted by a human who understands the issue better than the AI is bound to have problems.
 
 This project is maintained by volunteers who spent their real, personal time reviewing issues and pull requests (PRs).
@@ -11,20 +11,20 @@ Do not abuse it.
 
 ## TL;DR
 
-| | |
-|---|---|
-|AI as tool|✓|
-|AI as autopilot|✗|
+|                 |   |
+| --------------- | - |
+| AI as tool      | ✓ |
+| AI as autopilot | ✗ |
 
-| | |
-|---|---|
-|Restraining AI, refactor code and prevent slop|✓|
-|Let AI run wild|✗|
+|                                                |   |
+| ---------------------------------------------- | - |
+| Restraining AI, refactor code and prevent slop | ✓ |
+| Let AI run wild                                | ✗ |
 
-| | |
-|---|---|
-|Verify tests pass, compile app and test UI before submitting PR|✓|
-|Trust AI to produce valid and correct changes|✗|
+|                                                                 |   |
+| --------------------------------------------------------------- | - |
+| Verify tests pass, compile app and test UI before submitting PR | ✓ |
+| Trust AI to produce valid and correct changes                   | ✗ |
 
 ---
 
@@ -50,9 +50,9 @@ Do not abuse it.
 
 ### 5. Human Communication
 
-**Rule:** Commit messages, PR descriptions, and discussions must be written 100% by yourself. We will not waste our time trying to understand AI hallucinations or arguing with an overconfident LLM. 
+**Rule:** Commit messages, PR descriptions, and discussions must be written 100% by yourself. We will not waste our time trying to understand AI hallucinations or arguing with an overconfident LLM.
 
-**Expectation:** We don't want to read 5-page AI-generated essays about what your code does. We want to hear briefly and concisely from *you*:
+**Expectation:** We don't want to read 5-page AI-generated essays about what your code does. We want to hear briefly and concisely from _you_:
 
 - What was the problem?
 - How did you solve it?
@@ -81,4 +81,3 @@ This project is maintained by humans. Every bad, unreviewed AI PR costs us valua
 Prove to us that you control the AI, and we look forward to your contribution.
 
 ---
-

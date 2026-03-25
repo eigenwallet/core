@@ -1,7 +1,7 @@
 // TODO: This is essentially vendored from swap/src/common/tor.rs
 // TODO: Consider extracting this into a common swap-tor crate
 use anyhow::{Context, Result};
-use arti_client::{config::TorClientConfigBuilder, TorClient};
+use arti_client::{TorClient, config::TorClientConfigBuilder};
 use std::path::Path;
 use std::sync::Arc;
 use tor_rtcompat::tokio::TokioRustlsRuntime;

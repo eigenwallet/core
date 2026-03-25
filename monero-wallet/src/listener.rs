@@ -4,7 +4,7 @@ use monero_sys::WalletEventListener;
 
 use crate::Wallet;
 use monero_oxide_ext::Amount;
-use throttle::{throttle, Throttle};
+use throttle::{Throttle, throttle};
 
 use crate::TauriHandle;
 

@@ -2,8 +2,8 @@ pub mod harness;
 
 use std::time::Duration;
 
-use harness::bob_run_until::is_remaining_refund_timelock_expired;
 use harness::FastAmnestyConfig;
+use harness::bob_run_until::is_remaining_refund_timelock_expired;
 use rust_decimal::Decimal;
 use swap::asb::FixedRate;
 use swap::protocol::bob::BobState;
@@ -45,8 +45,7 @@ async fn bob_restart_at_reclaim_timelock_expired_detects_withhold() {
             // She will: lock XMR → see cancel → see partial refund → recover
             // XMR → publish TxWithhold → wait for confirmation.
             let alice_swap = ctx.alice_next_swap().await;
-            let alice_task =
-                tokio::spawn(alice::run(alice_swap, FixedRate::default()));
+            let alice_task = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
 
             // Bob finishes first (3-block timelock is much faster than XMR recovery)
             let bob_state = bob_task.await??;

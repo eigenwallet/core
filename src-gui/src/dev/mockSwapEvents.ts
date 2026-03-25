@@ -167,10 +167,22 @@ const baseScenario: TauriSwapProgressEvent[] = [
   { type: "RetrievingMoneroBlockheight" },
   { type: "BtcLockPublishInflight" },
   // BTC lock confirmations: 0, 1, 2
-  { type: "BtcLockTxInMempool", content: { btc_lock_txid: MOCK_BTC_LOCK_TXID, btc_lock_confirmations: 0 } },
-  { type: "BtcLockTxInMempool", content: { btc_lock_txid: MOCK_BTC_LOCK_TXID, btc_lock_confirmations: 1 } },
-  { type: "BtcLockTxInMempool", content: { btc_lock_txid: MOCK_BTC_LOCK_TXID, btc_lock_confirmations: 2 } },
-  { type: "VerifyingXmrLockTx", content: { xmr_lock_txid: MOCK_XMR_LOCK_TXID } },
+  {
+    type: "BtcLockTxInMempool",
+    content: { btc_lock_txid: MOCK_BTC_LOCK_TXID, btc_lock_confirmations: 0 },
+  },
+  {
+    type: "BtcLockTxInMempool",
+    content: { btc_lock_txid: MOCK_BTC_LOCK_TXID, btc_lock_confirmations: 1 },
+  },
+  {
+    type: "BtcLockTxInMempool",
+    content: { btc_lock_txid: MOCK_BTC_LOCK_TXID, btc_lock_confirmations: 2 },
+  },
+  {
+    type: "VerifyingXmrLockTx",
+    content: { xmr_lock_txid: MOCK_XMR_LOCK_TXID },
+  },
   // XMR lock confirmations: 0 through 10
   ...Array.from({ length: XMR_TARGET_CONFIRMATIONS + 1 }, (_, i) => ({
     type: "XmrLockTxInMempool" as const,
@@ -190,7 +202,10 @@ const happyPath: TauriSwapProgressEvent[] = [
   { type: "RedeemingMonero" },
   {
     type: "XmrRedeemInMempool",
-    content: { xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID], xmr_receive_pool: MOCK_RECEIVE_POOL },
+    content: {
+      xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
+      xmr_receive_pool: MOCK_RECEIVE_POOL,
+    },
   },
   { type: "Released" },
 ];
@@ -202,7 +217,10 @@ const cooperativeRedeem: TauriSwapProgressEvent[] = [
   { type: "RedeemingMonero" },
   {
     type: "XmrRedeemInMempool",
-    content: { xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID], xmr_receive_pool: MOCK_RECEIVE_POOL },
+    content: {
+      xmr_redeem_txids: [MOCK_XMR_REDEEM_TXID],
+      xmr_receive_pool: MOCK_RECEIVE_POOL,
+    },
   },
   { type: "Released" },
 ];
@@ -213,17 +231,33 @@ const cooperativeRedeemRejected: TauriSwapProgressEvent[] = [
   { type: "CooperativeRedeemRejected", content: { reason: "Peer offline" } },
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
-  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
+  {
+    type: "BtcCancelPublished",
+    content: {
+      btc_cancel_txid: MOCK_BTC_CANCEL_TXID,
+      btc_cancel_confirmations: 0,
+      btc_cancel_target_confirmations: 1,
+    },
+  },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
-  { type: "BtcRefundPublished", content: { btc_refund_txid: MOCK_BTC_REFUND_TXID } },
+  {
+    type: "BtcRefundPublished",
+    content: { btc_refund_txid: MOCK_BTC_REFUND_TXID },
+  },
   { type: "BtcRefunded", content: { btc_refund_txid: MOCK_BTC_REFUND_TXID } },
   { type: "Released" },
 ];
 
 const earlyRefund: TauriSwapProgressEvent[] = [
   ...baseScenario,
-  { type: "BtcEarlyRefundPublished", content: { btc_early_refund_txid: MOCK_BTC_EARLY_REFUND_TXID } },
-  { type: "BtcEarlyRefunded", content: { btc_early_refund_txid: MOCK_BTC_EARLY_REFUND_TXID } },
+  {
+    type: "BtcEarlyRefundPublished",
+    content: { btc_early_refund_txid: MOCK_BTC_EARLY_REFUND_TXID },
+  },
+  {
+    type: "BtcEarlyRefunded",
+    content: { btc_early_refund_txid: MOCK_BTC_EARLY_REFUND_TXID },
+  },
   { type: "Released" },
 ];
 
@@ -231,7 +265,14 @@ const partialRefundWithAmnesty: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
-  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
+  {
+    type: "BtcCancelPublished",
+    content: {
+      btc_cancel_txid: MOCK_BTC_CANCEL_TXID,
+      btc_cancel_confirmations: 0,
+      btc_cancel_target_confirmations: 1,
+    },
+  },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
@@ -283,7 +324,14 @@ const partialRefundWithBurn: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
-  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
+  {
+    type: "BtcCancelPublished",
+    content: {
+      btc_cancel_txid: MOCK_BTC_CANCEL_TXID,
+      btc_cancel_confirmations: 0,
+      btc_cancel_target_confirmations: 1,
+    },
+  },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
@@ -335,7 +383,14 @@ const partialRefundWithWithholdAndMercy: TauriSwapProgressEvent[] = [
   ...baseScenario,
   { type: "WaitingForCancelTimelockExpiration" },
   { type: "CancelTimelockExpired" },
-  { type: "BtcCancelPublished", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID, btc_cancel_confirmations: 0, btc_cancel_target_confirmations: 1 } },
+  {
+    type: "BtcCancelPublished",
+    content: {
+      btc_cancel_txid: MOCK_BTC_CANCEL_TXID,
+      btc_cancel_confirmations: 0,
+      btc_cancel_target_confirmations: 1,
+    },
+  },
   { type: "BtcCancelled", content: { btc_cancel_txid: MOCK_BTC_CANCEL_TXID } },
   {
     type: "BtcPartialRefundPublished",
@@ -458,7 +513,10 @@ const MOCK_SELLER = {
   addresses: ["/ip4/127.0.0.1/tcp/9939"],
 };
 
-function makeMockSwapInfo(swapId: string, stateName: string): GetSwapInfoResponse {
+function makeMockSwapInfo(
+  swapId: string,
+  stateName: string,
+): GetSwapInfoResponse {
   return {
     swap_id: swapId,
     seller: MOCK_SELLER,
@@ -474,7 +532,9 @@ function makeMockSwapInfo(swapId: string, stateName: string): GetSwapInfoRespons
     btc_refund_address: MOCK_BTC_DEPOSIT_ADDRESS,
     cancel_timelock: 24,
     punish_timelock: 144,
-    monero_receive_pool: [{ address: MOCK_XMR_ADDRESS, percentage: 100, label: "Main" }],
+    monero_receive_pool: [
+      { address: MOCK_XMR_ADDRESS, percentage: 100, label: "Main" },
+    ],
   };
 }
 
@@ -489,22 +549,30 @@ export function getMockAlertData(): {
   timelocks: [string, ExpiredTimelocks][];
 } {
   return {
-    swapInfos: MOCK_ALERT_SWAP_IDS.map((id) => makeMockSwapInfo(id, "btc is locked")),
+    swapInfos: MOCK_ALERT_SWAP_IDS.map((id) =>
+      makeMockSwapInfo(id, "btc is locked"),
+    ),
     timelocks: MOCK_ALERT_TIMELOCKS,
   };
 }
 
 export function getMockAlertCleanupData(): GetSwapInfoResponse[] {
-  return MOCK_ALERT_SWAP_IDS.map((id) => makeMockSwapInfo(id, "safely aborted"));
+  return MOCK_ALERT_SWAP_IDS.map((id) =>
+    makeMockSwapInfo(id, "safely aborted"),
+  );
 }
 
-export function getMockLockBitcoinApproval(scenario: MockScenario | null): ApprovalRequest {
+export function getMockLockBitcoinApproval(
+  scenario: MockScenario | null,
+): ApprovalRequest {
   const isPartial = scenario !== null && isPartialRefundScenario(scenario);
   return {
     request_id: "00000000-0000-0000-0000-000000000001",
     request: {
       type: "LockBitcoin",
-      content: isPartial ? MOCK_LOCK_BITCOIN_DETAILS_PARTIAL : MOCK_LOCK_BITCOIN_DETAILS_FULL,
+      content: isPartial
+        ? MOCK_LOCK_BITCOIN_DETAILS_PARTIAL
+        : MOCK_LOCK_BITCOIN_DETAILS_FULL,
     },
     request_status: {
       state: "Pending",

@@ -43,20 +43,23 @@ export default function Slide03_WhatIfICancel(props: IntroSlideProps) {
         </Box>
       </Box>
       <Typography variant="subtitle1">
-        If an anti-spam deposit was agreed, you'll get your Bitcoin back in two steps:
+        If an anti-spam deposit was agreed, you'll get your Bitcoin back in two
+        steps:
       </Typography>
       <Typography component="ol" variant="subtitle1" sx={{ px: 4, mt: 1 }}>
         <li>
-          Everything but the deposit is refunded instantly, just like before. <i>(95% in this example)</i>
+          Everything but the deposit is refunded instantly, just like before.{" "}
+          <i>(95% in this example)</i>
         </li>
         <li>
-          We have to wait for ~30min to reclaim the anti-spam deposit. <i>(5% in this example)</i>
+          We have to wait for ~30min to reclaim the anti-spam deposit.{" "}
+          <i>(5% in this example)</i>
         </li>
       </Typography>
       <Typography variant="subtitle1" sx={{ mt: 1 }}>
-        During these 30 minutes the maker may withhold the deposit.
-        They do this if they think you are spamming them.
-        But this only happens in rare circumstances.
+        During these 30 minutes the maker may withhold the deposit. They do this
+        if they think you are spamming them. But this only happens in rare
+        circumstances.
       </Typography>
       <br />
       <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>

@@ -13,7 +13,7 @@
 
 use anyhow::Result;
 use std::env;
-use swap::cli::command::{parse_args_and_apply_defaults, ParseResult};
+use swap::cli::command::{ParseResult, parse_args_and_apply_defaults};
 
 #[tokio::main]
 pub async fn main() -> Result<()> {
@@ -38,14 +38,14 @@ pub async fn main() -> Result<()> {
 mod tests {
     use super::*;
     use ::bitcoin::Amount;
-    use bitcoin::address::NetworkUnchecked;
     use bitcoin::Address;
+    use bitcoin::address::NetworkUnchecked;
     use futures::future::{BoxFuture, FutureExt};
     use libp2p::PeerId;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
-    use swap::cli::api::request::determine_btc_to_swap;
     use swap::cli::QuoteWithAddress;
+    use swap::cli::api::request::determine_btc_to_swap;
     use swap::network::quote::{BidQuote, RefundPolicyWire};
     use tracing::level_filters::LevelFilter;
     use tracing_ext::capture_logs;

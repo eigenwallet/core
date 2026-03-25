@@ -5,7 +5,7 @@ use crate::cli::api::request::{
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::monero::MoneroAddressPool;
 use crate::{monero, network::quote::BidQuote};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use bitcoin::Txid;
 use libp2p::PeerId;

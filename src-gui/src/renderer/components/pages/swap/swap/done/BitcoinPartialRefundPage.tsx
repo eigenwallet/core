@@ -12,7 +12,14 @@
  *       -> optionally BtcMercyPublished -> BtcMercyConfirmed (Alice grants mercy)
  */
 
-import { Alert, Box, Button, DialogContentText, Link, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  DialogContentText,
+  Link,
+  Typography,
+} from "@mui/material";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { useActiveSwapInfo, useAppSelector } from "store/hooks";
 import FeedbackInfoBox from "renderer/components/pages/help/FeedbackInfoBox";
@@ -60,14 +67,16 @@ export function WaitingForEarnestDepositTimelockExpirationPage({
   blocks_until_expiry,
 }: TauriSwapProgressEventContent<"WaitingForEarnestDepositTimelockExpiration">) {
   const blocksConfirmed = target_blocks - blocks_until_expiry;
-  const atRiskPercent = Math.round((btc_amnesty_amount / btc_lock_amount) * 100);
+  const atRiskPercent = Math.round(
+    (btc_amnesty_amount / btc_lock_amount) * 100,
+  );
 
   return (
     <>
       <DialogContentText>
-        Waiting for the timelock on the anti-spam deposit ({atRiskPercent}% of your Bitcoin) to expire.
-        The maker can choose to withhold it during this time.
-        After the timelock expires, we will refund the remaining Bitcoin.
+        Waiting for the timelock on the anti-spam deposit ({atRiskPercent}% of
+        your Bitcoin) to expire. The maker can choose to withhold it during this
+        time. After the timelock expires, we will refund the remaining Bitcoin.
       </DialogContentText>
       <BitcoinTransactionInfoBox
         title="Waiting for timelock to expire"
@@ -92,7 +101,9 @@ function PartialRefundPage({
 }) {
   const swap = useActiveSwapInfo();
 
-  const guaranteedPercent = Math.round(((btcLockAmount - btcAmnestyAmount) / btcLockAmount) * 100);
+  const guaranteedPercent = Math.round(
+    ((btcLockAmount - btcAmnestyAmount) / btcLockAmount) * 100,
+  );
   const atRiskPercent = Math.round((btcAmnestyAmount / btcLockAmount) * 100);
 
   const additionalContent = swap ? (
@@ -106,11 +117,17 @@ function PartialRefundPage({
   return (
     <>
       <DialogContentText>
-        We are first taking the guaranteed <strong>{guaranteedPercent}%</strong> Bitcoin refund.
-        After a short timelock we will be able to reclaim the anti-spam deposit (the remaining {atRiskPercent}%).
-        The maker may in rare circumstances withhold the deposit.
+        We are first taking the guaranteed <strong>{guaranteedPercent}%</strong>{" "}
+        Bitcoin refund. After a short timelock we will be able to reclaim the
+        anti-spam deposit (the remaining {atRiskPercent}%). The maker may in
+        rare circumstances withhold the deposit.
         <br />
-        <Link href={"https://docs.eigenwallet.org/advanced/anti_spam_deposit"} target="_blank">Read more</Link>
+        <Link
+          href={"https://docs.eigenwallet.org/advanced/anti_spam_deposit"}
+          target="_blank"
+        >
+          Read more
+        </Link>
       </DialogContentText>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
         <BitcoinTransactionInfoBox
@@ -129,17 +146,13 @@ function PartialRefundPage({
 export function BitcoinAmnestyPublished({
   btc_amnesty_txid,
 }: TauriSwapProgressEventContent<"BtcAmnestyPublished">) {
-  return (
-    <AmnestyPage txid={btc_amnesty_txid} confirmed={false} />
-  );
+  return <AmnestyPage txid={btc_amnesty_txid} confirmed={false} />;
 }
 
 export function BitcoinAmnestyReceived({
   btc_amnesty_txid,
 }: TauriSwapProgressEventContent<"BtcAmnestyReceived">) {
-  return (
-    <AmnestyPage txid={btc_amnesty_txid} confirmed={true} />
-  );
+  return <AmnestyPage txid={btc_amnesty_txid} confirmed={true} />;
 }
 
 function AmnestyPage({
@@ -167,7 +180,8 @@ function AmnestyPage({
     <>
       <Alert severity="success" sx={{ mb: 2 }}>
         <Typography variant="body2">
-          <strong>{confirmed ? "Complete:" : "Almost there:"}</strong>{" "}{mainMessage}
+          <strong>{confirmed ? "Complete:" : "Almost there:"}</strong>{" "}
+          {mainMessage}
         </Typography>
       </Alert>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -255,29 +269,36 @@ function WithholdPage({
   btcAmnestyAmount: number;
 }) {
   const swapInfo = useActiveSwapInfo();
-  const isMock = useAppSelector((s) => s.swap._mockOnlyDisableTauriCallsOnSwapProgress);
-  const swapId = swapInfo?.swap_id ?? (isMock ? "a1b2c3d4-e5f6-7890-abcd-ef1234567890" : null);
-  const peerId = swapInfo?.seller.peer_id ?? (isMock ? "12D3KooWF1rGmFnqJhNrHhEMPVbMM3eRnuf3XPG3JcvedAMdSHkj" : null);
+  const isMock = useAppSelector(
+    (s) => s.swap._mockOnlyDisableTauriCallsOnSwapProgress,
+  );
+  const swapId =
+    swapInfo?.swap_id ??
+    (isMock ? "a1b2c3d4-e5f6-7890-abcd-ef1234567890" : null);
+  const peerId =
+    swapInfo?.seller.peer_id ??
+    (isMock ? "12D3KooWF1rGmFnqJhNrHhEMPVbMM3eRnuf3XPG3JcvedAMdSHkj" : null);
   const atRiskPercent = Math.round((btcAmnestyAmount / btcLockAmount) * 100);
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <DialogContentText>
         <p>
-          The maker is withholding the anti-spam deposit (remaining {atRiskPercent}% of the Bitcoin)
-          because they think you are spamming them.
+          The maker is withholding the anti-spam deposit (remaining{" "}
+          {atRiskPercent}% of the Bitcoin) because they think you are spamming
+          them.
         </p>
         <p>
           They can still release the deposit if you convince them otherwise.
-          Share the swap ID below when you contact them.
-          The maker Peer ID helps confirm you are speaking to the correct market maker.
+          Share the swap ID below when you contact them. The maker Peer ID helps
+          confirm you are speaking to the correct market maker.
         </p>
+        <p>You can reach out to them on our community servers.</p>
         <p>
-          You can reach out to them on our community servers.
-        </p>
-        <p>
-          <i>Beware scammers.
-            Never reveal your private key or seedphrase to anyone.</i>
+          <i>
+            Beware scammers. Never reveal your private key or seedphrase to
+            anyone.
+          </i>
         </p>
         <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>
           <Button
@@ -332,7 +353,7 @@ function WithholdPage({
           )}
         </Box>
       )}
-    </Box >
+    </Box>
   );
 }
 
@@ -350,13 +371,7 @@ export function BitcoinMercyConfirmed({
   return <MercyPage txid={btc_mercy_txid} confirmed={true} />;
 }
 
-function MercyPage({
-  txid,
-  confirmed,
-}: {
-  txid: string;
-  confirmed: boolean;
-}) {
+function MercyPage({ txid, confirmed }: { txid: string; confirmed: boolean }) {
   const swap = useActiveSwapInfo();
 
   const mainMessage = confirmed
@@ -377,8 +392,8 @@ function MercyPage({
       <Alert severity="success" sx={{ mb: 2 }}>
         <Typography variant="body2">
           <strong>Mercy granted:</strong> The market maker has decided to
-          release the earnest deposit, which they previously withheld. All your Bitcoin has now been
-          fully refunded.
+          release the earnest deposit, which they previously withheld. All your
+          Bitcoin has now been fully refunded.
         </Typography>
       </Alert>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>

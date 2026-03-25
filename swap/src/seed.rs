@@ -1,11 +1,11 @@
 use ::bitcoin::bip32::Xpriv as ExtendedPrivKey;
 use anyhow::{Context as AnyContext, Result};
-use bitcoin::hashes::{sha256, Hash, HashEngine};
+use bitcoin::hashes::{Hash, HashEngine, sha256};
 use bitcoin::secp256k1::constants::SECRET_KEY_SIZE;
 use bitcoin::secp256k1::{self, SecretKey};
 use libp2p::identity;
 use monero_seed::{Language, Seed as MoneroSeed};
-use pem::{encode, Pem};
+use pem::{Pem, encode};
 use rand::prelude::*;
 use std::ffi::OsStr;
 use std::fmt;

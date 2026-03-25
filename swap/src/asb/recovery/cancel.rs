@@ -1,7 +1,7 @@
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
-use bitcoin_wallet::{parse_rpc_error_code, BitcoinWallet, RpcErrorCode, Txid};
+use crate::protocol::alice::AliceState;
+use anyhow::{Result, bail};
+use bitcoin_wallet::{BitcoinWallet, RpcErrorCode, Txid, parse_rpc_error_code};
 use std::convert::TryInto;
 use std::sync::Arc;
 use uuid::Uuid;

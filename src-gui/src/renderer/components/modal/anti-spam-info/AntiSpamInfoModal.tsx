@@ -8,9 +8,7 @@ import { setUserHasSeenAntiSpamInfo } from "store/features/settingsSlice";
 import { useAppDispatch, useSettings } from "store/hooks";
 
 export default function AntiSpamInfoModal() {
-  const userHasSeenAntiSpamInfo = useSettings(
-    (s) => s.userHasSeenAntiSpamInfo,
-  );
+  const userHasSeenAntiSpamInfo = useSettings((s) => s.userHasSeenAntiSpamInfo);
 
   const dispatch = useAppDispatch();
 

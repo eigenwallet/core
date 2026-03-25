@@ -1,6 +1,6 @@
 use std::result::Result;
 use std::sync::Arc;
-use swap::cli::api::{tauri_bindings::TauriHandle, Context};
+use swap::cli::api::{Context, tauri_bindings::TauriHandle};
 use tauri::{Manager, RunEvent};
 use tokio::sync::Mutex;
 

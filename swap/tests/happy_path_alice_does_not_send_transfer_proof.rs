@@ -1,8 +1,8 @@
 pub mod harness;
 
+use harness::SlowCancelConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_xmr_locked;
-use harness::SlowCancelConfig;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
 use swap::protocol::bob::BobState;

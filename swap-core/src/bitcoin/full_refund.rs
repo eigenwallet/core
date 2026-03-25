@@ -2,13 +2,13 @@
 
 use crate::bitcoin;
 use crate::bitcoin::{
-    verify_sig, Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey,
-    TooManyInputs, Transaction, TxCancel,
+    Address, Amount, EmptyWitnessStack, NoInputs, NotThreeWitnesses, PublicKey, TooManyInputs,
+    Transaction, TxCancel, verify_sig,
 };
 use ::bitcoin::sighash::SighashCache;
-use ::bitcoin::{secp256k1, ScriptBuf, Weight};
-use ::bitcoin::{sighash::SegwitV0Sighash as Sighash, EcdsaSighashType, Txid};
-use anyhow::{bail, Context, Result};
+use ::bitcoin::{EcdsaSighashType, Txid, sighash::SegwitV0Sighash as Sighash};
+use ::bitcoin::{ScriptBuf, Weight, secp256k1};
+use anyhow::{Context, Result, bail};
 use bdk_wallet::miniscript::Descriptor;
 use bitcoin_wallet::primitives::Watchable;
 use curve25519_dalek::scalar::Scalar;
@@ -20,10 +20,10 @@ use super::extract_ecdsa_sig;
 
 /// A transaction that refunds 100% of the locked Bitcoin.
 /// Previously to the partial refund protocol change, this was the only type of refund transaction.
-/// 
+///
 /// Now there also is the partial refund transaction, which refunds only a portion of the locked Bitcoin.
 /// For more information, see [#675](https://github.com/eigenwallet/core/pull/675).
-/// 
+///
 /// The main reason this struct is still here is to 1) keep backwards compatibility in the database
 /// and 2) avoid having to pay fees for 2 Bitcoin transactions when we want to get a full refund anyway.
 #[derive(Debug, Clone)]

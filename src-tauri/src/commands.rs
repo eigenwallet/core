@@ -3,14 +3,13 @@ use std::io::Write;
 use std::result::Result;
 use swap::cli::{
     api::{
-        data,
+        ContextBuilder, data,
         request::{
             BalanceArgs, BuyXmrArgs, CancelAndRefundArgs, ChangeMoneroNodeArgs,
             CheckElectrumNodeArgs, CheckElectrumNodeResponse, CheckMoneroNodeArgs,
             CheckMoneroNodeResponse, CheckSeedArgs, CheckSeedResponse, CreateMoneroSubaddressArgs,
             DeleteAllLogsArgs, DfxAuthenticateResponse, ExportBitcoinWalletArgs,
-            GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs,
-            GetLogsArgs,
+            GetBitcoinAddressArgs, GetCurrentSwapArgs, GetDataDirArgs, GetHistoryArgs, GetLogsArgs,
             GetMoneroAddressesArgs, GetMoneroBalanceArgs, GetMoneroHistoryArgs,
             GetMoneroMainAddressArgs, GetMoneroSeedArgs, GetMoneroSubaddressesArgs,
             GetMoneroSyncProgressArgs, GetPendingApprovalsResponse, GetRestoreHeightArgs,
@@ -21,15 +20,14 @@ use swap::cli::{
             WithdrawBtcArgs,
         },
         tauri_bindings::{ContextStatus, TauriSettings},
-        ContextBuilder,
     },
     command::Bitcoin,
 };
 use swap_p2p::libp2p_ext::MultiAddrVecExt;
 use tauri_plugin_dialog::DialogExt;
-use zip::{write::SimpleFileOptions, ZipWriter};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
-use crate::{commands::util::ToStringResult, State};
+use crate::{State, commands::util::ToStringResult};
 
 /// This macro returns the list of all command handlers
 /// You can call this and insert the output into [`tauri::app::Builder::invoke_handler`]

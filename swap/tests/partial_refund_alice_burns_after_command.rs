@@ -2,9 +2,9 @@ pub mod harness;
 
 use std::time::Duration;
 
+use harness::SlowAmnestyConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_partially_refunded;
-use harness::SlowAmnestyConfig;
 use rust_decimal::Decimal;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
@@ -21,7 +21,7 @@ async fn given_partial_refund_alice_burns_after_command() {
     // Alice does NOT withhold by default - always_withhold_deposit is false
     let refund_policy = Some(RefundPolicy {
         anti_spam_deposit_ratio: Decimal::new(5, 2), // 0.05 = 5%
-        always_withhold_deposit: false,               // Do not withhold by default
+        always_withhold_deposit: false,              // Do not withhold by default
     });
 
     harness::setup_test(

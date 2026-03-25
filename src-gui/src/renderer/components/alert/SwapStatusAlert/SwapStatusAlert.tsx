@@ -410,9 +410,8 @@ export default function SwapStatusAlert({
           <>
             Swap <TruncatedText>{swap.swap_id}</TruncatedText> is not running
           </>
-        )
-        }
-      </AlertTitle >
+        )}
+      </AlertTitle>
       <Box
         sx={{
           display: "flex",
@@ -423,6 +422,6 @@ export default function SwapStatusAlert({
         <StateAlert swap={swap} timelock={timelock} isRunning={isRunning} />
         {timelock && <TimelockTimeline swap={swap} timelock={timelock} />}
       </Box>
-    </Alert >
+    </Alert>
   );
 }

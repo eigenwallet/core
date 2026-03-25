@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use testcontainers::{core::WaitFor, Image, ImageArgs};
+use testcontainers::{Image, ImageArgs, core::WaitFor};
 
 pub const RPC_USER: &str = "admin";
 pub const RPC_PASSWORD: &str = "123";

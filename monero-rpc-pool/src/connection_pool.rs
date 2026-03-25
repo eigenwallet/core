@@ -102,7 +102,12 @@ impl ConnectionPool {
             if let Ok(guard) = sender_mutex.clone().try_lock_owned() {
                 tracing::debug!(
                     "Reusing connection for {}://{}:{} (via_tor={}). Pool stats: {}/{} connections available",
-                    key.0, key.1, key.2, key.3, total_connections - busy_connections, total_connections
+                    key.0,
+                    key.1,
+                    key.2,
+                    key.3,
+                    total_connections - busy_connections,
+                    total_connections
                 );
                 return Some(GuardedSender {
                     guard,
@@ -117,7 +122,11 @@ impl ConnectionPool {
 
         tracing::debug!(
             "No idle connections for {}://{}:{} (via_tor={}). Pool stats: 0/{} connections available",
-            key.0, key.1, key.2, key.3, total_connections
+            key.0,
+            key.1,
+            key.2,
+            key.3,
+            total_connections
         );
         None
     }
@@ -147,7 +156,11 @@ impl ConnectionPool {
             let vec = vec_lock.read().await;
             tracing::debug!(
                 "Created new connection for {}://{}:{} (via_tor={}). Pool stats: 1/{} connections available",
-                key_clone.0, key_clone.1, key_clone.2, key_clone.3, vec.len()
+                key_clone.0,
+                key_clone.1,
+                key_clone.2,
+                key_clone.3,
+                vec.len()
             );
         }
         drop(map_read);
@@ -171,7 +184,12 @@ impl ConnectionPool {
             if old_count != new_count {
                 tracing::debug!(
                     "Removed failed connection for {}://{}:{} (via_tor={}). Pool stats: {}/{} connections remaining",
-                    key.0, key.1, key.2, key.3, new_count, new_count
+                    key.0,
+                    key.1,
+                    key.2,
+                    key.3,
+                    new_count,
+                    new_count
                 );
             }
         }

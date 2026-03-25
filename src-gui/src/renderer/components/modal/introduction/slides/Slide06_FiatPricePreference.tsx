@@ -29,7 +29,8 @@ const FiatPricePreferenceSlide = ({
       imagePath={imagePath}
     >
       <Typography variant="subtitle1" color="textSecondary">
-        Do you want to us to show the current exchange rates for Bitcoin and Monero?
+        Do you want to us to show the current exchange rates for Bitcoin and
+        Monero?
       </Typography>
       <CardSelectionGroup
         value={showFiat ? "show" : "hide"}

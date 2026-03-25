@@ -152,7 +152,11 @@ export default function SwapStatePage({ state }: { state: SwapState | null }) {
       break;
     case "WaitingForEarnestDepositTimelockExpiration":
       if (state.curr.type === "WaitingForEarnestDepositTimelockExpiration") {
-        return <WaitingForEarnestDepositTimelockExpirationPage {...state.curr.content} />;
+        return (
+          <WaitingForEarnestDepositTimelockExpirationPage
+            {...state.curr.content}
+          />
+        );
       }
       break;
     case "BtcAmnestyPublished":

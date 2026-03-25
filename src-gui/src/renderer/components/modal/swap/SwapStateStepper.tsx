@@ -116,7 +116,12 @@ function getActiveStep(state: SwapState | null): PathStep | null {
 
     case "BtcRefundPublished":
     case "BtcEarlyRefundPublished":
-      return [PathType.RECOVERY_PATH, 1, isReleased, RecoveryScenario.FULL_REFUND];
+      return [
+        PathType.RECOVERY_PATH,
+        1,
+        isReleased,
+        RecoveryScenario.FULL_REFUND,
+      ];
 
     case "BtcRefunded":
     case "BtcEarlyRefunded":
@@ -125,15 +130,30 @@ function getActiveStep(state: SwapState | null): PathStep | null {
     // Recovery Path States - Partial Refund
 
     case "BtcPartialRefundPublished":
-      return [PathType.RECOVERY_PATH, 1, isReleased, RecoveryScenario.PARTIAL_REFUND];
+      return [
+        PathType.RECOVERY_PATH,
+        1,
+        isReleased,
+        RecoveryScenario.PARTIAL_REFUND,
+      ];
 
     case "BtcPartiallyRefunded":
     case "WaitingForEarnestDepositTimelockExpiration":
     case "BtcAmnestyPublished":
-      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
+      return [
+        PathType.RECOVERY_PATH,
+        2,
+        isReleased,
+        RecoveryScenario.PARTIAL_REFUND,
+      ];
 
     case "BtcAmnestyReceived":
-      return [PathType.RECOVERY_PATH, 3, false, RecoveryScenario.PARTIAL_REFUND];
+      return [
+        PathType.RECOVERY_PATH,
+        3,
+        false,
+        RecoveryScenario.PARTIAL_REFUND,
+      ];
 
     case "BtcWithholdPublished":
       return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.PARTIAL_REFUND];
@@ -142,22 +162,47 @@ function getActiveStep(state: SwapState | null): PathStep | null {
       return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.PARTIAL_REFUND];
 
     case "BtcMercyPublished":
-      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.PARTIAL_REFUND];
+      return [
+        PathType.RECOVERY_PATH,
+        2,
+        isReleased,
+        RecoveryScenario.PARTIAL_REFUND,
+      ];
 
     case "BtcMercyConfirmed":
-      return [PathType.RECOVERY_PATH, 3, false, RecoveryScenario.PARTIAL_REFUND];
+      return [
+        PathType.RECOVERY_PATH,
+        3,
+        false,
+        RecoveryScenario.PARTIAL_REFUND,
+      ];
 
     // Recovery Path States - Cooperative Redeem (after punishment)
 
     case "BtcPunished":
-      return [PathType.RECOVERY_PATH, 1, true, RecoveryScenario.COOPERATIVE_REDEEM];
+      return [
+        PathType.RECOVERY_PATH,
+        1,
+        true,
+        RecoveryScenario.COOPERATIVE_REDEEM,
+      ];
 
     case "AttemptingCooperativeRedeem":
     case "CooperativeRedeemAccepted":
-      return [PathType.RECOVERY_PATH, 2, isReleased, RecoveryScenario.COOPERATIVE_REDEEM];
+      return [
+        PathType.RECOVERY_PATH,
+        2,
+        isReleased,
+        RecoveryScenario.COOPERATIVE_REDEEM,
+      ];
 
     case "CooperativeRedeemRejected":
-      return [PathType.RECOVERY_PATH, 2, true, RecoveryScenario.COOPERATIVE_REDEEM];
+      return [
+        PathType.RECOVERY_PATH,
+        2,
+        true,
+        RecoveryScenario.COOPERATIVE_REDEEM,
+      ];
 
     case "Resuming":
       return null;

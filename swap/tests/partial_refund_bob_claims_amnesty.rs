@@ -1,7 +1,7 @@
 pub mod harness;
 
-use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::FastAmnestyConfig;
+use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use rust_decimal::Decimal;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
@@ -19,37 +19,42 @@ async fn given_partial_refund_bob_claims_amnesty_after_timelock() {
         always_withhold_deposit: false,
     });
 
-    harness::setup_test(FastAmnestyConfig, None, refund_policy, |mut ctx| async move {
-        let (bob_swap, _) = ctx.bob_swap().await;
-        let bob_swap = tokio::spawn(bob::run(bob_swap));
+    harness::setup_test(
+        FastAmnestyConfig,
+        None,
+        refund_policy,
+        |mut ctx| async move {
+            let (bob_swap, _) = ctx.bob_swap().await;
+            let bob_swap = tokio::spawn(bob::run(bob_swap));
 
-        let alice_swap = ctx.alice_next_swap().await;
-        let alice_swap = tokio::spawn(alice::run_until(
-            alice_swap,
-            is_xmr_lock_transaction_sent,
-            FixedRate::default(),
-        ));
+            let alice_swap = ctx.alice_next_swap().await;
+            let alice_swap = tokio::spawn(alice::run_until(
+                alice_swap,
+                is_xmr_lock_transaction_sent,
+                FixedRate::default(),
+            ));
 
-        // Alice finishes first (just sends XMR lock and stops)
-        let alice_state = alice_swap.await??;
-        assert!(matches!(
-            alice_state,
-            AliceState::XmrLockTransactionSent { .. }
-        ));
+            // Alice finishes first (just sends XMR lock and stops)
+            let alice_state = alice_swap.await??;
+            assert!(matches!(
+                alice_state,
+                AliceState::XmrLockTransactionSent { .. }
+            ));
 
-        // Bob takes longer: cancel timelock -> partial refund -> remaining refund timelock -> amnesty
-        let bob_state = bob_swap.await??;
-        ctx.assert_bob_amnesty_received(bob_state).await;
+            // Bob takes longer: cancel timelock -> partial refund -> remaining refund timelock -> amnesty
+            let bob_state = bob_swap.await??;
+            ctx.assert_bob_amnesty_received(bob_state).await;
 
-        // Restart Alice so she can refund her XMR
-        ctx.restart_alice().await;
-        let alice_swap = ctx.alice_next_swap().await;
-        let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
+            // Restart Alice so she can refund her XMR
+            ctx.restart_alice().await;
+            let alice_swap = ctx.alice_next_swap().await;
+            let alice_swap = tokio::spawn(alice::run(alice_swap, FixedRate::default()));
 
-        let alice_state = alice_swap.await??;
-        ctx.assert_alice_refunded(alice_state).await;
+            let alice_state = alice_swap.await??;
+            ctx.assert_alice_refunded(alice_state).await;
 
-        Ok(())
-    })
+            Ok(())
+        },
+    )
     .await;
 }

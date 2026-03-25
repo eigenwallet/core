@@ -13,7 +13,8 @@ export default function Slide01_WhatsNew(props: IntroSlideProps) {
         against spammers.
         <br />
         <br />
-        You'll see the deposit amount when choosing an offer and again when confirming.
+        You'll see the deposit amount when choosing an offer and again when
+        confirming.
       </Typography>
     </SlideTemplate>
   );

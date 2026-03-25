@@ -1,7 +1,7 @@
 use std::task::Poll;
 
-use libp2p::identify;
 use libp2p::PeerId;
+use libp2p::identify;
 
 use crate::libp2p_ext::MultiAddrExt;
 
@@ -62,17 +62,26 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
             libp2p::swarm::FromSwarm::NewListenAddr(new_listen_addr)
                 if new_listen_addr.addr.is_local() =>
             {
-                tracing::trace!(?new_listen_addr, "Blocking attempt by Swarm to tell Identify to share local address with other peers (FromSwarm::NewListenAddr)");
+                tracing::trace!(
+                    ?new_listen_addr,
+                    "Blocking attempt by Swarm to tell Identify to share local address with other peers (FromSwarm::NewListenAddr)"
+                );
             }
             libp2p::swarm::FromSwarm::NewExternalAddrCandidate(new_external_addr_candidate)
                 if new_external_addr_candidate.addr.is_local() =>
             {
-                tracing::trace!(?new_external_addr_candidate, "Blocking attempt by Swarm to tell Identify to share a local address with the Swarm (FromSwarm::NewExternalAddrCandidate)");
+                tracing::trace!(
+                    ?new_external_addr_candidate,
+                    "Blocking attempt by Swarm to tell Identify to share a local address with the Swarm (FromSwarm::NewExternalAddrCandidate)"
+                );
             }
             libp2p::swarm::FromSwarm::NewExternalAddrCandidate(new_external_addr_candidate)
                 if new_external_addr_candidate.addr.is_local() =>
             {
-                tracing::trace!(?new_external_addr_candidate, "Blocking attempt by Swarm to tell Identify to share a local address of another peer (FromSwarm::NewExternalAddrCandidate)");
+                tracing::trace!(
+                    ?new_external_addr_candidate,
+                    "Blocking attempt by Swarm to tell Identify to share a local address of another peer (FromSwarm::NewExternalAddrCandidate)"
+                );
             }
             other => self.inner.on_swarm_event(other),
         }
@@ -99,7 +108,11 @@ impl libp2p::swarm::NetworkBehaviour for Behaviour {
                 libp2p::swarm::ToSwarm::NewExternalAddrOfPeer { peer_id, address }
                     if address.is_local() =>
                 {
-                    tracing::trace!(?peer_id, ?address, "Blocking attempt by Identify to share a local address of another peer with the Swarm");
+                    tracing::trace!(
+                        ?peer_id,
+                        ?address,
+                        "Blocking attempt by Identify to share a local address of another peer with the Swarm"
+                    );
                     continue;
                 }
                 _ => return Poll::Ready(event),

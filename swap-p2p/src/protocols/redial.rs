@@ -1,10 +1,10 @@
 use crate::behaviour_util::{BackoffTracker, ConnectionTracker, Trigger};
 use crate::futures_util::FuturesHashSet;
 use crate::out_event;
+use libp2p::PeerId;
 use libp2p::core::Multiaddr;
 use libp2p::swarm::dial_opts::{DialOpts, PeerCondition};
 use libp2p::swarm::{DialError, FromSwarm, NetworkBehaviour, ToSwarm};
-use libp2p::PeerId;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -439,7 +439,10 @@ mod tests {
 
         loop {
             if tokio::time::Instant::now() >= deadline {
-                panic!("behaviour did not emit Dial event for peer {} in time after a mocked dial failure", peer);
+                panic!(
+                    "behaviour did not emit Dial event for peer {} in time after a mocked dial failure",
+                    peer
+                );
             }
 
             match behaviour.poll(&mut cx) {

@@ -1,21 +1,21 @@
+use crate::cli::api::Context;
 use crate::cli::api::request::{
     BalanceArgs, CancelAndRefundArgs, ExportBitcoinWalletArgs, GetConfigArgs, GetHistoryArgs,
     MoneroRecoveryArgs, Request, ResumeSwapArgs, WithdrawBtcArgs,
 };
-use crate::cli::api::Context;
 use anyhow::Result;
 use bitcoin::address::NetworkUnchecked;
-use bitcoin_wallet::{bitcoin_address, Amount};
+use bitcoin_wallet::{Amount, bitcoin_address};
 use libp2p::core::Multiaddr;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
-use structopt::{clap, StructOpt};
+use structopt::{StructOpt, clap};
 use url::Url;
 use uuid::Uuid;
 
-use super::api::request::GetLogsArgs;
 use super::api::ContextBuilder;
+use super::api::request::GetLogsArgs;
 
 // See: https://1209k.com/bitcoin-eye/ele.php?chain=btc
 const DEFAULT_ELECTRUM_RPC_URL: &str = "ssl://blockstream.info:700";
@@ -553,5 +553,4 @@ mod tests {
         };
         simple_positive(&raw_ars, (true, true, None), cli_cmd).await;
     }
-
 }

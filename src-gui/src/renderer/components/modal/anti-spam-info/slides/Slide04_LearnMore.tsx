@@ -22,11 +22,10 @@ export default function Slide04_LearnMore(props: IntroSlideProps) {
     >
       <Box sx={{ mb: 2 }}>
         <BulletPoint>
-          You don't need to deposit extra Bitcoin. Your swap experience doesn't change.
+          You don't need to deposit extra Bitcoin. Your swap experience doesn't
+          change.
         </BulletPoint>
-        <BulletPoint>
-          Normal, successful swaps are unaffected.
-        </BulletPoint>
+        <BulletPoint>Normal, successful swaps are unaffected.</BulletPoint>
         <BulletPoint>
           Makers cannot access the deposit, even if they withhold it.
         </BulletPoint>
@@ -39,7 +38,6 @@ export default function Slide04_LearnMore(props: IntroSlideProps) {
         Read more about the background and details of this update in the docs.
         There's an FAQ for quick answers, too.
       </p>
-
 
       <Button
         variant="outlined"

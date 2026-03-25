@@ -1,10 +1,10 @@
-use libp2p::{identify, ping};
 use libp2p::{
+    Multiaddr, PeerId,
     request_response::{
         InboundFailure, InboundRequestId, OutboundFailure, OutboundRequestId, ResponseChannel,
     },
-    Multiaddr, PeerId,
 };
+use libp2p::{identify, ping};
 
 use crate::observe;
 use crate::protocols::{

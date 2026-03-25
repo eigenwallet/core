@@ -77,8 +77,8 @@ function WalletDescriptorModal({
       <DialogTitle>Bitcoin Private Key</DialogTitle>
       <DialogContent>
         <DialogContentText>
-          The Bitcoin wallet is derived from the Monero seed. Opening the
-          same Monero wallet in another Eigenwallet will yield the same Bitcoin
+          The Bitcoin wallet is derived from the Monero seed. Opening the same
+          Monero wallet in another Eigenwallet will yield the same Bitcoin
           wallet.
           <br />
           <br />
@@ -87,7 +87,8 @@ function WalletDescriptorModal({
           descriptor, see our{" "}
           <Link href={WALLET_DESCRIPTOR_DOCS_URL} target="_blank">
             documentation
-          </Link>.
+          </Link>
+          .
           <br />
           <br />
           <PrivateKeyScamAlert />
@@ -107,4 +108,3 @@ function WalletDescriptorModal({
     </Dialog>
   );
 }
-

@@ -1,14 +1,11 @@
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Result};
+use crate::protocol::alice::AliceState;
+use anyhow::{Result, bail};
 use std::convert::TryInto;
 use std::sync::Arc;
 use uuid::Uuid;
 
-pub async fn grant_mercy(
-    swap_id: Uuid,
-    db: Arc<dyn Database + Send + Sync>,
-) -> Result<AliceState> {
+pub async fn grant_mercy(swap_id: Uuid, db: Arc<dyn Database + Send + Sync>) -> Result<AliceState> {
     let state = db.get_state(swap_id).await?.try_into()?;
 
     match state {

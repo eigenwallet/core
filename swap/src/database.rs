@@ -4,7 +4,7 @@ pub use sqlite::SqliteDatabase;
 
 use crate::cli::api::tauri_bindings::TauriHandle;
 use crate::protocol::{Database, State};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::path::Path;

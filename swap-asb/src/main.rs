@@ -12,34 +12,36 @@
 #![forbid(unsafe_code)]
 #![allow(non_snake_case)]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use comfy_table::Table;
 use libp2p::Swarm;
 use monero_sys::Daemon;
-use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use std::convert::TryInto;
 use std::env;
 use std::sync::Arc;
 use structopt::clap;
 use structopt::clap::ErrorKind;
 mod command;
-use command::{parse_args, Arguments, Command};
+use command::{Arguments, Command, parse_args};
 use swap::asb::rpc::RpcServer;
-use swap::asb::{cancel, grant_mercy, punish, redeem, refund, safely_abort, EventLoop, ExchangeRate, Finality};
+use swap::asb::{
+    EventLoop, ExchangeRate, Finality, cancel, grant_mercy, punish, redeem, refund, safely_abort,
+};
 use swap::common::tor::{bootstrap_tor_client, create_tor_client};
 use swap::common::tracing_util::Format;
 use swap::common::{self, get_logs, warn_if_outdated};
-use swap::database::{open_db, AccessMode};
+use swap::database::{AccessMode, open_db};
 use swap::monero;
 use swap::network::rendezvous::XmrBtcNamespace;
 use swap::network::swarm;
-use swap::protocol::alice::{run, AliceState, TipConfig};
+use swap::protocol::alice::{AliceState, TipConfig, run};
 use swap::protocol::{Database, State};
 use swap::seed::Seed;
 use swap_env::config::{
-    initial_setup, query_user_for_initial_config, read_config, validate_config, Config,
-    ConfigNotInitialized,
+    Config, ConfigNotInitialized, initial_setup, query_user_for_initial_config, read_config,
+    validate_config,
 };
 use swap_feed;
 use swap_machine::alice::is_complete;
@@ -242,7 +244,11 @@ pub async fn main() -> Result<()> {
 
             for listen in config.network.listen.clone() {
                 if let Err(e) = Swarm::listen_on(&mut swarm, listen.clone()) {
-                    tracing::warn!("Failed to listen on network interface {}: {}. Consider removing it from the config.", listen, e);
+                    tracing::warn!(
+                        "Failed to listen on network interface {}: {}. Consider removing it from the config.",
+                        listen,
+                        e
+                    );
                 }
             }
 

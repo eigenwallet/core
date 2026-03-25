@@ -1,9 +1,9 @@
 use crate::common::retry;
 use crate::monero;
-use crate::protocol::alice::swap::XmrRefundable;
-use crate::protocol::alice::AliceState;
 use crate::protocol::Database;
-use anyhow::{bail, Context, Result};
+use crate::protocol::alice::AliceState;
+use crate::protocol::alice::swap::XmrRefundable;
+use anyhow::{Context, Result, bail};
 use bitcoin_wallet::BitcoinWallet;
 use libp2p::PeerId;
 use std::convert::TryInto;
@@ -110,7 +110,10 @@ pub async fn refund(
     if state3.should_publish_tx_withhold.unwrap_or(false) {
         let timelocks = state3.expired_timelocks(bitcoin_wallet.as_ref()).await?;
 
-        if matches!(timelocks, swap_core::bitcoin::ExpiredTimelocks::RemainingRefund) {
+        if matches!(
+            timelocks,
+            swap_core::bitcoin::ExpiredTimelocks::RemainingRefund
+        ) {
             tracing::warn!(%swap_id, "Remaining refund timelock already expired, Bob may have already reclaimed. Attempting TxWithhold anyway");
         }
 

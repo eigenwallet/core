@@ -1,6 +1,6 @@
+use crate::cli::SwapEventLoopHandle;
 use crate::cli::api::tauri_bindings::LockBitcoinDetails;
 use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriSwapProgressEvent};
-use crate::cli::SwapEventLoopHandle;
 use crate::common::retry;
 use crate::monero;
 use crate::monero::MoneroAddressPool;
@@ -12,12 +12,12 @@ use crate::protocol::bob::common::{
     XmrRedeemable,
 };
 use crate::protocol::bob::*;
-use crate::protocol::{bob, Database};
+use crate::protocol::{Database, bob};
 use anyhow::{Context as AnyContext, Result};
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{
-    ExpiredTimelocks, TxCancel, TxMercy, TxFullRefund, TxPartialRefund, TxReclaim,
+    ExpiredTimelocks, TxCancel, TxFullRefund, TxMercy, TxPartialRefund, TxReclaim,
 };
 use swap_core::monero::BlockHeight;
 use swap_env::env;
@@ -51,7 +51,10 @@ pub fn has_already_processed_transfer_proof(state: &BobState) -> bool {
 //
 // The same is true for the BtcWithheld.
 pub fn is_run_at_most_once(state: &BobState) -> bool {
-    matches!(state, BobState::BtcPunished { .. } | BobState::BtcWithheld(..))
+    matches!(
+        state,
+        BobState::BtcPunished { .. } | BobState::BtcWithheld(..)
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -165,7 +168,9 @@ async fn next_state(
         BobState::SwapSetupCompleted(state2) => {
             // Alice and Bob have exchanged all necessary signatures
             let xmr_receive_amount = state2.xmr;
-            let btc_amnesty_amount = state2.btc_amnesty_amount.context("btc_amnesty_amount missing")?;
+            let btc_amnesty_amount = state2
+                .btc_amnesty_amount
+                .context("btc_amnesty_amount missing")?;
 
             // Sign the Bitcoin lock transaction
             let (state3, tx_lock) = state2.lock_btc().await?;
@@ -188,7 +193,7 @@ async fn next_state(
                 xmr_receive_amount,
                 monero_receive_pool,
                 swap_id,
-                has_full_refund_signature: state3.refund_signatures.has_full_refund_encsig()
+                has_full_refund_signature: state3.refund_signatures.has_full_refund_encsig(),
             };
 
             // We request approval before publishing the Bitcoin lock transaction,
@@ -551,7 +556,9 @@ async fn next_state(
             }
         }
         BobState::XmrLocked(state) => {
-            tracing::info!("Monero lock transaction is fully confirmed. Sending encrypted signature to Alice to allow her to redeem the Bitcoin.");
+            tracing::info!(
+                "Monero lock transaction is fully confirmed. Sending encrypted signature to Alice to allow her to redeem the Bitcoin."
+            );
 
             event_emitter
                 .emit_swap_progress_event(swap_id, TauriSwapProgressEvent::PreflightEncSig);
@@ -1053,7 +1060,7 @@ async fn next_state(
                 },
             }
         }
-        BobState::BtcPartialRefundPublished(state)=> {
+        BobState::BtcPartialRefundPublished(state) => {
             // 1. Emit a Tauri event
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -1066,7 +1073,7 @@ async fn next_state(
 
             // TxEarlyRefund might still get published+confirmed before the PartialRefund gets confirmed
             // 2. Wait for either refund transaction to be confirmed
-            
+
             let tx_partial_refund = state.construct_tx_partial_refund()?;
             let tx_early_refund = state.construct_tx_early_refund();
 
@@ -1075,7 +1082,7 @@ async fn next_state(
                 bitcoin_wallet.subscribe_to(Box::new(tx_early_refund.clone())),
             );
 
-            select!{
+            select! {
                 _ = tx_partial_refund_status.wait_until_final() => {
                     tracing::info!("TxPartialRefund has been confirmed");
                     BobState::BtcPartiallyRefunded(state)
@@ -1112,7 +1119,9 @@ async fn next_state(
         }
         BobState::BtcReclaimPublished(state) => {
             // Here we just wait for the amnesty transaction to be confirmed
-            let tx_amnesty = state.construct_tx_amnesty().context("Couldn't construct Bitcoin amnesty transaction")?;
+            let tx_amnesty = state
+                .construct_tx_amnesty()
+                .context("Couldn't construct Bitcoin amnesty transaction")?;
 
             event_emitter.emit_swap_progress_event(
                 swap_id,
@@ -1123,26 +1132,36 @@ async fn next_state(
                 },
             );
 
-            let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_amnesty.clone())).await;
+            let subscription = bitcoin_wallet
+                .subscribe_to(Box::new(tx_amnesty.clone()))
+                .await;
 
-            retry("Waiting for Bitcoin amnesty transaction to be published by Alice", || async {
-                subscription.clone()
-                    .wait_until_final()
-                    .await
-                    .context("Failed to wait for Bitcoin amnesty transaction to be confirmed")
-                    .map_err(backoff::Error::transient)?;
+            retry(
+                "Waiting for Bitcoin amnesty transaction to be published by Alice",
+                || async {
+                    subscription
+                        .clone()
+                        .wait_until_final()
+                        .await
+                        .context("Failed to wait for Bitcoin amnesty transaction to be confirmed")
+                        .map_err(backoff::Error::transient)?;
 
-                event_emitter.emit_swap_progress_event(
-                    swap_id,
-                    TauriSwapProgressEvent::BtcAmnestyReceived {
-                        btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
-                        btc_lock_amount: state.tx_lock.lock_amount(),
-                        btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
-                    },
-                );
+                    event_emitter.emit_swap_progress_event(
+                        swap_id,
+                        TauriSwapProgressEvent::BtcAmnestyReceived {
+                            btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
+                            btc_lock_amount: state.tx_lock.lock_amount(),
+                            btc_amnesty_amount: state
+                                .btc_amnesty_amount
+                                .unwrap_or(bitcoin::Amount::ZERO),
+                        },
+                    );
 
-                Ok(BobState::BtcReclaimConfirmed(state.clone()))
-            }, None, None)
+                    Ok(BobState::BtcReclaimConfirmed(state.clone()))
+                },
+                None,
+                None,
+            )
             .await
             .context("Failed to wait for Bitcoin amnesty transaction to be confirmed")?
         }
@@ -1279,19 +1298,25 @@ async fn next_state(
             };
         }
         BobState::BtcEarlyRefunded(state) => {
-            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcEarlyRefunded {
-                btc_early_refund_txid: state.construct_tx_early_refund().txid(),
-            });
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcEarlyRefunded {
+                    btc_early_refund_txid: state.construct_tx_early_refund().txid(),
+                },
+            );
             BobState::BtcEarlyRefunded(state)
-        },
+        }
         BobState::BtcReclaimConfirmed(state) => {
-            event_emitter.emit_swap_progress_event(swap_id, TauriSwapProgressEvent::BtcAmnestyReceived {
-                btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
-                btc_lock_amount: state.tx_lock.lock_amount(),
-                btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
-            });
+            event_emitter.emit_swap_progress_event(
+                swap_id,
+                TauriSwapProgressEvent::BtcAmnestyReceived {
+                    btc_amnesty_txid: state.construct_tx_amnesty()?.txid(),
+                    btc_lock_amount: state.tx_lock.lock_amount(),
+                    btc_amnesty_amount: state.btc_amnesty_amount.unwrap_or(bitcoin::Amount::ZERO),
+                },
+            );
             BobState::BtcReclaimConfirmed(state)
-        },
+        }
         BobState::WaitingForReclaimTimelockExpiration(state) => {
             // Race between:
             // - Remaining refund timelock expiring (so we can publish TxReclaim)
@@ -1403,23 +1428,32 @@ async fn next_state(
                 },
             );
 
-            retry("Wait for TxWithhold confirmation", || {
-                let state = state.clone();
-                let bitcoin_wallet = bitcoin_wallet.clone();
+            retry(
+                "Wait for TxWithhold confirmation",
+                || {
+                    let state = state.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
 
-                async move {
-                    let tx_withhold = state.construct_tx_withhold()
-                        .map_err(backoff::Error::transient)?;
-                    let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
+                    async move {
+                        let tx_withhold = state
+                            .construct_tx_withhold()
+                            .map_err(backoff::Error::transient)?;
+                        let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_withhold)).await;
 
-                    subscription.wait_until_final().await
-                        .context("Failed to wait for TxWithhold confirmation")
-                        .map_err(backoff::Error::transient)?;
+                        subscription
+                            .wait_until_final()
+                            .await
+                            .context("Failed to wait for TxWithhold confirmation")
+                            .map_err(backoff::Error::transient)?;
 
-                    tracing::info!("TxWithhold confirmed, amnesty output is burnt");
-                    Ok(BobState::BtcWithheld(state))
-                }
-            }, None, None).await?
+                        tracing::info!("TxWithhold confirmed, amnesty output is burnt");
+                        Ok(BobState::BtcWithheld(state))
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
         }
         BobState::BtcWithheld(state) => {
             // Watch for Alice publishing TxMercy
@@ -1439,7 +1473,10 @@ async fn next_state(
 
             let tx_mercy = state.construct_tx_mercy()?;
 
-            let mercy_status = bitcoin_wallet.status_of_script(&tx_mercy).await.context("Failed to check TxMercy status")?;
+            let mercy_status = bitcoin_wallet
+                .status_of_script(&tx_mercy)
+                .await
+                .context("Failed to check TxMercy status")?;
 
             if mercy_status.has_been_seen() {
                 BobState::BtcMercyPublished(state)
@@ -1459,23 +1496,32 @@ async fn next_state(
                 },
             );
 
-            retry("Wait for TxMercy confirmation", || {
-                let state = state.clone();
-                let bitcoin_wallet = bitcoin_wallet.clone();
+            retry(
+                "Wait for TxMercy confirmation",
+                || {
+                    let state = state.clone();
+                    let bitcoin_wallet = bitcoin_wallet.clone();
 
-                async move {
-                    let tx_mercy = state.construct_tx_mercy()
-                        .map_err(backoff::Error::transient)?;
-                    let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
+                    async move {
+                        let tx_mercy = state
+                            .construct_tx_mercy()
+                            .map_err(backoff::Error::transient)?;
+                        let subscription = bitcoin_wallet.subscribe_to(Box::new(tx_mercy)).await;
 
-                    subscription.wait_until_final().await
-                        .context("Failed to wait for TxMercy confirmation")
-                        .map_err(backoff::Error::transient)?;
+                        subscription
+                            .wait_until_final()
+                            .await
+                            .context("Failed to wait for TxMercy confirmation")
+                            .map_err(backoff::Error::transient)?;
 
-                    tracing::info!("TxMercy confirmed, received withheld funds back");
-                    Ok(BobState::BtcMercyConfirmed(state))
-                }
-            }, None, None).await?
+                        tracing::info!("TxMercy confirmed, received withheld funds back");
+                        Ok(BobState::BtcMercyConfirmed(state))
+                    }
+                },
+                None,
+                None,
+            )
+            .await?
         }
         BobState::BtcMercyConfirmed(state) => {
             // Terminal state - we received the withheld funds back

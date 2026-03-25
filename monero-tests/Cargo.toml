@@ -3,7 +3,6 @@ name = "monero-tests"
 version = "0.1.0"
 edition = "2024"
 
-
 [dev-dependencies]
 monero-address = { workspace = true }
 monero-daemon-rpc = { workspace = true }

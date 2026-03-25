@@ -2,9 +2,9 @@
 use std::collections::VecDeque;
 
 use libp2p::{
-    core::upgrade,
-    swarm::{handler::ProtocolsChange, ConnectionHandler, NetworkBehaviour, SubstreamProtocol},
     PeerId, StreamProtocol,
+    core::upgrade,
+    swarm::{ConnectionHandler, NetworkBehaviour, SubstreamProtocol, handler::ProtocolsChange},
 };
 
 pub struct Behaviour {

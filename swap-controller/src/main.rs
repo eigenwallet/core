@@ -66,7 +66,9 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         Cmd::PeerId => {
             let response = client.peer_id().await?;
             println!("Peer IDs are used to identify peers within the P2P network.");
-            println!("They are effectively the hash of your public key and are used for end-to-end encryption of network traffic.");
+            println!(
+                "They are effectively the hash of your public key and are used for end-to-end encryption of network traffic."
+            );
             println!();
             println!("Your Peer ID is: {}", response.peer_id);
         }
@@ -114,7 +116,10 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
         }
         Cmd::BitcoinSeed => {
             let response = client.bitcoin_seed().await?;
-            println!("Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}", response.descriptor);
+            println!(
+                "Descriptor (BIP-0382) containing the private keys of the internal Bitcoin wallet: \n{}",
+                response.descriptor
+            );
         }
         Cmd::RegistrationStatus => {
             let response = client.registration_status().await?;

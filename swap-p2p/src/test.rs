@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use futures::StreamExt;
+use libp2p::SwarmBuilder;
 use libp2p::core::muxing::StreamMuxerBox;
-use libp2p::core::transport::upgrade::Version;
 use libp2p::core::transport::MemoryTransport;
+use libp2p::core::transport::upgrade::Version;
 use libp2p::core::{Multiaddr, Transport};
 use libp2p::identity;
 use libp2p::noise;
@@ -10,7 +11,6 @@ use libp2p::swarm::dial_opts::DialOpts;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::tcp;
 use libp2p::yamux;
-use libp2p::SwarmBuilder;
 use std::fmt::Debug;
 use std::time::Duration;
 

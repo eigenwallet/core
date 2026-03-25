@@ -1,9 +1,9 @@
 pub mod harness;
 
-use bitcoin_wallet::{parse_rpc_error_code, RpcErrorCode};
+use bitcoin_wallet::{RpcErrorCode, parse_rpc_error_code};
+use harness::SlowCancelConfig;
 use harness::alice_run_until::is_xmr_lock_transaction_sent;
 use harness::bob_run_until::is_btc_locked;
-use harness::SlowCancelConfig;
 use swap::asb::FixedRate;
 use swap::protocol::alice::AliceState;
 use swap::protocol::bob::BobState;
@@ -43,9 +43,11 @@ async fn given_alice_and_bob_manually_cancel_when_timelock_not_expired_errors() 
             .await
             .unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("Cannot cancel swap because the cancel timelock has not expired yet"));
+        assert!(
+            error
+                .to_string()
+                .contains("Cannot cancel swap because the cancel timelock has not expired yet")
+        );
 
         ctx.restart_alice().await;
         let alice_swap = ctx.alice_next_swap().await;
@@ -73,9 +75,11 @@ async fn given_alice_and_bob_manually_cancel_when_timelock_not_expired_errors() 
         let error = cli::refund(bob_swap.id, bob_swap.bitcoin_wallet, bob_swap.db)
             .await
             .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("Cannot refund swap because the cancel timelock has not expired yet"));
+        assert!(
+            error
+                .to_string()
+                .contains("Cannot refund swap because the cancel timelock has not expired yet")
+        );
 
         let (bob_swap, _) = ctx
             .stop_and_resume_bob_from_db(bob_join_handle, swap_id)

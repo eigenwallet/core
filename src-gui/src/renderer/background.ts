@@ -115,8 +115,7 @@ export async function setupBackgroundTasks(): Promise<void> {
             .catch((err) => {
               logger.error(err, "Failed to clear logs after upgrade");
             });
-        }
-        else {
+        } else {
           logger.info("Skipping clearing the logs because we already did it.");
         }
       })

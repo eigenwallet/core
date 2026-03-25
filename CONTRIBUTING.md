@@ -26,18 +26,17 @@ It is okay to include ideas on how the feature should be implemented but they sh
 
 ### General
 
- - File structure
-   - The content of each file should be ordered in terms of importance / level of abstraction
-   - Public `struct`s, `enum`s and important constants should be at the top
-   - `impl` blocks should be below the type declarations
-   - Both the type declaration part and the implementation part of the file should be internally ordered by level of abstraction/ importance
-   - For example, `fn main` should always be at least at the top of the implementation 
- - Prefer early returns over nested `if`/`match` statements
- - Don't use fallback values or silent failures
+- File structure
+  - The content of each file should be ordered in terms of importance / level of abstraction
+  - Public `struct`s, `enum`s and important constants should be at the top
+  - `impl` blocks should be below the type declarations
+  - Both the type declaration part and the implementation part of the file should be internally ordered by level of abstraction/ importance
+  - For example, `fn main` should always be at least at the top of the implementation
+- Prefer early returns over nested `if`/`match` statements
+- Don't use fallback values or silent failures
 
 ### Rust
 
- - Use `cargo fmt` for formatting
- - Make use of the powerful `if let` and `let ... else` pattern to enable early returns
- - Make use of anyhows `.context` method and the `?` operator for concise error reporting
-
+- Use `cargo fmt` for formatting
+- Make use of the powerful `if let` and `let ... else` pattern to enable early returns
+- Make use of anyhows `.context` method and the `?` operator for concise error reporting

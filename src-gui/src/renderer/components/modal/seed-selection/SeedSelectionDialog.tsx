@@ -74,7 +74,8 @@ export default function SeedSelectionDialog() {
   >("RandomSeed");
   const [customSeed, setCustomSeed] = useState<string>("");
   const [blockheightInput, setBlockheightInput] = useState<string>("");
-  const [asyncSeedValidation, setAsyncSeedValidation] = useState<boolean>(false);
+  const [asyncSeedValidation, setAsyncSeedValidation] =
+    useState<boolean>(false);
   const [password, setPassword] = useState<string>("");
   const [isPasswordValid, setIsPasswordValid] = useState<boolean>(true);
   const [walletPath, setWalletPath] = useState<string>("");
@@ -88,7 +89,8 @@ export default function SeedSelectionDialog() {
       : [];
 
   // Only run async validation when in "FromSeed" mode with content
-  const needsSeedValidation = selectedOption === "FromSeed" && customSeed.trim();
+  const needsSeedValidation =
+    selectedOption === "FromSeed" && customSeed.trim();
 
   useEffect(() => {
     if (!needsSeedValidation) return;

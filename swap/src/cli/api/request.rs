@@ -1,26 +1,26 @@
 use super::tauri_bindings::TauriHandle;
+use crate::cli::api::Context;
 use crate::cli::api::tauri_bindings::{
     ApprovalRequestType, MoneroNodeConfig, SelectMakerDetails, SendMoneroDetails, TauriEmitter,
     TauriSwapProgressEvent,
 };
-use crate::cli::api::Context;
 use crate::cli::list_sellers::QuoteWithAddress;
 use crate::common::{get_logs, redact};
-use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::monero::MoneroAddressPool;
+use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::network::quote::BidQuote;
-use crate::protocol::bob::{self, BobState, Swap};
 use crate::protocol::State;
+use crate::protocol::bob::{self, BobState, Swap};
 use crate::{cli, monero};
-use ::bitcoin::address::NetworkUnchecked;
 use ::bitcoin::Txid;
+use ::bitcoin::address::NetworkUnchecked;
 use ::monero_address::Network;
-use anyhow::{bail, Context as AnyContext, Result};
+use anyhow::{Context as AnyContext, Result, bail};
+use futures::StreamExt;
 use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use libp2p::core::Multiaddr;
 use libp2p::PeerId;
+use libp2p::core::Multiaddr;
 use monero_seed::{Language, Seed as MoneroSeed};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -33,10 +33,10 @@ use swap_core::bitcoin;
 use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use thiserror::Error;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::debug_span;
-use tracing::error;
 use tracing::Instrument;
 use tracing::Span;
+use tracing::debug_span;
+use tracing::error;
 use typeshare::typeshare;
 use url::Url;
 use uuid::Uuid;
@@ -1396,8 +1396,7 @@ pub async fn withdraw_btc(
     let WithdrawBtcArgs { address, amount } = withdraw_btc;
     let bitcoin_wallet = context.try_get_bitcoin_wallet().await?;
 
-    let (txid, amount) =
-        bitcoin_wallet::withdraw(bitcoin_wallet.as_ref(), address, amount).await?;
+    let (txid, amount) = bitcoin_wallet::withdraw(bitcoin_wallet.as_ref(), address, amount).await?;
 
     Ok(WithdrawBtcResponse {
         txid: txid.to_string(),

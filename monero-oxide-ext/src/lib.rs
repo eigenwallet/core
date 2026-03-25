@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use monero_oxide_wallet::ed25519::{CompressedPoint, Point, Scalar};
 use std::str::FromStr;
 use std::{fmt, ops};

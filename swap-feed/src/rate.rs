@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
 use std::time::{Duration, Instant};
@@ -248,8 +248,8 @@ mod tests {
     }
 
     #[test]
-    fn given_spread_of_two_percent_when_caluclating_sell_quote_factor_between_should_be_two_percent(
-    ) {
+    fn given_spread_of_two_percent_when_caluclating_sell_quote_factor_between_should_be_two_percent()
+     {
         let asking_price = bitcoin::Amount::from_btc(0.004).unwrap();
 
         let rate_no_spread = Rate::new(asking_price, ZERO_SPREAD);
@@ -266,9 +266,9 @@ mod tests {
 
         assert!(xmr_with_spread < xmr_no_spread);
         assert_eq!(xmr_factor.round_dp(8), TWO_PERCENT); // round to 8 decimal
-                                                         // places to show that
-                                                         // it is really close
-                                                         // to two percent
+        // places to show that
+        // it is really close
+        // to two percent
     }
 
     mod average_ask {

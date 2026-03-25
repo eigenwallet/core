@@ -54,7 +54,7 @@ pub mod discovery;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::{new_swarm, SwarmExt};
+    use crate::test::{SwarmExt, new_swarm};
     use futures::StreamExt;
     use libp2p::rendezvous;
     use libp2p::swarm::SwarmEvent;

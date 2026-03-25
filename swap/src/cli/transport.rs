@@ -7,7 +7,7 @@ use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::{Boxed, OptionalTransport};
 use libp2p::dns;
 use libp2p::tcp;
-use libp2p::{identity, PeerId, Transport};
+use libp2p::{PeerId, Transport, identity};
 use libp2p_tor::{AddressConversion, TorTransport};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 

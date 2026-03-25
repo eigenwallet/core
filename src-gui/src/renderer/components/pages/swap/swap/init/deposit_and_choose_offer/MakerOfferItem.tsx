@@ -1,6 +1,10 @@
 import { Box, Chip, Divider, Paper, Tooltip, Typography } from "@mui/material";
 import Jdenticon from "renderer/components/other/Jdenticon";
-import { BidQuote, QuoteWithAddress, RefundPolicyWire } from "models/tauriModel";
+import {
+  BidQuote,
+  QuoteWithAddress,
+  RefundPolicyWire,
+} from "models/tauriModel";
 import {
   MoneroSatsExchangeRate,
   MoneroSatsMarkup,
@@ -33,7 +37,6 @@ export default function MakerOfferItem({
   const { multiaddr, peer_id, quote, version } = quoteWithAddress;
   const isOutOfLiquidity = quote.max_quantity == 0;
   const isTooOld = isMakerVersionTooOld(version);
-
 
   return (
     <Paper
@@ -171,10 +174,13 @@ export default function MakerOfferItem({
               fontWeight: "bold",
               color: "text.secondary",
               textAlign: "center",
-              textShadow: (theme) => `0 0 8px ${theme.palette.background.paper}`,
+              textShadow: (theme) =>
+                `0 0 8px ${theme.palette.background.paper}`,
             }}
           >
-            {isTooOld ? "Maker version incompatible (too old)" : "Maker has no available funds"}
+            {isTooOld
+              ? "Maker version incompatible (too old)"
+              : "Maker has no available funds"}
           </Typography>
         </Box>
       )}
@@ -183,12 +189,17 @@ export default function MakerOfferItem({
 }
 
 function AntiSpamDepositChip(quote: BidQuote) {
-  const full_refund: boolean = quote.refund_policy.type === "FullRefund" ? true : quote.refund_policy.content.anti_spam_deposit_ratio === 0;
+  const full_refund: boolean =
+    quote.refund_policy.type === "FullRefund"
+      ? true
+      : quote.refund_policy.content.anti_spam_deposit_ratio === 0;
   // Rounded to 0.001 precision
-  const earnest_deposit_ratio = Math.round(
-    (quote.refund_policy.type === "FullRefund" ? 0 : quote.refund_policy.content?.anti_spam_deposit_ratio)
-    * 1000
-  ) / 1000;
+  const earnest_deposit_ratio =
+    Math.round(
+      (quote.refund_policy.type === "FullRefund"
+        ? 0
+        : quote.refund_policy.content?.anti_spam_deposit_ratio) * 1000,
+    ) / 1000;
   const guaranteed_refund_percentage = (1 - earnest_deposit_ratio) * 100;
   const normalized_warning_intensity = Math.min(
     earnest_deposit_ratio / FULL_WARNING_ANTI_SPAM_DEPOSIT_RATIO,
@@ -196,64 +207,90 @@ function AntiSpamDepositChip(quote: BidQuote) {
   );
   const warning_intensity = Math.sqrt(normalized_warning_intensity);
 
-  const tooltip_text = full_refund ? "100% refund cryptographically guaranteed." : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. During refunds maker may withhold the remaining ${earnest_deposit_ratio * 100}% to deter spamming. Does not apply to successful swaps`;
+  const tooltip_text = full_refund
+    ? "100% refund cryptographically guaranteed."
+    : `${guaranteed_refund_percentage}% refund cryptographically guaranteed. During refunds maker may withhold the remaining ${earnest_deposit_ratio * 100}% to deter spamming. Does not apply to successful swaps`;
   const text = `${guaranteed_refund_percentage}% refund guaranteed`;
 
-  return <Tooltip
-    title={tooltip_text}
-    arrow
-  >
-    <Chip
-      label={text}
-      size="small"
-      variant="outlined"
-      clickable
-      component="a"
-      href="https://docs.eigenwallet.org/advanced/anti_spam_deposit"
-      target="_blank"
-      rel="noopener noreferrer"
-      sx={(theme) => {
-        const successMain = (theme.vars || theme).palette.success.main;
-        const warningMain = (theme.vars || theme).palette.warning.main;
-        const chipColor = `color-mix(in srgb, ${successMain} ${(1 - warning_intensity) * 100}%, ${warningMain} ${warning_intensity * 100}%)`;
+  return (
+    <Tooltip title={tooltip_text} arrow>
+      <Chip
+        label={text}
+        size="small"
+        variant="outlined"
+        clickable
+        component="a"
+        href="https://docs.eigenwallet.org/advanced/anti_spam_deposit"
+        target="_blank"
+        rel="noopener noreferrer"
+        sx={(theme) => {
+          const successMain = (theme.vars || theme).palette.success.main;
+          const warningMain = (theme.vars || theme).palette.warning.main;
+          const chipColor = `color-mix(in srgb, ${successMain} ${(1 - warning_intensity) * 100}%, ${warningMain} ${warning_intensity * 100}%)`;
 
-        return {
-          backgroundColor: `color-mix(in srgb, ${chipColor} ${12 + warning_intensity * 14}%, ${theme.palette.background.paper})`,
-          borderColor: `color-mix(in srgb, ${chipColor} ${35 + warning_intensity * 20}%, ${theme.palette.divider})`,
-          color: chipColor,
-        };
-      }} />
-  </Tooltip>;
+          return {
+            backgroundColor: `color-mix(in srgb, ${chipColor} ${12 + warning_intensity * 14}%, ${theme.palette.background.paper})`,
+            borderColor: `color-mix(in srgb, ${chipColor} ${35 + warning_intensity * 20}%, ${theme.palette.divider})`,
+            color: chipColor,
+          };
+        }}
+      />
+    </Tooltip>
+  );
 }
 
 function ReputationChip(peer_id: string) {
-  const allSwaps = useAppSelector(state => state.rpc.state.swapInfos)
-  if (!allSwaps) { return <></> }
-  const swapsWithThisPeer = Object.values(allSwaps).filter(swap => swap.seller.peer_id == peer_id)
+  const allSwaps = useAppSelector((state) => state.rpc.state.swapInfos);
+  if (!allSwaps) {
+    return <></>;
+  }
+  const swapsWithThisPeer = Object.values(allSwaps).filter(
+    (swap) => swap.seller.peer_id == peer_id,
+  );
 
-  const successfulSwaps = swapsWithThisPeer.filter(swap => swap.state_name === BobStateName.XmrRedeemed).length
+  const successfulSwaps = swapsWithThisPeer.filter(
+    (swap) => swap.state_name === BobStateName.XmrRedeemed,
+  ).length;
   // TODO: don't hardcode this check (was swap refunded/punished?) here, put into tauriModelExt or other place
-  const refundedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcRefunded, BobStateName.BtcEarlyRefunded, BobStateName.BtcMercyConfirmed].includes(swap.state_name)).length
-  const failedSwaps = swapsWithThisPeer.filter(swap => [BobStateName.BtcPunished, BobStateName.BtcWithheld].includes(swap.state_name)).length
+  const refundedSwaps = swapsWithThisPeer.filter((swap) =>
+    [
+      BobStateName.BtcRefunded,
+      BobStateName.BtcEarlyRefunded,
+      BobStateName.BtcMercyConfirmed,
+    ].includes(swap.state_name),
+  ).length;
+  const failedSwaps = swapsWithThisPeer.filter((swap) =>
+    [BobStateName.BtcPunished, BobStateName.BtcWithheld].includes(
+      swap.state_name,
+    ),
+  ).length;
 
-  return <Chip
-    size="small"
-    label={
-      <Box display="flex" style={{ gap: "0.5rem" }}>
-        <Tooltip title={`You've made ${successfulSwaps} successful swaps with this maker.`}>
-          <Box color="success.main">{successfulSwaps} successes</Box>
-        </Tooltip>
-        <Divider orientation="vertical" flexItem />
-        <Tooltip title={`${refundedSwaps} of your swaps with this maker needed to be refunded.`}>
-          <Box color="warning.main">{refundedSwaps} refunds</Box>
-        </Tooltip>
-        <Divider orientation="vertical" flexItem />
-        <Tooltip title={`The maker has acted uncooperatively in ${failedSwaps} swaps. This means withholding the anti-spam deposit or punishing you.`}>
-          <Box color="error.main">{failedSwaps} bad</Box>
-        </Tooltip>
-      </Box>
-    }
-  />
+  return (
+    <Chip
+      size="small"
+      label={
+        <Box display="flex" style={{ gap: "0.5rem" }}>
+          <Tooltip
+            title={`You've made ${successfulSwaps} successful swaps with this maker.`}
+          >
+            <Box color="success.main">{successfulSwaps} successes</Box>
+          </Tooltip>
+          <Divider orientation="vertical" flexItem />
+          <Tooltip
+            title={`${refundedSwaps} of your swaps with this maker needed to be refunded.`}
+          >
+            <Box color="warning.main">{refundedSwaps} refunds</Box>
+          </Tooltip>
+          <Divider orientation="vertical" flexItem />
+          <Tooltip
+            title={`The maker has acted uncooperatively in ${failedSwaps} swaps. This means withholding the anti-spam deposit or punishing you.`}
+          >
+            <Box color="error.main">{failedSwaps} bad</Box>
+          </Tooltip>
+        </Box>
+      }
+    />
+  );
 }
 
 function VersionChip({ version }: { version: string }) {
