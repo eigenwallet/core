@@ -86,6 +86,15 @@ where
     /// 4. Future is removed from this collection
     inflight_encrypted_signatures: FuturesUnordered<BoxFuture<'static, ResponseChannel<()>>>,
 
+    /// In-flight quote computation. At most one real future at a time;
+    /// a permanent `pending()` sentinel keeps the stream alive.
+    inflight_quote_computation:
+        FuturesUnordered<BoxFuture<'static, Result<Arc<BidQuote>, Arc<anyhow::Error>>>>,
+
+    /// Response channels waiting for the in-flight quote computation to finish.
+    /// Drained once the computation resolves.
+    pending_quote_channels: Vec<(ResponseChannel<BidQuote>, PeerId)>,
+
     /// Channel for sending transfer proofs to Bobs. The sender is shared with every EventLoopHandle.
     /// The receiver is polled by the event loop to send transfer proofs over the network to Bob.
     ///
@@ -177,6 +186,8 @@ where
             recv_encrypted_signature: Default::default(),
             recv_burn_on_refund_instruction: Default::default(),
             inflight_encrypted_signatures: Default::default(),
+            inflight_quote_computation: Default::default(),
+            pending_quote_channels: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
             service_requests,
@@ -201,6 +212,8 @@ where
         // ensure that these streams are NEVER empty, otherwise it will
         // terminate forever.
         self.inflight_encrypted_signatures
+            .push(future::pending().boxed());
+        self.inflight_quote_computation
             .push(future::pending().boxed());
 
         let swaps = match self.db.all().await {
@@ -288,27 +301,18 @@ where
                             tracing::warn!(%peer, "Ignoring spot price request: {}", error);
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
-                            match self.make_quote_or_use_cached(self.min_buy, self.max_buy, self.developer_tip.ratio, self.refund_policy.clone().into()).await {
-                                Ok(quote_arc) => {
-                                    if self.swarm.behaviour_mut().quote.send_response(channel, (*quote_arc).clone()).is_err() {
-                                        tracing::debug!(%peer, "Failed to respond with quote");
-                                    }
-                                }
-                                // The error is already logged in the make_quote_or_use_cached function
-                                // We don't log it here to avoid spamming on each request
-                                Err(_) => {
-                                    // We respond with a zero quote. This will stop Bob from trying to start a swap but doesn't require
-                                    // a breaking network change by changing the definition of the quote protocol
-                                    if self
-                                        .swarm
-                                        .behaviour_mut()
-                                        .quote
-                                        .send_response(channel, BidQuote::ZERO)
-                                        .is_err()
-                                    {
-                                        tracing::debug!(%peer, "Failed to respond with zero quote");
-                                    }
-                                }
+                            self.pending_quote_channels.push((channel, peer));
+
+                            // Only start a computation if one isn't already in-flight
+                            if self.pending_quote_channels.len() == 1 {
+                                self.inflight_quote_computation.push(
+                                    self.make_quote_or_use_cached(
+                                        self.min_buy,
+                                        self.max_buy,
+                                        self.developer_tip.ratio,
+                                        self.refund_policy.clone().into(),
+                                    ),
+                                );
                             }
                         }
                         SwarmEvent::Behaviour(OutEvent::TransferProofAcknowledged { peer, id }) => {
@@ -485,6 +489,19 @@ where
                 Some(response_channel) = self.inflight_encrypted_signatures.next() => {
                     let _ = self.swarm.behaviour_mut().encrypted_signature.send_response(response_channel, ());
                 },
+                Some(quote_result) = self.inflight_quote_computation.next() => {
+                    let quote = match &quote_result {
+                        Ok(quote_arc) => (**quote_arc).clone(),
+                        // We respond with a zero quote. This will stop Bob from trying to start a swap but doesn't require
+                        // a breaking network change by changing the definition of the quote protocol
+                        Err(_) => BidQuote::ZERO,
+                    };
+                    for (channel, peer) in self.pending_quote_channels.drain(..) {
+                        if self.swarm.behaviour_mut().quote.send_response(channel, quote.clone()).is_err() {
+                            tracing::debug!(%peer, "Failed to respond with quote");
+                        }
+                    }
+                },
                 Some(request) = self.service_requests.recv() => {
                     match request {
                         EventLoopRequest::GetMultiaddresses { respond_to } => {
@@ -526,79 +543,79 @@ where
         }
     }
 
-    /// Get a quote from the cache or calculate a new one by calling make_quote.
-    /// Returns the result wrapped in Arcs for consistent caching.
-    async fn make_quote_or_use_cached(
-        &mut self,
+    /// Get a quote from the cache or compute a new one.
+    ///
+    /// Returns a `'static` future so it can be stored in the event loop
+    /// and polled without blocking other select arms.
+    fn make_quote_or_use_cached(
+        &self,
         min_buy: bitcoin::Amount,
         max_buy: bitcoin::Amount,
         developer_tip: Decimal,
         refund_policy: RefundPolicyWire,
-    ) -> Result<Arc<BidQuote>, Arc<anyhow::Error>> {
-        // We use the min and max buy amounts to create a unique key for the cache
-        // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
-        let key = QuoteCacheKey { min_buy, max_buy };
-
-        // Check if we have a cached quote
-        let maybe_cached_quote = self.quote_cache.get(&key).await;
-
-        if let Some(cached_quote_result) = maybe_cached_quote {
-            tracing::trace!("Got a request for a quote, using cached value.");
-            return cached_quote_result;
-        }
-
-        // We have a cache miss, so we compute a new quote
-        tracing::trace!("Got a request for a quote, computing new quote.");
-
+    ) -> BoxFuture<'static, Result<Arc<BidQuote>, Arc<anyhow::Error>>> {
+        let quote_cache = self.quote_cache.clone();
         let rate = self.latest_rate.clone();
-
-        let get_reserved_items = || async {
-            let all_swaps = self.db.all().await?;
-            let alice_states: Vec<_> = all_swaps
-                .into_iter()
-                .filter_map(|(_, state)| match state {
-                    State::Alice(state) => Some(state),
-                    _ => None,
-                })
-                .collect();
-
-            Ok(alice_states)
-        };
-
+        let db = self.db.clone();
         let monero_wallet = self.monero_wallet.clone();
-        let get_unlocked_balance = || async {
-            unlocked_monero_balance_with_timeout(monero_wallet.main_wallet().await).await
-        };
-
-        let peer_id = self.peer_id();
         let monero_wallet_for_proof = self.monero_wallet.clone();
-        let get_reserve_proof = || async move {
-            reserve_proof_with_timeout(monero_wallet_for_proof.main_wallet().await, peer_id).await
-        };
+        let peer_id = self.peer_id();
 
-        let result = make_quote(
-            min_buy,
-            max_buy,
-            rate,
-            get_unlocked_balance,
-            get_reserved_items,
-            get_reserve_proof,
-            developer_tip,
-            refund_policy,
-        )
-        .await;
+        async move {
+            // We use the min and max buy amounts to create a unique key for the cache
+            // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
+            let key = QuoteCacheKey { min_buy, max_buy };
 
-        // Insert the computed quote into the cache
-        // Need to clone it as insert takes ownership
-        self.quote_cache.insert(key, result.clone()).await;
+            if let Some(cached) = quote_cache.get(&key).await {
+                tracing::trace!("Got a request for a quote, using cached value.");
+                return cached;
+            }
 
-        // If the quote failed, we log the error
-        if let Err(err) = result.clone() {
-            tracing::warn!(?err, "Failed to make quote. We will retry again later.");
+            tracing::trace!("Got a request for a quote, computing new quote.");
+
+            let get_reserved_items = || async {
+                let all_swaps = db.all().await?;
+                let alice_states: Vec<_> = all_swaps
+                    .into_iter()
+                    .filter_map(|(_, state)| match state {
+                        State::Alice(state) => Some(state),
+                        _ => None,
+                    })
+                    .collect();
+
+                Ok(alice_states)
+            };
+
+            let get_unlocked_balance = || async {
+                unlocked_monero_balance_with_timeout(monero_wallet.main_wallet().await).await
+            };
+
+            let get_reserve_proof = || async move {
+                reserve_proof_with_timeout(monero_wallet_for_proof.main_wallet().await, peer_id)
+                    .await
+            };
+
+            let result = make_quote(
+                min_buy,
+                max_buy,
+                rate,
+                get_unlocked_balance,
+                get_reserved_items,
+                get_reserve_proof,
+                developer_tip,
+                refund_policy,
+            )
+            .await;
+
+            quote_cache.insert(key, result.clone()).await;
+
+            if let Err(err) = &result {
+                tracing::warn!(?err, "Failed to make quote. We will retry again later.");
+            }
+
+            result
         }
-
-        // Return the computed quote
-        result
+        .boxed()
     }
 
     async fn handle_execution_setup_done(
