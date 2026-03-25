@@ -304,6 +304,8 @@ where
                             self.pending_quote_channels.push((channel, peer));
 
                             // Only start a computation if one isn't already in-flight
+                            // If the length is 1, only the keep-alive future is in the queue
+                            // meaning we are not already computing a quote
                             if self.pending_quote_channels.len() == 1 {
                                 self.inflight_quote_computation.push(
                                     self.make_quote_or_use_cached(
@@ -494,6 +496,9 @@ where
                         Ok(quote_arc) => (**quote_arc).clone(),
                         // We respond with a zero quote. This will stop Bob from trying to start a swap but doesn't require
                         // a breaking network change by changing the definition of the quote protocol
+                        //
+                        // The error is already logged in the make_quote_or_use_cached function
+                        // We don't log it here to avoid spamming on each request
                         Err(_) => BidQuote::ZERO,
                     };
                     for (channel, peer) in self.pending_quote_channels.drain(..) {
@@ -566,11 +571,13 @@ where
             // Although these values stay constant over the lifetime of an instance of the asb, this might change in the future
             let key = QuoteCacheKey { min_buy, max_buy };
 
+            // Check if we have a cached quote
             if let Some(cached) = quote_cache.get(&key).await {
                 tracing::trace!("Got a request for a quote, using cached value.");
                 return cached;
             }
 
+            // We have a cache miss, so we compute a new quote
             tracing::trace!("Got a request for a quote, computing new quote.");
 
             let get_reserved_items = || async {
@@ -607,12 +614,16 @@ where
             )
             .await;
 
+            // Insert the computed quote into the cache
+            // Need to clone it as insert takes ownership
             quote_cache.insert(key, result.clone()).await;
 
+            // If the quote failed, we log the error
             if let Err(err) = &result {
                 tracing::warn!(?err, "Failed to make quote. We will retry again later.");
             }
 
+            // Return the computed quote
             result
         }
         .boxed()
