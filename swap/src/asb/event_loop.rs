@@ -96,8 +96,8 @@ where
     pending_quote_channels: Vec<(ResponseChannel<BidQuote>, PeerId)>,
 
     /// In-flight wallet snapshot computations for swap setup.
-    /// Each future waits for the swap setup handler to request a wallet snapshot,
-    /// then computes it concurrently.
+    /// Each future waits for a single swap setup handler to request a wallet snapshot.
+    /// It then computes the wallet snapshot and returns the BTC amount, responder and wallet snapshot.
     #[allow(clippy::type_complexity)]
     inflight_wallet_snapshots: FuturesUnordered<
         BoxFuture<
