@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix an issue where the application would crash when the internal Tor client tried to execute a Proof-of-Work challenge due to a missing entitlement permission. ([#915](https://github.com/eigenwallet/core/issues/915))
+
 ## [4.0.5] - 2026-03-24
 
 - Try to fix an issue where the response from the Monero daemon would be too large to parse when fetching the status of a transaction ([#885](https://github.com/eigenwallet/core/issues/885)).
@@ -34,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The punish timelock, which determines the length of the refund window, remains at 72 blocks (24 hours).
 
 - Protocol: Add possibility for maker to require an "anti-spam deposit".
-  The deposit is a part of the Bitcoin refund which the maker may withhold during a 30 minute timeframe.
+  The deposit is a part of the Bitcoin refund which the maker may withhold during a 30 minute timeframe
   The deposit can still be released after the fact, by granting mercy.
   Both parties will refuse an anti-spam deposit that makes up more than 20% of the swap's Bitcoin.
 
