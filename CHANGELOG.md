@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Optimize how we respond to network request
+
 ## [4.1.0] - 2026-03-25
 
 - GUI: Fix an issue where the application would crash when the internal Tor client tried to execute a Proof-of-Work challenge due to a missing entitlement permission. ([#915](https://github.com/eigenwallet/core/issues/915))
