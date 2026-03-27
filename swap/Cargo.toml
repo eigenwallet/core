@@ -86,6 +86,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 
 # Tracing
+console-subscriber = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = "0.2"
 tracing-subscriber = { workspace = true }

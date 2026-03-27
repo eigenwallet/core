@@ -91,7 +91,8 @@ uuid = { version = "1", features = ["v4"] }
 
 # Tokio
 testcontainers = "0.15"
-tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+console-subscriber = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync", "tracing"] }
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 
 # Tor/Arti crates
@@ -129,3 +130,4 @@ rust.unconditional_recursion = "deny"
 [profile.release]
 codegen-units = 1
 lto = "fat"
+debug = 1

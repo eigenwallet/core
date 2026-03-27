@@ -160,7 +160,12 @@ pub fn init(
             .boxed(),
     };
 
+    let console_layer = console_subscriber::ConsoleLayer::builder()
+        .server_addr(([0, 0, 0, 0], 6669))
+        .spawn();
+
     let subscriber = tracing_subscriber::registry()
+        .with(console_layer)
         .with(file_layer)
         .with(tracing_file_layer)
         .with(tor_file_layer)
