@@ -1,5 +1,6 @@
 [build]
 target-dir = "target"
+rustflags = ["--cfg", "tokio_unstable"]
 
 # Cross-compilation support for armv7
 [target.armv7-unknown-linux-gnueabihf]
