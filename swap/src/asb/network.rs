@@ -102,7 +102,7 @@ pub mod transport {
 }
 
 pub mod behaviour {
-    use libp2p::{identify, identity, ping, swarm::behaviour::toggle::Toggle};
+    use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_p2p::{out_event::alice::OutEvent, patches};
 
     use super::*;
@@ -115,6 +115,7 @@ pub mod behaviour {
     where
         LR: LatestRate + Send + 'static,
     {
+        connection_limits: connection_limits::Behaviour,
         pub rendezvous: Toggle<rendezvous::register::Behaviour>,
         pub quote: quote::Behaviour,
         pub swap_setup: alice::Behaviour<LR>,
@@ -141,6 +142,7 @@ pub mod behaviour {
             env_config: env::Config,
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
+            connection_limits: connection_limits::ConnectionLimits,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -162,6 +164,7 @@ pub mod behaviour {
             };
 
             Self {
+                connection_limits: connection_limits::Behaviour::new(connection_limits),
                 rendezvous: Toggle::from(behaviour),
                 quote: quote::alice(),
                 swap_setup: alice::Behaviour::new(
