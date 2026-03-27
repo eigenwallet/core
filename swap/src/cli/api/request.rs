@@ -1508,14 +1508,25 @@ where
 
     let handle = tokio::task::spawn(async move {
         loop {
-            // Sync wallet before checking balance
-            let _ = sync_fn().await;
-
-            if let (Ok(balance), Ok((max_giveable, _fee))) =
-                (balance_fn().await, max_giveable_fn().await)
-            {
-                let _ = tx.send((balance, max_giveable));
+            if let Err(e) = sync_fn().await {
+                tracing::warn!(?e, "Failed to sync Bitcoin wallet in refresh_wallet_task");
             }
+
+            let balance_result = balance_fn().await;
+            let max_giveable_result = max_giveable_fn().await;
+
+            match (&balance_result, &max_giveable_result) {
+                (Ok(balance), Ok((max_giveable, _fee))) => {
+                    let _ = tx.send((*balance, *max_giveable));
+                }
+                (Err(e), _) => {
+                    tracing::warn!(?e, "Failed to fetch Bitcoin balance in refresh_wallet_task");
+                }
+                (_, Err(e)) => {
+                    tracing::warn!(?e, "Failed to compute max_giveable in refresh_wallet_task");
+                }
+            }
+
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
