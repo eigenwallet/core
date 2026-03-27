@@ -83,6 +83,9 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 # Act as if we are in a GitHub Actions environment
 ENV DOCKER_BUILD=true
 
+# Enable debug info in release builds for stack traces and perf
+ENV CARGO_PROFILE_RELEASE_DEBUG=1
+
 # Now we build our binaries
 COPY . .
 
