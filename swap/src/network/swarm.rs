@@ -4,6 +4,7 @@ use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
 use arti_client::TorClient;
+use libp2p::connection_limits::ConnectionLimits;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, Swarm, identity};
 use libp2p::{PeerId, SwarmBuilder};
@@ -45,6 +46,15 @@ where
         })
         .collect();
 
+    // TODO: Prioritize honest peers in this queue
+    let connection_limits = ConnectionLimits::default()
+        // Limit peers stuck in the handshake phase to prevent handshake floods
+        .with_max_pending_incoming(Some(64))
+        // Bound the total number of established inbound connections to cap memory usage
+        .with_max_established_incoming(Some(128))
+        // A single peer only needs one connection; allow 4 for brief overlap during reconnects
+        .with_max_established_per_peer(Some(4));
+
     let behaviour = asb::Behaviour::new(
         min_buy,
         max_buy,
@@ -53,6 +63,7 @@ where
         env_config,
         (identity.clone(), namespace),
         rendezvous_nodes,
+        connection_limits,
     );
 
     let (transport, onion_addresses) = asb::transport::new(

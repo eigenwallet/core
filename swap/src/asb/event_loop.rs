@@ -459,7 +459,15 @@ where
                             }
                         }
                         SwarmEvent::IncomingConnectionError { send_back_addr: address, error, .. } => {
-                            tracing::trace!(%address, "Failed to set up connection with peer: {:?}", error);
+                            if let libp2p::swarm::ListenError::Denied { cause } = &error {
+                                if let Some(exceeded) = cause.downcast_ref::<libp2p::connection_limits::Exceeded>() {
+                                    tracing::warn!(%address, error = %exceeded, "Rejected inbound connection to prevent against denial-of-service");
+                                } else {
+                                    tracing::trace!(%address, "Failed to set up connection with peer: {:?}", error);
+                                }
+                            } else {
+                                tracing::trace!(%address, "Failed to set up connection with peer: {:?}", error);
+                            }
                         }
                         SwarmEvent::ConnectionClosed { peer_id: peer, num_established: 0, endpoint, cause: Some(error), connection_id } => {
                             tracing::trace!(%peer, address = %endpoint.get_remote_address(), %connection_id, "Lost connection to peer: {:?}", error);

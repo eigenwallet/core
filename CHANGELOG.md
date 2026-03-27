@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Add connection limits to prevent denial-of-service via resource exhaustion. Inbound connections are now capped at 128 established and 64 pending, with a maximum of 4 connections per peer.
+
 ## [4.1.1] - 2026-03-26
 
 - ASB: Optimize how we respond to network request
