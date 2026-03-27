@@ -52,8 +52,8 @@ where
         .with_max_pending_incoming(Some(64))
         // Bound the total number of established inbound connections to cap memory usage
         .with_max_established_incoming(Some(128))
-        // A single peer only needs one connection; allow 2 for brief overlap during reconnects
-        .with_max_established_per_peer(Some(2));
+        // A single peer only needs one connection; allow 4 for brief overlap during reconnects
+        .with_max_established_per_peer(Some(4));
 
     let behaviour = asb::Behaviour::new(
         min_buy,

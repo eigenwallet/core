@@ -27,7 +27,7 @@ tor-hsservice = { workspace = true }
 tor-rtcompat = { workspace = true, features = ["tokio"] }
 
 # LibP2P
-libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa", "connection-limits"] }
+libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
 libp2p-tor = { path = "../libp2p-tor", features = ["listen-onion-service"] }
 
 # Error handling
