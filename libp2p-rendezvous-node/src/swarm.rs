@@ -157,7 +157,7 @@ async fn create_transport_with_onion(
         .unwrap();
 
     // Add onion service and get the address
-    let onion_address = tor_transport.add_onion_service(onion_service_config, onion_port)?;
+    let onion_address = tor_transport.add_onion_service(onion_service_config, onion_port, 16)?;
 
     // Combine transports
     let combined_transport = tcp_with_dns
