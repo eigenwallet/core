@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Add limits to prevent denial-of-service via resource exhaustion.
+
 ## [4.1.1] - 2026-03-26
 
 - ASB: Optimize how we respond to network request

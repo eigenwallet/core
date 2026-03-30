@@ -87,7 +87,7 @@ async fn onion_transport(
         .build()
         .unwrap();
 
-    let onion_listen_address = transport.add_onion_service(svg_cfg, 999).unwrap();
+    let onion_listen_address = transport.add_onion_service(svg_cfg, 999, 16).unwrap();
 
     let auth_upgrade = noise::Config::new(&keypair)?;
     let multiplex_upgrade = yamux::Config::default();

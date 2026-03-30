@@ -91,6 +91,12 @@ impl OutEvent {
 }
 
 // Some other behaviours which are not worth their own module
+impl From<void::Void> for OutEvent {
+    fn from(event: void::Void) -> Self {
+        void::unreachable(event)
+    }
+}
+
 impl From<ping::Event> for OutEvent {
     fn from(_: ping::Event) -> Self {
         OutEvent::Other
