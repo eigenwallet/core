@@ -14,6 +14,7 @@ use crate::protocol::bob::common::{
 use crate::protocol::bob::*;
 use crate::protocol::{Database, bob};
 use anyhow::{Context as AnyContext, Result};
+use bitcoin_wallet::Watchable;
 use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin::{
@@ -921,39 +922,41 @@ async fn next_state(
                     async move {
                         match state.expired_timelock(&*bitcoin_wallet).await.map_err(backoff::Error::transient)? {
                             ExpiredTimelocks::None { .. } => {
-                                Err(backoff::Error::Permanent(anyhow::anyhow!(
+                                return Err(backoff::Error::Permanent(anyhow::anyhow!(
                                     "Internal error: canceled state reached before cancel timelock was expired"
                                 )))
                             }
-                            // Just because the punish timelock is expired doesn't mean we have been punished.
-                            // We try to refund and infer we have been punished if the output was already spent.
-                            ExpiredTimelocks::Cancel { .. } | ExpiredTimelocks::Punish  => {
-                                tracing::debug!("Attempting to refund Bitcoin");
-                                let (tx_refund, refund_type) = state.construct_best_bitcoin_refund_tx().context("Couldn't construct best Bitcoin refund transaction").map_err(backoff::Error::transient)?;
+                            ExpiredTimelocks::Punish => {
+                                let tx_punish = state.construct_tx_punish().map_err(backoff::Error::transient)?;
+                                let punish_txid = tx_punish.id();
 
-                                // If the refund tx is denied due to double spend it means the Btc has been punished
-                                match bitcoin_wallet.ensure_broadcasted(tx_refund, &refund_type.to_string()).await {
-                                    Ok(_) => (),
-                                    Err(error) if bitcoin_wallet::parse_rpc_error_code(&error).is_ok_and(|error_code|
-                                        error_code == i64::from(bitcoin_wallet::RpcErrorCode::RpcVerifyRejected)
-                                        || error_code == i64::from(bitcoin_wallet::RpcErrorCode::RpcVerifyError))
-                                            => return Ok(BobState::BtcPunished { tx_lock_id: state.tx_lock_id(), state }),
-                                    Err(error) => return Err(backoff::Error::transient(error.context("Couldn't publish best refund transaction")))
+                                if bitcoin_wallet.get_raw_transaction(punish_txid).await.map_err(backoff::Error::transient)?.is_some() {
+                                    tracing::info!(%punish_txid, "Punish timelock expired and punish transaction has been found on the chain");
+                                    return Ok(BobState::BtcPunished { tx_lock_id: state.tx_lock_id(), state });
                                 }
 
-                                let next_state = match refund_type {
-                                    RefundType::Full => BobState::BtcRefundPublished(state),
-                                    RefundType::Partial { .. } => BobState::BtcPartialRefundPublished(state)
-                                };
-
-                                Ok(next_state)
+                                tracing::debug!("Punish timelock expired but punish tx not found, attempting refund");
+                            }
+                            ExpiredTimelocks::Cancel { .. } => {
+                                tracing::debug!("Cancel timelock expired, attempting refund");
                             }
                             ExpiredTimelocks::WaitingForRemainingRefund { .. } =>
-                                Ok(BobState::WaitingForReclaimTimelockExpiration(state)),
+                                return Ok(BobState::WaitingForReclaimTimelockExpiration(state)),
                             // Weird edge case: PartialRefund has been published without our knowledge
                             ExpiredTimelocks::RemainingRefund =>
-                                Ok(BobState::BtcPartiallyRefunded(state)),
+                                return Ok(BobState::BtcPartiallyRefunded(state)),
                         }
+
+                        // Attempt to refund. Reachable from both Cancel and Punish (if tx_punish has not yet been published).
+                        let (tx_refund, refund_type) = state.construct_best_bitcoin_refund_tx().context("Couldn't construct best Bitcoin refund transaction").map_err(backoff::Error::transient)?;
+                        bitcoin_wallet.ensure_broadcasted(tx_refund, &refund_type.to_string()).await.map_err(|e| backoff::Error::transient(e.context("Couldn't publish best refund transaction")))?;
+
+                        let next_state = match refund_type {
+                            RefundType::Full => BobState::BtcRefundPublished(state),
+                            RefundType::Partial { .. } => BobState::BtcPartialRefundPublished(state)
+                        };
+
+                        Ok(next_state)
                     }
                 },
                 None,

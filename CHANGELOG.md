@@ -7,12 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Fix an issue where we could get stuck in the "BtcCancelled" state if the swap was punished.
+
 ## [4.2.2] - 2026-03-31
 
 - ASB+CONTROLLER: Fix a bug where `get-swaps` would show "No swaps found" despite there being swaps.
-
-## [4.2.1] - 2026-03-30
-
 - ASB: Add limits to prevent denial-of-service via resource exhaustion.
 
 ## [4.1.1] - 2026-03-26
