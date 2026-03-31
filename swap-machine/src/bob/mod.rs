@@ -714,7 +714,9 @@ impl State2 {
                 tx_reclaim_fee: self.tx_reclaim_fee,
                 tx_withhold_fee: self.tx_withhold_fee,
                 tx_mercy_fee: self.tx_mercy_fee,
+                tx_punish_fee: self.tx_punish_fee,
                 tx_cancel_fee: self.tx_cancel_fee,
+                punish_address: self.punish_address,
             },
             self.tx_lock,
         ))
@@ -755,7 +757,10 @@ pub struct State3 {
     tx_reclaim_fee: Option<bitcoin::Amount>,
     tx_withhold_fee: Option<bitcoin::Amount>,
     tx_mercy_fee: Option<bitcoin::Amount>,
+    tx_punish_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
+    #[serde(with = "address_serde")]
+    punish_address: bitcoin::Address,
 }
 
 impl State3 {
@@ -802,6 +807,8 @@ impl State3 {
             tx_reclaim_fee: self.tx_reclaim_fee,
             tx_withhold_fee: self.tx_withhold_fee,
             tx_mercy_fee: self.tx_mercy_fee,
+            tx_punish_fee: self.tx_punish_fee,
+            punish_address: self.punish_address,
         }
     }
 
@@ -825,6 +832,8 @@ impl State3 {
             tx_reclaim_fee: self.tx_reclaim_fee,
             tx_withhold_fee: self.tx_withhold_fee,
             tx_mercy_fee: self.tx_mercy_fee,
+            tx_punish_fee: self.tx_punish_fee,
+            punish_address: self.punish_address.clone(),
             xmr: self.xmr,
             btc_amnesty_amount: self.btc_amnesty_amount,
         }
@@ -936,7 +945,10 @@ pub struct State4 {
     tx_reclaim_fee: Option<bitcoin::Amount>,
     tx_withhold_fee: Option<bitcoin::Amount>,
     tx_mercy_fee: Option<bitcoin::Amount>,
+    tx_punish_fee: bitcoin::Amount,
     tx_cancel_fee: bitcoin::Amount,
+    #[serde(with = "address_serde")]
+    punish_address: bitcoin::Address,
 }
 
 impl State4 {
@@ -1062,6 +1074,8 @@ impl State4 {
             tx_reclaim_fee: self.tx_reclaim_fee,
             tx_withhold_fee: self.tx_withhold_fee,
             tx_mercy_fee: self.tx_mercy_fee,
+            tx_punish_fee: self.tx_punish_fee,
+            punish_address: self.punish_address,
         }
     }
 
@@ -1127,6 +1141,9 @@ pub struct State6 {
     pub tx_reclaim_fee: Option<bitcoin::Amount>,
     pub tx_withhold_fee: Option<bitcoin::Amount>,
     pub tx_mercy_fee: Option<bitcoin::Amount>,
+    pub tx_punish_fee: bitcoin::Amount,
+    #[serde(with = "address_serde")]
+    pub punish_address: bitcoin::Address,
 }
 
 impl State6 {
@@ -1172,6 +1189,16 @@ impl State6 {
             self.b.public(),
             self.tx_cancel_fee,
         )
+    }
+
+    pub fn construct_tx_punish(&self) -> Result<bitcoin::TxPunish> {
+        let tx_cancel = self.construct_tx_cancel()?;
+        Ok(bitcoin::TxPunish::new(
+            &tx_cancel,
+            &self.punish_address,
+            self.punish_timelock,
+            self.tx_punish_fee,
+        ))
     }
 
     pub async fn check_for_tx_cancel(
