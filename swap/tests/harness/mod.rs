@@ -353,6 +353,7 @@ async fn start_alice(
         None,
         false,
         1,
+        16,
     )
     .unwrap();
     swarm.listen_on(listen_address).unwrap();

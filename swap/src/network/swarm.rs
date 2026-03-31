@@ -4,6 +4,7 @@ use crate::seed::Seed;
 use crate::{asb, cli};
 use anyhow::Result;
 use arti_client::TorClient;
+use libp2p::connection_limits::ConnectionLimits;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{Multiaddr, Swarm, identity};
 use libp2p::{PeerId, SwarmBuilder};
@@ -31,6 +32,7 @@ pub fn asb<LR>(
     maybe_tor_client: Option<Arc<TorClient<TokioRustlsRuntime>>>,
     register_hidden_service: bool,
     num_intro_points: u8,
+    max_concurrent_rend_requests: usize,
 ) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
@@ -45,6 +47,14 @@ where
         })
         .collect();
 
+    // TODO: Prioritize honest peers in this queue
+    let connection_limits = ConnectionLimits::default()
+        // Limit peers stuck in the handshake phase
+        .with_max_pending_incoming(Some(64 * 4))
+        .with_max_established_incoming(Some(128 * 4))
+        // A single peer only needs one connection; allow 4 for brief overlap during reconnects
+        .with_max_established_per_peer(Some(4));
+
     let behaviour = asb::Behaviour::new(
         min_buy,
         max_buy,
@@ -53,6 +63,7 @@ where
         env_config,
         (identity.clone(), namespace),
         rendezvous_nodes,
+        connection_limits,
     );
 
     let (transport, onion_addresses) = asb::transport::new(
@@ -60,6 +71,7 @@ where
         maybe_tor_client,
         register_hidden_service,
         num_intro_points,
+        max_concurrent_rend_requests,
     )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)

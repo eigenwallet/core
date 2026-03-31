@@ -210,6 +210,7 @@ hidden_service_num_intro_points = 5
 | --- | --- |
 | `register_hidden_service` | Whether the asb should register an onion service.  |
 | `hidden_service_num_intro_points` | If the asb registers an onion service, this specifies the number of introduction points the asb will use. |
+| `max_concurrent_rend_requests` | Maximum number of concurrent rendezvous circuit constructions. Controls how fast the Tor PoW priority queue is drained. Lower values create more backpressure, causing the PoW effort requirement to increase faster under load. Default: `16`. |
 
 
 ### Network Section

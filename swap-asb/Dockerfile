@@ -67,6 +67,11 @@ RUN cargo chef prepare --recipe-path recipe.json
 # Now we build the application
 FROM toolchain AS builder
 
+# Enable debug info in release builds for stack traces and perf.
+# Must be set before cargo chef cook so the profile fingerprint matches
+# the later cargo build, otherwise cook's cache is invalidated.
+ENV CARGO_PROFILE_RELEASE_DEBUG=1
+
 # Build just the external dependencies first
 COPY --from=planner /recipe.json recipe.json
 

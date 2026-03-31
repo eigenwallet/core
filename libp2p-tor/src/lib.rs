@@ -52,7 +52,7 @@
 //! ```
 
 use arti_client::{TorClient, TorClientBuilder};
-use futures::future::BoxFuture;
+use futures::{FutureExt as _, StreamExt as _, future::{BoxFuture, Either}};
 use libp2p::{
     Multiaddr, Transport, TransportError,
     core::transport::{ListenerId, TransportEvent},
@@ -74,7 +74,7 @@ use std::str::FromStr;
 use tor_cell::relaycell::msg::{Connected, End, EndReason};
 #[cfg(feature = "listen-onion-service")]
 use tor_hsservice::{
-    HsId, OnionServiceConfig, RunningOnionService, StreamRequest, handle_rend_requests,
+    HsId, OnionServiceConfig, RunningOnionService, StreamRequest,
     status::OnionServiceStatus,
 };
 #[cfg(feature = "listen-onion-service")]
@@ -233,12 +233,33 @@ impl TorTransport {
         &mut self,
         svc_cfg: OnionServiceConfig,
         port: u16,
+        max_concurrent_rend_requests: usize,
     ) -> anyhow::Result<Multiaddr> {
         let (service, request_stream) = self
             .client
             .launch_onion_service(svc_cfg)?
             .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
-        let request_stream = Box::pin(handle_rend_requests(request_stream));
+        // Accept rendezvous requests with bounded concurrency.
+        // `handle_rend_requests` uses `flat_map_unordered(None, ...)` which drains the
+        // PoW priority queue instantly, preventing it from ever filling up. That defeats
+        // the effort auto-tuning: the queue is always empty, so arti thinks there's no
+        // load and never increases the suggested effort.
+        // By limiting concurrency, we create backpressure that keeps the queue full under
+        // load, which causes low-effort requests to be evicted and the suggested effort
+        // to ramp up.
+        let request_stream = Box::pin(
+            request_stream.flat_map_unordered(Some(max_concurrent_rend_requests), |rend_request| {
+                Box::pin(rend_request.accept())
+                    .map(|outcome| match outcome {
+                        Ok(stream_requests) => Either::Left(stream_requests),
+                        Err(e) => {
+                            tracing::warn!("Problem while accepting rendezvous request: {e:#}");
+                            Either::Right(futures::stream::empty())
+                        }
+                    })
+                    .flatten_stream()
+            }),
+        );
 
         let multiaddr = service
             .onion_address()

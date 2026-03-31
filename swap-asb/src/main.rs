@@ -240,6 +240,7 @@ pub async fn main() -> Result<()> {
                 tor_client,
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
+                config.tor.max_concurrent_rend_requests,
             )?;
 
             for listen in config.network.listen.clone() {

@@ -335,6 +335,8 @@ services:
     container_name: asb
     {image_asb}
     restart: unless-stopped
+    cap_add:
+      - SYS_PTRACE
     depends_on:
       - electrs
     volumes:

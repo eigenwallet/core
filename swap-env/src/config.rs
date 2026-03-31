@@ -82,6 +82,15 @@ pub struct Monero {
 pub struct TorConf {
     pub register_hidden_service: bool,
     pub hidden_service_num_intro_points: u8,
+    /// Maximum number of concurrent rendezvous circuit constructions.
+    /// Limits how fast the PoW priority queue is drained, creating backpressure
+    /// that allows the suggested PoW effort to ramp up under load.
+    #[serde(default = "default_max_concurrent_rend_requests")]
+    pub max_concurrent_rend_requests: usize,
+}
+
+fn default_max_concurrent_rend_requests() -> usize {
+    16
 }
 
 impl Default for TorConf {
@@ -89,6 +98,7 @@ impl Default for TorConf {
         Self {
             register_hidden_service: true,
             hidden_service_num_intro_points: 5,
+            max_concurrent_rend_requests: default_max_concurrent_rend_requests(),
         }
     }
 }
