@@ -6,7 +6,10 @@ use bitcoin_wallet::BitcoinWallet;
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::ErrorObjectOwned;
 use jsonrpsee::types::error::ErrorCode;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{Decimal, RoundingStrategy};
 use std::sync::Arc;
+use swap_core::monero::PICONERO_OFFSET;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
@@ -174,10 +177,24 @@ impl AsbApiServer for RpcImpl {
                 .context("Error fetching current and first state from database")
                 .into_json_rpc_result()?;
 
-            let (State::Alice(current_alice), State::Alice(AliceState::Started { state3 })) =
-                (current, starting)
-            else {
-                continue; // Skip non-Alice swaps
+            let (current_alice, state3) = match (current, starting) {
+                (
+                    State::Alice(current_alice),
+                    State::Alice(AliceState::BtcLockTransactionSeen { state3 }),
+                ) => (current_alice, state3),
+                (State::Alice(AliceState::SafelyAborted), State::Alice(AliceState::SafelyAborted)) => {
+                    continue;
+                }
+                (State::Alice(current_alice), State::Alice(starting_alice)) => {
+                    tracing::error!(
+                        %swap_id,
+                        current_state = %current_alice,
+                        starting_state = %starting_alice,
+                        "Skipping swap with unexpected state history in get_swaps"
+                    );
+                    continue;
+                }
+                _ => continue, // Skip non-Alice swaps
             };
 
             let start_date = self
@@ -187,11 +204,8 @@ impl AsbApiServer for RpcImpl {
                 .into_json_rpc_result()?;
             let peer_id = self.db.get_peer_id(swap_id).await.into_json_rpc_result()?;
 
-            // Exchange rate: BTC per XMR (amount of BTC needed to buy 1 XMR)
-            let rate_btc_per_xmr = state3.btc.to_btc() / state3.xmr.as_xmr();
-            let exchange_rate = bitcoin::Amount::from_btc(rate_btc_per_xmr)
-                .context("exchange rate should be valid")
-                .into_json_rpc_result()?;
+            let exchange_rate =
+                calculate_exchange_rate(state3.btc, state3.xmr).into_json_rpc_result()?;
 
             results.push(Swap {
                 swap_id: swap_id.to_string(),
@@ -292,6 +306,21 @@ impl AsbApiServer for RpcImpl {
         self.bitcoin_wallet.sync().await.into_json_rpc_result()?;
         Ok(())
     }
+}
+
+fn calculate_exchange_rate(btc: bitcoin::Amount, xmr: monero::Amount) -> Result<bitcoin::Amount> {
+    let sats_per_xmr = Decimal::from(btc.to_sat())
+        .checked_mul(Decimal::from(PICONERO_OFFSET))
+        .context("exchange rate overflow")?
+        .checked_div(Decimal::from(xmr.as_pico()))
+        .context("xmr amount must be greater than zero")?;
+
+    let sats_per_xmr = sats_per_xmr
+        .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
+        .to_u64()
+        .context("exchange rate should fit into satoshis")?;
+
+    Ok(bitcoin::Amount::from_sat(sats_per_xmr))
 }
 
 trait IntoJsonRpcResult<T> {

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB+CONTROLLER: Fix a bug where `get-swaps` would show "No swaps found" despite there being swaps.
+
 ## [4.2.1] - 2026-03-30
 
 - ASB: Add limits to prevent denial-of-service via resource exhaustion.
