@@ -931,7 +931,7 @@ async fn next_state(
                                 let punish_txid = tx_punish.id();
 
                                 if bitcoin_wallet.get_raw_transaction(punish_txid).await.map_err(backoff::Error::transient)?.is_some() {
-                                    tracing::warn!(%punish_txid, "Punish transaction has been published");
+                                    tracing::info!(%punish_txid, "Punish timelock expired and punish transaction has been found on the chain");
                                     return Ok(BobState::BtcPunished { tx_lock_id: state.tx_lock_id(), state });
                                 }
 
@@ -947,7 +947,7 @@ async fn next_state(
                                 return Ok(BobState::BtcPartiallyRefunded(state)),
                         }
 
-                        // Attempt to refund. Reachable from both Cancel and Punish (if not yet punished).
+                        // Attempt to refund. Reachable from both Cancel and Punish (if tx_punish has not yet been published).
                         let (tx_refund, refund_type) = state.construct_best_bitcoin_refund_tx().context("Couldn't construct best Bitcoin refund transaction").map_err(backoff::Error::transient)?;
                         bitcoin_wallet.ensure_broadcasted(tx_refund, &refund_type.to_string()).await.map_err(|e| backoff::Error::transient(e.context("Couldn't publish best refund transaction")))?;
 
