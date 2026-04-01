@@ -1,11 +1,8 @@
--- This migration adds tx_punish_fee and punish_address to all Bob state objects
--- that contain the "xmr" field (State3, State4, State5, State6).
--- These fields are needed to construct the punish transaction txid for explicit
--- punish detection, but were previously only stored in State2 (ExecutionSetupDone).
---
--- Uses json_tree to generically find the parent object of "xmr" regardless of
--- nesting depth, avoiding the need to enumerate each BobState variant individually.
--- json_insert (not json_set) is used so existing values are never overwritten.
+-- Fix for 20260331125446_add_punish_tx_fields_to_bob_states which incorrectly
+-- matched Alice states containing "xmr" fields via json_tree. This v2 adds
+-- an explicit Bob-only filter. On databases where the original migration already
+-- ran successfully (Bob-only or empty), this is a no-op because json_insert
+-- with existing keys does nothing.
 
 -- Step 1: Collect source values (tx_punish_fee, punish_address) per swap_id
 -- from the ExecutionSetupDone state.
@@ -28,13 +25,15 @@ DROP TABLE _assert;
 -- Step 2: Collect target rows and the JSON path where the new fields should be
 -- inserted. json_tree's `path` column gives the parent object of the matched key,
 -- so appending '.tx_punish_fee' inserts as a sibling of "xmr", not under it.
+-- Only Bob states are considered (excludes Alice states which also have "xmr").
 CREATE TEMP TABLE _punish_target AS
 SELECT
     swap_states.id AS target_id,
     swap_states.swap_id,
     (SELECT jt.path FROM json_tree(swap_states.state) AS jt WHERE jt.key = 'xmr' LIMIT 1) AS parent_path
 FROM swap_states
-WHERE json_extract(state, '$.Bob.ExecutionSetupDone') IS NULL
+WHERE json_extract(state, '$.Bob') IS NOT NULL
+  AND json_extract(state, '$.Bob.ExecutionSetupDone') IS NULL
   AND (SELECT jt.path FROM json_tree(swap_states.state) AS jt WHERE jt.key = 'xmr' LIMIT 1) IS NOT NULL;
 
 -- Assert: every target row has a matching source row.

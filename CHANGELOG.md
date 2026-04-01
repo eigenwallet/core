@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.2.3] - 2026-03-31
 
 - GUI: Fix an issue where we could get stuck in the "BtcCancelled" state if the swap was punished.
+- ASB: Fix issue where a database migration would cause the ASB to fail to start.
 
 ## [4.2.2] - 2026-03-31
 
