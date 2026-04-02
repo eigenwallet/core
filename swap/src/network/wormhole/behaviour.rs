@@ -16,9 +16,7 @@ use tokio::sync::mpsc;
 use tor_hscrypto::pk::{HsId, HsIdKey, HsIdKeypair};
 use tor_llcrypto::pk::ed25519;
 
-use swap_machine::common::Database;
-
-use super::ServiceRequest;
+use super::{PeerTrust, ServiceRequest};
 
 /// Configuration for the wormhole behaviour.
 pub struct Config {
@@ -41,7 +39,7 @@ pub struct Behaviour {
     /// The ASB's libp2p identity secret key bytes (32 bytes, ed25519).
     identity_secret: [u8; 32],
     /// Database for querying peers.
-    db: Arc<dyn Database + Send + Sync>,
+    db: Arc<dyn PeerTrust + Send + Sync>,
     /// Channel to send service spawn requests to the wrapper transport.
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
     /// Map of wormhole onion address -> authorized peer.
@@ -57,7 +55,7 @@ pub struct Behaviour {
 impl Behaviour {
     pub fn new(
         identity: &identity::Keypair,
-        db: Arc<dyn Database + Send + Sync>,
+        db: Arc<dyn PeerTrust + Send + Sync>,
         service_tx: mpsc::UnboundedSender<ServiceRequest>,
         config: Config,
     ) -> Self {
@@ -177,7 +175,7 @@ impl NetworkBehaviour for Behaviour {
         if self.pending_query.is_none() && self.poll_interval.poll_tick(cx).is_ready() {
             let db = Arc::clone(&self.db);
             self.pending_query = Some(tokio::spawn(async move {
-                match db.get_peers_with_swaps_past_btc_locked().await {
+                match db.peers_with_financially_relevant_swap().await {
                     Ok(peers) => peers,
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to query peers");

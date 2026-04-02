@@ -1,6 +1,8 @@
 pub mod behaviour;
 pub mod transport;
 
+use anyhow::Result;
+use libp2p::PeerId;
 use tor_hscrypto::pk::HsIdKeypair;
 
 /// Request sent from the behaviour to the wrapper transport to spawn a
@@ -8,4 +10,11 @@ use tor_hscrypto::pk::HsIdKeypair;
 pub struct ServiceRequest {
     pub keypair: HsIdKeypair,
     pub nickname: String,
+}
+
+/// Provides trust information about peers.
+#[async_trait::async_trait]
+pub trait PeerTrust {
+    /// Returns peers that have committed real funds to a swap.
+    async fn peers_with_financially_relevant_swap(&self) -> Result<Vec<PeerId>>;
 }

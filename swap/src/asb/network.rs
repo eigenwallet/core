@@ -117,12 +117,11 @@ pub mod behaviour {
     use std::sync::Arc;
 
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
-    use swap_machine::common::Database;
     use swap_p2p::{out_event::alice::OutEvent, patches};
     use tokio::sync::mpsc;
 
     use crate::network::wormhole;
-    use crate::network::wormhole::ServiceRequest;
+    use crate::network::wormhole::{PeerTrust, ServiceRequest};
 
     use super::*;
 
@@ -163,7 +162,7 @@ pub mod behaviour {
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
-            db: Arc<dyn Database + Send + Sync>,
+            db: Arc<dyn PeerTrust + Send + Sync>,
             wormhole_service_tx: mpsc::UnboundedSender<ServiceRequest>,
         ) -> Self {
             let (identity, namespace) = identify_params;

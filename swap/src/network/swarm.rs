@@ -13,7 +13,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
-use swap_machine::common::Database;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -34,7 +33,7 @@ pub fn asb<LR>(
     register_hidden_service: bool,
     num_intro_points: u8,
     max_concurrent_rend_requests: usize,
-    db: Arc<dyn Database + Send + Sync>,
+    db: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
 ) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
