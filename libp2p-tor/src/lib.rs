@@ -52,7 +52,10 @@
 //! ```
 
 use arti_client::{TorClient, TorClientBuilder};
-use futures::{FutureExt as _, StreamExt as _, future::{BoxFuture, Either}};
+use futures::{
+    FutureExt as _, StreamExt as _,
+    future::{BoxFuture, Either},
+};
 use libp2p::{
     Multiaddr, Transport, TransportError,
     core::transport::{ListenerId, TransportEvent},
@@ -76,8 +79,7 @@ use tor_cell::relaycell::msg::{Connected, End, EndReason};
 pub use tor_hscrypto::pk::HsIdKeypair;
 #[cfg(feature = "listen-onion-service")]
 use tor_hsservice::{
-    HsId, OnionServiceConfig, RunningOnionService, StreamRequest,
-    status::OnionServiceStatus,
+    HsId, OnionServiceConfig, RunningOnionService, StreamRequest, status::OnionServiceStatus,
 };
 #[cfg(feature = "listen-onion-service")]
 use tor_proto::client::stream::IncomingStreamRequest;
@@ -249,8 +251,9 @@ impl TorTransport {
         // By limiting concurrency, we create backpressure that keeps the queue full under
         // load, which causes low-effort requests to be evicted and the suggested effort
         // to ramp up.
-        let request_stream = Box::pin(
-            request_stream.flat_map_unordered(Some(max_concurrent_rend_requests), |rend_request| {
+        let request_stream = Box::pin(request_stream.flat_map_unordered(
+            Some(max_concurrent_rend_requests),
+            |rend_request| {
                 Box::pin(rend_request.accept())
                     .map(|outcome| match outcome {
                         Ok(stream_requests) => Either::Left(stream_requests),
@@ -260,8 +263,8 @@ impl TorTransport {
                         }
                     })
                     .flatten_stream()
-            }),
-        );
+            },
+        ));
 
         let multiaddr = service
             .onion_address()
@@ -288,8 +291,9 @@ impl TorTransport {
             .launch_onion_service_with_hsid(svc_cfg, id_keypair)?
             .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
 
-        let request_stream = Box::pin(
-            request_stream.flat_map_unordered(Some(max_concurrent_rend_requests), |rend_request| {
+        let request_stream = Box::pin(request_stream.flat_map_unordered(
+            Some(max_concurrent_rend_requests),
+            |rend_request| {
                 Box::pin(rend_request.accept())
                     .map(|outcome| match outcome {
                         Ok(stream_requests) => Either::Left(stream_requests),
@@ -299,8 +303,8 @@ impl TorTransport {
                         }
                     })
                     .flatten_stream()
-            }),
-        );
+            },
+        ));
 
         let multiaddr = service
             .onion_address()

@@ -57,7 +57,7 @@ where
         // A single peer only needs one connection; allow 4 for brief overlap during reconnects
         .with_max_established_per_peer(Some(4));
 
-    let (personal_service_tx, personal_service_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (wormhole_service_tx, wormhole_service_rx) = tokio::sync::mpsc::unbounded_channel();
 
     let behaviour = asb::Behaviour::new(
         min_buy,
@@ -69,7 +69,7 @@ where
         rendezvous_nodes,
         connection_limits,
         db,
-        personal_service_tx,
+        wormhole_service_tx,
     );
 
     let (transport, onion_addresses) = asb::transport::new(
@@ -78,7 +78,7 @@ where
         register_hidden_service,
         num_intro_points,
         max_concurrent_rend_requests,
-        personal_service_rx,
+        wormhole_service_rx,
     )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
@@ -91,7 +91,7 @@ where
     for addr in rendezvous_addrs {
         let peer_id = addr
             .extract_peer_id()
-                .expect("Rendezvous node address must contain peer ID");
+            .expect("Rendezvous node address must contain peer ID");
         swarm.add_peer_address(peer_id, addr.clone());
     }
 

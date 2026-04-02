@@ -25,10 +25,10 @@ unsigned-varint = { version = "0.8.0", features = ["codec", "asynchronous_codec"
 
 # Crypto
 bitcoin = { workspace = true }
+data-encoding = { workspace = true }
 monero-address = { workspace = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
-data-encoding = { workspace = true }
 safelog = { workspace = true }
 tor-hscrypto = { workspace = true }
 tor-llcrypto = { workspace = true }

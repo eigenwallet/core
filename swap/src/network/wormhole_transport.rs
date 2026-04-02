@@ -5,33 +5,33 @@ use futures::future::BoxFuture;
 use libp2p::core::transport::{ListenerId, TransportEvent};
 use libp2p::{Multiaddr, Transport, TransportError};
 use libp2p_tor::{TokioTorStream, TorTransport, TorTransportError};
-use swap_p2p::protocols::personal_onion::PersonalServiceRequest;
+use swap_p2p::protocols::wormhole::ServiceRequest;
 use tokio::sync::mpsc;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 
-/// Port used for personal onion services.
-const PERSONAL_SERVICE_PORT: u16 = 9939;
-/// Max concurrent rendezvous requests for personal services.
+/// Port used for wormhole onion services.
+const WORMHOLE_SERVICE_PORT: u16 = 9939;
+/// Max concurrent rendezvous requests for wormhole services.
 /// Lower than the main service since these serve a single peer.
-const PERSONAL_MAX_CONCURRENT_REND_REQUESTS: usize = 4;
+const WORMHOLE_MAX_CONCURRENT_REND_REQUESTS: usize = 4;
 
-/// A wrapper around `TorTransport` that can dynamically spawn personal
-/// hidden services at runtime by receiving requests through a channel.
-pub struct PersonalOnionTransport {
+/// A wrapper around `TorTransport` that can dynamically spawn dedicated
+/// onion services at runtime by receiving requests through a channel.
+pub struct WormholeTransport {
     inner: TorTransport,
-    service_rx: mpsc::UnboundedReceiver<PersonalServiceRequest>,
+    service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
 }
 
-impl PersonalOnionTransport {
+impl WormholeTransport {
     pub fn new(
         inner: TorTransport,
-        service_rx: mpsc::UnboundedReceiver<PersonalServiceRequest>,
+        service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
     ) -> Self {
         Self { inner, service_rx }
     }
 }
 
-impl Transport for PersonalOnionTransport {
+impl Transport for WormholeTransport {
     type Output = TokioTorStream;
     type Error = TorTransportError;
     type Dial = BoxFuture<'static, Result<Self::Output, Self::Error>>;
@@ -68,14 +68,14 @@ impl Transport for PersonalOnionTransport {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<TransportEvent<Self::ListenerUpgrade, Self::Error>> {
-        // Drain the channel for new personal service requests
+        // Drain the channel for new wormhole service requests
         while let Poll::Ready(Some(request)) = self.service_rx.poll_recv(cx) {
             let svc_cfg = match OnionServiceConfigBuilder::default()
                 .nickname(
                     request
                         .nickname
                         .parse()
-                        .expect("Personal service nickname to be valid"),
+                        .expect("Wormhole service nickname to be valid"),
                 )
                 .num_intro_points(3)
                 .enable_pow(false)
@@ -83,7 +83,7 @@ impl Transport for PersonalOnionTransport {
             {
                 Ok(cfg) => cfg,
                 Err(e) => {
-                    tracing::error!(error = %e, "Failed to build personal onion service config");
+                    tracing::error!(error = %e, "Failed to build wormhole onion service config");
                     continue;
                 }
             };
@@ -91,19 +91,19 @@ impl Transport for PersonalOnionTransport {
             let addr = match self.inner.add_onion_service_with_hsid(
                 svc_cfg,
                 request.keypair,
-                PERSONAL_SERVICE_PORT,
-                PERSONAL_MAX_CONCURRENT_REND_REQUESTS,
+                WORMHOLE_SERVICE_PORT,
+                WORMHOLE_MAX_CONCURRENT_REND_REQUESTS,
             ) {
                 Ok(addr) => addr,
                 Err(e) => {
-                    tracing::error!(error = %e, "Failed to add personal onion service");
+                    tracing::error!(error = %e, "Failed to add wormhole onion service");
                     continue;
                 }
             };
 
             let listener_id = ListenerId::next();
             if let Err(e) = self.inner.listen_on(listener_id, addr.clone()) {
-                tracing::error!(%addr, error = %e, "Failed to listen on personal onion service");
+                tracing::error!(%addr, error = %e, "Failed to listen on wormhole onion service");
             }
         }
 
