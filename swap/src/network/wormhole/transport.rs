@@ -79,7 +79,7 @@ impl Transport for WormholeTransport {
                         .expect("Wormhole service nickname to be valid"),
                 )
                 .num_intro_points(3)
-                .enable_pow(false)
+                .enable_pow(true)
                 .build()
             {
                 Ok(cfg) => cfg,
