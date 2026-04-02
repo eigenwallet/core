@@ -101,9 +101,7 @@ impl Behaviour {
 
         self.authorized_peers.insert(multiaddr, peer_id);
 
-        let _ = self
-            .service_tx
-            .send(ServiceRequest { keypair, nickname });
+        let _ = self.service_tx.send(ServiceRequest { keypair, nickname });
     }
 }
 

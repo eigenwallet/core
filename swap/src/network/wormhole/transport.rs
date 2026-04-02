@@ -15,6 +15,7 @@ const WORMHOLE_SERVICE_PORT: u16 = 9939;
 /// Max concurrent rendezvous requests for wormhole services.
 /// Lower than the main service since these serve a single peer.
 const WORMHOLE_MAX_CONCURRENT_REND_REQUESTS: usize = 2;
+const WORMHOLE_NUM_INTRO_POINTS: u8 = 3;
 
 /// A wrapper around `TorTransport` that can dynamically spawn dedicated
 /// onion services at runtime by receiving requests through a channel.
@@ -24,10 +25,7 @@ pub struct WormholeTransport {
 }
 
 impl WormholeTransport {
-    pub fn new(
-        inner: TorTransport,
-        service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
-    ) -> Self {
+    pub fn new(inner: TorTransport, service_rx: mpsc::UnboundedReceiver<ServiceRequest>) -> Self {
         Self { inner, service_rx }
     }
 }
@@ -78,7 +76,7 @@ impl Transport for WormholeTransport {
                         .parse()
                         .expect("Wormhole service nickname to be valid"),
                 )
-                .num_intro_points(3)
+                .num_intro_points(WORMHOLE_NUM_INTRO_POINTS)
                 .enable_pow(true)
                 .build()
             {

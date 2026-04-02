@@ -8,9 +8,9 @@ pub use swap_p2p::protocols::rendezvous;
 pub use swap_p2p::protocols::swap_setup;
 pub use swap_p2p::protocols::transfer_proof;
 
-pub mod wormhole;
 pub mod swarm;
 pub mod transport;
+pub mod wormhole;
 
 #[cfg(test)]
 pub use swap_p2p::test;

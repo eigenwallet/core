@@ -62,6 +62,7 @@ proptest = "1"
 regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
+safelog = { workspace = true }
 semver = { workspace = true }
 structopt = "0.3"
 swap-controller-api = { path = "../swap-controller-api" }
@@ -77,7 +78,6 @@ swap-serde = { path = "../swap-serde" }
 tauri = { version = "2.0", features = ["config-json5"], optional = true, default-features = false }
 time = "0.3"
 url = { workspace = true }
-safelog = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
 void = "1"
 zeroize = { workspace = true }

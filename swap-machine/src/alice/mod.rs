@@ -133,8 +133,7 @@ impl AliceState {
     /// Returns true if this state is at or past BtcLocked.
     ///
     /// This indicates that the counterparty has committed real funds to the
-    /// swap, making them a "trusted" peer for the purpose of personal hidden
-    /// service allocation.
+    /// swap.
     pub fn is_at_or_past_btc_locked(&self) -> bool {
         !matches!(
             self,
