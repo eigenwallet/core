@@ -14,7 +14,7 @@ use super::ServiceRequest;
 const WORMHOLE_SERVICE_PORT: u16 = 9939;
 /// Max concurrent rendezvous requests for wormhole services.
 /// Lower than the main service since these serve a single peer.
-const WORMHOLE_MAX_CONCURRENT_REND_REQUESTS: usize = 4;
+const WORMHOLE_MAX_CONCURRENT_REND_REQUESTS: usize = 2;
 
 /// A wrapper around `TorTransport` that can dynamically spawn dedicated
 /// onion services at runtime by receiving requests through a channel.
@@ -105,6 +105,8 @@ impl Transport for WormholeTransport {
             let listener_id = ListenerId::next();
             if let Err(e) = self.inner.listen_on(listener_id, addr.clone()) {
                 tracing::error!(%addr, error = %e, "Failed to listen on wormhole onion service");
+            } else {
+                tracing::info!(%addr, "Wormhole onion service started");
             }
         }
 

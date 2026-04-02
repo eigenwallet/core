@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -22,7 +22,7 @@ use super::ServiceRequest;
 
 /// Configuration for the wormhole behaviour.
 pub struct Config {
-    /// How often to poll the database for new trusted peers.
+    /// How often to poll the database for new peers.
     pub poll_interval: Duration,
     /// Port for wormhole onion services.
     pub port: u16,
@@ -40,14 +40,12 @@ impl Default for Config {
 pub struct Behaviour {
     /// The ASB's libp2p identity secret key bytes (32 bytes, ed25519).
     identity_secret: [u8; 32],
-    /// Database for querying trusted peers.
+    /// Database for querying peers.
     db: Arc<dyn Database + Send + Sync>,
     /// Channel to send service spawn requests to the wrapper transport.
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
     /// Map of wormhole onion address -> authorized peer.
     authorized_peers: HashMap<Multiaddr, PeerId>,
-    /// Set of peers that already have a wormhole service spawned.
-    spawned_peers: HashSet<PeerId>,
     /// Timer for periodic DB polling.
     poll_interval: tokio::time::Interval,
     /// Port for wormhole onion services.
@@ -78,67 +76,30 @@ impl Behaviour {
             db,
             service_tx,
             authorized_peers: HashMap::new(),
-            spawned_peers: HashSet::new(),
             poll_interval,
             port: config.port,
             pending_query: None,
         }
     }
 
-    /// Derive a deterministic HsIdKeypair for a dedicated onion service
-    /// for a specific peer.
-    fn derive_hs_keypair(&self, peer_id: &PeerId) -> HsIdKeypair {
-        let mut engine = sha256::HashEngine::default();
-        engine.input(&self.identity_secret);
-        engine.input(b"WORMHOLE_ONION_SERVICE");
-        engine.input(&peer_id.to_bytes());
-        let hash = sha256::Hash::from_engine(engine);
-
-        let keypair = ed25519::Keypair::from_bytes(&hash.to_byte_array());
-        let expanded = ed25519::ExpandedKeypair::from(&keypair);
-
-        HsIdKeypair::from(expanded)
-    }
-
-    /// Compute the onion Multiaddr that a given HsIdKeypair will produce.
-    fn keypair_to_multiaddr(keypair: &HsIdKeypair, port: u16) -> Multiaddr {
-        let public: HsIdKey = keypair.into();
-        let hs_id: HsId = public.into();
-        let onion_domain = hs_id.display_unredacted().to_string();
-        let onion_without_dot_onion = onion_domain
-            .split('.')
-            .nth(0)
-            .expect("HsId display to contain .onion suffix");
-        let multiaddr_string = format!("/onion3/{onion_without_dot_onion}:{port}");
-        Multiaddr::from_str(&multiaddr_string).expect("valid onion multiaddr")
-    }
-
-    /// Derive a nickname for the wormhole onion service.
-    fn derive_nickname(peer_id: &PeerId) -> String {
-        let peer_bytes = peer_id.to_bytes();
-        let encoded = data_encoding::HEXLOWER.encode(&peer_bytes[..16.min(peer_bytes.len())]);
-        format!("wh-{encoded}")
-    }
-
     /// Spawn a dedicated onion service for a peer.
     fn spawn_service_for_peer(&mut self, peer_id: PeerId) {
-        if self.spawned_peers.contains(&peer_id) {
+        if self.authorized_peers.values().any(|p| *p == peer_id) {
             return;
         }
 
-        let keypair = self.derive_hs_keypair(&peer_id);
-        let multiaddr = Self::keypair_to_multiaddr(&keypair, self.port);
-        let nickname = Self::derive_nickname(&peer_id);
+        let keypair = derive_hs_keypair(&self.identity_secret, &peer_id);
+        let multiaddr = keypair_to_multiaddr(&keypair, self.port);
+        let nickname = derive_nickname(&peer_id);
 
-        tracing::info!(
+        tracing::debug!(
             %peer_id,
             %multiaddr,
             %nickname,
-            "Spawning wormhole onion service for trusted peer"
+            "Spawning wormhole onion service for peer"
         );
 
         self.authorized_peers.insert(multiaddr, peer_id);
-        self.spawned_peers.insert(peer_id);
 
         let _ = self
             .service_tx
@@ -208,7 +169,7 @@ impl NetworkBehaviour for Behaviour {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!(error = ?e, "Failed to query trusted peers from database");
+                        tracing::warn!(error = ?e, "Failed to query peers from database");
                     }
                 }
             }
@@ -221,7 +182,7 @@ impl NetworkBehaviour for Behaviour {
                 match db.get_peers_with_swaps_past_btc_locked().await {
                     Ok(peers) => peers,
                     Err(e) => {
-                        tracing::warn!(error = ?e, "Failed to query trusted peers");
+                        tracing::warn!(error = ?e, "Failed to query peers");
                         Vec::new()
                     }
                 }
@@ -232,4 +193,39 @@ impl NetworkBehaviour for Behaviour {
 
         Poll::Pending
     }
+}
+
+/// Derive a deterministic HsIdKeypair for a dedicated onion service
+/// for a specific peer.
+fn derive_hs_keypair(identity_secret: &[u8; 32], peer_id: &PeerId) -> HsIdKeypair {
+    let mut engine = sha256::HashEngine::default();
+    engine.input(identity_secret);
+    engine.input(b"WORMHOLE_ONION_SERVICE");
+    engine.input(&peer_id.to_bytes());
+    let hash = sha256::Hash::from_engine(engine);
+
+    let keypair = ed25519::Keypair::from_bytes(&hash.to_byte_array());
+    let expanded = ed25519::ExpandedKeypair::from(&keypair);
+
+    HsIdKeypair::from(expanded)
+}
+
+/// Compute the onion Multiaddr that a given HsIdKeypair will produce.
+fn keypair_to_multiaddr(keypair: &HsIdKeypair, port: u16) -> Multiaddr {
+    let public: HsIdKey = keypair.into();
+    let hs_id: HsId = public.into();
+    let onion_domain = hs_id.display_unredacted().to_string();
+    let onion_without_dot_onion = onion_domain
+        .split('.')
+        .nth(0)
+        .expect("HsId display to contain .onion suffix");
+    let multiaddr_string = format!("/onion3/{onion_without_dot_onion}:{port}");
+    Multiaddr::from_str(&multiaddr_string).expect("valid onion multiaddr")
+}
+
+/// Derive a nickname for the wormhole onion service.
+fn derive_nickname(peer_id: &PeerId) -> String {
+    let peer_bytes = peer_id.to_bytes();
+    let encoded = data_encoding::HEXLOWER.encode(&peer_bytes[..16.min(peer_bytes.len())]);
+    format!("wh-{encoded}")
 }
