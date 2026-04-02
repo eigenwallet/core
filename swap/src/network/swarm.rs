@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
+use swap_machine::common::Database;
 use swap_p2p::libp2p_ext::MultiAddrExt;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -33,6 +34,7 @@ pub fn asb<LR>(
     register_hidden_service: bool,
     num_intro_points: u8,
     max_concurrent_rend_requests: usize,
+    db: Arc<dyn Database + Send + Sync>,
 ) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
@@ -55,6 +57,8 @@ where
         // A single peer only needs one connection; allow 4 for brief overlap during reconnects
         .with_max_established_per_peer(Some(4));
 
+    let (personal_service_tx, personal_service_rx) = tokio::sync::mpsc::unbounded_channel();
+
     let behaviour = asb::Behaviour::new(
         min_buy,
         max_buy,
@@ -64,6 +68,8 @@ where
         (identity.clone(), namespace),
         rendezvous_nodes,
         connection_limits,
+        db,
+        personal_service_tx,
     );
 
     let (transport, onion_addresses) = asb::transport::new(
@@ -72,6 +78,7 @@ where
         register_hidden_service,
         num_intro_points,
         max_concurrent_rend_requests,
+        personal_service_rx,
     )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
@@ -84,7 +91,7 @@ where
     for addr in rendezvous_addrs {
         let peer_id = addr
             .extract_peer_id()
-            .expect("Rendezvous node address must contain peer ID");
+                .expect("Rendezvous node address must contain peer ID");
         swarm.add_peer_address(peer_id, addr.clone());
     }
 

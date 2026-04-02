@@ -278,6 +278,10 @@ pub trait Database {
 
         Ok((current, starting))
     }
+    /// Returns the set of peer IDs that have at least one swap which has
+    /// reached or passed the `BtcLocked` state (from Alice's perspective).
+    async fn get_peers_with_swaps_past_btc_locked(&self) -> Result<Vec<PeerId>>;
+
     async fn insert_buffered_transfer_proof(
         &self,
         swap_id: Uuid,

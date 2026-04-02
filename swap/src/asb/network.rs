@@ -20,8 +20,11 @@ pub mod transport {
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
     use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
     use libp2p_tor::AddressConversion;
-    use tor_hsservice::config::TokenBucketConfig;
+    use swap_p2p::protocols::personal_onion::PersonalServiceRequest;
+    use tokio::sync::mpsc;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+    use crate::network::personal_onion_transport::PersonalOnionTransport;
 
     use super::*;
 
@@ -43,6 +46,7 @@ pub mod transport {
         register_hidden_service: bool,
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
+        personal_service_rx: mpsc::UnboundedReceiver<PersonalServiceRequest>,
     ) -> Result<OnionTransportWithAddresses> {
         // Streams are multiplexed via yamux, we don't really need more than one.
         const MAX_STREAMS_PER_CIRCUIT: u32 = 4;
@@ -89,7 +93,8 @@ pub mod transport {
                 vec![]
             };
 
-            (OptionalTransport::some(tor_transport), addresses)
+            let wrapped = PersonalOnionTransport::new(tor_transport, personal_service_rx);
+            (OptionalTransport::some(wrapped), addresses)
         } else {
             (OptionalTransport::none(), vec![])
         };
@@ -106,8 +111,13 @@ pub mod transport {
 }
 
 pub mod behaviour {
+    use std::sync::Arc;
+
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
+    use swap_machine::common::Database;
+    use swap_p2p::protocols::personal_onion::{self, PersonalServiceRequest};
     use swap_p2p::{out_event::alice::OutEvent, patches};
+    use tokio::sync::mpsc;
 
     use super::*;
 
@@ -127,6 +137,7 @@ pub mod behaviour {
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
         pub identify: patches::identify::Behaviour,
+        personal_onion: personal_onion::Behaviour,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -147,6 +158,8 @@ pub mod behaviour {
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
+            db: Arc<dyn Database + Send + Sync>,
+            personal_service_tx: mpsc::UnboundedSender<PersonalServiceRequest>,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -156,6 +169,13 @@ pub mod behaviour {
                 .with_agent_version(agent_version);
 
             let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
+
+            let personal_onion = personal_onion::Behaviour::new(
+                &identity,
+                db,
+                personal_service_tx,
+                personal_onion::Config::default(),
+            );
 
             let behaviour = if rendezvous_nodes.is_empty() {
                 None
@@ -183,6 +203,7 @@ pub mod behaviour {
                 cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(),
                 ping: ping::Behaviour::new(pingConfig),
                 identify: patches::identify::Behaviour::new(identifyConfig),
+                personal_onion,
             }
         }
     }

@@ -1,4 +1,5 @@
 pub mod cooperative_xmr_redeem_after_punish;
+pub mod personal_onion;
 pub mod encrypted_signature;
 pub mod notice;
 pub mod quote;

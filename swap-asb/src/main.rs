@@ -241,6 +241,7 @@ pub async fn main() -> Result<()> {
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
                 config.tor.max_concurrent_rend_requests,
+                db.clone(),
             )?;
 
             for listen in config.network.listen.clone() {

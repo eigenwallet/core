@@ -73,6 +73,8 @@ use std::str::FromStr;
 #[cfg(feature = "listen-onion-service")]
 use tor_cell::relaycell::msg::{Connected, End, EndReason};
 #[cfg(feature = "listen-onion-service")]
+pub use tor_hscrypto::pk::HsIdKeypair;
+#[cfg(feature = "listen-onion-service")]
 use tor_hsservice::{
     HsId, OnionServiceConfig, RunningOnionService, StreamRequest,
     status::OnionServiceStatus,
@@ -247,6 +249,45 @@ impl TorTransport {
         // By limiting concurrency, we create backpressure that keeps the queue full under
         // load, which causes low-effort requests to be evicted and the suggested effort
         // to ramp up.
+        let request_stream = Box::pin(
+            request_stream.flat_map_unordered(Some(max_concurrent_rend_requests), |rend_request| {
+                Box::pin(rend_request.accept())
+                    .map(|outcome| match outcome {
+                        Ok(stream_requests) => Either::Left(stream_requests),
+                        Err(e) => {
+                            tracing::warn!("Problem while accepting rendezvous request: {e:#}");
+                            Either::Right(futures::stream::empty())
+                        }
+                    })
+                    .flatten_stream()
+            }),
+        );
+
+        let multiaddr = service
+            .onion_address()
+            .ok_or_else(|| anyhow::anyhow!("Onion service has no onion address"))?
+            .to_multiaddr(port);
+
+        self.services.push((service, request_stream));
+
+        Ok(multiaddr)
+    }
+
+    /// Like [`add_onion_service`](Self::add_onion_service), but uses a pre-generated
+    /// [`HsIdKeypair`] so the .onion address is deterministic.
+    #[cfg(feature = "listen-onion-service")]
+    pub fn add_onion_service_with_hsid(
+        &mut self,
+        svc_cfg: OnionServiceConfig,
+        id_keypair: HsIdKeypair,
+        port: u16,
+        max_concurrent_rend_requests: usize,
+    ) -> anyhow::Result<Multiaddr> {
+        let (service, request_stream) = self
+            .client
+            .launch_onion_service_with_hsid(svc_cfg, id_keypair)?
+            .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
+
         let request_stream = Box::pin(
             request_stream.flat_map_unordered(Some(max_concurrent_rend_requests), |rend_request| {
                 Box::pin(rend_request.accept())

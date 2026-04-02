@@ -476,6 +476,44 @@ impl Database for SqliteDatabase {
         Ok(Some(proof))
     }
 
+    async fn get_peers_with_swaps_past_btc_locked(&self) -> Result<Vec<PeerId>> {
+        use std::collections::HashSet;
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT ss.swap_id, ss.state, p.peer_id
+            FROM swap_states ss
+            INNER JOIN peers p ON ss.swap_id = p.swap_id
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut trusted_peers = HashSet::new();
+
+        for row in &rows {
+            let state = match serde_json::from_str::<Swap>(&row.state) {
+                Ok(swap) => State::from(swap),
+                Err(e) => {
+                    tracing::warn!(swap_id = %row.swap_id, error = ?e, "Failed to deserialize state");
+                    continue;
+                }
+            };
+
+            let State::Alice(alice_state) = &state else {
+                continue;
+            };
+
+            if alice_state.is_at_or_past_btc_locked() {
+                if let Ok(peer_id) = PeerId::from_str(&row.peer_id) {
+                    trusted_peers.insert(peer_id);
+                }
+            }
+        }
+
+        Ok(trusted_peers.into_iter().collect())
+    }
+
     async fn has_swap(&self, swap_id: Uuid) -> Result<bool> {
         let swap_id = swap_id.to_string();
 

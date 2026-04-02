@@ -99,7 +99,9 @@ arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgrade
 libp2p-tor = { path = "./libp2p-tor" }
 safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+tor-hscrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+tor-llcrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
 
