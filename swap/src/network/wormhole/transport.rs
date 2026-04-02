@@ -5,9 +5,10 @@ use futures::future::BoxFuture;
 use libp2p::core::transport::{ListenerId, TransportEvent};
 use libp2p::{Multiaddr, Transport, TransportError};
 use libp2p_tor::{TokioTorStream, TorTransport, TorTransportError};
-use swap_p2p::protocols::wormhole::ServiceRequest;
 use tokio::sync::mpsc;
 use tor_hsservice::config::OnionServiceConfigBuilder;
+
+use super::ServiceRequest;
 
 /// Port used for wormhole onion services.
 const WORMHOLE_SERVICE_PORT: u16 = 9939;

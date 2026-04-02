@@ -20,11 +20,11 @@ pub mod transport {
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
     use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
     use libp2p_tor::AddressConversion;
-    use swap_p2p::protocols::wormhole::ServiceRequest;
     use tokio::sync::mpsc;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-    use crate::network::wormhole_transport::WormholeTransport;
+    use crate::network::wormhole::ServiceRequest;
+    use crate::network::wormhole::transport::WormholeTransport;
 
     use super::*;
 
@@ -118,9 +118,11 @@ pub mod behaviour {
 
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_machine::common::Database;
-    use swap_p2p::protocols::wormhole::{self, ServiceRequest};
     use swap_p2p::{out_event::alice::OutEvent, patches};
     use tokio::sync::mpsc;
+
+    use crate::network::wormhole;
+    use crate::network::wormhole::ServiceRequest;
 
     use super::*;
 
@@ -140,7 +142,7 @@ pub mod behaviour {
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
         pub identify: patches::identify::Behaviour,
-        wormhole: wormhole::Behaviour,
+        wormhole: wormhole::behaviour::Behaviour,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -173,11 +175,11 @@ pub mod behaviour {
 
             let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
-            let wormhole = wormhole::Behaviour::new(
+            let wormhole = wormhole::behaviour::Behaviour::new(
                 &identity,
                 db,
                 wormhole_service_tx,
-                wormhole::Config::default(),
+                wormhole::behaviour::Config::default(),
             );
 
             let behaviour = if rendezvous_nodes.is_empty() {
