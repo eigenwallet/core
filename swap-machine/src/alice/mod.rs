@@ -129,6 +129,21 @@ pub enum AliceState {
     SafelyAborted,
 }
 
+impl AliceState {
+    /// Returns true if this state is at or past BtcLocked.
+    ///
+    /// This indicates that the counterparty has committed real funds to the
+    /// swap.
+    pub fn is_at_or_past_btc_locked(&self) -> bool {
+        !matches!(
+            self,
+            AliceState::Started { .. }
+                | AliceState::BtcLockTransactionSeen { .. }
+                | AliceState::SafelyAborted
+        )
+    }
+}
+
 pub fn is_complete(state: &AliceState) -> bool {
     match state {
         // XmrRefunded is only complete if we don't need to publish TxWithhold

@@ -9,13 +9,13 @@ use jsonrpsee::types::error::ErrorCode;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 use std::sync::Arc;
-use swap_core::monero::PICONERO_OFFSET;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
     PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
     RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
 };
+use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
 use uuid::Uuid;
 
@@ -182,7 +182,10 @@ impl AsbApiServer for RpcImpl {
                     State::Alice(current_alice),
                     State::Alice(AliceState::BtcLockTransactionSeen { state3 }),
                 ) => (current_alice, state3),
-                (State::Alice(AliceState::SafelyAborted), State::Alice(AliceState::SafelyAborted)) => {
+                (
+                    State::Alice(AliceState::SafelyAborted),
+                    State::Alice(AliceState::SafelyAborted),
+                ) => {
                     continue;
                 }
                 (State::Alice(current_alice), State::Alice(starting_alice)) => {

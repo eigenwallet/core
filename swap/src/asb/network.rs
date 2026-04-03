@@ -20,8 +20,11 @@ pub mod transport {
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
     use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
     use libp2p_tor::AddressConversion;
-    use tor_hsservice::config::TokenBucketConfig;
+    use tokio::sync::mpsc;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+    use crate::network::wormhole::ServiceRequest;
+    use crate::network::wormhole::transport::WormholeTransport;
 
     use super::*;
 
@@ -43,6 +46,7 @@ pub mod transport {
         register_hidden_service: bool,
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
+        wormhole_service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
     ) -> Result<OnionTransportWithAddresses> {
         // Streams are multiplexed via yamux, we don't really need more than one.
         const MAX_STREAMS_PER_CIRCUIT: u32 = 4;
@@ -71,8 +75,11 @@ pub mod transport {
                     .build()
                     .expect("We specified a valid nickname");
 
-                match tor_transport.add_onion_service(onion_service_config, ASB_ONION_SERVICE_PORT, max_concurrent_rend_requests)
-                {
+                match tor_transport.add_onion_service(
+                    onion_service_config,
+                    ASB_ONION_SERVICE_PORT,
+                    max_concurrent_rend_requests,
+                ) {
                     Ok(addr) => {
                         tracing::debug!(
                             %addr,
@@ -89,7 +96,8 @@ pub mod transport {
                 vec![]
             };
 
-            (OptionalTransport::some(tor_transport), addresses)
+            let wrapped = WormholeTransport::new(tor_transport, wormhole_service_rx);
+            (OptionalTransport::some(wrapped), addresses)
         } else {
             (OptionalTransport::none(), vec![])
         };
@@ -106,8 +114,14 @@ pub mod transport {
 }
 
 pub mod behaviour {
+    use std::sync::Arc;
+
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_p2p::{out_event::alice::OutEvent, patches};
+    use tokio::sync::mpsc;
+
+    use crate::network::wormhole;
+    use crate::network::wormhole::{PeerTrust, ServiceRequest};
 
     use super::*;
 
@@ -127,6 +141,7 @@ pub mod behaviour {
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
         pub identify: patches::identify::Behaviour,
+        wormhole: wormhole::behaviour::Behaviour,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -147,6 +162,8 @@ pub mod behaviour {
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
+            db: Arc<dyn PeerTrust + Send + Sync>,
+            wormhole_service_tx: mpsc::UnboundedSender<ServiceRequest>,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -156,6 +173,13 @@ pub mod behaviour {
                 .with_agent_version(agent_version);
 
             let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
+
+            let wormhole = wormhole::behaviour::Behaviour::new(
+                &identity,
+                db,
+                wormhole_service_tx,
+                wormhole::behaviour::Config::default(),
+            );
 
             let behaviour = if rendezvous_nodes.is_empty() {
                 None
@@ -183,6 +207,7 @@ pub mod behaviour {
                 cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(),
                 ping: ping::Behaviour::new(pingConfig),
                 identify: patches::identify::Behaviour::new(identifyConfig),
+                wormhole,
             }
         }
     }

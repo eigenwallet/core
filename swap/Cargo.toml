@@ -23,7 +23,9 @@ monero-wallet = { path = "../monero-wallet" }
 
 # Tor
 arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service", "hs-pow-full"] }
+tor-hscrypto = { workspace = true }
 tor-hsservice = { workspace = true }
+tor-llcrypto = { workspace = true }
 tor-rtcompat = { workspace = true, features = ["tokio"] }
 
 # LibP2P
@@ -37,6 +39,7 @@ thiserror = { workspace = true }
 
 # Crypto / Decoding / Encoding
 curve25519-dalek = { workspace = true, features = ["rand_core"] }
+data-encoding = { workspace = true }
 ecdsa_fun = { workspace = true, features = ["libsecp_compat", "serde", "adaptor"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
@@ -59,6 +62,7 @@ proptest = "1"
 regex = "1.10"
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { version = "1", features = ["serde-float"] }
+safelog = { workspace = true }
 semver = { workspace = true }
 structopt = "0.3"
 swap-controller-api = { path = "../swap-controller-api" }
@@ -75,6 +79,7 @@ tauri = { version = "2.0", features = ["config-json5"], optional = true, default
 time = "0.3"
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
+void = "1"
 zeroize = { workspace = true }
 
 # Tokio

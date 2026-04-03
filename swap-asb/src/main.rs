@@ -241,6 +241,7 @@ pub async fn main() -> Result<()> {
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
                 config.tor.max_concurrent_rend_requests,
+                db.clone(),
             )?;
 
             for listen in config.network.listen.clone() {
@@ -353,7 +354,8 @@ pub async fn main() -> Result<()> {
             event_loop.run().await;
         }
         Command::History { only_unfinished } => {
-            let db = open_db(db_file, AccessMode::ReadOnly, None).await?;
+            let db: Arc<dyn Database + Send + Sync> =
+                open_db(db_file, AccessMode::ReadOnly, None).await?;
             let mut table = Table::new();
 
             table.set_header(vec![

@@ -495,6 +495,47 @@ impl Database for SqliteDatabase {
     }
 }
 
+#[async_trait]
+impl crate::network::wormhole::PeerTrust for SqliteDatabase {
+    async fn peers_with_financially_relevant_swap(&self) -> Result<Vec<PeerId>> {
+        use std::collections::HashSet;
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT ss.swap_id, ss.state, p.peer_id
+            FROM swap_states ss
+            INNER JOIN peers p ON ss.swap_id = p.swap_id
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut peers = HashSet::new();
+
+        for row in &rows {
+            let state = match serde_json::from_str::<Swap>(&row.state) {
+                Ok(swap) => State::from(swap),
+                Err(e) => {
+                    tracing::warn!(swap_id = %row.swap_id, error = ?e, "Failed to deserialize state");
+                    continue;
+                }
+            };
+
+            let State::Alice(alice_state) = &state else {
+                continue;
+            };
+
+            if alice_state.is_at_or_past_btc_locked() {
+                if let Ok(peer_id) = PeerId::from_str(&row.peer_id) {
+                    peers.insert(peer_id);
+                }
+            }
+        }
+
+        Ok(peers.into_iter().collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

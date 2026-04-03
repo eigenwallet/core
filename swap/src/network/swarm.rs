@@ -33,6 +33,7 @@ pub fn asb<LR>(
     register_hidden_service: bool,
     num_intro_points: u8,
     max_concurrent_rend_requests: usize,
+    db: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
 ) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
@@ -55,6 +56,8 @@ where
         // A single peer only needs one connection; allow 4 for brief overlap during reconnects
         .with_max_established_per_peer(Some(4));
 
+    let (wormhole_service_tx, wormhole_service_rx) = tokio::sync::mpsc::unbounded_channel();
+
     let behaviour = asb::Behaviour::new(
         min_buy,
         max_buy,
@@ -64,6 +67,8 @@ where
         (identity.clone(), namespace),
         rendezvous_nodes,
         connection_limits,
+        db,
+        wormhole_service_tx,
     );
 
     let (transport, onion_addresses) = asb::transport::new(
@@ -72,6 +77,7 @@ where
         register_hidden_service,
         num_intro_points,
         max_concurrent_rend_requests,
+        wormhole_service_rx,
     )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)

@@ -354,6 +354,7 @@ async fn start_alice(
         false,
         1,
         16,
+        db.clone(),
     )
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
