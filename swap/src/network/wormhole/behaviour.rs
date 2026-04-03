@@ -139,7 +139,7 @@ impl NetworkBehaviour for Behaviour {
         Ok(libp2p::swarm::dummy::ConnectionHandler)
     }
 
-    fn on_swarm_event(&mut self, _event: FromSwarm) {}
+    fn on_swarm_event(&mut self, _event: FromSwarm<'_>) {}
 
     fn on_connection_handler_event(
         &mut self,

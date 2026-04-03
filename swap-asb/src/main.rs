@@ -354,7 +354,8 @@ pub async fn main() -> Result<()> {
             event_loop.run().await;
         }
         Command::History { only_unfinished } => {
-            let db = open_db(db_file, AccessMode::ReadOnly, None).await?;
+            let db: Arc<dyn Database + Send + Sync> =
+                open_db(db_file, AccessMode::ReadOnly, None).await?;
             let mut table = Table::new();
 
             table.set_header(vec![
