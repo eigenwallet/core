@@ -16,6 +16,7 @@ use libp2p::swarm::{
 use libp2p::{Multiaddr, PeerId, identity};
 use safelog::DisplayRedacted;
 use swap_p2p::behaviour_util::{BackoffTracker, ConnectionTracker};
+use swap_p2p::futures_util::FuturesHashSet;
 use swap_p2p::protocols::wormhole as proto;
 use tokio::sync::mpsc;
 use tor_hscrypto::pk::{HsId, HsIdKey, HsIdKeypair};
@@ -57,12 +58,14 @@ pub struct Behaviour {
     /// Identity secret key bytes.
     identity_secret: [u8; 32],
     /// Provides trust information about peers.
-    db: Arc<dyn PeerTrust + Send + Sync>,
+    trust_provider: Arc<dyn PeerTrust + Send + Sync>,
     /// Channel to send service spawn requests to the wrapper transport.
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
     /// Map of wormhole onion address -> authorized peer.
     authorized_peers: HashMap<Multiaddr, PeerId>,
-    /// Peers ready to dispatch (connected and backoff elapsed).
+    /// Peers waiting for their backoff to expire before dispatch.
+    pending: FuturesHashSet<PeerId, ()>,
+    /// Peers ready to dispatch (backoff elapsed, waiting for connection).
     to_dispatch: VecDeque<PeerId>,
     /// Inflight pushes: request_id -> peer.
     inflight: HashMap<OutboundRequestId, PeerId>,
@@ -81,7 +84,7 @@ pub struct Behaviour {
 impl Behaviour {
     pub fn new(
         identity: &identity::Keypair,
-        db: Arc<dyn PeerTrust + Send + Sync>,
+        trust_provider: Arc<dyn PeerTrust + Send + Sync>,
         service_tx: mpsc::UnboundedSender<ServiceRequest>,
         config: Config,
     ) -> Self {
@@ -98,9 +101,10 @@ impl Behaviour {
             inner: proto::alice(),
             connection_tracker: ConnectionTracker::new(),
             identity_secret,
-            db,
+            trust_provider,
             service_tx,
             authorized_peers: HashMap::new(),
+            pending: FuturesHashSet::new(),
             to_dispatch: VecDeque::new(),
             inflight: HashMap::new(),
             last_sent: HashMap::new(),
@@ -130,8 +134,8 @@ impl Behaviour {
 
         let _ = self.service_tx.send(ServiceRequest { keypair, peer_id });
 
-        // The active flag changed — schedule a re-push if connected
-        self.schedule_push(peer_id);
+        // The active flag changed — schedule an immediate re-push
+        self.schedule_push_immediate(peer_id);
     }
 
     fn is_active(&self, peer_id: &PeerId) -> bool {
@@ -146,15 +150,29 @@ impl Behaviour {
         SentState { address, active }
     }
 
-    /// Schedule a push to a peer if the state has changed since last send.
+    /// Schedule a push to a peer after backoff, if the state has changed since last send.
     fn schedule_push(&mut self, peer_id: PeerId) {
         let current = self.current_state_for(&peer_id);
         if self.last_sent.get(&peer_id) == Some(&current) {
             return;
         }
-        if !self.to_dispatch.contains(&peer_id) {
-            self.to_dispatch.push_back(peer_id);
+        let delay = self.backoff.get(&peer_id).current_interval;
+        self.schedule_push_after(peer_id, delay);
+    }
+
+    /// Schedule a push to a peer after a specific delay.
+    fn schedule_push_after(&mut self, peer_id: PeerId, delay: Duration) {
+        self.pending
+            .replace(peer_id, Box::pin(tokio::time::sleep(delay)));
+    }
+
+    /// Schedule an immediate push (no backoff).
+    fn schedule_push_immediate(&mut self, peer_id: PeerId) {
+        let current = self.current_state_for(&peer_id);
+        if self.last_sent.get(&peer_id) == Some(&current) {
+            return;
         }
+        self.schedule_push_after(peer_id, Duration::ZERO);
     }
 
     /// Actually send the push to a connected peer.
@@ -240,7 +258,7 @@ impl NetworkBehaviour for Behaviour {
         self.connection_tracker.handle_swarm_event(event);
 
         if let FromSwarm::ConnectionEstablished(info) = &event {
-            self.schedule_push(info.peer_id);
+            self.schedule_push_immediate(info.peer_id);
         }
 
         self.inner.on_swarm_event(event);
@@ -260,6 +278,11 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        // Move peers whose backoff has expired into the dispatch queue
+        while let Poll::Ready(Some((peer_id, ()))) = self.pending.poll_next_unpin(cx) {
+            self.to_dispatch.push_back(peer_id);
+        }
+
         // Dispatch to connected peers, keep non-connected ones in queue
         let to_dispatch = std::mem::take(&mut self.to_dispatch);
         self.to_dispatch = to_dispatch
@@ -323,9 +346,9 @@ impl NetworkBehaviour for Behaviour {
 
         // Check if it's time to poll the DB
         if self.pending_query.is_none() && self.poll_interval.poll_tick(cx).is_ready() {
-            let db = Arc::clone(&self.db);
+            let trust_provider = Arc::clone(&self.trust_provider);
             self.pending_query = Some(Box::pin(async move {
-                match db.peers_with_financially_relevant_swap().await {
+                match trust_provider.peers_with_financially_relevant_swap().await {
                     Ok(peers) => peers,
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to query peers");
