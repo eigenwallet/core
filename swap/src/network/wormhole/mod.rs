@@ -10,7 +10,7 @@ use tor_hscrypto::pk::HsIdKeypair;
 /// dedicated onion service for a peer.
 pub struct ServiceRequest {
     pub keypair: HsIdKeypair,
-    pub nickname: String,
+    pub peer_id: PeerId,
 }
 
 /// Provides trust information about peers (Alice side).

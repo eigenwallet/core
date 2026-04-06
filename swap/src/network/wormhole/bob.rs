@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use futures::stream::FuturesUnordered;
+use futures::{Future, StreamExt};
 use libp2p::request_response;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
@@ -15,8 +18,10 @@ use super::WormholeStore;
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
     store: Arc<dyn WormholeStore + Send + Sync>,
-    /// Cached wormhole addresses per peer: (address, active).
-    wormholes: HashMap<PeerId, (Multiaddr, bool)>,
+    /// Cached wormhole addresses per peer.
+    wormholes: HashMap<PeerId, Multiaddr>,
+    /// Inflight persist operations.
+    pending_persists: FuturesUnordered<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
 impl Behaviour {
@@ -25,7 +30,22 @@ impl Behaviour {
             inner: proto::bob(),
             store,
             wormholes: HashMap::new(),
+            pending_persists: FuturesUnordered::new(),
         }
+    }
+
+    fn persist_wormhole(
+        &self,
+        peer: PeerId,
+        address: Multiaddr,
+        active: bool,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        let store = Arc::clone(&self.store);
+        Box::pin(async move {
+            if let Err(e) = store.store_wormhole(peer, address, active).await {
+                tracing::warn!(%peer, error = ?e, "Failed to persist wormhole");
+            }
+        })
     }
 }
 
@@ -73,11 +93,9 @@ impl NetworkBehaviour for Behaviour {
         let Some(peer_id) = maybe_peer else {
             return Ok(vec![]);
         };
-        let Some((addr, _active)) = self.wormholes.get(&peer_id) else {
+        let Some(addr) = self.wormholes.get(&peer_id) else {
             return Ok(vec![]);
         };
-        // Always suggest the wormhole address.
-        // Ordering (front vs back) is handled by the dialer — we just provide it.
         Ok(vec![addr.clone()])
     }
 
@@ -99,6 +117,9 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        // Drive pending persist operations
+        while let Poll::Ready(Some(())) = self.pending_persists.poll_next_unpin(cx) {}
+
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
                 ToSwarm::GenerateEvent(event) => {
@@ -111,27 +132,20 @@ impl NetworkBehaviour for Behaviour {
                         ..
                     } = event
                     {
+                        let address = request.address;
+                        let active = request.active;
+
                         tracing::debug!(
                             %peer,
-                            address = %request.address,
-                            active = request.active,
+                            address = %address,
+                            active,
                             "Received wormhole from peer"
                         );
 
-                        self.wormholes
-                            .insert(peer, (request.address.clone(), request.active));
+                        self.wormholes.insert(peer, address.clone());
+                        self.pending_persists
+                            .push(self.persist_wormhole(peer, address, active));
 
-                        // Persist asynchronously — fire and forget
-                        let store = Arc::clone(&self.store);
-                        let address = request.address;
-                        let active = request.active;
-                        tokio::spawn(async move {
-                            if let Err(e) = store.store_wormhole(peer, address, active).await {
-                                tracing::warn!(%peer, error = ?e, "Failed to persist wormhole");
-                            }
-                        });
-
-                        // Ack the request
                         let _ = self.inner.send_response(channel, ());
                     }
                 }

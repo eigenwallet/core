@@ -69,10 +69,10 @@ impl Transport for WormholeTransport {
     ) -> Poll<TransportEvent<Self::ListenerUpgrade, Self::Error>> {
         // Drain the channel for new wormhole service requests
         while let Poll::Ready(Some(request)) = self.service_rx.poll_recv(cx) {
+            let nickname = format!("wormhole-{}", request.peer_id);
             let svc_cfg = match OnionServiceConfigBuilder::default()
                 .nickname(
-                    request
-                        .nickname
+                    nickname
                         .parse()
                         .expect("Wormhole service nickname to be valid"),
                 )

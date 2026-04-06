@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -41,9 +43,10 @@ impl Default for Config {
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
     connection_tracker: ConnectionTracker,
-    /// The ASB's libp2p identity secret key bytes (32 bytes, ed25519).
+    /// Identity secret key bytes.
+    /// We use this to derive the onion service keypair for a specific peer.
     identity_secret: [u8; 32],
-    /// Database for querying peers.
+    /// Provides trust information about peers.
     db: Arc<dyn PeerTrust + Send + Sync>,
     /// Channel to send service spawn requests to the wrapper transport.
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
@@ -51,12 +54,12 @@ pub struct Behaviour {
     authorized_peers: HashMap<Multiaddr, PeerId>,
     /// Peers we still need to push the wormhole address to.
     to_push: Vec<PeerId>,
-    /// Timer for periodic DB polling.
+    /// Timer for periodic polling of the trust provider.
     poll_interval: tokio::time::Interval,
     /// Port for wormhole onion services.
     port: u16,
-    /// Pending DB query result.
-    pending_query: Option<tokio::task::JoinHandle<Vec<PeerId>>>,
+    /// Pending trust provider query result.
+    pending_query: Option<Pin<Box<dyn Future<Output = Vec<PeerId>> + Send>>>,
 }
 
 impl Behaviour {
@@ -97,18 +100,16 @@ impl Behaviour {
 
         let keypair = derive_hs_keypair(&self.identity_secret, &peer_id);
         let multiaddr = keypair_to_multiaddr(&keypair, self.port);
-        let nickname = derive_nickname(&peer_id);
 
         tracing::debug!(
             %peer_id,
             %multiaddr,
-            %nickname,
             "Spawning wormhole onion service for peer"
         );
 
         self.authorized_peers.insert(multiaddr, peer_id);
 
-        let _ = self.service_tx.send(ServiceRequest { keypair, nickname });
+        let _ = self.service_tx.send(ServiceRequest { keypair, peer_id });
 
         // If peer is currently connected, push the updated (now active) address
         if self.connection_tracker.is_connected(&peer_id) {
@@ -201,7 +202,9 @@ impl NetworkBehaviour for Behaviour {
         self.connection_tracker.handle_swarm_event(event);
 
         if let FromSwarm::ConnectionEstablished(info) = &event {
-            self.to_push.push(info.peer_id);
+            if !self.to_push.contains(&info.peer_id) {
+                self.to_push.push(info.peer_id);
+            }
         }
 
         self.inner.on_swarm_event(event);
@@ -248,18 +251,11 @@ impl NetworkBehaviour for Behaviour {
         }
 
         // Check if a pending DB query has completed
-        if let Some(handle) = &mut self.pending_query {
-            if let Poll::Ready(result) = handle.poll_unpin(cx) {
+        if let Some(fut) = &mut self.pending_query {
+            if let Poll::Ready(peers) = fut.poll_unpin(cx) {
                 self.pending_query = None;
-                match result {
-                    Ok(peers) => {
-                        for peer_id in peers {
-                            self.spawn_service_for_peer(peer_id);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = ?e, "Failed to query peers from database");
-                    }
+                for peer_id in peers {
+                    self.spawn_service_for_peer(peer_id);
                 }
             }
         }
@@ -267,7 +263,7 @@ impl NetworkBehaviour for Behaviour {
         // Check if it's time to poll the DB
         if self.pending_query.is_none() && self.poll_interval.poll_tick(cx).is_ready() {
             let db = Arc::clone(&self.db);
-            self.pending_query = Some(tokio::spawn(async move {
+            self.pending_query = Some(Box::pin(async move {
                 match db.peers_with_financially_relevant_swap().await {
                     Ok(peers) => peers,
                     Err(e) => {
@@ -310,11 +306,4 @@ fn keypair_to_multiaddr(keypair: &HsIdKeypair, port: u16) -> Multiaddr {
         .expect("HsId display to contain .onion suffix");
     let multiaddr_string = format!("/onion3/{onion_without_dot_onion}:{port}");
     Multiaddr::from_str(&multiaddr_string).expect("valid onion multiaddr")
-}
-
-/// Derive a nickname for the wormhole onion service.
-fn derive_nickname(peer_id: &PeerId) -> String {
-    let peer_bytes = peer_id.to_bytes();
-    let encoded = data_encoding::HEXLOWER.encode(&peer_bytes[..16.min(peer_bytes.len())]);
-    format!("wh-{encoded}")
 }
