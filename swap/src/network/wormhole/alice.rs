@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -8,20 +8,24 @@ use std::time::Duration;
 
 use bitcoin::hashes::{Hash, HashEngine, sha256};
 use futures::FutureExt;
-use libp2p::request_response;
+use libp2p::request_response::{self, OutboundRequestId};
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
     THandlerOutEvent, ToSwarm,
 };
 use libp2p::{Multiaddr, PeerId, identity};
 use safelog::DisplayRedacted;
-use swap_p2p::behaviour_util::ConnectionTracker;
+use swap_p2p::behaviour_util::{BackoffTracker, ConnectionTracker};
 use swap_p2p::protocols::wormhole as proto;
 use tokio::sync::mpsc;
 use tor_hscrypto::pk::{HsId, HsIdKey, HsIdKeypair};
 use tor_llcrypto::pk::ed25519;
 
 use super::{PeerTrust, ServiceRequest};
+
+const BACKOFF_INITIAL: Duration = Duration::from_secs(5);
+const BACKOFF_MAX: Duration = Duration::from_secs(60);
+const BACKOFF_MULTIPLIER: f64 = 2.0;
 
 /// Configuration for the wormhole behaviour.
 pub struct Config {
@@ -40,11 +44,17 @@ impl Default for Config {
     }
 }
 
+/// What we last successfully pushed to a peer.
+#[derive(Clone, PartialEq, Eq)]
+struct SentState {
+    address: Multiaddr,
+    active: bool,
+}
+
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
     connection_tracker: ConnectionTracker,
     /// Identity secret key bytes.
-    /// We use this to derive the onion service keypair for a specific peer.
     identity_secret: [u8; 32],
     /// Provides trust information about peers.
     db: Arc<dyn PeerTrust + Send + Sync>,
@@ -52,8 +62,14 @@ pub struct Behaviour {
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
     /// Map of wormhole onion address -> authorized peer.
     authorized_peers: HashMap<Multiaddr, PeerId>,
-    /// Peers we still need to push the wormhole address to.
-    to_push: Vec<PeerId>,
+    /// Peers ready to dispatch (connected and backoff elapsed).
+    to_dispatch: VecDeque<PeerId>,
+    /// Inflight pushes: request_id -> peer.
+    inflight: HashMap<OutboundRequestId, PeerId>,
+    /// What we last successfully pushed to each peer.
+    last_sent: HashMap<PeerId, SentState>,
+    /// Backoff tracker for failed pushes.
+    backoff: BackoffTracker,
     /// Timer for periodic polling of the trust provider.
     poll_interval: tokio::time::Interval,
     /// Port for wormhole onion services.
@@ -85,7 +101,10 @@ impl Behaviour {
             db,
             service_tx,
             authorized_peers: HashMap::new(),
-            to_push: Vec::new(),
+            to_dispatch: VecDeque::new(),
+            inflight: HashMap::new(),
+            last_sent: HashMap::new(),
+            backoff: BackoffTracker::new(BACKOFF_INITIAL, BACKOFF_MAX, BACKOFF_MULTIPLIER),
             poll_interval,
             port: config.port,
             pending_query: None,
@@ -111,24 +130,44 @@ impl Behaviour {
 
         let _ = self.service_tx.send(ServiceRequest { keypair, peer_id });
 
-        // If peer is currently connected, push the updated (now active) address
-        if self.connection_tracker.is_connected(&peer_id) {
-            self.to_push.push(peer_id);
-        }
+        // The active flag changed — schedule a re-push if connected
+        self.schedule_push(peer_id);
     }
 
     fn is_active(&self, peer_id: &PeerId) -> bool {
         self.authorized_peers.values().any(|p| p == peer_id)
     }
 
-    /// Push the wormhole address to a connected peer.
-    fn push_to_peer(&mut self, peer_id: &PeerId) {
+    /// Compute what we would send to this peer right now.
+    fn current_state_for(&self, peer_id: &PeerId) -> SentState {
         let keypair = derive_hs_keypair(&self.identity_secret, peer_id);
         let address = keypair_to_multiaddr(&keypair, self.port);
         let active = self.is_active(peer_id);
+        SentState { address, active }
+    }
 
-        self.inner
-            .send_request(peer_id, proto::Request { address, active });
+    /// Schedule a push to a peer if the state has changed since last send.
+    fn schedule_push(&mut self, peer_id: PeerId) {
+        let current = self.current_state_for(&peer_id);
+        if self.last_sent.get(&peer_id) == Some(&current) {
+            return;
+        }
+        if !self.to_dispatch.contains(&peer_id) {
+            self.to_dispatch.push_back(peer_id);
+        }
+    }
+
+    /// Actually send the push to a connected peer.
+    fn dispatch_push(&mut self, peer_id: &PeerId) {
+        let state = self.current_state_for(peer_id);
+        let request_id = self.inner.send_request(
+            peer_id,
+            proto::Request {
+                address: state.address,
+                active: state.active,
+            },
+        );
+        self.inflight.insert(request_id, *peer_id);
     }
 }
 
@@ -143,7 +182,6 @@ impl NetworkBehaviour for Behaviour {
         local_addr: &Multiaddr,
         remote_addr: &Multiaddr,
     ) -> Result<THandler<Self>, ConnectionDenied> {
-        // Reject unauthorized peers on wormhole addresses
         if let Some(authorized_peer) = self.authorized_peers.get(local_addr) {
             if peer_id != *authorized_peer {
                 tracing::warn!(
@@ -202,9 +240,7 @@ impl NetworkBehaviour for Behaviour {
         self.connection_tracker.handle_swarm_event(event);
 
         if let FromSwarm::ConnectionEstablished(info) = &event {
-            if !self.to_push.contains(&info.peer_id) {
-                self.to_push.push(info.peer_id);
-            }
+            self.schedule_push(info.peer_id);
         }
 
         self.inner.on_swarm_event(event);
@@ -224,26 +260,51 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        // Push wormhole addresses to connected peers
-        let mut i = 0;
-        while i < self.to_push.len() {
-            let peer_id = self.to_push[i];
-            if self.connection_tracker.is_connected(&peer_id) {
-                self.to_push.swap_remove(i);
-                self.push_to_peer(&peer_id);
-            } else {
-                i += 1;
-            }
-        }
+        // Dispatch to connected peers, keep non-connected ones in queue
+        let to_dispatch = std::mem::take(&mut self.to_dispatch);
+        self.to_dispatch = to_dispatch
+            .into_iter()
+            .filter(|peer_id| {
+                if self.connection_tracker.is_connected(peer_id) {
+                    self.dispatch_push(peer_id);
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
 
-        // Drain inner events — we don't surface any of them
+        // Drain inner events
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
-                ToSwarm::GenerateEvent(event) => {
-                    if let request_response::Event::OutboundFailure { peer, error, .. } = event {
-                        tracing::debug!(%peer, %error, "Failed to push wormhole address");
+                ToSwarm::GenerateEvent(event) => match event {
+                    request_response::Event::Message {
+                        message: request_response::Message::Response { request_id, .. },
+                        peer,
+                        ..
+                    } => {
+                        self.inflight.remove(&request_id);
+                        self.backoff.reset(&peer);
+
+                        // Record what we successfully sent
+                        let state = self.current_state_for(&peer);
+                        self.last_sent.insert(peer, state);
                     }
-                }
+                    request_response::Event::OutboundFailure {
+                        peer,
+                        request_id,
+                        error,
+                    } => {
+                        self.inflight.remove(&request_id);
+                        self.backoff.increment(&peer);
+
+                        tracing::debug!(%peer, %error, "Failed to push wormhole address, will retry");
+
+                        // Re-schedule with backoff
+                        self.schedule_push(peer);
+                    }
+                    _ => {}
+                },
                 other => {
                     return Poll::Ready(other.map_out(|_| unreachable!()));
                 }

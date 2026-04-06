@@ -141,7 +141,7 @@ pub mod behaviour {
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
         pub identify: patches::identify::Behaviour,
-        wormhole: wormhole::behaviour::Behaviour,
+        wormhole: wormhole::alice::Behaviour,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -174,11 +174,11 @@ pub mod behaviour {
 
             let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
-            let wormhole = wormhole::behaviour::Behaviour::new(
+            let wormhole = wormhole::alice::Behaviour::new(
                 &identity,
                 db,
                 wormhole_service_tx,
-                wormhole::behaviour::Config::default(),
+                wormhole::alice::Config::default(),
             );
 
             let behaviour = if rendezvous_nodes.is_empty() {

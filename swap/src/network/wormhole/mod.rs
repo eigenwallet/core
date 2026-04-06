@@ -1,4 +1,4 @@
-pub mod behaviour;
+pub mod alice;
 pub mod bob;
 pub mod transport;
 
