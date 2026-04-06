@@ -113,6 +113,12 @@ impl From<observe::Event> for OutEvent {
     }
 }
 
+impl From<void::Void> for OutEvent {
+    fn from(event: void::Void) -> Self {
+        void::unreachable(event)
+    }
+}
+
 impl From<()> for OutEvent {
     fn from(_: ()) -> Self {
         OutEvent::Other

@@ -536,6 +536,53 @@ impl crate::network::wormhole::PeerTrust for SqliteDatabase {
     }
 }
 
+#[async_trait]
+impl crate::network::wormhole::WormholeStore for SqliteDatabase {
+    async fn store_wormhole(&self, peer: PeerId, address: Multiaddr, active: bool) -> Result<()> {
+        let peer_id = peer.to_string();
+        let address = address.to_string();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO wormholes (peer_id, address, active)
+            VALUES (?, ?, ?)
+            ON CONFLICT (peer_id) DO UPDATE SET address = excluded.address, active = excluded.active
+            "#,
+            peer_id,
+            address,
+            active,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_wormhole(&self, peer: PeerId) -> Result<Option<(Multiaddr, bool)>> {
+        let peer_id = peer.to_string();
+
+        let row = sqlx::query!(
+            r#"
+            SELECT address, active
+            FROM wormholes
+            WHERE peer_id = ?
+            "#,
+            peer_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let address = Multiaddr::from_str(&row.address)
+            .map_err(|e| anyhow::anyhow!("Invalid multiaddr in wormholes table: {e}"))?;
+
+        Ok(Some((address, row.active)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,12 +6,15 @@ use std::time::Duration;
 
 use bitcoin::hashes::{Hash, HashEngine, sha256};
 use futures::FutureExt;
+use libp2p::request_response;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
     THandlerOutEvent, ToSwarm,
 };
 use libp2p::{Multiaddr, PeerId, identity};
 use safelog::DisplayRedacted;
+use swap_p2p::behaviour_util::ConnectionTracker;
+use swap_p2p::protocols::wormhole as proto;
 use tokio::sync::mpsc;
 use tor_hscrypto::pk::{HsId, HsIdKey, HsIdKeypair};
 use tor_llcrypto::pk::ed25519;
@@ -36,6 +39,8 @@ impl Default for Config {
 }
 
 pub struct Behaviour {
+    inner: proto::InnerBehaviour,
+    connection_tracker: ConnectionTracker,
     /// The ASB's libp2p identity secret key bytes (32 bytes, ed25519).
     identity_secret: [u8; 32],
     /// Database for querying peers.
@@ -44,6 +49,8 @@ pub struct Behaviour {
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
     /// Map of wormhole onion address -> authorized peer.
     authorized_peers: HashMap<Multiaddr, PeerId>,
+    /// Peers we still need to push the wormhole address to.
+    to_push: Vec<PeerId>,
     /// Timer for periodic DB polling.
     poll_interval: tokio::time::Interval,
     /// Port for wormhole onion services.
@@ -66,14 +73,16 @@ impl Behaviour {
         let identity_secret: [u8; 32] = ed25519_kp.secret().as_ref().try_into().unwrap();
 
         let mut poll_interval = tokio::time::interval(config.poll_interval);
-        // First tick fires immediately
         poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         Self {
+            inner: proto::alice(),
+            connection_tracker: ConnectionTracker::new(),
             identity_secret,
             db,
             service_tx,
             authorized_peers: HashMap::new(),
+            to_push: Vec::new(),
             poll_interval,
             port: config.port,
             pending_query: None,
@@ -100,20 +109,40 @@ impl Behaviour {
         self.authorized_peers.insert(multiaddr, peer_id);
 
         let _ = self.service_tx.send(ServiceRequest { keypair, nickname });
+
+        // If peer is currently connected, push the updated (now active) address
+        if self.connection_tracker.is_connected(&peer_id) {
+            self.to_push.push(peer_id);
+        }
+    }
+
+    fn is_active(&self, peer_id: &PeerId) -> bool {
+        self.authorized_peers.values().any(|p| p == peer_id)
+    }
+
+    /// Push the wormhole address to a connected peer.
+    fn push_to_peer(&mut self, peer_id: &PeerId) {
+        let keypair = derive_hs_keypair(&self.identity_secret, peer_id);
+        let address = keypair_to_multiaddr(&keypair, self.port);
+        let active = self.is_active(peer_id);
+
+        self.inner
+            .send_request(peer_id, proto::Request { address, active });
     }
 }
 
 impl NetworkBehaviour for Behaviour {
-    type ConnectionHandler = libp2p::swarm::dummy::ConnectionHandler;
+    type ConnectionHandler = <proto::InnerBehaviour as NetworkBehaviour>::ConnectionHandler;
     type ToSwarm = void::Void;
 
     fn handle_established_inbound_connection(
         &mut self,
-        _: ConnectionId,
+        connection_id: ConnectionId,
         peer_id: PeerId,
         local_addr: &Multiaddr,
-        _: &Multiaddr,
+        remote_addr: &Multiaddr,
     ) -> Result<THandler<Self>, ConnectionDenied> {
+        // Reject unauthorized peers on wormhole addresses
         if let Some(authorized_peer) = self.authorized_peers.get(local_addr) {
             if peer_id != *authorized_peer {
                 tracing::warn!(
@@ -126,41 +155,103 @@ impl NetworkBehaviour for Behaviour {
                 ));
             }
         }
-        Ok(libp2p::swarm::dummy::ConnectionHandler)
+
+        self.inner.handle_established_inbound_connection(
+            connection_id,
+            peer_id,
+            local_addr,
+            remote_addr,
+        )
     }
 
     fn handle_established_outbound_connection(
         &mut self,
-        _: ConnectionId,
-        _: PeerId,
-        _: &Multiaddr,
-        _: libp2p::core::Endpoint,
+        connection_id: ConnectionId,
+        peer_id: PeerId,
+        addr: &Multiaddr,
+        role_override: libp2p::core::Endpoint,
     ) -> Result<THandler<Self>, ConnectionDenied> {
-        Ok(libp2p::swarm::dummy::ConnectionHandler)
+        self.inner.handle_established_outbound_connection(
+            connection_id,
+            peer_id,
+            addr,
+            role_override,
+        )
     }
 
-    fn on_swarm_event(&mut self, _event: FromSwarm<'_>) {}
+    fn handle_pending_outbound_connection(
+        &mut self,
+        connection_id: ConnectionId,
+        maybe_peer: Option<PeerId>,
+        addresses: &[Multiaddr],
+        effective_role: libp2p::core::Endpoint,
+    ) -> Result<Vec<Multiaddr>, ConnectionDenied> {
+        self.connection_tracker
+            .handle_pending_outbound_connection(connection_id, maybe_peer);
+
+        self.inner.handle_pending_outbound_connection(
+            connection_id,
+            maybe_peer,
+            addresses,
+            effective_role,
+        )
+    }
+
+    fn on_swarm_event(&mut self, event: FromSwarm<'_>) {
+        self.connection_tracker.handle_swarm_event(event);
+
+        if let FromSwarm::ConnectionEstablished(info) = &event {
+            self.to_push.push(info.peer_id);
+        }
+
+        self.inner.on_swarm_event(event);
+    }
 
     fn on_connection_handler_event(
         &mut self,
-        _: PeerId,
-        _: ConnectionId,
+        peer_id: PeerId,
+        connection_id: ConnectionId,
         event: THandlerOutEvent<Self>,
     ) {
-        void::unreachable(event)
+        self.inner
+            .on_connection_handler_event(peer_id, connection_id, event);
     }
 
     fn poll(
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
+        // Push wormhole addresses to connected peers
+        self.to_push.retain(|peer_id| {
+            if self.connection_tracker.is_connected(peer_id) {
+                self.push_to_peer(peer_id);
+                false // remove from queue
+            } else {
+                true // keep in queue for next poll
+            }
+        });
+
+        // Drain inner events — we don't surface any of them
+        while let Poll::Ready(event) = self.inner.poll(cx) {
+            match event {
+                ToSwarm::GenerateEvent(event) => {
+                    if let request_response::Event::OutboundFailure { peer, error, .. } = event {
+                        tracing::debug!(%peer, %error, "Failed to push wormhole address");
+                    }
+                }
+                other => {
+                    return Poll::Ready(other.map_out(|_| unreachable!()));
+                }
+            }
+        }
+
         // Check if a pending DB query has completed
         if let Some(handle) = &mut self.pending_query {
             if let Poll::Ready(result) = handle.poll_unpin(cx) {
                 self.pending_query = None;
                 match result {
-                    Ok(trusted_peers) => {
-                        for peer_id in trusted_peers {
+                    Ok(peers) => {
+                        for peer_id in peers {
                             self.spawn_service_for_peer(peer_id);
                         }
                     }
