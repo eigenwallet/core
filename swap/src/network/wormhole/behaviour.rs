@@ -222,14 +222,16 @@ impl NetworkBehaviour for Behaviour {
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
         // Push wormhole addresses to connected peers
-        self.to_push.retain(|peer_id| {
-            if self.connection_tracker.is_connected(peer_id) {
-                self.push_to_peer(peer_id);
-                false // remove from queue
+        let mut i = 0;
+        while i < self.to_push.len() {
+            let peer_id = self.to_push[i];
+            if self.connection_tracker.is_connected(&peer_id) {
+                self.to_push.swap_remove(i);
+                self.push_to_peer(&peer_id);
             } else {
-                true // keep in queue for next poll
+                i += 1;
             }
-        });
+        }
 
         // Drain inner events — we don't surface any of them
         while let Poll::Ready(event) = self.inner.poll(cx) {
