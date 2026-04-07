@@ -351,15 +351,16 @@ impl Database for SqliteDatabase {
         Ok(swap.into())
     }
 
-    async fn all(&self) -> Result<Vec<(Uuid, State)>> {
+    async fn all(&self) -> Result<Vec<(PeerId, Uuid, State)>> {
         let rows = sqlx::query!(
             r#"
-            SELECT swap_id, state
+            SELECT s.swap_id, s.state, p.peer_id
             FROM (
                 SELECT max(id), swap_id, state
                 FROM swap_states
                 GROUP BY swap_id
-            )
+            ) s
+            INNER JOIN peers p ON s.swap_id = p.swap_id
         "#
         )
         .fetch_all(&self.pool)
@@ -368,19 +369,21 @@ impl Database for SqliteDatabase {
         let result = rows
             .iter()
             .filter_map(|row| {
-                let (Some(swap_id), Some(state)) = (&row.swap_id, &row.state) else {
-                    tracing::error!("Row didn't contain state or swap_id when it should have");
-                    return None;
-                };
-
-                let swap_id = match Uuid::from_str(swap_id) {
+                let swap_id = match Uuid::from_str(&row.swap_id) {
                     Ok(id) => id,
                     Err(e) => {
-                        tracing::error!(%swap_id, error = ?e, "Failed to parse UUID");
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
                         return None;
                     }
                 };
-                let state = match serde_json::from_str::<Swap>(state) {
+                let peer_id = match PeerId::from_str(&row.peer_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
+                        return None;
+                    }
+                };
+                let state = match serde_json::from_str::<Swap>(&row.state) {
                     Ok(a) => State::from(a),
                     Err(e) => {
                         tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
@@ -388,9 +391,9 @@ impl Database for SqliteDatabase {
                     }
                 };
 
-                Some((swap_id, state))
+                Some((peer_id, swap_id, state))
             })
-            .collect::<Vec<(Uuid, State)>>();
+            .collect();
 
         Ok(result)
     }
@@ -500,37 +503,16 @@ impl crate::network::wormhole::PeerTrust for SqliteDatabase {
     async fn peers_with_financially_relevant_swap(&self) -> Result<Vec<PeerId>> {
         use std::collections::HashSet;
 
-        let rows = sqlx::query!(
-            r#"
-            SELECT ss.swap_id, ss.state, p.peer_id
-            FROM swap_states ss
-            INNER JOIN peers p ON ss.swap_id = p.swap_id
-            "#
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        let mut peers = HashSet::new();
-
-        for row in &rows {
-            let state = match serde_json::from_str::<Swap>(&row.state) {
-                Ok(swap) => State::from(swap),
-                Err(e) => {
-                    tracing::warn!(swap_id = %row.swap_id, error = ?e, "Failed to deserialize state");
-                    continue;
-                }
-            };
-
-            let State::Alice(alice_state) = &state else {
-                continue;
-            };
-
-            if alice_state.is_at_or_past_btc_locked() {
-                if let Ok(peer_id) = PeerId::from_str(&row.peer_id) {
-                    peers.insert(peer_id);
-                }
-            }
-        }
+        let swaps = self.all().await?;
+        let peers = swaps
+            .into_iter()
+            .filter_map(|(peer_id, _, state)| {
+                let State::Alice(alice_state) = state else {
+                    return None;
+                };
+                alice_state.is_at_or_past_btc_locked().then_some(peer_id)
+            })
+            .collect::<HashSet<_>>();
 
         Ok(peers.into_iter().collect())
     }
@@ -615,11 +597,16 @@ mod tests {
     async fn test_retrieve_all_latest_states() {
         let db = setup_test_db().await.unwrap();
 
+        let peer_id_1 = PeerId::random();
+        let peer_id_2 = PeerId::random();
         let state_1 = State::Alice(AliceState::BtcRedeemed);
         let state_2 = State::Alice(AliceState::SafelyAborted);
         let state_3 = State::Bob(BobState::SafelyAborted);
         let swap_id_1 = Uuid::new_v4();
         let swap_id_2 = Uuid::new_v4();
+
+        db.insert_peer_id(swap_id_1, peer_id_1).await.unwrap();
+        db.insert_peer_id(swap_id_2, peer_id_2).await.unwrap();
 
         db.insert_latest_state(swap_id_1, state_1.clone())
             .await
@@ -635,10 +622,10 @@ mod tests {
 
         assert_eq!(latest_loaded.len(), 2);
 
-        assert!(latest_loaded.contains(&(swap_id_1, state_2)));
-        assert!(latest_loaded.contains(&(swap_id_2, state_3)));
+        assert!(latest_loaded.contains(&(peer_id_1, swap_id_1, state_2)));
+        assert!(latest_loaded.contains(&(peer_id_2, swap_id_2, state_3)));
 
-        assert!(!latest_loaded.contains(&(swap_id_1, state_1)));
+        assert!(!latest_loaded.contains(&(peer_id_1, swap_id_1, state_1)));
     }
 
     #[tokio::test]

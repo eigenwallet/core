@@ -77,7 +77,8 @@ where
         rendezvous_nodes,
         connection_limits,
         trust_provider,
-        wormhole_channels,
+        // Passing None disables the wormhole behaviour entirely.
+        if wormhole_enabled { wormhole_channels } else { None },
     );
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)

@@ -170,7 +170,7 @@ impl AsbApiServer for RpcImpl {
             .into_json_rpc_result()?;
         let mut results = Vec::with_capacity(swaps.len());
 
-        for (swap_id, _) in swaps {
+        for (peer_id, swap_id, _) in swaps {
             let (current, starting) = self
                 .db
                 .get_current_and_starting_state(swap_id)
@@ -206,7 +206,6 @@ impl AsbApiServer for RpcImpl {
                 .get_swap_start_date(swap_id)
                 .await
                 .into_json_rpc_result()?;
-            let peer_id = self.db.get_peer_id(swap_id).await.into_json_rpc_result()?;
 
             let exchange_rate =
                 calculate_exchange_rate(state3.btc, state3.xmr).into_json_rpc_result()?;

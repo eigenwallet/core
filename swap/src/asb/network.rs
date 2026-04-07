@@ -29,6 +29,8 @@ pub mod transport {
     static ASB_ONION_SERVICE_NICKNAME: &str = "asb";
     static ASB_ONION_SERVICE_PORT: u16 = 9939;
 
+    /// (transport, onion listen addresses, channels for the behaviour to
+    /// communicate with the wormhole transport — `None` when Tor is unavailable)
     type TransportWithAddressesAndChannels =
         (Boxed<(PeerId, StreamMuxerBox)>, Vec<Multiaddr>, Option<WormholeChannels>);
 
@@ -55,7 +57,7 @@ pub mod transport {
         // `MAX_CONCURRENT_REND_REQUESTS` is much more important in terms of DOS protection.
         const POW_QUEUE_DEPTH: usize = 2048;
 
-        let (maybe_tor_transport, onion_addresses) = if let Some(tor_client) = maybe_tor_client {
+        let (maybe_tor_transport, onion_addresses, wormhole_channels) = if let Some(tor_client) = maybe_tor_client {
             let mut tor_transport =
                 libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
 

@@ -40,7 +40,7 @@ pub struct Behaviour {
     pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
     pub encrypted_signature: encrypted_signature::Behaviour,
 
-    /// Receives wormhole addresses from ASBs
+    /// Alice can give out wormhole addresses to Bob
     wormhole: wormhole::bob::Behaviour,
 
     /// Allows us to keep connections to specific peers alive

@@ -42,8 +42,13 @@ impl Behaviour {
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let store = Arc::clone(&self.store);
         Box::pin(async move {
-            if let Err(e) = store.store_wormhole(peer, address, active).await {
-                tracing::warn!(%peer, error = ?e, "Failed to persist wormhole");
+            match store.store_wormhole(peer, address.clone(), active).await {
+                Ok(()) => {
+                    tracing::debug!(%peer, %address, active, "Persisted wormhole");
+                }
+                Err(e) => {
+                    tracing::warn!(%peer, error = ?e, "Failed to persist wormhole");
+                }
             }
         })
     }

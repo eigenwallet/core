@@ -223,26 +223,18 @@ impl TorTransport {
         self
     }
 
-    /// Call this function to instruct the transport to listen on a specific onion address
-    /// You need to call this function **before** calling `listen_on`
+    /// Registers an already-launched onion service: applies bounded-concurrency
+    /// rendezvous handling, extracts the multiaddr, and stores the service.
     ///
-    /// # Returns
-    /// Returns the Multiaddr of the onion address that the transport can be instructed to listen on
-    /// To actually listen on the address, you need to call [`listen_on`] with the returned address
-    ///
-    /// # Errors
-    /// Returns an error if we cannot get the onion address of the service
+    /// Returns the listen address and a handle to the running service.
     #[cfg(feature = "listen-onion-service")]
-    pub fn add_onion_service(
+    fn register_onion_service(
         &mut self,
-        svc_cfg: OnionServiceConfig,
+        service: Arc<RunningOnionService>,
+        request_stream: impl Stream<Item = tor_hsservice::RendRequest> + Send + 'static,
         port: u16,
         max_concurrent_rend_requests: usize,
-    ) -> anyhow::Result<Multiaddr> {
-        let (service, request_stream) = self
-            .client
-            .launch_onion_service(svc_cfg)?
-            .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
+    ) -> anyhow::Result<(Multiaddr, Arc<RunningOnionService>)> {
         // Accept rendezvous requests with bounded concurrency.
         // `handle_rend_requests` uses `flat_map_unordered(None, ...)` which drains the
         // PoW priority queue instantly, preventing it from ever filling up. That defeats
@@ -271,7 +263,35 @@ impl TorTransport {
             .ok_or_else(|| anyhow::anyhow!("Onion service has no onion address"))?
             .to_multiaddr(port);
 
+        let handle = Arc::clone(&service);
         self.services.push((service, request_stream));
+
+        Ok((multiaddr, handle))
+    }
+
+    /// Call this function to instruct the transport to listen on a specific onion address
+    /// You need to call this function **before** calling `listen_on`
+    ///
+    /// # Returns
+    /// Returns the Multiaddr of the onion address that the transport can be instructed to listen on
+    /// To actually listen on the address, you need to call [`listen_on`] with the returned address
+    ///
+    /// # Errors
+    /// Returns an error if we cannot get the onion address of the service
+    #[cfg(feature = "listen-onion-service")]
+    pub fn add_onion_service(
+        &mut self,
+        svc_cfg: OnionServiceConfig,
+        port: u16,
+        max_concurrent_rend_requests: usize,
+    ) -> anyhow::Result<Multiaddr> {
+        let (service, request_stream) = self
+            .client
+            .launch_onion_service(svc_cfg)?
+            .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
+
+        let (multiaddr, _handle) =
+            self.register_onion_service(service, request_stream, port, max_concurrent_rend_requests)?;
 
         Ok(multiaddr)
     }
@@ -303,30 +323,7 @@ impl TorTransport {
                 }
             };
 
-        let request_stream = Box::pin(request_stream.flat_map_unordered(
-            Some(max_concurrent_rend_requests),
-            |rend_request| {
-                Box::pin(rend_request.accept())
-                    .map(|outcome| match outcome {
-                        Ok(stream_requests) => Either::Left(stream_requests),
-                        Err(e) => {
-                            tracing::warn!("Problem while accepting rendezvous request: {e:#}");
-                            Either::Right(futures::stream::empty())
-                        }
-                    })
-                    .flatten_stream()
-            },
-        ));
-
-        let multiaddr = service
-            .onion_address()
-            .ok_or_else(|| anyhow::anyhow!("Onion service has no onion address"))?
-            .to_multiaddr(port);
-
-        let handle = Arc::clone(&service);
-        self.services.push((service, request_stream));
-
-        Ok((multiaddr, handle))
+        self.register_onion_service(service, request_stream, port, max_concurrent_rend_requests)
     }
 }
 

@@ -15,7 +15,7 @@ use libp2p::swarm::{
 };
 use libp2p::{Multiaddr, PeerId, identity};
 use safelog::DisplayRedacted;
-use swap_p2p::behaviour_util::ConnectionTracker;
+use swap_p2p::behaviour_util::{BackoffTracker, ConnectionTracker};
 use swap_p2p::futures_util::FuturesHashSet;
 use swap_p2p::protocols::wormhole as proto;
 use tokio::sync::mpsc;
@@ -25,8 +25,6 @@ use tor_llcrypto::pk::ed25519;
 
 use super::{PeerTrust, ServiceHandle, ServiceRequest};
 
-const RETRY_INITIAL: Duration = Duration::from_secs(5);
-const RETRY_MAX: Duration = Duration::from_secs(60);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Configuration for the wormhole behaviour.
@@ -58,7 +56,7 @@ struct SentState {
 pub struct WormholeServiceInfo {
     pub peer_id: PeerId,
     pub address: Multiaddr,
-    pub status: String,
+    pub status: Option<String>,
 }
 
 pub struct Behaviour {
@@ -84,8 +82,8 @@ pub struct Behaviour {
     inflight: HashMap<OutboundRequestId, PeerId>,
     /// What we last successfully pushed to each peer.
     last_sent: HashMap<PeerId, SentState>,
-    /// Current retry delay per peer (doubles on failure, resets on success).
-    retry_delay: HashMap<PeerId, Duration>,
+    /// Exponential backoff state per peer.
+    backoff: BackoffTracker,
     /// Timer for periodic polling of the trust provider.
     poll_interval: tokio::time::Interval,
     /// Port for wormhole onion services.
@@ -124,7 +122,11 @@ impl Behaviour {
             to_dispatch: VecDeque::new(),
             inflight: HashMap::new(),
             last_sent: HashMap::new(),
-            retry_delay: HashMap::new(),
+            backoff: BackoffTracker::new(
+                Duration::from_secs(5),
+                Duration::from_secs(60),
+                2.0,
+            ),
             poll_interval,
             port: config.port,
             pending_query: None,
@@ -162,8 +164,7 @@ impl Behaviour {
                 let status = self
                     .service_handles
                     .get(peer)
-                    .map(|svc| format!("{:?}", svc.status().state()))
-                    .unwrap_or_else(|| "starting".to_string());
+                    .map(|svc| format!("{:?}", svc.status().state()));
                 WormholeServiceInfo {
                     peer_id: *peer,
                     address: addr.clone(),
@@ -192,11 +193,7 @@ impl Behaviour {
         if self.last_sent.get(&peer_id) == Some(&current) {
             return;
         }
-        let delay = self
-            .retry_delay
-            .get(&peer_id)
-            .copied()
-            .unwrap_or(RETRY_INITIAL);
+        let delay = self.backoff.increment(&peer_id);
         self.pending
             .replace(peer_id, Box::pin(tokio::time::sleep(delay)));
     }
@@ -339,7 +336,7 @@ impl NetworkBehaviour for Behaviour {
                         ..
                     } => {
                         self.inflight.remove(&request_id);
-                        self.retry_delay.remove(&peer);
+                        self.backoff.reset(&peer);
 
                         let state = self.current_state_for(&peer);
                         self.last_sent.insert(peer, state);
@@ -352,14 +349,6 @@ impl NetworkBehaviour for Behaviour {
                         error,
                     } => {
                         self.inflight.remove(&request_id);
-
-                        // Double the retry delay, capped at RETRY_MAX
-                        let current = self
-                            .retry_delay
-                            .get(&peer)
-                            .copied()
-                            .unwrap_or(RETRY_INITIAL);
-                        self.retry_delay.insert(peer, (current * 2).min(RETRY_MAX));
 
                         tracing::debug!(%peer, %error, "Failed to push wormhole address, will retry");
 

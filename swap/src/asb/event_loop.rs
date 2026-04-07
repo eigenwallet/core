@@ -244,17 +244,10 @@ where
 
         let unfinished_swaps = swaps
             .into_iter()
-            .filter(|(_swap_id, state)| !state.swap_finished())
-            .collect::<Vec<(Uuid, State)>>();
+            .filter(|(_, _, state)| !state.swap_finished())
+            .collect::<Vec<_>>();
 
-        for (swap_id, state) in unfinished_swaps {
-            let peer_id = match self.db.get_peer_id(swap_id).await {
-                Ok(peer_id) => peer_id,
-                Err(_) => {
-                    tracing::warn!(%swap_id, "Resuming swap skipped because no peer-id found for swap in database");
-                    continue;
-                }
-            };
+        for (peer_id, swap_id, state) in unfinished_swaps {
 
             let handle = self.new_handle(peer_id, swap_id);
 
@@ -639,7 +632,7 @@ where
                 let all_swaps = db.all().await?;
                 let alice_states: Vec<_> = all_swaps
                     .into_iter()
-                    .filter_map(|(_, state)| match state {
+                    .filter_map(|(_, _, state)| match state {
                         State::Alice(state) => Some(state),
                         _ => None,
                     })

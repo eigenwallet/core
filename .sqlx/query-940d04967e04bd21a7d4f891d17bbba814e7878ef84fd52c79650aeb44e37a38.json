@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT s.swap_id, s.state, p.peer_id\n            FROM (\n                SELECT max(id), swap_id, state\n                FROM swap_states\n                GROUP BY swap_id\n            ) s\n            INNER JOIN peers p ON s.swap_id = p.swap_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "swap_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "state",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "peer_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "940d04967e04bd21a7d4f891d17bbba814e7878ef84fd52c79650aeb44e37a38"
+}

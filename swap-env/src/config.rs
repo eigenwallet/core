@@ -87,10 +87,10 @@ pub struct TorConf {
     /// that allows the suggested PoW effort to ramp up under load.
     #[serde(default = "default_max_concurrent_rend_requests")]
     pub max_concurrent_rend_requests: usize,
-    /// Enable per-peer dedicated onion services (wormholes).
+    /// Enable wormholes.
     #[serde(default = "default_wormhole_enabled")]
     pub wormhole_enabled: bool,
-    /// Maximum concurrent rendezvous requests per wormhole onion service.
+    /// Maximum concurrent rendezvous requests per wormhole.
     #[serde(default = "default_wormhole_max_concurrent_rend_requests")]
     pub wormhole_max_concurrent_rend_requests: usize,
 }

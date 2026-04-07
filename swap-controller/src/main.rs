@@ -171,7 +171,8 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 println!("No active wormhole services");
             } else {
                 for svc in response.services {
-                    println!("{} -> {} ({})", svc.peer_id, svc.address, svc.status);
+                    let status = svc.status.as_deref().unwrap_or("?");
+                    println!("{} -> {} ({})", svc.peer_id, svc.address, status);
                 }
             }
         }

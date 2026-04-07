@@ -100,7 +100,7 @@ pub struct MoneroSeedResponse {
 pub struct WormholeServiceItem {
     pub peer_id: String,
     pub address: String,
-    pub status: String,
+    pub status: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
