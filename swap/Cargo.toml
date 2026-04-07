@@ -22,7 +22,7 @@ bitcoin-wallet = { path = "../bitcoin-wallet" }
 monero-wallet = { path = "../monero-wallet" }
 
 # Tor
-arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service", "hs-pow-full"] }
+arti-client = { workspace = true, features = ["static-sqlite", "tokio", "rustls", "onion-service-service", "hs-pow-full", "ephemeral-keystore"] }
 tor-hscrypto = { workspace = true }
 tor-hsservice = { workspace = true }
 tor-llcrypto = { workspace = true }

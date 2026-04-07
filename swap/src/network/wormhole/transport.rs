@@ -98,15 +98,16 @@ impl Transport for WormholeTransport {
                 }
             };
 
+            let max_rend = self.max_concurrent_rend_requests;
             let addr = match self.inner.add_onion_service_with_hsid(
                 svc_cfg,
                 request.keypair,
                 WORMHOLE_SERVICE_PORT,
-                self.max_concurrent_rend_requests,
+                max_rend,
             ) {
                 Ok(addr) => addr,
                 Err(e) => {
-                    tracing::error!(error = %e, "Failed to add wormhole onion service");
+                    tracing::error!(error = ?e, "Failed to add wormhole onion service");
                     continue;
                 }
             };

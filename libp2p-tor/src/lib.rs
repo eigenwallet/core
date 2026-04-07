@@ -53,7 +53,7 @@
 
 use arti_client::{TorClient, TorClientBuilder};
 use futures::{
-    FutureExt as _, StreamExt as _,
+    FutureExt as _, Stream, StreamExt as _,
     future::{BoxFuture, Either},
 };
 use libp2p::{
@@ -286,10 +286,20 @@ impl TorTransport {
         port: u16,
         max_concurrent_rend_requests: usize,
     ) -> anyhow::Result<Multiaddr> {
-        let (service, request_stream) = self
-            .client
-            .launch_onion_service_with_hsid(svc_cfg, id_keypair)?
-            .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
+        // Try launching with the stored key first (works on restarts).
+        // If no key is stored yet, insert it and launch.
+        let (service, request_stream): (_, Pin<Box<dyn Stream<Item = _> + Send>>) =
+            match self.client.launch_onion_service(svc_cfg.clone()) {
+                Ok(Some((svc, stream))) => (svc, Box::pin(stream)),
+                Ok(None) => anyhow::bail!("Onion service is disabled in config"),
+                Err(_) => {
+                    let (svc, stream) = self
+                        .client
+                        .launch_onion_service_with_hsid(svc_cfg, id_keypair)?
+                        .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
+                    (svc, Box::pin(stream))
+                }
+            };
 
         let request_stream = Box::pin(request_stream.flat_map_unordered(
             Some(max_concurrent_rend_requests),

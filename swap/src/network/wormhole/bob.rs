@@ -96,6 +96,7 @@ impl NetworkBehaviour for Behaviour {
         let Some(addr) = self.wormholes.get(&peer_id) else {
             return Ok(vec![]);
         };
+        tracing::debug!(%peer_id, address = %addr, "Contributing wormhole address for dial");
         Ok(vec![addr.clone()])
     }
 
