@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- A new feature called "wormholes" allows makers to automatically give out dedidcated onion services to takers which have committed funds to at least one swap. Takers can then connect to the maker irrespective of any potential DOS attack against the makers public onion service address. Wormholes are enabled by default. To disable them, set `tor.wormhole_enabled = false` in the config file. You can tweak `wormhole_max_concurrent_rend_requests` to control the maximum number of concurrent rendezvous requests per wormhole (default: 3). A higher value means each "wormhole" can handle more concurrent connections but also means they become more susceptible to DOS attacks. 
+- A new feature called "wormholes" allows makers to automatically give out dedidcated onion services to takers which have committed funds to at least one swap. Takers can then connect to the maker irrespective of any potential DOS attack against the makers public onion service address. Wormholes are enabled by default. To disable them, set `tor.wormhole_enabled = false` in the config file. You can tweak `wormhole_max_concurrent_rend_requests` to control the maximum number of concurrent rendezvous requests per wormhole (default: 3). A higher value means each "wormhole" can handle more concurrent connections but also means they become more susceptible to DOS attacks.
 
 ## [4.2.4] - 2026-04-01
 

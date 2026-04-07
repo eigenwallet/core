@@ -10,8 +10,6 @@ use tor_hsservice::config::OnionServiceConfigBuilder;
 
 use super::{ServiceHandle, ServiceRequest};
 
-/// Port used for wormhole onion services.
-const WORMHOLE_SERVICE_PORT: u16 = 9939;
 const WORMHOLE_NUM_INTRO_POINTS: u8 = 3;
 
 /// Channel handles returned by [`WormholeTransport::new`] for the behaviour
@@ -122,7 +120,7 @@ impl Transport for WormholeTransport {
             let (addr, service) = match self.inner.add_onion_service_with_hsid(
                 svc_cfg,
                 request.keypair,
-                WORMHOLE_SERVICE_PORT,
+                super::WORMHOLE_PORT,
                 max_rend,
             ) {
                 Ok(result) => result,

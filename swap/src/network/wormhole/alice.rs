@@ -1,6 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::future::Future;
-use std::pin::Pin;
+//
 use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -8,6 +7,7 @@ use std::time::Duration;
 
 use bitcoin::hashes::{Hash, HashEngine, sha256};
 use futures::FutureExt;
+use futures::future::{BoxFuture, FusedFuture, OptionFuture};
 use libp2p::request_response::{self, OutboundRequestId};
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
@@ -26,20 +26,20 @@ use tor_llcrypto::pk::ed25519;
 use super::{PeerTrust, ServiceHandle, ServiceRequest};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const BACKOFF_INITIAL: Duration = Duration::from_secs(5);
+const BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
+const BACKOFF_MULTIPLIER: f64 = 1.5;
 
 /// Configuration for the wormhole behaviour.
 pub struct Config {
     /// How often to poll the trust provider for new peers.
     pub poll_interval: Duration,
-    /// Port for wormhole onion services.
-    pub port: u16,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_secs(60),
-            port: 9939,
         }
     }
 }
@@ -86,10 +86,11 @@ pub struct Behaviour {
     backoff: BackoffTracker,
     /// Timer for periodic polling of the trust provider.
     poll_interval: tokio::time::Interval,
-    /// Port for wormhole onion services.
-    port: u16,
     /// Pending trust provider query result.
-    pending_query: Option<Pin<Box<dyn Future<Output = Vec<PeerId>> + Send>>>,
+    /// Stored as an OptionFuture so we can poll it directly without Option dance.
+    pending_query: OptionFuture<BoxFuture<'static, Vec<PeerId>>>,
+    /// Whether a trust provider query is currently in-flight.
+    query_inflight: bool,
 }
 
 impl Behaviour {
@@ -122,14 +123,9 @@ impl Behaviour {
             to_dispatch: VecDeque::new(),
             inflight: HashMap::new(),
             last_sent: HashMap::new(),
-            backoff: BackoffTracker::new(
-                Duration::from_secs(5),
-                Duration::from_secs(60),
-                2.0,
-            ),
+            backoff: BackoffTracker::new(BACKOFF_INITIAL, BACKOFF_MAX, BACKOFF_MULTIPLIER),
             poll_interval,
-            port: config.port,
-            pending_query: None,
+            pending_query: OptionFuture::from(None),
         }
     }
 
@@ -140,7 +136,7 @@ impl Behaviour {
         }
 
         let keypair = derive_hs_keypair(&self.identity_secret, &peer_id);
-        let multiaddr = keypair_to_multiaddr(&keypair, self.port);
+        let multiaddr = keypair_to_multiaddr(&keypair, super::WORMHOLE_PORT);
 
         tracing::debug!(
             %peer_id,
@@ -181,7 +177,7 @@ impl Behaviour {
     /// Compute what we would send to this peer right now.
     fn current_state_for(&self, peer_id: &PeerId) -> SentState {
         let keypair = derive_hs_keypair(&self.identity_secret, peer_id);
-        let address = keypair_to_multiaddr(&keypair, self.port);
+        let address = keypair_to_multiaddr(&keypair, super::WORMHOLE_PORT);
         let active = self.is_active(peer_id);
         SentState { address, active }
     }
@@ -368,19 +364,19 @@ impl NetworkBehaviour for Behaviour {
         }
 
         // Check if a pending trust provider query has completed
-        if let Some(fut) = &mut self.pending_query {
-            if let Poll::Ready(peers) = fut.poll_unpin(cx) {
-                self.pending_query = None;
+        match self.pending_query.poll_unpin(cx) {
+            Poll::Ready(Some(peers)) => {
                 for peer_id in peers {
                     self.spawn_service_for_peer(peer_id);
                 }
             }
+            Poll::Ready(None) | Poll::Pending => {}
         }
 
         // Check if it's time to poll the trust provider
-        if self.pending_query.is_none() && self.poll_interval.poll_tick(cx).is_ready() {
+        if self.pending_query.is_terminated() && self.poll_interval.poll_tick(cx).is_ready() {
             let trust_provider = Arc::clone(&self.trust_provider);
-            self.pending_query = Some(Box::pin(async move {
+            self.pending_query = OptionFuture::from(Some(Box::pin(async move {
                 match trust_provider.peers_with_financially_relevant_swap().await {
                     Ok(peers) => peers,
                     Err(e) => {
@@ -388,7 +384,7 @@ impl NetworkBehaviour for Behaviour {
                         Vec::new()
                     }
                 }
-            }));
+            })));
 
             cx.waker().wake_by_ref();
         }

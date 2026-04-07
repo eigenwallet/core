@@ -31,8 +31,11 @@ pub mod transport {
 
     /// (transport, onion listen addresses, channels for the behaviour to
     /// communicate with the wormhole transport — `None` when Tor is unavailable)
-    type TransportWithAddressesAndChannels =
-        (Boxed<(PeerId, StreamMuxerBox)>, Vec<Multiaddr>, Option<WormholeChannels>);
+    type TransportWithAddressesAndChannels = (
+        Boxed<(PeerId, StreamMuxerBox)>,
+        Vec<Multiaddr>,
+        Option<WormholeChannels>,
+    );
 
     /// Creates the libp2p transport for the ASB.
     ///
@@ -57,54 +60,53 @@ pub mod transport {
         // `MAX_CONCURRENT_REND_REQUESTS` is much more important in terms of DOS protection.
         const POW_QUEUE_DEPTH: usize = 2048;
 
-        let (maybe_tor_transport, onion_addresses, wormhole_channels) = if let Some(tor_client) = maybe_tor_client {
-            let mut tor_transport =
-                libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
+        let (maybe_tor_transport, onion_addresses, wormhole_channels) =
+            if let Some(tor_client) = maybe_tor_client {
+                let mut tor_transport =
+                    libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
 
-            let addresses = if register_hidden_service {
-                let onion_service_config = OnionServiceConfigBuilder::default()
-                    .nickname(
-                        ASB_ONION_SERVICE_NICKNAME
-                            .parse()
-                            .expect("Static nickname to be valid"),
-                    )
-                    .num_intro_points(num_intro_points)
-                    // DOS mitigations
-                    .max_concurrent_streams_per_circuit(MAX_STREAMS_PER_CIRCUIT)
-                    .pow_rend_queue_depth(POW_QUEUE_DEPTH)
-                    .enable_pow(true)
-                    .build()
-                    .expect("We specified a valid nickname");
+                let addresses = if register_hidden_service {
+                    let onion_service_config = OnionServiceConfigBuilder::default()
+                        .nickname(
+                            ASB_ONION_SERVICE_NICKNAME
+                                .parse()
+                                .expect("Static nickname to be valid"),
+                        )
+                        .num_intro_points(num_intro_points)
+                        // DOS mitigations
+                        .max_concurrent_streams_per_circuit(MAX_STREAMS_PER_CIRCUIT)
+                        .pow_rend_queue_depth(POW_QUEUE_DEPTH)
+                        .enable_pow(true)
+                        .build()
+                        .expect("We specified a valid nickname");
 
-                match tor_transport.add_onion_service(
-                    onion_service_config,
-                    ASB_ONION_SERVICE_PORT,
-                    max_concurrent_rend_requests,
-                ) {
-                    Ok(addr) => {
-                        tracing::debug!(
-                            %addr,
-                            "Setting up onion service for libp2p to listen on"
-                        );
-                        vec![addr]
+                    match tor_transport.add_onion_service(
+                        onion_service_config,
+                        ASB_ONION_SERVICE_PORT,
+                        max_concurrent_rend_requests,
+                    ) {
+                        Ok(addr) => {
+                            tracing::debug!(
+                                %addr,
+                                "Setting up onion service for libp2p to listen on"
+                            );
+                            vec![addr]
+                        }
+                        Err(err) => {
+                            tracing::warn!(error=%err, "Failed to listen on onion address");
+                            vec![]
+                        }
                     }
-                    Err(err) => {
-                        tracing::warn!(error=%err, "Failed to listen on onion address");
-                        vec![]
-                    }
-                }
+                } else {
+                    vec![]
+                };
+
+                let (wrapped, channels) =
+                    WormholeTransport::new(tor_transport, wormhole_max_concurrent_rend_requests);
+                (OptionalTransport::some(wrapped), addresses, Some(channels))
             } else {
-                vec![]
+                (OptionalTransport::none(), vec![], None)
             };
-
-            let (wrapped, channels) = WormholeTransport::new(
-                tor_transport,
-                wormhole_max_concurrent_rend_requests,
-            );
-            (OptionalTransport::some(wrapped), addresses, Some(channels))
-        } else {
-            (OptionalTransport::none(), vec![], None)
-        };
 
         let tcp = maybe_tor_transport
             .or_transport(tcp::tokio::Transport::new(tcp::Config::new().nodelay(true)));

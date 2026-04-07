@@ -290,8 +290,12 @@ impl TorTransport {
             .launch_onion_service(svc_cfg)?
             .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
 
-        let (multiaddr, _handle) =
-            self.register_onion_service(service, request_stream, port, max_concurrent_rend_requests)?;
+        let (multiaddr, _handle) = self.register_onion_service(
+            service,
+            request_stream,
+            port,
+            max_concurrent_rend_requests,
+        )?;
 
         Ok(multiaddr)
     }

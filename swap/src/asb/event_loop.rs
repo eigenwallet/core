@@ -248,7 +248,6 @@ where
             .collect::<Vec<_>>();
 
         for (peer_id, swap_id, state) in unfinished_swaps {
-
             let handle = self.new_handle(peer_id, swap_id);
 
             let swap = Swap {
@@ -1197,8 +1196,7 @@ mod service {
             respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
         },
         GetWormholeServices {
-            respond_to:
-                oneshot::Sender<Vec<crate::network::wormhole::alice::WormholeServiceInfo>>,
+            respond_to: oneshot::Sender<Vec<crate::network::wormhole::alice::WormholeServiceInfo>>,
         },
     }
 

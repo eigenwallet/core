@@ -9,6 +9,11 @@ use libp2p::{Multiaddr, PeerId};
 use tor_hscrypto::pk::HsIdKeypair;
 use tor_hsservice::RunningOnionService;
 
+/// Port used for per-peer wormhole onion services.
+///
+/// Source of truth shared between the behaviour and the transport.
+pub const WORMHOLE_PORT: u16 = 9939;
+
 /// Request sent from the behaviour to the wrapper transport to spawn a
 /// dedicated onion service for a peer.
 pub struct ServiceRequest {
