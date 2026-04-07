@@ -1,5 +1,4 @@
 use std::collections::{HashMap, VecDeque};
-//
 use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -7,7 +6,7 @@ use std::time::Duration;
 
 use bitcoin::hashes::{Hash, HashEngine, sha256};
 use futures::FutureExt;
-use futures::future::{BoxFuture, FusedFuture, OptionFuture};
+use futures::future::{BoxFuture, Fuse, FusedFuture, OptionFuture};
 use libp2p::request_response::{self, OutboundRequestId};
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
@@ -62,18 +61,27 @@ pub struct WormholeServiceInfo {
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
     connection_tracker: ConnectionTracker,
+
     /// Identity secret key bytes.
     identity_secret: [u8; 32],
     /// Provides trust information about peers.
     trust_provider: Arc<dyn PeerTrust + Send + Sync>,
+    /// Exponential backoff state per peer.
+    backoff: BackoffTracker,
+
+    /// Timer for periodic polling of the trust provider.
+    poll_interval: tokio::time::Interval,
+
     /// Channel to send service spawn requests to the wrapper transport.
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
+    /// Receives service handles back from the transport after spawning.
+    handle_rx: mpsc::UnboundedReceiver<ServiceHandle>,
+
     /// Map of wormhole onion address -> authorized peer.
     authorized_peers: HashMap<Multiaddr, PeerId>,
     /// Running onion service handles for status queries.
     service_handles: HashMap<PeerId, Arc<RunningOnionService>>,
-    /// Receives service handles back from the transport after spawning.
-    handle_rx: mpsc::UnboundedReceiver<ServiceHandle>,
+
     /// Peers waiting for their timer to expire before dispatch.
     pending: FuturesHashSet<PeerId, ()>,
     /// Peers ready to dispatch (timer elapsed, waiting for connection).
@@ -82,15 +90,10 @@ pub struct Behaviour {
     inflight: HashMap<OutboundRequestId, PeerId>,
     /// What we last successfully pushed to each peer.
     last_sent: HashMap<PeerId, SentState>,
-    /// Exponential backoff state per peer.
-    backoff: BackoffTracker,
-    /// Timer for periodic polling of the trust provider.
-    poll_interval: tokio::time::Interval,
     /// Pending trust provider query result.
     /// Stored as an OptionFuture so we can poll it directly without Option dance.
-    pending_query: OptionFuture<BoxFuture<'static, Vec<PeerId>>>,
-    /// Whether a trust provider query is currently in-flight.
-    query_inflight: bool,
+    /// Wrapped with `Fuse` so we can use `is_terminated()` without extra state.
+    pending_query: OptionFuture<Fuse<BoxFuture<'static, Vec<PeerId>>>>,
 }
 
 impl Behaviour {
@@ -104,7 +107,7 @@ impl Behaviour {
         let ed25519_kp = identity
             .clone()
             .try_into_ed25519()
-            .expect("ASB identity must be ed25519");
+            .expect("identity secret must be ed25519");
         let identity_secret: [u8; 32] = ed25519_kp.secret().as_ref().try_into().unwrap();
 
         let mut poll_interval = tokio::time::interval(config.poll_interval);
@@ -376,7 +379,7 @@ impl NetworkBehaviour for Behaviour {
         // Check if it's time to poll the trust provider
         if self.pending_query.is_terminated() && self.poll_interval.poll_tick(cx).is_ready() {
             let trust_provider = Arc::clone(&self.trust_provider);
-            self.pending_query = OptionFuture::from(Some(Box::pin(async move {
+            let fut: Fuse<BoxFuture<'static, Vec<PeerId>>> = async move {
                 match trust_provider.peers_with_financially_relevant_swap().await {
                     Ok(peers) => peers,
                     Err(e) => {
@@ -384,7 +387,10 @@ impl NetworkBehaviour for Behaviour {
                         Vec::new()
                     }
                 }
-            })));
+            }
+            .boxed()
+            .fuse();
+            self.pending_query = OptionFuture::from(Some(fut));
 
             cx.waker().wake_by_ref();
         }
