@@ -20,9 +20,10 @@ use swap_p2p::futures_util::FuturesHashSet;
 use swap_p2p::protocols::wormhole as proto;
 use tokio::sync::mpsc;
 use tor_hscrypto::pk::{HsId, HsIdKey, HsIdKeypair};
+use tor_hsservice::RunningOnionService;
 use tor_llcrypto::pk::ed25519;
 
-use super::{PeerTrust, ServiceRequest};
+use super::{PeerTrust, ServiceHandle, ServiceRequest};
 
 const RETRY_INITIAL: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -52,6 +53,14 @@ struct SentState {
     active: bool,
 }
 
+/// Status snapshot of a single wormhole onion service.
+#[derive(Debug)]
+pub struct WormholeServiceInfo {
+    pub peer_id: PeerId,
+    pub address: Multiaddr,
+    pub status: String,
+}
+
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
     connection_tracker: ConnectionTracker,
@@ -63,6 +72,10 @@ pub struct Behaviour {
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
     /// Map of wormhole onion address -> authorized peer.
     authorized_peers: HashMap<Multiaddr, PeerId>,
+    /// Running onion service handles for status queries.
+    service_handles: HashMap<PeerId, Arc<RunningOnionService>>,
+    /// Receives service handles back from the transport after spawning.
+    handle_rx: mpsc::UnboundedReceiver<ServiceHandle>,
     /// Peers waiting for their timer to expire before dispatch.
     pending: FuturesHashSet<PeerId, ()>,
     /// Peers ready to dispatch (timer elapsed, waiting for connection).
@@ -86,6 +99,7 @@ impl Behaviour {
         identity: &identity::Keypair,
         trust_provider: Arc<dyn PeerTrust + Send + Sync>,
         service_tx: mpsc::UnboundedSender<ServiceRequest>,
+        handle_rx: mpsc::UnboundedReceiver<ServiceHandle>,
         config: Config,
     ) -> Self {
         let ed25519_kp = identity
@@ -104,6 +118,8 @@ impl Behaviour {
             trust_provider,
             service_tx,
             authorized_peers: HashMap::new(),
+            service_handles: HashMap::new(),
+            handle_rx,
             pending: FuturesHashSet::new(),
             to_dispatch: VecDeque::new(),
             inflight: HashMap::new(),
@@ -136,6 +152,25 @@ impl Behaviour {
 
         // The active flag changed — schedule a push
         self.schedule_push(peer_id);
+    }
+
+    /// Returns a snapshot of all wormhole services and their current status.
+    pub fn services(&self) -> Vec<WormholeServiceInfo> {
+        self.authorized_peers
+            .iter()
+            .map(|(addr, peer)| {
+                let status = self
+                    .service_handles
+                    .get(peer)
+                    .map(|svc| format!("{:?}", svc.status().state()))
+                    .unwrap_or_else(|| "starting".to_string());
+                WormholeServiceInfo {
+                    peer_id: *peer,
+                    address: addr.clone(),
+                    status,
+                }
+            })
+            .collect()
     }
 
     fn is_active(&self, peer_id: &PeerId) -> bool {
@@ -336,6 +371,11 @@ impl NetworkBehaviour for Behaviour {
                     return Poll::Ready(other.map_out(|_| unreachable!()));
                 }
             }
+        }
+
+        // Drain service handles sent back from the transport
+        while let Poll::Ready(Some(handle)) = self.handle_rx.poll_recv(cx) {
+            self.service_handles.insert(handle.peer_id, handle.service);
         }
 
         // Check if a pending trust provider query has completed

@@ -97,6 +97,18 @@ pub struct MoneroSeedResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WormholeServiceItem {
+    pub peer_id: String,
+    pub address: String,
+    pub status: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WormholeServicesResponse {
+    pub services: Vec<WormholeServiceItem>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SetBurnOnRefundRequest {
     pub swap_id: String,
     pub burn: bool,
@@ -131,6 +143,8 @@ pub trait AsbApi {
     -> Result<(), ErrorObjectOwned>;
     #[method(name = "grant_mercy")]
     async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned>;
+    #[method(name = "wormhole_services")]
+    async fn wormhole_services(&self) -> Result<WormholeServicesResponse, ErrorObjectOwned>;
     #[method(name = "withdraw_btc")]
     async fn withdraw_btc(
         &self,

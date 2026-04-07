@@ -164,6 +164,17 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             client.refresh_bitcoin_wallet().await?;
             println!("Bitcoin wallet refreshed");
         }
+        Cmd::WormholeServices => {
+            println!("Wormholes are dedicated onion services spawned for peers that have committed funds to a swap.\n");
+            let response = client.wormhole_services().await?;
+            if response.services.is_empty() {
+                println!("No active wormhole services");
+            } else {
+                for svc in response.services {
+                    println!("{} -> {} ({})", svc.peer_id, svc.address, svc.status);
+                }
+            }
+        }
     }
     Ok(())
 }

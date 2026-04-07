@@ -20,18 +20,17 @@ pub mod transport {
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
     use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
     use libp2p_tor::AddressConversion;
-    use tokio::sync::mpsc;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-    use crate::network::wormhole::ServiceRequest;
-    use crate::network::wormhole::transport::WormholeTransport;
+    use crate::network::wormhole::transport::{WormholeChannels, WormholeTransport};
 
     use super::*;
 
     static ASB_ONION_SERVICE_NICKNAME: &str = "asb";
     static ASB_ONION_SERVICE_PORT: u16 = 9939;
 
-    type OnionTransportWithAddresses = (Boxed<(PeerId, StreamMuxerBox)>, Vec<Multiaddr>);
+    type TransportWithAddressesAndChannels =
+        (Boxed<(PeerId, StreamMuxerBox)>, Vec<Multiaddr>, Option<WormholeChannels>);
 
     /// Creates the libp2p transport for the ASB.
     ///
@@ -46,9 +45,8 @@ pub mod transport {
         register_hidden_service: bool,
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
-        wormhole_service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
         wormhole_max_concurrent_rend_requests: usize,
-    ) -> Result<OnionTransportWithAddresses> {
+    ) -> Result<TransportWithAddressesAndChannels> {
         // Streams are multiplexed via yamux, we don't really need more than one.
         const MAX_STREAMS_PER_CIRCUIT: u32 = 4;
         // This does not affect the PoW directly (only very slightly) but only serves as a protection
@@ -97,14 +95,13 @@ pub mod transport {
                 vec![]
             };
 
-            let wrapped = WormholeTransport::new(
+            let (wrapped, channels) = WormholeTransport::new(
                 tor_transport,
-                wormhole_service_rx,
                 wormhole_max_concurrent_rend_requests,
             );
-            (OptionalTransport::some(wrapped), addresses)
+            (OptionalTransport::some(wrapped), addresses, Some(channels))
         } else {
-            (OptionalTransport::none(), vec![])
+            (OptionalTransport::none(), vec![], None)
         };
 
         let tcp = maybe_tor_transport
@@ -114,6 +111,7 @@ pub mod transport {
         Ok((
             authenticate_and_multiplex(tcp_with_dns.boxed(), identity)?,
             onion_addresses,
+            wormhole_channels,
         ))
     }
 }
@@ -123,10 +121,10 @@ pub mod behaviour {
 
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_p2p::{out_event::alice::OutEvent, patches};
-    use tokio::sync::mpsc;
 
     use crate::network::wormhole;
-    use crate::network::wormhole::{PeerTrust, ServiceRequest};
+    use crate::network::wormhole::PeerTrust;
+    use crate::network::wormhole::transport::WormholeChannels;
 
     use super::*;
 
@@ -146,7 +144,7 @@ pub mod behaviour {
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
         pub identify: patches::identify::Behaviour,
-        wormhole: wormhole::alice::Behaviour,
+        pub(crate) wormhole: Toggle<wormhole::alice::Behaviour>,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -168,7 +166,7 @@ pub mod behaviour {
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
             trust_provider: Arc<dyn PeerTrust + Send + Sync>,
-            wormhole_service_tx: mpsc::UnboundedSender<ServiceRequest>,
+            wormhole_channels: Option<WormholeChannels>,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -179,12 +177,15 @@ pub mod behaviour {
 
             let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
 
-            let wormhole = wormhole::alice::Behaviour::new(
-                &identity,
-                trust_provider,
-                wormhole_service_tx,
-                wormhole::alice::Config::default(),
-            );
+            let wormhole = wormhole_channels.map(|channels| {
+                wormhole::alice::Behaviour::new(
+                    &identity,
+                    trust_provider,
+                    channels.service_tx,
+                    channels.handle_rx,
+                    wormhole::alice::Config::default(),
+                )
+            });
 
             let behaviour = if rendezvous_nodes.is_empty() {
                 None
@@ -212,7 +213,7 @@ pub mod behaviour {
                 cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(),
                 ping: ping::Behaviour::new(pingConfig),
                 identify: patches::identify::Behaviour::new(identifyConfig),
-                wormhole,
+                wormhole: Toggle::from(wormhole),
             }
         }
     }

@@ -60,4 +60,6 @@ pub enum Cmd {
     },
     /// Refresh the internal Bitcoin wallet by syncing with the blockchain
     RefreshBitcoinWallet,
+    /// List active wormhole onion services
+    WormholeServices,
 }

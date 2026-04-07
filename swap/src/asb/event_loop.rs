@@ -590,6 +590,13 @@ where
                             let result = self.handle_grant_mercy(swap_id).await;
                             let _ = respond_to.send(result);
                         }
+                        EventLoopRequest::GetWormholeServices { respond_to } => {
+                            let services = self.swarm.behaviour().wormhole
+                                .as_ref()
+                                .map(|w| w.services())
+                                .unwrap_or_default();
+                            let _ = respond_to.send(services);
+                        }
                     }
                 }
             }
@@ -1196,6 +1203,10 @@ mod service {
             swap_id: Uuid,
             respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
         },
+        GetWormholeServices {
+            respond_to:
+                oneshot::Sender<Vec<crate::network::wormhole::alice::WormholeServiceInfo>>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -1257,6 +1268,18 @@ mod service {
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        /// Get the list of active wormhole services
+        pub async fn get_wormhole_services(
+            &self,
+        ) -> anyhow::Result<Vec<crate::network::wormhole::alice::WormholeServiceInfo>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetWormholeServices { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
         }
 
         /// Grant mercy for a swap in BtcWithholdConfirmed state

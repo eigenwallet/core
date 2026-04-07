@@ -13,7 +13,8 @@ use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
     PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
+    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse, WormholeServiceItem,
+    WormholeServicesResponse,
 };
 use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
@@ -281,6 +282,25 @@ impl AsbApiServer for RpcImpl {
             .await
             .into_json_rpc_result()?;
         Ok(())
+    }
+
+    async fn wormhole_services(&self) -> Result<WormholeServicesResponse, ErrorObjectOwned> {
+        let services = self
+            .event_loop_service
+            .get_wormhole_services()
+            .await
+            .into_json_rpc_result()?;
+
+        let services = services
+            .into_iter()
+            .map(|info| WormholeServiceItem {
+                peer_id: info.peer_id.to_string(),
+                address: info.address.to_string(),
+                status: info.status,
+            })
+            .collect();
+
+        Ok(WormholeServicesResponse { services })
     }
 
     async fn withdraw_btc(

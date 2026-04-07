@@ -278,6 +278,8 @@ impl TorTransport {
 
     /// Like [`add_onion_service`](Self::add_onion_service), but uses a pre-generated
     /// [`HsIdKeypair`] so the .onion address is deterministic.
+    ///
+    /// Returns the listen address and a handle to the running service (for status queries).
     #[cfg(feature = "listen-onion-service")]
     pub fn add_onion_service_with_hsid(
         &mut self,
@@ -285,7 +287,7 @@ impl TorTransport {
         id_keypair: HsIdKeypair,
         port: u16,
         max_concurrent_rend_requests: usize,
-    ) -> anyhow::Result<Multiaddr> {
+    ) -> anyhow::Result<(Multiaddr, Arc<RunningOnionService>)> {
         // Try launching with the stored key first (works on restarts).
         // If no key is stored yet, insert it and launch.
         let (service, request_stream): (_, Pin<Box<dyn Stream<Item = _> + Send>>) =
@@ -321,9 +323,10 @@ impl TorTransport {
             .ok_or_else(|| anyhow::anyhow!("Onion service has no onion address"))?
             .to_multiaddr(port);
 
+        let handle = Arc::clone(&service);
         self.services.push((service, request_stream));
 
-        Ok(multiaddr)
+        Ok((multiaddr, handle))
     }
 }
 

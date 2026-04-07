@@ -8,31 +8,51 @@ use libp2p_tor::{TokioTorStream, TorTransport, TorTransportError};
 use tokio::sync::mpsc;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 
-use super::ServiceRequest;
+use super::{ServiceHandle, ServiceRequest};
 
 /// Port used for wormhole onion services.
 const WORMHOLE_SERVICE_PORT: u16 = 9939;
 const WORMHOLE_NUM_INTRO_POINTS: u8 = 3;
+
+/// Channel handles returned by [`WormholeTransport::new`] for the behaviour
+/// to send requests and receive service handles.
+pub struct WormholeChannels {
+    /// Send spawn requests to the transport.
+    pub service_tx: mpsc::UnboundedSender<ServiceRequest>,
+    /// Receive running service handles back from the transport.
+    pub handle_rx: mpsc::UnboundedReceiver<ServiceHandle>,
+}
 
 /// A wrapper around `TorTransport` that can dynamically spawn dedicated
 /// onion services at runtime by receiving requests through a channel.
 pub struct WormholeTransport {
     inner: TorTransport,
     service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
+    handle_tx: mpsc::UnboundedSender<ServiceHandle>,
     max_concurrent_rend_requests: usize,
 }
 
 impl WormholeTransport {
     pub fn new(
         inner: TorTransport,
-        service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
         max_concurrent_rend_requests: usize,
-    ) -> Self {
-        Self {
+    ) -> (Self, WormholeChannels) {
+        let (service_tx, service_rx) = mpsc::unbounded_channel();
+        let (handle_tx, handle_rx) = mpsc::unbounded_channel();
+
+        let transport = Self {
             inner,
             service_rx,
+            handle_tx,
             max_concurrent_rend_requests,
-        }
+        };
+
+        let channels = WormholeChannels {
+            service_tx,
+            handle_rx,
+        };
+
+        (transport, channels)
     }
 }
 
@@ -99,18 +119,23 @@ impl Transport for WormholeTransport {
             };
 
             let max_rend = self.max_concurrent_rend_requests;
-            let addr = match self.inner.add_onion_service_with_hsid(
+            let (addr, service) = match self.inner.add_onion_service_with_hsid(
                 svc_cfg,
                 request.keypair,
                 WORMHOLE_SERVICE_PORT,
                 max_rend,
             ) {
-                Ok(addr) => addr,
+                Ok(result) => result,
                 Err(e) => {
                     tracing::error!(error = ?e, "Failed to add wormhole onion service");
                     continue;
                 }
             };
+
+            let _ = self.handle_tx.send(ServiceHandle {
+                peer_id: request.peer_id,
+                service,
+            });
 
             let listener_id = ListenerId::next();
             if let Err(e) = self.inner.listen_on(listener_id, addr.clone()) {
