@@ -354,6 +354,8 @@ async fn start_alice(
         false,
         1,
         16,
+        false,
+        3,
         db.clone(),
     )
     .unwrap();

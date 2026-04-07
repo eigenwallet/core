@@ -87,10 +87,24 @@ pub struct TorConf {
     /// that allows the suggested PoW effort to ramp up under load.
     #[serde(default = "default_max_concurrent_rend_requests")]
     pub max_concurrent_rend_requests: usize,
+    /// Enable per-peer dedicated onion services (wormholes).
+    #[serde(default = "default_wormhole_enabled")]
+    pub wormhole_enabled: bool,
+    /// Maximum concurrent rendezvous requests per wormhole onion service.
+    #[serde(default = "default_wormhole_max_concurrent_rend_requests")]
+    pub wormhole_max_concurrent_rend_requests: usize,
 }
 
 fn default_max_concurrent_rend_requests() -> usize {
     16
+}
+
+fn default_wormhole_enabled() -> bool {
+    true
+}
+
+fn default_wormhole_max_concurrent_rend_requests() -> usize {
+    3
 }
 
 impl Default for TorConf {
@@ -99,6 +113,8 @@ impl Default for TorConf {
             register_hidden_service: true,
             hidden_service_num_intro_points: 5,
             max_concurrent_rend_requests: default_max_concurrent_rend_requests(),
+            wormhole_enabled: default_wormhole_enabled(),
+            wormhole_max_concurrent_rend_requests: default_wormhole_max_concurrent_rend_requests(),
         }
     }
 }

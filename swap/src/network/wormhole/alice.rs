@@ -15,7 +15,7 @@ use libp2p::swarm::{
 };
 use libp2p::{Multiaddr, PeerId, identity};
 use safelog::DisplayRedacted;
-use swap_p2p::behaviour_util::{BackoffTracker, ConnectionTracker};
+use swap_p2p::behaviour_util::ConnectionTracker;
 use swap_p2p::futures_util::FuturesHashSet;
 use swap_p2p::protocols::wormhole as proto;
 use tokio::sync::mpsc;
@@ -24,13 +24,13 @@ use tor_llcrypto::pk::ed25519;
 
 use super::{PeerTrust, ServiceRequest};
 
-const BACKOFF_INITIAL: Duration = Duration::from_secs(5);
-const BACKOFF_MAX: Duration = Duration::from_secs(60);
-const BACKOFF_MULTIPLIER: f64 = 2.0;
+const RETRY_INITIAL: Duration = Duration::from_secs(5);
+const RETRY_MAX: Duration = Duration::from_secs(60);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// Configuration for the wormhole behaviour.
 pub struct Config {
-    /// How often to poll the database for new peers.
+    /// How often to poll the trust provider for new peers.
     pub poll_interval: Duration,
     /// Port for wormhole onion services.
     pub port: u16,
@@ -63,16 +63,16 @@ pub struct Behaviour {
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
     /// Map of wormhole onion address -> authorized peer.
     authorized_peers: HashMap<Multiaddr, PeerId>,
-    /// Peers waiting for their backoff to expire before dispatch.
+    /// Peers waiting for their timer to expire before dispatch.
     pending: FuturesHashSet<PeerId, ()>,
-    /// Peers ready to dispatch (backoff elapsed, waiting for connection).
+    /// Peers ready to dispatch (timer elapsed, waiting for connection).
     to_dispatch: VecDeque<PeerId>,
     /// Inflight pushes: request_id -> peer.
     inflight: HashMap<OutboundRequestId, PeerId>,
     /// What we last successfully pushed to each peer.
     last_sent: HashMap<PeerId, SentState>,
-    /// Backoff tracker for failed pushes.
-    backoff: BackoffTracker,
+    /// Current retry delay per peer (doubles on failure, resets on success).
+    retry_delay: HashMap<PeerId, Duration>,
     /// Timer for periodic polling of the trust provider.
     poll_interval: tokio::time::Interval,
     /// Port for wormhole onion services.
@@ -108,7 +108,7 @@ impl Behaviour {
             to_dispatch: VecDeque::new(),
             inflight: HashMap::new(),
             last_sent: HashMap::new(),
-            backoff: BackoffTracker::new(BACKOFF_INITIAL, BACKOFF_MAX, BACKOFF_MULTIPLIER),
+            retry_delay: HashMap::new(),
             poll_interval,
             port: config.port,
             pending_query: None,
@@ -134,8 +134,8 @@ impl Behaviour {
 
         let _ = self.service_tx.send(ServiceRequest { keypair, peer_id });
 
-        // The active flag changed — schedule an immediate re-push
-        self.schedule_push_immediate(peer_id);
+        // The active flag changed — schedule a push
+        self.schedule_push(peer_id);
     }
 
     fn is_active(&self, peer_id: &PeerId) -> bool {
@@ -150,29 +150,26 @@ impl Behaviour {
         SentState { address, active }
     }
 
-    /// Schedule a push to a peer after backoff, if the state has changed since last send.
+    /// Schedule a push to a peer using the current retry delay.
+    /// Skips if the state hasn't changed since last successful send.
     fn schedule_push(&mut self, peer_id: PeerId) {
         let current = self.current_state_for(&peer_id);
         if self.last_sent.get(&peer_id) == Some(&current) {
             return;
         }
-        let delay = self.backoff.get(&peer_id).current_interval;
-        self.schedule_push_after(peer_id, delay);
-    }
-
-    /// Schedule a push to a peer after a specific delay.
-    fn schedule_push_after(&mut self, peer_id: PeerId, delay: Duration) {
+        let delay = self
+            .retry_delay
+            .get(&peer_id)
+            .copied()
+            .unwrap_or(RETRY_INITIAL);
         self.pending
             .replace(peer_id, Box::pin(tokio::time::sleep(delay)));
     }
 
-    /// Schedule an immediate push (no backoff).
-    fn schedule_push_immediate(&mut self, peer_id: PeerId) {
-        let current = self.current_state_for(&peer_id);
-        if self.last_sent.get(&peer_id) == Some(&current) {
-            return;
-        }
-        self.schedule_push_after(peer_id, Duration::ZERO);
+    /// Schedule a push after the heartbeat interval, bypassing the last_sent check.
+    fn schedule_heartbeat(&mut self, peer_id: PeerId) {
+        self.pending
+            .replace(peer_id, Box::pin(tokio::time::sleep(HEARTBEAT_INTERVAL)));
     }
 
     /// Actually send the push to a connected peer.
@@ -258,7 +255,7 @@ impl NetworkBehaviour for Behaviour {
         self.connection_tracker.handle_swarm_event(event);
 
         if let FromSwarm::ConnectionEstablished(info) = &event {
-            self.schedule_push_immediate(info.peer_id);
+            self.schedule_push(info.peer_id);
         }
 
         self.inner.on_swarm_event(event);
@@ -278,7 +275,7 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        // Move peers whose backoff has expired into the dispatch queue
+        // Move peers whose timer has expired into the dispatch queue
         while let Poll::Ready(Some((peer_id, ()))) = self.pending.poll_next_unpin(cx) {
             self.to_dispatch.push_back(peer_id);
         }
@@ -307,11 +304,12 @@ impl NetworkBehaviour for Behaviour {
                         ..
                     } => {
                         self.inflight.remove(&request_id);
-                        self.backoff.reset(&peer);
+                        self.retry_delay.remove(&peer);
 
-                        // Record what we successfully sent
                         let state = self.current_state_for(&peer);
                         self.last_sent.insert(peer, state);
+
+                        self.schedule_heartbeat(peer);
                     }
                     request_response::Event::OutboundFailure {
                         peer,
@@ -319,11 +317,17 @@ impl NetworkBehaviour for Behaviour {
                         error,
                     } => {
                         self.inflight.remove(&request_id);
-                        self.backoff.increment(&peer);
+
+                        // Double the retry delay, capped at RETRY_MAX
+                        let current = self
+                            .retry_delay
+                            .get(&peer)
+                            .copied()
+                            .unwrap_or(RETRY_INITIAL);
+                        self.retry_delay.insert(peer, (current * 2).min(RETRY_MAX));
 
                         tracing::debug!(%peer, %error, "Failed to push wormhole address, will retry");
 
-                        // Re-schedule with backoff
                         self.schedule_push(peer);
                     }
                     _ => {}
@@ -334,7 +338,7 @@ impl NetworkBehaviour for Behaviour {
             }
         }
 
-        // Check if a pending DB query has completed
+        // Check if a pending trust provider query has completed
         if let Some(fut) = &mut self.pending_query {
             if let Poll::Ready(peers) = fut.poll_unpin(cx) {
                 self.pending_query = None;
@@ -344,7 +348,7 @@ impl NetworkBehaviour for Behaviour {
             }
         }
 
-        // Check if it's time to poll the DB
+        // Check if it's time to poll the trust provider
         if self.pending_query.is_none() && self.poll_interval.poll_tick(cx).is_ready() {
             let trust_provider = Arc::clone(&self.trust_provider);
             self.pending_query = Some(Box::pin(async move {

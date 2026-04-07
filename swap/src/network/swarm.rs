@@ -33,7 +33,9 @@ pub fn asb<LR>(
     register_hidden_service: bool,
     num_intro_points: u8,
     max_concurrent_rend_requests: usize,
-    db: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
+    wormhole_enabled: bool,
+    wormhole_max_concurrent_rend_requests: usize,
+    trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
 ) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
@@ -67,7 +69,7 @@ where
         (identity.clone(), namespace),
         rendezvous_nodes,
         connection_limits,
-        db,
+        trust_provider,
         wormhole_service_tx,
     );
 
@@ -78,6 +80,7 @@ where
         num_intro_points,
         max_concurrent_rend_requests,
         wormhole_service_rx,
+        wormhole_max_concurrent_rend_requests,
     )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)

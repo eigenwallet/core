@@ -12,9 +12,6 @@ use super::ServiceRequest;
 
 /// Port used for wormhole onion services.
 const WORMHOLE_SERVICE_PORT: u16 = 9939;
-/// Max concurrent rendezvous requests for wormhole services.
-/// Lower than the main service since these serve a single peer.
-const WORMHOLE_MAX_CONCURRENT_REND_REQUESTS: usize = 2;
 const WORMHOLE_NUM_INTRO_POINTS: u8 = 3;
 
 /// A wrapper around `TorTransport` that can dynamically spawn dedicated
@@ -22,11 +19,20 @@ const WORMHOLE_NUM_INTRO_POINTS: u8 = 3;
 pub struct WormholeTransport {
     inner: TorTransport,
     service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
+    max_concurrent_rend_requests: usize,
 }
 
 impl WormholeTransport {
-    pub fn new(inner: TorTransport, service_rx: mpsc::UnboundedReceiver<ServiceRequest>) -> Self {
-        Self { inner, service_rx }
+    pub fn new(
+        inner: TorTransport,
+        service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
+        max_concurrent_rend_requests: usize,
+    ) -> Self {
+        Self {
+            inner,
+            service_rx,
+            max_concurrent_rend_requests,
+        }
     }
 }
 
@@ -69,7 +75,12 @@ impl Transport for WormholeTransport {
     ) -> Poll<TransportEvent<Self::ListenerUpgrade, Self::Error>> {
         // Drain the channel for new wormhole service requests
         while let Poll::Ready(Some(request)) = self.service_rx.poll_recv(cx) {
-            let nickname = format!("wormhole-{}", request.peer_id);
+            // Arti nicknames: 1-20 chars, [a-zA-Z0-9_] only.
+            // Hash the peer_id for uniform distribution, take first 8 hex chars.
+            use bitcoin::hashes::{Hash, sha256};
+            let hash = sha256::Hash::hash(&request.peer_id.to_bytes());
+            let hex = data_encoding::HEXLOWER.encode(&hash.to_byte_array()[..8]);
+            let nickname = format!("wh_{hex}");
             let svc_cfg = match OnionServiceConfigBuilder::default()
                 .nickname(
                     nickname
@@ -91,7 +102,7 @@ impl Transport for WormholeTransport {
                 svc_cfg,
                 request.keypair,
                 WORMHOLE_SERVICE_PORT,
-                WORMHOLE_MAX_CONCURRENT_REND_REQUESTS,
+                self.max_concurrent_rend_requests,
             ) {
                 Ok(addr) => addr,
                 Err(e) => {

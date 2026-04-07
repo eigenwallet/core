@@ -47,6 +47,7 @@ pub mod transport {
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
         wormhole_service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
+        wormhole_max_concurrent_rend_requests: usize,
     ) -> Result<OnionTransportWithAddresses> {
         // Streams are multiplexed via yamux, we don't really need more than one.
         const MAX_STREAMS_PER_CIRCUIT: u32 = 4;
@@ -96,7 +97,11 @@ pub mod transport {
                 vec![]
             };
 
-            let wrapped = WormholeTransport::new(tor_transport, wormhole_service_rx);
+            let wrapped = WormholeTransport::new(
+                tor_transport,
+                wormhole_service_rx,
+                wormhole_max_concurrent_rend_requests,
+            );
             (OptionalTransport::some(wrapped), addresses)
         } else {
             (OptionalTransport::none(), vec![])
@@ -162,7 +167,7 @@ pub mod behaviour {
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
-            db: Arc<dyn PeerTrust + Send + Sync>,
+            trust_provider: Arc<dyn PeerTrust + Send + Sync>,
             wormhole_service_tx: mpsc::UnboundedSender<ServiceRequest>,
         ) -> Self {
             let (identity, namespace) = identify_params;
@@ -176,7 +181,7 @@ pub mod behaviour {
 
             let wormhole = wormhole::alice::Behaviour::new(
                 &identity,
-                db,
+                trust_provider,
                 wormhole_service_tx,
                 wormhole::alice::Config::default(),
             );
