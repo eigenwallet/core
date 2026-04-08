@@ -114,6 +114,7 @@ proptest = "1"
 swap-p2p = { path = "../swap-p2p", features = ["test-support"] }
 tempfile = "3"
 testcontainers = "0.15"
+tokio = { workspace = true, features = ["test-util"] }
 tracing-ext = { path = "../tracing-ext" }
 
 [build-dependencies]
