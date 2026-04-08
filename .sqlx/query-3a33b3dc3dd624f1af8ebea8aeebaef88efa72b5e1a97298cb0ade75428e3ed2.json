@@ -1,0 +1,23 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT peer_id, address\n            FROM wormholes\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "peer_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "address",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [false, false]
+  },
+  "hash": "3a33b3dc3dd624f1af8ebea8aeebaef88efa72b5e1a97298cb0ade75428e3ed2"
+}

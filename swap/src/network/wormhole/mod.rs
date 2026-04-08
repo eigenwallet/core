@@ -1,5 +1,6 @@
 pub mod alice;
 pub mod bob;
+pub mod lazy_store;
 pub mod transport;
 
 use std::sync::Arc;
@@ -39,4 +40,5 @@ pub trait PeerTrust {
 pub trait WormholeStore {
     async fn store_wormhole(&self, peer: PeerId, address: Multiaddr, active: bool) -> Result<()>;
     async fn get_wormhole(&self, peer: PeerId) -> Result<Option<(Multiaddr, bool)>>;
+    async fn get_all_wormholes(&self) -> Result<Vec<(PeerId, Multiaddr)>>;
 }

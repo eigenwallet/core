@@ -1,10 +1,6 @@
-use std::collections::HashMap;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use futures::stream::FuturesUnordered;
-use futures::{Future, StreamExt};
 use libp2p::request_response;
 use libp2p::swarm::{
     ConnectionDenied, ConnectionId, FromSwarm, NetworkBehaviour, THandler, THandlerInEvent,
@@ -14,43 +10,19 @@ use libp2p::{Multiaddr, PeerId};
 use swap_p2p::protocols::wormhole as proto;
 
 use super::WormholeStore;
+use super::lazy_store::LazyWormholeStore;
 
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
-    store: Arc<dyn WormholeStore + Send + Sync>,
-    /// Cached wormhole addresses per peer.
-    wormholes: HashMap<PeerId, Multiaddr>,
-    /// Inflight persist operations.
-    pending_persists: FuturesUnordered<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    store: LazyWormholeStore,
 }
 
 impl Behaviour {
-    pub fn new(store: Arc<dyn WormholeStore + Send + Sync>) -> Self {
+    pub fn new(db: Arc<dyn WormholeStore + Send + Sync>) -> Self {
         Self {
             inner: proto::bob(),
-            store,
-            wormholes: HashMap::new(),
-            pending_persists: FuturesUnordered::new(),
+            store: LazyWormholeStore::new(db),
         }
-    }
-
-    fn persist_wormhole(
-        &self,
-        peer: PeerId,
-        address: Multiaddr,
-        active: bool,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        let store = Arc::clone(&self.store);
-        Box::pin(async move {
-            match store.store_wormhole(peer, address.clone(), active).await {
-                Ok(()) => {
-                    tracing::debug!(%peer, %address, active, "Persisted wormhole");
-                }
-                Err(e) => {
-                    tracing::warn!(%peer, error = ?e, "Failed to persist wormhole");
-                }
-            }
-        })
     }
 }
 
@@ -98,7 +70,7 @@ impl NetworkBehaviour for Behaviour {
         let Some(peer_id) = maybe_peer else {
             return Ok(vec![]);
         };
-        let Some(addr) = self.wormholes.get(&peer_id) else {
+        let Some(addr) = self.store.get(&peer_id) else {
             return Ok(vec![]);
         };
         tracing::debug!(%peer_id, address = %addr, "Contributing wormhole address for dial");
@@ -123,8 +95,7 @@ impl NetworkBehaviour for Behaviour {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<ToSwarm<Self::ToSwarm, THandlerInEvent<Self>>> {
-        // Drive pending persist operations
-        while let Poll::Ready(Some(())) = self.pending_persists.poll_next_unpin(cx) {}
+        self.store.poll(cx);
 
         while let Poll::Ready(event) = self.inner.poll(cx) {
             match event {
@@ -138,19 +109,14 @@ impl NetworkBehaviour for Behaviour {
                         ..
                     } = event
                     {
-                        let address = request.address;
-                        let active = request.active;
-
                         tracing::debug!(
                             %peer,
-                            address = %address,
-                            active,
+                            address = %request.address,
+                            active = request.active,
                             "Received wormhole from peer"
                         );
 
-                        self.wormholes.insert(peer, address.clone());
-                        self.pending_persists
-                            .push(self.persist_wormhole(peer, address, active));
+                        self.store.insert(peer, request.address, request.active);
 
                         let _ = self.inner.send_response(channel, ());
                     }

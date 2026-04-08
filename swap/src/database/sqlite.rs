@@ -563,6 +563,27 @@ impl crate::network::wormhole::WormholeStore for SqliteDatabase {
 
         Ok(Some((address, row.active)))
     }
+
+    async fn get_all_wormholes(&self) -> Result<Vec<(PeerId, Multiaddr)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT peer_id, address
+            FROM wormholes
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter()
+            .map(|row| {
+                let peer_id = PeerId::from_str(&row.peer_id)
+                    .map_err(|e| anyhow::anyhow!("Invalid peer_id in wormholes table: {e}"))?;
+                let address = Multiaddr::from_str(&row.address)
+                    .map_err(|e| anyhow::anyhow!("Invalid multiaddr in wormholes table: {e}"))?;
+                Ok((peer_id, address))
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
