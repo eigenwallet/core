@@ -1,7 +1,5 @@
 pub mod alice;
 pub mod bob;
-pub mod lazy_store;
-pub mod transport;
 
 use std::sync::Arc;
 

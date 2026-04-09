@@ -22,7 +22,7 @@ pub mod transport {
     use libp2p_tor::AddressConversion;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
-    use crate::network::wormhole::transport::{WormholeChannels, WormholeTransport};
+    use crate::network::wormhole::alice::transport::{WormholeChannels, WormholeTransport};
     use tor_hsservice::RunningOnionService;
 
     use super::*;
@@ -52,6 +52,7 @@ pub mod transport {
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
         wormhole_max_concurrent_rend_requests: usize,
+        wormhole_num_intro_points: u8,
     ) -> Result<TransportResult> {
         // Streams are multiplexed via yamux, we don't really need more than one.
         const MAX_STREAMS_PER_CIRCUIT: u32 = 4;
@@ -102,8 +103,11 @@ pub mod transport {
                     (vec![], None)
                 };
 
-                let (wrapped, channels) =
-                    WormholeTransport::new(tor_transport, wormhole_max_concurrent_rend_requests);
+                let (wrapped, channels) = WormholeTransport::new(
+                    tor_transport,
+                    wormhole_max_concurrent_rend_requests,
+                    wormhole_num_intro_points,
+                );
                 (
                     OptionalTransport::some(wrapped),
                     addresses,
@@ -146,7 +150,7 @@ pub mod behaviour {
 
     use crate::network::wormhole;
     use crate::network::wormhole::PeerTrust;
-    use crate::network::wormhole::transport::WormholeChannels;
+    use crate::network::wormhole::alice::transport::WormholeChannels;
 
     use super::*;
 

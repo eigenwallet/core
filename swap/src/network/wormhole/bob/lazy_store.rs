@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -11,12 +10,28 @@ use backoff::backoff::Backoff;
 use futures::FutureExt;
 use libp2p::{Multiaddr, PeerId};
 
-use super::WormholeStore;
+use super::super::WormholeStore;
 
 const WRITE_BACKOFF_INITIAL: Duration = Duration::from_secs(1);
 const WRITE_BACKOFF_MAX: Duration = Duration::from_secs(5 * 60);
+const LOAD_BACKOFF_INITIAL: Duration = Duration::from_secs(1);
+const LOAD_BACKOFF_MAX: Duration = Duration::from_secs(30);
 
-type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+type BoxFut<T> = Pin<Box<dyn futures::Future<Output = T> + Send>>;
+
+enum InflightWrite {
+    /// A database write in progress.
+    Store(BoxFut<Result<PeerId>>),
+    /// Backoff sleep after a failed write.
+    Backoff(Pin<Box<tokio::time::Sleep>>),
+}
+
+enum InflightLoad {
+    /// A database load in progress.
+    Loading(BoxFut<Result<Vec<(PeerId, Multiaddr)>>>),
+    /// Backoff sleep after a failed load.
+    Backoff(Pin<Box<tokio::time::Sleep>>),
+}
 
 /// In-memory cache in front of a [`WormholeStore`].
 ///
@@ -29,19 +44,17 @@ pub struct LazyWormholeStore {
     cache: HashMap<PeerId, (Multiaddr, bool)>,
     /// Peers whose cache entry has not yet been persisted.
     dirty: HashSet<PeerId>,
-    /// Current inflight write (resolves to the peer on success) or backoff sleep (resolves to None).
-    inflight_write: Option<BoxFut<Result<Option<PeerId>>>>,
-    /// Exponential backoff for consecutive write failures.
+    inflight_write: Option<InflightWrite>,
     write_backoff: ExponentialBackoff,
-    /// Initial load from the database. `None` once completed.
-    inflight_load: Option<BoxFut<Result<Vec<(PeerId, Multiaddr)>>>>,
+    inflight_load: Option<InflightLoad>,
+    load_backoff: ExponentialBackoff,
     loaded: bool,
 }
 
 impl LazyWormholeStore {
     pub fn new(db: Arc<dyn WormholeStore + Send + Sync>) -> Self {
         Self {
-            inflight_load: Some(Self::load_future(&db)),
+            inflight_load: Some(InflightLoad::Loading(Self::make_load_future(&db))),
             db,
             cache: HashMap::new(),
             dirty: HashSet::new(),
@@ -53,11 +66,18 @@ impl LazyWormholeStore {
                 max_elapsed_time: None,
                 ..ExponentialBackoff::default()
             },
+            load_backoff: ExponentialBackoff {
+                initial_interval: LOAD_BACKOFF_INITIAL,
+                current_interval: LOAD_BACKOFF_INITIAL,
+                max_interval: LOAD_BACKOFF_MAX,
+                max_elapsed_time: None,
+                ..ExponentialBackoff::default()
+            },
             loaded: false,
         }
     }
 
-    fn load_future(
+    fn make_load_future(
         db: &Arc<dyn WormholeStore + Send + Sync>,
     ) -> BoxFut<Result<Vec<(PeerId, Multiaddr)>>> {
         let db = Arc::clone(db);
@@ -76,42 +96,84 @@ impl LazyWormholeStore {
     }
 
     /// Drive the initial load and pending writes.
+    ///
+    /// Loops internally until no more synchronous progress can be made,
+    /// so newly created futures are always polled at least once before
+    /// returning. This avoids the need for manual `wake_by_ref()` on
+    /// internal state transitions.
     pub fn poll(&mut self, cx: &mut Context<'_>) {
-        // Drive initial load
-        if let Some(fut) = &mut self.inflight_load {
-            if let Poll::Ready(result) = fut.poll_unpin(cx) {
+        loop {
+            let load_progressed = self.poll_load(cx);
+            let write_progressed = self.poll_write(cx);
+
+            if self.inflight_write.is_none() && self.start_next_write() {
+                continue;
+            }
+
+            if !load_progressed && !write_progressed {
+                return;
+            }
+        }
+    }
+
+    /// Drive the initial load. Returns `true` if a state transition happened.
+    fn poll_load(&mut self, cx: &mut Context<'_>) -> bool {
+        let Some(inflight) = &mut self.inflight_load else {
+            return false;
+        };
+
+        match inflight {
+            InflightLoad::Loading(fut) => {
+                let Poll::Ready(result) = fut.poll_unpin(cx) else {
+                    return false;
+                };
                 match result {
                     Ok(wormholes) => {
                         tracing::debug!(count = wormholes.len(), "Loaded wormholes from store");
-
                         for (peer_id, address) in wormholes {
                             // Don't overwrite entries that arrived via the wire
                             // while the load was in flight.
                             self.cache.entry(peer_id).or_insert((address, false));
                         }
-
                         self.loaded = true;
+                        self.load_backoff.reset();
                         self.inflight_load = None;
                     }
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to load wormholes, retrying");
-                        self.inflight_load = Some(Self::load_future(&self.db));
-                        cx.waker().wake_by_ref();
+                        let delay = self.load_backoff.next_backoff().unwrap_or(LOAD_BACKOFF_MAX);
+                        self.inflight_load =
+                            Some(InflightLoad::Backoff(Box::pin(tokio::time::sleep(delay))));
                     }
                 }
+                true
+            }
+            InflightLoad::Backoff(sleep) => {
+                let Poll::Ready(()) = sleep.as_mut().poll(cx) else {
+                    return false;
+                };
+                self.inflight_load = Some(InflightLoad::Loading(Self::make_load_future(&self.db)));
+                true
             }
         }
+    }
 
-        // Drive inflight write or backoff sleep
-        if let Some(fut) = &mut self.inflight_write {
-            if let Poll::Ready(result) = fut.poll_unpin(cx) {
+    /// Drive the current write or backoff. Returns `true` if a state transition happened.
+    fn poll_write(&mut self, cx: &mut Context<'_>) -> bool {
+        let Some(inflight) = &mut self.inflight_write else {
+            return false;
+        };
+
+        match inflight {
+            InflightWrite::Store(fut) => {
+                let Poll::Ready(result) = fut.poll_unpin(cx) else {
+                    return false;
+                };
                 match result {
-                    Ok(Some(peer)) => {
+                    Ok(peer) => {
                         self.dirty.remove(&peer);
                         self.write_backoff.reset();
-                    }
-                    Ok(None) => {
-                        // Backoff sleep completed, try next dirty peer
+                        self.inflight_write = None;
                     }
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to persist wormhole, will retry");
@@ -119,30 +181,36 @@ impl LazyWormholeStore {
                             .write_backoff
                             .next_backoff()
                             .unwrap_or(WRITE_BACKOFF_MAX);
-                        self.inflight_write = Some(Box::pin(async move {
-                            tokio::time::sleep(delay).await;
-                            Ok(None)
-                        }));
-                        return;
+                        self.inflight_write =
+                            Some(InflightWrite::Backoff(Box::pin(tokio::time::sleep(delay))));
                     }
                 }
+                true
+            }
+            InflightWrite::Backoff(sleep) => {
+                let Poll::Ready(()) = sleep.as_mut().poll(cx) else {
+                    return false;
+                };
                 self.inflight_write = None;
+                true
             }
         }
+    }
 
-        // Start next write if idle and there are dirty entries
-        if self.inflight_write.is_none() {
-            if let Some(&peer) = self.dirty.iter().next() {
-                if let Some((address, active)) = self.cache.get(&peer).cloned() {
-                    let db = Arc::clone(&self.db);
-                    self.inflight_write = Some(Box::pin(async move {
-                        db.store_wormhole(peer, address, active).await?;
-                        Ok(Some(peer))
-                    }));
-                    cx.waker().wake_by_ref();
-                }
-            }
-        }
+    /// If idle and there are dirty entries, start a write. Returns `true` if one was started.
+    fn start_next_write(&mut self) -> bool {
+        let Some(&peer) = self.dirty.iter().next() else {
+            return false;
+        };
+        let Some((address, active)) = self.cache.get(&peer).cloned() else {
+            return false;
+        };
+        let db = Arc::clone(&self.db);
+        self.inflight_write = Some(InflightWrite::Store(Box::pin(async move {
+            db.store_wormhole(peer, address, active).await?;
+            Ok(peer)
+        })));
+        true
     }
 }
 

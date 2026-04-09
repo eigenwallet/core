@@ -36,6 +36,7 @@ pub fn asb<LR>(
     max_concurrent_rend_requests: usize,
     wormhole_enabled: bool,
     wormhole_max_concurrent_rend_requests: usize,
+    wormhole_num_intro_points: u8,
     trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
 ) -> Result<(
     Swarm<asb::Behaviour<LR>>,
@@ -71,6 +72,7 @@ where
             num_intro_points,
             max_concurrent_rend_requests,
             wormhole_max_concurrent_rend_requests,
+            wormhole_num_intro_points,
         )?;
 
     let behaviour = asb::Behaviour::new(

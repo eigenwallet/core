@@ -9,8 +9,10 @@ use libp2p::swarm::{
 use libp2p::{Multiaddr, PeerId};
 use swap_p2p::protocols::wormhole as proto;
 
+mod lazy_store;
+
 use super::WormholeStore;
-use super::lazy_store::LazyWormholeStore;
+use lazy_store::LazyWormholeStore;
 
 pub struct Behaviour {
     inner: proto::InnerBehaviour,
@@ -126,6 +128,9 @@ impl NetworkBehaviour for Behaviour {
                 }
             }
         }
+
+        // Drive any new dirty entries from inserts above.
+        self.store.poll(cx);
 
         Poll::Pending
     }

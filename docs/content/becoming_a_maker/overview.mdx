@@ -204,6 +204,7 @@ register_hidden_service = true
 hidden_service_num_intro_points = 5
 wormhole_enabled = true
 wormhole_max_concurrent_rend_requests = 3
+wormhole_num_intro_points = 3
 
 # ...
 ```
@@ -215,6 +216,7 @@ wormhole_max_concurrent_rend_requests = 3
 | `max_concurrent_rend_requests` | Maximum number of concurrent rendezvous circuit constructions. Controls how fast the Tor PoW priority queue is drained. Lower values create more backpressure, causing the PoW effort requirement to increase faster under load. Default: `16`. |
 | `wormhole_enabled` | Whether the asb should spawn dedicated per-peer onion services (wormholes) for peers that have committed funds to a swap. Default: `true`. |
 | `wormhole_max_concurrent_rend_requests` | Maximum concurrent rendezvous requests per wormhole. Default: `3`. |
+| `wormhole_num_intro_points` | Number of introduction points per wormhole onion service. Default: `3`. |
 
 
 ### Network Section
@@ -293,6 +295,7 @@ register_hidden_service = true
 hidden_service_num_intro_points = 5
 wormhole_enabled = true
 wormhole_max_concurrent_rend_requests = 3
+wormhole_num_intro_points = 3
 
 [data]
 dir = "/asb-data/"

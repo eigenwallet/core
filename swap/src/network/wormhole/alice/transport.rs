@@ -8,9 +8,7 @@ use libp2p_tor::{TokioTorStream, TorTransport, TorTransportError};
 use tokio::sync::mpsc;
 use tor_hsservice::config::OnionServiceConfigBuilder;
 
-use super::{ServiceHandle, ServiceRequest};
-
-const WORMHOLE_NUM_INTRO_POINTS: u8 = 3;
+use super::super::{ServiceHandle, ServiceRequest};
 
 /// Channel handles returned by [`WormholeTransport::new`] for the behaviour
 /// to send requests and receive service handles.
@@ -28,12 +26,14 @@ pub struct WormholeTransport {
     service_rx: mpsc::UnboundedReceiver<ServiceRequest>,
     handle_tx: mpsc::UnboundedSender<ServiceHandle>,
     max_concurrent_rend_requests: usize,
+    num_intro_points: u8,
 }
 
 impl WormholeTransport {
     pub fn new(
         inner: TorTransport,
         max_concurrent_rend_requests: usize,
+        num_intro_points: u8,
     ) -> (Self, WormholeChannels) {
         let (service_tx, service_rx) = mpsc::unbounded_channel();
         let (handle_tx, handle_rx) = mpsc::unbounded_channel();
@@ -43,6 +43,7 @@ impl WormholeTransport {
             service_rx,
             handle_tx,
             max_concurrent_rend_requests,
+            num_intro_points,
         };
 
         let channels = WormholeChannels {
@@ -105,7 +106,7 @@ impl Transport for WormholeTransport {
                         .parse()
                         .expect("Wormhole service nickname to be valid"),
                 )
-                .num_intro_points(WORMHOLE_NUM_INTRO_POINTS)
+                .num_intro_points(self.num_intro_points)
                 .enable_pow(true)
                 .build()
             {
@@ -120,7 +121,7 @@ impl Transport for WormholeTransport {
             let (addr, service) = match self.inner.add_onion_service_with_hsid(
                 svc_cfg,
                 request.keypair,
-                super::WORMHOLE_PORT,
+                super::super::WORMHOLE_PORT,
                 max_rend,
             ) {
                 Ok(result) => result,
