@@ -3,7 +3,7 @@ pub use bob::Bob;
 pub use sqlite::SqliteDatabase;
 
 use crate::cli::api::tauri_bindings::TauriHandle;
-use crate::protocol::{Database, State};
+use crate::protocol::State;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -95,7 +95,7 @@ pub async fn open_db(
     sqlite_path: impl AsRef<Path>,
     access_mode: AccessMode,
     tauri_handle: impl Into<Option<TauriHandle>>,
-) -> Result<Arc<dyn Database + Send + Sync>> {
+) -> Result<Arc<SqliteDatabase>> {
     if sqlite_path.as_ref().exists() {
         tracing::debug!("Using existing sqlite database.");
 

@@ -52,7 +52,10 @@
 //! ```
 
 use arti_client::{TorClient, TorClientBuilder};
-use futures::{FutureExt as _, StreamExt as _, future::{BoxFuture, Either}};
+use futures::{
+    FutureExt as _, Stream, StreamExt as _,
+    future::{BoxFuture, Either},
+};
 use libp2p::{
     Multiaddr, Transport, TransportError,
     core::transport::{ListenerId, TransportEvent},
@@ -73,9 +76,10 @@ use std::str::FromStr;
 #[cfg(feature = "listen-onion-service")]
 use tor_cell::relaycell::msg::{Connected, End, EndReason};
 #[cfg(feature = "listen-onion-service")]
+pub use tor_hscrypto::pk::HsIdKeypair;
+#[cfg(feature = "listen-onion-service")]
 use tor_hsservice::{
-    HsId, OnionServiceConfig, RunningOnionService, StreamRequest,
-    status::OnionServiceStatus,
+    HsId, OnionServiceConfig, RunningOnionService, StreamRequest, status::OnionServiceStatus,
 };
 #[cfg(feature = "listen-onion-service")]
 use tor_proto::client::stream::IncomingStreamRequest;
@@ -219,6 +223,52 @@ impl TorTransport {
         self
     }
 
+    /// Registers an already-launched onion service: applies bounded-concurrency
+    /// rendezvous handling, extracts the multiaddr, and stores the service.
+    ///
+    /// Returns the listen address and a handle to the running service.
+    #[cfg(feature = "listen-onion-service")]
+    fn register_onion_service(
+        &mut self,
+        service: Arc<RunningOnionService>,
+        request_stream: impl Stream<Item = tor_hsservice::RendRequest> + Send + 'static,
+        port: u16,
+        max_concurrent_rend_requests: usize,
+    ) -> anyhow::Result<(Multiaddr, Arc<RunningOnionService>)> {
+        // Accept rendezvous requests with bounded concurrency.
+        // `handle_rend_requests` uses `flat_map_unordered(None, ...)` which drains the
+        // PoW priority queue instantly, preventing it from ever filling up. That defeats
+        // the effort auto-tuning: the queue is always empty, so arti thinks there's no
+        // load and never increases the suggested effort.
+        // By limiting concurrency, we create backpressure that keeps the queue full under
+        // load, which causes low-effort requests to be evicted and the suggested effort
+        // to ramp up.
+        let request_stream = Box::pin(request_stream.flat_map_unordered(
+            Some(max_concurrent_rend_requests),
+            |rend_request| {
+                Box::pin(rend_request.accept())
+                    .map(|outcome| match outcome {
+                        Ok(stream_requests) => Either::Left(stream_requests),
+                        Err(e) => {
+                            tracing::warn!("Problem while accepting rendezvous request: {e:#}");
+                            Either::Right(futures::stream::empty())
+                        }
+                    })
+                    .flatten_stream()
+            },
+        ));
+
+        let multiaddr = service
+            .onion_address()
+            .ok_or_else(|| anyhow::anyhow!("Onion service has no onion address"))?
+            .to_multiaddr(port);
+
+        let handle = Arc::clone(&service);
+        self.services.push((service, request_stream));
+
+        Ok((multiaddr, handle))
+    }
+
     /// Call this function to instruct the transport to listen on a specific onion address
     /// You need to call this function **before** calling `listen_on`
     ///
@@ -234,41 +284,43 @@ impl TorTransport {
         svc_cfg: OnionServiceConfig,
         port: u16,
         max_concurrent_rend_requests: usize,
-    ) -> anyhow::Result<Multiaddr> {
+    ) -> anyhow::Result<(Multiaddr, Arc<RunningOnionService>)> {
         let (service, request_stream) = self
             .client
             .launch_onion_service(svc_cfg)?
             .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
-        // Accept rendezvous requests with bounded concurrency.
-        // `handle_rend_requests` uses `flat_map_unordered(None, ...)` which drains the
-        // PoW priority queue instantly, preventing it from ever filling up. That defeats
-        // the effort auto-tuning: the queue is always empty, so arti thinks there's no
-        // load and never increases the suggested effort.
-        // By limiting concurrency, we create backpressure that keeps the queue full under
-        // load, which causes low-effort requests to be evicted and the suggested effort
-        // to ramp up.
-        let request_stream = Box::pin(
-            request_stream.flat_map_unordered(Some(max_concurrent_rend_requests), |rend_request| {
-                Box::pin(rend_request.accept())
-                    .map(|outcome| match outcome {
-                        Ok(stream_requests) => Either::Left(stream_requests),
-                        Err(e) => {
-                            tracing::warn!("Problem while accepting rendezvous request: {e:#}");
-                            Either::Right(futures::stream::empty())
-                        }
-                    })
-                    .flatten_stream()
-            }),
-        );
 
-        let multiaddr = service
-            .onion_address()
-            .ok_or_else(|| anyhow::anyhow!("Onion service has no onion address"))?
-            .to_multiaddr(port);
+        self.register_onion_service(service, request_stream, port, max_concurrent_rend_requests)
+    }
 
-        self.services.push((service, request_stream));
+    /// Like [`add_onion_service`](Self::add_onion_service), but uses a pre-generated
+    /// [`HsIdKeypair`] so the .onion address is deterministic.
+    ///
+    /// Returns the listen address and a handle to the running service (for status queries).
+    #[cfg(feature = "listen-onion-service")]
+    pub fn add_onion_service_with_hsid(
+        &mut self,
+        svc_cfg: OnionServiceConfig,
+        id_keypair: HsIdKeypair,
+        port: u16,
+        max_concurrent_rend_requests: usize,
+    ) -> anyhow::Result<(Multiaddr, Arc<RunningOnionService>)> {
+        // Try launching with the stored key first (works on restarts).
+        // If no key is stored yet, insert it and launch.
+        let (service, request_stream): (_, Pin<Box<dyn Stream<Item = _> + Send>>) =
+            match self.client.launch_onion_service(svc_cfg.clone()) {
+                Ok(Some((svc, stream))) => (svc, Box::pin(stream)),
+                Ok(None) => anyhow::bail!("Onion service is disabled in config"),
+                Err(_) => {
+                    let (svc, stream) = self
+                        .client
+                        .launch_onion_service_with_hsid(svc_cfg, id_keypair)?
+                        .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
+                    (svc, Box::pin(stream))
+                }
+            };
 
-        Ok(multiaddr)
+        self.register_onion_service(service, request_stream, port, max_concurrent_rend_requests)
     }
 }
 

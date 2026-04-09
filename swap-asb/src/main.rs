@@ -228,7 +228,7 @@ pub async fn main() -> Result<()> {
             bootstrap_tor_client(tor_client.clone(), None).await?;
             let tor_client = tor_client.into();
 
-            let (mut swarm, onion_addresses) = swarm::asb(
+            let (mut swarm, onion_addresses, onion_service_handle) = swarm::asb(
                 &seed,
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
@@ -241,6 +241,10 @@ pub async fn main() -> Result<()> {
                 config.tor.register_hidden_service,
                 config.tor.hidden_service_num_intro_points,
                 config.tor.max_concurrent_rend_requests,
+                config.tor.wormhole_enabled,
+                config.tor.wormhole_max_concurrent_rend_requests,
+                config.tor.wormhole_num_intro_points,
+                db.clone(),
             )?;
 
             for listen in config.network.listen.clone() {
@@ -313,6 +317,7 @@ pub async fn main() -> Result<()> {
                 config.maker.external_bitcoin_redeem_address,
                 tip_config,
                 config.maker.refund_policy,
+                onion_service_handle,
             )
             .unwrap();
 
@@ -353,7 +358,8 @@ pub async fn main() -> Result<()> {
             event_loop.run().await;
         }
         Command::History { only_unfinished } => {
-            let db = open_db(db_file, AccessMode::ReadOnly, None).await?;
+            let db: Arc<dyn Database + Send + Sync> =
+                open_db(db_file, AccessMode::ReadOnly, None).await?;
             let mut table = Table::new();
 
             table.set_header(vec![
@@ -369,7 +375,7 @@ pub async fn main() -> Result<()> {
             ]);
 
             let all_swaps = db.all().await?;
-            for (swap_id, state) in all_swaps {
+            for (_, swap_id, state) in all_swaps {
                 let state: AliceState = state
                     .try_into()
                     .expect("Alice database only has Alice states");

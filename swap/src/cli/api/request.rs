@@ -909,7 +909,7 @@ pub async fn get_swap_infos_all(context: Arc<Context>) -> Result<Vec<GetSwapInfo
     let swap_ids = db.all().await?;
     let mut swap_infos = Vec::new();
 
-    for (swap_id, _) in swap_ids {
+    for (_, swap_id, _) in swap_ids {
         match get_swap_info(GetSwapInfoArgs { swap_id }, context.clone()).await {
             Ok(swap_info) => swap_infos.push(swap_info),
             Err(error) => {
@@ -1357,7 +1357,7 @@ pub async fn get_history(context: Arc<Context>) -> Result<GetHistoryResponse> {
     let db = context.try_get_db().await?;
     let swaps = db.all().await?;
     let mut vec: Vec<GetHistoryEntry> = Vec::new();
-    for (swap_id, state) in swaps {
+    for (_, swap_id, state) in swaps {
         let state: BobState = state.try_into()?;
         vec.push(GetHistoryEntry {
             swap_id,

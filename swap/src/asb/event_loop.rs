@@ -35,9 +35,10 @@ use swap_env::env;
 use swap_feed::LatestRate;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
 use tokio::sync::{mpsc, oneshot};
+use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
-pub use service::{EventLoopRequest, EventLoopService};
+pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -133,6 +134,9 @@ where
     /// Channel for service requests
     service_requests: mpsc::UnboundedReceiver<EventLoopRequest>,
 
+    /// Handle to the primary onion service (if registered)
+    onion_service_handle: Option<Arc<RunningOnionService>>,
+
     /// Temporarily stores transfer proof requests for peers that are currently disconnected.
     ///
     /// When a transfer proof cannot be sent because there's no connection to the peer:
@@ -176,6 +180,7 @@ where
         external_redeem_address: Option<bitcoin::Address>,
         developer_tip: TipConfig,
         refund_policy: RefundPolicy,
+        onion_service_handle: Option<Arc<RunningOnionService>>,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -207,6 +212,7 @@ where
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
             service_requests,
+            onion_service_handle,
             buffered_transfer_proofs: Default::default(),
             inflight_transfer_proofs: Default::default(),
         };
@@ -244,18 +250,10 @@ where
 
         let unfinished_swaps = swaps
             .into_iter()
-            .filter(|(_swap_id, state)| !state.swap_finished())
-            .collect::<Vec<(Uuid, State)>>();
+            .filter(|(_, _, state)| !state.swap_finished())
+            .collect::<Vec<_>>();
 
-        for (swap_id, state) in unfinished_swaps {
-            let peer_id = match self.db.get_peer_id(swap_id).await {
-                Ok(peer_id) => peer_id,
-                Err(_) => {
-                    tracing::warn!(%swap_id, "Resuming swap skipped because no peer-id found for swap in database");
-                    continue;
-                }
-            };
-
+        for (peer_id, swap_id, state) in unfinished_swaps {
             let handle = self.new_handle(peer_id, swap_id);
 
             let swap = Swap {
@@ -590,6 +588,24 @@ where
                             let result = self.handle_grant_mercy(swap_id).await;
                             let _ = respond_to.send(result);
                         }
+                        EventLoopRequest::GetWormholeServices { respond_to } => {
+                            let services = self.swarm.behaviour().wormhole
+                                .as_ref()
+                                .map(|w| w.services())
+                                .unwrap_or_default();
+                            let _ = respond_to.send(services);
+                        }
+                        EventLoopRequest::GetOnionServiceStatus { respond_to } => {
+                            let info = self.onion_service_handle.as_ref().map(|svc| {
+                                let status = svc.status();
+                                OnionServiceStatusInfo {
+                                    state: format!("{:?}", status.state()),
+                                    reachable: status.state().is_fully_reachable(),
+                                    problem: status.current_problem().map(|p| format!("{p:?}")),
+                                }
+                            });
+                            let _ = respond_to.send(info);
+                        }
                     }
                 }
             }
@@ -632,7 +648,7 @@ where
                 let all_swaps = db.all().await?;
                 let alice_states: Vec<_> = all_swaps
                     .into_iter()
-                    .filter_map(|(_, state)| match state {
+                    .filter_map(|(_, _, state)| match state {
                         State::Alice(state) => Some(state),
                         _ => None,
                     })
@@ -1173,6 +1189,14 @@ async fn capture_wallet_snapshot(
 mod service {
     use super::*;
 
+    /// Status snapshot of the primary onion service.
+    #[derive(Debug)]
+    pub struct OnionServiceStatusInfo {
+        pub state: String,
+        pub reachable: bool,
+        pub problem: Option<String>,
+    }
+
     /// Request types for the EventLoop service with typed responders
     #[derive(Debug)]
     pub enum EventLoopRequest {
@@ -1195,6 +1219,12 @@ mod service {
         GrantMercy {
             swap_id: Uuid,
             respond_to: oneshot::Sender<Result<(), anyhow::Error>>,
+        },
+        GetWormholeServices {
+            respond_to: oneshot::Sender<Vec<crate::network::wormhole::alice::WormholeServiceInfo>>,
+        },
+        GetOnionServiceStatus {
+            respond_to: oneshot::Sender<Option<OnionServiceStatusInfo>>,
         },
     }
 
@@ -1257,6 +1287,30 @@ mod service {
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+        }
+
+        /// Get the list of active wormhole services
+        pub async fn get_wormhole_services(
+            &self,
+        ) -> anyhow::Result<Vec<crate::network::wormhole::alice::WormholeServiceInfo>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetWormholeServices { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the status of the primary onion service
+        pub async fn get_onion_service_status(
+            &self,
+        ) -> anyhow::Result<Option<OnionServiceStatusInfo>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetOnionServiceStatus { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
         }
 
         /// Grant mercy for a swap in BtcWithholdConfirmed state

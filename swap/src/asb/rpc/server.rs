@@ -9,13 +9,14 @@ use jsonrpsee::types::error::ErrorCode;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
 use std::sync::Arc;
-use swap_core::monero::PICONERO_OFFSET;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
+    OnionServiceStatusResponse, PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse,
+    RendezvousConnectionStatus, RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
+    WormholeServiceItem, WormholeServicesResponse,
 };
+use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
 use uuid::Uuid;
 
@@ -169,7 +170,7 @@ impl AsbApiServer for RpcImpl {
             .into_json_rpc_result()?;
         let mut results = Vec::with_capacity(swaps.len());
 
-        for (swap_id, _) in swaps {
+        for (peer_id, swap_id, _) in swaps {
             let (current, starting) = self
                 .db
                 .get_current_and_starting_state(swap_id)
@@ -182,7 +183,10 @@ impl AsbApiServer for RpcImpl {
                     State::Alice(current_alice),
                     State::Alice(AliceState::BtcLockTransactionSeen { state3 }),
                 ) => (current_alice, state3),
-                (State::Alice(AliceState::SafelyAborted), State::Alice(AliceState::SafelyAborted)) => {
+                (
+                    State::Alice(AliceState::SafelyAborted),
+                    State::Alice(AliceState::SafelyAborted),
+                ) => {
                     continue;
                 }
                 (State::Alice(current_alice), State::Alice(starting_alice)) => {
@@ -202,7 +206,6 @@ impl AsbApiServer for RpcImpl {
                 .get_swap_start_date(swap_id)
                 .await
                 .into_json_rpc_result()?;
-            let peer_id = self.db.get_peer_id(swap_id).await.into_json_rpc_result()?;
 
             let exchange_rate =
                 calculate_exchange_rate(state3.btc, state3.xmr).into_json_rpc_result()?;
@@ -278,6 +281,41 @@ impl AsbApiServer for RpcImpl {
             .await
             .into_json_rpc_result()?;
         Ok(())
+    }
+
+    async fn wormhole_services(&self) -> Result<WormholeServicesResponse, ErrorObjectOwned> {
+        let services = self
+            .event_loop_service
+            .get_wormhole_services()
+            .await
+            .into_json_rpc_result()?;
+
+        let services = services
+            .into_iter()
+            .map(|info| WormholeServiceItem {
+                peer_id: info.peer_id.to_string(),
+                address: info.address.to_string(),
+                state: info.state,
+                reachable: info.reachable,
+                problem: info.problem,
+            })
+            .collect();
+
+        Ok(WormholeServicesResponse { services })
+    }
+
+    async fn onion_service_status(&self) -> Result<OnionServiceStatusResponse, ErrorObjectOwned> {
+        let info = self
+            .event_loop_service
+            .get_onion_service_status()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(OnionServiceStatusResponse {
+            state: info.as_ref().map(|i| i.state.clone()),
+            reachable: info.as_ref().is_some_and(|i| i.reachable),
+            problem: info.and_then(|i| i.problem),
+        })
     }
 
     async fn withdraw_btc(

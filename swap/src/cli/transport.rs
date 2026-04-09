@@ -5,8 +5,8 @@ use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::{Boxed, OptionalTransport};
-use libp2p::{dns, tcp, websocket};
 use libp2p::{PeerId, Transport, identity};
+use libp2p::{dns, tcp, websocket};
 use libp2p_tor::{AddressConversion, TorTransport};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -42,9 +42,10 @@ pub fn new(
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
     let maybe_tor_transport: OptionalTransport<TorTransport> = match maybe_tor_client {
-        Some(client) => {
-            OptionalTransport::some(TorTransport::from_client(client, AddressConversion::IpAndDns))
-        }
+        Some(client) => OptionalTransport::some(TorTransport::from_client(
+            client,
+            AddressConversion::IpAndDns,
+        )),
         None => OptionalTransport::none(),
     };
     let plain_transport = maybe_tor_transport.or_transport(tcp_with_dns);

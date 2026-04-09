@@ -20,7 +20,9 @@ libp2p = { workspace = true, features = ["tokio", "tcp", "tls"] }
 data-encoding = { workspace = true }
 safelog = { workspace = true }
 tor-cell = { workspace = true, optional = true }
+tor-hscrypto = { workspace = true, optional = true }
 tor-hsservice = { workspace = true, optional = true }
+tor-llcrypto = { workspace = true, optional = true }
 tor-proto = { workspace = true, optional = true }
 tor-rtcompat = { workspace = true, features = ["tokio", "rustls"] }
 tracing = { workspace = true }
@@ -34,7 +36,10 @@ tracing-subscriber = { workspace = true }
 [features]
 listen-onion-service = [
   "arti-client/onion-service-service",
+  "arti-client/experimental-api",
+  "dep:tor-hscrypto",
   "dep:tor-hsservice",
+  "dep:tor-llcrypto",
   "dep:tor-cell",
   "dep:tor-proto",
 ]

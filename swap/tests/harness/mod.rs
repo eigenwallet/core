@@ -341,7 +341,7 @@ async fn start_alice(
     let latest_rate = FixedRate::default();
     let resume_only = false;
 
-    let (mut swarm, _) = swarm::asb(
+    let (mut swarm, _, _) = swarm::asb(
         seed,
         min_buy,
         max_buy,
@@ -354,6 +354,10 @@ async fn start_alice(
         false,
         1,
         16,
+        false,
+        3,
+        3,
+        db.clone(),
     )
     .unwrap();
     swarm.listen_on(listen_address).unwrap();
@@ -370,6 +374,7 @@ async fn start_alice(
         None,
         developer_tip,
         refund_policy,
+        None,
     )
     .unwrap();
 
@@ -671,7 +676,7 @@ impl BobParams {
 
     pub async fn new_eventloop(
         &self,
-        db: Arc<dyn Database + Send + Sync>,
+        db: Arc<SqliteDatabase>,
     ) -> Result<(cli::EventLoop, cli::EventLoopHandle)> {
         let identity = self.seed.derive_libp2p_identity();
 
@@ -681,6 +686,7 @@ impl BobParams {
             identity.clone(),
             XmrBtcNamespace::Testnet,
             Vec::new(),
+            db.clone(),
         );
         let mut swarm = swarm::cli(identity.clone(), None, behaviour).await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());

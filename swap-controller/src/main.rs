@@ -164,6 +164,42 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
             client.refresh_bitcoin_wallet().await?;
             println!("Bitcoin wallet refreshed");
         }
+        Cmd::WormholeServices => {
+            println!(
+                "Wormholes are dedicated onion services spawned for peers that have committed funds to a swap.\n"
+            );
+            let response = client.wormhole_services().await?;
+            if response.services.is_empty() {
+                println!("No active wormhole services");
+            } else {
+                for (i, svc) in response.services.iter().enumerate() {
+                    if i > 0 {
+                        println!();
+                    }
+                    let state = svc.state.as_deref().unwrap_or("?");
+                    println!("Peer:      {}", svc.peer_id);
+                    println!("Address:   {}", svc.address);
+                    println!("State:     {state}");
+                    println!("Reachable: {}", svc.reachable);
+                    if let Some(problem) = &svc.problem {
+                        println!("Problem:   {problem}");
+                    }
+                }
+            }
+        }
+        Cmd::OnionServiceStatus => {
+            let response = client.onion_service_status().await?;
+            match response.state {
+                Some(state) => {
+                    println!("State:     {state}");
+                    println!("Reachable: {}", response.reachable);
+                    if let Some(problem) = response.problem {
+                        println!("Problem:   {problem}");
+                    }
+                }
+                None => println!("No primary onion service registered"),
+            }
+        }
     }
     Ok(())
 }

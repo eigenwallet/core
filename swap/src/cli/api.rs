@@ -834,6 +834,7 @@ mod builder {
                     seed.derive_libp2p_identity(),
                     namespace,
                     rendezvous_peer_ids,
+                    db.clone(),
                 );
 
                 let mut swarm = crate::network::swarm::cli(

@@ -14,6 +14,7 @@ use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
+use tor_hsservice::RunningOnionService;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 // We keep connections open for 2 minutes
@@ -33,7 +34,15 @@ pub fn asb<LR>(
     register_hidden_service: bool,
     num_intro_points: u8,
     max_concurrent_rend_requests: usize,
-) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
+    wormhole_enabled: bool,
+    wormhole_max_concurrent_rend_requests: usize,
+    wormhole_num_intro_points: u8,
+    trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
+) -> Result<(
+    Swarm<asb::Behaviour<LR>>,
+    Vec<Multiaddr>,
+    Option<Arc<RunningOnionService>>,
+)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
 {
@@ -55,6 +64,17 @@ where
         // A single peer only needs one connection; allow 4 for brief overlap during reconnects
         .with_max_established_per_peer(Some(4));
 
+    let (transport, onion_addresses, wormhole_channels, onion_service_handle) =
+        asb::transport::new(
+            &identity,
+            maybe_tor_client,
+            register_hidden_service,
+            num_intro_points,
+            max_concurrent_rend_requests,
+            wormhole_max_concurrent_rend_requests,
+            wormhole_num_intro_points,
+        )?;
+
     let behaviour = asb::Behaviour::new(
         min_buy,
         max_buy,
@@ -64,15 +84,14 @@ where
         (identity.clone(), namespace),
         rendezvous_nodes,
         connection_limits,
+        trust_provider,
+        // Passing None disables the wormhole behaviour entirely.
+        if wormhole_enabled {
+            wormhole_channels
+        } else {
+            None
+        },
     );
-
-    let (transport, onion_addresses) = asb::transport::new(
-        &identity,
-        maybe_tor_client,
-        register_hidden_service,
-        num_intro_points,
-        max_concurrent_rend_requests,
-    )?;
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
@@ -88,7 +107,7 @@ where
         swarm.add_peer_address(peer_id, addr.clone());
     }
 
-    Ok((swarm, onion_addresses))
+    Ok((swarm, onion_addresses, onion_service_handle))
 }
 
 pub async fn cli<T>(

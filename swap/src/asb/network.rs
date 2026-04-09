@@ -20,15 +20,23 @@ pub mod transport {
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
     use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp, websocket};
     use libp2p_tor::AddressConversion;
-    use tor_hsservice::config::TokenBucketConfig;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
+
+    use crate::network::wormhole::alice::transport::{WormholeChannels, WormholeTransport};
+    use tor_hsservice::RunningOnionService;
 
     use super::*;
 
     static ASB_ONION_SERVICE_NICKNAME: &str = "asb";
     static ASB_ONION_SERVICE_PORT: u16 = 9939;
 
-    type OnionTransportWithAddresses = (Boxed<(PeerId, StreamMuxerBox)>, Vec<Multiaddr>);
+    /// (transport, onion listen addresses, wormhole channels, primary onion service handle)
+    type TransportResult = (
+        Boxed<(PeerId, StreamMuxerBox)>,
+        Vec<Multiaddr>,
+        Option<WormholeChannels>,
+        Option<Arc<RunningOnionService>>,
+    );
 
     /// Creates the libp2p transport for the ASB.
     ///
@@ -43,7 +51,9 @@ pub mod transport {
         register_hidden_service: bool,
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
-    ) -> Result<OnionTransportWithAddresses> {
+        wormhole_max_concurrent_rend_requests: usize,
+        wormhole_num_intro_points: u8,
+    ) -> Result<TransportResult> {
         // Streams are multiplexed via yamux, we don't really need more than one.
         const MAX_STREAMS_PER_CIRCUIT: u32 = 4;
         // This does not affect the PoW directly (only very slightly) but only serves as a protection
@@ -52,47 +62,61 @@ pub mod transport {
         // `MAX_CONCURRENT_REND_REQUESTS` is much more important in terms of DOS protection.
         const POW_QUEUE_DEPTH: usize = 2048;
 
-        let (maybe_tor_transport, onion_addresses) = if let Some(tor_client) = maybe_tor_client {
-            let mut tor_transport =
-                libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
+        let (maybe_tor_transport, onion_addresses, wormhole_channels, onion_service_handle) =
+            if let Some(tor_client) = maybe_tor_client {
+                let mut tor_transport =
+                    libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
 
-            let addresses = if register_hidden_service {
-                let onion_service_config = OnionServiceConfigBuilder::default()
-                    .nickname(
-                        ASB_ONION_SERVICE_NICKNAME
-                            .parse()
-                            .expect("Static nickname to be valid"),
-                    )
-                    .num_intro_points(num_intro_points)
-                    // DOS mitigations
-                    .max_concurrent_streams_per_circuit(MAX_STREAMS_PER_CIRCUIT)
-                    .pow_rend_queue_depth(POW_QUEUE_DEPTH)
-                    .enable_pow(true)
-                    .build()
-                    .expect("We specified a valid nickname");
+                let (addresses, onion_handle) = if register_hidden_service {
+                    let onion_service_config = OnionServiceConfigBuilder::default()
+                        .nickname(
+                            ASB_ONION_SERVICE_NICKNAME
+                                .parse()
+                                .expect("Static nickname to be valid"),
+                        )
+                        .num_intro_points(num_intro_points)
+                        // DOS mitigations
+                        .max_concurrent_streams_per_circuit(MAX_STREAMS_PER_CIRCUIT)
+                        .pow_rend_queue_depth(POW_QUEUE_DEPTH)
+                        .enable_pow(true)
+                        .build()
+                        .expect("We specified a valid nickname");
 
-                match tor_transport.add_onion_service(onion_service_config, ASB_ONION_SERVICE_PORT, max_concurrent_rend_requests)
-                {
-                    Ok(addr) => {
-                        tracing::debug!(
-                            %addr,
-                            "Setting up onion service for libp2p to listen on"
-                        );
-                        vec![addr]
+                    match tor_transport.add_onion_service(
+                        onion_service_config,
+                        ASB_ONION_SERVICE_PORT,
+                        max_concurrent_rend_requests,
+                    ) {
+                        Ok((addr, handle)) => {
+                            tracing::debug!(
+                                %addr,
+                                "Setting up onion service for libp2p to listen on"
+                            );
+                            (vec![addr], Some(handle))
+                        }
+                        Err(err) => {
+                            tracing::warn!(error=%err, "Failed to listen on onion address");
+                            (vec![], None)
+                        }
                     }
-                    Err(err) => {
-                        tracing::warn!(error=%err, "Failed to listen on onion address");
-                        vec![]
-                    }
-                }
+                } else {
+                    (vec![], None)
+                };
+
+                let (wrapped, channels) = WormholeTransport::new(
+                    tor_transport,
+                    wormhole_max_concurrent_rend_requests,
+                    wormhole_num_intro_points,
+                );
+                (
+                    OptionalTransport::some(wrapped),
+                    addresses,
+                    Some(channels),
+                    onion_handle,
+                )
             } else {
-                vec![]
+                (OptionalTransport::none(), vec![], None, None)
             };
-
-            (OptionalTransport::some(tor_transport), addresses)
-        } else {
-            (OptionalTransport::none(), vec![])
-        };
 
         // Build the websocket transport. WsConfig strips the /ws suffix and
         // delegates to its inner TCP+DNS transport for the actual connection.
@@ -112,13 +136,21 @@ pub mod transport {
         Ok((
             authenticate_and_multiplex(transport, identity)?,
             onion_addresses,
+            wormhole_channels,
+            onion_service_handle,
         ))
     }
 }
 
 pub mod behaviour {
+    use std::sync::Arc;
+
     use libp2p::{connection_limits, identify, identity, ping, swarm::behaviour::toggle::Toggle};
     use swap_p2p::{out_event::alice::OutEvent, patches};
+
+    use crate::network::wormhole;
+    use crate::network::wormhole::PeerTrust;
+    use crate::network::wormhole::alice::transport::WormholeChannels;
 
     use super::*;
 
@@ -138,6 +170,7 @@ pub mod behaviour {
         pub cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::Behaviour,
         pub encrypted_signature: encrypted_signature::Behaviour,
         pub identify: patches::identify::Behaviour,
+        pub(crate) wormhole: Toggle<wormhole::alice::Behaviour>,
 
         /// Ping behaviour that ensures that the underlying network connection
         /// is still alive. If the ping fails a connection close event
@@ -158,6 +191,8 @@ pub mod behaviour {
             identify_params: (identity::Keypair, XmrBtcNamespace),
             rendezvous_nodes: Vec<PeerId>,
             connection_limits: connection_limits::ConnectionLimits,
+            trust_provider: Arc<dyn PeerTrust + Send + Sync>,
+            wormhole_channels: Option<WormholeChannels>,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -167,6 +202,16 @@ pub mod behaviour {
                 .with_agent_version(agent_version);
 
             let pingConfig = ping::Config::new().with_timeout(Duration::from_secs(60));
+
+            let wormhole = wormhole_channels.map(|channels| {
+                wormhole::alice::Behaviour::new(
+                    &identity,
+                    trust_provider,
+                    channels.service_tx,
+                    channels.handle_rx,
+                    wormhole::alice::Config::default(),
+                )
+            });
 
             let behaviour = if rendezvous_nodes.is_empty() {
                 None
@@ -194,6 +239,7 @@ pub mod behaviour {
                 cooperative_xmr_redeem: cooperative_xmr_redeem_after_punish::alice(),
                 ping: ping::Behaviour::new(pingConfig),
                 identify: patches::identify::Behaviour::new(identifyConfig),
+                wormhole: Toggle::from(wormhole),
             }
         }
     }
