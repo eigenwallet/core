@@ -356,6 +356,7 @@ async fn start_alice(
         16,
         false,
         3,
+        3,
         db.clone(),
     )
     .unwrap();
@@ -675,7 +676,7 @@ impl BobParams {
 
     pub async fn new_eventloop(
         &self,
-        db: Arc<dyn Database + Send + Sync>,
+        db: Arc<SqliteDatabase>,
     ) -> Result<(cli::EventLoop, cli::EventLoopHandle)> {
         let identity = self.seed.derive_libp2p_identity();
 
@@ -685,6 +686,7 @@ impl BobParams {
             identity.clone(),
             XmrBtcNamespace::Testnet,
             Vec::new(),
+            db.clone(),
         );
         let mut swarm = swarm::cli(identity.clone(), None, behaviour).await?;
         swarm.add_peer_address(self.alice_peer_id, self.alice_address.clone());
