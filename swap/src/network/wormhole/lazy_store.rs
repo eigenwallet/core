@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(store.get(&peer), Some(&wire_addr));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn failed_write_retries_until_success() {
         use std::sync::atomic::{AtomicUsize, Ordering};
 

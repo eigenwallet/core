@@ -163,7 +163,8 @@ async fn create_transport_with_onion(
         .unwrap();
 
     // Add onion service and get the address
-    let onion_address = tor_transport.add_onion_service(onion_service_config, onion_port, 16)?;
+    let (onion_address, _onion_service) =
+        tor_transport.add_onion_service(onion_service_config, onion_port, 16)?;
 
     // Build the websocket transport (WsConfig must come first so Tor/TCP
     // don't eagerly claim addresses with a trailing /ws suffix).

@@ -23,18 +23,19 @@ pub mod transport {
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
     use crate::network::wormhole::transport::{WormholeChannels, WormholeTransport};
+    use tor_hsservice::RunningOnionService;
 
     use super::*;
 
     static ASB_ONION_SERVICE_NICKNAME: &str = "asb";
     static ASB_ONION_SERVICE_PORT: u16 = 9939;
 
-    /// (transport, onion listen addresses, channels for the behaviour to
-    /// communicate with the wormhole transport — `None` when Tor is unavailable)
-    type TransportWithAddressesAndChannels = (
+    /// (transport, onion listen addresses, wormhole channels, primary onion service handle)
+    type TransportResult = (
         Boxed<(PeerId, StreamMuxerBox)>,
         Vec<Multiaddr>,
         Option<WormholeChannels>,
+        Option<Arc<RunningOnionService>>,
     );
 
     /// Creates the libp2p transport for the ASB.
@@ -51,7 +52,7 @@ pub mod transport {
         num_intro_points: u8,
         max_concurrent_rend_requests: usize,
         wormhole_max_concurrent_rend_requests: usize,
-    ) -> Result<TransportWithAddressesAndChannels> {
+    ) -> Result<TransportResult> {
         // Streams are multiplexed via yamux, we don't really need more than one.
         const MAX_STREAMS_PER_CIRCUIT: u32 = 4;
         // This does not affect the PoW directly (only very slightly) but only serves as a protection
@@ -60,12 +61,12 @@ pub mod transport {
         // `MAX_CONCURRENT_REND_REQUESTS` is much more important in terms of DOS protection.
         const POW_QUEUE_DEPTH: usize = 2048;
 
-        let (maybe_tor_transport, onion_addresses, wormhole_channels) =
+        let (maybe_tor_transport, onion_addresses, wormhole_channels, onion_service_handle) =
             if let Some(tor_client) = maybe_tor_client {
                 let mut tor_transport =
                     libp2p_tor::TorTransport::from_client(tor_client, AddressConversion::DnsOnly);
 
-                let addresses = if register_hidden_service {
+                let (addresses, onion_handle) = if register_hidden_service {
                     let onion_service_config = OnionServiceConfigBuilder::default()
                         .nickname(
                             ASB_ONION_SERVICE_NICKNAME
@@ -85,27 +86,32 @@ pub mod transport {
                         ASB_ONION_SERVICE_PORT,
                         max_concurrent_rend_requests,
                     ) {
-                        Ok(addr) => {
+                        Ok((addr, handle)) => {
                             tracing::debug!(
                                 %addr,
                                 "Setting up onion service for libp2p to listen on"
                             );
-                            vec![addr]
+                            (vec![addr], Some(handle))
                         }
                         Err(err) => {
                             tracing::warn!(error=%err, "Failed to listen on onion address");
-                            vec![]
+                            (vec![], None)
                         }
                     }
                 } else {
-                    vec![]
+                    (vec![], None)
                 };
 
                 let (wrapped, channels) =
                     WormholeTransport::new(tor_transport, wormhole_max_concurrent_rend_requests);
-                (OptionalTransport::some(wrapped), addresses, Some(channels))
+                (
+                    OptionalTransport::some(wrapped),
+                    addresses,
+                    Some(channels),
+                    onion_handle,
+                )
             } else {
-                (OptionalTransport::none(), vec![], None)
+                (OptionalTransport::none(), vec![], None, None)
             };
 
         // Build the websocket transport. WsConfig strips the /ws suffix and
@@ -127,6 +133,7 @@ pub mod transport {
             authenticate_and_multiplex(transport, identity)?,
             onion_addresses,
             wormhole_channels,
+            onion_service_handle,
         ))
     }
 }

@@ -62,4 +62,6 @@ pub enum Cmd {
     RefreshBitcoinWallet,
     /// List active wormhole onion services
     WormholeServices,
+    /// Show status of the primary onion service
+    OnionServiceStatus,
 }

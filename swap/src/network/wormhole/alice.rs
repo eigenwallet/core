@@ -55,7 +55,9 @@ struct SentState {
 pub struct WormholeServiceInfo {
     pub peer_id: PeerId,
     pub address: Multiaddr,
-    pub status: Option<String>,
+    pub state: Option<String>,
+    pub reachable: bool,
+    pub problem: Option<String>,
 }
 
 pub struct Behaviour {
@@ -160,14 +162,16 @@ impl Behaviour {
         self.authorized_peers
             .iter()
             .map(|(addr, peer)| {
-                let status = self
-                    .service_handles
-                    .get(peer)
-                    .map(|svc| format!("{:?}", svc.status().state()));
+                let maybe_status = self.service_handles.get(peer).map(|svc| svc.status());
                 WormholeServiceInfo {
                     peer_id: *peer,
                     address: addr.clone(),
-                    status,
+                    state: maybe_status.as_ref().map(|s| format!("{:?}", s.state())),
+                    reachable: maybe_status
+                        .as_ref()
+                        .is_some_and(|s| s.state().is_fully_reachable()),
+                    problem: maybe_status
+                        .and_then(|s| s.current_problem().map(|p| format!("{p:?}"))),
                 }
             })
             .collect()

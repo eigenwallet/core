@@ -14,6 +14,7 @@ use std::time::Duration;
 use swap_core::bitcoin;
 use swap_env::env;
 use swap_p2p::libp2p_ext::MultiAddrExt;
+use tor_hsservice::RunningOnionService;
 use tor_rtcompat::tokio::TokioRustlsRuntime;
 
 // We keep connections open for 2 minutes
@@ -36,7 +37,11 @@ pub fn asb<LR>(
     wormhole_enabled: bool,
     wormhole_max_concurrent_rend_requests: usize,
     trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
-) -> Result<(Swarm<asb::Behaviour<LR>>, Vec<Multiaddr>)>
+) -> Result<(
+    Swarm<asb::Behaviour<LR>>,
+    Vec<Multiaddr>,
+    Option<Arc<RunningOnionService>>,
+)>
 where
     LR: LatestRate + Send + 'static + Debug + Clone,
 {
@@ -58,14 +63,15 @@ where
         // A single peer only needs one connection; allow 4 for brief overlap during reconnects
         .with_max_established_per_peer(Some(4));
 
-    let (transport, onion_addresses, wormhole_channels) = asb::transport::new(
-        &identity,
-        maybe_tor_client,
-        register_hidden_service,
-        num_intro_points,
-        max_concurrent_rend_requests,
-        wormhole_max_concurrent_rend_requests,
-    )?;
+    let (transport, onion_addresses, wormhole_channels, onion_service_handle) =
+        asb::transport::new(
+            &identity,
+            maybe_tor_client,
+            register_hidden_service,
+            num_intro_points,
+            max_concurrent_rend_requests,
+            wormhole_max_concurrent_rend_requests,
+        )?;
 
     let behaviour = asb::Behaviour::new(
         min_buy,
@@ -99,7 +105,7 @@ where
         swarm.add_peer_address(peer_id, addr.clone());
     }
 
-    Ok((swarm, onion_addresses))
+    Ok((swarm, onion_addresses, onion_service_handle))
 }
 
 pub async fn cli<T>(

@@ -100,12 +100,25 @@ pub struct MoneroSeedResponse {
 pub struct WormholeServiceItem {
     pub peer_id: String,
     pub address: String,
-    pub status: Option<String>,
+    pub state: Option<String>,
+    pub reachable: bool,
+    pub problem: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WormholeServicesResponse {
     pub services: Vec<WormholeServiceItem>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OnionServiceStatusResponse {
+    /// The high-level state (e.g. "Running", "Bootstrapping", "Broken").
+    /// `None` if no onion service is registered.
+    pub state: Option<String>,
+    /// Whether the service is believed to be fully reachable.
+    pub reachable: bool,
+    /// Description of the current problem, if any.
+    pub problem: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -145,6 +158,8 @@ pub trait AsbApi {
     async fn grant_mercy(&self, swap_id: Uuid) -> Result<(), ErrorObjectOwned>;
     #[method(name = "wormhole_services")]
     async fn wormhole_services(&self) -> Result<WormholeServicesResponse, ErrorObjectOwned>;
+    #[method(name = "onion_service_status")]
+    async fn onion_service_status(&self) -> Result<OnionServiceStatusResponse, ErrorObjectOwned>;
     #[method(name = "withdraw_btc")]
     async fn withdraw_btc(
         &self,

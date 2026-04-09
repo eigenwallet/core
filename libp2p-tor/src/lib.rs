@@ -284,20 +284,13 @@ impl TorTransport {
         svc_cfg: OnionServiceConfig,
         port: u16,
         max_concurrent_rend_requests: usize,
-    ) -> anyhow::Result<Multiaddr> {
+    ) -> anyhow::Result<(Multiaddr, Arc<RunningOnionService>)> {
         let (service, request_stream) = self
             .client
             .launch_onion_service(svc_cfg)?
             .ok_or_else(|| anyhow::anyhow!("Onion service is disabled in config"))?;
 
-        let (multiaddr, _handle) = self.register_onion_service(
-            service,
-            request_stream,
-            port,
-            max_concurrent_rend_requests,
-        )?;
-
-        Ok(multiaddr)
+        self.register_onion_service(service, request_stream, port, max_concurrent_rend_requests)
     }
 
     /// Like [`add_onion_service`](Self::add_onion_service), but uses a pre-generated

@@ -12,9 +12,9 @@ use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse, RendezvousConnectionStatus,
-    RendezvousRegistrationStatus, Swap, WithdrawBtcResponse, WormholeServiceItem,
-    WormholeServicesResponse,
+    OnionServiceStatusResponse, PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse,
+    RendezvousConnectionStatus, RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
+    WormholeServiceItem, WormholeServicesResponse,
 };
 use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
@@ -295,11 +295,27 @@ impl AsbApiServer for RpcImpl {
             .map(|info| WormholeServiceItem {
                 peer_id: info.peer_id.to_string(),
                 address: info.address.to_string(),
-                status: info.status,
+                state: info.state,
+                reachable: info.reachable,
+                problem: info.problem,
             })
             .collect();
 
         Ok(WormholeServicesResponse { services })
+    }
+
+    async fn onion_service_status(&self) -> Result<OnionServiceStatusResponse, ErrorObjectOwned> {
+        let info = self
+            .event_loop_service
+            .get_onion_service_status()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(OnionServiceStatusResponse {
+            state: info.as_ref().map(|i| i.state.clone()),
+            reachable: info.as_ref().is_some_and(|i| i.reachable),
+            problem: info.and_then(|i| i.problem),
+        })
     }
 
     async fn withdraw_btc(

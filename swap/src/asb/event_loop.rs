@@ -35,9 +35,10 @@ use swap_env::env;
 use swap_feed::LatestRate;
 use swap_p2p::protocols::cooperative_xmr_redeem_after_punish;
 use tokio::sync::{mpsc, oneshot};
+use tor_hsservice::RunningOnionService;
 use uuid::Uuid;
 
-pub use service::{EventLoopRequest, EventLoopService};
+pub use service::{EventLoopRequest, EventLoopService, OnionServiceStatusInfo};
 
 #[allow(missing_debug_implementations)]
 pub struct EventLoop<LR>
@@ -133,6 +134,9 @@ where
     /// Channel for service requests
     service_requests: mpsc::UnboundedReceiver<EventLoopRequest>,
 
+    /// Handle to the primary onion service (if registered)
+    onion_service_handle: Option<Arc<RunningOnionService>>,
+
     /// Temporarily stores transfer proof requests for peers that are currently disconnected.
     ///
     /// When a transfer proof cannot be sent because there's no connection to the peer:
@@ -176,6 +180,7 @@ where
         external_redeem_address: Option<bitcoin::Address>,
         developer_tip: TipConfig,
         refund_policy: RefundPolicy,
+        onion_service_handle: Option<Arc<RunningOnionService>>,
     ) -> Result<(Self, mpsc::Receiver<Swap>, EventLoopService)> {
         let swap_channel = MpscChannels::default();
         let (outgoing_transfer_proofs_sender, outgoing_transfer_proofs_requests) =
@@ -207,6 +212,7 @@ where
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
             service_requests,
+            onion_service_handle,
             buffered_transfer_proofs: Default::default(),
             inflight_transfer_proofs: Default::default(),
         };
@@ -588,6 +594,17 @@ where
                                 .map(|w| w.services())
                                 .unwrap_or_default();
                             let _ = respond_to.send(services);
+                        }
+                        EventLoopRequest::GetOnionServiceStatus { respond_to } => {
+                            let info = self.onion_service_handle.as_ref().map(|svc| {
+                                let status = svc.status();
+                                OnionServiceStatusInfo {
+                                    state: format!("{:?}", status.state()),
+                                    reachable: status.state().is_fully_reachable(),
+                                    problem: status.current_problem().map(|p| format!("{p:?}")),
+                                }
+                            });
+                            let _ = respond_to.send(info);
                         }
                     }
                 }
@@ -1172,6 +1189,14 @@ async fn capture_wallet_snapshot(
 mod service {
     use super::*;
 
+    /// Status snapshot of the primary onion service.
+    #[derive(Debug)]
+    pub struct OnionServiceStatusInfo {
+        pub state: String,
+        pub reachable: bool,
+        pub problem: Option<String>,
+    }
+
     /// Request types for the EventLoop service with typed responders
     #[derive(Debug)]
     pub enum EventLoopRequest {
@@ -1197,6 +1222,9 @@ mod service {
         },
         GetWormholeServices {
             respond_to: oneshot::Sender<Vec<crate::network::wormhole::alice::WormholeServiceInfo>>,
+        },
+        GetOnionServiceStatus {
+            respond_to: oneshot::Sender<Option<OnionServiceStatusInfo>>,
         },
     }
 
@@ -1268,6 +1296,18 @@ mod service {
             let (tx, rx) = oneshot::channel();
             self.sender
                 .send(EventLoopRequest::GetWormholeServices { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the status of the primary onion service
+        pub async fn get_onion_service_status(
+            &self,
+        ) -> anyhow::Result<Option<OnionServiceStatusInfo>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetOnionServiceStatus { respond_to: tx })
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))

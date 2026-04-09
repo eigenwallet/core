@@ -341,7 +341,7 @@ async fn start_alice(
     let latest_rate = FixedRate::default();
     let resume_only = false;
 
-    let (mut swarm, _) = swarm::asb(
+    let (mut swarm, _, _) = swarm::asb(
         seed,
         min_buy,
         max_buy,
@@ -373,6 +373,7 @@ async fn start_alice(
         None,
         developer_tip,
         refund_policy,
+        None,
     )
     .unwrap();
 

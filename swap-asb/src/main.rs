@@ -228,7 +228,7 @@ pub async fn main() -> Result<()> {
             bootstrap_tor_client(tor_client.clone(), None).await?;
             let tor_client = tor_client.into();
 
-            let (mut swarm, onion_addresses) = swarm::asb(
+            let (mut swarm, onion_addresses, onion_service_handle) = swarm::asb(
                 &seed,
                 config.maker.min_buy_btc,
                 config.maker.max_buy_btc,
@@ -316,6 +316,7 @@ pub async fn main() -> Result<()> {
                 config.maker.external_bitcoin_redeem_address,
                 tip_config,
                 config.maker.refund_policy,
+                onion_service_handle,
             )
             .unwrap();
 
