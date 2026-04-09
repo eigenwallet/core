@@ -18,7 +18,7 @@ pub mod transport {
     use std::sync::Arc;
 
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
-    use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
+    use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp, websocket};
     use libp2p_tor::AddressConversion;
     use tor_hsservice::config::TokenBucketConfig;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -98,8 +98,14 @@ pub mod transport {
             .or_transport(tcp::tokio::Transport::new(tcp::Config::new().nodelay(true)));
         let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
+        let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
+        let ws_tcp_with_dns = dns::tokio::Transport::system(ws_tcp)?;
+        let ws_transport = websocket::WsConfig::new(ws_tcp_with_dns);
+
+        let transport = tcp_with_dns.or_transport(ws_transport).boxed();
+
         Ok((
-            authenticate_and_multiplex(tcp_with_dns.boxed(), identity)?,
+            authenticate_and_multiplex(transport, identity)?,
             onion_addresses,
         ))
     }

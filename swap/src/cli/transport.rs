@@ -5,8 +5,7 @@ use anyhow::Result;
 use arti_client::TorClient;
 use libp2p::core::muxing::StreamMuxerBox;
 use libp2p::core::transport::{Boxed, OptionalTransport};
-use libp2p::dns;
-use libp2p::tcp;
+use libp2p::{dns, tcp, websocket};
 use libp2p::{PeerId, Transport, identity};
 use libp2p_tor::{AddressConversion, TorTransport};
 use tor_rtcompat::tokio::TokioRustlsRuntime;
@@ -16,6 +15,7 @@ use tor_rtcompat::tokio::TokioRustlsRuntime;
 /// The CLI's transport needs the following capabilities:
 /// - Establish TCP connections
 /// - Resolve DNS entries
+/// - Dial websocket addresses (ws)
 /// - Dial onion-addresses through a running Tor daemon by connecting to the
 ///   socks5 port. If the port is not given, we will fall back to the regular
 ///   TCP transport.
@@ -26,6 +26,10 @@ pub fn new(
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
+    let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
+    let ws_tcp_with_dns = dns::tokio::Transport::system(ws_tcp)?;
+    let ws_transport = websocket::WsConfig::new(ws_tcp_with_dns);
+
     let maybe_tor_transport: OptionalTransport<TorTransport> = match maybe_tor_client {
         Some(client) => OptionalTransport::some(libp2p_tor::TorTransport::from_client(
             client,
@@ -34,7 +38,10 @@ pub fn new(
         None => OptionalTransport::none(),
     };
 
-    let transport = maybe_tor_transport.or_transport(tcp_with_dns).boxed();
+    let transport = maybe_tor_transport
+        .or_transport(tcp_with_dns)
+        .or_transport(ws_transport)
+        .boxed();
 
     authenticate_and_multiplex(transport, identity)
 }
