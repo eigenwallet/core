@@ -94,15 +94,20 @@ pub mod transport {
             (OptionalTransport::none(), vec![])
         };
 
+        // Build the websocket transport. WsConfig strips the /ws suffix and
+        // delegates to its inner TCP+DNS transport for the actual connection.
+        let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
+        let ws_tcp_dns = dns::tokio::Transport::system(ws_tcp)?;
+        let ws_transport = websocket::WsConfig::new(ws_tcp_dns);
+
+        // Build the plain Tor-or-TCP+DNS transport for non-websocket addresses.
         let tcp = maybe_tor_transport
             .or_transport(tcp::tokio::Transport::new(tcp::Config::new().nodelay(true)));
         let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
-        let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
-        let ws_tcp_with_dns = dns::tokio::Transport::system(ws_tcp)?;
-        let ws_transport = websocket::WsConfig::new(ws_tcp_with_dns);
-
-        let transport = tcp_with_dns.or_transport(ws_transport).boxed();
+        // WsConfig only matches addresses ending in /ws or /wss, so it must
+        // come first — otherwise Tor or TCP would eagerly claim the address.
+        let transport = ws_transport.or_transport(tcp_with_dns).boxed();
 
         Ok((
             authenticate_and_multiplex(transport, identity)?,
