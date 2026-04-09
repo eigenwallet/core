@@ -34,7 +34,7 @@ tokio = { workspace = true, features = ["process", "fs", "net", "parking_lot", "
 tracing = { workspace = true }
 
 comfy-table = "7.1"
-libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa"] }
+libp2p = { workspace = true, features = ["tcp", "yamux", "dns", "noise", "request-response", "ping", "rendezvous", "identify", "macros", "cbor", "json", "tokio", "serde", "rsa", "websocket"] }
 reqwest = { workspace = true, features = ["http2", "rustls-tls-native-roots", "stream", "socks"] }
 rust_decimal = { workspace = true, features = ["serde-float"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

@@ -5,7 +5,7 @@ use libp2p::core::upgrade::Version;
 use libp2p::identity::{self};
 use libp2p::tcp;
 use libp2p::yamux;
-use libp2p::{Multiaddr, PeerId, Swarm, Transport, dns, noise};
+use libp2p::{Multiaddr, PeerId, Swarm, Transport, dns, noise, websocket};
 use libp2p::{SwarmBuilder, core::muxing::StreamMuxerBox};
 use libp2p_tor::{AddressConversion, TorTransport};
 use std::fmt;
@@ -116,10 +116,16 @@ pub async fn create_swarm_with_onion(
 }
 
 fn create_transport(identity: &identity::Keypair) -> Result<Boxed<(PeerId, StreamMuxerBox)>> {
+    let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
+    let ws_tcp_dns = dns::tokio::Transport::system(ws_tcp)?;
+    let ws_transport = websocket::WsConfig::new(ws_tcp_dns);
+
     let tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
     let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
-    let transport = authenticate_and_multiplex(tcp_with_dns.boxed(), &identity).unwrap();
+    let transport = ws_transport.or_transport(tcp_with_dns).boxed();
+
+    let transport = authenticate_and_multiplex(transport, &identity).unwrap();
 
     Ok(transport)
 }
@@ -159,10 +165,16 @@ async fn create_transport_with_onion(
     // Add onion service and get the address
     let onion_address = tor_transport.add_onion_service(onion_service_config, onion_port, 16)?;
 
-    // Combine transports
-    let combined_transport = tcp_with_dns
-        .boxed()
-        .or_transport(tor_transport.boxed())
+    // Build the websocket transport (WsConfig must come first so Tor/TCP
+    // don't eagerly claim addresses with a trailing /ws suffix).
+    let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
+    let ws_tcp_dns = dns::tokio::Transport::system(ws_tcp)?;
+    let ws_transport = websocket::WsConfig::new(ws_tcp_dns);
+
+    // Combine transports: WS first, then TCP, then Tor.
+    let combined_transport = ws_transport
+        .or_transport(tcp_with_dns)
+        .or_transport(tor_transport)
         .boxed();
 
     let transport = authenticate_and_multiplex(combined_transport, &identity).unwrap();
