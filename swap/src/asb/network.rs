@@ -18,7 +18,7 @@ pub mod transport {
     use std::sync::Arc;
 
     use arti_client::{TorClient, config::onion_service::OnionServiceConfigBuilder};
-    use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp};
+    use libp2p::{Transport, core::transport::OptionalTransport, dns, identity, tcp, websocket};
     use libp2p_tor::AddressConversion;
     use tor_rtcompat::tokio::TokioRustlsRuntime;
 
@@ -108,12 +108,23 @@ pub mod transport {
                 (OptionalTransport::none(), vec![], None)
             };
 
+        // Build the websocket transport. WsConfig strips the /ws suffix and
+        // delegates to its inner TCP+DNS transport for the actual connection.
+        let ws_tcp = tcp::tokio::Transport::new(tcp::Config::new().nodelay(true));
+        let ws_tcp_dns = dns::tokio::Transport::system(ws_tcp)?;
+        let ws_transport = websocket::WsConfig::new(ws_tcp_dns);
+
+        // Build the plain Tor-or-TCP+DNS transport for non-websocket addresses.
         let tcp = maybe_tor_transport
             .or_transport(tcp::tokio::Transport::new(tcp::Config::new().nodelay(true)));
         let tcp_with_dns = dns::tokio::Transport::system(tcp)?;
 
+        // WsConfig only matches addresses ending in /ws or /wss, so it must
+        // come first — otherwise Tor or TCP would eagerly claim the address.
+        let transport = ws_transport.or_transport(tcp_with_dns).boxed();
+
         Ok((
-            authenticate_and_multiplex(tcp_with_dns.boxed(), identity)?,
+            authenticate_and_multiplex(transport, identity)?,
             onion_addresses,
             wormhole_channels,
         ))
