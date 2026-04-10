@@ -266,9 +266,12 @@ fn build(input: OrchestratorInput) -> String {
         .to_string();
 
     let cloudflared_segment = if let Some(cf) = input.cloudflared.as_ref() {
+        // We clear the image's ENTRYPOINT below, so `command` must start with
+        // the binary name, matching every other service in this compose file.
         let command_cloudflared = command![
-            "tunnel",
+            "cloudflared",
             flag!("--no-autoupdate"),
+            flag!("tunnel"),
             flag!("run"),
             flag!("--token"),
             flag!("{}", cf.token),
@@ -289,16 +292,6 @@ fn build(input: OrchestratorInput) -> String {
         )
     } else {
         String::new()
-    };
-
-    // When cloudflared is enabled, the asb container must expose the
-    // WebSocket listen port on the docker network so cloudflared can reach it.
-    let asb_ws_expose = match input.cloudflared.as_ref() {
-        Some(cf) => format!(
-            "\n    expose:\n      - {internal_port}",
-            internal_port = cf.internal_port
-        ),
-        None => String::new(),
     };
 
     let (tor_segment, tor_volume) = if input.want_tor {
@@ -403,7 +396,7 @@ services:
       - '{asb_config_path_on_host}:{asb_config_path_inside_container}'
       - 'asb-data:{asb_data_dir}'
     ports:
-      - '0.0.0.0:{asb_port}:{asb_port}'{asb_ws_expose}
+      - '0.0.0.0:{asb_port}:{asb_port}'
     entrypoint: ''
     command: {command_asb}
   asb-controller:

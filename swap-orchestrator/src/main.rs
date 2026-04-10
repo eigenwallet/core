@@ -10,6 +10,7 @@ use crate::compose::{
     OrchestratorImage, OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
 };
 use libp2p::Multiaddr;
+use libp2p::multiaddr::Protocol;
 use std::path::PathBuf;
 use std::str::FromStr;
 use swap_env::config::{
@@ -329,6 +330,29 @@ fn ensure_cloudflared_addresses_in_config(
         cf.external_host, cf.external_port
     ))
     .expect("wss external multiaddr to be valid");
+
+    // Reject CLOUDFLARE_TUNNEL_INTERNAL_PORT values that would collide with
+    // a TCP port the ASB is already bound to. The ASB binds every entry in
+    // `config.network.listen` individually, so a clash produces `AddrInUse`
+    // at startup and the tunnel silently never comes up. Also check the
+    // well-known orchestrator ports (libp2p TCP + RPC) for the same reason.
+    let mut reserved_ports: Vec<u16> = vec![recipe.ports.asb_libp2p, recipe.ports.asb_rpc_port];
+    for existing in &config.network.listen {
+        if existing == &ws_listen {
+            continue;
+        }
+        for proto in existing.iter() {
+            if let Protocol::Tcp(port) = proto {
+                reserved_ports.push(port);
+            }
+        }
+    }
+    if reserved_ports.contains(&cf.internal_port) {
+        panic!(
+            "CLOUDFLARE_TUNNEL_INTERNAL_PORT={} collides with a port the ASB already binds ({:?}). Pick a different internal port.",
+            cf.internal_port, reserved_ports
+        );
+    }
 
     if !config.network.listen.contains(&ws_listen) {
         config.network.listen.push(ws_listen);
