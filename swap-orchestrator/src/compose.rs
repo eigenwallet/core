@@ -17,6 +17,28 @@ pub struct OrchestratorInput {
     pub images: OrchestratorImages<OrchestratorImage>,
     pub directories: OrchestratorDirectories,
     pub want_tor: bool,
+    pub cloudflared: Option<CloudflaredConfig>,
+}
+
+/// Cloudflare Tunnel configuration.
+///
+/// When set, the orchestrator adds a `cloudflared` service to the compose file
+/// and configures the ASB to listen on a WebSocket transport and advertise the
+/// tunnel's public hostname as an external libp2p address.
+#[derive(Clone)]
+pub struct CloudflaredConfig {
+    /// The tunnel run token from the Cloudflare Zero Trust dashboard.
+    pub token: String,
+    /// The public hostname assigned to the tunnel in the Cloudflare dashboard
+    /// (e.g. `asb.example.com`). Advertised to peers as `/dns4/<host>/tcp/<port>/wss`.
+    pub external_host: String,
+    /// The port clients will dial on the public hostname.
+    /// Almost always `443` for `wss`.
+    pub external_port: u16,
+    /// The port the ASB will listen on inside the docker network for the
+    /// WebSocket transport. The tunnel's ingress rule should point at
+    /// `http://asb:<internal_port>`.
+    pub internal_port: u16,
 }
 
 pub struct OrchestratorDirectories {
@@ -38,6 +60,7 @@ pub struct OrchestratorImages<T: IntoImageAttribute> {
     pub asb_controller: T,
     pub asb_tracing_logger: T,
     pub rendezvous_node: T,
+    pub cloudflared: T,
 }
 
 pub struct OrchestratorPorts {
@@ -242,6 +265,35 @@ fn build(input: OrchestratorInput) -> String {
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
 
+    let cloudflared_segment = if let Some(cf) = input.cloudflared.as_ref() {
+        // We clear the image's ENTRYPOINT below, so `command` must start with
+        // the binary name, matching every other service in this compose file.
+        let command_cloudflared = command![
+            "cloudflared",
+            flag!("--no-autoupdate"),
+            flag!("tunnel"),
+            flag!("run"),
+            flag!("--token"),
+            flag!("{}", cf.token),
+        ];
+
+        format!(
+            "\
+  cloudflared:
+    container_name: cloudflared
+    {image_cloudflared}
+    restart: unless-stopped
+    depends_on:
+      - asb
+    entrypoint: ''
+    command: {command_cloudflared}\
+",
+            image_cloudflared = input.images.cloudflared.to_image_attribute(),
+        )
+    } else {
+        String::new()
+    };
+
     let (tor_segment, tor_volume) = if input.want_tor {
         // This image comes with an empty /etc/tor/, so this is the entire config
         let command_tor = command![
@@ -331,6 +383,7 @@ services:
     entrypoint: ''
     command: {command_electrs}
   {tor_segment}
+  {cloudflared_segment}
   asb:
     container_name: asb
     {image_asb}

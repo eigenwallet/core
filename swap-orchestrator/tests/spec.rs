@@ -1,14 +1,13 @@
 #![allow(unused_crate_dependencies)]
 
 use swap_orchestrator::compose::{
-    IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages, OrchestratorInput,
-    OrchestratorNetworks, OrchestratorPorts,
+    CloudflaredConfig, IntoSpec, OrchestratorDirectories, OrchestratorImage, OrchestratorImages,
+    OrchestratorInput, OrchestratorNetworks, OrchestratorPorts,
 };
 use swap_orchestrator::images;
 
-#[test]
-fn test_orchestrator_spec_generation() {
-    let input = OrchestratorInput {
+fn make_input(want_tor: bool, cloudflared: Option<CloudflaredConfig>) -> OrchestratorInput {
+    OrchestratorInput {
         ports: OrchestratorPorts {
             monerod_rpc: 38081,
             bitcoind_rpc: 18332,
@@ -38,16 +37,32 @@ fn test_orchestrator_spec_generation() {
             asb_tracing_logger: OrchestratorImage::Registry(
                 images::ASB_TRACING_LOGGER_IMAGE.to_string(),
             ),
+            cloudflared: OrchestratorImage::Registry(images::CLOUDFLARED_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
         },
-        want_tor: false,
-    };
+        want_tor,
+        cloudflared,
+    }
+}
 
-    let spec = input.to_spec();
+fn sample_cloudflared_config() -> CloudflaredConfig {
+    CloudflaredConfig {
+        token: "test-token".to_string(),
+        external_host: "atomic.exolix.com".to_string(),
+        external_port: 443,
+        internal_port: 8080,
+    }
+}
 
-    println!("{}", spec);
-
-    // TODO: Here we should use the docker binary to verify the compose file
+#[test]
+fn test_orchestrator_spec_generation() {
+    // `to_spec` runs `validate_compose` internally, so generating each
+    // variant is enough to catch indentation regressions in the optional
+    // tor / cloudflared segments.
+    let _ = make_input(false, None).to_spec();
+    let _ = make_input(true, None).to_spec();
+    let _ = make_input(false, Some(sample_cloudflared_config())).to_spec();
+    let _ = make_input(true, Some(sample_cloudflared_config())).to_spec();
 }
