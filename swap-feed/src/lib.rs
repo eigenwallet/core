@@ -1,4 +1,5 @@
 pub mod bitfinex;
+pub mod exolix;
 pub mod kraken;
 pub mod kucoin;
 pub mod rate;
@@ -25,4 +26,12 @@ pub fn connect_kucoin(
     client: reqwest::Client,
 ) -> anyhow::Result<kucoin::PriceUpdates> {
     kucoin::connect(url, client)
+}
+
+pub fn connect_exolix(
+    url: url::Url,
+    api_key: Option<String>,
+    client: reqwest::Client,
+) -> anyhow::Result<exolix::PriceUpdates> {
+    exolix::connect(url, api_key, client)
 }
