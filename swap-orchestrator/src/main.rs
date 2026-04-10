@@ -6,10 +6,12 @@ mod prompt;
 use swap_orchestrator as _;
 
 use crate::compose::{
-    ASB_DATA_DIR, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories, OrchestratorImage,
-    OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
+    ASB_DATA_DIR, CloudflaredConfig, DOCKER_COMPOSE_FILE, IntoSpec, OrchestratorDirectories,
+    OrchestratorImage, OrchestratorImages, OrchestratorInput, OrchestratorNetworks,
 };
+use libp2p::Multiaddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use swap_env::config::{
     Bitcoin, Config, ConfigNotInitialized, Data, Maker, Monero, Network, TorConf,
 };
@@ -17,7 +19,68 @@ use swap_env::prompt as config_prompt;
 use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
 use url::Url;
 
+/// Environment variables that together configure the Cloudflare Tunnel
+/// integration. Either all of them must be set, or none — a partial set
+/// is a hard error.
+const CLOUDFLARE_ENV_VARS: [&str; 4] = [
+    "CLOUDFLARE_TUNNEL_TOKEN",
+    "CLOUDFLARE_TUNNEL_EXTERNAL_HOST",
+    "CLOUDFLARE_TUNNEL_EXTERNAL_PORT",
+    "CLOUDFLARE_TUNNEL_INTERNAL_PORT",
+];
+
+/// Reads the Cloudflare Tunnel configuration from the environment.
+///
+/// Returns `None` if none of the variables are set. Returns `Some(..)` if
+/// all of them are set. Panics if the set is partially populated, because
+/// a half-configured tunnel would silently ship a broken deployment.
+fn read_cloudflared_config_from_env() -> Option<CloudflaredConfig> {
+    let present: Vec<&str> = CLOUDFLARE_ENV_VARS
+        .iter()
+        .copied()
+        .filter(|name| std::env::var(name).is_ok())
+        .collect();
+
+    if present.is_empty() {
+        return None;
+    }
+
+    if present.len() != CLOUDFLARE_ENV_VARS.len() {
+        let missing: Vec<&str> = CLOUDFLARE_ENV_VARS
+            .iter()
+            .copied()
+            .filter(|name| std::env::var(name).is_err())
+            .collect();
+        panic!(
+            "Cloudflare Tunnel is partially configured. The following variables are set: {:?}, but these are missing: {:?}. Set all four or none.",
+            present, missing
+        );
+    }
+
+    let token = std::env::var("CLOUDFLARE_TUNNEL_TOKEN").expect("checked above");
+    let external_host = std::env::var("CLOUDFLARE_TUNNEL_EXTERNAL_HOST").expect("checked above");
+    let external_port: u16 = std::env::var("CLOUDFLARE_TUNNEL_EXTERNAL_PORT")
+        .expect("checked above")
+        .parse()
+        .expect("CLOUDFLARE_TUNNEL_EXTERNAL_PORT must be a valid u16");
+    let internal_port: u16 = std::env::var("CLOUDFLARE_TUNNEL_INTERNAL_PORT")
+        .expect("checked above")
+        .parse()
+        .expect("CLOUDFLARE_TUNNEL_INTERNAL_PORT must be a valid u16");
+
+    Some(CloudflaredConfig {
+        token,
+        external_host,
+        external_port,
+        internal_port,
+    })
+}
+
 fn main() {
+    // Cloudflare Tunnel is opt-in via env vars so existing deployments
+    // keep working unchanged.
+    let cloudflared_config = read_cloudflared_config_from_env();
+
     let want_tor = prompt::tor_for_daemons();
     let (bitcoin_network, monero_network) = prompt::network();
 
@@ -60,11 +123,13 @@ fn main() {
             rendezvous_node: OrchestratorImage::Build(
                 images::RENDEZVOUS_NODE_IMAGE_FROM_SOURCE.clone(),
             ),
+            cloudflared: OrchestratorImage::Registry(images::CLOUDFLARED_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: PathBuf::from(ASB_DATA_DIR),
         },
         want_tor,
+        cloudflared: cloudflared_config.clone(),
     };
 
     // If the config file already exists and be de-serialized,
@@ -219,12 +284,86 @@ fn main() {
         .expect("Failed to write config.toml");
     }
 
+    // If Cloudflare Tunnel is enabled, ensure the ASB config advertises the
+    // WebSocket listen address and the public wss external address. We do this
+    // after the wizard branch so it applies whether the config was just
+    // generated or already existed on disk.
+    if let Some(cf) = cloudflared_config.as_ref() {
+        ensure_cloudflared_addresses_in_config(&recipe, cf);
+    }
+
     // Write the compose to ./docker-compose.yml
     let compose = recipe.to_spec();
     std::fs::write(DOCKER_COMPOSE_FILE, compose).expect("Failed to write docker-compose.yml");
 
     println!();
     println!("Run `docker compose up -d` to start the services.");
+
+    if let Some(cf) = cloudflared_config.as_ref() {
+        print_cloudflared_instructions(cf);
+    }
+}
+
+/// Reads the ASB config from disk, inserts the WebSocket listen address and
+/// the public wss external address required by the Cloudflare Tunnel, and
+/// writes it back. Idempotent — running this repeatedly does not duplicate
+/// entries.
+fn ensure_cloudflared_addresses_in_config(
+    recipe: &OrchestratorInput,
+    cf: &CloudflaredConfig,
+) {
+    let config_path = recipe.directories.asb_config_path_on_host_as_path_buf();
+
+    let mut config = swap_env::config::read_config(config_path.clone())
+        .expect("Failed to read asb config for cloudflared patching")
+        .expect("asb config must exist by this point");
+
+    let ws_listen: Multiaddr = Multiaddr::from_str(&format!(
+        "/ip4/0.0.0.0/tcp/{}/ws",
+        cf.internal_port
+    ))
+    .expect("ws listen multiaddr to be valid");
+
+    let wss_external: Multiaddr = Multiaddr::from_str(&format!(
+        "/dns4/{}/tcp/{}/wss",
+        cf.external_host, cf.external_port
+    ))
+    .expect("wss external multiaddr to be valid");
+
+    if !config.network.listen.contains(&ws_listen) {
+        config.network.listen.push(ws_listen);
+    }
+
+    if !config.network.external_addresses.contains(&wss_external) {
+        config.network.external_addresses.push(wss_external);
+    }
+
+    std::fs::write(
+        &config_path,
+        toml::to_string(&config).expect("Failed to serialize patched config.toml"),
+    )
+    .expect("Failed to write patched config.toml");
+}
+
+/// Prints the manual steps the operator must take in the Cloudflare Zero
+/// Trust dashboard to finish configuring the tunnel.
+fn print_cloudflared_instructions(cf: &CloudflaredConfig) {
+    println!();
+    println!("Cloudflare Tunnel is enabled. Configure it in the dashboard:");
+    println!("  1. Open https://one.dash.cloudflare.com/ -> Networks -> Tunnels");
+    println!("  2. Select the tunnel matching your CLOUDFLARE_TUNNEL_TOKEN");
+    println!("  3. Under 'Public Hostnames', add (or verify) a hostname with:");
+    println!("       - Subdomain / domain: {}", cf.external_host);
+    println!("       - Service type: HTTP");
+    println!(
+        "       - URL: asb:{} (the asb container on the docker network)",
+        cf.internal_port
+    );
+    println!(
+        "  4. Peers will reach this ASB at /dns4/{}/tcp/{}/wss",
+        cf.external_host, cf.external_port
+    );
+    println!("  5. Do NOT put a Cloudflare Access policy in front of this hostname — libp2p clients cannot authenticate with it.");
 }
 
 fn unix_epoch_secs() -> u64 {

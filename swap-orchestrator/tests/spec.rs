@@ -38,11 +38,13 @@ fn test_orchestrator_spec_generation() {
             asb_tracing_logger: OrchestratorImage::Registry(
                 images::ASB_TRACING_LOGGER_IMAGE.to_string(),
             ),
+            cloudflared: OrchestratorImage::Registry(images::CLOUDFLARED_IMAGE.to_string()),
         },
         directories: OrchestratorDirectories {
             asb_data_dir: std::path::PathBuf::from(swap_orchestrator::compose::ASB_DATA_DIR),
         },
         want_tor: false,
+        cloudflared: None,
     };
 
     let spec = input.to_spec();

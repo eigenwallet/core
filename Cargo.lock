@@ -11028,6 +11028,7 @@ dependencies = [
  "chrono",
  "compose_spec",
  "dialoguer",
+ "libp2p",
  "monero-address",
  "serde_yaml",
  "swap-env",
