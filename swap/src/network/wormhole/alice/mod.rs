@@ -395,7 +395,10 @@ impl NetworkBehaviour for Behaviour {
             let trust_provider = Arc::clone(&self.trust_provider);
             let freshness = self.swap_freshness;
             let fut: Fuse<BoxFuture<'static, Vec<PeerId>>> = async move {
-                match trust_provider.peers_with_financially_relevant_swap(freshness).await {
+                match trust_provider
+                    .peers_with_financially_relevant_swap(freshness)
+                    .await
+                {
                     Ok(peers) => peers,
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to query peers");
