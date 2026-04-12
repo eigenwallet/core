@@ -507,10 +507,7 @@ impl SqliteDatabase {
     /// accept the offset trailer, so we `substr` down to the first 19
     /// characters before parsing with `strftime('%s', ...)`. All writes use
     /// `OffsetDateTime::now_utc()`, so dropping the offset is safe.
-    pub async fn all_fresh(
-        &self,
-        freshness_hours: u64,
-    ) -> Result<Vec<(PeerId, Uuid, State)>> {
+    pub async fn all_fresh(&self, freshness_hours: u64) -> Result<Vec<(PeerId, Uuid, State)>> {
         let freshness_seconds = (freshness_hours as i64).saturating_mul(3600);
 
         let rows = sqlx::query!(
