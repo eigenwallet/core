@@ -200,7 +200,29 @@ fn env_filter_with_all_crates(crates: Vec<(Vec<&str>, LevelFilter)>) -> Result<E
 }
 
 mod crates {
-    pub const TOR_CRATES: &[&str] = &["arti", "arti_client"];
+    pub const TOR_CRATES: &[&str] = &[
+        "arti",
+        "arti_client",
+        "tor_guardmgr",
+        "tor_circmgr",
+        "tor_chanmgr",
+        "tor_hsclient",
+        "tor_hscrypto",
+        "tor_hsservice",
+        "tor_dirmgr",
+        "tor_dirclient",
+        "tor_dircommon",
+        "tor_netdir",
+        "tor_netdoc",
+        "tor_proto",
+        "tor_linkspec",
+        "tor_ptmgr",
+        "tor_rtcompat",
+        "tor_persist",
+        "tor_consdiff",
+        "tor_error",
+        "tor_log_ratelim",
+    ];
 
     pub const LIBP2P_CRATES: &[&str] = &[
         "libp2p",
