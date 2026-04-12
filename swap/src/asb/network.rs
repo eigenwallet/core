@@ -193,6 +193,7 @@ pub mod behaviour {
             connection_limits: connection_limits::ConnectionLimits,
             trust_provider: Arc<dyn PeerTrust + Send + Sync>,
             wormhole_channels: Option<WormholeChannels>,
+            wormhole_swap_freshness_hours: u64,
         ) -> Self {
             let (identity, namespace) = identify_params;
             let agent_version = format!("asb/{} ({})", env!("CARGO_PKG_VERSION"), namespace);
@@ -209,7 +210,12 @@ pub mod behaviour {
                     trust_provider,
                     channels.service_tx,
                     channels.handle_rx,
-                    wormhole::alice::Config::default(),
+                    wormhole::alice::Config {
+                        swap_freshness: Duration::from_secs(
+                            wormhole_swap_freshness_hours.saturating_mul(3600),
+                        ),
+                        ..wormhole::alice::Config::default()
+                    },
                 )
             });
 

@@ -37,6 +37,7 @@ pub fn asb<LR>(
     wormhole_enabled: bool,
     wormhole_max_concurrent_rend_requests: usize,
     wormhole_num_intro_points: u8,
+    wormhole_swap_freshness_hours: u64,
     trust_provider: Arc<dyn super::wormhole::PeerTrust + Send + Sync>,
 ) -> Result<(
     Swarm<asb::Behaviour<LR>>,
@@ -91,6 +92,7 @@ where
         } else {
             None
         },
+        wormhole_swap_freshness_hours,
     );
 
     let mut swarm = SwarmBuilder::with_existing_identity(identity)

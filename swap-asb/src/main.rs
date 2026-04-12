@@ -244,6 +244,7 @@ pub async fn main() -> Result<()> {
                 config.tor.wormhole_enabled,
                 config.tor.wormhole_max_concurrent_rend_requests,
                 config.tor.wormhole_num_intro_points,
+                config.tor.wormhole_swap_freshness_hours,
                 db.clone(),
             )?;
 

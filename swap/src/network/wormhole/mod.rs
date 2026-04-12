@@ -2,6 +2,7 @@ pub mod alice;
 pub mod bob;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use libp2p::{Multiaddr, PeerId};
@@ -29,8 +30,12 @@ pub struct ServiceHandle {
 /// Provides trust information about peers (Alice side).
 #[async_trait::async_trait]
 pub trait PeerTrust {
-    /// Returns peers that have committed real funds to a swap.
-    async fn peers_with_financially_relevant_swap(&self) -> Result<Vec<PeerId>>;
+    /// Returns peers that have committed real funds to a swap whose latest
+    /// state update occurred within `freshness`. Older swaps are ignored.
+    async fn peers_with_financially_relevant_swap(
+        &self,
+        freshness: Duration,
+    ) -> Result<Vec<PeerId>>;
 }
 
 /// Stores wormhole addresses received from peers (Bob side).
