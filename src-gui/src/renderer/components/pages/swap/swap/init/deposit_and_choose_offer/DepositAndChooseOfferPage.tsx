@@ -136,14 +136,19 @@ export default function DepositAndChooseOfferPage({
                   display: "flex",
                   justifyContent: "flex-end",
                   alignItems: "center",
+                  gap: 0.5,
                   mb: 0.5,
+                  opacity: 0.6,
+                  "&:hover": { opacity: 1 },
                 }}
               >
+                <Typography variant="caption" color="text.secondary">
+                  Sorting
+                </Typography>
                 <Tooltip title={`Sort: ${currentSortLabel}`}>
                   <IconButton
                     size="small"
                     onClick={(e) => setSortAnchorEl(e.currentTarget)}
-                    sx={{ opacity: 0.6, "&:hover": { opacity: 1 } }}
                   >
                     <SortIcon fontSize="small" />
                   </IconButton>
