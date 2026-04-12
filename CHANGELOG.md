@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- GUI: Allow sorting of maker offers on the swap page by largest max amount (default), smallest min amount, or cheapest price, via a subtle sort button above the offer list.
+
 ## [4.3.1] - 2026-04-11
 
 ## [4.3.0] - 2026-04-09

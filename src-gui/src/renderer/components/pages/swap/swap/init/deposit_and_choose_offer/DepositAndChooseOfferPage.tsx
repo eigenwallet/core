@@ -1,4 +1,18 @@
-import { Typography, Box, Paper, Divider, Pagination } from "@mui/material";
+import {
+  Typography,
+  Box,
+  Paper,
+  Divider,
+  Pagination,
+  IconButton,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  Tooltip,
+} from "@mui/material";
+import SortIcon from "@mui/icons-material/Sort";
+import CheckIcon from "@mui/icons-material/Check";
 import ActionableMonospaceTextBox from "renderer/components/other/ActionableMonospaceTextBox";
 import MakerOfferItem from "./MakerOfferItem";
 import { usePendingSelectMakerApproval } from "store/hooks";
@@ -6,7 +20,16 @@ import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
 import { useState } from "react";
-import { sortApprovalsAndKnownQuotes } from "utils/sortUtils";
+import {
+  sortApprovalsAndKnownQuotes,
+  OfferSortMode,
+} from "utils/sortUtils";
+
+const SORT_OPTIONS: { value: OfferSortMode; label: string }[] = [
+  { value: "large", label: "Large swaps" },
+  { value: "small", label: "Small swaps" },
+  { value: "cheapest", label: "Cheapest" },
+];
 
 export default function DepositAndChooseOfferPage({
   deposit_address,
@@ -15,12 +38,18 @@ export default function DepositAndChooseOfferPage({
 }: TauriSwapProgressEventContent<"WaitingForBtcDeposit">) {
   const pendingSelectMakerApprovals = usePendingSelectMakerApproval();
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortMode, setSortMode] = useState<OfferSortMode>("large");
+  const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const offersPerPage = 3;
 
   const makerOffers = sortApprovalsAndKnownQuotes(
     pendingSelectMakerApprovals,
     known_quotes,
+    sortMode,
   );
+
+  const currentSortLabel =
+    SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "";
 
   // Pagination calculations
   const totalPages = Math.ceil(makerOffers.length / offersPerPage);
@@ -102,6 +131,51 @@ export default function DepositAndChooseOfferPage({
         <Box>
           {makerOffers.length > 0 && (
             <>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  mb: 0.5,
+                }}
+              >
+                <Tooltip title={`Sort: ${currentSortLabel}`}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => setSortAnchorEl(e.currentTarget)}
+                    sx={{ opacity: 0.6, "&:hover": { opacity: 1 } }}
+                  >
+                    <SortIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Menu
+                  anchorEl={sortAnchorEl}
+                  open={Boolean(sortAnchorEl)}
+                  onClose={() => setSortAnchorEl(null)}
+                  anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                  transformOrigin={{ vertical: "top", horizontal: "right" }}
+                >
+                  {SORT_OPTIONS.map((option) => (
+                    <MenuItem
+                      key={option.value}
+                      selected={option.value === sortMode}
+                      onClick={() => {
+                        setSortMode(option.value);
+                        setCurrentPage(1);
+                        setSortAnchorEl(null);
+                      }}
+                      dense
+                    >
+                      <ListItemIcon sx={{ minWidth: 28 }}>
+                        {option.value === sortMode && (
+                          <CheckIcon fontSize="small" />
+                        )}
+                      </ListItemIcon>
+                      <ListItemText>{option.label}</ListItemText>
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </Box>
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 {paginatedOffers.map((quote, index) => {
                   return (

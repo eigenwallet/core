@@ -6,9 +6,12 @@ import { QuoteWithAddress } from "models/tauriModel";
 import { isMakerVersionOld, isMakerVersionTooOld } from "./multiAddrUtils";
 import _ from "lodash";
 
+export type OfferSortMode = "large" | "small" | "cheapest";
+
 export function sortApprovalsAndKnownQuotes(
   pendingSelectMakerApprovals: PendingSelectMakerApprovalRequest[],
   known_quotes: QuoteWithAddress[],
+  sortMode: OfferSortMode = "large",
 ) {
   const sortableQuotes: SortableQuoteWithAddress[] =
     pendingSelectMakerApprovals.map((approval) => {
@@ -31,6 +34,18 @@ export function sortApprovalsAndKnownQuotes(
     })),
   );
 
+  const primaryIteratee = (m: SortableQuoteWithAddress) => {
+    const q = m.quote_with_address.quote;
+    switch (sortMode) {
+      case "large":
+        return -(q.max_quantity ?? 0);
+      case "small":
+        return q.min_quantity ?? 0;
+      case "cheapest":
+        return q.price;
+    }
+  };
+
   return (
     _(sortableQuotes)
       .orderBy(
@@ -38,6 +53,8 @@ export function sortApprovalsAndKnownQuotes(
           // Prefer makers that have a 'version' attribute
           // If we don't have a version, we cannot clarify if it's outdated or not
           (m) => (m.quote_with_address.version ? 0 : 1),
+          // Prefer makers with a max quantity > 0 (have liquidity)
+          (m) => ((m.quote_with_address.quote.max_quantity ?? 0) > 0 ? 0 : 1),
           // Prefer makers with a minimum quantity > 0
           (m) => ((m.quote_with_address.quote.min_quantity ?? 0) > 0 ? 0 : 1),
           // Prefer makers that are not incompatible
@@ -49,10 +66,10 @@ export function sortApprovalsAndKnownQuotes(
                 : 0,
           // Prefer approvals over actual quotes
           (m) => (m.approval ? 0 : 1),
-          // Prefer makers with a lower price
-          (m) => m.quote_with_address.quote.price,
+          // User-selected sort criterion
+          primaryIteratee,
         ],
-        ["asc", "asc", "asc", "asc", "asc"],
+        ["asc", "asc", "asc", "asc", "asc", "asc"],
       )
       // Remove duplicate makers
       .uniqBy((m) => m.quote_with_address.peer_id)
