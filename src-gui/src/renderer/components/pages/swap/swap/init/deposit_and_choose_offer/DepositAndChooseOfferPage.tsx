@@ -4,7 +4,6 @@ import {
   Paper,
   Divider,
   Pagination,
-  IconButton,
   Menu,
   MenuItem,
   ListItemIcon,
@@ -136,22 +135,39 @@ export default function DepositAndChooseOfferPage({
                   display: "flex",
                   justifyContent: "flex-end",
                   alignItems: "center",
-                  gap: 0.5,
                   mb: 0.5,
-                  opacity: 0.6,
-                  "&:hover": { opacity: 1 },
                 }}
               >
-                <Typography variant="caption" color="text.secondary">
-                  Sorting
-                </Typography>
                 <Tooltip title={`Sort: ${currentSortLabel}`}>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => setSortAnchorEl(e.currentTarget)}
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={(e) =>
+                      setSortAnchorEl(e.currentTarget as HTMLElement)
+                    }
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0.5,
+                      px: 0.75,
+                      py: 0.25,
+                      border: "none",
+                      background: "transparent",
+                      color: "inherit",
+                      cursor: "pointer",
+                      borderRadius: 1,
+                      opacity: 0.6,
+                      "&:hover": {
+                        opacity: 1,
+                        bgcolor: "action.hover",
+                      },
+                    }}
                   >
+                    <Typography variant="caption" color="text.secondary">
+                      Sorting
+                    </Typography>
                     <SortIcon fontSize="small" />
-                  </IconButton>
+                  </Box>
                 </Tooltip>
                 <Menu
                   anchorEl={sortAnchorEl}
