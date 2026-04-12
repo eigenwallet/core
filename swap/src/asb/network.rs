@@ -211,9 +211,7 @@ pub mod behaviour {
                     channels.service_tx,
                     channels.handle_rx,
                     wormhole::alice::Config {
-                        swap_freshness: Duration::from_secs(
-                            wormhole_swap_freshness_hours.saturating_mul(3600),
-                        ),
+                        swap_freshness_hours: wormhole_swap_freshness_hours,
                         ..wormhole::alice::Config::default()
                     },
                 )

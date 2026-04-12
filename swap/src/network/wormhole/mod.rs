@@ -2,7 +2,6 @@ pub mod alice;
 pub mod bob;
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Result;
 use libp2p::{Multiaddr, PeerId};
@@ -31,10 +30,11 @@ pub struct ServiceHandle {
 #[async_trait::async_trait]
 pub trait PeerTrust {
     /// Returns peers that have committed real funds to a swap whose latest
-    /// state update occurred within `freshness`. Older swaps are ignored.
+    /// state update occurred within the last `freshness_hours`. Older swaps
+    /// are ignored.
     async fn peers_with_financially_relevant_swap(
         &self,
-        freshness: Duration,
+        freshness_hours: u64,
     ) -> Result<Vec<PeerId>>;
 }
 

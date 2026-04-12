@@ -500,7 +500,7 @@ impl Database for SqliteDatabase {
 
 impl SqliteDatabase {
     /// Like [`Database::all`] but only returns swaps whose latest state
-    /// update happened within `freshness`.
+    /// update happened within the last `freshness_hours`.
     ///
     /// `entered_at` is stored as a Rust-formatted string
     /// (`YYYY-MM-DD HH:MM:SS.fff +00:00:00`). SQLite's date functions don't
@@ -509,9 +509,9 @@ impl SqliteDatabase {
     /// `OffsetDateTime::now_utc()`, so dropping the offset is safe.
     pub async fn all_fresh(
         &self,
-        freshness: std::time::Duration,
+        freshness_hours: u64,
     ) -> Result<Vec<(PeerId, Uuid, State)>> {
-        let freshness_seconds = freshness.as_secs() as i64;
+        let freshness_seconds = (freshness_hours as i64).saturating_mul(3600);
 
         let rows = sqlx::query!(
             r#"
@@ -567,11 +567,11 @@ impl SqliteDatabase {
 impl crate::network::wormhole::PeerTrust for SqliteDatabase {
     async fn peers_with_financially_relevant_swap(
         &self,
-        freshness: std::time::Duration,
+        freshness_hours: u64,
     ) -> Result<Vec<PeerId>> {
         use std::collections::HashSet;
 
-        let swaps = self.all_fresh(freshness).await?;
+        let swaps = self.all_fresh(freshness_hours).await?;
         let peers = swaps
             .into_iter()
             .filter_map(|(peer_id, _, state)| {

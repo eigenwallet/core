@@ -161,7 +161,7 @@ The ASB provider has to monitor Monero funds to make sure the ASB still has liqu
 
 If `tor.register_hidden_service` is set to `true` that asb will automatically start listening on an onion service.
 
-If `tor.wormhole_enabled` is set to `true` (default), the ASB will spawn dedicated per-peer onion services (wormholes) for peers that have committed funds to a swap. `tor.wormhole_max_concurrent_rend_requests` controls the maximum concurrent rendezvous requests per wormhole (default: 3). `tor.wormhole_num_intro_points` controls the number of introduction points per wormhole (default: 3).
+If `tor.wormhole_enabled` is set to `true` (default), the ASB will spawn dedicated per-peer onion services (wormholes) for peers that have committed funds to a swap. `tor.wormhole_max_concurrent_rend_requests` controls the maximum concurrent rendezvous requests per wormhole (default: 3). `tor.wormhole_num_intro_points` controls the number of introduction points per wormhole (default: 3). `tor.wormhole_swap_freshness_hours` bounds how far back swaps are considered when deciding wormhole eligibility; peers whose most recent swap state update is older than this window are ignored (default: 168, i.e. 7 days).
 
 ### Exporting the Bitcoin wallet descriptor
 
