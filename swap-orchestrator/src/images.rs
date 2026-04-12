@@ -33,8 +33,7 @@ pub static ASB_TRACING_LOGGER_IMAGE: &str =
     "alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1";
 
 /// cloudflared 2026.3.0 (https://hub.docker.com/r/cloudflare/cloudflared)
-pub static CLOUDFLARED_IMAGE: &str =
-    "cloudflare/cloudflared@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0";
+pub static CLOUDFLARED_IMAGE: &str = "cloudflare/cloudflared@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0";
 
 /// These are built from source
 pub static ASB_IMAGE_FROM_SOURCE: DockerBuildInput = DockerBuildInput {

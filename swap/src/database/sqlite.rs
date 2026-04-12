@@ -498,12 +498,77 @@ impl Database for SqliteDatabase {
     }
 }
 
+impl SqliteDatabase {
+    /// Like [`Database::all`] but only returns swaps whose latest state
+    /// update happened within the last `freshness_hours`.
+    ///
+    /// `entered_at` is stored as a Rust-formatted string
+    /// (`YYYY-MM-DD HH:MM:SS.fff +00:00:00`). SQLite's date functions don't
+    /// accept the offset trailer, so we `substr` down to the first 19
+    /// characters before parsing with `strftime('%s', ...)`. All writes use
+    /// `OffsetDateTime::now_utc()`, so dropping the offset is safe.
+    pub async fn all_fresh(&self, freshness_hours: u64) -> Result<Vec<(PeerId, Uuid, State)>> {
+        let freshness_seconds = (freshness_hours as i64).saturating_mul(3600);
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT s.swap_id, s.state, p.peer_id
+            FROM (
+                SELECT max(id) as id, swap_id, state, entered_at
+                FROM swap_states
+                GROUP BY swap_id
+            ) s
+            INNER JOIN peers p ON s.swap_id = p.swap_id
+            WHERE CAST(strftime('%s', substr(s.entered_at, 1, 19)) AS INTEGER)
+                  >= CAST(strftime('%s', 'now') AS INTEGER) - ?
+            "#,
+            freshness_seconds,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let result = rows
+            .iter()
+            .filter_map(|row| {
+                let swap_id = match Uuid::from_str(&row.swap_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(swap_id = %row.swap_id, error = ?e, "Failed to parse UUID");
+                        return None;
+                    }
+                };
+                let peer_id = match PeerId::from_str(&row.peer_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to parse PeerId");
+                        return None;
+                    }
+                };
+                let state = match serde_json::from_str::<Swap>(&row.state) {
+                    Ok(a) => State::from(a),
+                    Err(e) => {
+                        tracing::error!(%swap_id, error = ?e, "Failed to deserialize state");
+                        return None;
+                    }
+                };
+
+                Some((peer_id, swap_id, state))
+            })
+            .collect();
+
+        Ok(result)
+    }
+}
+
 #[async_trait]
 impl crate::network::wormhole::PeerTrust for SqliteDatabase {
-    async fn peers_with_financially_relevant_swap(&self) -> Result<Vec<PeerId>> {
+    async fn peers_with_financially_relevant_swap(
+        &self,
+        freshness_hours: u64,
+    ) -> Result<Vec<PeerId>> {
         use std::collections::HashSet;
 
-        let swaps = self.all().await?;
+        let swaps = self.all_fresh(freshness_hours).await?;
         let peers = swaps
             .into_iter()
             .filter_map(|(peer_id, _, state)| {

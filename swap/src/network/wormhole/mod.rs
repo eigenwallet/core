@@ -29,8 +29,13 @@ pub struct ServiceHandle {
 /// Provides trust information about peers (Alice side).
 #[async_trait::async_trait]
 pub trait PeerTrust {
-    /// Returns peers that have committed real funds to a swap.
-    async fn peers_with_financially_relevant_swap(&self) -> Result<Vec<PeerId>>;
+    /// Returns peers that have committed real funds to a swap whose latest
+    /// state update occurred within the last `freshness_hours`. Older swaps
+    /// are ignored.
+    async fn peers_with_financially_relevant_swap(
+        &self,
+        freshness_hours: u64,
+    ) -> Result<Vec<PeerId>>;
 }
 
 /// Stores wormhole addresses received from peers (Bob side).

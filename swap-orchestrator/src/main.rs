@@ -309,21 +309,16 @@ fn main() {
 /// the public wss external address required by the Cloudflare Tunnel, and
 /// writes it back. Idempotent — running this repeatedly does not duplicate
 /// entries.
-fn ensure_cloudflared_addresses_in_config(
-    recipe: &OrchestratorInput,
-    cf: &CloudflaredConfig,
-) {
+fn ensure_cloudflared_addresses_in_config(recipe: &OrchestratorInput, cf: &CloudflaredConfig) {
     let config_path = recipe.directories.asb_config_path_on_host_as_path_buf();
 
     let mut config = swap_env::config::read_config(config_path.clone())
         .expect("Failed to read asb config for cloudflared patching")
         .expect("asb config must exist by this point");
 
-    let ws_listen: Multiaddr = Multiaddr::from_str(&format!(
-        "/ip4/0.0.0.0/tcp/{}/ws",
-        cf.internal_port
-    ))
-    .expect("ws listen multiaddr to be valid");
+    let ws_listen: Multiaddr =
+        Multiaddr::from_str(&format!("/ip4/0.0.0.0/tcp/{}/ws", cf.internal_port))
+            .expect("ws listen multiaddr to be valid");
 
     let wss_external: Multiaddr = Multiaddr::from_str(&format!(
         "/dns4/{}/tcp/{}/wss",
@@ -387,7 +382,9 @@ fn print_cloudflared_instructions(cf: &CloudflaredConfig) {
         "  4. Peers will reach this ASB at /dns4/{}/tcp/{}/wss",
         cf.external_host, cf.external_port
     );
-    println!("  5. Do NOT put a Cloudflare Access policy in front of this hostname — libp2p clients cannot authenticate with it.");
+    println!(
+        "  5. Do NOT put a Cloudflare Access policy in front of this hostname — libp2p clients cannot authenticate with it."
+    );
 }
 
 fn unix_epoch_secs() -> u64 {

@@ -35,12 +35,16 @@ const BACKOFF_MULTIPLIER: f64 = 1.5;
 pub struct Config {
     /// How often to poll the trust provider for new peers.
     pub poll_interval: Duration,
+    /// Only swaps whose latest state update occurred within this many hours
+    /// count as financially relevant.
+    pub swap_freshness_hours: u64,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_secs(60),
+            swap_freshness_hours: 168,
         }
     }
 }
@@ -75,6 +79,9 @@ pub struct Behaviour {
 
     /// Timer for periodic polling of the trust provider.
     poll_interval: tokio::time::Interval,
+    /// Only swaps whose latest state update occurred within this many hours
+    /// count as financially relevant.
+    swap_freshness_hours: u64,
 
     /// Channel to send service spawn requests to the wrapper transport.
     service_tx: mpsc::UnboundedSender<ServiceRequest>,
@@ -132,6 +139,7 @@ impl Behaviour {
             last_sent: HashMap::new(),
             backoff: BackoffTracker::new(BACKOFF_INITIAL, BACKOFF_MAX, BACKOFF_MULTIPLIER),
             poll_interval,
+            swap_freshness_hours: config.swap_freshness_hours,
             pending_query: OptionFuture::from(None),
         }
     }
@@ -385,8 +393,12 @@ impl NetworkBehaviour for Behaviour {
         // Check if it's time to poll the trust provider
         if self.pending_query.is_terminated() && self.poll_interval.poll_tick(cx).is_ready() {
             let trust_provider = Arc::clone(&self.trust_provider);
+            let freshness_hours = self.swap_freshness_hours;
             let fut: Fuse<BoxFuture<'static, Vec<PeerId>>> = async move {
-                match trust_provider.peers_with_financially_relevant_swap().await {
+                match trust_provider
+                    .peers_with_financially_relevant_swap(freshness_hours)
+                    .await
+                {
                     Ok(peers) => peers,
                     Err(e) => {
                         tracing::warn!(error = ?e, "Failed to query peers");

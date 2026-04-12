@@ -217,6 +217,7 @@ wormhole_num_intro_points = 3
 | `wormhole_enabled` | Whether the asb should spawn dedicated per-peer onion services (wormholes) for peers that have committed funds to a swap. Default: `true`. |
 | `wormhole_max_concurrent_rend_requests` | Maximum concurrent rendezvous requests per wormhole. Default: `3`. |
 | `wormhole_num_intro_points` | Number of introduction points per wormhole onion service. Default: `3`. |
+| `wormhole_swap_freshness_hours` | Only peers whose most recent swap state update falls within this window (in hours) are eligible for a wormhole. Older swaps are ignored, so inactive peers do not accumulate onion services indefinitely. Default: `168` (7 days). |
 
 
 ### Network Section
