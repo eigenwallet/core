@@ -18,7 +18,7 @@ import { usePendingSelectMakerApproval } from "store/hooks";
 import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   sortApprovalsAndKnownQuotes,
   OfferSortMode,
@@ -51,8 +51,16 @@ export default function DepositAndChooseOfferPage({
     SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "";
 
   // Pagination calculations
-  const totalPages = Math.ceil(makerOffers.length / offersPerPage);
-  const startIndex = (currentPage - 1) * offersPerPage;
+  const totalPages = Math.max(1, Math.ceil(makerOffers.length / offersPerPage));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const clampedPage = Math.min(currentPage, totalPages);
+  const startIndex = (clampedPage - 1) * offersPerPage;
   const endIndex = startIndex + offersPerPage;
   const paginatedOffers = makerOffers.slice(startIndex, endIndex);
 
@@ -198,10 +206,10 @@ export default function DepositAndChooseOfferPage({
                 </Menu>
               </Box>
               <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                {paginatedOffers.map((quote, index) => {
+                {paginatedOffers.map((quote) => {
                   return (
                     <MakerOfferItem
-                      key={startIndex + index}
+                      key={quote.quote_with_address.peer_id}
                       quoteWithAddress={quote.quote_with_address}
                       requestId={quote.approval?.request_id}
                     />
@@ -213,7 +221,7 @@ export default function DepositAndChooseOfferPage({
                 <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
                   <Pagination
                     count={totalPages}
-                    page={currentPage}
+                    page={clampedPage}
                     onChange={handlePageChange}
                     color="primary"
                   />

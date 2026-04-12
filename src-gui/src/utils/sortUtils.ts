@@ -38,9 +38,9 @@ export function sortApprovalsAndKnownQuotes(
     const q = m.quote_with_address.quote;
     switch (sortMode) {
       case "large":
-        return -(q.max_quantity ?? 0);
+        return -q.max_quantity;
       case "small":
-        return q.min_quantity ?? 0;
+        return q.min_quantity;
       case "cheapest":
         return q.price;
     }
@@ -54,9 +54,9 @@ export function sortApprovalsAndKnownQuotes(
           // If we don't have a version, we cannot clarify if it's outdated or not
           (m) => (m.quote_with_address.version ? 0 : 1),
           // Prefer makers with a max quantity > 0 (have liquidity)
-          (m) => ((m.quote_with_address.quote.max_quantity ?? 0) > 0 ? 0 : 1),
+          (m) => (m.quote_with_address.quote.max_quantity > 0 ? 0 : 1),
           // Prefer makers with a minimum quantity > 0
-          (m) => ((m.quote_with_address.quote.min_quantity ?? 0) > 0 ? 0 : 1),
+          (m) => (m.quote_with_address.quote.min_quantity > 0 ? 0 : 1),
           // Prefer makers that are not incompatible
           (m) =>
             isMakerVersionTooOld(m.quote_with_address.version)
