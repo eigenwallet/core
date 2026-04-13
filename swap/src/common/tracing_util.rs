@@ -15,9 +15,12 @@ use crate::cli::api::tauri_bindings::{TauriEmitter, TauriHandle, TauriLogEvent};
 
 /// Creates a tracing layer that writes to a rolling file appender.
 macro_rules! json_rolling_layer {
-    ($dir:expr, $prefix:expr, $env_filter:expr, $max_files:expr) => {{
+    ($dir:expr, $prefix:expr, $env_filter:expr, $max_files:expr) => {
+        json_rolling_layer!($dir, $prefix, $env_filter, $max_files, Rotation::HOURLY)
+    };
+    ($dir:expr, $prefix:expr, $env_filter:expr, $max_files:expr, $rotation:expr) => {{
         let appender: RollingFileAppender = RollingFileAppender::builder()
-            .rotation(Rotation::HOURLY)
+            .rotation($rotation)
             .filename_prefix($prefix)
             .filename_suffix("log")
             .max_log_files($max_files)
@@ -82,12 +85,16 @@ pub fn init(
         24
     );
 
-    // Write Tor/arti to a verbose log file (tracing-tor*.log)
+    // Write Tor/arti to a verbose log file (tracing-tor*.log).
+    // Rotates every minute and keeps the last 5 files: TRACE-level tor logs are
+    // extremely voluminous (`tor_proto` alone can produce >10 MB/min during
+    // HS failures), so we deliberately keep only a short rolling window.
     let tor_file_layer = json_rolling_layer!(
         &dir,
         "tracing-tor",
         env_filter_with_all_crates(vec![(crates::TOR_CRATES.to_vec(), LevelFilter::TRACE)]),
-        24
+        5,
+        Rotation::MINUTELY
     );
 
     // Write libp2p to a verbose log file (tracing-libp2p*.log)
@@ -214,7 +221,6 @@ mod crates {
         "tor_dircommon",
         "tor_netdir",
         "tor_netdoc",
-        "tor_proto",
         "tor_linkspec",
         "tor_ptmgr",
         "tor_rtcompat",
