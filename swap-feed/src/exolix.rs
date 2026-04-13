@@ -43,38 +43,61 @@ pub struct ExolixParams {
 pub(crate) mod connection {
     use super::{ExolixParams, wire};
     use anyhow::Result;
+    use backoff::{ExponentialBackoff, backoff::Backoff};
     use futures::StreamExt;
     use futures::stream::{self, BoxStream};
     use std::convert::Infallible;
     use std::sync::Arc;
+    use std::time::Duration;
+
+    /// Initial retry delay after a failed fetch.
+    const BACKOFF_INITIAL: Duration = Duration::from_secs(3);
+    /// Cap on the retry delay after repeated failures.
+    const BACKOFF_MAX: Duration = Duration::from_secs(60);
+
+    fn new_backoff() -> ExponentialBackoff {
+        ExponentialBackoff {
+            initial_interval: BACKOFF_INITIAL,
+            max_interval: BACKOFF_MAX,
+            max_elapsed_time: None,
+            ..ExponentialBackoff::default()
+        }
+    }
 
     pub async fn new(
         params: Arc<ExolixParams>,
     ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Infallible>>> {
         tracing::debug!("Connected to Exolix REST API");
 
-        // Fetch-then-sleep loop. Per-poll failures are logged and retried
-        // on the next interval rather than tearing down the feed — the
-        // ticker's backoff machinery is for transport loss, not transient
-        // REST errors (429, 500, decode error).
-        let stream = stream::unfold((params, true), |(params, first)| async move {
-            if !first {
-                tokio::time::sleep(params.poll_interval).await;
-            }
-            loop {
-                match fetch_rate(&params).await {
-                    Ok(update) => return Some((Ok(update), (params, false))),
-                    Err(err) => {
-                        tracing::warn!(
-                            error = %err,
-                            "Exolix poll failed, will retry after next interval",
-                        );
-                        tokio::time::sleep(params.poll_interval).await;
+        // Fetch-then-sleep loop. Per-poll failures are handled locally
+        // with an exponential backoff (3s → 60s) rather than being
+        // propagated to the ticker's reconnect machinery — that layer is
+        // designed for transport loss, not transient REST errors (429,
+        // 500, decode error). On success the backoff resets.
+        let stream =
+            stream::unfold((params, true, new_backoff()), |(params, first, mut backoff)| async move {
+                if !first {
+                    tokio::time::sleep(params.poll_interval).await;
+                }
+                loop {
+                    match fetch_rate(&params).await {
+                        Ok(update) => {
+                            backoff.reset();
+                            return Some((Ok(update), (params, false, backoff)));
+                        }
+                        Err(err) => {
+                            let delay = backoff.next_backoff().unwrap_or(BACKOFF_MAX);
+                            tracing::warn!(
+                                error = %err,
+                                retry_in_ms = delay.as_millis() as u64,
+                                "Exolix poll failed, will retry",
+                            );
+                            tokio::time::sleep(delay).await;
+                        }
                     }
                 }
-            }
-        })
-        .boxed();
+            })
+            .boxed();
 
         Ok(stream)
     }
