@@ -92,7 +92,7 @@ pub fn init(
     let tor_file_layer = json_rolling_layer!(
         &dir,
         "tracing-tor",
-        env_filter_with_all_crates(vec![(crates::TOR_CRATES.to_vec(), LevelFilter::TRACE)]),
+        env_filter_with_all_crates(vec![(crates::TOR_CRATES.to_vec(), LevelFilter::DEBUG)]),
         5,
         Rotation::MINUTELY
     );
