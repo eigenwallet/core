@@ -205,7 +205,7 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to Kraken, Bitfinex, and KuCoin
+            // Connect to Kraken, Bitfinex, KuCoin, and optionally Exolix
             let kraken_price_updates =
                 swap_feed::connect_kraken(config.maker.price_ticker_ws_url_kraken.clone())?;
             let bitfinex_price_updates =
@@ -214,12 +214,28 @@ pub async fn main() -> Result<()> {
                 config.maker.price_ticker_rest_url_kucoin.clone(),
                 reqwest::Client::new(),
             )?;
+            let exolix_price_updates = config
+                .maker
+                .exolix_api_key
+                .as_ref()
+                .map(|api_key| {
+                    swap_feed::connect_exolix(
+                        config.maker.price_ticker_rest_url_exolix.clone(),
+                        Some(api_key.clone()),
+                        reqwest::Client::new(),
+                    )
+                })
+                .transpose()?;
+            if exolix_price_updates.is_some() {
+                tracing::info!("Exolix price feed enabled");
+            }
 
             let kraken_rate = ExchangeRate::new(
                 config.maker.ask_spread,
                 kraken_price_updates,
                 bitfinex_price_updates,
                 kucoin_price_updates,
+                exolix_price_updates,
             );
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 

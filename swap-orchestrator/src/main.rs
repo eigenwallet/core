@@ -260,6 +260,8 @@ fn main() {
                 price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
                 price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
                 price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
+                price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
+                exolix_api_key: None,
                 external_bitcoin_redeem_address: None,
                 refund_policy: defaults.refund_policy,
                 developer_tip,
