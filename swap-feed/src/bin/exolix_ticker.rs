@@ -16,9 +16,13 @@ async fn main() -> Result<()> {
         .or_else(|| std::env::var("EXOLIX_API_KEY").ok());
 
     let rest_url = Url::parse("https://exolix.com/api/v2/rate")?;
-    let mut ticker =
-        swap_feed::exolix::connect(rest_url, api_key, reqwest::Client::new())
-            .context("Failed to connect to Exolix")?;
+    let mut ticker = swap_feed::exolix::connect(
+        rest_url,
+        api_key,
+        std::time::Duration::from_secs(10),
+        reqwest::Client::new(),
+    )
+    .context("Failed to connect to Exolix")?;
 
     loop {
         match ticker.wait_for_next_update().await? {

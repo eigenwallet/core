@@ -2,9 +2,6 @@ use anyhow::Result;
 use std::time::Duration;
 use url::Url;
 
-/// Default poll interval for the Exolix rate endpoint.
-pub const POLL_INTERVAL: Duration = Duration::from_secs(30);
-
 /// Connect to the Exolix REST API and poll it for XMR/BTC rate updates.
 ///
 /// Unlike the websocket-based feeds, Exolix only exposes a REST rate endpoint,
@@ -16,6 +13,7 @@ pub const POLL_INTERVAL: Duration = Duration::from_secs(30);
 pub fn connect(
     rest_url: Url,
     api_key: Option<String>,
+    poll_interval: Duration,
     client: reqwest::Client,
 ) -> Result<PriceUpdates> {
     crate::ticker::connect(
@@ -23,6 +21,7 @@ pub fn connect(
         ExolixParams {
             rest_url,
             api_key,
+            poll_interval,
             client,
         },
         connection::new,
@@ -37,12 +36,13 @@ pub type Error = crate::ticker::Error;
 pub struct ExolixParams {
     pub rest_url: Url,
     pub api_key: Option<String>,
+    pub poll_interval: Duration,
     pub client: reqwest::Client,
 }
 
 pub(crate) mod connection {
-    use super::{ExolixParams, POLL_INTERVAL, wire};
-    use anyhow::{Context, Result};
+    use super::{ExolixParams, wire};
+    use anyhow::Result;
     use futures::StreamExt;
     use futures::stream::{self, BoxStream};
     use std::convert::Infallible;
@@ -51,46 +51,25 @@ pub(crate) mod connection {
     pub async fn new(
         params: Arc<ExolixParams>,
     ) -> Result<BoxStream<'static, Result<wire::PriceUpdate, Infallible>>> {
-        // Do a synchronous first fetch so connection failures (bad key,
-        // wrong URL) surface immediately to the ticker's backoff machinery
-        // instead of being buried behind a 30s sleep. The successful sample
-        // is emitted as the very first stream item so subscribers leave
-        // `NotYetAvailable` without waiting for the poll interval.
-        let initial = fetch_rate(&params)
-            .await
-            .context("Failed initial Exolix rate fetch")?;
-
         tracing::debug!("Connected to Exolix REST API");
 
-        enum State {
-            First(wire::PriceUpdate, Arc<ExolixParams>),
-            Polling(Arc<ExolixParams>),
-        }
-
-        let stream = stream::unfold(State::First(initial, params), |state| async move {
-            match state {
-                State::First(update, params) => Some((Ok(update), State::Polling(params))),
-                State::Polling(params) => {
-                    tokio::time::sleep(POLL_INTERVAL).await;
-                    // Per-poll failures must NOT tear down the whole feed.
-                    // Websocket feeds only reconnect on transport loss; a
-                    // single bad REST response (429, 500, decode error)
-                    // should be logged and retried on the next tick. We
-                    // therefore skip item-errors by recursing the unfold
-                    // until we get a healthy sample.
-                    loop {
-                        match fetch_rate(&params).await {
-                            Ok(update) => {
-                                return Some((Ok(update), State::Polling(params)));
-                            }
-                            Err(err) => {
-                                tracing::warn!(
-                                    error = %err,
-                                    "Exolix poll failed, will retry after next interval",
-                                );
-                                tokio::time::sleep(POLL_INTERVAL).await;
-                            }
-                        }
+        // Fetch-then-sleep loop. Per-poll failures are logged and retried
+        // on the next interval rather than tearing down the feed — the
+        // ticker's backoff machinery is for transport loss, not transient
+        // REST errors (429, 500, decode error).
+        let stream = stream::unfold((params, true), |(params, first)| async move {
+            if !first {
+                tokio::time::sleep(params.poll_interval).await;
+            }
+            loop {
+                match fetch_rate(&params).await {
+                    Ok(update) => return Some((Ok(update), (params, false))),
+                    Err(err) => {
+                        tracing::warn!(
+                            error = %err,
+                            "Exolix poll failed, will retry after next interval",
+                        );
+                        tokio::time::sleep(params.poll_interval).await;
                     }
                 }
             }
@@ -101,37 +80,25 @@ pub(crate) mod connection {
     }
 
     async fn fetch_rate(params: &ExolixParams) -> Result<wire::PriceUpdate, FetchError> {
-        let mut url = params.rest_url.clone();
-        url.query_pairs_mut()
-            .append_pair("coinFrom", "XMR")
-            .append_pair("networkFrom", "XMR")
-            .append_pair("coinTo", "BTC")
-            .append_pair("networkTo", "BTC")
-            .append_pair("amount", "1")
-            .append_pair("rateType", "float");
+        let request_body = wire::RateRequest::xmr_to_btc();
 
-        let mut request = params.client.get(url).header("Accept", "application/json");
+        let mut request = params
+            .client
+            .get(params.rest_url.clone())
+            .query(&request_body)
+            .header("Accept", "application/json");
         if let Some(key) = params.api_key.as_deref() {
             request = request.header("Authorization", key);
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(FetchError::Request)?;
+        let response = request.send().await.map_err(FetchError::Request)?;
         let status = response.status();
         if !status.is_success() {
-            let body = response
-                .text()
-                .await
-                .map_err(FetchError::BodyRead)?;
+            let body = response.text().await.map_err(FetchError::BodyRead)?;
             return Err(FetchError::Status { status, body });
         }
 
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(FetchError::BodyRead)?;
+        let bytes = response.bytes().await.map_err(FetchError::BodyRead)?;
         let body: wire::RateResponse =
             serde_json::from_slice(&bytes).map_err(FetchError::Decode)?;
         wire::PriceUpdate::try_from(body).map_err(FetchError::Parse)
@@ -153,13 +120,46 @@ pub(crate) mod connection {
         #[error("Invalid Exolix rate payload")]
         Parse(#[from] wire::Error),
     }
-
 }
 
 pub mod wire {
     use bitcoin::amount::ParseAmountError;
     use rust_decimal::Decimal;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
+
+    /// Query parameters for `GET /api/v2/rate`.
+    #[derive(Debug, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RateRequest {
+        pub coin_from: String,
+        pub network_from: String,
+        pub coin_to: String,
+        pub network_to: String,
+        pub amount: Decimal,
+        pub rate_type: RateType,
+    }
+
+    #[derive(Debug, Serialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum RateType {
+        Float,
+        #[allow(dead_code)]
+        Fixed,
+    }
+
+    impl RateRequest {
+        /// Request the XMR -> BTC floating rate for a 1 XMR send amount.
+        pub fn xmr_to_btc() -> Self {
+            Self {
+                coin_from: "XMR".to_string(),
+                network_from: "XMR".to_string(),
+                coin_to: "BTC".to_string(),
+                network_to: "BTC".to_string(),
+                amount: Decimal::ONE,
+                rate_type: RateType::Float,
+            }
+        }
+    }
 
     /// Raw response from `GET /api/v2/rate`.
     ///

@@ -151,6 +151,14 @@ pub struct Maker {
     /// Bitfinex, and KuCoin.
     #[serde(default)]
     pub exolix_api_key: Option<String>,
+    /// How often the Exolix REST rate endpoint is polled, in seconds.
+    #[serde(default = "default_price_ticker_rest_poll_interval_exolix_secs")]
+    pub price_ticker_rest_poll_interval_exolix_secs: u64,
+    /// How long a polled/streamed exchange-rate sample remains usable
+    /// before it is discarded as stale (in seconds). Applies uniformly
+    /// to all feeds (Kraken, Bitfinex, KuCoin, Exolix).
+    #[serde(default = "default_price_ticker_validity_duration_secs")]
+    pub price_ticker_validity_duration_secs: u64,
     /// If specified, Bitcoin received from successful swaps will be sent to this address.
     #[serde(default, with = "swap_serde::bitcoin::address_serde::option")]
     pub external_bitcoin_redeem_address: Option<bitcoin::Address>,
@@ -198,6 +206,14 @@ fn default_price_ticker_rest_url_kucoin() -> Url {
 
 fn default_price_ticker_rest_url_exolix() -> Url {
     Url::parse(EXOLIX_PRICE_TICKER_REST_URL).expect("default exolix rest url to be valid")
+}
+
+fn default_price_ticker_rest_poll_interval_exolix_secs() -> u64 {
+    10
+}
+
+fn default_price_ticker_validity_duration_secs() -> u64 {
+    10 * 60
 }
 
 fn default_developer_tip() -> Decimal {
@@ -359,6 +375,9 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
             price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
             exolix_api_key: None,
+            price_ticker_rest_poll_interval_exolix_secs:
+                default_price_ticker_rest_poll_interval_exolix_secs(),
+            price_ticker_validity_duration_secs: default_price_ticker_validity_duration_secs(),
             external_bitcoin_redeem_address: None,
             developer_tip,
             refund_policy: defaults.refund_policy,

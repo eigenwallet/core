@@ -214,6 +214,9 @@ pub async fn main() -> Result<()> {
                 config.maker.price_ticker_rest_url_kucoin.clone(),
                 reqwest::Client::new(),
             )?;
+            let exolix_poll_interval = std::time::Duration::from_secs(
+                config.maker.price_ticker_rest_poll_interval_exolix_secs,
+            );
             let exolix_price_updates = config
                 .maker
                 .exolix_api_key
@@ -222,6 +225,7 @@ pub async fn main() -> Result<()> {
                     swap_feed::connect_exolix(
                         config.maker.price_ticker_rest_url_exolix.clone(),
                         Some(api_key.clone()),
+                        exolix_poll_interval,
                         reqwest::Client::new(),
                     )
                 })
@@ -230,12 +234,16 @@ pub async fn main() -> Result<()> {
                 tracing::info!("Exolix price feed enabled");
             }
 
+            let price_validity_duration = std::time::Duration::from_secs(
+                config.maker.price_ticker_validity_duration_secs,
+            );
             let kraken_rate = ExchangeRate::new(
                 config.maker.ask_spread,
                 kraken_price_updates,
                 bitfinex_price_updates,
                 kucoin_price_updates,
                 exolix_price_updates,
+                price_validity_duration,
             );
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 

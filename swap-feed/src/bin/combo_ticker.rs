@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
         bitfinex_ticker,
         kucoin_ticker,
         None,
+        std::time::Duration::from_secs(10 * 60),
     );
 
     let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
