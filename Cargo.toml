@@ -95,15 +95,15 @@ tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
 
 # Tor/Arti crates
-arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0", default-features = false }
+arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0", default-features = false }
 libp2p-tor = { path = "./libp2p-tor" }
-safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-hscrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-llcrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
-tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_1_8_0" }
+safelog = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-cell = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-hscrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-hsservice = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-llcrypto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-proto = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
+tor-rtcompat = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0" }
 
 # Terminal Utilities
 console = "0.16"
