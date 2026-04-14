@@ -23,12 +23,12 @@ async fn main() -> Result<()> {
 
     let mut combo = swap_feed::ExchangeRate::new(
         rust_decimal::Decimal::ZERO,
-        kraken_ticker,
-        bitfinex_ticker,
-        kucoin_ticker,
+        Some(kraken_ticker),
+        Some(bitfinex_ticker),
+        Some(kucoin_ticker),
         None,
         std::time::Duration::from_secs(10 * 60),
-    );
+    )?;
 
     let mut timer = tokio::time::interval(std::time::Duration::from_secs(1));
     let mut prev_rate = Ok(swap_feed::Rate::ZERO);

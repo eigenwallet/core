@@ -109,54 +109,78 @@ impl crate::traits::LatestRate for FixedRate {
     }
 }
 
-/// Produces [`Rate`]s based on [`PriceUpdate`]s from kraken, bitfinex, kucoin,
-/// optionally exolix, and a configured spread.
+/// Produces [`Rate`]s based on [`PriceUpdate`]s from any combination of
+/// kraken, bitfinex, kucoin, and exolix feeds plus a configured spread.
+///
+/// Each feed is optional; at least one must be enabled (enforced at
+/// construction).
 #[derive(Debug, Clone)]
 pub struct ExchangeRate {
     ask_spread: Decimal,
-    kraken_price_updates: crate::kraken::PriceUpdates,
-    bitfinex_price_updates: crate::bitfinex::PriceUpdates,
-    kucoin_price_updates: crate::kucoin::PriceUpdates,
+    kraken_price_updates: Option<crate::kraken::PriceUpdates>,
+    bitfinex_price_updates: Option<crate::bitfinex::PriceUpdates>,
+    kucoin_price_updates: Option<crate::kucoin::PriceUpdates>,
     exolix_price_updates: Option<crate::exolix::PriceUpdates>,
     validity_duration: Duration,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("At least one price feed must be enabled")]
+pub struct NoPriceFeedEnabled;
+
 impl ExchangeRate {
     pub fn new(
         ask_spread: Decimal,
-        kraken_price_updates: crate::kraken::PriceUpdates,
-        bitfinex_price_updates: crate::bitfinex::PriceUpdates,
-        kucoin_price_updates: crate::kucoin::PriceUpdates,
+        kraken_price_updates: Option<crate::kraken::PriceUpdates>,
+        bitfinex_price_updates: Option<crate::bitfinex::PriceUpdates>,
+        kucoin_price_updates: Option<crate::kucoin::PriceUpdates>,
         exolix_price_updates: Option<crate::exolix::PriceUpdates>,
         validity_duration: Duration,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, NoPriceFeedEnabled> {
+        if kraken_price_updates.is_none()
+            && bitfinex_price_updates.is_none()
+            && kucoin_price_updates.is_none()
+            && exolix_price_updates.is_none()
+        {
+            return Err(NoPriceFeedEnabled);
+        }
+        Ok(Self {
             ask_spread,
             kraken_price_updates,
             bitfinex_price_updates,
             kucoin_price_updates,
             exolix_price_updates,
             validity_duration,
-        }
+        })
     }
 }
 
 #[derive(PartialEq, Clone, Debug, thiserror::Error)]
 pub enum Error {
     #[error(
-        "All exchanges failed (Kraken: {0}, Bitfinex: {1}, KuCoin: {2}, Exolix: {})",
-        .3.as_ref().map(|e| e.to_string()).unwrap_or_else(|| "not configured".into())
+        "All enabled exchanges failed (Kraken: {}, Bitfinex: {}, KuCoin: {}, Exolix: {})",
+        format_feed_error(kraken),
+        format_feed_error(bitfinex),
+        format_feed_error(kucoin),
+        format_feed_error(exolix),
     )]
-    AllExchanges(
-        crate::kraken::Error,
-        crate::bitfinex::Error,
-        crate::kucoin::Error,
-        Option<crate::exolix::Error>,
-    ),
+    AllExchanges {
+        kraken: Option<crate::kraken::Error>,
+        bitfinex: Option<crate::bitfinex::Error>,
+        kucoin: Option<crate::kucoin::Error>,
+        exolix: Option<crate::exolix::Error>,
+    },
     #[error("All exchange data is stale beyond the configured validity window")]
     AllStaleData,
     #[error("Exchanges disagree by more than 10%")]
     SpreadTooWide,
+}
+
+fn format_feed_error<E: std::fmt::Display>(err: &Option<E>) -> String {
+    match err {
+        Some(e) => e.to_string(),
+        None => "disabled".to_string(),
+    }
 }
 
 const MAX_INTEREXCHANGE_SPREAD: Decimal = Decimal::from_parts(1, 0, 0, false, 1); // 10%
@@ -165,9 +189,18 @@ impl crate::traits::LatestRate for ExchangeRate {
     type Error = Error;
 
     fn latest_rate(&mut self) -> Result<Rate, Self::Error> {
-        let kraken_update = self.kraken_price_updates.latest_update();
-        let bitfinex_update = self.bitfinex_price_updates.latest_update();
-        let kucoin_update = self.kucoin_price_updates.latest_update();
+        let kraken_update = self
+            .kraken_price_updates
+            .as_mut()
+            .map(|feed| feed.latest_update());
+        let bitfinex_update = self
+            .bitfinex_price_updates
+            .as_mut()
+            .map(|feed| feed.latest_update());
+        let kucoin_update = self
+            .kucoin_price_updates
+            .as_mut()
+            .map(|feed| feed.latest_update());
         let exolix_update = self
             .exolix_price_updates
             .as_mut()
@@ -184,37 +217,42 @@ impl crate::traits::LatestRate for ExchangeRate {
 }
 
 fn average_ask(
-    kraken_update: crate::kraken::PriceUpdate,
-    bitfinex_update: crate::bitfinex::PriceUpdate,
-    kucoin_update: crate::kucoin::PriceUpdate,
+    kraken_update: Option<crate::kraken::PriceUpdate>,
+    bitfinex_update: Option<crate::bitfinex::PriceUpdate>,
+    kucoin_update: Option<crate::kucoin::PriceUpdate>,
     exolix_update: Option<crate::exolix::PriceUpdate>,
     validity_duration: Duration,
 ) -> Result<bitcoin::Amount, Error> {
-    let exolix_configured = exolix_update.is_some();
-    let expected_sources = 3 + usize::from(exolix_configured);
+    let enabled_sources = usize::from(kraken_update.is_some())
+        + usize::from(bitfinex_update.is_some())
+        + usize::from(kucoin_update.is_some())
+        + usize::from(exolix_update.is_some());
 
-    let all_failed = kraken_update.is_err()
-        && bitfinex_update.is_err()
-        && kucoin_update.is_err()
-        && exolix_update.as_ref().map(|u| u.is_err()).unwrap_or(true);
+    fn feed_failed<T, E>(u: &Option<Result<T, E>>) -> bool {
+        u.as_ref().map(|r| r.is_err()).unwrap_or(true)
+    }
+    let all_failed = feed_failed(&kraken_update)
+        && feed_failed(&bitfinex_update)
+        && feed_failed(&kucoin_update)
+        && feed_failed(&exolix_update);
     if all_failed {
-        return Err(Error::AllExchanges(
-            kraken_update.unwrap_err(),
-            bitfinex_update.unwrap_err(),
-            kucoin_update.unwrap_err(),
-            exolix_update.map(|u| u.unwrap_err()),
-        ));
+        return Err(Error::AllExchanges {
+            kraken: kraken_update.map(|u| u.unwrap_err()),
+            bitfinex: bitfinex_update.map(|u| u.unwrap_err()),
+            kucoin: kucoin_update.map(|u| u.unwrap_err()),
+            exolix: exolix_update.map(|u| u.unwrap_err()),
+        });
     }
 
     let now = Instant::now();
-    let kraken_update = kraken_update.map(|(ts, u)| (now - ts, u.ask));
-    let bitfinex_update = bitfinex_update.map(|(ts, u)| (now - ts, u.ask));
-    let kucoin_update = kucoin_update.map(|(ts, u)| (now - ts, u.ask));
+    let kraken_update = kraken_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
+    let bitfinex_update = bitfinex_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
+    let kucoin_update = kucoin_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
     let exolix_update = exolix_update.map(|u| u.map(|(ts, u)| (now - ts, u.ask)));
     let asks: Vec<_> = [
-        kraken_update.as_ref().ok(),
-        bitfinex_update.as_ref().ok(),
-        kucoin_update.as_ref().ok(),
+        kraken_update.as_ref().and_then(|u| u.as_ref().ok()),
+        bitfinex_update.as_ref().and_then(|u| u.as_ref().ok()),
+        kucoin_update.as_ref().and_then(|u| u.as_ref().ok()),
         exolix_update.as_ref().and_then(|u| u.as_ref().ok()),
     ]
     .into_iter()
@@ -226,7 +264,7 @@ fn average_ask(
     if asks.is_empty() {
         return Err(Error::AllStaleData);
     }
-    let degraded = asks.len() < expected_sources;
+    let degraded = asks.len() < enabled_sources;
 
     let average_ask = asks.iter().copied().sum::<bitcoin::Amount>() / (asks.len() as u64);
     let min_ask = asks.iter().min().expect(">0 asks");
@@ -328,7 +366,7 @@ mod tests {
                 },
             ));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -350,7 +388,7 @@ mod tests {
                 },
             ));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -367,7 +405,7 @@ mod tests {
             ));
             let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -378,13 +416,13 @@ mod tests {
             let bitfinex_update = Err(crate::bitfinex::Error::NotYetAvailable);
             let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
-                Err(Error::AllExchanges(
-                    crate::kraken::Error::NotYetAvailable,
-                    crate::bitfinex::Error::NotYetAvailable,
-                    crate::kucoin::Error::NotYetAvailable,
-                    None,
-                ))
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
+                Err(Error::AllExchanges {
+                    kraken: Some(crate::kraken::Error::NotYetAvailable),
+                    bitfinex: Some(crate::bitfinex::Error::NotYetAvailable),
+                    kucoin: Some(crate::kucoin::Error::NotYetAvailable),
+                    exolix: None,
+                })
             );
         }
 
@@ -410,7 +448,7 @@ mod tests {
                 },
             ));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
                 Err(Error::SpreadTooWide)
             );
         }
@@ -438,7 +476,7 @@ mod tests {
                 },
             ));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -461,7 +499,7 @@ mod tests {
                 },
             ));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -494,7 +532,7 @@ mod tests {
                 },
             )));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, exolix_update, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), exolix_update, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -525,7 +563,7 @@ mod tests {
             // erroring out.
             let exolix_update = Some(Err(crate::exolix::Error::NotYetAvailable));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, exolix_update, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), exolix_update, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -537,13 +575,13 @@ mod tests {
             let kucoin_update = Err(crate::kucoin::Error::NotYetAvailable);
             let exolix_update = Some(Err(crate::exolix::Error::NotYetAvailable));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, exolix_update, TEST_VALIDITY),
-                Err(Error::AllExchanges(
-                    crate::kraken::Error::NotYetAvailable,
-                    crate::bitfinex::Error::NotYetAvailable,
-                    crate::kucoin::Error::NotYetAvailable,
-                    Some(crate::exolix::Error::NotYetAvailable),
-                ))
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), exolix_update, TEST_VALIDITY),
+                Err(Error::AllExchanges {
+                    kraken: Some(crate::kraken::Error::NotYetAvailable),
+                    bitfinex: Some(crate::bitfinex::Error::NotYetAvailable),
+                    kucoin: Some(crate::kucoin::Error::NotYetAvailable),
+                    exolix: Some(crate::exolix::Error::NotYetAvailable),
+                })
             );
         }
 
@@ -560,7 +598,7 @@ mod tests {
                 },
             )));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, exolix_update, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), exolix_update, TEST_VALIDITY),
                 Ok(bitcoin::Amount::ONE_BTC)
             );
         }
@@ -587,7 +625,7 @@ mod tests {
                 },
             ));
             assert_eq!(
-                average_ask(kraken_update, bitfinex_update, kucoin_update, None, TEST_VALIDITY),
+                average_ask(Some(kraken_update), Some(bitfinex_update), Some(kucoin_update), None, TEST_VALIDITY),
                 Err(Error::AllStaleData)
             );
         }

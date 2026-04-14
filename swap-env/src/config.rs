@@ -146,6 +146,15 @@ pub struct Maker {
     pub price_ticker_rest_url_kucoin: Url,
     #[serde(default = "default_price_ticker_rest_url_exolix")]
     pub price_ticker_rest_url_exolix: Url,
+    /// Whether the Kraken price feed contributes to the XMR/BTC rate.
+    #[serde(default = "default_price_ticker_source_enabled")]
+    pub price_ticker_source_kraken_enabled: bool,
+    /// Whether the Bitfinex price feed contributes to the XMR/BTC rate.
+    #[serde(default = "default_price_ticker_source_enabled")]
+    pub price_ticker_source_bitfinex_enabled: bool,
+    /// Whether the KuCoin price feed contributes to the XMR/BTC rate.
+    #[serde(default = "default_price_ticker_source_enabled")]
+    pub price_ticker_source_kucoin_enabled: bool,
     /// Optional Exolix API key. When set, the Exolix rate endpoint is
     /// polled and included in the price average alongside Kraken,
     /// Bitfinex, and KuCoin.
@@ -210,6 +219,10 @@ fn default_price_ticker_rest_url_exolix() -> Url {
 
 fn default_price_ticker_rest_poll_interval_exolix_secs() -> u64 {
     10
+}
+
+fn default_price_ticker_source_enabled() -> bool {
+    true
 }
 
 fn default_price_ticker_validity_duration_secs() -> u64 {
@@ -378,6 +391,9 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_rest_poll_interval_exolix_secs:
                 default_price_ticker_rest_poll_interval_exolix_secs(),
             price_ticker_validity_duration_secs: default_price_ticker_validity_duration_secs(),
+            price_ticker_source_kraken_enabled: default_price_ticker_source_enabled(),
+            price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
+            price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
             external_bitcoin_redeem_address: None,
             developer_tip,
             refund_policy: defaults.refund_policy,
