@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.4.0] - 2026-04-13
-
-- ASB: Wormhole eligibility now only considers swaps whose most recent state update falls within a configurable freshness window. This is controlled by the new `tor.wormhole_swap_freshness_hours` config option (default: `168`, i.e. 7 days). Inactive peers no longer keep their wormhole indefinitely.
 - ASB+CONTROLLER: New `get-current-quote` command returns the quote the ASB is currently serving to peers (price per XMR, min and max quantity). Reuses the in-flight quote cache so repeated calls don't trigger extra work.
 - ASB: Added Exolix as an optional XMR/BTC price source. Set `maker.price_ticker_source_exolix_api_key` in the config to enable; the polled rate is averaged alongside Kraken, Bitfinex, and KuCoin. Poll interval is configurable via `maker.price_ticker_rest_poll_interval_exolix_secs` (default: `10`).
 - ASB: Each price source can now be individually disabled via `maker.price_ticker_source_kraken_enabled`, `maker.price_ticker_source_bitfinex_enabled`, and `maker.price_ticker_source_kucoin_enabled` (all default `true`). At least one source must remain enabled.
 - ASB: How long a polled exchange-rate sample is considered valid is now configurable via `maker.price_ticker_validity_duration_secs` (default: `600`, i.e. 10 minutes).
+
+## [4.4.0] - 2026-04-13
+
+- ASB: Wormhole eligibility now only considers swaps whose most recent state update falls within a configurable freshness window. This is controlled by the new `tor.wormhole_swap_freshness_hours` config option (default: `168`, i.e. 7 days). Inactive peers no longer keep their wormhole indefinitely.
 - GUI: Allow sorting of maker offers on the swap page by largest max amount (default), smallest min amount, or cheapest price, via a subtle sort button above the offer list.
 - Improve Tor connectivity
 
