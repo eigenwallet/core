@@ -311,23 +311,7 @@ where
                         }
                         SwarmEvent::Behaviour(OutEvent::QuoteRequested { channel, peer }) => {
                             self.pending_quote_channels.push((channel, peer));
-
-                            // If no computation is in flight, we start one
-                            // (If the length is one, only the keep-alive future is in the queue)
-                            if self.inflight_quote_computation.len() == 1 {
-                                // This should be the first request,
-                                // so the pending queue should also have exactly one request
-                                debug_assert!(self.pending_quote_channels.len() == 1);
-
-                                self.inflight_quote_computation.push(
-                                    self.make_quote_or_use_cached(
-                                        self.min_buy,
-                                        self.max_buy,
-                                        self.developer_tip.ratio,
-                                        self.refund_policy.clone().into(),
-                                    ),
-                                );
-                            }
+                            self.ensure_quote_computation_is_inflight();
                         }
                         SwarmEvent::Behaviour(OutEvent::TransferProofAcknowledged { peer, id }) => {
                             tracing::debug!(%peer, "Bob acknowledged transfer proof");
@@ -619,23 +603,32 @@ where
                         }
                         EventLoopRequest::GetCurrentQuote { respond_to } => {
                             self.pending_quote_controller_responders.push(respond_to);
-
-                            // Start a computation if none is in flight.
-                            // (length of 1 means only the keep-alive pending() future is queued)
-                            if self.inflight_quote_computation.len() == 1 {
-                                self.inflight_quote_computation.push(
-                                    self.make_quote_or_use_cached(
-                                        self.min_buy,
-                                        self.max_buy,
-                                        self.developer_tip.ratio,
-                                        self.refund_policy.clone().into(),
-                                    ),
-                                );
-                            }
+                            self.ensure_quote_computation_is_inflight();
                         }
                     }
                 }
             }
+        }
+    }
+
+    /// Start a quote computation if none is currently in flight.
+    ///
+    /// The `inflight_quote_computation` stream always contains a permanent
+    /// `pending()` keep-alive future, so `len() == 1` means no real
+    /// computation is running. Called by every site that queues a
+    /// consumer for the next quote result (p2p quote protocol, controller
+    /// RPC) to guarantee there is a future that will eventually wake up
+    /// the result-draining select arm.
+    fn ensure_quote_computation_is_inflight(&mut self) {
+        if self.inflight_quote_computation.len() == 1 {
+            self.inflight_quote_computation.push(
+                self.make_quote_or_use_cached(
+                    self.min_buy,
+                    self.max_buy,
+                    self.developer_tip.ratio,
+                    self.refund_policy.clone().into(),
+                ),
+            );
         }
     }
 
