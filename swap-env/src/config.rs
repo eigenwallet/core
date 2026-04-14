@@ -96,6 +96,11 @@ pub struct TorConf {
     /// Number of introduction points per wormhole onion service.
     #[serde(default = "default_wormhole_num_intro_points")]
     pub wormhole_num_intro_points: u8,
+    /// Only swaps whose latest state update occurred within this many hours
+    /// are considered when deciding which peers receive a wormhole. Stale
+    /// swaps beyond this window are ignored.
+    #[serde(default = "default_wormhole_swap_freshness_hours")]
+    pub wormhole_swap_freshness_hours: u64,
 }
 
 fn default_max_concurrent_rend_requests() -> usize {
@@ -114,6 +119,10 @@ fn default_wormhole_num_intro_points() -> u8 {
     3
 }
 
+fn default_wormhole_swap_freshness_hours() -> u64 {
+    7 * 24
+}
+
 impl Default for TorConf {
     fn default() -> Self {
         Self {
@@ -123,6 +132,7 @@ impl Default for TorConf {
             wormhole_enabled: default_wormhole_enabled(),
             wormhole_max_concurrent_rend_requests: default_wormhole_max_concurrent_rend_requests(),
             wormhole_num_intro_points: default_wormhole_num_intro_points(),
+            wormhole_swap_freshness_hours: default_wormhole_swap_freshness_hours(),
         }
     }
 }

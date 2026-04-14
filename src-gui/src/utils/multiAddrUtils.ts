@@ -16,7 +16,8 @@ export function isMakerOnCorrectNetwork(
 }
 
 /** Check whether a maker version is old and might not support newer features. */
-export function isMakerVersionOld(version: string): boolean {
+export function isMakerVersionOld(version: string | undefined): boolean {
+  if (version === undefined) return false;
   // This checks if the version is less than the minimum version
   // we use .compare(...) instead of .satisfies(...) because satisfies(...)
   // does not work with pre-release versions
@@ -24,6 +25,7 @@ export function isMakerVersionOld(version: string): boolean {
 }
 
 /** Check whether a maker version is too old and is known to be completely incompatile. */
-export function isMakerVersionTooOld(version: string): boolean {
+export function isMakerVersionTooOld(version: string | undefined): boolean {
+  if (version === undefined) return false;
   return semver.compare(version, VERSION_FLOOR_HARD) === -1;
 }

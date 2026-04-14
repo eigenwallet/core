@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB: Wormhole eligibility now only considers swaps whose most recent state update falls within a configurable freshness window. This is controlled by the new `tor.wormhole_swap_freshness_hours` config option (default: `168`, i.e. 7 days). Inactive peers no longer keep their wormhole indefinitely.
+- GUI: Allow sorting of maker offers on the swap page by largest max amount (default), smallest min amount, or cheapest price, via a subtle sort button above the offer list.
+- Improve Tor connectivity
+
+## [4.3.1] - 2026-04-11
+
 ## [4.3.0] - 2026-04-09
 
 - A new feature called "wormholes" allows makers to automatically give out dedidcated onion services to takers which have committed funds to at least one swap. Takers can then connect to the maker irrespective of any potential DOS attack against the makers public onion service address. Wormholes are enabled by default. To disable them, set `tor.wormhole_enabled = false` in the config file. You can tweak `wormhole_max_concurrent_rend_requests` to control the maximum number of concurrent rendezvous requests per wormhole (default: 3). A higher value means each "wormhole" can handle more concurrent connections but also means they become more susceptible to DOS attacks.
@@ -901,7 +907,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.3.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.3.1...HEAD
+[4.3.1]: https://github.com/eigenwallet/core/compare/4.3.0...4.3.1
 [4.3.0]: https://github.com/eigenwallet/core/compare/4.2.4...4.3.0
 [4.2.4]: https://github.com/eigenwallet/core/compare/4.2.3...4.2.4
 [4.2.3]: https://github.com/eigenwallet/core/compare/4.2.2...4.2.3

@@ -149,7 +149,7 @@ export default function MakerOfferItem({
         </Tooltip>
         {AntiSpamDepositChip(quote)}
         {ReputationChip(peer_id)}
-        <VersionChip version={version} />
+        {version !== undefined && <VersionChip version={version} />}
       </Box>
 
       {(isOutOfLiquidity || isTooOld) && (

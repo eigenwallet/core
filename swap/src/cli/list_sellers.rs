@@ -24,6 +24,6 @@ pub struct QuoteWithAddress {
 
     /// The version of the seller's agent
     #[serde_as(as = "Option<DisplayFromStr>")]
-    #[typeshare(serialized_as = "string")]
+    #[typeshare(serialized_as = "Option<string>")]
     pub version: Option<Version>,
 }
