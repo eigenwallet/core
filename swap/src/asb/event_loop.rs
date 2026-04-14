@@ -96,6 +96,11 @@ where
     /// Drained once the computation resolves.
     pending_quote_channels: Vec<(ResponseChannel<BidQuote>, PeerId)>,
 
+    /// Controller RPC responders waiting for the in-flight quote computation.
+    /// Drained alongside `pending_quote_channels` when the computation resolves.
+    pending_quote_controller_responders:
+        Vec<oneshot::Sender<Result<Arc<BidQuote>, Arc<anyhow::Error>>>>,
+
     /// In-flight wallet snapshot computations for swap setup.
     /// Each future waits for a single swap setup handler to request a wallet snapshot.
     /// It then computes the wallet snapshot and returns the BTC amount, responder and wallet snapshot.
@@ -208,6 +213,7 @@ where
             inflight_encrypted_signatures: Default::default(),
             inflight_quote_computation: Default::default(),
             pending_quote_channels: Default::default(),
+            pending_quote_controller_responders: Default::default(),
             inflight_wallet_snapshots: Default::default(),
             outgoing_transfer_proofs_requests,
             outgoing_transfer_proofs_sender,
@@ -523,6 +529,11 @@ where
                             tracing::debug!(%peer, "Failed to respond with quote");
                         }
                     }
+
+                    // Also respond to any controller RPC callers waiting on this computation.
+                    for responder in self.pending_quote_controller_responders.drain(..) {
+                        let _ = responder.send(quote_result.clone());
+                    }
                 },
 
                 // Swap setup routine:
@@ -605,6 +616,22 @@ where
                                 }
                             });
                             let _ = respond_to.send(info);
+                        }
+                        EventLoopRequest::GetCurrentQuote { respond_to } => {
+                            self.pending_quote_controller_responders.push(respond_to);
+
+                            // Start a computation if none is in flight.
+                            // (length of 1 means only the keep-alive pending() future is queued)
+                            if self.inflight_quote_computation.len() == 1 {
+                                self.inflight_quote_computation.push(
+                                    self.make_quote_or_use_cached(
+                                        self.min_buy,
+                                        self.max_buy,
+                                        self.developer_tip.ratio,
+                                        self.refund_policy.clone().into(),
+                                    ),
+                                );
+                            }
                         }
                     }
                 }
@@ -1226,6 +1253,9 @@ mod service {
         GetOnionServiceStatus {
             respond_to: oneshot::Sender<Option<OnionServiceStatusInfo>>,
         },
+        GetCurrentQuote {
+            respond_to: oneshot::Sender<Result<Arc<BidQuote>, Arc<anyhow::Error>>>,
+        },
     }
 
     /// Tower service for communicating with the EventLoop
@@ -1311,6 +1341,21 @@ mod service {
                 .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
             rx.await
                 .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))
+        }
+
+        /// Get the quote the ASB is currently serving to peers.
+        ///
+        /// Reuses the same cache and in-flight computation as the p2p
+        /// quote protocol, so repeated calls during a single computation
+        /// share the result.
+        pub async fn get_current_quote(&self) -> anyhow::Result<Arc<BidQuote>> {
+            let (tx, rx) = oneshot::channel();
+            self.sender
+                .send(EventLoopRequest::GetCurrentQuote { respond_to: tx })
+                .map_err(|_| anyhow::anyhow!("EventLoop service is down"))?;
+            rx.await
+                .map_err(|_| anyhow::anyhow!("EventLoop service did not respond"))?
+                .map_err(|e| anyhow::anyhow!("Failed to compute quote: {}", e))
         }
 
         /// Grant mercy for a swap in BtcWithholdConfirmed state

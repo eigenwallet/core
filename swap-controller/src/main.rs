@@ -200,6 +200,12 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 None => println!("No primary onion service registered"),
             }
         }
+        Cmd::GetCurrentQuote => {
+            let response = client.get_current_quote().await?;
+            println!("Price (per 1 XMR): {}", response.price);
+            println!("Min quantity:      {}", response.min_quantity);
+            println!("Max quantity:      {}", response.max_quantity);
+        }
     }
     Ok(())
 }
