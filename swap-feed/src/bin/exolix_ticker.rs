@@ -3,7 +3,7 @@ use url::Url;
 
 /// Hand-test binary for the Exolix price feed.
 ///
-/// Usage: `exolix_ticker [API_KEY]`
+/// Usage: `exolix_ticker <API_KEY>`
 /// Alternatively, set `EXOLIX_API_KEY` in the environment.
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,7 +13,8 @@ async fn main() -> Result<()> {
 
     let api_key = std::env::args()
         .nth(1)
-        .or_else(|| std::env::var("EXOLIX_API_KEY").ok());
+        .or_else(|| std::env::var("EXOLIX_API_KEY").ok())
+        .context("Exolix API key required: pass as first arg or set EXOLIX_API_KEY")?;
 
     let rest_url = Url::parse("https://exolix.com/api/v2/rate")?;
     let mut ticker = swap_feed::exolix::connect(

@@ -12,7 +12,7 @@ use url::Url;
 /// See: <https://exolix.com/developers>
 pub fn connect(
     rest_url: Url,
-    api_key: Option<String>,
+    api_key: String,
     poll_interval: Duration,
     client: reqwest::Client,
 ) -> Result<PriceUpdates> {
@@ -35,7 +35,7 @@ pub type Error = crate::ticker::Error;
 #[derive(Clone)]
 pub struct ExolixParams {
     pub rest_url: Url,
-    pub api_key: Option<String>,
+    pub api_key: String,
     pub poll_interval: Duration,
     pub client: reqwest::Client,
 }
@@ -74,8 +74,9 @@ pub(crate) mod connection {
         // propagated to the ticker's reconnect machinery — that layer is
         // designed for transport loss, not transient REST errors (429,
         // 500, decode error). On success the backoff resets.
-        let stream =
-            stream::unfold((params, true, new_backoff()), |(params, first, mut backoff)| async move {
+        let stream = stream::unfold(
+            (params, true, new_backoff()),
+            |(params, first, mut backoff)| async move {
                 if !first {
                     tokio::time::sleep(params.poll_interval).await;
                 }
@@ -96,8 +97,9 @@ pub(crate) mod connection {
                         }
                     }
                 }
-            })
-            .boxed();
+            },
+        )
+        .boxed();
 
         Ok(stream)
     }
@@ -105,14 +107,12 @@ pub(crate) mod connection {
     async fn fetch_rate(params: &ExolixParams) -> Result<wire::PriceUpdate, FetchError> {
         let request_body = wire::RateRequest::xmr_to_btc();
 
-        let mut request = params
+        let request = params
             .client
             .get(params.rest_url.clone())
             .query(&request_body)
-            .header("Accept", "application/json");
-        if let Some(key) = params.api_key.as_deref() {
-            request = request.header("Authorization", key);
-        }
+            .header("Accept", "application/json")
+            .header("Authorization", &params.api_key);
 
         let response = request.send().await.map_err(FetchError::Request)?;
         let status = response.status();

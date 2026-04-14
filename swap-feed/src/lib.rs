@@ -30,7 +30,7 @@ pub fn connect_kucoin(
 
 pub fn connect_exolix(
     url: url::Url,
-    api_key: Option<String>,
+    api_key: String,
     poll_interval: std::time::Duration,
     client: reqwest::Client,
 ) -> anyhow::Result<exolix::PriceUpdates> {

@@ -64,6 +64,6 @@ pub enum Cmd {
     WormholeServices,
     /// Show status of the primary onion service
     OnionServiceStatus,
-    /// Show the quote currently served to peers (price, min, max quantity)
+    /// Show the quote currently served to peers
     GetCurrentQuote,
 }

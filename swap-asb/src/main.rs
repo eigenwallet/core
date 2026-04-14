@@ -240,7 +240,7 @@ pub async fn main() -> Result<()> {
                 .map(|api_key| {
                     swap_feed::connect_exolix(
                         config.maker.price_ticker_rest_url_exolix.clone(),
-                        Some(api_key.clone()),
+                        api_key.clone(),
                         exolix_poll_interval,
                         reqwest::Client::new(),
                     )
@@ -254,9 +254,8 @@ pub async fn main() -> Result<()> {
                 "Price feed sources",
             );
 
-            let price_validity_duration = std::time::Duration::from_secs(
-                config.maker.price_ticker_validity_duration_secs,
-            );
+            let price_validity_duration =
+                std::time::Duration::from_secs(config.maker.price_ticker_validity_duration_secs);
             let kraken_rate = ExchangeRate::new(
                 config.maker.ask_spread,
                 kraken_price_updates,

@@ -621,14 +621,13 @@ where
     /// the result-draining select arm.
     fn ensure_quote_computation_is_inflight(&mut self) {
         if self.inflight_quote_computation.len() == 1 {
-            self.inflight_quote_computation.push(
-                self.make_quote_or_use_cached(
+            self.inflight_quote_computation
+                .push(self.make_quote_or_use_cached(
                     self.min_buy,
                     self.max_buy,
                     self.developer_tip.ratio,
                     self.refund_policy.clone().into(),
-                ),
-            );
+                ));
         }
     }
 
