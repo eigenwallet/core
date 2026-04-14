@@ -12,9 +12,9 @@ use std::sync::Arc;
 use swap_controller_api::{
     ActiveConnectionsResponse, AsbApiServer, BitcoinBalanceResponse, BitcoinSeedResponse,
     MoneroAddressResponse, MoneroBalanceResponse, MoneroSeedResponse, MultiaddressesResponse,
-    OnionServiceStatusResponse, PeerIdResponse, RegistrationStatusItem, RegistrationStatusResponse,
-    RendezvousConnectionStatus, RendezvousRegistrationStatus, Swap, WithdrawBtcResponse,
-    WormholeServiceItem, WormholeServicesResponse,
+    OnionServiceStatusResponse, PeerIdResponse, QuoteResponse, RegistrationStatusItem,
+    RegistrationStatusResponse, RendezvousConnectionStatus, RendezvousRegistrationStatus, Swap,
+    WithdrawBtcResponse, WormholeServiceItem, WormholeServicesResponse,
 };
 use swap_core::monero::PICONERO_OFFSET;
 use tokio_util::task::AbortOnDropHandle;
@@ -343,6 +343,20 @@ impl AsbApiServer for RpcImpl {
     async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned> {
         self.bitcoin_wallet.sync().await.into_json_rpc_result()?;
         Ok(())
+    }
+
+    async fn get_current_quote(&self) -> Result<QuoteResponse, ErrorObjectOwned> {
+        let quote = self
+            .event_loop_service
+            .get_current_quote()
+            .await
+            .into_json_rpc_result()?;
+
+        Ok(QuoteResponse {
+            price: quote.price,
+            min_quantity: quote.min_quantity,
+            max_quantity: quote.max_quantity,
+        })
     }
 }
 

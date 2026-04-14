@@ -205,22 +205,66 @@ pub async fn main() -> Result<()> {
             let bitcoin_balance = bitcoin_wallet.balance().await?;
             tracing::info!(%bitcoin_balance, "Bitcoin wallet balance");
 
-            // Connect to Kraken, Bitfinex, and KuCoin
-            let kraken_price_updates =
-                swap_feed::connect_kraken(config.maker.price_ticker_ws_url_kraken.clone())?;
-            let bitfinex_price_updates =
-                swap_feed::connect_bitfinex(config.maker.price_ticker_ws_url_bitfinex.clone())?;
-            let kucoin_price_updates = swap_feed::connect_kucoin(
-                config.maker.price_ticker_rest_url_kucoin.clone(),
-                reqwest::Client::new(),
-            )?;
+            // Connect to each enabled price feed. Each source is
+            // independently toggleable via config; Exolix additionally
+            // requires an API key.
+            let kraken_price_updates = if config.maker.price_ticker_source_kraken_enabled {
+                Some(swap_feed::connect_kraken(
+                    config.maker.price_ticker_ws_url_kraken.clone(),
+                )?)
+            } else {
+                None
+            };
+            let bitfinex_price_updates = if config.maker.price_ticker_source_bitfinex_enabled {
+                Some(swap_feed::connect_bitfinex(
+                    config.maker.price_ticker_ws_url_bitfinex.clone(),
+                )?)
+            } else {
+                None
+            };
+            let kucoin_price_updates = if config.maker.price_ticker_source_kucoin_enabled {
+                Some(swap_feed::connect_kucoin(
+                    config.maker.price_ticker_rest_url_kucoin.clone(),
+                    reqwest::Client::new(),
+                )?)
+            } else {
+                None
+            };
+            let exolix_poll_interval = std::time::Duration::from_secs(
+                config.maker.price_ticker_rest_poll_interval_exolix_secs,
+            );
+            let exolix_price_updates = config
+                .maker
+                .price_ticker_source_exolix_api_key
+                .as_ref()
+                .map(|api_key| {
+                    swap_feed::connect_exolix(
+                        config.maker.price_ticker_rest_url_exolix.clone(),
+                        api_key.clone(),
+                        exolix_poll_interval,
+                        reqwest::Client::new(),
+                    )
+                })
+                .transpose()?;
+            tracing::info!(
+                kraken = kraken_price_updates.is_some(),
+                bitfinex = bitfinex_price_updates.is_some(),
+                kucoin = kucoin_price_updates.is_some(),
+                exolix = exolix_price_updates.is_some(),
+                "Price feed sources",
+            );
 
+            let price_validity_duration =
+                std::time::Duration::from_secs(config.maker.price_ticker_validity_duration_secs);
             let kraken_rate = ExchangeRate::new(
                 config.maker.ask_spread,
                 kraken_price_updates,
                 bitfinex_price_updates,
                 kucoin_price_updates,
-            );
+                exolix_price_updates,
+                price_validity_duration,
+            )
+            .context("Invalid price feed configuration")?;
             let namespace = XmrBtcNamespace::from_is_testnet(testnet);
 
             // Initialize and bootstrap Tor client

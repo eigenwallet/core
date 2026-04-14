@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use swap_env::config::{
     Bitcoin, Config, ConfigNotInitialized, Data, Maker, Monero, Network, TorConf,
+    default_price_ticker_rest_poll_interval_exolix_secs, default_price_ticker_source_enabled,
+    default_price_ticker_validity_duration_secs,
 };
 use swap_env::prompt as config_prompt;
 use swap_env::{defaults::GetDefaults, env::Mainnet, env::Testnet};
@@ -260,6 +262,14 @@ fn main() {
                 price_ticker_ws_url_kraken: defaults.price_ticker_ws_url_kraken,
                 price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
                 price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
+                price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
+                price_ticker_source_exolix_api_key: None,
+                price_ticker_rest_poll_interval_exolix_secs:
+                    default_price_ticker_rest_poll_interval_exolix_secs(),
+                price_ticker_validity_duration_secs: default_price_ticker_validity_duration_secs(),
+                price_ticker_source_kraken_enabled: default_price_ticker_source_enabled(),
+                price_ticker_source_bitfinex_enabled: default_price_ticker_source_enabled(),
+                price_ticker_source_kucoin_enabled: default_price_ticker_source_enabled(),
                 external_bitcoin_redeem_address: None,
                 refund_policy: defaults.refund_policy,
                 developer_tip,

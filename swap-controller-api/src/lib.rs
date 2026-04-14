@@ -127,6 +127,19 @@ pub struct SetBurnOnRefundRequest {
     pub burn: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct QuoteResponse {
+    /// Price offered per 1 XMR, in satoshis.
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub price: bitcoin::Amount,
+    /// Minimum BTC amount the maker is willing to swap, in satoshis.
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub min_quantity: bitcoin::Amount,
+    /// Maximum BTC amount the maker is willing to swap, in satoshis.
+    #[serde(with = "bitcoin::amount::serde::as_sat")]
+    pub max_quantity: bitcoin::Amount,
+}
+
 #[rpc(client, server)]
 pub trait AsbApi {
     #[method(name = "check_connection")]
@@ -168,4 +181,6 @@ pub trait AsbApi {
     ) -> Result<WithdrawBtcResponse, ErrorObjectOwned>;
     #[method(name = "refresh_bitcoin_wallet")]
     async fn refresh_bitcoin_wallet(&self) -> Result<(), ErrorObjectOwned>;
+    #[method(name = "get_current_quote")]
+    async fn get_current_quote(&self) -> Result<QuoteResponse, ErrorObjectOwned>;
 }

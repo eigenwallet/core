@@ -19,10 +19,7 @@ import MakerDiscoveryStatus from "./MakerDiscoveryStatus";
 import { TauriSwapProgressEventContent } from "models/tauriModelExt";
 import { SatsAmount } from "renderer/components/other/Units";
 import { useEffect, useState } from "react";
-import {
-  sortApprovalsAndKnownQuotes,
-  OfferSortMode,
-} from "utils/sortUtils";
+import { sortApprovalsAndKnownQuotes, OfferSortMode } from "utils/sortUtils";
 
 const SORT_OPTIONS: { value: OfferSortMode; label: string }[] = [
   { value: "large", label: "Large swaps" },
