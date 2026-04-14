@@ -169,7 +169,7 @@ pub struct Maker {
     /// polled and included in the price average alongside Kraken,
     /// Bitfinex, and KuCoin.
     #[serde(default)]
-    pub exolix_api_key: Option<String>,
+    pub price_ticker_source_exolix_api_key: Option<String>,
     /// How often the Exolix REST rate endpoint is polled, in seconds.
     #[serde(default = "default_price_ticker_rest_poll_interval_exolix_secs")]
     pub price_ticker_rest_poll_interval_exolix_secs: u64,
@@ -227,15 +227,15 @@ fn default_price_ticker_rest_url_exolix() -> Url {
     Url::parse(EXOLIX_PRICE_TICKER_REST_URL).expect("default exolix rest url to be valid")
 }
 
-fn default_price_ticker_rest_poll_interval_exolix_secs() -> u64 {
+pub fn default_price_ticker_rest_poll_interval_exolix_secs() -> u64 {
     10
 }
 
-fn default_price_ticker_source_enabled() -> bool {
+pub fn default_price_ticker_source_enabled() -> bool {
     true
 }
 
-fn default_price_ticker_validity_duration_secs() -> u64 {
+pub fn default_price_ticker_validity_duration_secs() -> u64 {
     10 * 60
 }
 
@@ -397,7 +397,7 @@ pub fn query_user_for_initial_config_with_network(
             price_ticker_ws_url_bitfinex: defaults.price_ticker_ws_url_bitfinex,
             price_ticker_rest_url_kucoin: defaults.price_ticker_rest_url_kucoin,
             price_ticker_rest_url_exolix: defaults.price_ticker_rest_url_exolix,
-            exolix_api_key: None,
+            price_ticker_source_exolix_api_key: None,
             price_ticker_rest_poll_interval_exolix_secs:
                 default_price_ticker_rest_poll_interval_exolix_secs(),
             price_ticker_validity_duration_secs: default_price_ticker_validity_duration_secs(),

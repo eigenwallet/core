@@ -235,7 +235,7 @@ pub async fn main() -> Result<()> {
             );
             let exolix_price_updates = config
                 .maker
-                .exolix_api_key
+                .price_ticker_source_exolix_api_key
                 .as_ref()
                 .map(|api_key| {
                     swap_feed::connect_exolix(
