@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-04-15
+
 - ASB+CONTROLLER: New `get-current-quote` command returns the quote the ASB is currently serving to peers (price per XMR, min and max quantity). Reuses the in-flight quote cache so repeated calls don't trigger extra work.
 - ASB: Added Exolix as an optional XMR/BTC price source. Set `maker.price_ticker_source_exolix_api_key` in the config to enable; the polled rate is averaged alongside Kraken, Bitfinex, and KuCoin. Poll interval is configurable via `maker.price_ticker_rest_poll_interval_exolix_secs` (default: `10`).
 - ASB: Each price source can now be individually disabled via `maker.price_ticker_source_kraken_enabled`, `maker.price_ticker_source_bitfinex_enabled`, and `maker.price_ticker_source_kucoin_enabled` (all default `true`). At least one source must remain enabled.
@@ -915,7 +917,8 @@ It is possible to migrate critical data from the old db to the sqlite but there 
 - Fixed an issue where Alice would not verify if Bob's Bitcoin lock transaction is semantically correct, i.e. pays the agreed upon amount to an output owned by both of them.
   Fixing this required a **breaking change** on the network layer and hence old versions are not compatible with this version.
 
-[unreleased]: https://github.com/eigenwallet/core/compare/4.4.0...HEAD
+[unreleased]: https://github.com/eigenwallet/core/compare/4.4.1...HEAD
+[4.4.1]: https://github.com/eigenwallet/core/compare/4.4.0...4.4.1
 [4.4.0]: https://github.com/eigenwallet/core/compare/4.3.1...4.4.0
 [4.3.1]: https://github.com/eigenwallet/core/compare/4.3.0...4.3.1
 [4.3.0]: https://github.com/eigenwallet/core/compare/4.2.4...4.3.0
