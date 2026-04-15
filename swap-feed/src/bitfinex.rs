@@ -170,7 +170,10 @@ pub mod wire {
                     f.write_str("a [chan_id, [..10 floats..]] array with optional trailing fields")
                 }
 
-                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<TradingEvent, A::Error> {
+                fn visit_seq<A: SeqAccess<'de>>(
+                    self,
+                    mut seq: A,
+                ) -> Result<TradingEvent, A::Error> {
                     let chan_id: u64 = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(0, &self))?;
