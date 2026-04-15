@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ASB: Added Exolix as an optional XMR/BTC price source. Set `maker.price_ticker_source_exolix_api_key` in the config to enable; the polled rate is averaged alongside Kraken, Bitfinex, and KuCoin. Poll interval is configurable via `maker.price_ticker_rest_poll_interval_exolix_secs` (default: `10`).
 - ASB: Each price source can now be individually disabled via `maker.price_ticker_source_kraken_enabled`, `maker.price_ticker_source_bitfinex_enabled`, and `maker.price_ticker_source_kucoin_enabled` (all default `true`). At least one source must remain enabled.
 - ASB: How long a polled exchange-rate sample is considered valid is now configurable via `maker.price_ticker_validity_duration_secs` (default: `600`, i.e. 10 minutes).
+- ASB: Fix an issue where the Bitfinex price was broken due to a change in the Bitfinex API.
 
 ## [4.4.0] - 2026-04-13
 
