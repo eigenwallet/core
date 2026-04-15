@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use futures::{SinkExt, StreamExt, TryStreamExt};
-use serde::Deserialize;
+use serde::de::{self, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use std::convert::TryFrom;
+use std::fmt;
 use url::Url;
 
 /// Connect to Bitfinex websocket API for a constant stream of rate updates.
@@ -151,8 +153,71 @@ pub mod wire {
     #[derive(Debug, Deserialize, PartialEq)]
     pub struct HeartbeatEvent(u64, pub String);
 
-    #[derive(Debug, Deserialize, PartialEq)]
-    pub struct TradingEvent(u64, [f64; 10]);
+    /// Bitfinex may append new fields to the ticker array at any time (often as a trailing
+    /// `null` placeholder), per their WS spec: "message lengths should never be hardcoded".
+    /// We read exactly the 10 documented fields and silently discard any trailing elements.
+    #[derive(Debug, PartialEq)]
+    pub struct TradingEvent(pub u64, pub [f64; 10]);
+
+    impl<'de> Deserialize<'de> for TradingEvent {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct TradingEventVisitor;
+
+            impl<'de> Visitor<'de> for TradingEventVisitor {
+                type Value = TradingEvent;
+
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("a [chan_id, [..10 floats..]] array with optional trailing fields")
+                }
+
+                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<TradingEvent, A::Error> {
+                    let chan_id: u64 = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                    let values: PriceValues = seq
+                        .next_element()?
+                        .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                    // drain any extra trailing elements Bitfinex may have appended
+                    while seq.next_element::<de::IgnoredAny>()?.is_some() {}
+                    Ok(TradingEvent(chan_id, values.0))
+                }
+            }
+
+            deserializer.deserialize_seq(TradingEventVisitor)
+        }
+    }
+
+    /// The 10 documented ticker floats, tolerating (and ignoring) any trailing fields
+    /// Bitfinex may append in the future.
+    #[derive(Debug, PartialEq)]
+    struct PriceValues([f64; 10]);
+
+    impl<'de> Deserialize<'de> for PriceValues {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct PriceValuesVisitor;
+
+            impl<'de> Visitor<'de> for PriceValuesVisitor {
+                type Value = PriceValues;
+
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("an array of at least 10 floats")
+                }
+
+                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<PriceValues, A::Error> {
+                    let mut values = [0.0f64; 10];
+                    for (i, slot) in values.iter_mut().enumerate() {
+                        *slot = seq
+                            .next_element()?
+                            .ok_or_else(|| de::Error::invalid_length(i, &self))?;
+                    }
+                    while seq.next_element::<de::IgnoredAny>()?.is_some() {}
+                    Ok(PriceValues(values))
+                }
+            }
+
+            deserializer.deserialize_seq(PriceValuesVisitor)
+        }
+    }
 
     #[derive(Clone, Debug, Deserialize)]
     #[serde(try_from = "TradingEvent")]
@@ -220,6 +285,34 @@ pub mod wire {
             let event = serde_json::from_str::<HeartbeatEvent>(event).unwrap();
 
             assert_eq!(event, HeartbeatEvent(225000, "hb".to_string()))
+        }
+
+        #[test]
+        fn can_deserialize_trading_event_with_trailing_null() {
+            // Bitfinex appended an extra `null` field to the ticker array. Parsing must
+            // still succeed and the 10 documented values must be preserved.
+            let message = r#"[1958338,[0.004619,531.52417965,0.0046467,356.07460428,-0.0000349,-0.00749909,0.004619,416.68683558,0.0047546,0.004571,null]]"#;
+
+            let event = serde_json::from_str::<TradingEvent>(message).unwrap();
+
+            assert_eq!(
+                event,
+                TradingEvent(
+                    1958338,
+                    [
+                        0.004619,
+                        531.52417965,
+                        0.0046467,
+                        356.07460428,
+                        -0.0000349,
+                        -0.00749909,
+                        0.004619,
+                        416.68683558,
+                        0.0047546,
+                        0.004571,
+                    ]
+                )
+            );
         }
 
         #[test]
