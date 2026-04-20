@@ -731,7 +731,7 @@ pub struct State3 {
     /// in case of a refund. Otherwise Bob will only be partially refunded.
     #[serde(default)]
     tx_reclaim_sig_bob: Option<swap_core::bitcoin::Signature>,
-    tx_redeem_fee: bitcoin::Amount,
+    pub tx_redeem_fee: bitcoin::Amount,
     pub tx_punish_fee: bitcoin::Amount,
     pub tx_refund_fee: bitcoin::Amount,
     #[serde(default)]

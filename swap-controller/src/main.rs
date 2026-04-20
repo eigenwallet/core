@@ -88,6 +88,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                 "BTC",
                 "XMR",
                 "Rate (BTC/XMR)",
+                "BTC Redeem Fee",
                 "Peer ID",
                 "Completed",
             ]);
@@ -106,6 +107,7 @@ async fn dispatch(cmd: Cmd, client: impl AsbApiClient) -> anyhow::Result<()> {
                         // Floating point may introduce very small inaccuracies here
                         &format!("{:.12} XMR", xmr.as_xmr()),
                         &swap.exchange_rate.to_string(),
+                        &swap.btc_redeem_fee.to_string(),
                         &swap.peer_id,
                         &swap.completed.to_string(),
                     ]);

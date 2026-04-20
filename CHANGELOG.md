@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- ASB+CONTROLLER: `get-swaps` now includes the `btc_redeem_fee` per swap: the fee Alice paid (or will pay) for the Bitcoin redeem transaction.
+
 ## [4.4.1] - 2026-04-15
 
 - ASB+CONTROLLER: New `get-current-quote` command returns the quote the ASB is currently serving to peers (price per XMR, min and max quantity). Reuses the in-flight quote cache so repeated calls don't trigger extra work.
