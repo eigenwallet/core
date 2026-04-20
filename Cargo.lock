@@ -2115,9 +2115,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cuprate-cryptonight"
+version = "0.1.0"
+source = "git+https://github.com/Cuprate/cuprate.git#27b52f4c61fc8b78e81cba311bad675e39ae0075"
+dependencies = [
+ "digest 0.10.7",
+ "groestl",
+ "jh",
+ "keccak",
+ "seq-macro",
+ "sha3",
+ "skein",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "cuprate-epee-encoding"
 version = "0.5.0"
-source = "git+https://github.com/Cuprate/cuprate.git#3147170485c82baec4b5a5f10bdac67316c5923d"
+source = "git+https://github.com/Cuprate/cuprate.git#27b52f4c61fc8b78e81cba311bad675e39ae0075"
 dependencies = [
  "bytes",
  "cuprate-fixed-bytes",
@@ -2130,7 +2145,7 @@ dependencies = [
 [[package]]
 name = "cuprate-fixed-bytes"
 version = "0.1.0"
-source = "git+https://github.com/Cuprate/cuprate.git#3147170485c82baec4b5a5f10bdac67316c5923d"
+source = "git+https://github.com/Cuprate/cuprate.git#27b52f4c61fc8b78e81cba311bad675e39ae0075"
 dependencies = [
  "bytes",
  "thiserror 2.0.18",
@@ -2139,7 +2154,7 @@ dependencies = [
 [[package]]
 name = "cuprate-hex"
 version = "0.0.0"
-source = "git+https://github.com/Cuprate/cuprate.git#3147170485c82baec4b5a5f10bdac67316c5923d"
+source = "git+https://github.com/Cuprate/cuprate.git#27b52f4c61fc8b78e81cba311bad675e39ae0075"
 dependencies = [
  "hex",
  "serde",
@@ -4083,6 +4098,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "groestl"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "343cfc165f92a988fd60292f7a0bfde4352a5a0beff9fbec29251ca4e9676e4d"
+dependencies = [
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4328,6 +4352,12 @@ checksum = "fda06d18ac606267c40c04e41b9947729bf8b9efe74bd4e82b61a5f26a510b9f"
 dependencies = [
  "arrayvec",
 ]
+
+[[package]]
+name = "hex-literal"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hex-literal"
@@ -5040,6 +5070,17 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "jh"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f65735f9e73adc203417d2e05352aef71d7e832ec090f65de26c96c9ec563aa5"
+dependencies = [
+ "digest 0.10.7",
+ "hex-literal 0.4.1",
+ "ppv-lite86",
 ]
 
 [[package]]
@@ -6399,7 +6440,7 @@ source = "git+https://github.com/kayabaNerve/monero-oxide.git#c8be5d3d1287669946
 dependencies = [
  "hex",
  "monero-address",
- "monero-epee",
+ "monero-epee 0.2.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "monero-interface",
  "monero-oxide",
  "serde",
@@ -6421,6 +6462,12 @@ dependencies = [
  "subtle",
  "zeroize",
 ]
+
+[[package]]
+name = "monero-epee"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8dadd2d795141e43bbbb757ddfbc342def34b73d52cc4bf4f1ac89cc36fa6337"
 
 [[package]]
 name = "monero-epee"
@@ -6484,7 +6531,7 @@ version = "0.1.4-alpha"
 source = "git+https://github.com/kayabaNerve/monero-oxide.git#c8be5d3d1287669946a83fbfcb296ce2a8852e47"
 dependencies = [
  "curve25519-dalek",
- "hex-literal",
+ "hex-literal 1.1.0",
  "monero-borromean",
  "monero-bulletproofs",
  "monero-clsag",
@@ -6693,6 +6740,19 @@ dependencies = [
  "tokio",
  "tracing",
  "zeroize",
+]
+
+[[package]]
+name = "monero-wallet2-adapter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chacha20",
+ "cuprate-cryptonight",
+ "hex",
+ "monero-epee 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -9606,6 +9666,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "seq-macro"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bc711410fbe7399f390ca1c3b60ad0f53f80e95c5eb935e52268a0e2cd49acc"
+
+[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10025,6 +10091,16 @@ name = "siphasher"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
+
+[[package]]
+name = "skein"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96a90a220ab98dbbfeabeae7c558a79f37839c10b9ef55c77082a741a463cab7"
+dependencies = [
+ "digest 0.10.7",
+ "threefish",
+]
 
 [[package]]
 name = "slab"
@@ -10664,6 +10740,7 @@ dependencies = [
  "ecdsa_fun",
  "electrum-pool",
  "futures",
+ "hex",
  "jsonrpsee",
  "libp2p",
  "libp2p-tor",
@@ -10676,6 +10753,7 @@ dependencies = [
  "monero-seed",
  "monero-sys",
  "monero-wallet 0.1.0",
+ "monero-wallet2-adapter",
  "pem",
  "proptest",
  "rand 0.8.5",
@@ -11721,6 +11799,12 @@ checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "threefish"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a693d0c8cf16973fac5a93fbe47b8c6452e7097d4fcac49f3d7a18e39c76e62e"
 
 [[package]]
 name = "throttle"

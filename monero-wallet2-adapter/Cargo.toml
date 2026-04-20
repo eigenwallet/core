@@ -1,0 +1,18 @@
+[package]
+name = "monero-wallet2-adapter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+cuprate-cryptonight = { git = "https://github.com/Cuprate/cuprate.git" }
+chacha20 = "0.9"
+monero-epee = "0.2"
+
+[dev-dependencies]
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
