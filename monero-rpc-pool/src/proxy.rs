@@ -495,6 +495,16 @@ async fn proxy_to_single_node(
                     .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
 
                 Box::new(stream)
+            } else if let Some(proxy) = state
+                .system_tor_socks5
+                .filter(|_| !request.clearnet_whitelisted())
+            {
+                let stream = proxy
+                    .connect(address)
+                    .await
+                    .map_err(|e| SingleRequestError::ConnectionError(format!("{e:?}")))?;
+
+                Box::new(stream)
             } else {
                 let stream = TcpStream::connect(address)
                     .await
@@ -530,7 +540,13 @@ async fn proxy_to_single_node(
 
         tracing::trace!(
             "Established new connection via {}{}",
-            if use_tor { "Tor" } else { "clearnet" },
+            if use_tor {
+                "Tor"
+            } else if state.system_tor_socks5.is_some() && !request.clearnet_whitelisted() {
+                "system Tor SOCKS5"
+            } else {
+                "clearnet"
+            },
             if node.0 == "https" { " with TLS" } else { "" }
         );
     }

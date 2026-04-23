@@ -1,0 +1,16 @@
+[package]
+name = "tor-socks5"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["net"] }
+tokio-socks = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+reqwest = ["dep:reqwest"]
+
+[lints]
+workspace = true

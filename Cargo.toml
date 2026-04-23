@@ -27,6 +27,7 @@ members = [
   "swap-proptest",
   "swap-serde",
   "throttle",
+  "tor-socks5",
   "tracing-ext",
 ]
 
@@ -92,7 +93,9 @@ uuid = { version = "1", features = ["v4"] }
 # Tokio
 testcontainers = "0.15"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+tokio-socks = "0.5.2"
 tokio-util = { version = "0.7", features = ["io", "codec", "rt"] }
+tor-socks5 = { path = "./tor-socks5" }
 
 # Tor/Arti crates
 arti-client = { git = "https://github.com/eigenwallet/arti", branch = "downgraded_rusqlite_arti_2_2_0", default-features = false }
