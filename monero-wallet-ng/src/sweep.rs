@@ -359,3 +359,50 @@ fn distribute(total: u64, ratios: &[f64]) -> Result<Vec<u64>, DestinationsError>
 
     Ok(amounts)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_destination_gets_everything() {
+        let amounts = distribute(1_000, &[1.0]).unwrap();
+        assert_eq!(amounts, vec![1_000]);
+    }
+
+    #[test]
+    fn even_split_divides_evenly() {
+        let amounts = distribute(1_000, &[0.5, 0.5]).unwrap();
+        assert_eq!(amounts, vec![500, 500]);
+    }
+
+    #[test]
+    fn ratios_must_sum_to_one() {
+        let err = distribute(1_000, &[0.5, 0.4]).unwrap_err();
+        assert!(matches!(
+            err,
+            DestinationsError::RatiosDontSumToOne { .. }
+        ));
+    }
+
+    #[test]
+    fn empty_destinations_rejected() {
+        let err = distribute(1_000, &[]).unwrap_err();
+        assert!(matches!(err, DestinationsError::Empty));
+    }
+
+    #[test]
+    fn more_destinations_than_piconero_rejected() {
+        let err = distribute(2, &[0.25, 0.25, 0.25, 0.25]).unwrap_err();
+        assert!(matches!(err, DestinationsError::TooMany { .. }));
+    }
+
+    #[test]
+    fn remainder_absorbed_by_last_destination() {
+        // 10 * 1/3 floors to 3 for the first two slots; last slot absorbs
+        // 10 - 3 - 3 = 4 so the sum equals total exactly.
+        let third = 1.0 / 3.0;
+        let amounts = distribute(10, &[third, third, third]).unwrap();
+        assert_eq!(amounts, vec![3, 3, 4]);
+    }
+}
