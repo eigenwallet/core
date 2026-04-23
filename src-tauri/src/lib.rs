@@ -1,10 +1,13 @@
+use reqwest13 as _; // phantom dep — enables socks feature on reqwest 0.13 for tauri-plugin-updater
 use std::result::Result;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use swap::cli::api::{Context, tauri_bindings::TauriHandle};
 use tauri::{Manager, RunEvent};
 use tokio::sync::Mutex;
 
 mod commands;
+mod http_client;
 
 use commands::*;
 
@@ -19,6 +22,11 @@ struct State {
     /// However, we want to avoid multiple processes intializing the context at the same time.
     pub context_lock: Mutex<()>,
     pub handle: TauriHandle,
+    /// Whether the DFX (fiat on-ramp) integration is enabled. DFX only speaks
+    /// clearnet, so this flag acts as a user-controlled kill switch,
+    /// independent of proxy mode. Mirrors the value the frontend sends via
+    /// `initialize_context`. `dfx_authenticate` bails when this is false.
+    pub allow_dfx_clearnet: AtomicBool,
 }
 
 impl State {
@@ -31,6 +39,7 @@ impl State {
             context,
             context_lock,
             handle,
+            allow_dfx_clearnet: AtomicBool::new(true),
         }
     }
 

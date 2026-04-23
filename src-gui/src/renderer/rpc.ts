@@ -19,6 +19,7 @@ import {
   CheckSeedArgs,
   CheckSeedResponse,
   CheckMoneroNodeResponse,
+  NetworkProxy,
   TauriSettings,
   CheckElectrumNodeArgs,
   CheckElectrumNodeResponse,
@@ -84,6 +85,7 @@ import { setStatus } from "store/features/nodesSlice";
 import { CliLog } from "models/cliModel";
 import { logsToRawString, parseLogsFromString } from "utils/parseUtils";
 import { DEFAULT_RENDEZVOUS_POINTS } from "store/defaults";
+import { NetworkProxyMode } from "store/features/settingsSlice";
 
 /// These are the official donation address for the eigenwallet/core project
 const DONATION_ADDRESS_MAINNET =
@@ -219,7 +221,8 @@ export async function buyXmr() {
 export async function initializeContext() {
   const network = getNetwork();
   const testnet = isTestnet();
-  const useTor = store.getState().settings.enableTor;
+  const networkProxyMode = store.getState().settings.networkProxyMode;
+  const torSocksAddress = store.getState().settings.torSocksAddress;
 
   // Get all Bitcoin nodes without checking availability
   // The backend ElectrumBalancer will handle load balancing and failover
@@ -230,6 +233,7 @@ export async function initializeContext() {
   const useMoneroRpcPool = store.getState().settings.useMoneroRpcPool;
 
   const useMoneroTor = store.getState().settings.enableMoneroTor;
+  const allowDfxClearnet = store.getState().settings.allowDfxClearnet;
   const rendezvousPoints = Array.from(
     new Set([
       ...store.getState().settings.rendezvousPoints,
@@ -253,13 +257,33 @@ export async function initializeContext() {
           },
         };
 
+  if (
+    networkProxyMode === NetworkProxyMode.TorSocks &&
+    (torSocksAddress === null || torSocksAddress === "")
+  ) {
+    throw new Error(
+      "Tor Socks proxy is selected but no address is configured. Enter an IPv4 address (e.g. 127.0.0.1:9050) in Settings.",
+    );
+  }
+
+  const networkProxy: NetworkProxy =
+    networkProxyMode === NetworkProxyMode.InternalTor
+      ? { type: "InternalTor" }
+      : networkProxyMode === NetworkProxyMode.TorSocks
+        ? {
+            type: "SystemTorSocks5",
+            content: { address: torSocksAddress! },
+          }
+        : { type: "None" };
+
   // Initialize Tauri settings
   const tauriSettings: TauriSettings = {
     electrum_rpc_urls: bitcoinNodes,
     monero_node_config: moneroNodeConfig,
-    use_tor: useTor,
+    network_proxy: networkProxy,
     enable_monero_tor: useMoneroTor,
     rendezvous_points: rendezvousPoints,
+    allow_dfx_clearnet: allowDfxClearnet,
   };
 
   logger.info({ tauriSettings }, "Initializing context with settings");

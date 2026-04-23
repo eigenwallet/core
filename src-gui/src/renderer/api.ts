@@ -5,6 +5,7 @@
 // - and to submit feedback
 // - fetch currency rates from CoinGecko
 
+import { invoke as invokeUnsafe } from "@tauri-apps/api/core";
 import { Alert, AttachmentInput, Message } from "models/apiModel";
 import { store } from "./store/storeRenderer";
 import {
@@ -19,9 +20,45 @@ import { setConversation } from "store/features/conversationsSlice";
 
 const PUBLIC_REGISTRY_API_BASE_URL = "https://api.unstoppableswap.net";
 
+interface HttpResponse {
+  status: number;
+  body: string;
+}
+
+async function httpGet(url: string): Promise<HttpResponse> {
+  return invokeUnsafe("http_get", {
+    args: { url },
+  }) as Promise<HttpResponse>;
+}
+
+async function httpPostJson(
+  url: string,
+  body: unknown,
+): Promise<HttpResponse> {
+  return invokeUnsafe("http_post_json", {
+    args: { url, body: JSON.stringify(body) },
+  }) as Promise<HttpResponse>;
+}
+
+function ensureSuccessfulResponse(response: HttpResponse, url: string): void {
+  if (response.status >= 200 && response.status < 300) {
+    return;
+  }
+
+  throw new Error(
+    `Request to ${url} failed. Status: ${response.status}. Body: ${response.body}`,
+  );
+}
+
+function parseJsonResponse<T>(response: HttpResponse, url: string): T {
+  ensureSuccessfulResponse(response, url);
+  return JSON.parse(response.body) as T;
+}
+
 async function fetchAlertsViaHttp(): Promise<Alert[]> {
-  const response = await fetch(`${PUBLIC_REGISTRY_API_BASE_URL}/api/alerts`);
-  return (await response.json()) as Alert[];
+  const url = `${PUBLIC_REGISTRY_API_BASE_URL}/api/alerts`;
+  const response = await httpGet(url);
+  return parseJsonResponse<Alert[]>(response, url);
 }
 
 export async function submitFeedbackViaHttp(
@@ -35,42 +72,20 @@ export async function submitFeedbackViaHttp(
     attachments: attachments || [], // Ensure attachments is always an array
   };
 
-  const response = await fetch(
-    `${PUBLIC_REGISTRY_API_BASE_URL}/api/submit-feedback`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestPayload), // Send the corrected structure
-    },
+  const url = `${PUBLIC_REGISTRY_API_BASE_URL}/api/submit-feedback`;
+  const response = await httpPostJson(
+    url,
+    requestPayload, // Send the corrected structure
   );
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `Failed to submit feedback. Status: ${response.status}. Body: ${errorBody}`,
-    );
-  }
-
-  const responseBody = (await response.json()) as Response;
-  return responseBody;
+  return parseJsonResponse<Response>(response, url);
 }
 
 export async function fetchFeedbackMessagesViaHttp(
   feedbackId: string,
 ): Promise<Message[]> {
-  const response = await fetch(
-    `${PUBLIC_REGISTRY_API_BASE_URL}/api/feedback/${feedbackId}/messages`,
-  );
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `Failed to fetch messages for feedback ${feedbackId}. Status: ${response.status}. Body: ${errorBody}`,
-    );
-  }
-  // Assuming the response is directly the Message[] array including attachments
-  return (await response.json()) as Message[];
+  const url = `${PUBLIC_REGISTRY_API_BASE_URL}/api/feedback/${feedbackId}/messages`;
+  const response = await httpGet(url);
+  return parseJsonResponse<Message[]>(response, url);
 }
 
 export async function appendFeedbackMessageViaHttp(
@@ -86,44 +101,38 @@ export async function appendFeedbackMessageViaHttp(
     attachments: attachments || [], // Ensure attachments is always an array
   };
 
-  const response = await fetch(
-    `${PUBLIC_REGISTRY_API_BASE_URL}/api/append-feedback-message`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body), // Send new structure
-    },
+  const url = `${PUBLIC_REGISTRY_API_BASE_URL}/api/append-feedback-message`;
+  const response = await httpPostJson(
+    url,
+    body, // Send new structure
   );
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `Failed to append message for feedback ${feedbackId}. Status: ${response.status}. Body: ${errorBody}`,
-    );
-  }
-
-  const responseBody = (await response.json()) as Response;
-  return responseBody;
+  return parseJsonResponse<Response>(response, url);
 }
 
 async function fetchCurrencyPrice(
   currency: string,
   fiatCurrency: FiatCurrency,
 ): Promise<number> {
-  const response = await fetch(
-    `https://api.coingecko.com/api/v3/simple/price?ids=${currency}&vs_currencies=${fiatCurrency.toLowerCase()}`,
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${currency}&vs_currencies=${fiatCurrency.toLowerCase()}`;
+  const response = await httpGet(url);
+  const data = parseJsonResponse<Record<string, Record<string, number>>>(
+    response,
+    url,
   );
-  const data = await response.json();
   return data[currency][fiatCurrency.toLowerCase()];
 }
 
 async function fetchXmrBtcRate(): Promise<number> {
-  const response = await fetch(
-    "https://api.kraken.com/0/public/Ticker?pair=XMRXBT",
-  );
-  const data = await response.json();
+  const url = "https://api.kraken.com/0/public/Ticker?pair=XMRXBT";
+  const response = await httpGet(url);
+  const data = parseJsonResponse<{
+    error?: string[];
+    result: {
+      XXMRXXBT: {
+        c: [string, string];
+      };
+    };
+  }>(response, url);
 
   if (data.error && data.error.length > 0) {
     throw new Error(`Kraken API error: ${data.error[0]}`);
@@ -154,17 +163,25 @@ export async function updateRates(): Promise<void> {
   try {
     const xmrBtcRate = await fetchXmrBtcRate();
     store.dispatch(setXmrBtcRate(xmrBtcRate));
+  } catch (error) {
+    logger.error(error, "Error fetching XMR/BTC market rate");
+  }
 
+  try {
     const btcPrice = await fetchBtcPrice(settings.fiatCurrency);
     store.dispatch(setBtcPrice(btcPrice));
+  } catch (error) {
+    logger.error(error, `Error fetching BTC price in ${settings.fiatCurrency}`);
+  }
 
+  try {
     const xmrPrice = await fetchXmrPrice(settings.fiatCurrency);
     store.dispatch(setXmrPrice(xmrPrice));
-
-    logger.info(`Fetched rates for ${settings.fiatCurrency}`);
   } catch (error) {
-    logger.error(error, "Error fetching rates");
+    logger.error(error, `Error fetching XMR price in ${settings.fiatCurrency}`);
   }
+
+  logger.info(`Finished rate update for ${settings.fiatCurrency}`);
 }
 
 /**

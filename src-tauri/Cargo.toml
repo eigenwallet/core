@@ -11,17 +11,27 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [build-dependencies]
 tauri-build = { version = "2.*", features = ["config-json5"] }
+toml = { workspace = true }
 
 [dependencies]
 swap = { path = "../swap", features = [ "tauri" ] }
 swap-p2p = { path = "../swap-p2p" }
+tor-socks5 = { workspace = true }
 dfx-swiss-sdk = { workspace = true }
+anyhow = { workspace = true }
 
 rustls = { version = "0.23.26", default-features = false, features = ["ring"] }
+reqwest = { workspace = true, features = ["rustls-tls-native-roots", "socks"] }
+# Phantom dep: enable `socks` feature on reqwest 0.13 via Cargo feature unification
+# so that tauri-plugin-updater can route through socks5h:// proxies.
+# Without this, reqwest 0.13 rejects SOCKS URLs with "unknown proxy scheme".
+# build.rs verifies this version still matches what tauri-plugin-updater uses.
+reqwest13 = { package = "reqwest", version = "0.13", default-features = false, features = ["socks"] }
 serde = { version = "1", features = [ "derive" ] }
 serde_json = "1"
 
 tracing = "0.1"
+url = { workspace = true }
 zip = "4.0.0"
 
 # Tauri

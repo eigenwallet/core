@@ -1255,9 +1255,6 @@ pub enum MoneroNodeConfig {
 }
 
 /// How the app should route its network traffic.
-///
-/// Makes invalid combinations of the previous `use_tor` / `use_system_tor_socks5`
-/// / `tor_socks5_address` triple unrepresentable.
 #[typeshare]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "content")]
@@ -1285,10 +1282,7 @@ pub struct TauriSettings {
     pub enable_monero_tor: bool,
     /// The list of rendezvous points to connect to
     pub rendezvous_points: Vec<String>,
-    /// Whether the DFX (fiat on-ramp) integration is enabled. DFX only speaks
-    /// clearnet, so this flag gates the integration entirely — independent of
-    /// proxy mode. When `false`, the backend refuses DFX requests and the UI
-    /// hides the Buy Monero entry-point.
+    /// Whether the DFX integration is enabled.
     #[serde(default = "default_allow_dfx_clearnet")]
     pub allow_dfx_clearnet: bool,
 }
@@ -1370,9 +1364,7 @@ mod tests {
 
     #[test]
     fn network_proxy_serde_round_trip() {
-        // The frontend relies on the exact `{ "type": "...", "content": ... }`
-        // shape (typeshare-generated). Any drift in the serde attributes or
-        // variant names breaks the rpc.ts handshake silently.
+        // Keep the JSON shape stable for the renderer RPC contract.
         let cases = vec![
             NetworkProxy::InternalTor,
             NetworkProxy::None,
@@ -1385,8 +1377,7 @@ mod tests {
             let json = serde_json::to_value(&original).expect("serialize NetworkProxy");
             let round_tripped: NetworkProxy =
                 serde_json::from_value(json.clone()).expect("deserialize NetworkProxy");
-            // NetworkProxy is not PartialEq; compare through the JSON surface,
-            // which is exactly what the frontend contract cares about.
+            // NetworkProxy is not PartialEq; compare the serialized form.
             let round_tripped_json =
                 serde_json::to_value(&round_tripped).expect("re-serialize NetworkProxy");
             assert_eq!(json, round_tripped_json);
@@ -1395,7 +1386,7 @@ mod tests {
 
     #[test]
     fn network_proxy_tag_and_content_shape() {
-        // Matches the exact JSON the GUI constructs in rpc.ts.
+        // Expected JSON encoding for `NetworkProxy`.
         let internal = serde_json::to_value(NetworkProxy::InternalTor).unwrap();
         assert_eq!(internal, serde_json::json!({ "type": "InternalTor" }));
 
@@ -1417,9 +1408,7 @@ mod tests {
 
     #[test]
     fn tauri_settings_defaults_allow_dfx_clearnet_when_missing() {
-        // Old GUI builds won't send `allow_dfx_clearnet`; serde default must
-        // preserve the previous clearnet-enabled behaviour so upgrades don't
-        // silently disable the Buy Monero entry-point.
+        // Preserve the previous default when older GUI builds omit the field.
         let json = serde_json::json!({
             "monero_node_config": { "type": "Pool" },
             "electrum_rpc_urls": [],

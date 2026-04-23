@@ -16,9 +16,28 @@ import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
 import { check, Update, DownloadEvent } from "@tauri-apps/plugin-updater";
 import { useSnackbar } from "notistack";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke as invokeUnsafe } from "@tauri-apps/api/core";
+import { store } from "renderer/store/storeRenderer";
+import { NetworkProxyMode } from "store/features/settingsSlice";
 
 const GITHUB_RELEASES_URL = "https://github.com/eigenwallet/core/releases";
 const HOMEPAGE_URL = "https://unstoppableswap.net/";
+
+// The updater runs before backend context init, so build the proxy URL
+// from persisted settings via Tauri instead of backend state.
+async function getSystemTorProxyUrl(): Promise<string | null> {
+  const settings = store.getState().settings;
+  if (settings.networkProxyMode !== NetworkProxyMode.TorSocks) {
+    return null;
+  }
+  const address = settings.torSocksAddress;
+  if (address === null || address === "") {
+    throw new Error(
+      "Tor Socks proxy is selected but no address is configured. Enter an IPv4 address (e.g. 127.0.0.1:9050) in Settings.",
+    );
+  }
+  return invokeUnsafe<string>("get_updater_proxy_url", { address });
+}
 
 interface DownloadProgress {
   contentLength: number | null;
@@ -63,17 +82,35 @@ export default function UpdaterDialog() {
   const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
-    // Check for updates when component mounts
-    check()
-      .then((updateResponse) => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const proxy = await getSystemTorProxyUrl();
+        const updateResponse = await check(
+          proxy === null ? undefined : { proxy },
+        );
+
+        if (cancelled) {
+          return;
+        }
+
         console.log("updateResponse", updateResponse);
         setAvailableUpdate(updateResponse);
-      })
-      .catch((err) => {
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
         enqueueSnackbar(`Failed to check for updates: ${err}`, {
           variant: "error",
         });
-      });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [enqueueSnackbar]);
 
   // If no update is available, don't render the dialog

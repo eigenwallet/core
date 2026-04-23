@@ -14,6 +14,7 @@ import { useState } from "react";
 import { dfxAuthenticate } from "renderer/rpc";
 import PromiseInvokeButton from "renderer/components/PromiseInvokeButton";
 import { isContextWithMoneroWallet } from "models/tauriModelExt";
+import { useAppSelector } from "store/hooks";
 
 function DFXLogo({ height = 24 }: { height?: number }) {
   return (
@@ -39,6 +40,15 @@ function DFXLogo({ height = 24 }: { height?: number }) {
 // Component for DFX button and modal
 export default function DfxButton() {
   const [dfxUrl, setDfxUrl] = useState<string | null>(null);
+
+  // DFX only speaks clearnet. Hide the entry point entirely when the user
+  // has turned the integration off in Settings.
+  const allowDfxClearnet = useAppSelector(
+    (state) => state.settings.allowDfxClearnet,
+  );
+  if (!allowDfxClearnet) {
+    return null;
+  }
 
   const handleCloseModal = () => {
     setDfxUrl(null);
