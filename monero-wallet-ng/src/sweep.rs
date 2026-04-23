@@ -24,8 +24,6 @@ fn public_key(private_key: &Scalar) -> Point {
     Point::from(curve25519_dalek::constants::ED25519_BASEPOINT_POINT * (*private_key).into())
 }
 
-const RATIO_SUM_TOLERANCE: f64 = 1e-6;
-
 /// The caller-supplied set of destinations is invalid.
 #[derive(Debug, thiserror::Error)]
 pub enum DestinationsError {
@@ -52,11 +50,11 @@ pub enum BuildSweepError {
     Send(#[from] SendError),
 }
 
-/// An error while sweeping a known block.
+/// An error while sweeping a transaction.
 ///
-/// Everything [`sweep_tx_given_block_to`] can fail with: build errors plus
-/// the I/O, scanning, and publishing errors that come from interacting with
-/// the daemon.
+/// Everything [`sweep_tx_to`] can fail with: build errors, transaction-status
+/// lookup failures, and the I/O, scanning, and publishing errors that come
+/// from interacting with the daemon.
 #[derive(Debug, thiserror::Error)]
 pub enum SweepError {
     #[error(transparent)]
@@ -65,6 +63,15 @@ pub enum SweepError {
     ViewPair(#[from] ViewPairError),
     #[error("Scan error: {0}")]
     Scan(#[from] monero_oxide_wallet::ScanError),
+    #[error("Failed to look up transaction status: {0}")]
+    StatusLookup(#[from] TransactionStatusError),
+    #[error("Transaction {} is unknown to the daemon", hex::encode(.tx_id))]
+    TransactionNotFound { tx_id: [u8; 32] },
+    #[error(
+        "Transaction {} is still in the mempool; cannot sweep until it is mined",
+        hex::encode(.tx_id)
+    )]
+    TransactionInMempool { tx_id: [u8; 32] },
     #[error("Block at height {block_height} does not exist")]
     BlockNotFound { block_height: usize },
     #[error(
@@ -80,25 +87,6 @@ pub enum SweepError {
     Publish(#[from] monero_interface::PublishTransactionError),
     #[error("Interface error: {0}")]
     Interface(#[from] monero_interface::InterfaceError),
-}
-
-/// An error while looking up a transaction and sweeping it.
-///
-/// Everything [`sweep_tx_to`] can fail with: the lookup failure modes plus
-/// anything [`SweepError`] can represent.
-#[derive(Debug, thiserror::Error)]
-pub enum SweepTxError {
-    #[error(transparent)]
-    Sweep(#[from] SweepError),
-    #[error("Failed to look up transaction status: {0}")]
-    StatusLookup(#[from] TransactionStatusError),
-    #[error("Transaction {} is unknown to the daemon", hex::encode(.tx_id))]
-    TransactionNotFound { tx_id: [u8; 32] },
-    #[error(
-        "Transaction {} is still in the mempool; cannot sweep until it is mined",
-        hex::encode(.tx_id)
-    )]
-    TransactionInMempool { tx_id: [u8; 32] },
 }
 
 /// Build an unsigned sweep transaction that spends `input` across `destinations`.
@@ -161,18 +149,11 @@ fn build_sweep_transaction(
                     input: amount,
                 })?;
 
-        let ratios: Vec<f64> = destinations.iter().map(|(_, r)| *r).collect();
-        let amounts = distribute(distributable, &ratios)?;
-
         // All destinations are explicit payments summing to `distributable
         // = amount - necessary_fee`. With `Change::fingerprintable(None)`,
         // monero-oxide shunts `input - sum(payments) = necessary_fee` into
         // the fee, so the paid fee is exactly what the probe reported.
-        let payments: Vec<(MoneroAddress, u64)> = destinations
-            .iter()
-            .zip(amounts.iter())
-            .map(|((addr, _), amount)| (*addr, *amount))
-            .collect();
+        let payments = distribute(distributable, destinations)?;
         (payments, Change::fingerprintable(None))
     };
 
@@ -189,9 +170,13 @@ fn build_sweep_transaction(
 
 /// Locate `tx_id` on-chain and sweep its output across `destinations`.
 ///
-/// Looks up which block contains `tx_id` via the provider and then delegates
-/// to [`sweep_tx_given_block_to`]. Returns a [`SweepTxError`] if the daemon
-/// does not know about the transaction or if it is still in the mempool.
+/// Looks up which block contains `tx_id` via the provider, scans that block
+/// for outputs belonging to `tx_id` (ignoring any sibling outputs in the same
+/// block that also happen to match the view-pair), selects the largest output,
+/// and sweeps it across `destinations` split by ratio.
+///
+/// Returns a [`SweepError`] if the daemon does not know about the transaction
+/// or if it is still in the mempool.
 pub async fn sweep_tx_to<P>(
     provider: P,
     private_spend_key: Zeroizing<Scalar>,
@@ -199,7 +184,7 @@ pub async fn sweep_tx_to<P>(
     tx_id: [u8; 32],
     destinations: Vec<(MoneroAddress, f64)>,
     max_fee_per_weight: u64,
-) -> Result<[u8; 32], SweepTxError>
+) -> Result<[u8; 32], SweepError>
 where
     P: ProvidesScannableBlocks
         + ProvidesBlockchainMeta
@@ -210,54 +195,16 @@ where
         + Send
         + Sync,
 {
-    let block_height = match provider.transaction_status(tx_id).await? {
-        TransactionStatus::InBlock { block_height } => block_height as usize,
-        TransactionStatus::InPool => return Err(SweepTxError::TransactionInMempool { tx_id }),
-        TransactionStatus::Unknown => return Err(SweepTxError::TransactionNotFound { tx_id }),
-    };
-
-    Ok(sweep_tx_given_block_to(
-        provider,
-        private_spend_key,
-        private_view_key,
-        tx_id,
-        block_height,
-        destinations,
-        max_fee_per_weight,
-    )
-    .await?)
-}
-
-/// Sweep the largest output belonging to the caller's view-pair from
-/// transaction `tx_id` at `block_height` across `destinations`, split by the
-/// associated ratios.
-///
-/// Only outputs from `tx_id` itself are considered — any other outputs in the
-/// same block that happen to also belong to the view-pair are ignored.
-///
-/// The caller is responsible for locating the block; see [`sweep_tx_to`] for
-/// a wrapper that does the lookup via the daemon RPC.
-pub async fn sweep_tx_given_block_to<P>(
-    provider: P,
-    private_spend_key: Zeroizing<Scalar>,
-    private_view_key: Zeroizing<Scalar>,
-    tx_id: [u8; 32],
-    block_height: usize,
-    destinations: Vec<(MoneroAddress, f64)>,
-    max_fee_per_weight: u64,
-) -> Result<[u8; 32], SweepError>
-where
-    P: ProvidesScannableBlocks
-        + ProvidesBlockchainMeta
-        + ProvidesDecoys
-        + ProvidesFeeRates
-        + PublishTransaction
-        + Send
-        + Sync,
-{
     if destinations.is_empty() {
         return Err(BuildSweepError::from(DestinationsError::Empty).into());
     }
+
+    // Locate the block that contains `tx_id`
+    let block_height = match provider.transaction_status(tx_id).await? {
+        TransactionStatus::InBlock { block_height } => block_height as usize,
+        TransactionStatus::InPool => return Err(SweepError::TransactionInMempool { tx_id }),
+        TransactionStatus::Unknown => return Err(SweepError::TransactionNotFound { tx_id }),
+    };
 
     // Scanner for finding sweepable outputs
     let mut scanner = {
@@ -316,36 +263,40 @@ where
     Ok(tx_hash)
 }
 
-/// Distribute `total` piconero across `ratios` (summing to ~1.0).
+/// Distribute `total` piconero across `destinations` by ratio (ratios summing to ~1.0).
 ///
-/// Mirrors `FfiWallet::distribute` from `monero-sys`: the first n-1 slots are
-/// `floor(total * ratio)` and the last slot absorbs the remainder so the sum
-/// is exactly `total`.
-fn distribute(total: u64, ratios: &[f64]) -> Result<Vec<u64>, DestinationsError> {
-    if ratios.is_empty() {
+/// Mirrors `FfiWallet::distribute` from `monero-sys`: the first n-1 destinations
+/// get `floor(total * ratio)` and the last destination absorbs the remainder so
+/// the sum of allocated amounts is exactly `total`.
+fn distribute(
+    total: u64,
+    destinations: &[(MoneroAddress, f64)],
+) -> Result<Vec<(MoneroAddress, u64)>, DestinationsError> {
+    if destinations.is_empty() {
         return Err(DestinationsError::Empty);
     }
 
     // Assert that the ratios sum to 1.0
-    let sum: f64 = ratios.iter().sum();
+    const RATIO_SUM_TOLERANCE: f64 = 1e-6;
+    let sum: f64 = destinations.iter().map(|(_, r)| *r).sum();
     if (sum - 1.0).abs() > RATIO_SUM_TOLERANCE {
         return Err(DestinationsError::RatiosDontSumToOne { sum });
     }
 
     // Check if the total is enough to cover at least one piconero per output
-    if total < ratios.len() as u64 {
+    if total < destinations.len() as u64 {
         return Err(DestinationsError::TooMany {
             total,
-            destinations: ratios.len(),
+            destinations: destinations.len(),
         });
     }
 
     // First n-1 destinations
-    let mut amounts = Vec::with_capacity(ratios.len());
+    let mut allocations = Vec::with_capacity(destinations.len());
     let mut assigned: u64 = 0;
-    for &r in &ratios[..ratios.len() - 1] {
-        let amount = ((total as f64) * r).floor() as u64;
-        amounts.push(amount);
+    for (addr, ratio) in &destinations[..destinations.len() - 1] {
+        let amount = ((total as f64) * ratio).floor() as u64;
+        allocations.push((*addr, amount));
         assigned = assigned
             .checked_add(amount)
             .ok_or(DestinationsError::Overflow)?;
@@ -355,34 +306,49 @@ fn distribute(total: u64, ratios: &[f64]) -> Result<Vec<u64>, DestinationsError>
     let remainder = total
         .checked_sub(assigned)
         .ok_or(DestinationsError::Overflow)?;
-    amounts.push(remainder);
+    let (last_addr, _) = destinations[destinations.len() - 1];
+    allocations.push((last_addr, remainder));
 
-    Ok(amounts)
+    Ok(allocations)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use monero_oxide_wallet::address::{AddressType, Network};
+
+    /// A distinct dummy mainnet legacy address derived from a `seed`.
+    /// Addresses are not compared by value in any test; we only need them to
+    /// be structurally valid and differ between slots.
+    fn addr(seed: u8) -> MoneroAddress {
+        use curve25519_dalek::Scalar as DalekScalar;
+        let spend_scalar = DalekScalar::from(u64::from(seed).wrapping_add(1));
+        let view_scalar = DalekScalar::from(u64::from(seed).wrapping_add(101));
+        let spend =
+            Point::from(curve25519_dalek::constants::ED25519_BASEPOINT_POINT * spend_scalar);
+        let view = Point::from(curve25519_dalek::constants::ED25519_BASEPOINT_POINT * view_scalar);
+        MoneroAddress::new(Network::Mainnet, AddressType::Legacy, spend, view)
+    }
 
     #[test]
     fn single_destination_gets_everything() {
-        let amounts = distribute(1_000, &[1.0]).unwrap();
-        assert_eq!(amounts, vec![1_000]);
+        let a = addr(0);
+        let out = distribute(1_000, &[(a, 1.0)]).unwrap();
+        assert_eq!(out, vec![(a, 1_000)]);
     }
 
     #[test]
     fn even_split_divides_evenly() {
-        let amounts = distribute(1_000, &[0.5, 0.5]).unwrap();
-        assert_eq!(amounts, vec![500, 500]);
+        let (a, b) = (addr(0), addr(1));
+        let out = distribute(1_000, &[(a, 0.5), (b, 0.5)]).unwrap();
+        assert_eq!(out, vec![(a, 500), (b, 500)]);
     }
 
     #[test]
     fn ratios_must_sum_to_one() {
-        let err = distribute(1_000, &[0.5, 0.4]).unwrap_err();
-        assert!(matches!(
-            err,
-            DestinationsError::RatiosDontSumToOne { .. }
-        ));
+        let (a, b) = (addr(0), addr(1));
+        let err = distribute(1_000, &[(a, 0.5), (b, 0.4)]).unwrap_err();
+        assert!(matches!(err, DestinationsError::RatiosDontSumToOne { .. }));
     }
 
     #[test]
@@ -393,7 +359,13 @@ mod tests {
 
     #[test]
     fn more_destinations_than_piconero_rejected() {
-        let err = distribute(2, &[0.25, 0.25, 0.25, 0.25]).unwrap_err();
+        let dests = [
+            (addr(0), 0.25),
+            (addr(1), 0.25),
+            (addr(2), 0.25),
+            (addr(3), 0.25),
+        ];
+        let err = distribute(2, &dests).unwrap_err();
         assert!(matches!(err, DestinationsError::TooMany { .. }));
     }
 
@@ -402,7 +374,8 @@ mod tests {
         // 10 * 1/3 floors to 3 for the first two slots; last slot absorbs
         // 10 - 3 - 3 = 4 so the sum equals total exactly.
         let third = 1.0 / 3.0;
-        let amounts = distribute(10, &[third, third, third]).unwrap();
-        assert_eq!(amounts, vec![3, 3, 4]);
+        let (a, b, c) = (addr(0), addr(1), addr(2));
+        let out = distribute(10, &[(a, third), (b, third), (c, third)]).unwrap();
+        assert_eq!(out, vec![(a, 3), (b, 3), (c, 4)]);
     }
 }
