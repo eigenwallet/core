@@ -1,4 +1,5 @@
 import {
+  Alert,
   Table,
   TableBody,
   TableCell,
@@ -20,6 +21,7 @@ import {
   useTheme,
   Switch,
   SelectChangeEvent,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
 } from "@mui/material";
@@ -34,8 +36,10 @@ import {
   setFetchFiatPrices,
   setFiatCurrency,
   setTheme,
-  setTorEnabled,
+  setNetworkProxyMode,
+  setTorSocksAddress,
   setEnableMoneroTor,
+  setAllowDfxClearnet,
   setUseMoneroRpcPool,
   setMoneroRedeemPolicy,
   setMoneroRedeemAddress,
@@ -43,12 +47,13 @@ import {
   setBitcoinRefundPolicy,
   RedeemPolicy,
   RefundPolicy,
+  NetworkProxyMode,
 } from "store/features/settingsSlice";
 import { Blockchain, Network } from "store/types";
 import { useAppDispatch, useNodes, useSettings } from "store/hooks";
 import ValidatedTextField from "renderer/components/other/ValidatedTextField";
 import HelpIcon from "@mui/icons-material/HelpOutline";
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Theme } from "renderer/components/theme";
 import {
   Add,
@@ -58,6 +63,7 @@ import {
   HourglassEmpty,
   Refresh,
 } from "@mui/icons-material";
+import { invoke as invokeUnsafe } from "@tauri-apps/api/core";
 
 import { getNetwork } from "store/config";
 import { currencySymbol } from "utils/formatUtils";
@@ -73,6 +79,150 @@ import DonationTipDialog, {
 
 const PLACEHOLDER_ELECTRUM_RPC_URL = "ssl://blockstream.info:700";
 const PLACEHOLDER_MONERO_NODE_URL = "http://xmr-node.cakewallet.com:18081";
+
+/** Returns true when the IP part of an "ip:port" string is the IPv4 loopback. */
+const isSocksAddressLocalhost = (val: string): boolean => {
+  const ip = val.slice(0, val.lastIndexOf(":"));
+  return ip === "127.0.0.1";
+};
+
+/**
+ * Result of parsing a user-entered SOCKS5 address as it's being typed.
+ *
+ * The phases track how far the user has progressed through `ipv4:port`:
+ * `empty` → `partialIp` → `ipComplete` → `awaitingPort` → `complete`, with
+ * `invalid` for anything that cannot be fixed by typing more characters
+ * (e.g. octet > 255, leading zero, port > 65535).
+ *
+ * Only `complete` triggers a SOCKS5 probe. Other phases drive the
+ * helper-text / error UI so the user sees *why* input is incomplete.
+ */
+type SocksAddressParse =
+  | { phase: "empty" }
+  | { phase: "partialIp"; hint: string }
+  | { phase: "ipComplete"; hint: string }
+  | { phase: "awaitingPort"; hint: string }
+  | { phase: "complete" }
+  | { phase: "invalid"; error: string };
+
+/**
+ * Validates a single IPv4 octet as the user types it.
+ *
+ * `partial` means "so far so good, may accept more digits" (e.g. "1", "25").
+ * `complete` means the octet is fully specified (e.g. "192", "0", "255").
+ * Rejects leading zeros ("01", "001") to match Rust's `SocketAddrV4::from_str`.
+ */
+const classifyOctet = (
+  s: string,
+): { kind: "empty" } | { kind: "partial" } | { kind: "complete" } | { kind: "invalid" } => {
+  if (s === "") return { kind: "empty" };
+  if (!/^\d+$/.test(s)) return { kind: "invalid" };
+  if (s.length > 3) return { kind: "invalid" };
+  if (s.length > 1 && s.startsWith("0")) return { kind: "invalid" };
+  const n = parseInt(s, 10);
+  if (n > 255) return { kind: "invalid" };
+  // An octet of 1–2 digits could still grow (e.g. "2" → "25" → "255"),
+  // so we call those "partial"; 3 digits are final.
+  if (s.length === 3) return { kind: "complete" };
+  return { kind: "partial" };
+};
+
+/**
+ * Parse user input through each phase of a `SocketAddrV4`. Strictly matches
+ * Rust's `SocketAddrV4::from_str` so the frontend and backend never disagree:
+ * rejects leading zeros, octets > 255, and ports outside 1–65535.
+ */
+const parseSocks5Address = (raw: string): SocksAddressParse => {
+  if (raw === "") return { phase: "empty" };
+
+  const colonCount = (raw.match(/:/g) ?? []).length;
+  if (colonCount > 1) {
+    return { phase: "invalid", error: "Only one ':' is allowed — use ipv4:port" };
+  }
+
+  const [ipPart, portPart] = raw.includes(":") ? raw.split(":") : [raw, null];
+
+  const octets = ipPart.split(".");
+  if (octets.length > 4) {
+    return { phase: "invalid", error: "IPv4 has exactly 4 octets" };
+  }
+
+  // Classify each octet that's been typed so far.
+  let allOctetsComplete = true;
+  for (let i = 0; i < octets.length; i++) {
+    const result = classifyOctet(octets[i]);
+    if (result.kind === "invalid") {
+      return {
+        phase: "invalid",
+        error: `Invalid octet "${octets[i]}" — each octet must be 0–255 with no leading zeros`,
+      };
+    }
+    // Non-last octets must be complete (otherwise the dot is premature).
+    if (i < octets.length - 1 && result.kind !== "complete" && result.kind !== "partial") {
+      return { phase: "invalid", error: "Each '.' must follow an octet" };
+    }
+    // `partial` (1-2 digits) is already a valid octet numerically; only an
+    // empty trailing octet (e.g. "127.0.0.") means the IP is unfinished.
+    if (result.kind === "empty") allOctetsComplete = false;
+  }
+
+  const hasAllFourOctets = octets.length === 4;
+
+  if (!hasAllFourOctets || !allOctetsComplete) {
+    // Still building up the IP.
+    if (portPart !== null) {
+      return {
+        phase: "invalid",
+        error: "Finish the IPv4 address before adding ':port'",
+      };
+    }
+    return {
+      phase: "partialIp",
+      hint: hasAllFourOctets
+        ? "Finish the last octet"
+        : `Enter ${4 - octets.length} more octet${octets.length === 3 ? "" : "s"}`,
+    };
+  }
+
+  // IP is complete. Now handle the port side.
+  if (portPart === null) {
+    return { phase: "ipComplete", hint: "Type ':' then the port" };
+  }
+  if (portPart === "") {
+    return { phase: "awaitingPort", hint: "Enter the port (1–65535)" };
+  }
+  if (!/^\d+$/.test(portPart)) {
+    return { phase: "invalid", error: "Port must be digits only" };
+  }
+  if (portPart.length > 1 && portPart.startsWith("0")) {
+    return { phase: "invalid", error: "Port must not have leading zeros" };
+  }
+  const port = parseInt(portPart, 10);
+  if (port < 1 || port > 65535) {
+    return { phase: "invalid", error: "Port must be between 1 and 65535" };
+  }
+  if (portPart.length > 5) {
+    return { phase: "invalid", error: "Port must be at most 5 digits" };
+  }
+  return { phase: "complete" };
+};
+
+/** True once the string is a fully formed ipv4:port ready for a probe. */
+const isValidSocksAddress = (val: string): boolean =>
+  parseSocks5Address(val).phase === "complete";
+
+/**
+ * Runs a single SOCKS5 handshake probe via the `check_socks5_address` Tauri
+ * command. Failures (parse error, TCP error, unexpected handshake response)
+ * all collapse into `false` — callers only need to know reachable/not.
+ */
+async function probeSocks5(address: string): Promise<boolean> {
+  try {
+    return await invokeUnsafe<boolean>("check_socks5_address", { address });
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The settings box, containing the settings for the GUI.
@@ -99,8 +249,7 @@ export default function SettingsBox() {
           <TableContainer>
             <Table>
               <TableBody>
-                <TorSettings />
-                <MoneroTorSettings />
+                <NetworkProxySetting />
                 <DonationTipSetting />
                 <RedeemPolicySetting />
                 <RefundPolicySetting />
@@ -704,62 +853,231 @@ function NodeTable({
   );
 }
 
-export function TorSettings() {
+function NetworkProxySetting() {
   const dispatch = useAppDispatch();
-  const torEnabled = useSettings((settings) => settings.enableTor);
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
-    dispatch(setTorEnabled(event.target.checked));
-  const status = (state: boolean) => (state === true ? "enabled" : "disabled");
+  const networkProxyMode = useSettings((s) => s.networkProxyMode);
+  const torSocksAddress = useSettings((s) => s.torSocksAddress);
+  const enableMoneroTor = useSettings((s) => s.enableMoneroTor);
+  const allowDfxClearnet = useSettings((s) => s.allowDfxClearnet);
+
+  const [addrInput, setAddrInput] = useState(torSocksAddress ?? "");
+  const [probeStatus, setProbeStatus] = useState<boolean | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Keep addrInput in sync with persisted state (e.g. after rehydration)
+  useEffect(() => {
+    setAddrInput(torSocksAddress ?? "");
+  }, [torSocksAddress]);
+
+  const handleAddrChange = (raw: string) => {
+    // Strip any character that cannot appear in an IPv4 ip:port address.
+    const val = raw.replace(/[^0-9.:]/g, "");
+    setAddrInput(val);
+    if (val === "") {
+      dispatch(setTorSocksAddress(null));
+      setProbeStatus(null);
+    } else if (isValidSocksAddress(val)) {
+      dispatch(setTorSocksAddress(val));
+    }
+  };
+
+  const parsed = parseSocks5Address(addrInput);
+
+  // Debounced auto-probe: wait until the user stops typing before firing a
+  // SOCKS5 handshake, so each keystroke doesn't trigger its own TCP connect.
+  // Only fires once the address is fully formed — `ipComplete`,
+  // `awaitingPort`, and `partialIp` phases do not hit the network.
+  useEffect(() => {
+    if (networkProxyMode !== NetworkProxyMode.TorSocks || parsed.phase !== "complete") {
+      setProbeStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setIsRefreshing(true);
+      const result = await probeSocks5(addrInput);
+      if (!cancelled) {
+        setProbeStatus(result);
+        setIsRefreshing(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [addrInput, networkProxyMode, parsed.phase]);
+
+  const handleRefresh = async () => {
+    if (parsed.phase !== "complete") return;
+    setIsRefreshing(true);
+    setProbeStatus(await probeSocks5(addrInput));
+    setIsRefreshing(false);
+  };
+
+  const addrIsError = parsed.phase === "invalid";
+  const addrHelperText =
+    parsed.phase === "invalid"
+      ? parsed.error
+      : parsed.phase === "partialIp" ||
+          parsed.phase === "ipComplete" ||
+          parsed.phase === "awaitingPort"
+        ? parsed.hint
+        : "";
 
   return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Use Tor"
-          tooltip="Route network traffic through Tor to hide your IP address from the maker."
-        />
-      </TableCell>
+    <>
+      <TableRow>
+        <TableCell>
+          <SettingLabel
+            label="Network proxy"
+            tooltip="Configure how eigenwallet routes its network traffic. Changes take effect after restarting the app."
+          />
+        </TableCell>
+        <TableCell>
+          <ToggleButtonGroup
+            color="primary"
+            value={networkProxyMode}
+            onChange={(_, newMode) => {
+              if (
+                newMode === NetworkProxyMode.InternalTor ||
+                newMode === NetworkProxyMode.TorSocks ||
+                newMode === NetworkProxyMode.None
+              ) {
+                dispatch(setNetworkProxyMode(newMode));
+              }
+            }}
+            exclusive
+            size="small"
+          >
+            <Tooltip title="Route all traffic through the built-in Tor instance. Recommended for most users.">
+              <ToggleButton value={NetworkProxyMode.InternalTor}>
+                Internal Tor (Recommended)
+              </ToggleButton>
+            </Tooltip>
+            <Tooltip title="Route traffic through a system Tor SOCKS5 proxy on localhost. For power users running a local Tor daemon (e.g. on Tails).">
+              <ToggleButton value={NetworkProxyMode.TorSocks}>
+                Tor Socks (Advanced)
+              </ToggleButton>
+            </Tooltip>
+            <Tooltip title="Connect directly to the network without any proxy. Onion peers are not available in this mode.">
+              <ToggleButton value={NetworkProxyMode.None}>
+                None
+              </ToggleButton>
+            </Tooltip>
+          </ToggleButtonGroup>
+        </TableCell>
+      </TableRow>
 
-      <TableCell>
-        <Switch checked={torEnabled} onChange={handleChange} color="primary" />
-      </TableCell>
-    </TableRow>
-  );
-}
+      {networkProxyMode === NetworkProxyMode.InternalTor && (
+        <TableRow>
+          <TableCell>
+            <SettingLabel
+              label="Route Monero traffic through Tor"
+              tooltip="When enabled, Monero wallet traffic will be routed through Tor for additional privacy. Requires the built-in Tor to be active."
+            />
+          </TableCell>
+          <TableCell>
+            <Switch
+              checked={enableMoneroTor}
+              onChange={(e) => dispatch(setEnableMoneroTor(e.target.checked))}
+              color="primary"
+            />
+          </TableCell>
+        </TableRow>
+      )}
 
-/**
- * A setting that allows you to enable or disable routing Monero wallet traffic through Tor.
- * This setting is only visible when Tor is enabled.
- */
-function MoneroTorSettings() {
-  const dispatch = useAppDispatch();
-  const torEnabled = useSettings((settings) => settings.enableTor);
-  const enableMoneroTor = useSettings((settings) => settings.enableMoneroTor);
+      {networkProxyMode === NetworkProxyMode.TorSocks && (
+        <TableRow>
+          <TableCell>
+            <SettingLabel
+              label="Tor Socks Address"
+              tooltip="IPv4 address and port of the Tor SOCKS5 proxy (e.g. 127.0.0.1:9050 for a local Tor daemon, 10.152.152.10:9050 for Whonix). Only IPv4 addresses are accepted. Changes take effect after restarting the app."
+            />
+          </TableCell>
+          <TableCell>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <TextField
+                  value={addrInput}
+                  onChange={(e) => handleAddrChange(e.target.value)}
+                  placeholder="127.0.0.1:9050"
+                  error={addrIsError}
+                  helperText={addrHelperText}
+                  variant="outlined"
+                  size="small"
+                  fullWidth
+                />
+                <Tooltip
+                  title={
+                    parsed.phase === "empty"
+                      ? "Enter an address to check proxy status"
+                      : parsed.phase !== "complete"
+                        ? "Finish typing the address to probe"
+                        : probeStatus === null
+                          ? "Checking proxy..."
+                          : probeStatus
+                            ? "Proxy is reachable"
+                            : "Proxy is unreachable"
+                  }
+                >
+                  <Box sx={{ display: "flex", alignItems: "center" }}>
+                    <Circle
+                      color={
+                        parsed.phase !== "complete" || probeStatus === null
+                          ? "gray"
+                          : probeStatus
+                            ? "green"
+                            : "red"
+                      }
+                    />
+                  </Box>
+                </Tooltip>
+                <Tooltip title="Check proxy availability">
+                  <IconButton
+                    onClick={handleRefresh}
+                    disabled={isRefreshing || parsed.phase !== "complete"}
+                    size="small"
+                  >
+                    {isRefreshing ? <HourglassEmpty /> : <Refresh />}
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              {parsed.phase === "complete" &&
+                !isSocksAddressLocalhost(addrInput) && (
+                  <Alert severity="warning" variant="outlined">
+                    SOCKS5 traffic between this app and the proxy is
+                    unencrypted. Make sure the network path to{" "}
+                    <Typography component="span" fontFamily="monospace" fontSize="inherit">
+                      {addrInput}
+                    </Typography>{" "}
+                    is trusted (e.g. an isolated VM network or a secured LAN).
+                  </Alert>
+                )}
+            </Box>
+          </TableCell>
+        </TableRow>
+      )}
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) =>
-    dispatch(setEnableMoneroTor(event.target.checked));
-
-  // Hide this setting if Tor is disabled entirely
-  if (!torEnabled) {
-    return null;
-  }
-
-  return (
-    <TableRow>
-      <TableCell>
-        <SettingLabel
-          label="Route Monero traffic through Tor"
-          tooltip="When enabled, Monero wallet traffic will be routed through Tor for additional privacy. Requires main Tor setting to be enabled."
-        />
-      </TableCell>
-      <TableCell>
-        <Switch
-          checked={enableMoneroTor}
-          onChange={handleChange}
-          color="primary"
-        />
-      </TableCell>
-    </TableRow>
+      <TableRow>
+        <TableCell>
+          <SettingLabel
+            label="Enable DFX (clearnet only)"
+            tooltip="Controls the DFX fiat on-ramp integration. DFX is reached over clearnet regardless of the proxy mode. When disabled, the Buy Monero entry is hidden and DFX is never contacted."
+          />
+        </TableCell>
+        <TableCell>
+          <Switch
+            checked={allowDfxClearnet}
+            onChange={(e) =>
+              dispatch(setAllowDfxClearnet(e.target.checked))
+            }
+            color="primary"
+          />
+        </TableCell>
+      </TableRow>
+    </>
   );
 }
 
