@@ -303,6 +303,64 @@ impl Wallets {
         Ok(height as u64)
     }
 
+    /// Sweep the largest output of `lock_tx_hash` (viewable by the given
+    /// view-pair) across a set of `destinations` split by ratio.
+    ///
+    /// This is the monero-wallet-ng-based replacement for the old monero-sys
+    /// `sweep_multi_destination` flow: the caller hands over the keys of a
+    /// single-use view-pair that only ever receives the lock transaction, and
+    /// this method locates the block that contains `lock_tx_hash`, scans it,
+    /// and sweeps its single output across the destinations.
+    ///
+    /// `destinations` must be non-empty and its ratios must sum to 1.
+    pub async fn sweep_to(
+        &self,
+        lock_tx_hash: &TxHash,
+        spend_key: monero_oxide_ext::PrivateKey,
+        view_key: PrivateViewKey,
+        destinations: Vec<(monero_address::MoneroAddress, f64)>,
+    ) -> Result<TxHash> {
+        use monero_wallet_ng::rpc::{ProvidesTransactionStatus, TransactionStatus};
+
+        // ~1000x mainnet normal fee leaves plenty of headroom for fee spikes
+        // while still preventing a malicious RPC from inflating the fee
+        // to drain the output.
+        const MAX_FEE_PER_WEIGHT: u64 = 10_000_000;
+
+        let rpc_client = self.rpc_client().await;
+        let tx_id = tx_hash_to_bytes(lock_tx_hash)?;
+
+        let block_height = match rpc_client
+            .transaction_status(tx_id)
+            .await
+            .context("Failed to fetch status of lock transaction")?
+        {
+            TransactionStatus::InBlock { block_height } => block_height as usize,
+            TransactionStatus::InPool => {
+                anyhow::bail!("cannot sweep: lock transaction is still in mempool")
+            }
+            TransactionStatus::Unknown => {
+                anyhow::bail!("cannot sweep: daemon does not know about lock transaction")
+            }
+        };
+
+        let spend_scalar = Zeroizing::new(spend_key.scalar);
+        let view_scalar = Zeroizing::new(view_key.0.scalar);
+
+        let tx_hash = monero_wallet_ng::sweep::sweep(
+            rpc_client,
+            spend_scalar,
+            view_scalar,
+            block_height,
+            destinations,
+            MAX_FEE_PER_WEIGHT,
+        )
+        .await
+        .context("Failed to sweep to destination")?;
+
+        Ok(TxHash(hex::encode(tx_hash)))
+    }
+
     /// Verify a transfer using the new monero-wallet-ng implementation.
     ///
     /// This verifies that a transaction sends the expected amount to the given view pair

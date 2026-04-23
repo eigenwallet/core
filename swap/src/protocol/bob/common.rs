@@ -31,7 +31,6 @@ pub(super) trait InfallibleXmrRedeemable {
 }
 
 impl XmrRedeemable for State5 {
-    // TODO: Use monero-wallet-ng with monero-oxide here
     async fn redeem_xmr(
         self: State5,
         monero_wallet: &monero::Wallets,
@@ -42,35 +41,30 @@ impl XmrRedeemable for State5 {
 
         tracing::info!(%swap_id, "Redeeming Monero");
 
-        let wallet = monero_wallet
-            .swap_wallet_spendable(
-                swap_id,
+        let main_address = monero_wallet.main_wallet().await.main_address().await?;
+        let addresses = monero_receive_pool.fill_empty_addresses(main_address);
+        let ratios = monero_receive_pool.percentages();
+        let destinations: Vec<_> = addresses.into_iter().zip(ratios).collect();
+
+        tracing::debug!(
+            %swap_id,
+            destinations = ?destinations,
+            "Sweeping lock output across receive pool"
+        );
+
+        let tx_hash = monero_wallet
+            .sweep_to(
+                &self.lock_transfer_proof.tx_hash(),
                 spend_key,
                 view_key,
-                self.lock_transfer_proof.tx_hash(),
+                destinations,
             )
             .await
-            .context("Failed to open Monero wallet")?;
+            .context("Failed to redeem Monero")?;
 
-        // Before we sweep, we ensure that the wallet is synchronized
-        wallet.refresh_blocking().await?;
+        tracing::info!(%swap_id, tx_hash = %tx_hash.0, "Redeemed Monero");
 
-        tracing::debug!(%swap_id, receive_address=?monero_receive_pool, "Opened temporary Monero wallet, sweeping to receive address");
-
-        let main_address = monero_wallet.main_wallet().await.main_address().await?;
-
-        let tx_hash = wallet
-            .sweep_multi_destination(
-                &monero_receive_pool.fill_empty_addresses(main_address),
-                &monero_receive_pool.percentages(),
-            )
-            .await
-            .context("Failed to redeem Monero")?
-            .txid;
-
-        tracing::info!(%swap_id, %tx_hash, "Redeemed Monero");
-
-        Ok(TxHash(tx_hash))
+        Ok(tx_hash)
     }
 }
 

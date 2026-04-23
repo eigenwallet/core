@@ -965,22 +965,21 @@ impl XmrRefundable for State3 {
             .await
             .context("Failed to wait for Monero lock transaction to be confirmed")?;
 
-        tracing::debug!(%swap_id, "Opening temporary Monero wallet from keys for refunding");
-
-        let swap_wallet = monero_wallet
-            .swap_wallet_spendable(swap_id, spend_key, view_key, transfer_proof.tx_hash())
-            .await
-            .context(format!("Failed to open/create swap wallet `{}`", swap_id))?;
-
-        tracing::debug!(%swap_id, "Sweeping Monero to redeem address");
         let main_address = monero_wallet.main_wallet().await.main_address().await?;
 
-        swap_wallet.refresh_blocking().await?;
+        tracing::debug!(%swap_id, %main_address, "Sweeping lock output to redeem address");
 
-        swap_wallet
-            .sweep(&main_address)
+        let tx_hash = monero_wallet
+            .sweep_to(
+                &transfer_proof.tx_hash(),
+                spend_key,
+                view_key,
+                vec![(main_address, 1.0)],
+            )
             .await
             .context("Failed to sweep Monero to redeem address")?;
+
+        tracing::info!(%swap_id, tx_hash = %tx_hash.0, "Refunded Monero");
 
         Ok(())
     }

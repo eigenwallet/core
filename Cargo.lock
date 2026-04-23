@@ -6612,6 +6612,7 @@ name = "monero-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "curve25519-dalek",
  "hex",
  "monero-address",
  "monero-daemon-rpc",
@@ -6621,6 +6622,7 @@ dependencies = [
  "monero-sys",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
  "monero-wallet-ng",
+ "rand 0.8.5",
  "testcontainers",
  "tokio",
  "tracing",
@@ -6687,6 +6689,7 @@ dependencies = [
  "monero-oxide",
  "monero-simple-request-rpc",
  "monero-wallet 0.1.0 (git+https://github.com/kayabaNerve/monero-oxide.git)",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
