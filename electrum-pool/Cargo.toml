@@ -11,4 +11,5 @@ bitcoin = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }
 tokio = { workspace = true }
+tor-socks5 = { workspace = true }
 tracing = { workspace = true }

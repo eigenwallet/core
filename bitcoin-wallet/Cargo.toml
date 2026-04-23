@@ -15,6 +15,7 @@ bdk_wallet = { workspace = true, features = ["rusqlite", "test-utils"] }
 bitcoin = { workspace = true }
 derive_builder = "0.20.2"
 electrum-pool = { path = "../electrum-pool" }
+tor-socks5 = { workspace = true, features = ["reqwest"] }
 futures = { workspace = true }
 moka = { version = "0.12", features = ["sync", "future"] }
 proptest = "1"

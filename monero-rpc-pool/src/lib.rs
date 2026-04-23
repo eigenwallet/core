@@ -31,6 +31,7 @@ use proxy::{proxy_handler, stats_handler};
 pub struct AppState {
     pub node_pool: Arc<NodePool>,
     pub tor_client: Option<TorClientArc>,
+    pub system_tor_socks5: Option<tor_socks5::ProxyConfig>,
     pub connection_pool: crate::connection_pool::ConnectionPool,
 }
 
@@ -109,6 +110,7 @@ pub async fn create_app_with_receiver(
     let app_state = AppState {
         node_pool,
         tor_client: config.tor_client,
+        system_tor_socks5: tor_socks5::proxy_config(tor_socks5::Subsystem::MoneroRpc),
         connection_pool: crate::connection_pool::ConnectionPool::new(),
     };
 

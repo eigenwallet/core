@@ -1,6 +1,6 @@
 use backoff::{Error as BackoffError, ExponentialBackoff};
 use bdk_electrum::BdkElectrumClient;
-use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error};
+use bdk_electrum::electrum_client::{Client, ConfigBuilder, ElectrumApi, Error, Socks5Config};
 use bitcoin::Transaction;
 use futures::future::join_all;
 use once_cell::sync::OnceCell;
@@ -569,7 +569,15 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
         url: &str,
         config: &ElectrumBalancerConfig,
     ) -> Result<Arc<BdkElectrumClient<Client>>, Error> {
+        let socks5 = tor_socks5::proxy_config(tor_socks5::Subsystem::Electrum).map(|proxy| {
+            Socks5Config::with_credentials(
+                proxy.addr.to_string(),
+                proxy.username.to_string(),
+                proxy.password.to_string(),
+            )
+        });
         let client_config = ConfigBuilder::new()
+            .socks5(socks5.clone())
             .timeout(Some(config.request_timeout))
             // TODO: Why is this set to 1?
             // The goal of this crate is to extract retry logic out of the electrum client library
@@ -578,6 +586,14 @@ impl ElectrumClientFactory<BdkElectrumClient<Client>> for BdkElectrumClientFacto
             // Setting it to 0 causes some bugs, see: https://github.com/bitcoindevkit/rust-electrum-client/issues/186
             .retry(1)
             .build();
+
+        if socks5.is_some() {
+            debug!(
+                server_url = url,
+                proxy = %tor_socks5::current_addr(),
+                "Using system Tor SOCKS5 proxy for Electrum connection"
+            );
+        }
 
         let client = Client::from_config(url, client_config).map_err(|e| {
             // Wrap connection errors with DNS resolution context

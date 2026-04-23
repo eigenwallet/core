@@ -5,7 +5,7 @@ use crate::cli::api::tauri_bindings::{
     TauriSwapProgressEvent,
 };
 use crate::cli::list_sellers::QuoteWithAddress;
-use crate::common::{get_logs, redact};
+use crate::common::{get_logs, http, redact};
 use crate::monero::MoneroAddressPool;
 use crate::monero::wallet_rpc::MoneroDaemon;
 use crate::network::quote::BidQuote;
@@ -27,12 +27,13 @@ use serde_json::json;
 use std::convert::TryInto;
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::Duration;
 use swap_core::bitcoin;
 use swap_core::bitcoin::{CancelTimelock, ExpiredTimelocks, PunishTimelock};
 use thiserror::Error;
 use tokio_util::task::AbortOnDropHandle;
+use tor_socks5::Subsystem;
 use tracing::Instrument;
 use tracing::Span;
 use tracing::debug_span;
@@ -1729,20 +1730,23 @@ impl CheckMoneroNodeArgs {
             otherwise => anyhow::bail!(UnknownMoneroNetwork(otherwise.to_string())),
         };
 
-        static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-            reqwest::Client::builder()
-                // This function is called very frequently, so we set the timeout to be short
-                .timeout(Duration::from_secs(5))
-                .https_only(false)
-                .build()
-                .expect("reqwest client to work")
-        });
-
         let Ok(monero_daemon) = MoneroDaemon::from_str(self.url, network) else {
             return Ok(CheckMoneroNodeResponse { available: false });
         };
+        let parsed_url = reqwest::Url::parse(&url).context("Failed to parse Monero node URL")?;
 
-        match monero_daemon.is_available(&CLIENT).await {
+        let client = http::configure_http_client(
+            reqwest::Client::builder()
+                // This function is called very frequently, so we set the timeout to be short
+                .timeout(Duration::from_secs(5))
+                .https_only(false),
+            &parsed_url,
+            Subsystem::MoneroRpc,
+        )?
+        .build()
+        .context("Failed to build Monero node check HTTP client")?;
+
+        match monero_daemon.is_available(&client).await {
             Ok(available) => Ok(CheckMoneroNodeResponse { available }),
             Err(e) => {
                 tracing::error!(
